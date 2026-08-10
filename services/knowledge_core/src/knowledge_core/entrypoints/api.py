@@ -40,7 +40,7 @@ from knowledge_core.api.discovery_router import router as discovery_router
 from knowledge_core.api.evidence_router import router as evidence_router
 from knowledge_core.api.visual_router import router as visual_router
 from knowledge_core.api.parse_task_router import router as parse_task_router
-from knowledge_core.api.status_router import router as status_router
+from knowledge_core.api.status_router import catalog_router, router as status_router
 from knowledge_core.api.preview_router import router as preview_router
 from knowledge_core.api.purge_task_router import router as purge_task_router
 from knowledge_core.api.projection_task_router import (
@@ -65,6 +65,11 @@ from knowledge_core.application.model_references import (
 )
 from knowledge_core.application.scope import KnowledgeCoreScopeService
 from knowledge_core.application.collection_purge import KnowledgeCoreCollectionPurgeService
+from knowledge_core.application.collections import (
+    KnowledgeCoreBindingService,
+    KnowledgeCoreCollectionService,
+)
+from knowledge_core.application.reprocessing import KnowledgeCoreReprocessingService
 from knowledge_core.application.notifications import KnowledgeOutboxPublisher
 from knowledge_core.application.projection_tasks import (
     KnowledgeCoreProjectionTaskService,
@@ -258,7 +263,18 @@ async def lifespan(app: FastAPI):
     app.state.kc_scope_service = KnowledgeCoreScopeService(
         uow_factory=kc_uow_factory,
     )
-    from knowledge_core.application.collections import KnowledgeCoreBindingService, KnowledgeCoreCollectionService
+    parser_artifact_store = LocalParserArtifactStore(
+        Path(settings.storage.local_object_storage_path)
+    )
+    app.state.kc_parser_artifact_store = parser_artifact_store
+    app.state.kc_reprocessing_service = KnowledgeCoreReprocessingService(
+        uow_factory=kc_uow_factory,
+        artifact_store=parser_artifact_store,
+        parse_policy_overrides={
+            "ocr_model": settings.parse_policy.ocr_model,
+            "visual_max_concurrency": settings.parse_policy.visual_max_concurrency,
+        },
+    )
     app.state.kc_collection_service = KnowledgeCoreCollectionService(
         uow_factory=kc_uow_factory,
     )
@@ -307,6 +323,7 @@ app.include_router(evidence_router)
 app.include_router(visual_router)
 app.include_router(parse_task_router)
 app.include_router(status_router)
+app.include_router(catalog_router)
 app.include_router(preview_router)
 app.include_router(purge_task_router)
 app.include_router(projection_task_router)

@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import hmac
 import json
-import os
 import tempfile
 import sys
 from datetime import UTC, datetime, timedelta
@@ -25,6 +24,9 @@ from aiops_agent.adapters.monitoring.payload_store import (
 )
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.application.monitoring import MonitorWebhookIntakeService
+from aiops_agent.application.managed_credentials import (
+    AIOpsManagedCredentialService,
+)
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.config import get_aiops_settings
 from aiops_agent.contracts.monitoring import (
@@ -61,6 +63,10 @@ from main_api.entities import PlatformDomainEntity
 from platform_core.contracts.aiops import MonitorWebhookEnvelope
 from platform_core.database.oracle import create_database_runtime
 from platform_core.identity import uuid7
+from platform_core.managed_credentials import (
+    ManagedCredentialCipher,
+    ManagedCredentialEntity,
+)
 
 
 class FixtureMonitorAdapter:
@@ -139,7 +145,13 @@ async def main() -> None:
     trace_id = str(uuid7())
     webhook_key = f"whk-{uuid7()}-{uuid7()}"
     webhook_secret = f"smoke-secret-{uuid7()}"
-    os.environ["KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK"] = webhook_secret
+    managed_credentials = AIOpsManagedCredentialService(
+        uow_factory=uow_factory,
+        cipher=ManagedCredentialCipher(
+            key=hashlib.sha256(b"aiops-monitoring-smoke").digest(),
+            key_version="smoke-v1",
+        ),
+    )
     client_session = aiohttp.ClientSession()
     payload_directory = tempfile.TemporaryDirectory(
         prefix="kbot-aiops-monitor-smoke-"
@@ -170,6 +182,20 @@ async def main() -> None:
             await session.commit()
 
         async with uow_factory() as uow:
+            credential = await managed_credentials.put(
+                uow=uow,
+                domain_id=domain_id,
+                external_key=source_id,
+                credential_kind="monitor_webhook",
+                values={"webhook_secret": webhook_secret},
+                actor_id="monitor-smoke",
+            )
+            webhook_secret_ref = managed_credentials.reference(
+                domain_id=domain_id,
+                external_key=source_id,
+                credential_kind="monitor_webhook",
+                credential_id=credential.credential_id,
+            )
             await uow.targets.add_target(
                 TargetEntity(
                     target_id=target_id,
@@ -202,7 +228,7 @@ async def main() -> None:
                     display_name="监控闭环 Smoke Prometheus",
                     source_type="PROMETHEUS",
                     endpoint="https://prometheus.invalid",
-                    webhook_secret_ref="env://KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK",
+                    webhook_secret_ref=webhook_secret_ref,
                     webhook_key_hash=hashlib.sha256(
                         webhook_key.encode()
                     ).hexdigest(),
@@ -257,8 +283,7 @@ async def main() -> None:
             hashlib.sha256,
         ).hexdigest()
         secret_store = ConfiguredSecretStore(
-            provider="environment",
-            allowed_schemes=("env", "vault", "secret-manager"),
+            managed_credentials=managed_credentials,
         )
         intake = MonitorWebhookIntakeService(
             uow_factory=uow_factory,
@@ -425,6 +450,12 @@ async def main() -> None:
                     TargetEntity.target_id == target_id
                 )
             )
+            await session.execute(
+                delete(ManagedCredentialEntity).where(
+                    ManagedCredentialEntity.external_key == str(source_id),
+                    ManagedCredentialEntity.namespace == "aiops",
+                )
+            )
             if created_domain_id is not None:
                 await session.execute(
                     delete(PlatformDomainEntity).where(
@@ -433,7 +464,6 @@ async def main() -> None:
                     )
                 )
             await session.commit()
-        os.environ.pop("KBOT_AIOPS_MONITORING_SMOKE_WEBHOOK", None)
         await client_session.close()
         await database.close()
         payload_directory.cleanup()

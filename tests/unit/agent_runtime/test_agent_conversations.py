@@ -56,7 +56,10 @@ class AgentConversationApiTest(unittest.TestCase):
             run_id=self.run_id,
             run_status="RUNNING",
             event_cursor=2,
-            events_url=f"/api/v1/runs/{self.run_id}/events",
+            events_url=(
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.run_id}/events"
+            ),
         )
         app = FastAPI()
         app.state.conversation_service = self.service
@@ -79,11 +82,25 @@ class AgentConversationApiTest(unittest.TestCase):
         app.include_router(memory_router)
         self.client = TestClient(app)
 
+    def _execution_spec(self):
+        return {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": 20,
+            "consumer_agent_id": str(self.agent_id),
+            "consumer_agent_version_id": str(uuid7()),
+            "agent_kind": "KNOWLEDGE_RETRIEVAL",
+            "display_name": "文档助手",
+            "enabled_capabilities": ["document"],
+            "models": {"composer_llm": str(uuid7())},
+        }
+
     def test_create_conversation_uses_trusted_identity(self):
         response = self.client.post(
             "/internal/v1/conversations",
             json={
                 "agent_id": str(self.agent_id),
+                "execution_spec": self._execution_spec(),
                 "title": "文档讨论",
             },
         )

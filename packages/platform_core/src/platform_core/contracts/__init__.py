@@ -2,15 +2,13 @@
 
 from .api_versions import INTERNAL_API_V1, PUBLIC_API_V1
 from .agent import (
-    AgentDefinition,
+    AgentExecutionSpec,
     AgentArtifact,
     AgentArtifactRef,
     AgentRunEvent,
     AgentRunReceipt,
     AgentRunSummary,
     CreateAgentRunRequest,
-    CreateAgentDefinitionRequest,
-    UpdateAgentDefinitionRequest,
 )
 from .conversation import (
     ConversationItemView,
@@ -24,25 +22,6 @@ from .conversation import (
     MemoryItemView,
     PublicTraceEvent,
     UpdateConversationRequest,
-)
-from .composition import (
-    Availability,
-    AgentCompositionCreate,
-    AgentCompositionUpdate,
-    AgentDataQueryBindingDefinition,
-    CollectionCompositionCreate,
-    CollectionCompositionDefinition,
-    CollectionModelsCompositionUpdate,
-    CompositionEdge,
-    CompositionNode,
-    CompositionReceipt,
-    CompositionStatus,
-    ResourceDecommissionPrecheck,
-    ResourceDecommissionResult,
-    ResourceReferenceGraph,
-    RunCompositionView,
-    SemanticModelBindingDefinition,
-    SemanticModelPublicationComposition,
 )
 from .identity import AuthContext, PrincipalKind, ServiceIdentity
 from .model import (
@@ -60,25 +39,14 @@ from .model import (
 from . import data_query
 
 __all__ = [
-    "Availability",
-    "AgentCompositionCreate",
-    "AgentCompositionUpdate",
-    "AgentDataQueryBindingDefinition",
+    "AgentExecutionSpec",
     "AuthContext",
     "AgentArtifactRef",
     "AgentArtifact",
-    "AgentDefinition",
     "AgentRunEvent",
     "AgentRunReceipt",
     "AgentRunSummary",
     "CreateAgentRunRequest",
-    "CollectionCompositionCreate",
-    "CollectionCompositionDefinition",
-    "CollectionModelsCompositionUpdate",
-    "CompositionEdge",
-    "CompositionNode",
-    "CompositionReceipt",
-    "CompositionStatus",
     "ConversationItemView",
     "ConversationTurnPage",
     "ConversationTurnReceipt",
@@ -89,14 +57,7 @@ __all__ = [
     "ConversationQueryImage",
     "MemoryItemView",
     "PublicTraceEvent",
-    "ResourceDecommissionPrecheck",
-    "ResourceDecommissionResult",
-    "ResourceReferenceGraph",
-    "RunCompositionView",
-    "SemanticModelBindingDefinition",
-    "SemanticModelPublicationComposition",
     "UpdateConversationRequest",
-    "CreateAgentDefinitionRequest",
     "EmbeddingDataItem",
     "ModelArchiveRequest",
     "ModelCatalogItem",
@@ -109,7 +70,6 @@ __all__ = [
     "ModelUpdateRequest",
     "PrincipalKind",
     "ServiceIdentity",
-    "UpdateAgentDefinitionRequest",
     "PUBLIC_API_V1",
     "INTERNAL_API_V1",
     "data_query",

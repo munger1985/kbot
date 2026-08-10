@@ -16,15 +16,11 @@ from knowledge_core.entities import (
 )
 from knowledge_core.domain.intake import KmAssetIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
-from knowledge_core.parsing import canonical_json_hash
+from knowledge_core.application.parse_policy import (
+    build_parse_plan,
+    validate_parse_policy_overrides,
+)
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
-
-
-_FORBIDDEN_PARSE_POLICY_KEYS = frozenset({
-    "embedding", "embedding_model", "embedding_model_id",
-    "embedding_served_model_name",
-    "txt_embed_model", "txt_embedding_model", "query_vector", "models",
-})
 
 
 class IntakeConflictError(Exception):
@@ -169,12 +165,7 @@ class KnowledgeCoreIntakeService:
         self._receipt_ttl_seconds = receipt_ttl_seconds
         self._uow_factory = uow_factory
         self._parse_policy_overrides = parse_policy_overrides or {}
-        forbidden_keys = _FORBIDDEN_PARSE_POLICY_KEYS.intersection(self._parse_policy_overrides)
-        if forbidden_keys:
-            raise ValueError(
-                "Parser policy cannot select or generate retrieval embeddings: "
-                + ", ".join(sorted(forbidden_keys))
-            )
+        validate_parse_policy_overrides(self._parse_policy_overrides)
 
     async def reserve(self, command: ReserveIntakeCommand) -> IntakeReservation:
         """Commit a small Receipt transaction before any file byte is staged.
@@ -747,56 +738,23 @@ class KnowledgeCoreIntakeService:
         )
         if collection is None:
             raise IntakeCollectionError("Target Collection no longer exists")
-        policy = {
-            "pipeline": "kc-docling-structure/v1",
-            "atom_ir_schema": "kc-atom/v1",
-            "structure_ir_schema": "kc-structure/v1",
-            "evidence_manifest_schema": "kc-evidence-manifest/v1",
-            "quality_gate": "kc-structure-quality/v1",
-            "do_ocr": True,
-            "ocr_engine": "tesseract",
-            "image_scale": 2.0,
-            "models": dict(collection.models_json or {}),
-        }
-        policy.update(self._parse_policy_overrides)
-        if policy.get("ocr_model"):
-            policy["do_ocr"] = False
-            policy["ocr_provider"] = "DEEPSEEK_OCR"
-        strategy = str(policy.get("parse_strategy", "AUTO")).upper()
-        supports_page_visual = version.detected_mime_type in {
-            "application/pdf",
-            "image/png",
-            "image/jpeg",
-            "image/tiff",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        }
-        if (
-            supports_page_visual
-            and policy.get("models", {}).get("parser_vlm")
-            and strategy != "TEXT"
-        ):
-            view_kind = "VISUAL" if strategy == "VISUAL" else "HYBRID"
-            parser_name = "kc-adaptive-visual-pipeline"
-        elif policy.get("ocr_model"):
-            view_kind = "TEXT"
-            parser_name = "kc-deepseek-ocr-pipeline"
-        else:
-            view_kind = "TEXT"
-            parser_name = "kc-docling-pipeline"
-        fingerprint = canonical_json_hash(policy)
-        view = await uow.parse_views.get_by_input(document_version_id=version.document_version_id, view_kind=view_kind, parse_config_fingerprint=fingerprint)
+        plan = build_parse_plan(
+            collection=collection,
+            version=version,
+            overrides=self._parse_policy_overrides,
+        )
+        view = await uow.parse_views.get_by_input(document_version_id=version.document_version_id, view_kind=plan.view_kind, parse_config_fingerprint=plan.fingerprint)
         if view is None:
             view = await uow.parse_views.add(KcParseViewEntity(
                 collection_id=collection_id, document_version_id=version.document_version_id,
-                view_kind=view_kind, parser_name=parser_name, parse_config_fingerprint=fingerprint,
-                parse_config_json=policy, view_status="PENDING",
+                view_kind=plan.view_kind, parser_name=plan.parser_name, parse_config_fingerprint=plan.fingerprint,
+                parse_config_json=plan.policy, view_status="PENDING",
                 created_by=actor_id, updated_by=actor_id,
             ))
         await uow.jobs.add(KcIngestionJobEntity(
             collection_id=collection_id, bundle_revision_id=bundle_revision_id,
             document_version_id=version.document_version_id, parse_view_id=view.parse_view_id, job_type="PARSE",
-            idempotency_key=f"parse:{version.document_version_id}:{fingerprint}", input_fingerprint=version.content_hash,
+            idempotency_key=f"parse:{version.document_version_id}:{plan.fingerprint}", input_fingerprint=version.content_hash,
             payload_json={"document_version_id": version.document_version_id}, job_status="PENDING",
             created_by=actor_id, updated_by=actor_id,
         ))

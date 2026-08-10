@@ -84,11 +84,6 @@ async def smoke() -> None:
                     "WHERE view_name LIKE 'KBOT_V_DQ_%'"
                 ))).scalars()
             )
-            mode_columns = int((await connection.execute(text(
-                "SELECT COUNT(*) FROM user_tab_columns "
-                "WHERE table_name='KBOT_AGENT_DEFINITION' "
-                "AND column_name='DATA_QUERY_MODE'"
-            ))).scalar_one())
             database_columns = {
                 table_name: set((await connection.execute(text(
                     "SELECT column_name FROM user_tab_columns "
@@ -102,7 +97,6 @@ async def smoke() -> None:
         assert views == SERVICE_VIEWS["data_query"], (
             f"Data Query 视图不一致：{sorted(views)}"
         )
-        assert mode_columns == 1
         for table_name in SERVICE_TABLES["data_query"]:
             mapped_columns = {
                 column.name.upper()

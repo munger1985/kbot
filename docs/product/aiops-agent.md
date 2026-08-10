@@ -226,7 +226,7 @@ Diagnosis
 
 ## AIOps SSE 与前端交互
 
-`GET /api/v1/ops/runs/{run_id}/events` 支持 `Last-Event-ID` 续传。主要事件：
+`GET /api/v1/apps/aiops/runs/{run_id}/events` 支持 `Last-Event-ID` 续传。主要事件：
 
 | 事件 | 前端表现 |
 | --- | --- |

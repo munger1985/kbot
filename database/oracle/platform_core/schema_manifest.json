@@ -7,7 +7,7 @@
     {"name": "001_domain.sql", "statements": 3, "sha256": "a62fd9a288d104a5d552835f78035c25ea16470baf8075bb543388b66311ffd3"},
     {"name": "002_prompt_registry.sql", "statements": 5, "sha256": "a29216c760249ac7258ae5679153828b481617eddde4546d4d0c2e2085c55229"},
     {"name": "003_notifications.sql", "statements": 13, "sha256": "bbbec476a209721cda43e64ea9e58bc94e4f3d179c893273fd8f183b657b5909"},
-    {"name": "004_composition.sql", "statements": 3, "sha256": "bc91915a913121dc63aa2639e63d0f83c5ade1aa8e3c080a137b75df34fc7988"}
+    {"name": "004_managed_credentials.sql", "statements": 2, "sha256": "c40cec70ead84842570dfdb98df0a0e900708aeb3d08a6a6bc0d789f5f67172b"}
   ],
   "tables": [
     "KBOT_PLATFORM_DOMAIN",
@@ -19,7 +19,7 @@
     "KBOT_WORK_ITEM",
     "KBOT_BACKGROUND_OPERATION",
     "KBOT_OPERATION_WATCH",
-    "KBOT_COMPOSITION_RECEIPT"
+    "KBOT_MANAGED_CREDENTIAL"
   ],
   "views": ["KBOT_V_PLATFORM_DOMAIN"],
   "function_unique_indexes": ["UX_NOTIFY_WORK_OPEN"],

@@ -8,7 +8,11 @@ from fastapi.testclient import TestClient
 
 from agent_runtime.api import internal_router, task_router
 from agent_runtime.application import AgentRuntimeConflict
-from platform_core.contracts import AgentRunReceipt, AuthContext, PrincipalKind
+from platform_core.contracts import (
+    AgentRunReceipt,
+    AuthContext,
+    PrincipalKind,
+)
 from platform_core.identity import uuid7
 
 
@@ -20,7 +24,10 @@ class AgentRuntimeApiTest(unittest.TestCase):
             run_id=self.run_id,
             status="CREATED",
             event_cursor=1,
-            events_url=f"/api/v1/runs/{self.run_id}/events",
+            events_url=(
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.run_id}/events"
+            ),
         )
         app = FastAPI()
         app.state.agent_runtime_service = self.service
@@ -43,12 +50,28 @@ class AgentRuntimeApiTest(unittest.TestCase):
         app.include_router(task_router)
         self.client = TestClient(app)
 
+    @staticmethod
+    def _execution_spec(agent_id):
+        return {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": 20,
+            "consumer_agent_id": str(agent_id),
+            "consumer_agent_version_id": str(uuid7()),
+            "agent_kind": "KNOWLEDGE_RETRIEVAL",
+            "display_name": "文档助手",
+            "enabled_capabilities": ["document"],
+            "models": {"composer_llm": str(uuid7())},
+        }
+
     def test_create_derives_scope_and_actor_from_auth_context(self):
+        agent_id = uuid7()
         response = self.client.post(
             "/internal/v1/runs",
             headers={"Idempotency-Key": "create-1"},
             json={
-                "agent_id": str(uuid7()),
+                "agent_id": str(agent_id),
+                "execution_spec": self._execution_spec(agent_id),
                 "input": "查询文档",
                 "collection_ids": [],
                 "security_level": 2,
@@ -67,11 +90,13 @@ class AgentRuntimeApiTest(unittest.TestCase):
             "IDEMPOTENCY_CONFLICT", "请求内容不同"
         )
 
+        agent_id = uuid7()
         response = self.client.post(
             "/internal/v1/runs",
             headers={"Idempotency-Key": "create-1"},
             json={
-                "agent_id": str(uuid7()),
+                "agent_id": str(agent_id),
+                "execution_spec": self._execution_spec(agent_id),
                 "input": "查询文档",
             },
         )

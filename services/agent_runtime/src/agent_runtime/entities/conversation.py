@@ -26,6 +26,9 @@ class AgentConversationEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    execution_spec_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
     title: Mapped[str | None] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="ACTIVE"

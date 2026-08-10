@@ -1,0 +1,90 @@
+{
+  "catalog_version": "postgresql-baseline.v1",
+  "tools": [
+    {
+      "tool_id": "db.instance.identity", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": [], "parameters": [],
+      "output_columns": [
+        {"name": "product", "logical_type": "STRING", "nullable": false},
+        {"name": "version", "logical_type": "STRING", "nullable": false},
+        {"name": "instance_name", "logical_type": "STRING", "nullable": false},
+        {"name": "database_role", "logical_type": "STRING", "nullable": false},
+        {"name": "server_time", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/instance_identity.sql", "template_sha256": "45c2cfad430e841eb2d6ef6269a06471c519ac35d6f8ace41282f93b29bb365b",
+      "timeout_seconds": 20, "max_rows": 1, "max_bytes": 65536, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.active", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_activity",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "client_host", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "database_name", "logical_type": "STRING"},
+        {"name": "command_name", "logical_type": "STRING", "nullable": false},
+        {"name": "active_seconds", "logical_type": "INTEGER", "nullable": false},
+        {"name": "session_state", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/session_active.sql", "template_sha256": "348f63b24da859c262ee211ea20dab96e82039a4d1b96fca30d28034f91e5516",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.blocking_chain", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_blocking_pids",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [
+        {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "waiting_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "blocking_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "wait_seconds", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/session_blocking.sql", "template_sha256": "f6391d7ecc3d195cd96de944a4d1f3de40315bbf5b1800f22dc65a463788bda0",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.storage.capacity", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_database_size",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": [], "parameters": [],
+      "output_columns": [
+        {"name": "database_name", "logical_type": "STRING", "nullable": false},
+        {"name": "allocated_mb", "logical_type": "DECIMAL"},
+        {"name": "table_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/storage_capacity.sql", "template_sha256": "ed58ddde9c662327c15217c4e440d7c4868d5271d17ef9b44f0e77c7ec0059cd",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.transaction.long_running", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_activity",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "min_seconds", "type": "integer", "minimum": 1, "maximum": 86400, "default": 300, "required": false}],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "transaction_started_at", "logical_type": "DATETIME", "nullable": false},
+        {"name": "elapsed_seconds", "logical_type": "INTEGER", "nullable": false},
+        {"name": "transaction_state", "logical_type": "STRING", "nullable": false},
+        {"name": "rows_locked", "logical_type": "INTEGER", "nullable": false},
+        {"name": "rows_modified", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/transaction_long_running.sql", "template_sha256": "269e34e602df56cf9acbf8b647ddf27fdc53202e5b4c15ab051f056721747386",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.replication.status", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_replication",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20,
+      "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [
+        {"name": "channel_name", "logical_type": "STRING", "nullable": false},
+        {"name": "service_state", "logical_type": "STRING", "nullable": false},
+        {"name": "source_uuid", "logical_type": "STRING"},
+        {"name": "last_error_number", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/replication_status.sql", "template_sha256": "32b3c0a542d7eca849a6614f3cfe4389ad2e0c86f5aef970cba76ab59bed16f4",
+      "timeout_seconds": 20, "max_rows": 32, "max_bytes": 262144, "cost_level": "LOW"
+    }
+  ]
+}

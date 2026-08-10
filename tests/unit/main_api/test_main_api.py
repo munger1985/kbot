@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 from typing import Any
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -185,7 +186,10 @@ class _FakeAgentRuntimeClient:
             "run_id": str(self.run_id),
             "status": "RUNNING",
             "event_cursor": 2,
-            "events_url": f"/api/v1/runs/{self.run_id}/events",
+            "events_url": (
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.run_id}/events"
+            ),
         }
 
     async def get_run(self, *, run_id, auth_context):
@@ -250,7 +254,10 @@ class _FakeAgentRuntimeClient:
             "run_id": str(self.run_id),
             "status": "CANCELLED",
             "event_cursor": 9,
-            "events_url": f"/api/v1/runs/{self.run_id}/events",
+            "events_url": (
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.run_id}/events"
+            ),
         }
 
 
@@ -304,6 +311,78 @@ class _FakeDomainManagementService:
         }
 
 
+class _FakeAccessControlService:
+    _PERMISSIONS = frozenset(
+        {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:upload",
+            "knowledge_retrieval:review",
+            "knowledge_retrieval:knowledge_manage",
+            "knowledge_retrieval:agent_manage",
+            "knowledge_retrieval:data_manage",
+            "aiops:use",
+            "aiops:agent_manage",
+            "aiops:target_manage",
+            "aiops:monitor_source_manage",
+            "aiops:policy_manage",
+            "aiops:plan_manage",
+            "aiops:operations_manage",
+            "aiops:proposal:approve",
+        }
+    )
+
+    async def snapshot(self, *, app_id, domain_id, user_id):
+        return SimpleNamespace(
+            app_id=app_id,
+            domain_id=domain_id,
+            user_id=user_id,
+            roles=("manager",),
+            permissions=self._PERMISSIONS,
+        )
+
+    async def require(self, *, app_id, domain_id, user_id, permission_code):
+        return await self.snapshot(
+            app_id=app_id, domain_id=domain_id, user_id=user_id
+        )
+
+
+class _FakeKnowledgeRetrievalAppClient:
+    def __init__(self, runtime):
+        self.runtime = runtime
+
+    async def authorize(self, *, payload, auth_context):
+        return {"authorized": True}
+
+    async def execution_spec(self, *, agent_id, domain_id, auth_context):
+        agent = self.runtime._agent()
+        return {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": domain_id,
+            "consumer_agent_id": str(agent_id),
+            "consumer_agent_version_id": (
+                "019f8eae-2c25-7d48-b044-350ec3f5a015"
+            ),
+            "agent_kind": "KNOWLEDGE_RETRIEVAL",
+            "display_name": agent["display_name"],
+            "enabled_capabilities": agent["enabled_capabilities"],
+            "models": agent["models"],
+            "do_rerank": False,
+            "instruction": None,
+            "resource_context": {},
+            "runtime_policy": {},
+        }
+
+    async def create_agent(self, *, payload, auth_context):
+        return self.runtime._agent()
+
+    async def list_agents(self, *, domain_id, auth_context):
+        return [self.runtime._agent()]
+
+    async def list_grants(self, *, domain_id, auth_context):
+        return []
+
+
 class _FakeDomainRepository:
     async def exists_active(self, *, domain_id: int) -> bool:
         return domain_id == 100
@@ -347,6 +426,10 @@ class MainApiTest(unittest.TestCase):
         )
         self.app.state.knowledge_core_client = self.kc
         self.app.state.agent_runtime_client = self.agent_runtime
+        self.app.state.knowledge_retrieval_app_client = (
+            _FakeKnowledgeRetrievalAppClient(self.agent_runtime)
+        )
+        self.app.state.access_control_service = _FakeAccessControlService()
         self.aiops = _FakeAIOpsClient()
         self.app.state.aiops_client = self.aiops
         self.domain_management = _FakeDomainManagementService()
@@ -364,7 +447,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_public_collection_request_propagates_trusted_context(self) -> None:
         response = self.client.get(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers=self._headers(),
         )
         self.assertEqual(200, response.status_code)
@@ -378,7 +461,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_cors_headers_are_present_on_authentication_failure(self) -> None:
         response = self.client.post(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers={"Origin": "http://127.0.0.1:8080"},
             json={},
         )
@@ -447,7 +530,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_invalid_domain_is_rejected_before_kc_call(self) -> None:
         response = self.client.get(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers=self._headers(domain_id="200"),
         )
         self.assertEqual(400, response.status_code)
@@ -457,7 +540,7 @@ class MainApiTest(unittest.TestCase):
     def test_kc_error_is_mapped_to_public_problem_details(self) -> None:
         self.kc.raise_error = True
         response = self.client.get(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers=self._headers(),
         )
         self.assertEqual(503, response.status_code)
@@ -476,7 +559,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_multipart_intake_is_streamed_and_internal_url_is_rewritten(self) -> None:
         response = self.client.post(
-            f"/api/v1/knowledge/collections/{TEST_COLLECTION_ID}/ingestions/user-files",
+            f"/api/v1/apps/knowledge-retrieval/knowledge/collections/{TEST_COLLECTION_ID}/ingestions/user-files",
             headers={
                 **self._headers(),
                 "Idempotency-Key": "upload-1",
@@ -490,15 +573,17 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(202, response.status_code)
         self.assertIn(b"hello", self.kc.multipart_body)
         self.assertEqual(
-            "/api/v1/knowledge/bundles/88",
+            "/api/v1/apps/knowledge-retrieval/knowledge/bundles/88",
             response.json()["status_url"],
         )
 
     def test_openapi_contains_no_internal_routes(self) -> None:
         paths = self.app.openapi()["paths"]
-        self.assertIn("/api/v1/knowledge/collections", paths)
-        self.assertIn("/api/v1/agents", paths)
-        self.assertIn("/api/v1/runs", paths)
+        self.assertIn(
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections", paths
+        )
+        self.assertIn("/api/v1/apps/knowledge-retrieval/agents", paths)
+        self.assertIn("/api/v1/apps/knowledge-retrieval/runs", paths)
         self.assertIn("/api/v1/development/logs/events", paths)
         self.assertIn("/api/v1/development/agent-runs", paths)
         self.assertIn("/api/v1/development/agent-runs/{run_id}", paths)
@@ -506,11 +591,10 @@ class MainApiTest(unittest.TestCase):
 
     def test_agent_and_run_public_contracts(self) -> None:
         agent = self.client.post(
-            "/api/v1/agents",
+            "/api/v1/apps/knowledge-retrieval/agents",
             headers=self._headers(),
             json={
                 "display_name": "文档助手",
-                "enabled_capabilities": ["document"],
                 "models": {
                     "context_llm": "019f8eae-2c25-7d48-b044-350ec3f5a011",
                     "composer_llm": "019f8eae-2c25-7d48-b044-350ec3f5a012",
@@ -522,7 +606,7 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(201, agent.status_code)
         run = self.client.post(
-            "/api/v1/runs",
+            "/api/v1/apps/knowledge-retrieval/runs",
             headers={
                 **self._headers(),
                 "Idempotency-Key": "run-1",
@@ -542,7 +626,7 @@ class MainApiTest(unittest.TestCase):
     def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:
         with self.client.stream(
             "GET",
-            f"/api/v1/runs/{self.agent_runtime.run_id}/events",
+            f"/api/v1/apps/knowledge-retrieval/runs/{self.agent_runtime.run_id}/events",
             headers={**self._headers(), "Last-Event-ID": "7"},
         ) as response:
             body = "".join(response.iter_text())
@@ -554,7 +638,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_sse_rejects_cursor_beyond_current_run(self) -> None:
         response = self.client.get(
-            f"/api/v1/runs/{self.agent_runtime.run_id}/events",
+            f"/api/v1/apps/knowledge-retrieval/runs/{self.agent_runtime.run_id}/events",
             headers={**self._headers(), "Last-Event-ID": "9"},
         )
 
@@ -567,14 +651,14 @@ class MainApiTest(unittest.TestCase):
     def test_public_resource_paths_require_uuid(self) -> None:
         bundle_id = UUID("019c03b5-4b88-7ab2-8c19-7b6ea34f2a31")
         response = self.client.get(
-            f"/api/v1/knowledge/bundles/{bundle_id}",
+            f"/api/v1/apps/knowledge-retrieval/knowledge/bundles/{bundle_id}",
             headers=self._headers(),
         )
         self.assertEqual(200, response.status_code)
         self.assertEqual(bundle_id, self.kc.last_bundle_id)
 
         invalid = self.client.get(
-            "/api/v1/knowledge/bundles/88",
+            "/api/v1/apps/knowledge-retrieval/knowledge/bundles/88",
             headers=self._headers(),
         )
         self.assertEqual(422, invalid.status_code)
@@ -585,7 +669,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_validation_error_uses_problem_details(self) -> None:
         response = self.client.post(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers=self._headers(),
             json={},
         )
@@ -598,7 +682,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_ops_patch_without_if_match_returns_428(self) -> None:
         response = self.client.patch(
-            "/api/v1/ops/targets/019f8eae-2c25-7d48-b044-350ec3f5a111",
+            "/api/v1/apps/aiops/targets/019f8eae-2c25-7d48-b044-350ec3f5a111",
             headers=self._headers(),
             json={"display_name": "新名称"},
         )
@@ -608,7 +692,7 @@ class MainApiTest(unittest.TestCase):
     def test_aiops_binding_selects_agent_chat_target(self) -> None:
         target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
         response = self.client.post(
-            f"/api/v1/ops/targets/{target_id}/agent-bindings",
+            f"/api/v1/apps/aiops/targets/{target_id}/agent-bindings",
             headers={
                 **self._headers(),
                 "Idempotency-Key": "binding-1",
@@ -621,18 +705,8 @@ class MainApiTest(unittest.TestCase):
         )
 
         self.assertEqual(201, response.status_code)
-        self.assertEqual(
-            {
-                "aiops_target_id": str(target_id),
-            },
-            self.agent_runtime.last_update_payload["config"],
-        )
-        self.assertEqual(
-            1,
-            self.agent_runtime.last_update_payload[
-                "expected_row_version"
-            ],
-        )
+        self.assertEqual(str(target_id), response.json()["target_id"])
+        self.assertIsNone(self.agent_runtime.last_update_payload)
 
     def test_health_is_public(self) -> None:
         response = self.client.get("/healthz")
@@ -665,7 +739,7 @@ class MainApiTest(unittest.TestCase):
 
     def test_problem_response_generates_request_id(self) -> None:
         response = self.client.post(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers={
                 "Authorization": f"Bearer {self.raw_key}",
                 DOMAIN_ID_HEADER: "100",
@@ -704,7 +778,7 @@ class MainApiTest(unittest.TestCase):
             enable_access_log=False,
         )
         response = TestClient(app).get(
-            "/api/v1/knowledge/collections",
+            "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers={
                 "Authorization": f"Bearer {raw_key}",
                 DOMAIN_ID_HEADER: "100",

@@ -38,6 +38,13 @@ class BundleRepository:
         statement: Select = select(KcBundleEntity).where(KcBundleEntity.bundle_id == bundle_id)
         if lock: statement = statement.with_for_update()
         return (await self.session.execute(statement)).scalar_one_or_none()
+    async def list_by_ids(self, *, bundle_ids: list[UUID]) -> list[KcBundleEntity]:
+        if not bundle_ids:
+            return []
+        statement = select(KcBundleEntity).where(
+            KcBundleEntity.bundle_id.in_(bundle_ids)
+        )
+        return list((await self.session.execute(statement)).scalars())
     async def delete_empty_unreferenced(self, *, bundle_id: UUID) -> None:
         await self.session.execute(
             delete(KcBundleEntity).where(
@@ -92,6 +99,35 @@ class BundleRevisionRepository:
             )
         )
         return list((await self.session.execute(statement)).scalars())
+
+    async def list_approved_page(
+        self, *, collection_id: UUID, query: str | None,
+        status: str | None, offset: int, limit: int,
+    ) -> tuple[list[KcBundleRevisionEntity], int]:
+        predicates = [
+            KcBundleRevisionEntity.collection_id == collection_id,
+            KcBundleRevisionEntity.approval_status == "APPROVED",
+        ]
+        if status:
+            predicates.append(KcBundleRevisionEntity.status == status)
+        if query:
+            predicates.append(KcBundleRevisionEntity.title.ilike(f"%{query}%"))
+        total = int((await self.session.execute(
+            select(func.count()).select_from(KcBundleRevisionEntity).where(
+                *predicates
+            )
+        )).scalar_one())
+        statement = (
+            select(KcBundleRevisionEntity)
+            .where(*predicates)
+            .order_by(
+                KcBundleRevisionEntity.reviewed_at.desc().nullslast(),
+                KcBundleRevisionEntity.bundle_revision_id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        return list((await self.session.execute(statement)).scalars()), total
 
 
 class DocumentRepository:
@@ -152,6 +188,136 @@ class BundleRevisionDocumentRepository:
     async def list_by_revision(self, *, bundle_revision_id: UUID) -> list[KcBundleRevisionDocumentEntity]:
         statement: Select = select(KcBundleRevisionDocumentEntity).where(KcBundleRevisionDocumentEntity.bundle_revision_id == bundle_revision_id)
         return list((await self.session.execute(statement)).scalars())
+
+    async def list_by_revisions(
+        self, *, bundle_revision_ids: list[UUID]
+    ) -> list[KcBundleRevisionDocumentEntity]:
+        if not bundle_revision_ids:
+            return []
+        statement = select(KcBundleRevisionDocumentEntity).where(
+            KcBundleRevisionDocumentEntity.bundle_revision_id.in_(
+                bundle_revision_ids
+            )
+        ).order_by(
+            KcBundleRevisionDocumentEntity.bundle_revision_id,
+            KcBundleRevisionDocumentEntity.ordinal,
+        )
+        return list((await self.session.execute(statement)).scalars())
+
+    async def get_current_file(
+        self, *, collection_id: UUID, document_version_id: UUID,
+    ) -> dict | None:
+        statement = (
+            select(
+                KcBundleEntity.bundle_id,
+                KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.title.label("bundle_title"),
+                KcBundleRevisionEntity.revision_no,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.document_role,
+                KcBundleRevisionDocumentEntity.member_status,
+                KcBundleRevisionDocumentEntity.completed_at,
+                KcDocumentVersionEntity.detected_mime_type,
+                KcDocumentVersionEntity.byte_size,
+                KcDocumentVersionEntity.received_at,
+            )
+            .select_from(KcBundleRevisionDocumentEntity)
+            .join(
+                KcBundleRevisionEntity,
+                KcBundleRevisionEntity.bundle_revision_id
+                == KcBundleRevisionDocumentEntity.bundle_revision_id,
+            )
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id,
+            )
+            .join(
+                KcDocumentVersionEntity,
+                KcDocumentVersionEntity.document_version_id
+                == KcBundleRevisionDocumentEntity.document_version_id,
+            )
+            .where(
+                KcBundleEntity.collection_id == collection_id,
+                KcBundleEntity.current_revision_id
+                == KcBundleRevisionDocumentEntity.bundle_revision_id,
+                KcBundleRevisionDocumentEntity.document_version_id
+                == document_version_id,
+                KcBundleRevisionDocumentEntity.document_role != "MANIFEST",
+            )
+        )
+        row = (await self.session.execute(statement)).mappings().one_or_none()
+        return dict(row) if row is not None else None
+
+    async def list_current_files_page(
+        self, *, collection_id: UUID, query: str | None,
+        status: str | None, offset: int, limit: int,
+    ) -> tuple[list[dict], int]:
+        predicates = [
+            KcBundleEntity.collection_id == collection_id,
+            KcBundleEntity.current_revision_id
+            == KcBundleRevisionDocumentEntity.bundle_revision_id,
+            KcBundleRevisionDocumentEntity.document_role != "MANIFEST",
+        ]
+        if status:
+            predicates.append(
+                KcBundleRevisionDocumentEntity.member_status == status
+            )
+        if query:
+            pattern = f"%{query}%"
+            predicates.append(or_(
+                KcBundleRevisionDocumentEntity.declared_name.ilike(pattern),
+                KcBundleRevisionDocumentEntity.external_document_id.ilike(pattern),
+                KcBundleRevisionEntity.title.ilike(pattern),
+            ))
+        base = (
+            select(
+                KcBundleEntity.bundle_id,
+                KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.title.label("bundle_title"),
+                KcBundleRevisionEntity.revision_no,
+                KcBundleRevisionDocumentEntity.document_version_id,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.document_role,
+                KcBundleRevisionDocumentEntity.member_status,
+                KcBundleRevisionDocumentEntity.failure_stage,
+                KcBundleRevisionDocumentEntity.failure_code,
+                KcBundleRevisionDocumentEntity.failure_message,
+                KcBundleRevisionDocumentEntity.completed_at,
+                KcDocumentVersionEntity.detected_mime_type,
+                KcDocumentVersionEntity.byte_size,
+                KcDocumentVersionEntity.received_at,
+                KcDocumentVersionEntity.storage_state,
+            )
+            .select_from(KcBundleRevisionDocumentEntity)
+            .join(
+                KcBundleRevisionEntity,
+                KcBundleRevisionEntity.bundle_revision_id
+                == KcBundleRevisionDocumentEntity.bundle_revision_id,
+            )
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id,
+            )
+            .outerjoin(
+                KcDocumentVersionEntity,
+                KcDocumentVersionEntity.document_version_id
+                == KcBundleRevisionDocumentEntity.document_version_id,
+            )
+            .where(*predicates)
+        )
+        total = int((await self.session.execute(
+            select(func.count()).select_from(base.subquery())
+        )).scalar_one())
+        rows = (await self.session.execute(
+            base.order_by(
+                KcDocumentVersionEntity.received_at.desc().nullslast(),
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id.desc(),
+            ).offset(offset).limit(limit)
+        )).mappings()
+        return [dict(row) for row in rows], total
 
 
 class IngestionJobRepository:
@@ -281,6 +447,30 @@ class IngestionJobRepository:
             self._on_job_added(entity.job_type)
         return entity
 
+    async def list_by_revisions(
+        self, *, bundle_revision_ids: list[UUID]
+    ) -> list[KcIngestionJobEntity]:
+        if not bundle_revision_ids:
+            return []
+        rows = await self.session.scalars(
+            select(KcIngestionJobEntity)
+            .where(
+                KcIngestionJobEntity.bundle_revision_id.in_(
+                    bundle_revision_ids
+                )
+            )
+            .order_by(KcIngestionJobEntity.created_at)
+        )
+        return list(rows)
+
+    async def detach_parse_views(self, *, parse_view_ids: list[UUID]) -> None:
+        if parse_view_ids:
+            await self.session.execute(
+                update(KcIngestionJobEntity)
+                .where(KcIngestionJobEntity.parse_view_id.in_(parse_view_ids))
+                .values(parse_view_id=None)
+            )
+
 
 class ParseViewRepository:
     def __init__(self, session: AsyncSession): self.session = session
@@ -303,9 +493,30 @@ class ParseViewRepository:
             KcParseViewEntity.parse_view_id != except_parse_view_id,
         ).with_for_update()
         return list((await self.session.execute(statement)).scalars())
+    async def list_by_document_version(
+        self, *, document_version_id: UUID,
+    ) -> list[KcIngestionJobEntity]:
+        statement = select(KcIngestionJobEntity).where(
+            KcIngestionJobEntity.document_version_id == document_version_id,
+            KcIngestionJobEntity.job_type.in_(("PARSE", "INDEX", "PROFILE")),
+        ).order_by(
+            KcIngestionJobEntity.created_at.desc(),
+            KcIngestionJobEntity.ingestion_job_id.desc(),
+        )
+        return list((await self.session.execute(statement)).scalars())
     async def delete_by_ids(self, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
             await self.session.execute(delete(KcParseViewEntity).where(KcParseViewEntity.parse_view_id.in_(parse_view_ids)))
+
+    async def list_by_document_version(
+        self, *, document_version_id: UUID, lock: bool = False
+    ) -> list[KcParseViewEntity]:
+        statement = select(KcParseViewEntity).where(
+            KcParseViewEntity.document_version_id == document_version_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self.session.execute(statement)).scalars())
 
 
 class EvidenceRepository:
@@ -374,6 +585,70 @@ class EvidenceRepository:
             .order_by(KcEvidenceEntity.ordinal, KcEvidenceEntity.fragment_index)
             .offset(offset)
             .limit(limit)
+        )
+        return list((await self.session.execute(statement)).scalars())
+
+    async def list_active_document_page(
+        self, *, document_version_id: UUID, query: str | None,
+        evidence_type: str | None, page_no: int | None,
+        offset: int, limit: int,
+    ) -> tuple[list[KcEvidenceEntity], int]:
+        predicates = [
+            KcEvidenceEntity.document_version_id == document_version_id,
+            KcEvidenceEntity.status == "ACTIVE",
+            KcParseViewEntity.view_status == "ACTIVE",
+        ]
+        if query:
+            predicates.append(KcEvidenceEntity.content_text.ilike(f"%{query}%"))
+        if evidence_type:
+            predicates.append(KcEvidenceEntity.evidence_type == evidence_type)
+        if page_no is not None:
+            predicates.extend((
+                KcEvidenceEntity.page_start.is_not(None),
+                KcEvidenceEntity.page_start <= page_no,
+                or_(
+                    KcEvidenceEntity.page_end.is_(None),
+                    KcEvidenceEntity.page_end >= page_no,
+                ),
+            ))
+        base = (
+            select(KcEvidenceEntity)
+            .join(
+                KcParseViewEntity,
+                KcParseViewEntity.parse_view_id
+                == KcEvidenceEntity.parse_view_id,
+            )
+            .where(*predicates)
+        )
+        total = int((await self.session.execute(
+            select(func.count()).select_from(base.subquery())
+        )).scalar_one())
+        items = list((await self.session.execute(
+            base.order_by(
+                KcEvidenceEntity.ordinal,
+                KcEvidenceEntity.fragment_index,
+                KcEvidenceEntity.evidence_id,
+            ).offset(offset).limit(limit)
+        )).scalars())
+        return items, total
+
+    async def list_active_document_types(
+        self, *, document_version_id: UUID,
+    ) -> list[str]:
+        statement = (
+            select(KcEvidenceEntity.evidence_type)
+            .join(
+                KcParseViewEntity,
+                KcParseViewEntity.parse_view_id
+                == KcEvidenceEntity.parse_view_id,
+            )
+            .where(
+                KcEvidenceEntity.document_version_id == document_version_id,
+                KcEvidenceEntity.status == "ACTIVE",
+                KcParseViewEntity.view_status == "ACTIVE",
+            )
+            .distinct()
+            .order_by(KcEvidenceEntity.evidence_type)
         )
         return list((await self.session.execute(statement)).scalars())
 

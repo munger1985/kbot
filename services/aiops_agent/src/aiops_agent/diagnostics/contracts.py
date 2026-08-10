@@ -51,7 +51,7 @@ class DiagnosticToolDefinition(BaseModel):
 
     tool_id: str = Field(pattern=r"^db\.[a-z0-9_.-]{1,124}$")
     version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     variant: str = Field(min_length=1, max_length=128)
     supported_version_min: int = Field(ge=0)
     supported_version_max_exclusive: int = Field(gt=0)

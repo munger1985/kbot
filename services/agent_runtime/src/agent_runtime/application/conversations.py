@@ -14,7 +14,7 @@ from loguru import logger
 
 from agent_runtime.application.commands import CreateRunCommand
 from agent_runtime.application.runtime_service import (
-    AgentDefinitionNotFound,
+    AgentExecutionSpecDenied,
     AgentRuntimeConflict,
 )
 from agent_runtime.entities import (
@@ -23,6 +23,7 @@ from agent_runtime.entities import (
     AgentConversationTurnEntity,
 )
 from platform_core.contracts import (
+    AgentExecutionSpec,
     ConversationItemView,
     ConversationTurnPage,
     ConversationTurnReceipt,
@@ -142,22 +143,28 @@ class ConversationService:
         domain_id: int,
         actor_id: str,
         agent_id: UUID,
+        execution_spec: AgentExecutionSpec,
         title: str | None,
         retention_policy: str,
     ) -> ConversationView:
-        async with self._uow_factory() as uow:
-            agent = await uow.agents.get_active(
-                agent_id=agent_id,
-                domain_id=domain_id,
+        if execution_spec.consumer_agent_id != agent_id:
+            raise AgentRuntimeConflict(
+                "EXECUTION_SPEC_AGENT_MISMATCH",
+                "Execution Spec 与 Agent 不一致",
             )
-            if agent is None:
-                raise AgentDefinitionNotFound()
+        if execution_spec.domain_id != domain_id:
+            raise AgentRuntimeConflict(
+                "EXECUTION_SPEC_DOMAIN_MISMATCH",
+                "Execution Spec 与 Domain 不一致",
+            )
+        async with self._uow_factory() as uow:
             conversation = await uow.conversations.add(
                 AgentConversationEntity(
                     conversation_id=uuid7(),
                     domain_id=domain_id,
                     actor_id=actor_id,
                     agent_id=agent_id,
+                    execution_spec_json=execution_spec.model_dump(mode="json"),
                     title=title.strip() if title else None,
                     status="ACTIVE",
                     retention_policy=retention_policy,
@@ -449,6 +456,9 @@ class ConversationService:
                 CreateRunCommand(
                     domain_id=domain_id,
                     agent_id=conversation.agent_id,
+                    execution_spec=AgentExecutionSpec.model_validate(
+                        conversation.execution_spec_json
+                    ),
                     actor_id=actor_id,
                     request_id=request_id,
                     trace_id=trace_id,
@@ -1047,5 +1057,8 @@ class ConversationService:
             run_id=turn.root_run_id,
             run_status=run.status,
             event_cursor=run.event_cursor,
-            events_url=f"/api/v1/runs/{turn.root_run_id}/events",
+            events_url=(
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{turn.root_run_id}/events"
+            ),
         )

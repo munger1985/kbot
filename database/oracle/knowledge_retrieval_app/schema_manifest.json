@@ -1,0 +1,21 @@
+{
+  "component": "knowledge_retrieval_app",
+  "schema_version": 1,
+  "contract_version": "knowledge-retrieval-app-oracle-v1",
+  "oracle_baseline": "26ai",
+  "scripts": [
+    {"name": "001_agents.sql", "statements": 7, "sha256": "9f17cb228b8bde9b45b0a525e62de079986663b065dafde72c2a06abca7f829b"}
+  ],
+  "tables": [
+    "KBOT_KR_AGENT",
+    "KBOT_KR_AGENT_VERSION",
+    "KBOT_KR_AGENT_GRANT"
+  ],
+  "views": [],
+  "invariants": {
+    "resource_id_type": "RAW(16)",
+    "resource_id_generation": "application_uuidv7",
+    "domain_isolation": true,
+    "shared_workspace": false
+  }
+}

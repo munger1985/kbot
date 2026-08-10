@@ -12,20 +12,20 @@ from loguru import logger
 
 from main_api.app import create_main_api_app
 from main_api.application import (
+    AccessControlService,
     DomainManagementService,
     DomainValidationService,
     NotificationCenterService,
-    ResourceCompositionService,
     SlackIntakeService,
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
 from platform_clients import (
-    AIModelConfigClient,
     AIOpsClientAuth,
     AIOpsManagementClient,
     AgentRuntimeClient,
     KnowledgeCoreClient,
+    KnowledgeRetrievalAppClient,
     DataQueryClient,
 )
 from platform_core.database.oracle import create_database_runtime
@@ -67,6 +67,9 @@ async def lifespan(app: FastAPI):
     app.state.domain_management_service = DomainManagementService(
         uow_factory=uow_factory,
     )
+    app.state.access_control_service = AccessControlService(
+        uow_factory=uow_factory,
+    )
     app.state.slack_intake_service = SlackIntakeService(
         uow_factory=uow_factory,
         slack_config=slack_config,
@@ -84,6 +87,13 @@ async def lifespan(app: FastAPI):
         caller_service=config.service_name,
         audience=settings.knowledge_core.audience,
         timeout_seconds=settings.knowledge_core.timeout_seconds,
+        session=client_session,
+    )
+    app.state.knowledge_retrieval_app_client = KnowledgeRetrievalAppClient(
+        base_url=settings.knowledge_retrieval_app.base_url,
+        caller_service=config.service_name,
+        audience=settings.knowledge_retrieval_app.audience,
+        timeout_seconds=settings.knowledge_retrieval_app.timeout_seconds,
         session=client_session,
     )
     app.state.agent_runtime_client = AgentRuntimeClient(
@@ -117,28 +127,6 @@ async def lifespan(app: FastAPI):
         ),
         timeout_seconds=settings.aiops.timeout_seconds,
         session=client_session,
-    )
-    app.state.model_config_clients = tuple(
-        AIModelConfigClient(
-            base_url=dependency.base_url,
-            timeout=min(dependency.timeout_seconds, 10),
-            caller_service=config.service_name,
-            audience=dependency.audience,
-        )
-        for dependency in (
-            settings.model_embedding,
-            settings.model_llm,
-            settings.model_visual,
-            settings.model_vlm,
-        )
-    )
-    app.state.resource_composition_service = ResourceCompositionService(
-        uow_factory=uow_factory,
-        agent_client=app.state.agent_runtime_client,
-        knowledge_client=app.state.knowledge_core_client,
-        data_query_client=app.state.data_query_client,
-        model_clients=app.state.model_config_clients,
-        notification_center=app.state.notification_center_service,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")
     try:

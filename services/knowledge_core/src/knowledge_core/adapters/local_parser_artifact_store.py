@@ -5,6 +5,7 @@ import asyncio
 import json
 import hashlib
 from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Any
 
 from knowledge_core.parsing import canonical_json_hash
@@ -51,6 +52,32 @@ class LocalParserArtifactStore:
             except ValueError as exc:
                 raise ValueError("parser artifact URI is outside the configured store") from exc
             await asyncio.to_thread(target.unlink, missing_ok=True)
+
+    async def delete_uris(self, uris: list[str]) -> None:
+        for uri in uris:
+            target = Path(uri).resolve()
+            try:
+                target.relative_to(self._root)
+            except ValueError as exc:
+                raise ValueError(
+                    "Parser 资产 URI 超出配置的存储目录"
+                ) from exc
+            await asyncio.to_thread(target.unlink, missing_ok=True)
+
+    async def stream(self, *, uri: str) -> AsyncIterator[bytes]:
+        target = Path(uri).resolve()
+        try:
+            target.relative_to(self._root)
+        except ValueError as exc:
+            raise ValueError("Parser 资产 URI 超出配置的存储目录") from exc
+        if not target.is_file():
+            raise FileNotFoundError(uri)
+        handle = await asyncio.to_thread(target.open, "rb")
+        try:
+            while chunk := await asyncio.to_thread(handle.read, 64 * 1024):
+                yield chunk
+        finally:
+            await asyncio.to_thread(handle.close)
 
     async def put_bytes(
         self,

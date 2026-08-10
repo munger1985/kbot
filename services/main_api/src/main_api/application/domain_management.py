@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
-from main_api.entities import PlatformDomainEntity
+from main_api.entities import PlatformDomainEntity, PlatformUserEntity
 
 
 class DomainConflictError(RuntimeError):
@@ -44,6 +44,24 @@ class DomainManagementService:
             )
             try:
                 await uow.domains.add(entity)
+                user = await uow.access.get_user(actor_id)
+                if user is None:
+                    await uow.access.add_user(
+                        PlatformUserEntity(
+                            user_id=actor_id,
+                            display_name=actor_id,
+                            status="ACTIVE",
+                        )
+                    )
+                for app_id in ("knowledge_retrieval", "aiops"):
+                    await uow.access.upsert_member_role(
+                        app_id=app_id,
+                        domain_id=int(entity.domain_id),
+                        user_id=actor_id,
+                        role_code="manager",
+                        status="ACTIVE",
+                        actor_id=actor_id,
+                    )
                 await uow.commit()
             except IntegrityError as exc:
                 raise DomainConflictError(

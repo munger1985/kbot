@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -86,17 +85,24 @@ class AIOpsExecutorConfig(ServiceConfig):
 
 
 class AIOpsDependencyEndpoints(BaseModel):
-    agent_runtime: ServiceDependencyConfig = Field(
-        default_factory=lambda: ServiceDependencyConfig(
-            base_url="http://127.0.0.1:18100",
-            audience="kbot-agent-runtime-api",
-            timeout_seconds=120,
-        )
-    )
     model_serving: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",
             audience="kbot-model-llm",
+            timeout_seconds=300,
+        )
+    )
+    model_vlm: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18094",
+            audience="kbot-model-vlm",
+            timeout_seconds=600,
+        )
+    )
+    model_ocr: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18096",
+            audience="kbot-model-ocr",
             timeout_seconds=300,
         )
     )
@@ -120,15 +126,6 @@ class AIOpsDependencyEndpoints(BaseModel):
             audience="kbot-aiops-db-executor",
             timeout_seconds=120,
         )
-    )
-
-
-class SecretStoreConfig(BaseModel):
-    provider: Literal["environment", "vault", "secret_manager"] = "environment"
-    allowed_schemes: tuple[str, ...] = (
-        "env",
-        "vault",
-        "secret-manager",
     )
 
 
@@ -208,7 +205,6 @@ class AIOpsSettings(Settings):
     clients: AIOpsDependencyEndpoints = Field(
         default_factory=AIOpsDependencyEndpoints
     )
-    secret_store: SecretStoreConfig = Field(default_factory=SecretStoreConfig)
     limits: AIOpsLimitsConfig = Field(default_factory=AIOpsLimitsConfig)
     monitoring: AIOpsMonitoringConfig = Field(
         default_factory=AIOpsMonitoringConfig
@@ -233,7 +229,6 @@ class AIOpsSettings(Settings):
         ).resolve().is_relative_to(Path("/tmp")):
             raise ValueError("生产环境监控正文存储不能位于 /tmp")
         for dependency in (
-            self.clients.agent_runtime,
             self.clients.model_serving,
             self.clients.knowledge_core,
             self.clients.aiops_api,

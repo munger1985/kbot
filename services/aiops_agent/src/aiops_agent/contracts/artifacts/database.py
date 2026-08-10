@@ -16,7 +16,7 @@ class DatabaseScopeResult(BaseModel):
         "DATABASE_SCOPE_RESULT.v1"
     )
     target_id: str
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     configured_version: str
     catalog_hash: str
     capability_snapshot_hash: str

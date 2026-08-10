@@ -49,10 +49,10 @@ sequenceDiagram
     API-->>UI: RUN_COMPLETED + done
 ```
 
-公开入口从 `POST /api/v1/conversations` 开始。提交 Turn 后返回
-`run_id` 和 `/api/v1/runs/{run_id}/events`。SSE 断线后使用
+公开入口从 `POST /api/v1/apps/knowledge-retrieval/conversations` 开始。提交 Turn 后返回
+`run_id` 和 `/api/v1/apps/knowledge-retrieval/runs/{run_id}/events`。SSE 断线后使用
 `Last-Event-ID` 续传；最终结果也可通过
-`GET /api/v1/runs/{run_id}/result` 重新获取，因此 SSE 不是状态存储。
+`GET /api/v1/apps/knowledge-retrieval/runs/{run_id}/result` 重新获取，因此 SSE 不是状态存储。
 
 ## 会话上下文与记忆
 

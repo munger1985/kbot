@@ -25,7 +25,6 @@ from agent_runtime.entities import (  # noqa: E402
     AgentConversationEntity,
     AgentConversationItemEntity,
     AgentConversationTurnEntity,
-    AgentDefinitionEntity,
     AgentMemoryJobEntity,
 )
 from agent_runtime.persistence import create_agent_runtime_uow  # noqa: E402
@@ -124,8 +123,6 @@ async def _cleanup(
             "WHERE ACTOR_ID = :actor_id AND AGENT_ID = :agent_id",
             "DELETE FROM KBOT_AGENT_MEMORY_INDEX_PROFILE "
             "WHERE AGENT_ID = :agent_id",
-            "DELETE FROM KBOT_AGENT_DEFINITION "
-            "WHERE AGENT_ID = :agent_id",
             "DELETE FROM KBOT_PLATFORM_DOMAIN "
             "WHERE DOMAIN_ID = :domain_id",
         )
@@ -160,36 +157,33 @@ async def main() -> None:
             )
             await session.flush()
             session.add(
-                AgentDefinitionEntity(
-                    agent_id=agent_id,
-                    domain_id=domain_id,
-                    display_name="记忆实库验收",
-                    status="ACTIVE",
-                    enabled_capabilities_json=["document"],
-                    models_json={
-                        "router_llm": str(llm_model_id),
-                        "context_llm": str(llm_model_id),
-                        "composer_llm": str(llm_model_id),
-                        "memory_llm": str(llm_model_id),
-                        "memory_embedding": str(embedding_model_id),
-                    },
-                    config_json={
-                        "memory": {
-                            "episodic_enabled": True,
-                        }
-                    },
-                    row_version=1,
-                    created_by="memory-smoke",
-                    updated_by="memory-smoke",
-                )
-            )
-            await session.flush()
-            session.add(
                 AgentConversationEntity(
                     conversation_id=conversation_id,
                     domain_id=domain_id,
                     actor_id=actor_id,
                     agent_id=agent_id,
+                    execution_spec_json={
+                        "schema_version": "1.0",
+                        "owner_app_id": "knowledge_retrieval",
+                        "domain_id": str(domain_id),
+                        "consumer_agent_id": str(agent_id),
+                        "consumer_agent_version_id": str(uuid7()),
+                        "agent_kind": "KNOWLEDGE_RETRIEVAL",
+                        "display_name": "记忆实库验收",
+                        "enabled_capabilities": ["document"],
+                        "models": {
+                            "router_llm": str(llm_model_id),
+                            "context_llm": str(llm_model_id),
+                            "composer_llm": str(llm_model_id),
+                            "memory_llm": str(llm_model_id),
+                            "memory_embedding": str(embedding_model_id),
+                        },
+                        "instruction": None,
+                        "resource_context": {
+                            "memory": {"episodic_enabled": True}
+                        },
+                        "runtime_policy": {},
+                    },
                     title="记忆验收",
                     status="ACTIVE",
                     row_version=1,

@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from agent_runtime.application.agent_definitions import AgentDefinitionService
 from agent_runtime.application.conversations import ConversationService
 from agent_runtime.application.memory import (
     MemoryConsolidationWorker,
@@ -148,47 +147,6 @@ class AgentRuntimeS2Test(unittest.IsolatedAsyncioTestCase):
                 model_client=_ModelClient({"query": "x" * 513}),
                 prompt_resolver=_PromptResolver(),
             ).execute(_context())
-
-    async def test_document_activation_requires_active_collection_binding(self):
-        class _KnowledgeClient:
-            async def list_agent_bindings(self, **kwargs):
-                del kwargs
-                return {"bindings": []}
-
-        service = AgentDefinitionService(
-            uow_factory=None,
-            knowledge_core_client=_KnowledgeClient(),
-        )
-        with self.assertRaises(AgentRuntimeConflict) as raised:
-            await service._validate_knowledge_binding(
-                domain_id=20,
-                actor_id="admin",
-                agent_id=uuid7(),
-                status="ACTIVE",
-                required=True,
-            )
-        self.assertEqual(
-            "AGENT_COLLECTION_BINDING_REQUIRED",
-            raised.exception.code,
-        )
-
-    async def test_document_activation_accepts_active_collection_binding(self):
-        class _KnowledgeClient:
-            async def list_agent_bindings(self, **kwargs):
-                del kwargs
-                return {"bindings": [{"status": "ACTIVE"}]}
-
-        service = AgentDefinitionService(
-            uow_factory=None,
-            knowledge_core_client=_KnowledgeClient(),
-        )
-        await service._validate_knowledge_binding(
-            domain_id=20,
-            actor_id="admin",
-            agent_id=uuid7(),
-            status="ACTIVE",
-            required=True,
-        )
 
     async def test_memory_worker_failure_only_updates_async_job(self):
         job = SimpleNamespace(

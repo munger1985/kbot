@@ -3,7 +3,6 @@
 from datetime import datetime, timezone
 import unittest
 
-from agent_runtime.entities.agent_definition import AgentDefinitionEntity
 from agent_runtime.entities.conversation import AgentConversationEntity
 from agent_runtime.entities.runtime import (
     AgentDelegationEntity,
@@ -20,7 +19,6 @@ class AgentRuntimeTimestampMappingTest(unittest.TestCase):
             AgentTaskEntity.__table__.c.lease_until,
             AgentTaskEntity.__table__.c.next_retry_at,
             AgentDelegationEntity.__table__.c.lease_until,
-            AgentDefinitionEntity.__table__.c.created_at,
             AgentConversationEntity.__table__.c.created_at,
         )
 

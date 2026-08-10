@@ -10,7 +10,8 @@ from data_query.bootstrap.common import (
     create_process_app,
 )
 from data_query.config import DataQuerySettings, get_data_query_settings
-from data_query.adapters import CredentialCipher, DatabaseCredentialService, DataSourceExecutorResolver
+from data_query.adapters import DatabaseCredentialService, DataSourceExecutorResolver
+from platform_core.managed_credentials import ManagedCredentialCipher
 from data_query.connectors.schema_introspector import DatabaseSchemaIntrospector
 from data_query.persistence import create_data_query_uow_factory
 from data_query.workers import (
@@ -31,7 +32,7 @@ def create_data_query_worker_probe(settings: DataQuerySettings | None = None):
     uow_factory = create_data_query_uow_factory(database_runtime.session_factory)
     credential_service = DatabaseCredentialService(
         uow_factory=uow_factory,
-        cipher=CredentialCipher.from_environment(),
+        cipher=ManagedCredentialCipher.from_environment(),
     )
     snapshot_worker = SchemaSnapshotWorker(
         uow_factory=uow_factory,

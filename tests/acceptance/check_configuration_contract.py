@@ -13,7 +13,11 @@ if str(ROOT) not in sys.path:
 
 from agent_runtime.config import AgentRuntimeSettings  # noqa: E402
 from aiops_agent.config import AIOpsSettings  # noqa: E402
+from data_query.config import DataQuerySettings  # noqa: E402
 from knowledge_core.config import KnowledgeCoreSettings  # noqa: E402
+from knowledge_retrieval_app.config import (  # noqa: E402
+    KnowledgeRetrievalAppSettings,
+)
 from main_api.config import MainApiSettings  # noqa: E402
 from model_serving.config import ModelServingSettings  # noqa: E402
 from platform_core.config import Settings, load_settings  # noqa: E402
@@ -23,7 +27,9 @@ CONFIG_ROOT = ROOT / "configuration"
 SERVICE_MODELS = {
     "agent_runtime": AgentRuntimeSettings,
     "aiops_agent": AIOpsSettings,
+    "data_query": DataQuerySettings,
     "knowledge_core": KnowledgeCoreSettings,
+    "knowledge_retrieval_app": KnowledgeRetrievalAppSettings,
     "main_api": MainApiSettings,
     "model_serving": ModelServingSettings,
 }
@@ -68,7 +74,11 @@ def check_configuration_contract() -> list[str]:
     declared = set(
         re.findall(r"^([A-Z][A-Z0-9_]*)=", env_text, flags=re.MULTILINE)
     )
-    required_secrets = {"KBOT_ORACLE_PASSWORD", "KBOT_MASTER_KEY"}
+    required_secrets = {
+        "KBOT_ORACLE_PASSWORD",
+        "KBOT_MASTER_KEY",
+        "KBOT_MANAGED_CREDENTIAL_KEY",
+    }
     missing = sorted(required_secrets - declared)
     if missing:
         errors.append(f".env.example 缺少必需 Secret：{missing}")

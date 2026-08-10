@@ -9,6 +9,17 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Consumer App Id",
+            "type": "string"
+          },
           "policy_binding_id": {
             "format": "uuid",
             "title": "Policy Binding Id",
@@ -21,7 +32,9 @@
           }
         },
         "required": [
+          "consumer_app_id",
           "agent_id",
+          "agent_version_id",
           "semantic_model_id",
           "policy_binding_id"
         ],
@@ -91,6 +104,15 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "title": "Consumer App Id",
+            "type": "string"
+          },
           "policy_binding_id": {
             "format": "uuid",
             "title": "Policy Binding Id",
@@ -113,7 +135,9 @@
         },
         "required": [
           "agent_binding_id",
+          "consumer_app_id",
           "agent_id",
+          "agent_version_id",
           "semantic_model_id",
           "policy_binding_id",
           "status",
@@ -128,6 +152,17 @@
           "agent_id": {
             "format": "uuid",
             "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Consumer App Id",
             "type": "string"
           },
           "deadline_at": {
@@ -193,7 +228,9 @@
           "original_question",
           "standalone_query",
           "plan",
-          "agent_id"
+          "agent_id",
+          "consumer_app_id",
+          "agent_version_id"
         ],
         "title": "CreateDataQueryRun",
         "type": "object"
@@ -373,6 +410,15 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "title": "Consumer App Id",
+            "type": "string"
+          },
           "models": {
             "items": {
               "$ref": "#/components/schemas/PlanningSemanticModel"
@@ -383,6 +429,8 @@
         },
         "required": [
           "agent_id",
+          "consumer_app_id",
+          "agent_version_id",
           "models"
         ],
         "title": "DataQueryPlanningContext",
@@ -1337,10 +1385,14 @@
             "minItems": 1,
             "title": "Semantic Model Ids",
             "type": "array"
+          },
+          "subject_selector": {
+            "$ref": "#/components/schemas/SubjectSelector"
           }
         },
         "required": [
-          "semantic_model_ids"
+          "semantic_model_ids",
+          "subject_selector"
         ],
         "title": "PolicyBindingCreate",
         "type": "object"
@@ -1373,6 +1425,9 @@
             "title": "Status",
             "type": "string"
           },
+          "subject_selector": {
+            "$ref": "#/components/schemas/SubjectSelector"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1384,6 +1439,7 @@
           "status",
           "row_version",
           "semantic_model_ids",
+          "subject_selector",
           "budget",
           "updated_at"
         ],
@@ -2602,6 +2658,31 @@
           "row_version"
         ],
         "title": "SemanticModelView",
+        "type": "object"
+      },
+      "SubjectSelector": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Actor Ids",
+            "type": "array"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "title": "SubjectSelector",
         "type": "object"
       },
       "SubmitSemanticModelReviewCommand": {
@@ -4706,6 +4787,25 @@
             "schema": {
               "format": "uuid",
               "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "consumer_app_id",
+            "required": true,
+            "schema": {
+              "title": "Consumer App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Version Id",
               "type": "string"
             }
           }

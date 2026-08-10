@@ -66,6 +66,12 @@ _EVENTS = (
     _event("model.catalog.archive_blocked", "model-serving", "ACTION_REQUIRED", "WARNING", "模型归档被引用阻止"),
     _event("model.catalog.delete_blocked", "model-serving", "ACTION_REQUIRED", "WARNING", "模型删除被引用阻止"),
     _event("model.runtime.reload_failed", "model-serving", "SYSTEM", "CRITICAL", "模型运行时重新加载失败"),
+    _event("aiops.diagnostic.input_required", "aiops", "ACTION_REQUIRED", "WARNING", "AIOps 诊断等待补充证据", operation_status="WAITING_USER", work_item_action="aiops.run.input"),
+    _event("aiops.proposal.review_required", "aiops", "ACTION_REQUIRED", "WARNING", "AIOps 变更方案等待审批", work_item_action="aiops.proposal.review"),
+    _event("aiops.proposal.approved", "aiops", "TASK", "INFO", "AIOps 变更方案已批准", work_item_action="aiops.proposal.review", resolve_work_item=True),
+    _event("aiops.proposal.rejected", "aiops", "RESULT", "WARNING", "AIOps 变更方案已拒绝", work_item_action="aiops.proposal.review", resolve_work_item=True),
+    _event("aiops.report.ready", "aiops", "RESULT", "INFO", "AIOps 报告已生成", operation_status="SUCCEEDED"),
+    _event("aiops.run.failed", "aiops", "RESULT", "WARNING", "AIOps 诊断失败", operation_status="FAILED", work_item_action="aiops.run.input", resolve_work_item=True),
 )
 
 EVENT_TYPES = MappingProxyType({item.event_type: item for item in _EVENTS})

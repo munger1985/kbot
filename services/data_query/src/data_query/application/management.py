@@ -138,16 +138,20 @@ class DataQueryManagementService:
 
     async def get_source(self, *, domain_id: int, data_source_id: UUID) -> DataSourceDetail:
         async with self._uow_factory() as uow:
-            assert uow.data_sources and uow.credentials
+            assert uow.data_sources and uow.managed_credentials
             row = await uow.data_sources.get_by_id(data_source_id=data_source_id)
             credential = None
             if row is not None and row.domain_id == domain_id:
-                credential = await uow.credentials.get_scoped(
-                    credential_id=row.credential_id,
-                    domain_id=domain_id,
-                    data_source_id=row.data_source_id,
-                    active_only=True,
+                credential = await uow.managed_credentials.get(
+                    credential_id=row.credential_id, domain_id=domain_id,
                 )
+                if credential is not None and (
+                    credential.status != "ACTIVE"
+                    or credential.namespace != "data_query"
+                    or credential.credential_kind != "database"
+                    or credential.external_key != str(row.data_source_id)
+                ):
+                    credential = None
             await uow.commit()
         if row is None or row.domain_id != domain_id or credential is None:
             raise DataQueryManagementError("DATA_SOURCE_NOT_FOUND")
@@ -642,7 +646,10 @@ class DataQueryManagementService:
     async def create_agent_binding(self, *, domain_id: int, actor_id: str, command: AgentBindingCreate) -> AgentBindingView:
         entity = await create_agent_binding(uow_factory=self._uow_factory, domain_id=domain_id, actor_id=actor_id, command=command)
         return AgentBindingView(
-            agent_binding_id=entity.agent_binding_id, agent_id=entity.agent_id,
+            agent_binding_id=entity.agent_binding_id,
+            consumer_app_id=entity.consumer_app_id,
+            agent_id=entity.agent_id,
+            agent_version_id=entity.agent_version_id,
             semantic_model_id=entity.semantic_model_id, policy_binding_id=entity.policy_binding_id,
             status=entity.status, row_version=int(entity.row_version),
         )
@@ -687,6 +694,7 @@ class DataQueryManagementService:
             semantic_model_ids=tuple(
                 UUID(item) for item in entity.semantic_model_ids_json
             ),
+            subject_selector=entity.subject_selector_json,
             budget=budget,
             updated_at=entity.updated_at,
         )
@@ -694,7 +702,10 @@ class DataQueryManagementService:
     @staticmethod
     def _agent_binding_view(entity) -> AgentBindingView:
         return AgentBindingView(
-            agent_binding_id=entity.agent_binding_id, agent_id=entity.agent_id,
+            agent_binding_id=entity.agent_binding_id,
+            consumer_app_id=entity.consumer_app_id,
+            agent_id=entity.agent_id,
+            agent_version_id=entity.agent_version_id,
             semantic_model_id=entity.semantic_model_id, policy_binding_id=entity.policy_binding_id,
             status=entity.status, row_version=int(entity.row_version),
         )

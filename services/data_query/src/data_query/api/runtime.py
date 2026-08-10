@@ -38,16 +38,20 @@ async def create_run(body: CreateDataQueryRun, request: Request, service: Servic
     require_scope(request, "data_query.delegate")
     return await service.create_run(
         domain_id=domain_id_from_context(context), actor_id=actor_id_from_context(context),
-        trace_id=context.trace_id, command=body,
+        actor_roles=context.roles, trace_id=context.trace_id, command=body,
     )
 
 
 @router.get("/planning-context/{agent_id}", response_model=DataQueryPlanningContext)
-async def get_planning_context(agent_id: UUID, request: Request, service: Service, context: Auth) -> DataQueryPlanningContext:
+async def get_planning_context(
+    agent_id: UUID, consumer_app_id: str, agent_version_id: UUID,
+    request: Request, service: Service, context: Auth,
+) -> DataQueryPlanningContext:
     require_scope(request, "data_query.delegate")
     return await service.get_planning_context(
         domain_id=domain_id_from_context(context), actor_id=actor_id_from_context(context),
-        agent_id=agent_id,
+        actor_roles=context.roles, consumer_app_id=consumer_app_id,
+        agent_id=agent_id, agent_version_id=agent_version_id,
     )
 
 

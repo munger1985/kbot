@@ -2,12 +2,13 @@
 
 from uuid import UUID
 
-from sqlalchemy import Float, bindparam, delete, select, update
+from sqlalchemy import Float, bindparam, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from knowledge_core.entities import (
     KcBundleEntity,
     KcBundleRevisionEntity,
+    KcParseViewEntity,
     KcVisualAssetEntity,
 )
 
@@ -80,6 +81,71 @@ class VisualAssetRepository:
                     KcVisualAssetEntity.parse_view_id.in_(parse_view_ids)
                 )
             )
+
+    async def list_payload_uris_by_view_ids(
+        self, parse_view_ids: list[UUID]
+    ) -> list[str]:
+        if not parse_view_ids:
+            return []
+        rows = await self.session.scalars(
+            select(KcVisualAssetEntity.payload_uri).where(
+                KcVisualAssetEntity.parse_view_id.in_(parse_view_ids)
+            )
+        )
+        return list(rows)
+
+    async def list_active_document_page(
+        self, *, document_version_id: UUID, asset_type: str | None,
+        page_no: int | None, offset: int, limit: int,
+    ) -> tuple[list[KcVisualAssetEntity], int]:
+        predicates = [
+            KcVisualAssetEntity.document_version_id == document_version_id,
+            KcVisualAssetEntity.status == "ACTIVE",
+            KcParseViewEntity.view_status == "ACTIVE",
+        ]
+        if asset_type:
+            predicates.append(KcVisualAssetEntity.asset_type == asset_type)
+        if page_no is not None:
+            predicates.append(KcVisualAssetEntity.page_no == page_no)
+        base = (
+            select(KcVisualAssetEntity)
+            .join(
+                KcParseViewEntity,
+                KcParseViewEntity.parse_view_id
+                == KcVisualAssetEntity.parse_view_id,
+            )
+            .where(*predicates)
+        )
+        total = int((await self.session.execute(
+            select(func.count()).select_from(base.subquery())
+        )).scalar_one())
+        items = list((await self.session.execute(
+            base.order_by(
+                KcVisualAssetEntity.page_no.asc().nullslast(),
+                KcVisualAssetEntity.asset_type,
+                KcVisualAssetEntity.visual_asset_id,
+            ).offset(offset).limit(limit)
+        )).scalars())
+        return items, total
+
+    async def get_active_document_asset(
+        self, *, document_version_id: UUID, visual_asset_id: UUID,
+    ) -> KcVisualAssetEntity | None:
+        statement = (
+            select(KcVisualAssetEntity)
+            .join(
+                KcParseViewEntity,
+                KcParseViewEntity.parse_view_id
+                == KcVisualAssetEntity.parse_view_id,
+            )
+            .where(
+                KcVisualAssetEntity.visual_asset_id == visual_asset_id,
+                KcVisualAssetEntity.document_version_id == document_version_id,
+                KcVisualAssetEntity.status == "ACTIVE",
+                KcParseViewEntity.view_status == "ACTIVE",
+            )
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def search(
         self,

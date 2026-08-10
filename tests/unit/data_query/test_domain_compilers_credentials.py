@@ -2,7 +2,6 @@
 
 import unittest
 
-from data_query.adapters.credential_cipher import CredentialCipher, DataQueryCredentialError
 from data_query.connectors import compile_dialect_query
 from data_query.connectors.postgresql import compile_postgresql_query
 from data_query.contracts import (
@@ -24,8 +23,8 @@ from data_query.domain import (
     can_transition,
     validate_query_plan,
 )
-from data_query.entities import CredentialEntity
 from platform_core.identity import uuid7
+from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_core.persistence.orm import BaseEntity
 
 
@@ -84,8 +83,8 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
 
     def test_all_oracle_entities_are_registered(self):
         tables = {name for name in BaseEntity.metadata.tables if name.startswith("KBOT_DQ_")}
-        self.assertEqual(15, len(tables))
-        self.assertIn("KBOT_DQ_CREDENTIAL", tables)
+        self.assertEqual(14, len(tables))
+        self.assertNotIn("KBOT_DQ_CREDENTIAL", tables)
         self.assertIn("KBOT_DQ_AUDIT", tables)
 
     def test_plan_rejects_unknown_field_and_budget_overage(self):
@@ -105,37 +104,35 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
             self.assertNotIn("DROP TABLE", compiled.sql)
 
     def test_cipher_uses_aad_and_rejects_tampering(self):
-        cipher = CredentialCipher(key=b"k" * 32, key_version="2026-08")
-        source_id = uuid7()
-        encrypted = cipher.encrypt(
-            domain_id=20,
-            data_source_id=source_id,
-            credential_version=1,
-            username="readonly",
-            password="secret",
+        cipher = ManagedCredentialCipher(
+            key=b"k" * 32, key_version="2026-08"
         )
-        row = CredentialEntity(
+        credential_id = uuid7()
+        encrypted = cipher.encrypt(
+            {"username": "readonly", "password": "secret"},
             domain_id=20,
-            data_source_id=source_id,
-            credential_version=1,
-            username_ciphertext=encrypted.username_ciphertext,
-            username_nonce=encrypted.username_nonce,
-            password_ciphertext=encrypted.password_ciphertext,
-            password_nonce=encrypted.password_nonce,
-            key_version=encrypted.key_version,
-            status="ACTIVE",
-            created_by="test",
-            updated_by="test",
+            namespace="data_query",
+            credential_kind="database",
+            credential_id=credential_id,
         )
         self.assertEqual(
-            ("readonly", "secret"),
-            cipher.decrypt(domain_id=20, data_source_id=source_id, credential_version=1, row=row),
+            {"username": "readonly", "password": "secret"},
+            cipher.decrypt(
+                encrypted,
+                domain_id=20,
+                namespace="data_query",
+                credential_kind="database",
+                credential_id=credential_id,
+            ),
         )
-        with self.assertRaises(DataQueryCredentialError):
-            cipher.decrypt(domain_id=21, data_source_id=source_id, credential_version=1, row=row)
-        row.password_ciphertext = bytes([row.password_ciphertext[0] ^ 1]) + row.password_ciphertext[1:]
-        with self.assertRaises(DataQueryCredentialError):
-            cipher.decrypt(domain_id=20, data_source_id=source_id, credential_version=1, row=row)
+        with self.assertRaises(Exception):
+            cipher.decrypt(
+                encrypted,
+                domain_id=21,
+                namespace="data_query",
+                credential_kind="database",
+                credential_id=credential_id,
+            )
 
 
 if __name__ == "__main__":

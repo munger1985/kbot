@@ -17,6 +17,11 @@ EXPECTED = (
     ("packages/platform_clients", "kbot-platform-clients", "platform_clients"),
     ("services/model_serving", "kbot-model-serving", "model_serving"),
     ("services/knowledge_core", "kbot-knowledge-core", "knowledge_core"),
+    (
+        "services/knowledge_retrieval_app",
+        "kbot-knowledge-retrieval-app",
+        "knowledge_retrieval_app",
+    ),
     ("services/agent_runtime", "kbot-agent-runtime", "agent_runtime"),
     ("services/aiops_agent", "kbot-aiops-agent", "aiops_agent"),
     ("services/data_query", "kbot-data-query", "data_query"),

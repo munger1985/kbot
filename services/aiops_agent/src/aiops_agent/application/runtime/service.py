@@ -161,7 +161,7 @@ class AIOpsRuntimeService:
         diagnostic_registry: DiagnosticRegistry | None = None,
         diagnosis_config=None,
         diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
-        agent_runtime=None,
+        agent_catalog=None,
         cursor_codec: SignedCursorCodec | None = None,
     ):
         self._uow_factory = uow_factory
@@ -177,7 +177,7 @@ class AIOpsRuntimeService:
         self._diagnostic_registry = diagnostic_registry
         self._diagnosis_config = diagnosis_config
         self._diagnosis_prompts = diagnosis_prompt_registry
-        self._agent_runtime = agent_runtime
+        self._agent_catalog = agent_catalog
         self._cursor_codec = cursor_codec
 
     async def create_run(
@@ -188,12 +188,12 @@ class AIOpsRuntimeService:
         )
         diagnosis_model = None
         if command.blueprint_id == "diagnosis.root-cause":
-            if self._agent_runtime is None:
+            if self._agent_catalog is None:
                 raise dependency_unavailable(
                     "Agent Runtime 模型解析器尚未配置"
                 )
             diagnosis_model = (
-                await self._agent_runtime.resolve_diagnosis_model(
+                await self._agent_catalog.resolve_diagnosis_model(
                     agent_id=command.agent_id,
                     domain_id=command.domain_id,
                     trace_id=trace_id,
@@ -617,6 +617,7 @@ class AIOpsRuntimeService:
                 run = await uow.runs.add_run(
                     OpsRunEntity(
                         ops_run_id=run_id,
+                        domain_id=command.domain_id,
                         target_id=target.target_id,
                         agent_id=command.agent_id,
                         parent_agent_run_id=command.parent_agent_run_id,
@@ -1769,6 +1770,12 @@ class AIOpsRuntimeService:
             trace_id=trace_id,
             now=now,
         )
+        assert uow.platform_notifications is not None
+        await uow.platform_notifications.emit_report_ready(
+            run=run,
+            report=report,
+            actor_id=run.actor_id,
+        )
         return report_artifact
 
     async def _publish_diagnosis_report(
@@ -1965,6 +1972,12 @@ class AIOpsRuntimeService:
             },
             trace_id=trace_id,
             now=now,
+        )
+        assert uow.platform_notifications is not None
+        await uow.platform_notifications.emit_report_ready(
+            run=run,
+            report=report,
+            actor_id=run.actor_id,
         )
 
     async def _publish_comparison_report(
@@ -2243,6 +2256,12 @@ class AIOpsRuntimeService:
             trace_id=trace_id,
             now=now,
         )
+        assert uow.platform_notifications is not None
+        await uow.platform_notifications.emit_report_ready(
+            run=source_run,
+            report=report,
+            actor_id=source_run.actor_id,
+        )
         return report_artifact
 
     @staticmethod
@@ -2447,6 +2466,13 @@ class AIOpsRuntimeService:
                     "trace_id": command.trace_id,
                 },
             )
+            assert uow.platform_notifications is not None
+            await uow.platform_notifications.emit_run_event(
+                run=run,
+                event_type="aiops.diagnostic.input_required",
+                summary="诊断需要补充输入",
+                actor_id=run.actor_id,
+            )
             await uow.commit()
             return self._mutation_receipt(
                 run,
@@ -2618,6 +2644,15 @@ class AIOpsRuntimeService:
                 "trace_id": trace_id,
             },
         )
+        if status == "PENDING_APPROVAL":
+            assert uow.platform_notifications is not None
+            await uow.platform_notifications.emit_proposal_event(
+                run=run,
+                proposal=proposal,
+                event_type="aiops.proposal.review_required",
+                summary="变更方案等待审核",
+                actor_id=run.actor_id,
+            )
         if status == "PENDING_APPROVAL":
             await uow.changes.add_hitl(
                 HitlEntity(
@@ -2906,6 +2941,13 @@ class AIOpsRuntimeService:
                         "error_code": command.error_code,
                         "trace_id": command.trace_id,
                     },
+                )
+                assert uow.platform_notifications is not None
+                await uow.platform_notifications.emit_run_event(
+                    run=run,
+                    event_type="aiops.run.failed",
+                    summary=policy.safe_message,
+                    actor_id=run.actor_id,
                 )
             await uow.commit()
             return self._mutation_receipt(
@@ -3489,6 +3531,13 @@ class AIOpsRuntimeService:
                             "error_code": "WORKER_LEASE_EXPIRED",
                             "trace_id": trace_id,
                         },
+                    )
+                    assert uow.platform_notifications is not None
+                    await uow.platform_notifications.emit_run_event(
+                        run=run,
+                        event_type="aiops.run.failed",
+                        summary=run.error_message or "诊断运行失败",
+                        actor_id=run.actor_id,
                     )
                 await uow.commit()
                 return True

@@ -3,24 +3,59 @@
 from model_serving.common.model_registry import ModelRegistryService
 from model_serving.common.notifications import ModelCatalogNotificationPublisher
 from model_serving.persistence import create_model_serving_uow_factory
-from platform_clients import AgentRuntimeClient, DataQueryClient, KnowledgeCoreClient
+from platform_clients import (
+    AIOpsClientAuth,
+    AIOpsManagementClient,
+    DataQueryClient,
+    KnowledgeCoreClient,
+    KnowledgeRetrievalAppClient,
+)
+from platform_core.security import (
+    create_auth_context_codec,
+    create_service_identity_codec,
+)
 
 
 def create_model_registry(
-    *, session_factory, runtime_service, service_name: str, settings,
+    *,
+    session_factory,
+    runtime_service,
+    service_name: str,
+    settings,
 ) -> ModelRegistryService:
     """装配 UoW、引用客户端和模型粒度缓存失效。"""
 
-    async def agent_references(model_id, auth_context):
-        client = AgentRuntimeClient(
-            base_url=settings.agent_runtime.base_url,
+    async def knowledge_agent_references(model_id, auth_context):
+        client = KnowledgeRetrievalAppClient(
+            base_url=settings.knowledge_retrieval_app.base_url,
             caller_service=service_name,
-            audience=settings.agent_runtime.audience,
-            timeout_seconds=settings.agent_runtime.timeout_seconds,
+            audience=settings.knowledge_retrieval_app.audience,
+            timeout_seconds=settings.knowledge_retrieval_app.timeout_seconds,
         )
         return await client.list_model_references(
-            model_id=model_id, auth_context=auth_context,
+            model_id=model_id,
+            auth_context=auth_context,
         )
+
+    async def aiops_agent_references(model_id, auth_context):
+        client = AIOpsManagementClient(
+            base_url=settings.aiops.base_url,
+            auth=AIOpsClientAuth(
+                caller_service=service_name,
+                audience=settings.aiops.audience,
+                scopes=("aiops.manage",),
+                auth_context_codec=create_auth_context_codec(),
+                service_identity_codec=create_service_identity_codec(),
+            ),
+            timeout_seconds=settings.aiops.timeout_seconds,
+        )
+        try:
+            return await client.list_model_references(
+                model_id=model_id,
+                auth_context=auth_context,
+            )
+        finally:
+            await client.close()
 
     async def knowledge_references(model_id, auth_context):
         client = KnowledgeCoreClient(
@@ -30,7 +65,8 @@ def create_model_registry(
             timeout_seconds=settings.knowledge_core.timeout_seconds,
         )
         return await client.list_model_references(
-            model_id=model_id, auth_context=auth_context,
+            model_id=model_id,
+            auth_context=auth_context,
         )
 
     async def data_query_references(model_id, auth_context):
@@ -42,7 +78,8 @@ def create_model_registry(
         )
         try:
             return await client.list_model_references(
-                model_id=model_id, auth_context=auth_context,
+                model_id=model_id,
+                auth_context=auth_context,
             )
         finally:
             await client.close()
@@ -55,7 +92,8 @@ def create_model_registry(
         uow_factory=uow_factory,
         on_model_changed=invalidate,
         reference_resolvers={
-            "agent-runtime": agent_references,
+            "knowledge-retrieval-app": knowledge_agent_references,
+            "aiops-agent": aiops_agent_references,
             "knowledge-core": knowledge_references,
             "data-query": data_query_references,
         },

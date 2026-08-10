@@ -2,7 +2,6 @@
 
 from .data_query import (
     AgentBindingEntity,
-    CredentialEntity,
     DataQueryAuditEntity,
     DataQueryEventEntity,
     DataQueryExecutionEntity,
@@ -19,7 +18,7 @@ from .data_query import (
 )
 
 __all__ = [
-    "AgentBindingEntity", "CredentialEntity", "DataQueryAuditEntity", "DataQueryEventEntity",
+    "AgentBindingEntity", "DataQueryAuditEntity", "DataQueryEventEntity",
     "DataQueryExecutionEntity", "DataQueryResultEntity", "DataQueryRunEntity",
     "DataSourceEntity", "PolicyBindingEntity", "SchemaSnapshotEntity",
     "SchemaSnapshotObjectEntity",

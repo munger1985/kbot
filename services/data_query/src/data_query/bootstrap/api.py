@@ -17,7 +17,8 @@ from data_query.application import (
     SemanticModelValidationError,
 )
 from data_query.config import DataQuerySettings, get_data_query_settings
-from data_query.adapters import CredentialCipher, DatabaseCredentialService
+from data_query.adapters import DatabaseCredentialService
+from platform_core.managed_credentials import ManagedCredentialCipher
 from data_query.connectors.connection_tester import test_data_source_connection
 from platform_core.database import create_database_runtime
 from data_query.persistence import create_data_query_uow_factory
@@ -58,7 +59,7 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
         uow_factory=uow_factory,
         credential_service=DatabaseCredentialService(
             uow_factory=uow_factory,
-            cipher=CredentialCipher.from_environment(),
+            cipher=ManagedCredentialCipher.from_environment(),
         ),
         connection_tester=test_data_source_connection,
         model_config_client=AIModelConfigClient(

@@ -4,13 +4,15 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, or_, select, update
+from sqlalchemy import Select, and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     InspectionFireEntity,
     InspectionPlanEntity,
+    InspectionReportTemplateEntity,
+    InspectionReportTemplateVersionEntity,
     InspectionTargetEntity,
     OpsRunEntity,
     OutboxEntity,
@@ -45,6 +47,37 @@ class InspectionRepository(AIOpsRepository):
 
     async def add_report(self, entity: ReportEntity) -> ReportEntity:
         return await self._add(entity)
+
+    async def add_report_template(self, entity): return await self._add(entity)
+    async def add_report_template_version(self, entity): return await self._add(entity)
+
+    async def list_report_templates(self, *, domain_id: int):
+        rows = await self._session.scalars(select(
+            InspectionReportTemplateEntity
+        ).where(InspectionReportTemplateEntity.domain_id == domain_id).order_by(
+            InspectionReportTemplateEntity.updated_at.desc()
+        ))
+        return list(rows)
+
+    async def get_report_template(self, *, domain_id: int, template_id: UUID, lock: bool = False):
+        statement = select(InspectionReportTemplateEntity).where(
+            InspectionReportTemplateEntity.domain_id == domain_id,
+            InspectionReportTemplateEntity.template_id == template_id,
+        )
+        if lock: statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_report_template_version(self, *, template_version_id: UUID):
+        return await self._session.get(
+            InspectionReportTemplateVersionEntity, template_version_id
+        )
+
+    async def next_report_template_version(self, *, template_id: UUID) -> int:
+        value = await self._session.scalar(select(func.coalesce(func.max(
+            InspectionReportTemplateVersionEntity.version_no), 0)).where(
+                InspectionReportTemplateVersionEntity.template_id == template_id
+            ))
+        return int(value) + 1
 
     async def get_plan_scoped(
         self,

@@ -74,7 +74,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_parser_policy_cannot_override_collection_embedding_model(self):
-        with self.assertRaisesRegex(ValueError, "retrieval embeddings"):
+        with self.assertRaisesRegex(ValueError, "检索向量"):
             KnowledgeCoreIntakeService(
                 receipt_ttl_seconds=60,
                 uow_factory=lambda: None,

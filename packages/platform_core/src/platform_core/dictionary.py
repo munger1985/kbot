@@ -117,6 +117,7 @@ class ModelCategory(IntEnum):
     IMG_EMBEDDING = 3
     RERANKER = 4
     VLM = 5
+    OCR = 6
 
 class PromptCategory(IntEnum):
     """Prompt category enumeration."""

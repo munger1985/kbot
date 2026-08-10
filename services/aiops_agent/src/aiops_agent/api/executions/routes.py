@@ -21,7 +21,6 @@ from platform_core.contracts.aiops.executor import (
 )
 from aiops_agent.diagnostics.grants import DiagnosticGrantError
 from aiops_agent.actions import MutationGrantError
-from aiops_agent.application.credential_cipher import CredentialCipherError
 from aiops_agent.entities import InboxEntity
 from platform_core.identity import uuid7
 from platform_core.contracts.aiops.internal import EventReceipt
@@ -92,7 +91,8 @@ async def issue_credential(body: CredentialIssueRequest, request: Request) -> Cr
     grant_hash = hashlib.sha256(str(grant.grant_id).encode()).hexdigest()
     service = request.app.state.configuration_service
     async with service._uow_factory() as uow:
-        assert uow.inbox is not None and uow.targets is not None and uow.credentials is not None
+        assert uow.inbox is not None and uow.targets is not None
+        assert uow.managed_credentials is not None
         existing = await uow.inbox.get_by_message(source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, lock=True)
         if existing is not None:
             raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
@@ -102,10 +102,21 @@ async def issue_credential(body: CredentialIssueRequest, request: Request) -> Cr
         current_id = target.diagnostic_credential_id if kind == "DIAGNOSTIC" else target.execution_credential_id
         if current_id != credential_id:
             raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-        credential = await uow.credentials.get_scoped(credential_id=credential_id, domain_id=int(grant.domain_id), credential_kind=kind, active_only=True, lock=True)
-        if credential is None:
-            raise PermissionError("凭据发放授权无效")
+        try:
+            values = await request.app.state.managed_credential_service.read(
+                uow=uow,
+                domain_id=int(grant.domain_id),
+                credential_id=credential_id,
+                credential_kind=f"target_{kind.lower()}",
+                external_key=grant.target_id,
+                lock=True,
+            )
+            username = values["username"]
+            password = values["password"]
+            if not isinstance(username, str) or not isinstance(password, str):
+                raise ValueError("数据库凭据字段缺失")
+        except (KeyError, ValueError) as exc:
+            raise PermissionError("凭据发放授权无效") from exc
         await uow.inbox.add(InboxEntity(inbox_id=uuid7(), source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, message_type="CREDENTIAL_ISSUED", payload_json={}, payload_hash=grant_hash, status="PROCESSED", processed_at=datetime.now(UTC)))
-        username, password = request.app.state.credential_cipher.decrypt(domain_id=int(grant.domain_id), credential_id=credential_id, credential_kind=kind, username_ciphertext=bytes(credential.username_ciphertext), username_nonce=bytes(credential.username_nonce), password_ciphertext=bytes(credential.password_ciphertext), password_nonce=bytes(credential.password_nonce), key_version=credential.key_version)
         await uow.commit()
     return CredentialIssueResponse(username=username, password=password)

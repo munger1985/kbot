@@ -243,7 +243,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 }
             )
 
-    def test_production_rejects_environment_secret_provider(self) -> None:
+    def test_legacy_secret_store_configuration_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
             AIOpsSettings(
                 environment="production",
@@ -300,7 +300,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             hasattr(AIOpsDelegationClient, "create_delegation")
         )
 
-    def test_step_one_owns_six_ordered_ddl_scripts(self) -> None:
+    def test_aiops_owns_eight_ordered_ddl_scripts(self) -> None:
         root = Path(__file__).resolve().parents[3]
         sql_files = sorted(
             (root / "database" / "oracle" / "aiops_agent").glob("*.sql")
@@ -313,6 +313,8 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 "004_ops_inspection.sql",
                 "005_ops_messaging.sql",
                 "006_ops_fks_views.sql",
+                "007_ops_agents.sql",
+                "008_ops_conversations_reports.sql",
             ],
             [path.name for path in sql_files],
         )

@@ -8,7 +8,7 @@ from time import monotonic
 from typing import AsyncIterator, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,12 +17,34 @@ from platform_core.contracts import (
     AgentArtifact,
     AgentRunReceipt,
     AgentRunSummary,
-    CreateAgentRunRequest,
     PUBLIC_API_V1,
 )
+from main_api.application import AccessDeniedError
+from platform_clients import KnowledgeRetrievalAppClient
+from platform_core.security import get_auth_context
 
 
-router = APIRouter(prefix=f"{PUBLIC_API_V1}/runs", tags=["Agent Runs"])
+async def _require_use(request: Request) -> None:
+    context = get_auth_context(request)
+    try:
+        await request.app.state.access_control_service.require(
+            app_id="knowledge_retrieval",
+            domain_id=int(context.domain_id or "0"),
+            user_id=context.asserted_user_id or context.client_id,
+            permission_code="knowledge_retrieval:use",
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(
+            403,
+            {"code": "APP_PERMISSION_DENIED", "permission": "knowledge_retrieval:use"},
+        ) from exc
+
+
+router = APIRouter(
+    prefix=f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs",
+    tags=["Knowledge Retrieval Runs"],
+    dependencies=[Depends(_require_use)],
+)
 
 _TERMINAL_EVENTS = {
     "RUN_COMPLETED",
@@ -38,6 +60,15 @@ class CancelRunRequest(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class KnowledgeRunCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_id: UUID
+    input: str = Field(min_length=1, max_length=32000)
+    collection_ids: tuple[UUID, ...] = ()
+    security_level: int = Field(default=0, ge=0, le=999)
+    client_metadata: dict = Field(default_factory=dict)
+
+
 def _client(request: Request) -> AgentRuntimeClient:
     return cast(
         AgentRuntimeClient,
@@ -45,14 +76,42 @@ def _client(request: Request) -> AgentRuntimeClient:
     )
 
 
+async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
+    context = get_auth_context(request)
+    domain_id = int(context.domain_id or "0")
+    actor_id = context.asserted_user_id or context.client_id
+    snapshot = await request.app.state.access_control_service.snapshot(
+        app_id="knowledge_retrieval", domain_id=domain_id, user_id=actor_id
+    )
+    client: KnowledgeRetrievalAppClient = (
+        request.app.state.knowledge_retrieval_app_client
+    )
+    await client.authorize(
+        payload={
+            "domain_id": domain_id,
+            "agent_id": str(agent_id),
+            "user_id": actor_id,
+            "role_codes": list(snapshot.roles),
+        },
+        auth_context=context,
+    )
+    return await client.execution_spec(
+        agent_id=agent_id, domain_id=domain_id, auth_context=context
+    )
+
+
 @router.post("", status_code=202, response_model=AgentRunReceipt)
 async def create_run(
-    payload: CreateAgentRunRequest,
+    payload: KnowledgeRunCreateRequest,
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
+    spec = await _authorized_spec(request, payload.agent_id)
     result = await _client(request).create_run(
-        payload=payload.model_dump(mode="json"),
+        payload={
+            **payload.model_dump(mode="json"),
+            "execution_spec": spec,
+        },
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )

@@ -10,9 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.application import (
-    AgentDefinitionService,
-    AgentDefinitionView,
-    AgentDefinitionNotFound,
+    AgentExecutionSpecDenied,
     AgentRuntimeConflict,
     AgentResultNotReady,
     AgentRuntimeNotFound,
@@ -20,13 +18,11 @@ from agent_runtime.application import (
     CancelRunCommand,
     ClaimTaskCommand,
     CompleteTaskCommand,
-    CreateAgentDefinitionCommand,
     CreateRunCommand,
     FailTaskCommand,
     HeartbeatTaskCommand,
     InstallPlanCommand,
     StaleTaskLease,
-    UpdateAgentDefinitionCommand,
 )
 from agent_runtime.domain.planning import PlanDraft
 from agent_runtime.domain.planning import PlanValidationError
@@ -86,40 +82,6 @@ class CancelRunRequest(_RequestModel):
     expected_row_version: int = Field(ge=1)
 
 
-class CreateAgentDefinitionRequest(_RequestModel):
-    agent_id: UUID | None = None
-    display_name: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[str, ...] = Field(min_length=1)
-    models: dict[str, UUID]
-    do_rerank: bool = False
-    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
-    data_profile_name: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    instruction: str | None = Field(default=None, max_length=32000)
-    config: dict = Field(default_factory=dict)
-    status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
-
-
-class UpdateAgentDefinitionRequest(_RequestModel):
-    expected_row_version: int = Field(ge=1)
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[str, ...] | None = None
-    models: dict[str, UUID] | None = None
-    do_rerank: bool | None = None
-    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
-    data_profile_name: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    instruction: str | None = Field(default=None, max_length=32000)
-    config: dict | None = None
-    status: str | None = Field(
-        default=None, pattern=r"^(DRAFT|ACTIVE|INACTIVE)$"
-    )
-
-
 def _service(request: Request):
     service = getattr(request.app.state, "agent_runtime_service", None)
     if service is None:
@@ -128,19 +90,6 @@ def _service(request: Request):
             detail={
                 "code": "RUNTIME_NOT_READY",
                 "message": "Agent Runtime 尚未初始化",
-            },
-        )
-    return service
-
-
-def _agent_service(request: Request) -> AgentDefinitionService:
-    service = getattr(request.app.state, "agent_definition_service", None)
-    if service is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "RUNTIME_NOT_READY",
-                "message": "Agent Definition Service 尚未初始化",
             },
         )
     return service
@@ -178,7 +127,7 @@ def _service_identity(request: Request) -> tuple[str, str]:
 
 
 def _raise_runtime_error(exc: Exception) -> None:
-    if isinstance(exc, (AgentRuntimeNotFound, AgentDefinitionNotFound)):
+    if isinstance(exc, (AgentRuntimeNotFound, AgentExecutionSpecDenied)):
         status = 404
     elif isinstance(exc, StaleTaskLease):
         status = 409
@@ -220,6 +169,7 @@ async def create_run(
             CreateRunCommand(
                 domain_id=domain_id,
                 agent_id=payload.agent_id,
+                execution_spec=payload.execution_spec,
                 actor_id=actor_id,
                 request_id=request_id,
                 trace_id=trace_id,
@@ -235,7 +185,7 @@ async def create_run(
             )
         )
     except (
-        AgentDefinitionNotFound,
+        AgentExecutionSpecDenied,
         AgentRuntimeConflict,
         AgentRuntimeNotFound,
     ) as exc:
@@ -382,11 +332,6 @@ task_router = APIRouter(
 )
 
 
-agent_router = APIRouter(
-    prefix=f"{INTERNAL_API_V1}/agents",
-    tags=["Agent Definition"],
-)
-
 data_router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/data",
     tags=["MCP Data"],
@@ -414,88 +359,6 @@ async def list_data_profiles(request: Request):
                 "message": str(exc),
             },
         ) from exc
-
-
-@agent_router.post("", status_code=201, response_model=AgentDefinitionView)
-async def create_agent_definition(
-    payload: CreateAgentDefinitionRequest,
-    request: Request,
-) -> AgentDefinitionView:
-    domain_id, actor_id, _, _ = _identity(request)
-    try:
-        return await _agent_service(request).create(
-            CreateAgentDefinitionCommand(
-                domain_id=domain_id,
-                actor_id=actor_id,
-                **payload.model_dump(),
-            )
-        )
-    except AgentRuntimeConflict as exc:
-        _raise_runtime_error(exc)
-
-
-@agent_router.get("", response_model=list[AgentDefinitionView])
-async def list_agent_definitions(
-    request: Request,
-) -> list[AgentDefinitionView]:
-    domain_id, _, _, _ = _identity(request)
-    return await _agent_service(request).list(
-        domain_id=domain_id,
-    )
-
-
-@agent_router.get("/model-references/{model_id}")
-async def list_agent_model_references(
-    model_id: UUID, request: Request,
-) -> dict[str, object]:
-    """只允许模型服务执行跨 Domain 引用检查。"""
-    context = request.state.auth_context
-    caller = context.calling_service or context.client_id
-    if not caller.startswith("kbot-model-"):
-        raise HTTPException(status_code=403, detail="调用方无权读取模型引用")
-    references = await _agent_service(request).list_model_references(
-        model_id=model_id
-    )
-    return {"model_id": str(model_id), "references": references}
-
-
-@agent_router.get(
-    "/{agent_id}", response_model=AgentDefinitionView
-)
-async def get_agent_definition(
-    agent_id: UUID,
-    request: Request,
-) -> AgentDefinitionView:
-    domain_id, _, _, _ = _identity(request)
-    try:
-        return await _agent_service(request).get(
-            agent_id=agent_id,
-            domain_id=domain_id,
-        )
-    except AgentRuntimeConflict as exc:
-        _raise_runtime_error(exc)
-
-
-@agent_router.patch(
-    "/{agent_id}", response_model=AgentDefinitionView
-)
-async def update_agent_definition(
-    agent_id: UUID,
-    payload: UpdateAgentDefinitionRequest,
-    request: Request,
-) -> AgentDefinitionView:
-    domain_id, actor_id, _, _ = _identity(request)
-    try:
-        return await _agent_service(request).update(
-            UpdateAgentDefinitionCommand(
-                domain_id=domain_id,
-                agent_id=agent_id,
-                actor_id=actor_id,
-                **payload.model_dump(exclude_unset=True),
-            )
-        )
-    except AgentRuntimeConflict as exc:
-        _raise_runtime_error(exc)
 
 
 @task_router.post("/claim")

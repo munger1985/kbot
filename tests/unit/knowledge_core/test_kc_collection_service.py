@@ -136,6 +136,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 "retrieval_llm": str(uuid7()),
                 "embedding": str(uuid7()),
             },
+            parse_policy_json={},
             status="ACTIVE",
             default_security_level=1,
             metadata_json={"source": "test"},

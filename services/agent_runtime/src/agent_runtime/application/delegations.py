@@ -815,7 +815,7 @@ class AgentDelegationReconciler:
         identifier = payload.get(field)
         if not identifier:
             return None
-        return f"/api/v1/ops/{resource}/{identifier}"
+        return f"/api/v1/apps/aiops/{resource}/{identifier}"
 
     @staticmethod
     async def _append_event(

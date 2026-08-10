@@ -1,4 +1,4 @@
-"""验收 Main API、Model、KC 与 Agent Runtime 的 Oracle 持久化边界。"""
+"""验收 Main API、Model、KC 与知识检索 App 的 Oracle 持久化边界。"""
 
 from __future__ import annotations
 
@@ -14,10 +14,14 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent_runtime.entities import AgentDefinitionEntity  # noqa: E402
-from agent_runtime.persistence import create_agent_runtime_uow  # noqa: E402
 from knowledge_core.entities import KcCollectionEntity  # noqa: E402
 from knowledge_core.persistence import create_kc_uow  # noqa: E402
+from knowledge_retrieval_app.entities import (  # noqa: E402
+    KnowledgeRetrievalAgentEntity,
+)
+from knowledge_retrieval_app.persistence import (  # noqa: E402
+    create_knowledge_retrieval_app_uow,
+)
 from main_api.entities import PlatformDomainEntity  # noqa: E402
 from main_api.persistence import create_main_api_uow  # noqa: E402
 from model_serving.common.entities import AIModelEntity  # noqa: E402
@@ -40,8 +44,8 @@ async def _cleanup(
     async with runtime.session_factory() as session:
         if agent_ids:
             await session.execute(
-                delete(AgentDefinitionEntity).where(
-                    AgentDefinitionEntity.agent_id.in_(agent_ids)
+                delete(KnowledgeRetrievalAgentEntity).where(
+                    KnowledgeRetrievalAgentEntity.agent_id.in_(agent_ids)
                 )
             )
         if collection_ids:
@@ -177,48 +181,32 @@ async def smoke() -> None:
                 )
             ).scalar_one_or_none() is None
 
-        agent_uow_factory = create_agent_runtime_uow(
+        agent_uow_factory = create_knowledge_retrieval_app_uow(
             runtime.session_factory
         )
         async with agent_uow_factory() as uow:
-            await uow.agents.add(
-                AgentDefinitionEntity(
+            await uow.agents.add_agent(
+                KnowledgeRetrievalAgentEntity(
                     agent_id=agent_id,
                     domain_id=domain_id,
-                    display_name="Oracle Smoke Agent",
-                    status="ACTIVE",
-                    enabled_capabilities_json=["document"],
-                    models_json={
-                        "composer_llm": str(model_id),
-                        "context_llm": str(model_id),
-                        "memory_llm": str(model_id),
-                        "memory_embedding": str(model_id),
-                    },
-                    config_json={},
+                    display_name="Oracle Smoke Knowledge Agent",
+                    status="DRAFT",
                     created_by="oracle-smoke",
                     updated_by="oracle-smoke",
                 )
             )
             await uow.commit()
         async with agent_uow_factory() as uow:
-            assert await uow.agents.get_active(
+            assert await uow.agents.get(
                 agent_id=agent_id,
                 domain_id=domain_id,
             )
-            await uow.agents.add(
-                AgentDefinitionEntity(
+            await uow.agents.add_agent(
+                KnowledgeRetrievalAgentEntity(
                     agent_id=rollback_agent_id,
                     domain_id=domain_id,
-                    display_name="Oracle Smoke Rollback Agent",
+                    display_name="Oracle Smoke Rollback Knowledge Agent",
                     status="DRAFT",
-                    enabled_capabilities_json=[],
-                    models_json={
-                        "composer_llm": str(model_id),
-                        "context_llm": str(model_id),
-                        "memory_llm": str(model_id),
-                        "memory_embedding": str(model_id),
-                    },
-                    config_json={},
                     created_by="oracle-smoke",
                     updated_by="oracle-smoke",
                 )
@@ -226,15 +214,16 @@ async def smoke() -> None:
         async with runtime.session_factory() as session:
             assert (
                 await session.execute(
-                    select(AgentDefinitionEntity).where(
-                        AgentDefinitionEntity.agent_id == rollback_agent_id
+                    select(KnowledgeRetrievalAgentEntity).where(
+                        KnowledgeRetrievalAgentEntity.agent_id
+                        == rollback_agent_id
                     )
                 )
             ).scalar_one_or_none() is None
 
         print(
             "跨服务 Oracle UoW Smoke 通过："
-            "Domain 作用域、Model Service 提交、KC/Agent 显式提交与"
+            "Domain 作用域、Model Service 提交、KC/知识 Agent 显式提交与"
             "漏提交回滚均正常"
         )
     finally:

@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .agent import AgentExecutionSpec
+
 
 class _Contract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -13,6 +15,7 @@ class _Contract(BaseModel):
 
 class CreateConversationRequest(_Contract):
     agent_id: UUID
+    execution_spec: AgentExecutionSpec
     title: str | None = Field(default=None, min_length=1, max_length=512)
     retention_policy: str = Field(
         default="DEFAULT",

@@ -5,13 +5,17 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete
 
-from agent_runtime.application.agent_definitions import AgentDefinitionService
-from agent_runtime.persistence import create_agent_runtime_uow
+from aiops_agent.application.agents import AIOpsAgentService
+from aiops_agent.persistence import create_aiops_uow_factory
 from data_query.persistence import create_data_query_uow_factory
 from knowledge_core.application.model_references import (
     KnowledgeCoreModelReferenceService,
 )
 from knowledge_core.persistence import create_kc_uow
+from knowledge_retrieval_app.application import KnowledgeRetrievalAgentService
+from knowledge_retrieval_app.persistence import (
+    create_knowledge_retrieval_app_uow,
+)
 from model_serving.common.entities.ai_model import AIModelEntity
 from model_serving.common.model_registry import (
     ModelRegistryConflict,
@@ -30,16 +34,26 @@ async def main() -> None:
     async def capture(event):
         events.append(event)
 
-    agent_references = AgentDefinitionService(
-        uow_factory=create_agent_runtime_uow(runtime.session_factory),
+    aiops_references = AIOpsAgentService(
+        uow_factory=create_aiops_uow_factory(runtime.session_factory),
+    )
+    knowledge_agent_references = KnowledgeRetrievalAgentService(
+        uow_factory=create_knowledge_retrieval_app_uow(
+            runtime.session_factory
+        ),
     )
     knowledge_references = KnowledgeCoreModelReferenceService(
         uow_factory=lambda: create_kc_uow(runtime.session_factory),
     )
     data_query_uow = create_data_query_uow_factory(runtime.session_factory)
 
-    async def resolve_agent(model_id, _auth_context):
-        return await agent_references.list_model_references(model_id=model_id)
+    async def resolve_aiops_agent(model_id, _auth_context):
+        return await aiops_references.model_references(model_id=model_id)
+
+    async def resolve_knowledge_agent(model_id, _auth_context):
+        return await knowledge_agent_references.model_references(
+            model_id=model_id
+        )
 
     async def resolve_knowledge(model_id, _auth_context):
         return await knowledge_references.list(model_id=model_id)
@@ -55,7 +69,8 @@ async def main() -> None:
         uow_factory=create_model_serving_uow_factory(runtime.session_factory),
         on_model_changed=capture,
         reference_resolvers={
-            "agent-runtime": resolve_agent,
+            "aiops-agent": resolve_aiops_agent,
+            "knowledge-retrieval-app": resolve_knowledge_agent,
             "knowledge-core": resolve_knowledge,
             "data-query": resolve_data_query,
         },

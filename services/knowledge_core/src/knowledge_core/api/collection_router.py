@@ -10,6 +10,7 @@ from knowledge_core.application.collections import (
     BindAgentCollectionCommand, ChangeCollectionStatusCommand,
     CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CollectionVersionConflictError, CreateCollectionCommand,
     UpdateCollectionModelsCommand,
+    UpdateCollectionParsingSettingsCommand,
 )
 
 router = APIRouter(
@@ -40,11 +41,17 @@ class CollectionModelsRequest(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class CollectionParsingSettingsRequest(BaseModel):
+    parse_policy: dict
+    expected_row_version: int = Field(ge=1)
+
+
 def _collection(entity) -> dict:
     return {
         "collection_id": entity.collection_id, "domain_id": int(entity.domain_id),
         "display_name": entity.display_name, "description": entity.description,
         "models": dict(entity.models_json or {}),
+        "parse_policy": dict(entity.parse_policy_json or {}),
         "status": entity.status,
         "default_security_level": int(entity.default_security_level),
         "metadata": entity.metadata_json or {},
@@ -154,6 +161,42 @@ async def delete_collection(domain_id: int, collection_id: UUID, request: Reques
     except CollectionDeletionStateError as exc:
         raise HTTPException(status_code=409, detail={"code": "COLLECTION_DELETING", "message": str(exc)}) from exc
     return {"status": "DELETING", "purge_job_id": job_id}
+
+
+@router.put("/collections/{collection_id}/parsing-settings")
+async def update_collection_parsing_settings(
+    domain_id: int,
+    collection_id: UUID,
+    payload: CollectionParsingSettingsRequest,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        entity = await request.app.state.kc_collection_service.update_parsing_settings(
+            UpdateCollectionParsingSettingsCommand(
+                domain_id=domain_id,
+                collection_id=collection_id,
+                parse_policy=payload.parse_policy,
+                expected_row_version=payload.expected_row_version,
+                actor_id=get_actor_id(request),
+            )
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except CollectionVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "COLLECTION_VERSION_CONFLICT", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_PARSE_POLICY", "message": str(exc)},
+        ) from exc
+    return _collection(entity)
 
 
 @router.put("/agents/{agent_id}/collections/{collection_id}/binding")

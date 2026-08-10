@@ -18,17 +18,16 @@ from loguru import logger
 from sqlalchemy import text
 
 from main_api.api import (
-    agent_router,
-    composition_router,
+    aiops_app_router,
     conversation_router,
     data_query_router,
-    data_router,
     development_agent_runs_router,
     development_logs_router,
     dify_router,
     domain_router,
     integration_router,
     knowledge_router,
+    knowledge_retrieval_app_router,
     memory_router,
     model_catalog_router,
     notification_router,
@@ -42,6 +41,7 @@ from platform_clients import (
     AIOpsClientError,
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
+    KnowledgeRetrievalAppClientError,
     DataQueryClientError,
 )
 from platform_core.middleware.log_middleware import log_requests
@@ -207,14 +207,13 @@ def create_main_api_app(
             ],
         )
     app.include_router(knowledge_router)
-    app.include_router(composition_router)
+    app.include_router(knowledge_retrieval_app_router)
+    app.include_router(aiops_app_router)
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
     app.include_router(domain_router)
-    app.include_router(agent_router)
     app.include_router(run_router)
     app.include_router(conversation_router)
-    app.include_router(data_router)
     app.include_router(data_query_router)
     app.include_router(dify_router)
     app.include_router(memory_router)
@@ -271,6 +270,25 @@ def create_main_api_app(
             code=exc.code,
             title="Knowledge Core 请求失败",
             detail=str(exc),
+        )
+
+    @app.exception_handler(KnowledgeRetrievalAppClientError)
+    async def knowledge_retrieval_app_error_handler(
+        request: Request, exc: KnowledgeRetrievalAppClientError,
+    ):
+        _log_downstream_failure(
+            request=request, service_name="knowledge-retrieval-app", exc=exc
+        )
+        if exc.status_code >= 500:
+            return _problem_response(
+                request=request, status_code=503,
+                code="KNOWLEDGE_RETRIEVAL_APP_UNAVAILABLE",
+                title="知识检索应用暂时不可用",
+                detail="知识检索应用暂时无法完成请求",
+            )
+        return _problem_response(
+            request=request, status_code=exc.status_code, code=exc.code,
+            title="知识检索应用请求失败", detail=str(exc),
         )
 
     @app.exception_handler(DataQueryClientError)

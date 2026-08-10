@@ -11,6 +11,10 @@ from knowledge_core.domain.model_bindings import (
     KC_IMMUTABLE_MODEL_ROLES,
     normalize_collection_models,
 )
+from knowledge_core.domain.parse_settings import (
+    DEFAULT_COLLECTION_PARSE_POLICY,
+    normalize_collection_parse_policy,
+)
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 from platform_core.identity import uuid7
 
@@ -40,6 +44,7 @@ class CollectionSnapshot:
     display_name: str
     description: str | None
     models_json: dict[str, str]
+    parse_policy_json: dict[str, Any]
     status: str
     default_security_level: int
     metadata_json: dict[str, Any]
@@ -66,6 +71,7 @@ def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
         display_name=entity.display_name,
         description=entity.description,
         models_json=dict(entity.models_json or {}),
+        parse_policy_json=dict(entity.parse_policy_json or {}),
         status=entity.status,
         default_security_level=int(entity.default_security_level),
         metadata_json=dict(entity.metadata_json or {}),
@@ -125,6 +131,15 @@ class UpdateCollectionModelsCommand:
     expected_row_version: int = 1
 
 
+@dataclass(frozen=True)
+class UpdateCollectionParsingSettingsCommand:
+    domain_id: int
+    collection_id: UUID
+    parse_policy: dict[str, Any]
+    actor_id: str = "svc:knowledge-core"
+    expected_row_version: int = 1
+
+
 class KnowledgeCoreCollectionService:
     """Application service for Collection root creation.
 
@@ -154,6 +169,7 @@ class KnowledgeCoreCollectionService:
                 display_name=display_name,
                 description=command.description,
                 models_json=models,
+                parse_policy_json=dict(DEFAULT_COLLECTION_PARSE_POLICY),
                 status="ACTIVE",
                 default_security_level=command.default_security_level,
                 metadata_json=command.metadata,
@@ -238,6 +254,29 @@ class KnowledgeCoreCollectionService:
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1
             await uow.session.flush()
+            await uow.commit()
+            return collection
+
+    async def update_parsing_settings(
+        self, command: UpdateCollectionParsingSettingsCommand
+    ) -> KcCollectionEntity:
+        policy = normalize_collection_parse_policy(command.parse_policy)
+        async with self._uow_factory() as uow:
+            collection = await uow.collections.get_by_id_scope(
+                domain_id=command.domain_id,
+                collection_id=command.collection_id,
+                lock=True,
+            )
+            if collection is None:
+                raise CollectionNotFoundError("Collection not found")
+            if int(collection.row_version) != command.expected_row_version:
+                raise CollectionVersionConflictError(
+                    "Collection 已被其他请求修改"
+                )
+            collection.parse_policy_json = policy
+            collection.updated_by = command.actor_id
+            collection.row_version = int(collection.row_version) + 1
+            await uow.flush()
             await uow.commit()
             return collection
 

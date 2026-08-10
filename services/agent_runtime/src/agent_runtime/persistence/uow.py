@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from platform_core.notifications import NotificationOutboxRepository
 
 from agent_runtime.repositories import (
-    AgentDefinitionRepository,
     AgentConversationItemRepository,
     AgentConversationRepository,
     AgentConversationTurnRepository,
@@ -27,7 +26,6 @@ class AgentRuntimeUnitOfWork:
     def __init__(self, session_factory: Callable[[], AsyncSession]):
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
-        self.agents: AgentDefinitionRepository | None = None
         self.runs: AgentRunRepository | None = None
         self.tasks: AgentTaskRepository | None = None
         self.artifacts: AgentArtifactRepository | None = None
@@ -48,7 +46,6 @@ class AgentRuntimeUnitOfWork:
 
     async def __aenter__(self) -> "AgentRuntimeUnitOfWork":
         self.session = self._session_factory()
-        self.agents = AgentDefinitionRepository(self.session)
         self.runs = AgentRunRepository(self.session)
         self.tasks = AgentTaskRepository(self.session)
         self.artifacts = AgentArtifactRepository(self.session)
@@ -86,7 +83,6 @@ class AgentRuntimeUnitOfWork:
         finally:
             await self.session.close()
             self.session = None
-            self.agents = None
             self.runs = None
             self.tasks = None
             self.artifacts = None

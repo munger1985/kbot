@@ -22,6 +22,7 @@ class OpsRunEntity(BaseEntity):
     ops_run_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())

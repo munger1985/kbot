@@ -44,18 +44,27 @@ async def create_data_query_run(
     uow_factory: Callable[[], DataQueryUnitOfWork],
     domain_id: int,
     actor_id: str,
+    actor_roles: tuple[str, ...],
     trace_id: str,
     command: CreateDataQueryRun,
 ) -> DataQueryRunReceipt:
     """验证所有可变管理资源后，写入可重放的 Run/Execution/Event/Audit。"""
     plan_json = command.plan.model_dump(mode="json")
-    fingerprint = _hash({"question": command.standalone_query, "agent_id": str(command.agent_id), "plan": plan_json})
+    fingerprint = _hash({
+        "question": command.standalone_query,
+        "consumer_app_id": command.consumer_app_id,
+        "agent_id": str(command.agent_id),
+        "agent_version_id": str(command.agent_version_id),
+        "plan": plan_json,
+    })
     async with uow_factory() as uow:
         assert uow.runs and uow.semantic_models and uow.semantic_model_versions and uow.schema_snapshots
         assert uow.data_sources and uow.agent_bindings and uow.policy_bindings and uow.executions and uow.events and uow.audits
         assert uow.platform_access is not None
         agent_domain_id = await uow.platform_access.agent_domain_id(
-            domain_id=domain_id, agent_id=command.agent_id,
+            domain_id=domain_id, consumer_app_id=command.consumer_app_id,
+            agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
         )
         if agent_domain_id is None:
             raise DataQueryRunError("AGENT_DOMAIN_NOT_CONFIGURED")
@@ -81,7 +90,12 @@ async def create_data_query_run(
         source = await uow.data_sources.get_by_id(data_source_id=version.data_source_id)
         if snapshot is None or snapshot.status not in {SchemaSnapshotStatus.READY.value, SchemaSnapshotStatus.PARTIAL_READY.value} or source is None or source.status != "ACTIVE":
             raise DataQueryRunError("MODEL_RUNTIME_NOT_READY")
-        bindings = await uow.agent_bindings.list_active(domain_id=domain_id, agent_id=command.agent_id, semantic_model_id=model.semantic_model_id)
+        bindings = await uow.agent_bindings.list_active(
+            domain_id=domain_id, consumer_app_id=command.consumer_app_id,
+            agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
+            semantic_model_id=model.semantic_model_id,
+        )
         if not bindings:
             raise DataQueryRunError("MODEL_NOT_BOUND")
         if len(bindings) != 1:
@@ -92,6 +106,11 @@ async def create_data_query_run(
         )
         if policy is None or policy.status != "ACTIVE":
             raise DataQueryRunError("POLICY_DENIED")
+        subjects = policy.subject_selector_json
+        actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
+        roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
+        if actor_id not in actor_ids and not set(actor_roles).intersection(roles):
+            raise DataQueryRunError("POLICY_SUBJECT_DENIED")
         budget = policy.policy_json.get("budget") if isinstance(policy.policy_json, dict) else None
         if not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
             raise DataQueryRunError("POLICY_INVALID")
@@ -125,7 +144,10 @@ async def create_data_query_run(
             )
         compiled_hash = hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest()
         run = DataQueryRunEntity(
-            domain_id=domain_id, actor_id=actor_id, agent_id=command.agent_id,
+            domain_id=domain_id, actor_id=actor_id,
+            consumer_app_id=command.consumer_app_id,
+            agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
             parent_agent_run_id=command.parent_agent_run_id, parent_agent_task_id=command.parent_agent_task_id,
             trace_id=trace_id, idempotency_key=command.idempotency_key, request_fingerprint=fingerprint,
             original_question=command.original_question, standalone_query=command.standalone_query,

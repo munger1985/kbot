@@ -16,12 +16,13 @@ from aiops_agent.diagnostics import DiagnosticRegistry
 def main() -> None:
     registry = DiagnosticRegistry.load()
     counts = Counter(item.definition.db_type for item in registry.tools)
-    if counts["ORACLE"] != counts["MYSQL"]:
-        raise RuntimeError("Oracle/MySQL 首批诊断工具数量不对等")
+    if len({counts[name] for name in ("ORACLE", "MYSQL", "POSTGRESQL")}) != 1:
+        raise RuntimeError("Oracle/MySQL/PostgreSQL 诊断工具数量不对等")
     print(
         "AIOps 诊断目录检查通过："
         f"tools={len(registry.tools)} "
         f"oracle={counts['ORACLE']} mysql={counts['MYSQL']} "
+        f"postgresql={counts['POSTGRESQL']} "
         f"catalog_hash={registry.catalog_hash}"
     )
 

@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 
 from agent_runtime.application import (
-    AgentDefinitionNotFound,
+    AgentExecutionSpecDenied,
     AgentRuntimeConflict,
     ConversationNotFound,
     ConversationService,
@@ -84,7 +84,7 @@ def _raise_error(exc: Exception) -> None:
         (
             ConversationNotFound,
             ConversationTurnNotFound,
-            AgentDefinitionNotFound,
+            AgentExecutionSpecDenied,
         ),
     ):
         status = 404
@@ -109,10 +109,11 @@ async def create_conversation(
             domain_id=domain_id,
             actor_id=actor_id,
             agent_id=payload.agent_id,
+            execution_spec=payload.execution_spec,
             title=payload.title,
             retention_policy=payload.retention_policy,
         )
-    except (AgentDefinitionNotFound, AgentRuntimeConflict) as exc:
+    except (AgentExecutionSpecDenied, AgentRuntimeConflict) as exc:
         _raise_error(exc)
 
 
@@ -217,7 +218,7 @@ async def create_turn(
             budget=request.app.state.agent_runtime_budget,
         )
     except (
-        AgentDefinitionNotFound,
+        AgentExecutionSpecDenied,
         AgentRuntimeConflict,
         ConversationNotFound,
         ConversationTurnNotFound,

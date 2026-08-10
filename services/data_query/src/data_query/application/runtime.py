@@ -37,15 +37,18 @@ class DataQueryRuntimeService:
 
     async def create_run(
         self, *, domain_id: int, actor_id: str, trace_id: str,
+        actor_roles: tuple[str, ...],
         command: CreateDataQueryRun,
     ) -> DataQueryRunReceipt:
         return await create_data_query_run(
             uow_factory=self._uow_factory,domain_id=domain_id,
-            actor_id=actor_id, trace_id=trace_id, command=command,
+            actor_id=actor_id, actor_roles=actor_roles,
+            trace_id=trace_id, command=command,
         )
 
     async def get_planning_context(
-        self, *, domain_id: int, actor_id: str, agent_id: UUID,
+        self, *, domain_id: int, actor_id: str, actor_roles: tuple[str, ...],
+        consumer_app_id: str, agent_id: UUID, agent_version_id: UUID,
     ) -> DataQueryPlanningContext:
         """仅返回逻辑名称，绝不将物理对象、列或策略细节交给 Planner LLM。"""
         async with self._uow_factory() as uow:
@@ -54,14 +57,24 @@ class DataQueryRuntimeService:
             resolved_domain_id = await self._resolve_agent_domain(
                 uow.platform_access,
                 domain_id=domain_id,
+                consumer_app_id=consumer_app_id,
                 agent_id=agent_id,
+                agent_version_id=agent_version_id,
             )
-            bindings = await uow.agent_bindings.list_active_for_agent(domain_id=domain_id, agent_id=agent_id)
+            bindings = await uow.agent_bindings.list_active_for_agent(
+                domain_id=domain_id, consumer_app_id=consumer_app_id,
+                agent_id=agent_id, agent_version_id=agent_version_id,
+            )
             models: list[PlanningSemanticModel] = []
             for binding in bindings:
                 policy = await uow.policy_bindings.get_by_id(policy_binding_id=binding.policy_binding_id)
                 model = await uow.semantic_models.get_by_id(semantic_model_id=binding.semantic_model_id)
                 if policy is None or model is None or policy.status != "ACTIVE":
+                    continue
+                subjects = policy.subject_selector_json
+                actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
+                roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
+                if actor_id not in actor_ids and not set(actor_roles).intersection(roles):
                     continue
                 if model.domain_id != resolved_domain_id:
                     continue
@@ -79,17 +92,21 @@ class DataQueryRuntimeService:
                     max_rows=budget["max_rows"],
                 ))
             await uow.commit()
-            return DataQueryPlanningContext(agent_id=agent_id, models=tuple(models))
+            return DataQueryPlanningContext(
+                agent_id=agent_id, consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id, models=tuple(models),
+            )
 
     @staticmethod
     async def _resolve_agent_domain(
         platform_access,
         *,
-        domain_id: int,
-        agent_id: UUID,
+        domain_id: int, consumer_app_id: str,
+        agent_id: UUID, agent_version_id: UUID,
     ) -> int:
         agent_domain_id = await platform_access.agent_domain_id(
-            domain_id=domain_id, agent_id=agent_id,
+            domain_id=domain_id, consumer_app_id=consumer_app_id,
+            agent_id=agent_id, agent_version_id=agent_version_id,
         )
         if agent_domain_id is None:
             raise DataQueryRunError("AGENT_DOMAIN_NOT_CONFIGURED")
@@ -106,7 +123,9 @@ class DataQueryRuntimeService:
             await self._resolve_agent_domain(
                 uow.platform_access,
                 domain_id=domain_id,
+                consumer_app_id=run.consumer_app_id,
                 agent_id=run.agent_id,
+                agent_version_id=run.agent_version_id,
             )
             result = await uow.results.get_available_by_run_id(
                 data_query_run_id=data_query_run_id, now=datetime.now(UTC),
@@ -131,7 +150,9 @@ class DataQueryRuntimeService:
             await self._resolve_agent_domain(
                 uow.platform_access,
                 domain_id=domain_id,
+                consumer_app_id=run.consumer_app_id,
                 agent_id=run.agent_id,
+                agent_version_id=run.agent_version_id,
             )
             await uow.commit()
             return DataQueryResultView(
@@ -164,7 +185,9 @@ class DataQueryRuntimeService:
             await self._resolve_agent_domain(
                 uow.platform_access,
                 domain_id=domain_id,
+                consumer_app_id=run.consumer_app_id,
                 agent_id=run.agent_id,
+                agent_version_id=run.agent_version_id,
             )
             if run.status in {"COMPLETED", "COMPLETED_EMPTY", "REJECTED", "FAILED", "TIMED_OUT", "CANCELLED"}:
                 await uow.commit()

@@ -4,8 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.oracle import RAW
+from sqlalchemy import CheckConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -24,29 +23,6 @@ class _VersionedEntity(BaseEntity):
     created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     __mapper_args__ = {"version_id_col": row_version}
-
-
-class CredentialEntity(_VersionedEntity):
-    """Data Query 专用数据库凭据密文。"""
-
-    __tablename__ = "KBOT_DQ_CREDENTIAL"
-    __table_args__ = (
-        UniqueConstraint("credential_id", "domain_id", name="uq_dq_cred_scope"),
-        UniqueConstraint("data_source_id", "credential_version", name="uq_dq_cred_version"),
-    )
-
-    credential_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
-    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
-    data_source_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
-    credential_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
-    username_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    username_nonce: Mapped[bytes] = mapped_column(RAW(12), nullable=False)
-    password_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    password_nonce: Mapped[bytes] = mapped_column(RAW(12), nullable=False)
-    key_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
-    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
 
 
 class DataSourceEntity(_VersionedEntity):
@@ -185,6 +161,9 @@ class PolicyBindingEntity(_VersionedEntity):
 
     policy_binding_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
+    subject_selector_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
     semantic_model_ids_json: Mapped[list[str]] = mapped_column(OracleNativeJSON, nullable=False)
     policy_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -195,11 +174,17 @@ class PolicyBindingEntity(_VersionedEntity):
 
 class AgentBindingEntity(_VersionedEntity):
     __tablename__ = "KBOT_DQ_AGENT_BINDING"
-    __table_args__ = (UniqueConstraint("domain_id", "agent_id", "semantic_model_id", "policy_binding_id", name="uq_KBOT_DQ_agent_binding"),)
+    __table_args__ = (UniqueConstraint(
+        "domain_id", "consumer_app_id", "agent_id", "agent_version_id",
+        "semantic_model_id", "policy_binding_id",
+        name="uq_KBOT_DQ_agent_binding",
+    ),)
 
     agent_binding_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
+    consumer_app_id: Mapped[str] = mapped_column(String(128), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
+    agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     semantic_model_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     policy_binding_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", index=True)
@@ -229,7 +214,9 @@ class DataQueryRunEntity(_VersionedEntity):
     data_query_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
     actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    agent_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    consumer_app_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type(), index=True)
     parent_agent_task_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     trace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)

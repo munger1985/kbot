@@ -75,9 +75,9 @@ class FailingDriver:
 
 
 class DiagnosticCatalogTest(unittest.TestCase):
-    def test_catalog_contains_oracle_mysql_parity(self) -> None:
+    def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(12, len(registry.tools))
+        self.assertEqual(18, len(registry.tools))
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools
@@ -90,6 +90,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         ):
             self.assertIn(("ORACLE", tool_id), pairs)
             self.assertIn(("MYSQL", tool_id), pairs)
+            self.assertIn(("POSTGRESQL", tool_id), pairs)
 
     def test_capability_and_entitlement_selection_is_exact(self) -> None:
         registry = DiagnosticRegistry.load()

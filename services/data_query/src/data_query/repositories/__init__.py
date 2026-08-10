@@ -2,7 +2,6 @@
 
 from .data_query import (
     AgentBindingRepository,
-    CredentialRepository,
     DataQueryAuditRepository,
     DataQueryHealthRepository,
     DataQueryEventRepository,
@@ -24,7 +23,6 @@ from .model_reference import DataQueryModelReferenceRepository
 __all__ = [
     "PlatformResourceAccessRepository",
     "DataQueryModelReferenceRepository",
-    "CredentialRepository",
     "AgentBindingRepository",
     "DataQueryAuditRepository",
     "DataQueryHealthRepository",

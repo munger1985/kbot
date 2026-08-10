@@ -20,7 +20,6 @@ from fastapi import (
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from platform_clients import AgentRuntimeClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.aiops import (
@@ -75,9 +74,45 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
 from platform_core.identity import uuid7
+from platform_core.security import get_auth_context
+from main_api.application import AccessControlService, AccessDeniedError
 
 
-router = APIRouter(prefix=f"{PUBLIC_API_V1}/ops", tags=["AIOps"])
+async def _require_route_access(request: Request) -> None:
+    context = get_auth_context(request)
+    domain_id = int(context.domain_id or "0")
+    actor_id = context.asserted_user_id or context.client_id
+    relative = request.url.path.removeprefix(f"{PUBLIC_API_V1}/apps/aiops")
+    permission = "aiops:use"
+    if relative.startswith("/targets"):
+        permission = "aiops:target_manage"
+    elif relative.startswith("/monitor-sources"):
+        permission = "aiops:monitor_source_manage"
+    elif relative.startswith("/policies"):
+        permission = "aiops:policy_manage"
+    elif relative.startswith("/inspection-plans"):
+        permission = "aiops:plan_manage"
+    elif relative.endswith("/approve"):
+        permission = "aiops:proposal:approve"
+    service = cast(
+        AccessControlService, request.app.state.access_control_service
+    )
+    try:
+        await service.require(
+            app_id="aiops", domain_id=domain_id, user_id=actor_id,
+            permission_code=permission,
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(
+            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
+        ) from exc
+
+
+router = APIRouter(
+    prefix=f"{PUBLIC_API_V1}/apps/aiops",
+    tags=["AIOps"],
+    dependencies=[Depends(_require_route_access)],
+)
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -101,61 +136,6 @@ IfMatch = Annotated[str, Depends(require_if_match)]
 
 def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
-
-
-def _agent_client(request: Request) -> AgentRuntimeClient:
-    return cast(
-        AgentRuntimeClient,
-        request.app.state.agent_runtime_client,
-    )
-
-
-async def _select_aiops_chat_target(
-    *, request: Request, agent_id: UUID, target_id: UUID
-) -> None:
-    """将显式创建或恢复的绑定同步为该 Agent 的聊天目标。"""
-    client = _agent_client(request)
-    context = request.state.auth_context
-    agent = await client.get_agent(
-        agent_id=agent_id,
-        auth_context=context,
-    )
-    config = dict(agent.get("config") or {})
-    expected = {"aiops_target_id": str(target_id)}
-    if all(config.get(key) == value for key, value in expected.items()):
-        return
-    await client.update_agent(
-        agent_id=agent_id,
-        payload={
-            "expected_row_version": int(agent["row_version"]),
-            "config": {**config, **expected},
-        },
-        auth_context=context,
-    )
-
-
-async def _clear_aiops_chat_target(
-    *, request: Request, agent_id: UUID, target_id: UUID
-) -> None:
-    """撤销当前聊天目标时清理冻结配置，不猜测其他绑定。"""
-    client = _agent_client(request)
-    context = request.state.auth_context
-    agent = await client.get_agent(
-        agent_id=agent_id,
-        auth_context=context,
-    )
-    config = dict(agent.get("config") or {})
-    if config.get("aiops_target_id") != str(target_id):
-        return
-    config.pop("aiops_target_id", None)
-    await client.update_agent(
-        agent_id=agent_id,
-        payload={
-            "expected_row_version": int(agent["row_version"]),
-            "config": config,
-        },
-        auth_context=context,
-    )
 
 
 def _validated(
@@ -260,11 +240,26 @@ async def create_ops_run(
     idempotency_key: IdempotencyKey,
 ) -> OpsRunReceipt:
     context = request.state.auth_context
+    access = cast(
+        AccessControlService, request.app.state.access_control_service
+    )
+    actor_id = context.asserted_user_id or context.client_id
+    snapshot = await access.snapshot(
+        app_id="aiops", domain_id=int(context.domain_id), user_id=actor_id
+    )
+    await _client(request).authorize_private_agent(
+        {
+            "agent_id": str(body.agent_id),
+            "user_id": actor_id,
+            "role_codes": list(snapshot.roles),
+        },
+        auth_context=context,
+    )
     command = CreateOpsRunCommand(
         command_id=uuid7(),
         idempotency_key=idempotency_key,
         domain_id=int(context.domain_id),
-        actor_id=context.asserted_user_id or context.client_id,
+        actor_id=actor_id,
         agent_id=body.agent_id,
         target_id=body.target_id,
         trigger_type="CHAT",
@@ -285,7 +280,7 @@ async def create_ops_run(
     result = OpsRunReceipt(
         **payload,
         events_url=(
-            f"{PUBLIC_API_V1}/ops/runs/{payload['ops_run_id']}/events"
+            f"{PUBLIC_API_V1}/apps/aiops/runs/{payload['ops_run_id']}/events"
         ),
     )
     response.headers["ETag"] = f'"rv-{result.row_version}"'
@@ -488,7 +483,7 @@ async def cancel_ops_run(
     )
     result = OpsRunReceipt(
         **payload,
-        events_url=f"{PUBLIC_API_V1}/ops/runs/{run_id}/events",
+        events_url=f"{PUBLIC_API_V1}/apps/aiops/runs/{run_id}/events",
     )
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
@@ -749,13 +744,7 @@ async def create_agent_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    result = _validated(AgentBindingView, payload, response)
-    await _select_aiops_chat_target(
-        request=request,
-        agent_id=result.agent_id,
-        target_id=result.target_id,
-    )
-    return result
+    return _validated(AgentBindingView, payload, response)
 
 
 @router.patch(
@@ -801,20 +790,7 @@ async def command_agent_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    result = _validated(AgentBindingView, payload, response)
-    if command == "restore":
-        await _select_aiops_chat_target(
-            request=request,
-            agent_id=result.agent_id,
-            target_id=result.target_id,
-        )
-    else:
-        await _clear_aiops_chat_target(
-            request=request,
-            agent_id=result.agent_id,
-            target_id=result.target_id,
-        )
-    return result
+    return _validated(AgentBindingView, payload, response)
 
 
 @router.post(

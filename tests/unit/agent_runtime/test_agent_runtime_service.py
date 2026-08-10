@@ -6,20 +6,16 @@ import unittest
 
 from agent_runtime.application import (
     AppendTaskProgressCommand,
-    AgentDefinitionNotFound,
-    AgentDefinitionService,
     AgentRuntimeConflict,
     AgentRuntimeService,
     ArtifactInput,
     ClaimTaskCommand,
     CompleteTaskCommand,
-    CreateAgentDefinitionCommand,
     CreateRunCommand,
     FailTaskCommand,
     InstallPlanCommand,
     StartDelegationCommand,
     StaleTaskLease,
-    UpdateAgentDefinitionCommand,
 )
 from agent_runtime.domain.planning import (
     ExecutionKind,
@@ -32,6 +28,7 @@ from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.specialists import register_builtin_manifests
 from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.identity import uuid7
+from platform_core.contracts import AgentExecutionSpec
 
 
 class _ModelResolver:
@@ -370,29 +367,36 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             model_resolver=self.model_resolver,
             notification_publisher=_NoopNotificationPublisher(),
         )
-        self.definition_service = AgentDefinitionService(
-            uow_factory=lambda: _Uow(self.store),
-            model_resolver=self.model_resolver,
+        self.execution_spec = AgentExecutionSpec(
+            schema_version="1.0",
+            owner_app_id="knowledge_retrieval",
+            domain_id=20,
+            consumer_agent_id=self.agent_id,
+            consumer_agent_version_id=uuid7(),
+            agent_kind="KNOWLEDGE_RETRIEVAL",
+            display_name="文档助手",
+            enabled_capabilities=("document",),
+            models={
+                "router_llm": uuid7(),
+                "context_llm": uuid7(),
+                "composer_llm": uuid7(),
+                "memory_llm": uuid7(),
+                "query_vlm": uuid7(),
+                "memory_embedding": uuid7(),
+            },
+            instruction="仅基于可验证证据回答。",
+            resource_context={"answer_language": "zh-CN"},
         )
         self.create_command = CreateRunCommand(
             domain_id=20,
             agent_id=self.agent_id,
+            execution_spec=self.execution_spec,
             actor_id="user-1",
             request_id="request-1",
             trace_id="trace-1",
             idempotency_key="create-1",
             original_input="总结上传文档",
         )
-
-    async def test_create_run_rejects_unknown_or_inactive_agent(self):
-        unknown = self.create_command.model_copy(
-            update={
-                "agent_id": uuid7(),
-                "idempotency_key": "unknown-agent",
-            }
-        )
-        with self.assertRaises(AgentDefinitionNotFound):
-            await self.service.create_run(unknown)
 
     async def test_create_run_atomically_installs_document_plan(self):
         service = AgentRuntimeService(
@@ -419,12 +423,16 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(run.final_task_id)
 
     async def test_delegation_task_releases_worker_lease(self):
-        self.store.agents[self.agent_id].enabled_capabilities_json = [
-            "aiops"
-        ]
-        self.store.agents[self.agent_id].config_json = {
-            "aiops_target_id": str(uuid7()),
-        }
+        aiops_spec = self.execution_spec.model_copy(
+            update={
+                "owner_app_id": "aiops",
+                "agent_kind": "AIOPS",
+                "enabled_capabilities": ("aiops",),
+                "resource_context": {
+                    "aiops_target_id": str(uuid7())
+                },
+            }
+        )
         service = AgentRuntimeService(
             uow_factory=lambda: _Uow(self.store),
             plan_validator=PlanValidator(
@@ -445,6 +453,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 update={
                     "idempotency_key": "create-aiops",
                     "original_input": "分析数据库性能问题",
+                    "execution_spec": aiops_spec,
                 }
             )
         )
@@ -511,53 +520,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             f"task:{task.task_id}:delegation",
         )
 
-    async def test_agent_definition_create_and_update(self):
-        created = await self.definition_service.create(
-            CreateAgentDefinitionCommand(
-                domain_id=20,
-                display_name="案例助手",
-                enabled_capabilities=("document",),
-                models={
-                    "context_llm": uuid7(),
-                    "composer_llm": uuid7(),
-                    "memory_llm": uuid7(),
-                    "memory_embedding": uuid7(),
-                    "future_reasoner": uuid7(),
-                },
-                status="DRAFT",
-                actor_id="admin-1",
-            )
-        )
-        updated = await self.definition_service.update(
-            UpdateAgentDefinitionCommand(
-                domain_id=20,
-                agent_id=created.agent_id,
-                expected_row_version=1,
-                display_name="案例检索助手",
-                actor_id="admin-1",
-            )
-        )
-
-        self.assertEqual(updated.display_name, "案例检索助手")
-        self.assertEqual(updated.row_version, 2)
-        self.assertEqual(
-            updated.models["future_reasoner"].version, 7
-        )
-
-    async def test_agent_definition_list_is_scoped_to_domain(self):
-        other_agent_id = uuid7()
-        self.store.agents[other_agent_id] = SimpleNamespace(
-            **{
-                **vars(self.store.agents[self.agent_id]),
-                "agent_id": other_agent_id,
-                "domain_id": 21,
-            }
-        )
-
-        agents = await self.definition_service.list(domain_id=20)
-
-        self.assertEqual([agent.agent_id for agent in agents], [self.agent_id])
-
     async def test_create_run_freezes_agent_configuration(self):
         receipt = await self.service.create_run(self.create_command)
         snapshot = self.store.runs[receipt.run_id].config_snapshot_json
@@ -578,26 +540,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             "memory-model",
         )
         self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
-
-    async def test_memory_embedding_model_is_immutable_once_set(self):
-        with self.assertRaises(AgentRuntimeConflict) as raised:
-            await self.definition_service.update(
-                UpdateAgentDefinitionCommand(
-                    domain_id=20,
-                    agent_id=self.agent_id,
-                    expected_row_version=1,
-                    models={
-                        **self.store.agents[self.agent_id].models_json,
-                        "memory_embedding": uuid7(),
-                    },
-                    actor_id="admin-1",
-                )
-            )
-
-        self.assertEqual(
-            raised.exception.code,
-            "AGENT_MODEL_IMMUTABLE",
-        )
 
     async def test_create_run_is_idempotent_and_checks_fingerprint(self):
         first = await self.service.create_run(self.create_command)

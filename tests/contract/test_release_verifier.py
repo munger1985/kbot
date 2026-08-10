@@ -72,7 +72,6 @@ class ReleaseVerifierTest(unittest.TestCase):
         self.assertIn("oracle_knowledge_core_s3", names)
         self.assertIn("oracle_model_serving_s4", names)
         self.assertIn("oracle_notifications_s6", names)
-        self.assertIn("oracle_composition_s7", names)
 
     def test_external_database_smoke_is_explicitly_enabled(self):
         names = {

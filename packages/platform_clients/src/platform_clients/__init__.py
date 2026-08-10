@@ -15,6 +15,10 @@ from .knowledge_core import (
 )
 from .mcp_data import MCPDataClient, MCPDataClientError
 from .data_query import DataQueryClient, DataQueryClientError
+from .knowledge_retrieval_app import (
+    KnowledgeRetrievalAppClient,
+    KnowledgeRetrievalAppClientError,
+)
 
 __all__ = [
     "AgentRuntimeClient",
@@ -32,4 +36,6 @@ __all__ = [
     "MCPDataClientError",
     "DataQueryClient",
     "DataQueryClientError",
+    "KnowledgeRetrievalAppClient",
+    "KnowledgeRetrievalAppClientError",
 ]

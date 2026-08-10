@@ -37,6 +37,15 @@ kind = "http"
 port = 18094
 
 [[processes]]
+process_key = "model_ocr"
+module = "model_serving.entrypoints.ocr"
+service_config = "model_serving"
+config_section = "ocr"
+service_name = "kbot-model-ocr"
+kind = "http"
+port = 18096
+
+[[processes]]
 process_key = "knowledge_core_api"
 module = "knowledge_core.entrypoints.api"
 service_config = "knowledge_core"
@@ -70,6 +79,15 @@ config_section = "api"
 service_name = "kbot-agent-runtime-api"
 kind = "http"
 port = 18100
+
+[[processes]]
+process_key = "knowledge_retrieval_app_api"
+module = "knowledge_retrieval_app.entrypoints.api"
+service_config = "knowledge_retrieval_app"
+config_section = "api"
+service_name = "kbot-knowledge-retrieval-app-api"
+kind = "http"
+port = 18150
 
 [[processes]]
 process_key = "agent_runtime_worker"
@@ -161,6 +179,7 @@ kind = "worker"
 # 端点只引用进程；默认 URL 根据进程端口生成，audience 使用 service_name。
 [endpoints]
 knowledge_core = "knowledge_core_api"
+knowledge_retrieval_app = "knowledge_retrieval_app_api"
 agent_runtime = "agent_runtime_api"
 data_query = "data_query_api"
 aiops = "aiops_api"
@@ -169,9 +188,14 @@ model_embedding = "model_embedding"
 model_llm = "model_llm"
 model_visual = "model_visual"
 model_vlm = "model_vlm"
+model_ocr = "model_ocr"
 
 [dependencies.main_api.knowledge_core]
 endpoint = "knowledge_core"
+timeout_seconds = 120
+
+[dependencies.main_api.knowledge_retrieval_app]
+endpoint = "knowledge_retrieval_app"
 timeout_seconds = 120
 
 [dependencies.main_api.agent_runtime]
@@ -251,12 +275,32 @@ timeout_seconds = 300
 endpoint = "model_llm"
 timeout_seconds = 300
 
-[dependencies.aiops_agent.clients.agent_runtime]
-endpoint = "agent_runtime"
+[dependencies.model_serving.knowledge_retrieval_app]
+endpoint = "knowledge_retrieval_app"
 timeout_seconds = 120
+
+[dependencies.model_serving.aiops]
+endpoint = "aiops"
+timeout_seconds = 120
+
+[dependencies.model_serving.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 120
+
+[dependencies.model_serving.data_query]
+endpoint = "data_query"
+timeout_seconds = 300
 
 [dependencies.aiops_agent.clients.model_serving]
 endpoint = "model_llm"
+timeout_seconds = 300
+
+[dependencies.aiops_agent.clients.model_vlm]
+endpoint = "model_vlm"
+timeout_seconds = 600
+
+[dependencies.aiops_agent.clients.model_ocr]
+endpoint = "model_ocr"
 timeout_seconds = 300
 
 [dependencies.aiops_agent.clients.knowledge_core]

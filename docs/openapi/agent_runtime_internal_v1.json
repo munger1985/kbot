@@ -115,65 +115,41 @@
         "title": "AgentArtifactRef",
         "type": "object"
       },
-      "AgentDefinitionView": {
+      "AgentExecutionSpec": {
         "additionalProperties": false,
+        "description": "业务 App 签发给 Agent Runtime 的不可变执行规格。",
         "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
+          "agent_kind": {
+            "enum": [
+              "KNOWLEDGE_RETRIEVAL",
+              "AIOPS"
+            ],
+            "title": "Agent Kind",
             "type": "string"
           },
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
+          "consumer_agent_id": {
+            "format": "uuid",
+            "title": "Consumer Agent Id",
+            "type": "string"
           },
-          "data_profile_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Profile Name"
-          },
-          "data_query_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "MCP",
-                  "SEMANTIC"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Query Mode"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+          "consumer_agent_version_id": {
+            "format": "uuid",
+            "title": "Consumer Agent Version Id",
+            "type": "string"
           },
           "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
             "title": "Display Name",
             "type": "string"
           },
           "do_rerank": {
+            "default": false,
             "title": "Do Rerank",
             "type": "boolean"
           },
           "domain_id": {
+            "minimum": 1.0,
             "title": "Domain Id",
             "type": "integer"
           },
@@ -181,12 +157,14 @@
             "items": {
               "type": "string"
             },
+            "minItems": 1,
             "title": "Enabled Capabilities",
             "type": "array"
           },
           "instruction": {
             "anyOf": [
               {
+                "maxLength": 32000,
                 "type": "string"
               },
               {
@@ -203,31 +181,42 @@
             "title": "Models",
             "type": "object"
           },
-          "row_version": {
-            "title": "Row Version",
-            "type": "integer"
+          "owner_app_id": {
+            "enum": [
+              "knowledge_retrieval",
+              "aiops"
+            ],
+            "title": "Owner App Id",
+            "type": "string"
           },
-          "status": {
-            "title": "Status",
+          "resource_context": {
+            "additionalProperties": true,
+            "title": "Resource Context",
+            "type": "object"
+          },
+          "runtime_policy": {
+            "additionalProperties": true,
+            "title": "Runtime Policy",
+            "type": "object"
+          },
+          "schema_version": {
+            "pattern": "^1\\.0$",
+            "title": "Schema Version",
             "type": "string"
           }
         },
         "required": [
-          "agent_id",
+          "schema_version",
+          "owner_app_id",
           "domain_id",
+          "consumer_agent_id",
+          "consumer_agent_version_id",
+          "agent_kind",
           "display_name",
-          "description",
-          "status",
           "enabled_capabilities",
-          "models",
-          "do_rerank",
-          "data_query_mode",
-          "data_profile_name",
-          "instruction",
-          "config",
-          "row_version"
+          "models"
         ],
-        "title": "AgentDefinitionView",
+        "title": "AgentExecutionSpec",
         "type": "object"
       },
       "AgentRunEvent": {
@@ -931,120 +920,6 @@
         "title": "ConversationView",
         "type": "object"
       },
-      "CreateAgentDefinitionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
-          "data_profile_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Profile Name"
-          },
-          "data_query_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "MCP",
-                  "SEMANTIC"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Query Mode"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
-          },
-          "enabled_capabilities": {
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Enabled Capabilities",
-            "type": "array"
-          },
-          "instruction": {
-            "anyOf": [
-              {
-                "maxLength": 32000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instruction"
-          },
-          "models": {
-            "additionalProperties": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Models",
-            "type": "object"
-          },
-          "status": {
-            "default": "DRAFT",
-            "pattern": "^(DRAFT|ACTIVE)$",
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "display_name",
-          "enabled_capabilities",
-          "models"
-        ],
-        "title": "CreateAgentDefinitionRequest",
-        "type": "object"
-      },
       "CreateAgentRunRequest": {
         "additionalProperties": false,
         "description": "公开请求经 Main API 认证后转发的 Run 创建参数。",
@@ -1068,6 +943,9 @@
             "title": "Collection Ids",
             "type": "array"
           },
+          "execution_spec": {
+            "$ref": "#/components/schemas/AgentExecutionSpec"
+          },
           "input": {
             "maxLength": 32000,
             "minLength": 1,
@@ -1084,6 +962,7 @@
         },
         "required": [
           "agent_id",
+          "execution_spec",
           "input"
         ],
         "title": "CreateAgentRunRequest",
@@ -1096,6 +975,9 @@
             "format": "uuid",
             "title": "Agent Id",
             "type": "string"
+          },
+          "execution_spec": {
+            "$ref": "#/components/schemas/AgentExecutionSpec"
           },
           "retention_policy": {
             "default": "DEFAULT",
@@ -1118,7 +1000,8 @@
           }
         },
         "required": [
-          "agent_id"
+          "agent_id",
+          "execution_spec"
         ],
         "title": "CreateConversationRequest",
         "type": "object"
@@ -1680,150 +1563,6 @@
         "title": "TaskSpec",
         "type": "object"
       },
-      "UpdateAgentDefinitionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          },
-          "data_profile_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Profile Name"
-          },
-          "data_query_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "MCP",
-                  "SEMANTIC"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Query Mode"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "do_rerank": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Do Rerank"
-          },
-          "enabled_capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled Capabilities"
-          },
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          },
-          "instruction": {
-            "anyOf": [
-              {
-                "maxLength": 32000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instruction"
-          },
-          "models": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Models"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "pattern": "^(DRAFT|ACTIVE|INACTIVE)$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          }
-        },
-        "required": [
-          "expected_row_version"
-        ],
-        "title": "UpdateAgentDefinitionRequest",
-        "type": "object"
-      },
       "UpdateConversationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1962,210 +1701,6 @@
         "summary": "Healthz",
         "tags": [
           "System"
-        ]
-      }
-    },
-    "/internal/v1/agents": {
-      "get": {
-        "operationId": "list_agent_definitions_internal_v1_agents_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AgentDefinitionView"
-                  },
-                  "title": "Response List Agent Definitions Internal V1 Agents Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Agent Definitions",
-        "tags": [
-          "Agent Definition"
-        ]
-      },
-      "post": {
-        "operationId": "create_agent_definition_internal_v1_agents_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentDefinitionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentDefinitionView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Agent Definition",
-        "tags": [
-          "Agent Definition"
-        ]
-      }
-    },
-    "/internal/v1/agents/model-references/{model_id}": {
-      "get": {
-        "description": "只允许模型服务执行跨 Domain 引用检查。",
-        "operationId": "list_agent_model_references_internal_v1_agents_model_references__model_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Agent Model References Internal V1 Agents Model References  Model Id  Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Agent Model References",
-        "tags": [
-          "Agent Definition"
-        ]
-      }
-    },
-    "/internal/v1/agents/{agent_id}": {
-      "get": {
-        "operationId": "get_agent_definition_internal_v1_agents__agent_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentDefinitionView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Agent Definition",
-        "tags": [
-          "Agent Definition"
-        ]
-      },
-      "patch": {
-        "operationId": "update_agent_definition_internal_v1_agents__agent_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAgentDefinitionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentDefinitionView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Agent Definition",
-        "tags": [
-          "Agent Definition"
         ]
       }
     },

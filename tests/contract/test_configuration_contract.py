@@ -21,7 +21,9 @@ class ConfigurationContractTest(unittest.TestCase):
             {
                 "agent_runtime",
                 "aiops_agent",
+                "data_query",
                 "knowledge_core",
+                "knowledge_retrieval_app",
                 "main_api",
                 "model_serving",
             },

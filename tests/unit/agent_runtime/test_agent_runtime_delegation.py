@@ -77,7 +77,7 @@ class AgentDelegationReconcilerTest(
             payload={"hitl_id": str(uuid7())},
         )
 
-        self.assertTrue(url.startswith("/api/v1/ops/hitl/"))
+        self.assertTrue(url.startswith("/api/v1/apps/aiops/hitl/"))
 
     async def test_submit_timeout_keeps_same_recoverable_delegation(self):
         now = datetime.now(UTC)

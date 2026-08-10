@@ -24,7 +24,7 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
 
-        self.assertEqual(18, len(processes))
+        self.assertEqual(20, len(processes))
         self.assertEqual(
             4,
             sum(item["kind"] == "worker" for item in processes),
@@ -48,6 +48,7 @@ class ProcessTopologyTest(unittest.TestCase):
         for group in (
             "Model Serving",
             "Knowledge Core",
+            "Knowledge Retrieval App",
             "Agent Runtime",
             "AIOps Agent",
             "Main API",

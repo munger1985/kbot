@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     Header,
@@ -22,7 +23,6 @@ from platform_core.contracts import (
     ConversationTurnPage,
     ConversationTurnReceipt,
     ConversationView,
-    CreateConversationRequest,
     CreateConversationTurnRequest,
     ConversationQueryImage,
     MemoryItemView,
@@ -30,16 +30,30 @@ from platform_core.contracts import (
     PublicTraceEvent,
     UpdateConversationRequest,
 )
+from pydantic import BaseModel, ConfigDict, Field
+from main_api.api.runs import _authorized_spec, _require_use
 
 
 router = APIRouter(
-    prefix=f"{PUBLIC_API_V1}/conversations",
-    tags=["Conversations"],
+    prefix=f"{PUBLIC_API_V1}/apps/knowledge-retrieval/conversations",
+    tags=["Knowledge Retrieval Conversations"],
+    dependencies=[Depends(_require_use)],
 )
 memory_router = APIRouter(
-    prefix=f"{PUBLIC_API_V1}/memories",
-    tags=["Memories"],
+    prefix=f"{PUBLIC_API_V1}/apps/knowledge-retrieval/memories",
+    tags=["Knowledge Retrieval Memories"],
+    dependencies=[Depends(_require_use)],
 )
+
+
+class KnowledgeConversationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_id: UUID
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    retention_policy: str = Field(
+        default="DEFAULT",
+        pattern=r"^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+    )
 
 
 def _client(request: Request) -> AgentRuntimeClient:
@@ -48,11 +62,15 @@ def _client(request: Request) -> AgentRuntimeClient:
 
 @router.post("", status_code=201, response_model=ConversationView)
 async def create_conversation(
-    payload: CreateConversationRequest,
+    payload: KnowledgeConversationCreateRequest,
     request: Request,
 ) -> ConversationView:
+    spec = await _authorized_spec(request, payload.agent_id)
     result = await _client(request).create_conversation(
-        payload=payload.model_dump(mode="json"),
+        payload={
+            **payload.model_dump(mode="json"),
+            "execution_spec": spec,
+        },
         auth_context=request.state.auth_context,
     )
     return ConversationView.model_validate(result)
@@ -121,6 +139,11 @@ async def create_turn(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
+    conversation = await _client(request).get_conversation(
+        conversation_id=conversation_id,
+        auth_context=request.state.auth_context,
+    )
+    await _authorized_spec(request, UUID(str(conversation["agent_id"])))
     result = await _client(request).create_conversation_turn(
         conversation_id=conversation_id,
         payload=payload.model_dump(mode="json"),
@@ -146,6 +169,11 @@ async def create_turn_with_images(
     images: list[UploadFile] = File(default_factory=list),
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
+    conversation = await _client(request).get_conversation(
+        conversation_id=conversation_id,
+        auth_context=request.state.auth_context,
+    )
+    await _authorized_spec(request, UUID(str(conversation["agent_id"])))
     if not images or len(images) > 8:
         raise HTTPException(
             status_code=422,

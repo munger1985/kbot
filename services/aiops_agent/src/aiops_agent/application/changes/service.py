@@ -180,6 +180,14 @@ class AIOpsChangeService:
                     "trace_id": trace_id,
                 },
             )
+            assert uow.platform_notifications is not None
+            await uow.platform_notifications.emit_proposal_event(
+                run=run,
+                proposal=proposal,
+                event_type="aiops.proposal.rejected",
+                summary="变更方案已驳回",
+                actor_id=actor_id,
+            )
             snapshot = await self._snapshot(uow, proposal)
             await uow.commit()
             view = self._view(proposal, snapshot)
@@ -474,6 +482,14 @@ class AIOpsChangeService:
                     ),
                     "trace_id": trace_id,
                 },
+            )
+            assert uow.platform_notifications is not None
+            await uow.platform_notifications.emit_proposal_event(
+                run=run,
+                proposal=proposal,
+                event_type="aiops.proposal.approved",
+                summary="变更方案已批准",
+                actor_id=actor_id,
             )
             outbox_payload = {
                 "execution_id": str(execution_id),

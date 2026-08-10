@@ -93,8 +93,9 @@ def _outbox(
 class NotificationCenterS6Test(unittest.IsolatedAsyncioTestCase):
     def test_catalog_contains_only_kbot_business_events(self):
         serialized = " ".join(EVENT_TYPES).casefold()
-        for forbidden in ("aiops", "tenant", "permission", "role", "license", "api_key"):
+        for forbidden in ("tenant", "permission", "role", "license", "api_key"):
             self.assertNotIn(forbidden, serialized)
+        self.assertIn("aiops.report.ready", EVENT_TYPES)
         self.assertEqual(
             {("IN_APP",)},
             {definition.allowed_channels for definition in EVENT_TYPES.values()},

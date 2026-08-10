@@ -45,7 +45,6 @@ from aiops_agent.entities import (
     TargetMonitorEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
-from aiops_agent.ports.agent_runtime import AgentRuntimePort
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (

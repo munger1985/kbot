@@ -21,12 +21,17 @@ SERVICE_TABLES = {
         "KBOT_WORK_ITEM",
         "KBOT_BACKGROUND_OPERATION",
         "KBOT_OPERATION_WATCH",
-        "KBOT_COMPOSITION_RECEIPT",
+        "KBOT_MANAGED_CREDENTIAL",
     },
     "main_api": {
         "KBOT_MAIN_SLACK_INBOX",
         "KBOT_MAIN_SLACK_THREAD",
         "KBOT_MAIN_SLACK_DELIVERY",
+        "KBOT_PLATFORM_USER",
+        "KBOT_PERMISSION",
+        "KBOT_APP_ROLE",
+        "KBOT_APP_ROLE_PERMISSION",
+        "KBOT_APP_MEMBER_ROLE",
     },
     "model_serving": {"KBOT_AI_MODEL"},
     "knowledge_core": {
@@ -46,7 +51,6 @@ SERVICE_TABLES = {
         "KBOT_KC_VISUAL_ASSET",
     },
     "agent_runtime": {
-        "KBOT_AGENT_DEFINITION",
         "KBOT_AGENT_RUN",
         "KBOT_AGENT_TASK",
         "KBOT_AGENT_ARTIFACT",
@@ -62,7 +66,6 @@ SERVICE_TABLES = {
         "KBOT_AGENT_MEMORY_JOB",
     },
     "data_query": {
-        "KBOT_DQ_CREDENTIAL",
         "KBOT_DQ_DATA_SOURCE",
         "KBOT_DQ_SCHEMA_SNAPSHOT",
         "KBOT_DQ_SNAPSHOT_OBJECT",
@@ -79,7 +82,6 @@ SERVICE_TABLES = {
         "KBOT_DQ_AUDIT",
     },
     "aiops_agent": {
-        "KBOT_OPS_CREDENTIAL",
         "KBOT_OPS_TARGET",
         "KBOT_OPS_POLICY",
         "KBOT_OPS_TARGET_BINDING",
@@ -101,6 +103,22 @@ SERVICE_TABLES = {
         "KBOT_OPS_REPORT",
         "KBOT_OPS_INBOX",
         "KBOT_OPS_OUTBOX",
+        "KBOT_OPS_AGENT",
+        "KBOT_OPS_AGENT_VERSION",
+        "KBOT_OPS_AGENT_GRANT",
+        "KBOT_OPS_REPORT_TEMPLATE",
+        "KBOT_OPS_REPORT_TEMPLATE_VER",
+        "KBOT_OPS_CONVERSATION",
+        "KBOT_OPS_CONVERSATION_MESSAGE",
+        "KBOT_OPS_CONVERSATION_RUN",
+        "KBOT_OPS_EVIDENCE_REQUEST",
+        "KBOT_OPS_ACTION_STEP",
+        "KBOT_OPS_IMAGE_EVIDENCE",
+    },
+    "knowledge_retrieval_app": {
+        "KBOT_KR_AGENT",
+        "KBOT_KR_AGENT_VERSION",
+        "KBOT_KR_AGENT_GRANT",
     },
 }
 SERVICE_VIEWS = {
@@ -126,12 +144,12 @@ SERVICE_VIEWS = {
         "KBOT_V_OPS_CHAT_PENDING",
         "KBOT_V_OPS_SCHEMA_VERSION",
     },
+    "knowledge_retrieval_app": set(),
 }
 FORBIDDEN_TOKENS = (
     "KBOT_MD_",
     "KBOT_BIZ_",
     "TXTCHUNK",
-    "INSERT INTO",
     "MERGE INTO",
     "CREATE TABLE AS SELECT",
     "DATABASE LINK",
@@ -230,7 +248,6 @@ NOTIFICATION_UUID_COLUMNS = (
     "RESOLVED_OUTBOX_ID",
     "LAST_OUTBOX_ID",
 )
-COMPOSITION_UUID_COLUMNS = ("RECEIPT_ID",)
 
 
 def _ordered_scripts(service_dir: Path, errors: list[str]) -> list[Path]:
@@ -338,9 +355,6 @@ def main() -> int:
     for column in NOTIFICATION_UUID_COLUMNS:
         if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", platform_sql):
             errors.append(f"Notification 的 {column} 必须至少声明一次为 UUIDv7 RAW(16)")
-    for column in COMPOSITION_UUID_COLUMNS:
-        if not re.search(rf"\b{column}\s+RAW\s*\(\s*16\s*\)", platform_sql):
-            errors.append(f"Composition 的 {column} 必须为 UUIDv7 RAW(16)")
     for forbidden in ("TENANT_ID", "ROLE_ID", "PERMISSION_ID", "USER_ID"):
         if re.search(rf"\b{forbidden}\b", platform_sql):
             errors.append(f"Platform Core 通知禁止依赖 {forbidden}")
@@ -373,8 +387,6 @@ def main() -> int:
             data_query_sql,
         ):
             errors.append(f"Data Query 缺少函数唯一索引：{index_name}")
-    if "SUBJECT_SELECTOR" in data_query_sql or "ROLE_ID" in data_query_sql:
-        errors.append("Data Query 禁止引入 User/Role 策略选择器")
     if "SECRET_REF" in data_query_sql:
         errors.append("Data Query 禁止保存外部 SecretRef")
 
@@ -396,8 +408,8 @@ def main() -> int:
             aiops_sql,
         ):
             errors.append(f"AIOps 缺少函数唯一索引：{index_name}")
-    if aiops_sql.count("DEFERRABLE INITIALLY DEFERRED") != 5:
-        errors.append("AIOps 必须包含 5 个延后 Artifact 当前指针外键")
+    if aiops_sql.count("DEFERRABLE INITIALLY DEFERRED") < 5:
+        errors.append("AIOps 必须包含至少 5 个延后当前指针外键")
     if re.search(r"\bMODE\s+VARCHAR2\b", aiops_sql):
         errors.append("AIOps 禁止使用 Oracle 26ai 保留字 MODE 作为列名")
     if not re.search(

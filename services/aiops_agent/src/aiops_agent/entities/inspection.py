@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Computed, Numeric, String, func
+from sqlalchemy import Computed, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -13,6 +13,43 @@ from platform_core.persistence.orm import (
     UniversalTimestamp,
     UUIDv7Type,
 )
+
+
+class InspectionReportTemplateEntity(BaseEntity):
+    """Domain 私有的巡检报告展示模板。"""
+
+    __tablename__ = "KBOT_OPS_REPORT_TEMPLATE"
+    __table_args__ = (
+        UniqueConstraint("domain_id", "display_name", name="UK_OPS_REPORT_TEMPLATE_NAME"),
+        Index("IX_OPS_REPORT_TEMPLATE_SCOPE", "domain_id", "status"),
+    )
+    template_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    current_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    __mapper_args__ = {"version_id_col": row_version}
+
+
+class InspectionReportTemplateVersionEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_REPORT_TEMPLATE_VER"
+    __table_args__ = (
+        UniqueConstraint("template_id", "version_no", name="UK_OPS_REPORT_TEMPLATE_VER"),
+        UniqueConstraint("template_id", "content_hash", name="UK_OPS_REPORT_TEMPLATE_HASH"),
+    )
+    template_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    template_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
+    version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
+    definition_json: Mapped[dict] = mapped_column(OracleNativeJSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
 
 
 class InspectionPlanEntity(BaseEntity):

@@ -58,13 +58,12 @@ async def create_data_source(
     """在同一事务创建 DRAFT 数据源和首版加密凭据。"""
     configuration = command.endpoint.model_dump(mode="json")
     async with uow_factory() as uow:
-        assert uow.data_sources and uow.credentials
+        assert uow.data_sources and uow.managed_credentials
         data_source_id = uuid7()
         credential = await credential_service.create(
             uow=uow,
             domain_id=domain_id,
             data_source_id=data_source_id,
-            credential_version=1,
             username=command.credentials.username,
             password=command.credentials.password,
             actor_id=actor_id,
@@ -98,7 +97,7 @@ async def update_data_source(
     """更新连接配置；数据库类型不可变，凭据仅在显式提供时轮换。"""
     configuration = command.endpoint.model_dump(mode="json")
     async with uow_factory() as uow:
-        assert uow.data_sources and uow.credentials
+        assert uow.data_sources and uow.managed_credentials
         source = await uow.data_sources.get_by_id(
             data_source_id=data_source_id, lock=True,
         )
@@ -107,25 +106,15 @@ async def update_data_source(
         if int(source.row_version) != command.expected_row_version:
             raise DataQueryManagementError("ROW_VERSION_CONFLICT")
         if command.credentials is not None:
-            previous = await uow.credentials.get_scoped(
-                credential_id=source.credential_id,
-                domain_id=domain_id,
-                data_source_id=source.data_source_id,
-                lock=True,
-            )
-            version = 1 if previous is None else int(previous.credential_version) + 1
             replacement = await credential_service.create(
                 uow=uow,
                 domain_id=domain_id,
                 data_source_id=source.data_source_id,
-                credential_version=version,
                 username=command.credentials.username,
                 password=command.credentials.password,
                 actor_id=actor_id,
             )
             source.credential_id = replacement.credential_id
-            if previous is not None:
-                await uow.credentials.revoke(previous, actor_id=actor_id)
         source.display_name = command.display_name
         source.configuration_json = configuration
         source.configuration_hash = _canonical_hash(configuration)
@@ -237,12 +226,18 @@ async def create_policy_binding(
             model = await uow.semantic_models.get_by_id(semantic_model_id=model_id)
             if model is None or model.domain_id != domain_id or model.active_version is None:
                 raise DataQueryManagementError("POLICY_MODEL_NOT_FOUND")
+        subjects = command.subject_selector.model_dump(mode="json")
         policy = {"budget": command.budget.model_dump(mode="json")}
         entity = PolicyBindingEntity(
             domain_id=domain_id,
+            subject_selector_json=subjects,
             semantic_model_ids_json=[str(item) for item in command.semantic_model_ids],
             policy_json=policy,
-            policy_hash=_canonical_hash({"models": [str(item) for item in command.semantic_model_ids], "policy": policy}),
+            policy_hash=_canonical_hash({
+                "subjects": subjects,
+                "models": [str(item) for item in command.semantic_model_ids],
+                "policy": policy,
+            }),
             status="ACTIVE",
             created_by=actor_id,
             updated_by=actor_id,
@@ -265,7 +260,9 @@ async def create_agent_binding(
         assert uow.platform_access is not None
         mode = await uow.platform_access.agent_data_query_mode(
             domain_id=domain_id,
+            consumer_app_id=command.consumer_app_id,
             agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
         )
         if mode != "SEMANTIC":
             raise DataQueryManagementError("AGENT_BINDING_MODE_NOT_SEMANTIC")
@@ -278,13 +275,18 @@ async def create_agent_binding(
         if str(model.semantic_model_id) not in policy.semantic_model_ids_json:
             raise DataQueryManagementError("AGENT_BINDING_POLICY_MODEL_DENIED")
         existing = await uow.agent_bindings.get_active(
-            domain_id=domain_id, agent_id=command.agent_id, semantic_model_id=command.semantic_model_id
+            domain_id=domain_id, consumer_app_id=command.consumer_app_id,
+            agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
+            semantic_model_id=command.semantic_model_id,
         )
         if existing is not None:
             raise DataQueryManagementError("AGENT_BINDING_CONFLICT")
         entity = AgentBindingEntity(
             domain_id=domain_id,
+            consumer_app_id=command.consumer_app_id,
             agent_id=command.agent_id,
+            agent_version_id=command.agent_version_id,
             semantic_model_id=command.semantic_model_id,
             policy_binding_id=command.policy_binding_id,
             status="ACTIVE",

@@ -465,14 +465,17 @@ class MemoryConsolidationWorker:
         self, lease: MemoryJobLease
     ) -> MemoryRuntimeConfig:
         async with self._uow_factory() as uow:
-            agent = await uow.agents.get_active(
-                agent_id=lease.agent_id,
-                domain_id=lease.domain_id,
+            conversation = await uow.conversations.get(
+                conversation_id=lease.conversation_id
             )
-            if agent is None:
-                raise RuntimeError("记忆任务对应 Agent 已不可用")
-            models = dict(agent.models_json or {})
-            raw = dict(agent.config_json or {}).get("memory") or {}
+            if conversation is None:
+                raise RuntimeError("记忆任务对应 Conversation 已不可用")
+            execution_spec = dict(conversation.execution_spec_json or {})
+            models = dict(execution_spec.get("models") or {})
+            resource_context = dict(
+                execution_spec.get("resource_context") or {}
+            )
+            raw = resource_context.get("memory") or {}
             if not isinstance(raw, dict):
                 raise RuntimeError("Agent memory 配置必须是对象")
             episodic_enabled = bool(raw.get("episodic_enabled", True))

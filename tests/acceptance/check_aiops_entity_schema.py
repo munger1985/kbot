@@ -16,15 +16,22 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from aiops_agent.entities import (
-    CredentialEntity,
+    AIOpsAgentEntity,
+    AIOpsAgentGrantEntity,
+    AIOpsAgentVersionEntity,
+    ActionStepEntity,
     ApprovalTokenEntity,
     ChangeProposalEntity,
     ExecutionEntity,
+    EvidenceRequestEntity,
     HitlEntity,
     InboxEntity,
     InspectionFireEntity,
     InspectionPlanEntity,
+    InspectionReportTemplateEntity,
+    InspectionReportTemplateVersionEntity,
     InspectionTargetEntity,
+    ImageEvidenceProcessingEntity,
     MonitorSourceEntity,
     OpsAlertEntity,
     OpsArtifactEntity,
@@ -33,6 +40,9 @@ from aiops_agent.entities import (
     OpsRunEventEntity,
     OpsTaskEntity,
     OutboxEntity,
+    OpsConversationEntity,
+    OpsConversationMessageEntity,
+    OpsConversationRunEntity,
     PolicyEntity,
     ReportEntity,
     TargetBindingEntity,
@@ -51,7 +61,9 @@ from tests.support.oracle_preflight import require_oracle_listener
 
 
 AIOPS_ENTITY_CLASSES = (
-    CredentialEntity,
+    AIOpsAgentEntity,
+    AIOpsAgentVersionEntity,
+    AIOpsAgentGrantEntity,
     TargetEntity,
     PolicyEntity,
     TargetBindingEntity,
@@ -70,7 +82,15 @@ AIOPS_ENTITY_CLASSES = (
     InspectionPlanEntity,
     InspectionTargetEntity,
     InspectionFireEntity,
+    InspectionReportTemplateEntity,
+    InspectionReportTemplateVersionEntity,
     ReportEntity,
+    OpsConversationEntity,
+    OpsConversationMessageEntity,
+    OpsConversationRunEntity,
+    EvidenceRequestEntity,
+    ImageEvidenceProcessingEntity,
+    ActionStepEntity,
     InboxEntity,
     OutboxEntity,
 )
@@ -306,7 +326,10 @@ def main() -> int:
         for error in errors:
             print(f"- {error}")
         return 1
-    print("AIOps Entity/Oracle Schema 校验通过：21 张表逐列一致")
+    print(
+        "AIOps Entity/Oracle Schema 校验通过："
+        f"{len(AIOPS_ENTITY_CLASSES)} 张表逐列一致"
+    )
     return 0
 
 

@@ -790,7 +790,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             payload["references"][0]["resource_url"],
-            f"/api/v1/ops/runs/{ops_run_id}",
+            f"/api/v1/apps/aiops/runs/{ops_run_id}",
         )
 
 

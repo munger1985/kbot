@@ -65,10 +65,15 @@ class DataQueryClient:
         )
 
     async def get_planning_context(
-        self, *, agent_id: UUID, auth_context: AuthContext
+        self, *, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
-            "GET", f"/internal/v1/data-query/runs/planning-context/{agent_id}",
+            "GET", (
+                f"/internal/v1/data-query/runs/planning-context/{agent_id}"
+                f"?consumer_app_id={consumer_app_id}"
+                f"&agent_version_id={agent_version_id}"
+            ),
             auth_context=auth_context, scopes=("data_query.delegate",),
         )
 

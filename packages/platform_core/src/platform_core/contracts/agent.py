@@ -7,12 +7,33 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class AgentExecutionSpec(BaseModel):
+    """业务 App 签发给 Agent Runtime 的不可变执行规格。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = Field(pattern=r"^1\.0$")
+    owner_app_id: Literal["knowledge_retrieval", "aiops"]
+    domain_id: int = Field(ge=1)
+    consumer_agent_id: UUID
+    consumer_agent_version_id: UUID
+    agent_kind: Literal["KNOWLEDGE_RETRIEVAL", "AIOPS"]
+    display_name: str = Field(min_length=1, max_length=256)
+    enabled_capabilities: tuple[str, ...] = Field(min_length=1)
+    models: dict[str, UUID]
+    do_rerank: bool = False
+    instruction: str | None = Field(default=None, max_length=32000)
+    resource_context: dict[str, Any] = Field(default_factory=dict)
+    runtime_policy: dict[str, Any] = Field(default_factory=dict)
+
+
 class CreateAgentRunRequest(BaseModel):
     """公开请求经 Main API 认证后转发的 Run 创建参数。"""
 
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
+    execution_spec: AgentExecutionSpec
     input: str = Field(min_length=1, max_length=32000)
     collection_ids: tuple[UUID, ...] = ()
     security_level: int = Field(default=0, ge=0, le=999)
@@ -20,66 +41,13 @@ class CreateAgentRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def reject_internal_attachment_metadata(self) -> "CreateAgentRunRequest":
+        if self.execution_spec.consumer_agent_id != self.agent_id:
+            raise ValueError("execution_spec 与 agent_id 不一致")
         if "query_images" in self.client_metadata:
             raise ValueError(
                 "查询图片只能通过 Conversation multipart 接口上传"
             )
         return self
-
-
-class CreateAgentDefinitionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    display_name: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[str, ...] = Field(min_length=1)
-    models: dict[str, UUID]
-    do_rerank: bool = False
-    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
-    data_profile_name: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    instruction: str | None = Field(default=None, max_length=32000)
-    config: dict[str, Any] = Field(default_factory=dict)
-    status: str = Field(default="DRAFT", pattern=r"^(DRAFT|ACTIVE)$")
-
-
-class UpdateAgentDefinitionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_row_version: int = Field(ge=1)
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[str, ...] | None = None
-    models: dict[str, UUID] | None = None
-    do_rerank: bool | None = None
-    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
-    data_profile_name: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    instruction: str | None = Field(default=None, max_length=32000)
-    config: dict[str, Any] | None = None
-    status: str | None = Field(
-        default=None, pattern=r"^(DRAFT|ACTIVE|INACTIVE)$"
-    )
-
-
-class AgentDefinition(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    agent_id: UUID
-    domain_id: int
-    display_name: str
-    description: str | None = None
-    status: str
-    enabled_capabilities: tuple[str, ...]
-    models: dict[str, UUID]
-    do_rerank: bool
-    data_query_mode: Literal["MCP", "SEMANTIC"] | None = None
-    data_profile_name: str | None = None
-    instruction: str | None = None
-    config: dict[str, Any]
-    row_version: int = Field(ge=1)
 
 
 class AgentRunReceipt(BaseModel):

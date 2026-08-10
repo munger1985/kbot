@@ -1,6 +1,7 @@
 """Storage boundary for immutable Parser output artifacts."""
 
 from uuid import UUID
+from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
 
@@ -21,3 +22,7 @@ class ParserArtifactStore(Protocol):
     ) -> dict[str, str]: ...
 
     async def delete_manifest(self, manifest: dict[str, Any]) -> None: ...
+
+    async def delete_uris(self, uris: list[str]) -> None: ...
+
+    async def stream(self, *, uri: str) -> AsyncIterator[bytes]: ...

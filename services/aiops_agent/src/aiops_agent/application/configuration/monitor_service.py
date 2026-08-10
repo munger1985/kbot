@@ -45,7 +45,6 @@ from aiops_agent.entities import (
     TargetMonitorEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
-from aiops_agent.ports.agent_runtime import AgentRuntimePort
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
@@ -106,25 +105,46 @@ class MonitorConfigurationMixin:
         request: MonitorSourceCreate,
         idempotency_key: str,
     ) -> MonitorSourceDetail:
-        await self._validate_secret_refs(
-            request.secret_ref,
-            request.webhook_secret_ref,
-            request.tls_profile_ref,
-        )
-
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
         ) -> MonitorSourceDetail:
             assert uow.monitor_sources is not None
+            assert uow.managed_credentials is not None
+            source_id = uuid7()
+            secret_ref = webhook_secret_ref = None
+            for kind, values in (
+                ("monitor_source", request.credentials),
+                ("monitor_webhook", request.webhook_credentials),
+            ):
+                if values is None:
+                    continue
+                credential = await self._managed_credentials.put(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    external_key=source_id,
+                    credential_kind=kind,
+                    values=values,
+                    actor_id=scope.actor_id,
+                )
+                reference = self._managed_credentials.reference(
+                    domain_id=scope.domain_id,
+                    external_key=source_id,
+                    credential_kind=kind,
+                    credential_id=credential.credential_id,
+                )
+                if kind == "monitor_source":
+                    secret_ref = reference
+                else:
+                    webhook_secret_ref = reference
             entity = MonitorSourceEntity(
-                monitor_source_id=uuid7(),
+                monitor_source_id=source_id,
                 domain_id=scope.domain_id,
                 display_name=request.display_name,
                 source_type=request.source_type,
                 endpoint=str(request.endpoint),
-                secret_ref=request.secret_ref,
-                webhook_secret_ref=request.webhook_secret_ref,
-                tls_profile_ref=request.tls_profile_ref,
+                secret_ref=secret_ref,
+                webhook_secret_ref=webhook_secret_ref,
+                tls_profile_ref=None,
                 capabilities_json=request.capabilities,
                 status="DISABLED",
                 health_status="UNKNOWN",
@@ -224,11 +244,10 @@ class MonitorConfigurationMixin:
         fields.pop("schema_version", None)
         if not fields:
             raise validation_failed("PATCH 至少需要一个可修改字段")
-        await self._validate_secret_refs(
-            fields.get("secret_ref"),
-            fields.get("webhook_secret_ref"),
-            fields.get("tls_profile_ref"),
-        )
+        credential_updates = {
+            "monitor_source": fields.pop("credentials", ...),
+            "monitor_webhook": fields.pop("webhook_credentials", ...),
+        }
         if "endpoint" in fields:
             if request.endpoint is None:
                 raise validation_failed("Monitor Endpoint 不能为空")
@@ -236,16 +255,16 @@ class MonitorConfigurationMixin:
         connectivity_changed = bool(
             {
                 "endpoint",
-                "secret_ref",
-                "webhook_secret_ref",
-                "tls_profile_ref",
+                "credentials",
+                "webhook_credentials",
             }
-            & fields.keys()
+            & request.model_fields_set
         )
         if "capabilities" in fields:
             fields["capabilities_json"] = fields.pop("capabilities")
         async with self._uow_factory() as uow:
             assert uow.monitor_sources is not None
+            assert uow.managed_credentials is not None
             entity = await uow.monitor_sources.get_scoped(
                 monitor_source_id=source_id,
                 domain_id=scope.domain_id,
@@ -254,6 +273,49 @@ class MonitorConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Monitor Source")
             self._check_version(entity.row_version, expected_version)
+            for kind, values in credential_updates.items():
+                if values is ...:
+                    continue
+                field = (
+                    "secret_ref"
+                    if kind == "monitor_source"
+                    else "webhook_secret_ref"
+                )
+                current_ref = getattr(entity, field)
+                if values is None:
+                    if current_ref:
+                        _, _, _, credential_id = (
+                            self._managed_credentials.parse_reference(
+                                current_ref
+                            )
+                        )
+                        await self._managed_credentials.revoke(
+                            uow=uow,
+                            domain_id=scope.domain_id,
+                            credential_id=credential_id,
+                            credential_kind=kind,
+                            actor_id=scope.actor_id,
+                        )
+                    setattr(entity, field, None)
+                    continue
+                credential = await self._managed_credentials.put(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    external_key=source_id,
+                    credential_kind=kind,
+                    values=values,
+                    actor_id=scope.actor_id,
+                )
+                setattr(
+                    entity,
+                    field,
+                    self._managed_credentials.reference(
+                        domain_id=scope.domain_id,
+                        external_key=source_id,
+                        credential_kind=kind,
+                        credential_id=credential.credential_id,
+                    ),
+                )
             for name, value in fields.items():
                 setattr(entity, name, value)
             if connectivity_changed:

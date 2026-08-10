@@ -143,8 +143,20 @@ class QueryBudget(_Contract):
     max_concurrent_runs: int = Field(default=4, ge=1, le=64)
 
 
+class SubjectSelector(_Contract):
+    actor_ids: tuple[str, ...] = Field(default=(), max_length=1000)
+    roles: tuple[str, ...] = Field(default=(), max_length=100)
+
+    @model_validator(mode="after")
+    def require_subject(self) -> "SubjectSelector":
+        if not self.actor_ids and not self.roles:
+            raise ValueError("Policy 必须至少指定一个用户或角色")
+        return self
+
+
 class PolicyBindingCreate(_Contract):
     semantic_model_ids: tuple[UUID, ...] = Field(min_length=1, max_length=64)
+    subject_selector: SubjectSelector
     budget: QueryBudget = Field(default_factory=QueryBudget)
 
     @model_validator(mode="after")
@@ -155,7 +167,9 @@ class PolicyBindingCreate(_Contract):
 
 
 class AgentBindingCreate(_Contract):
+    consumer_app_id: str = Field(min_length=1, max_length=128)
     agent_id: UUID
+    agent_version_id: UUID
     semantic_model_id: UUID
     policy_binding_id: UUID
 
@@ -398,6 +412,7 @@ class PolicyBindingView(_Contract):
 
 class PolicyBindingDetail(PolicyBindingView):
     semantic_model_ids: tuple[UUID, ...]
+    subject_selector: SubjectSelector
     budget: QueryBudget
     updated_at: datetime
 
@@ -414,7 +429,9 @@ class PolicyBindingStatusChange(_Contract):
 
 class AgentBindingView(_Contract):
     agent_binding_id: UUID
+    consumer_app_id: str
     agent_id: UUID
+    agent_version_id: UUID
     semantic_model_id: UUID
     policy_binding_id: UUID
     status: str

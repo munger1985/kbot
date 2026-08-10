@@ -1019,6 +1019,107 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
 
+    async def list_private_agents(self, *, auth_context: AuthContext):
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/agents",
+            auth_context=auth_context,
+        )
+
+    async def get_private_agent(
+        self, agent_id: UUID, *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/agents/{agent_id}",
+            auth_context=auth_context,
+        )
+
+    async def create_private_agent(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/agents",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def update_private_agent(
+        self, agent_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "PATCH", f"{INTERNAL_API_V1}/aiops/agents/{agent_id}",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def list_model_references(
+        self, *, model_id: UUID, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        payload = await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/agents/model-references/{model_id}",
+            auth_context=auth_context,
+        )
+        return list(payload.get("references") or [])
+
+    async def list_private_agent_grants(self, *, auth_context: AuthContext):
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/agents/grants/list",
+            auth_context=auth_context,
+        )
+
+    async def upsert_private_agent_grant(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "PUT", f"{INTERNAL_API_V1}/aiops/agents/grants",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def update_private_agent_grant(
+        self, grant_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "PATCH", f"{INTERNAL_API_V1}/aiops/agents/grants/{grant_id}",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def authorize_private_agent(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/agents:authorize",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def conversation_request(
+        self,
+        method: str,
+        suffix: str,
+        *,
+        auth_context: AuthContext,
+        payload: dict[str, Any] | None = None,
+    ):
+        return await self._json(
+            method,
+            f"{INTERNAL_API_V1}/aiops/conversations{suffix}",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def report_template_request(
+        self,
+        method: str,
+        suffix: str,
+        *,
+        auth_context: AuthContext,
+        payload: dict[str, Any] | None = None,
+    ):
+        return await self._json(
+            method,
+            f"{INTERNAL_API_V1}/aiops/report-templates{suffix}",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+
 class AIOpsDelegationClient(_BaseAIOpsClient):
     """Agent Runtime 只能使用的 Root Delegation Client。"""
 

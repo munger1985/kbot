@@ -66,8 +66,13 @@ class SemanticDataQueryExecutor:
         if self._client is None:
             raise RuntimeError("SEMANTIC_DATA_QUERY_UNAVAILABLE")
         auth_context = self._auth_context(context)
+        agent_snapshot = context.config_snapshot.get("agent", {})
+        consumer_app_id = str(agent_snapshot.get("owner_app_id") or "")
+        agent_version_id = UUID(str(agent_snapshot.get("agent_version_id")))
         planning = await self._client.get_planning_context(
+            consumer_app_id=consumer_app_id,
             agent_id=context.agent_id,
+            agent_version_id=agent_version_id,
             auth_context=auth_context,
         )
         models = planning.get("models") if isinstance(planning, dict) else None
@@ -81,6 +86,8 @@ class SemanticDataQueryExecutor:
                 "standalone_query": question,
                 "plan": plan.model_dump(mode="json"),
                 "agent_id": str(context.agent_id),
+                "consumer_app_id": consumer_app_id,
+                "agent_version_id": str(agent_version_id),
                 "parent_agent_run_id": str(context.run_id),
                 "parent_agent_task_id": str(context.task_id),
                 "deadline_at": (

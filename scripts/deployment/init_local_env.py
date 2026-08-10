@@ -56,17 +56,11 @@ def initialize_local_env(*, root: Path = ROOT) -> tuple[str, ...]:
         ).decode("ascii").rstrip("=")
 
     set_value(
-        "KBOT_AIOPS_CREDENTIAL_ENCRYPTION_KEY",
+        "KBOT_MANAGED_CREDENTIAL_KEY",
         random_key(),
         require_32_bytes=True,
     )
-    set_value("KBOT_AIOPS_CREDENTIAL_KEY_VERSION", "2026-08")
-    set_value(
-        "KBOT_DATA_QUERY_CREDENTIAL_ENCRYPTION_KEY",
-        random_key(),
-        require_32_bytes=True,
-    )
-    set_value("KBOT_DATA_QUERY_CREDENTIAL_KEY_VERSION", "2026-08")
+    set_value("KBOT_MANAGED_CREDENTIAL_KEY_VERSION", "2026-08")
     env_path.write_text(text, encoding="utf-8")
     env_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     return tuple(changed)

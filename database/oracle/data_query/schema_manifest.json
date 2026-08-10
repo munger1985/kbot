@@ -4,22 +4,22 @@
   "contract_version": "data-query-oracle-v1",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_data_sources.sql", "statements": 5, "sha256": "50747434241a8954a0565c39c5b45e749d6cf4fa440dab760ca61902a75e4bba"},
+    {"name": "001_data_sources.sql", "statements": 3, "sha256": "21f6e349663f738f955032a4acc41c0a79f47c0a4cf8cd392d758469febe1dee"},
     {"name": "002_schema_snapshots.sql", "statements": 4, "sha256": "354409951aee86413cf2683e85b49148b54d4ecf348aa4cb1c906d2552ca5706"},
     {"name": "003_semantic_models.sql", "statements": 6, "sha256": "bd48cb7a2a8873abc1fbdec7f5b3df7aa53bb4ab6870f9f7f8aadb4c79a019cb"},
-    {"name": "004_bindings_policies.sql", "statements": 4, "sha256": "459afbb1788d6216cf6f144545bc185c61aca66efcf6f22be7a58921b7127f8d"},
-    {"name": "005_query_runtime.sql", "statements": 7, "sha256": "b887a19d4bb73a86f6768cba96617d4bc2d43717aa4f1f01748f159fc66f43c1"},
-    {"name": "006_audit_views.sql", "statements": 32, "sha256": "c9b862b6b36a2a2c2fd00b3cfa5fc31d590bf7b955c638d4cce911c1a16f383c"}
+    {"name": "004_bindings_policies.sql", "statements": 4, "sha256": "b2ee8af84e6d4dc031ae8bb2f34da5017e4060a700a1ffc825b704e5ba16562d"},
+    {"name": "005_query_runtime.sql", "statements": 7, "sha256": "3e375464a7ef5aeb8feda90feb466ccd50e6cf986f74e5ffd20aeda156506083"},
+    {"name": "006_audit_views.sql", "statements": 28, "sha256": "92e357a080998738e41c622197feecb9197e3c73de60e9f776e57f14f4eb8af4"}
   ],
   "tables": [
-    "KBOT_DQ_CREDENTIAL", "KBOT_DQ_DATA_SOURCE", "KBOT_DQ_SCHEMA_SNAPSHOT",
+    "KBOT_DQ_DATA_SOURCE", "KBOT_DQ_SCHEMA_SNAPSHOT",
     "KBOT_DQ_SNAPSHOT_OBJECT", "KBOT_DQ_SEMANTIC_MODEL", "KBOT_DQ_MODEL_VERSION",
     "KBOT_DQ_MODEL_GEN_JOB", "KBOT_DQ_POLICY", "KBOT_DQ_AGENT_BINDING",
     "KBOT_DQ_VERIFIED_QUERY", "KBOT_DQ_RUN", "KBOT_DQ_EXECUTION",
     "KBOT_DQ_RESULT", "KBOT_DQ_EVENT", "KBOT_DQ_AUDIT"
   ],
   "views": ["KBOT_V_DQ_SOURCE", "KBOT_V_DQ_RUN", "KBOT_V_DQ_SCHEMA_VERSION"],
-  "deferred_foreign_keys": ["FK_DQ_SOURCE_CRED", "FK_DQ_CRED_SOURCE"],
+  "deferred_foreign_keys": [],
   "function_unique_indexes": ["UX_DQ_MODEL_ACTIVE", "UX_DQ_BINDING_ACTIVE", "UX_DQ_EVENT_KEY"],
   "invariants": {
     "resource_id_type": "RAW(16)",

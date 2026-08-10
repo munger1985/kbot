@@ -1,18 +1,18 @@
 {
   "component": "aiops_agent",
-  "schema_version": 6,
+  "schema_version": 8,
   "contract_version": "aiops-oracle-v1",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 25,
-      "sha256": "13543552c1f52e45e25eb0b9e21dfa3620540c8c92e0dd214de6419b9e8f19fe"
+      "statements": 23,
+      "sha256": "76fa47dcab7cf86afdd898bf08f17b7b45bf07754f7d8a570728fa31a5c738df"
     },
     {
       "name": "002_ops_runtime.sql",
       "statements": 32,
-      "sha256": "9fa714850ec3d0a84d8ae48ae9f4808841eb28463e66ed4cdc6e5d78c55ff89c"
+      "sha256": "518000e50cb684c278d7029e0980e2bb09d5d883fea3f77315c3e0a8240bead6"
     },
     {
       "name": "003_ops_change.sql",
@@ -32,11 +32,20 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 31,
-      "sha256": "2aa3b6c5e398faba32902c09cb25d17fef101d3610f9e9c2dbe664da23fef998"
+      "sha256": "b0d645e788e6110f4b836a6188183d3ebe48b8f50c9b47c98580f472302859d5"
+    },
+    {
+      "name": "007_ops_agents.sql",
+      "statements": 8,
+      "sha256": "2afd8c4cf5691bb696ad88866bfc5df25738eedd8cfa558346c47226cc3ef809"
+    },
+    {
+      "name": "008_ops_conversations_reports.sql",
+      "statements": 17,
+      "sha256": "558a15e22d192eba2e3767ff669cf3e279d4a3020e2f3b1aedf1d4580a6e78bc"
     }
   ],
   "tables": [
-    "KBOT_OPS_CREDENTIAL",
     "KBOT_OPS_TARGET",
     "KBOT_OPS_POLICY",
     "KBOT_OPS_TARGET_BINDING",
@@ -57,7 +66,18 @@
     "KBOT_OPS_INSPECTION_FIRE",
     "KBOT_OPS_REPORT",
     "KBOT_OPS_INBOX",
-    "KBOT_OPS_OUTBOX"
+    "KBOT_OPS_OUTBOX",
+    "KBOT_OPS_AGENT",
+    "KBOT_OPS_AGENT_VERSION",
+    "KBOT_OPS_AGENT_GRANT",
+    "KBOT_OPS_REPORT_TEMPLATE",
+    "KBOT_OPS_REPORT_TEMPLATE_VER",
+    "KBOT_OPS_CONVERSATION",
+    "KBOT_OPS_CONVERSATION_MESSAGE",
+    "KBOT_OPS_CONVERSATION_RUN",
+    "KBOT_OPS_EVIDENCE_REQUEST",
+    "KBOT_OPS_ACTION_STEP",
+    "KBOT_OPS_IMAGE_EVIDENCE"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",
@@ -76,7 +96,9 @@
     "FK_OPS_TASK_OUTPUT_ART",
     "FK_OPS_PROP_SNAPSHOT_ART",
     "FK_OPS_EXEC_RESULT_ART",
-    "FK_OPS_REPORT_CONTENT_ART"
+    "FK_OPS_REPORT_CONTENT_ART",
+    "FK_OPS_RPT_TPL_CURRENT_VERSION",
+    "FK_OPS_RPT_TPL_VER_TEMPLATE"
   ],
   "function_unique_indexes": [
     "UX_OPS_POLICY_ACTIVE",

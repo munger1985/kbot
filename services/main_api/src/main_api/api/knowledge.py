@@ -5,18 +5,50 @@ from __future__ import annotations
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from platform_clients import KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
+from main_api.application import AccessControlService, AccessDeniedError
+
+
+async def _require_knowledge_access(request: Request) -> None:
+    context = get_auth_context(request)
+    actor_id = context.asserted_user_id or context.client_id
+    relative = request.url.path.removeprefix(
+        f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge"
+    )
+    permission = "knowledge_retrieval:use"
+    if "/approval" in relative:
+        permission = "knowledge_retrieval:review"
+    elif relative.startswith("/agents/"):
+        permission = "knowledge_retrieval:agent_manage"
+    elif "/ingestions/user-files" in relative:
+        permission = "knowledge_retrieval:upload"
+    elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        permission = (
+            "knowledge_retrieval:knowledge_manage"
+        )
+    try:
+        await request.app.state.access_control_service.require(
+            app_id="knowledge_retrieval",
+            domain_id=int(context.domain_id or "0"),
+            user_id=actor_id,
+            permission_code=permission,
+        )
+    except AccessDeniedError as exc:
+        raise HTTPException(
+            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
+        ) from exc
 
 
 router = APIRouter(
-    prefix=f"{PUBLIC_API_V1}/knowledge",
+    prefix=f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge",
     tags=["Knowledge"],
+    dependencies=[Depends(_require_knowledge_access)],
 )
 
 
@@ -300,7 +332,7 @@ async def _ingest(
         payload = {
             **payload,
             "status_url": (
-                f"{PUBLIC_API_V1}/knowledge/bundles/"
+                f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge/bundles/"
                 f"{payload['bundle_id']}"
             ),
         }

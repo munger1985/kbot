@@ -3,12 +3,11 @@
 import hashlib
 import hmac
 import json
-import os
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -346,15 +345,13 @@ class MonitoringHandlerTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SecretAndOutboxTest(unittest.IsolatedAsyncioTestCase):
-    async def test_environment_secret_is_resolved_without_repr_value(self) -> None:
+    async def test_managed_secret_is_resolved_without_repr_value(self) -> None:
+        managed = AsyncMock()
+        managed.resolve_reference.return_value = {"token": "top-secret"}
         store = ConfiguredSecretStore(
-            provider="environment", allowed_schemes=("env",)
+            managed_credentials=managed
         )
-        with patch.dict(
-            os.environ,
-            {"KBOT_AIOPS_TEST_MONITOR": '{"token":"top-secret"}'},
-        ):
-            secret = await store.resolve("env://KBOT_AIOPS_TEST_MONITOR")
+        secret = await store.resolve("managed://credential-id")
         self.assertEqual("top-secret", secret.values["token"])
         self.assertNotIn("top-secret", repr(secret))
 

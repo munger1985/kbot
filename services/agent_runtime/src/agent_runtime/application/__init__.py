@@ -1,11 +1,5 @@
 """Agent Runtime 应用服务。"""
 
-from .agent_definitions import (
-    AgentDefinitionService,
-    AgentDefinitionView,
-    CreateAgentDefinitionCommand,
-    UpdateAgentDefinitionCommand,
-)
 from .commands import (
     AppendTaskProgressCommand,
     ArtifactInput,
@@ -22,7 +16,7 @@ from .commands import (
     TaskMutationReceipt,
 )
 from .runtime_service import (
-    AgentDefinitionNotFound,
+    AgentExecutionSpecDenied,
     AgentRuntimeConflict,
     AgentResultNotReady,
     AgentRuntimeNotFound,
@@ -44,10 +38,8 @@ from .notifications import (
 )
 
 __all__ = [
-    "AgentDefinitionService",
     "AgentDelegationReconciler",
-    "AgentDefinitionView",
-    "AgentDefinitionNotFound",
+    "AgentExecutionSpecDenied",
     "AgentRuntimeConflict",
     "AgentResultNotReady",
     "AgentRuntimeNotFound",
@@ -66,7 +58,6 @@ __all__ = [
     "AgentRunNotificationPublisher",
     "ConversationRetentionWorker",
     "CreateRunCommand",
-    "CreateAgentDefinitionCommand",
     "FailTaskCommand",
     "HeartbeatTaskCommand",
     "InstallPlanCommand",
@@ -75,5 +66,4 @@ __all__ = [
     "StaleTaskLease",
     "TaskLease",
     "TaskMutationReceipt",
-    "UpdateAgentDefinitionCommand",
 ]

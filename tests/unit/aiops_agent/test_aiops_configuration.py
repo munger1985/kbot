@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
-from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
+from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
@@ -85,8 +85,8 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
     async def test_resolves_agent_diagnosis_model_to_served_name(self) -> None:
         agent_id = uuid7()
         model_id = uuid7()
-        agent_client = AsyncMock()
-        agent_client.get_agent.return_value = {
+        agent_service = AsyncMock()
+        agent_service.get.return_value = {
             "agent_id": str(agent_id),
             "domain_id": 100,
             "status": "ACTIVE",
@@ -98,10 +98,9 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             "model_id": str(model_id),
             "served_model_name": "qwen-diagnosis",
         }
-        resolver = AgentRuntimeValidator(
-            agent_client,
+        resolver = AIOpsAgentValidator(
+            agent_service,
             model_client=model_client,
-            caller_service="kbot-aiops-api",
         )
 
         result = await resolver.resolve_diagnosis_model(
@@ -115,16 +114,16 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_diagnosis_model_is_rejected(self) -> None:
         agent_id = uuid7()
-        agent_client = AsyncMock()
-        agent_client.get_agent.return_value = {
+        agent_service = AsyncMock()
+        agent_service.get.return_value = {
             "agent_id": str(agent_id),
             "domain_id": 100,
             "status": "ACTIVE",
             "enabled_capabilities": ["aiops"],
             "models": {},
         }
-        resolver = AgentRuntimeValidator(
-            agent_client,
+        resolver = AIOpsAgentValidator(
+            agent_service,
             model_client=AsyncMock(),
         )
 
@@ -169,20 +168,14 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
                 overrides={"sql": "select * from secret"},
             )
 
-    async def test_environment_secret_adapter_never_returns_value(self) -> None:
+    async def test_managed_secret_adapter_never_returns_value(self) -> None:
+        managed = AsyncMock()
+        managed.resolve_reference.return_value = {"token": "plain-secret-value"}
         adapter = ConfiguredSecretStore(
-            provider="environment",
-            allowed_schemes=("env",),
+            managed_credentials=managed,
         )
-        with patch.dict(
-            "os.environ",
-            {"KBOT_AIOPS_TEST_READONLY": "plain-secret-value"},
-            clear=False,
-        ):
-            metadata = await adapter.validate_ref(
-                "env://KBOT_AIOPS_TEST_READONLY"
-            )
-        self.assertEqual("env", metadata.provider)
+        metadata = await adapter.validate_ref("managed://credential-id")
+        self.assertEqual("managed-credential", metadata.provider)
         self.assertNotIn("plain-secret-value", repr(metadata))
 
 

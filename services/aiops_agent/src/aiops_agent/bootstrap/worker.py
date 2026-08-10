@@ -11,7 +11,7 @@ from aiops_agent.adapters.monitoring import MonitorProviderRegistry
 from aiops_agent.actions import ActionRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
-from aiops_agent.adapters.agent_runtime import AgentRuntimeValidator
+from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
@@ -21,6 +21,10 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.application.agents import AIOpsAgentService
+from aiops_agent.application.managed_credentials import (
+    AIOpsManagedCredentialService,
+)
 from aiops_agent.application.monitoring import MonitorHealthCheckService
 from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
@@ -38,8 +42,8 @@ from aiops_agent.workers import (
     create_runtime_handler_registry,
 )
 from platform_core.database.oracle import create_database_runtime
+from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_clients.knowledge_core import KnowledgeCoreClient
-from platform_clients.agent_runtime import AgentRuntimeClient
 from platform_clients.model import AIModelConfigClient
 
 
@@ -68,27 +72,21 @@ def create_aiops_worker_probe(
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
         client_session = aiohttp.ClientSession()
-        agent_runtime_validator = AgentRuntimeValidator(
-            AgentRuntimeClient(
-                base_url=resolved.clients.agent_runtime.base_url,
-                caller_service=config.service_name,
-                audience=resolved.clients.agent_runtime.audience,
-                timeout_seconds=(
-                    resolved.clients.agent_runtime.timeout_seconds
-                ),
-                session=client_session,
-            ),
+        agent_catalog = AIOpsAgentValidator(
+            AIOpsAgentService(uow_factory=runtime.uow_factory),
             model_client=AIModelConfigClient(
                 base_url=resolved.clients.model_serving.base_url,
                 timeout=resolved.clients.model_serving.timeout_seconds,
                 caller_service=config.service_name,
                 audience=resolved.clients.model_serving.audience,
             ),
-            caller_service=config.service_name,
+        )
+        managed_credential_service = AIOpsManagedCredentialService(
+            uow_factory=runtime.uow_factory,
+            cipher=ManagedCredentialCipher.from_environment(),
         )
         secret_store = ConfiguredSecretStore(
-            provider=resolved.secret_store.provider,
-            allowed_schemes=resolved.secret_store.allowed_schemes,
+            managed_credentials=managed_credential_service,
         )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)
@@ -171,7 +169,7 @@ def create_aiops_worker_probe(
             diagnostic_registry=diagnostic_registry,
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
-            agent_runtime=agent_runtime_validator,
+            agent_catalog=agent_catalog,
         )
         workers = [
             AIOpsTaskWorker(

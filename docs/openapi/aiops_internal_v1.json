@@ -3022,6 +3022,21 @@
             "title": "Capabilities",
             "type": "object"
           },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -3040,20 +3055,6 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Secret Ref"
-          },
           "source_type": {
             "enum": [
               "PROMETHEUS",
@@ -3063,33 +3064,20 @@
             "title": "Source Type",
             "type": "string"
           },
-          "tls_profile_ref": {
+          "webhook_credentials": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Tls Profile Ref"
-          },
-          "webhook_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Secret Ref"
+            "title": "Webhook Credentials",
+            "writeOnly": true
           }
         },
         "required": [
@@ -3292,6 +3280,21 @@
             ],
             "title": "Capabilities"
           },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
           "display_name": {
             "anyOf": [
               {
@@ -3324,47 +3327,20 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "secret_ref": {
+          "webhook_credentials": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Secret Ref"
-          },
-          "tls_profile_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tls Profile Ref"
-          },
-          "webhook_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Secret Ref"
+            "title": "Webhook Credentials",
+            "writeOnly": true
           }
         },
         "title": "MonitorSourcePatch",

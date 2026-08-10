@@ -29,7 +29,6 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "model-serving.md",
                 "overview.md",
                 "repository-layout.md",
-                "resource-composition.md",
                 "security-and-api.md",
             },
             {
@@ -38,7 +37,11 @@ class DocumentationLayoutTest(unittest.TestCase):
             },
         )
         self.assertEqual(
-            {"deployment.md"},
+            {
+                "deployment.md",
+                "oracle-linux-nginx-http-apex-ords.md",
+                "oracle-linux-nginx-https-gateway.md",
+            },
             {
                 path.name
                 for path in (DOCS_ROOT / "operations").glob("*.md")
@@ -48,11 +51,6 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 "agent-chat.md",
                 "aiops-agent.md",
-                "aiops-configuration-pages.md",
-                "aiops-credential-encryption-implementation-plan.md",
-                "kbot-ammolite-backend-migration-implementation-plan.md",
-                "kbot-backend-capability-migration-detailed-design.md",
-                "kbot-backend-capability-migration-steps.md",
                 "kbot-backend-migration-s0-baseline-report.md",
                 "knowledge-lifecycle.md",
                 "slack-integration.md",
@@ -60,6 +58,13 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 path.name
                 for path in (DOCS_ROOT / "product").glob("*.md")
+            },
+        )
+        self.assertEqual(
+            {"ammolite-aiops-knowledge-backend.md"},
+            {
+                path.name
+                for path in (DOCS_ROOT / "migrations").glob("*.md")
             },
         )
 

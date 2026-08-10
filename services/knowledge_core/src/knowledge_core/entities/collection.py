@@ -22,6 +22,9 @@ class KcCollectionEntity(BaseEntity):
     models_json: Mapped[dict[str, str]] = mapped_column(
         OracleNativeJSON, nullable=False
     )
+    parse_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False, default=dict
+    )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE")
     default_security_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)

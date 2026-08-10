@@ -117,14 +117,6 @@ python3 scripts/db/apply_oracle_schema.py \
   --dry-run
 ```
 
-已有环境升级到第 7 阶段时，只补建 Main API 组合回执表：
-
-```bash
-python3 scripts/db/apply_composition_schema.py
-```
-
-组合命令遵循 `PRECHECKING → COMMAND_SUBMITTED → SUCCEEDED`。若下游命令返回超时且无法确认结果，Receipt 会进入 `COMPENSATION_REQUIRED`；使用相同 `Idempotency-Key` 重试时只执行验证，不会再次发送不确定命令。运维人员应先核对 Receipt 的 `resource_id` 和下游实际状态，修复或确认下游资源后再以相同请求重放。不得直接删除 Receipt 来绕过恢复流程。
-
 KC 使用 `DBMS_ALERT` 通知 Worker，PDB 管理员需要直接授权：
 
 ```sql

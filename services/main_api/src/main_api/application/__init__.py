@@ -10,22 +10,29 @@ from .notification_projection import (
     NotificationDispatcher,
     NotificationProjectionService,
 )
-from .resource_composition import CompositionError, ResourceCompositionService
 from .slack_intake import (
     SlackIntakeResult,
     SlackIntakeService,
     SlackWebhookError,
 )
 from .slack_dispatch import SlackDispatchService
+from .access_control import (
+    AccessConfigurationError,
+    AccessControlService,
+    AccessDeniedError,
+    AccessSnapshot,
+)
 
 __all__ = [
+    "AccessControlService",
+    "AccessConfigurationError",
+    "AccessDeniedError",
+    "AccessSnapshot",
     "DomainConflictError",
     "DomainManagementService",
     "DomainValidationService",
     "NotificationCenterError",
     "NotificationCenterService",
-    "CompositionError",
-    "ResourceCompositionService",
     "NotificationDispatcher",
     "NotificationProjectionService",
     "SlackIntakeResult",

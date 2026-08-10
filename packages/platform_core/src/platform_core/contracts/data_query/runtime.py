@@ -16,6 +16,8 @@ class CreateDataQueryRun(_PlanContract):
     standalone_query: str = Field(min_length=1, max_length=8000)
     plan: DataQueryPlanV1
     agent_id: UUID
+    consumer_app_id: str = Field(min_length=1, max_length=128)
+    agent_version_id: UUID
     parent_agent_run_id: UUID | None = None
     parent_agent_task_id: UUID | None = None
     deadline_at: datetime | None = None
@@ -63,4 +65,6 @@ class PlanningSemanticModel(_PlanContract):
 
 class DataQueryPlanningContext(_PlanContract):
     agent_id: UUID
+    consumer_app_id: str
+    agent_version_id: UUID
     models: tuple[PlanningSemanticModel, ...]

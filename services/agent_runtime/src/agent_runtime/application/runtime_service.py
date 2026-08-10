@@ -81,7 +81,7 @@ class AgentRuntimeNotFound(AgentRuntimeError):
         )
 
 
-class AgentDefinitionNotFound(AgentRuntimeError):
+class AgentExecutionSpecDenied(AgentRuntimeError):
     def __init__(self):
         super().__init__(
             "AGENT_NOT_ACTIVE_OR_DENIED",
@@ -135,6 +135,9 @@ class AgentRuntimeService:
         fingerprint = _canonical_hash(
             {
                 "agent_id": command.agent_id,
+                "execution_spec": command.execution_spec.model_dump(
+                    mode="json"
+                ),
                 "input": command.original_input,
                 "collection_ids": command.collection_ids,
                 "security_level": command.security_level,
@@ -145,7 +148,7 @@ class AgentRuntimeService:
                 "conversation_context": command.conversation_context,
             }
         )
-        # 先读取冻结配置并释放数据库会话，避免 Router 模型调用占用连接。
+        # 先检查幂等键并释放数据库会话，避免模型目录调用占用连接。
         async with self._uow_factory() as uow:
             existing = await uow.runs.get_by_idempotency(
                 domain_id=command.domain_id,
@@ -164,28 +167,25 @@ class AgentRuntimeService:
                 )
                 return self._run_receipt(existing, cursor)
 
-            agent = await uow.agents.get_active(
-                agent_id=command.agent_id,
-                domain_id=command.domain_id,
-            )
-            if agent is None:
-                raise AgentDefinitionNotFound()
-            raw_models = dict(agent.models_json or {})
+            raw_models = dict(command.execution_spec.models)
             agent_snapshot = {
-                "agent_id": str(agent.agent_id),
-                "display_name": agent.display_name,
+                "agent_id": str(command.execution_spec.consumer_agent_id),
+                "agent_version_id": str(
+                    command.execution_spec.consumer_agent_version_id
+                ),
+                "owner_app_id": command.execution_spec.owner_app_id,
+                "agent_kind": command.execution_spec.agent_kind,
+                "display_name": command.execution_spec.display_name,
                 "enabled_capabilities": list(
-                    agent.enabled_capabilities_json or []
+                    command.execution_spec.enabled_capabilities
                 ),
                 "models": {},
-                "do_rerank": bool(getattr(agent, "do_rerank", False)),
-                "data_query_mode": getattr(agent, "data_query_mode", None),
-                "data_profile_name": getattr(
-                    agent, "data_profile_name", None
+                "do_rerank": command.execution_spec.do_rerank,
+                "instruction": command.execution_spec.instruction,
+                "config": dict(command.execution_spec.resource_context),
+                "runtime_policy": dict(
+                    command.execution_spec.runtime_policy
                 ),
-                "instruction": agent.instruction,
-                "config": dict(agent.config_json or {}),
-                "row_version": int(agent.row_version),
             }
 
         if self._model_resolver is None:
@@ -242,19 +242,6 @@ class AgentRuntimeService:
                     run_id=existing.run_id
                 )
                 return self._run_receipt(existing, cursor)
-            current_agent = await uow.agents.get_active(
-                agent_id=command.agent_id,
-                domain_id=command.domain_id,
-            )
-            if current_agent is None:
-                raise AgentDefinitionNotFound()
-            if int(current_agent.row_version) != int(
-                agent_snapshot["row_version"]
-            ):
-                raise AgentRuntimeConflict(
-                    "AGENT_CONFIG_CHANGED",
-                    "Agent 配置在路由期间发生变化，请重试本轮请求",
-                )
             try:
                 run = await uow.runs.add(
                     AgentRunEntity(
@@ -1734,7 +1721,10 @@ class AgentRuntimeService:
             run_id=run.run_id,
             status=run.status,
             event_cursor=cursor,
-            events_url=f"/api/v1/runs/{run.run_id}/events",
+            events_url=(
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{run.run_id}/events"
+            ),
         )
 
     @staticmethod

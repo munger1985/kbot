@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_runtime.domain.planning import PlanDraft
+from platform_core.contracts import AgentExecutionSpec
 
 
 class _FrozenCommand(BaseModel):
@@ -16,6 +17,7 @@ class _FrozenCommand(BaseModel):
 class CreateRunCommand(_FrozenCommand):
     domain_id: int = Field(ge=1)
     agent_id: UUID
+    execution_spec: AgentExecutionSpec
     actor_id: str = Field(min_length=1, max_length=256)
     request_id: str = Field(min_length=1, max_length=128)
     trace_id: str = Field(min_length=1, max_length=128)
@@ -34,6 +36,10 @@ class CreateRunCommand(_FrozenCommand):
 
     @model_validator(mode="after")
     def validate_conversation_scope(self) -> "CreateRunCommand":
+        if self.execution_spec.consumer_agent_id != self.agent_id:
+            raise ValueError("Execution Spec 与 Agent ID 不一致")
+        if self.execution_spec.domain_id != self.domain_id:
+            raise ValueError("Execution Spec 与 Domain 不一致")
         if (self.conversation_id is None) != (self.turn_id is None):
             raise ValueError(
                 "conversation_id 与 turn_id 必须同时提供或同时为空"

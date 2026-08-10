@@ -1,12 +1,12 @@
 """Main API Repository。"""
 
 from .domain import PlatformDomainRepository
-from .composition import CompositionReceiptRepository
 from .notifications import NotificationRepository
 from .slack import SlackIntegrationRepository
+from .access_control import AccessControlRepository
 
 __all__ = [
-    "CompositionReceiptRepository",
+    "AccessControlRepository",
     "NotificationRepository",
     "PlatformDomainRepository",
     "SlackIntegrationRepository",

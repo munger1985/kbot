@@ -23,7 +23,9 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
-from aiops_agent.application.credential_cipher import CredentialCipher
+from aiops_agent.application.managed_credentials import (
+    AIOpsManagedCredentialService,
+)
 from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
@@ -46,7 +48,7 @@ from aiops_agent.entities import (
     TargetMonitorEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
-from aiops_agent.ports.agent_runtime import AgentRuntimePort
+from aiops_agent.ports.agent_catalog import AgentCatalogPort
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
@@ -83,6 +85,7 @@ from platform_core.contracts.aiops import (
     WebhookKeyRotation,
 )
 from platform_core.identity import uuid7
+from platform_core.managed_credentials import ManagedCredentialCipher
 
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
@@ -100,21 +103,23 @@ class ConfigurationServiceBase:
         uow_factory: UowFactory,
         cursor_codec: SignedCursorCodec,
         secret_store: SecretStorePort,
-        agent_runtime: AgentRuntimePort,
+        agent_catalog: AgentCatalogPort,
         template_registry: InspectionTemplateRegistry,
         management: AIOpsManagementConfig,
         max_inspection_targets: int,
-        credential_cipher: CredentialCipher,
+        credential_cipher: ManagedCredentialCipher,
+        managed_credential_service: AIOpsManagedCredentialService,
     ):
         self._uow_factory = uow_factory
         self._cursor_codec = cursor_codec
         self._secret_store = secret_store
-        self._agent_runtime = agent_runtime
+        self._agent_catalog = agent_catalog
         self._template_registry = template_registry
         self._management = management
         self._max_inspection_targets = max_inspection_targets
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher
+        self._managed_credentials = managed_credential_service
 
     async def _validate_secret_refs(self, *references: str | None) -> None:
         for reference in references:
@@ -148,7 +153,7 @@ class ConfigurationServiceBase:
         )
         # 口令请求不能留下可离线猜测的原始摘要。
         payload_hash = hmac.new(
-            self._credential_cipher._fingerprint_key,  # type: ignore[attr-defined]
+            self._credential_cipher.fingerprint_key,
             canonical_json(payload).encode("utf-8"), hashlib.sha256,
         ).hexdigest()
         try:

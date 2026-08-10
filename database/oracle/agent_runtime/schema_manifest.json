@@ -1,0 +1,27 @@
+{
+  "component": "agent_runtime",
+  "schema_version": 5,
+  "contract_version": "agent-runtime-oracle-v1",
+  "oracle_baseline": "26ai",
+  "scripts": [
+    {"name": "001_runs_tasks.sql", "statements": 9, "sha256": "a5f24edb50db744bbf3a1210df096f5bf9ab22ec3dd5003bfab95627c3735fa3"},
+    {"name": "002_artifacts_events.sql", "statements": 7, "sha256": "fc180cfd4d290d51bc52e975dc506a4fec5a7d23898d8e16d6d41352dc81722e"},
+    {"name": "003_delegations.sql", "statements": 5, "sha256": "a74d2a7ca93c5f63a3446a03f075319d376cb2eccca88eb36e771561b53ea5c1"},
+    {"name": "004_conversations.sql", "statements": 10, "sha256": "c410e58ea781ab6c904cf92c3147e79ae1e8b9b055fe0bbc686084bba9ccdb97"},
+    {"name": "005_memory.sql", "statements": 11, "sha256": "d47fd9201230842fb5613cb891b7896ad84e3fbf1fad0a089cd9f20a75d01801"}
+  ],
+  "tables": [
+    "KBOT_AGENT_RUN", "KBOT_AGENT_TASK", "KBOT_AGENT_ARTIFACT",
+    "KBOT_AGENT_RUN_EVENT", "KBOT_AGENT_DELEGATION",
+    "KBOT_AGENT_CONVERSATION", "KBOT_AGENT_CONVERSATION_TURN",
+    "KBOT_AGENT_CONVERSATION_ITEM", "KBOT_AGENT_MEMORY_SNAPSHOT",
+    "KBOT_AGENT_MEMORY_INDEX_PROFILE", "KBOT_AGENT_MEMORY_ITEM",
+    "KBOT_AGENT_MEMORY_SOURCE", "KBOT_AGENT_MEMORY_JOB"
+  ],
+  "views": [],
+  "invariants": {
+    "execution_spec_snapshot": true,
+    "owns_agent_definition": false,
+    "resource_id_type": "RAW(16)"
+  }
+}

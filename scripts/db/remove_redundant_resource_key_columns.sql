@@ -74,7 +74,6 @@ DECLARE
         );
     END;
 BEGIN
-    drop_resource_column('KBOT_AGENT_DEFINITION', 'AGENT_KEY');
     drop_resource_column('KBOT_KC_COLLECTION', 'COLLECTION_KEY');
     drop_resource_column('KBOT_OPS_TARGET', 'TARGET_KEY');
     drop_resource_column('KBOT_OPS_MONITOR_SOURCE', 'SOURCE_KEY');
@@ -430,7 +429,6 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 SELECT table_name, column_name
 FROM user_tab_columns columns
 WHERE (columns.table_name, columns.column_name) IN (
-    ('KBOT_AGENT_DEFINITION', 'AGENT_KEY'),
     ('KBOT_KC_COLLECTION', 'COLLECTION_KEY'),
     ('KBOT_OPS_TARGET', 'TARGET_KEY'),
     ('KBOT_OPS_MONITOR_SOURCE', 'SOURCE_KEY'),

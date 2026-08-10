@@ -9,8 +9,10 @@
 2. `main_api/`：Slack 等公开集成的 Inbox、会话映射和 Outbox；
 3. `model_serving/`：模型目录；
 4. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
-5. `agent_runtime/`：Agent Definition、Run、Task、Artifact、Event 和 Delegation；
-6. `aiops_agent/`：目标、监控、运维 Run、HITL、执行、巡检和可靠消息。
+5. `knowledge_retrieval_app/`：知识检索私有 Agent、版本和授权；
+6. `agent_runtime/`：Execution Spec 快照、Run、Task、Artifact、Event、会话和记忆；
+7. `data_query/`：数据源、语义模型、查询策略和查询运行；
+8. `aiops_agent/`：私有 Agent、目标、监控、会话、证据、HITL、执行、巡检和报告。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
 `scripts/db/init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。
@@ -19,7 +21,7 @@
 建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
 其他服务目录中的表。
 
-`aiops_agent` 已提供六段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
+`aiops_agent` 已提供八段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
 初始化配置中选择。其脚本必须整体启用或禁用，不能跳过中间依赖段。
 
 当前 4.0 开发阶段修改字段时直接更新所属服务的规范建库脚本，并重新创建测试

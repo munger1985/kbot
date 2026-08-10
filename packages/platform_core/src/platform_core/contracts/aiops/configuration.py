@@ -13,7 +13,6 @@ from .types import (
     DatabaseType,
     JsonObject,
     PUBLIC_SCHEMA_VERSION,
-    SecretRef,
     UUIDv7,
     UtcDatetime,
 )
@@ -181,9 +180,12 @@ class MonitorSourceCreate(AIOpsContract):
     display_name: str = Field(min_length=1, max_length=256)
     source_type: Literal["PROMETHEUS", "ZABBIX", "OEM"]
     endpoint: HttpUrl
-    secret_ref: SecretRef | None = None
-    webhook_secret_ref: SecretRef | None = None
-    tls_profile_ref: SecretRef | None = None
+    credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
+    webhook_credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
     capabilities: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -203,9 +205,12 @@ class MonitorSourcePatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     endpoint: HttpUrl | None = None
-    secret_ref: SecretRef | None = None
-    webhook_secret_ref: SecretRef | None = None
-    tls_profile_ref: SecretRef | None = None
+    credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
+    webhook_credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
     capabilities: JsonObject | None = None
 
     @model_validator(mode="after")

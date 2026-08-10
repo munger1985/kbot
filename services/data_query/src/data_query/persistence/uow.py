@@ -6,11 +6,11 @@ from enum import StrEnum
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker
 from platform_core.notifications import NotificationOutboxRepository
+from platform_core.managed_credentials import ManagedCredentialRepository
 from data_query.domain.errors import DataQueryPersistenceError
 
 from data_query.repositories import (
     AgentBindingRepository,
-    CredentialRepository,
     DataQueryAuditRepository,
     DataQueryHealthRepository,
     DataQueryEventRepository,
@@ -47,7 +47,7 @@ class DataQueryUnitOfWork:
         self._transaction: AsyncSessionTransaction | None = None
         self.state = UnitOfWorkState.NEW
         self.data_sources: DataSourceRepository | None = None
-        self.credentials: CredentialRepository | None = None
+        self.managed_credentials: ManagedCredentialRepository | None = None
         self.schema_snapshots: SchemaSnapshotRepository | None = None
         self.schema_snapshot_objects: SchemaSnapshotObjectRepository | None = None
         self.semantic_models: SemanticModelRepository | None = None
@@ -78,7 +78,7 @@ class DataQueryUnitOfWork:
         self.state = UnitOfWorkState.ACTIVE
         guard = self._require_active
         self.data_sources = DataSourceRepository(self._session, guard)
-        self.credentials = CredentialRepository(self._session, guard)
+        self.managed_credentials = ManagedCredentialRepository(self._session)
         self.schema_snapshots = SchemaSnapshotRepository(self._session, guard)
         self.schema_snapshot_objects = SchemaSnapshotObjectRepository(self._session, guard)
         self.semantic_models = SemanticModelRepository(self._session, guard)
@@ -128,7 +128,7 @@ class DataQueryUnitOfWork:
             self._transaction = None
             self._session = None
             self.data_sources = None
-            self.credentials = None
+            self.managed_credentials = None
             self.schema_snapshots = None
             self.schema_snapshot_objects = None
             self.semantic_models = None

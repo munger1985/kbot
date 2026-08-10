@@ -1,0 +1,128 @@
+-- KBot 4.0 单 Domain 应用成员、角色和权限。
+
+CREATE TABLE KBOT_PLATFORM_USER (
+    USER_ID VARCHAR2(256 CHAR) PRIMARY KEY,
+    DISPLAY_NAME VARCHAR2(256 CHAR),
+    STATUS VARCHAR2(16 CHAR) DEFAULT 'ACTIVE' NOT NULL,
+    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT CK_PLATFORM_USER_STATUS CHECK (STATUS IN ('ACTIVE', 'DISABLED'))
+);
+
+CREATE TABLE KBOT_PERMISSION (
+    PERMISSION_CODE VARCHAR2(128 CHAR) PRIMARY KEY,
+    APP_ID VARCHAR2(64 CHAR) NOT NULL,
+    DISPLAY_NAME VARCHAR2(256 CHAR) NOT NULL
+);
+
+CREATE INDEX IX_PERMISSION_APP ON KBOT_PERMISSION (APP_ID, PERMISSION_CODE);
+
+CREATE TABLE KBOT_APP_ROLE (
+    APP_ID VARCHAR2(64 CHAR) NOT NULL,
+    ROLE_CODE VARCHAR2(64 CHAR) NOT NULL,
+    DISPLAY_NAME VARCHAR2(256 CHAR) NOT NULL,
+    STATUS VARCHAR2(16 CHAR) DEFAULT 'ACTIVE' NOT NULL,
+    CONSTRAINT PK_APP_ROLE PRIMARY KEY (APP_ID, ROLE_CODE),
+    CONSTRAINT CK_APP_ROLE_STATUS CHECK (STATUS IN ('ACTIVE', 'DISABLED'))
+);
+
+CREATE TABLE KBOT_APP_ROLE_PERMISSION (
+    APP_ID VARCHAR2(64 CHAR) NOT NULL,
+    ROLE_CODE VARCHAR2(64 CHAR) NOT NULL,
+    PERMISSION_CODE VARCHAR2(128 CHAR) NOT NULL,
+    CONSTRAINT PK_APP_ROLE_PERMISSION
+        PRIMARY KEY (APP_ID, ROLE_CODE, PERMISSION_CODE),
+    CONSTRAINT FK_APP_ROLE_PERMISSION_ROLE FOREIGN KEY (APP_ID, ROLE_CODE)
+        REFERENCES KBOT_APP_ROLE (APP_ID, ROLE_CODE),
+    CONSTRAINT FK_APP_ROLE_PERM_PERMISSION FOREIGN KEY (PERMISSION_CODE)
+        REFERENCES KBOT_PERMISSION (PERMISSION_CODE)
+);
+
+CREATE TABLE KBOT_APP_MEMBER_ROLE (
+    APP_ID VARCHAR2(64 CHAR) NOT NULL,
+    DOMAIN_ID NUMBER(38) NOT NULL,
+    USER_ID VARCHAR2(256 CHAR) NOT NULL,
+    ROLE_CODE VARCHAR2(64 CHAR) NOT NULL,
+    STATUS VARCHAR2(16 CHAR) DEFAULT 'ACTIVE' NOT NULL,
+    CREATED_BY VARCHAR2(256 CHAR) NOT NULL,
+    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT PK_APP_MEMBER_ROLE
+        PRIMARY KEY (APP_ID, DOMAIN_ID, USER_ID, ROLE_CODE),
+    CONSTRAINT FK_APP_MEMBER_ROLE_ROLE FOREIGN KEY (APP_ID, ROLE_CODE)
+        REFERENCES KBOT_APP_ROLE (APP_ID, ROLE_CODE),
+    CONSTRAINT FK_APP_MEMBER_ROLE_DOMAIN FOREIGN KEY (DOMAIN_ID)
+        REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID),
+    CONSTRAINT FK_APP_MEMBER_ROLE_USER FOREIGN KEY (USER_ID)
+        REFERENCES KBOT_PLATFORM_USER (USER_ID),
+    CONSTRAINT CK_APP_MEMBER_ROLE_STATUS CHECK (STATUS IN ('ACTIVE', 'DISABLED'))
+);
+
+CREATE INDEX IX_APP_MEMBER_ROLE_USER ON KBOT_APP_MEMBER_ROLE
+    (DOMAIN_ID, USER_ID, APP_ID, STATUS);
+
+INSERT ALL
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:use', 'knowledge_retrieval', '使用知识检索')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:upload', 'knowledge_retrieval', '上传知识文件')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:review', 'knowledge_retrieval', '审核知识文件')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:member_manage', 'knowledge_retrieval', '管理应用成员')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:knowledge_manage', 'knowledge_retrieval', '管理知识库')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:data_manage', 'knowledge_retrieval', '管理问数资源')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:agent_manage', 'knowledge_retrieval', '管理知识检索 Agent')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:operations_manage', 'knowledge_retrieval', '管理知识检索运行')
+    INTO KBOT_PERMISSION VALUES ('aiops:use', 'aiops', '使用 AIOps')
+    INTO KBOT_PERMISSION VALUES ('aiops:domain_manage', 'aiops', '管理 AIOps Domain 配置')
+    INTO KBOT_PERMISSION VALUES ('aiops:member_manage', 'aiops', '管理 AIOps 成员')
+    INTO KBOT_PERMISSION VALUES ('aiops:operations_manage', 'aiops', '管理 AIOps 运行')
+    INTO KBOT_PERMISSION VALUES ('aiops:target_manage', 'aiops', '管理诊断目标')
+    INTO KBOT_PERMISSION VALUES ('aiops:monitor_source_manage', 'aiops', '管理监控源')
+    INTO KBOT_PERMISSION VALUES ('aiops:policy_manage', 'aiops', '管理诊断策略')
+    INTO KBOT_PERMISSION VALUES ('aiops:plan_manage', 'aiops', '管理变更计划')
+    INTO KBOT_PERMISSION VALUES ('aiops:agent_manage', 'aiops', '管理 AIOps Agent')
+    INTO KBOT_PERMISSION VALUES ('aiops:proposal:approve', 'aiops', '审批执行提案')
+SELECT 1 FROM DUAL;
+
+INSERT ALL
+    INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'user', '用户', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'contributor', '贡献者', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'reviewer', '审核人', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'manager', '管理员', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('aiops', 'operator', '运维操作员', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('aiops', 'approver', '审批人', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('aiops', 'manager', '管理员', 'ACTIVE')
+SELECT 1 FROM DUAL;
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'knowledge_retrieval', 'user', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE = 'knowledge_retrieval:use';
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'knowledge_retrieval', 'contributor', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN ('knowledge_retrieval:use', 'knowledge_retrieval:upload');
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'knowledge_retrieval', 'reviewer', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN (
+    'knowledge_retrieval:use', 'knowledge_retrieval:upload',
+    'knowledge_retrieval:review'
+);
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'knowledge_retrieval', 'manager', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE APP_ID = 'knowledge_retrieval';
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'aiops', 'operator', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN (
+    'aiops:use', 'aiops:operations_manage', 'aiops:target_manage',
+    'aiops:monitor_source_manage', 'aiops:policy_manage', 'aiops:plan_manage'
+);
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'aiops', 'approver', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN (
+    'aiops:use', 'aiops:operations_manage', 'aiops:proposal:approve'
+);
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'aiops', 'manager', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE APP_ID = 'aiops';

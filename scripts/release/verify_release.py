@@ -20,6 +20,7 @@ ACTIVE_PACKAGES = (
     "packages/platform_clients/src/platform_clients",
     "services/model_serving/src/model_serving",
     "services/knowledge_core/src/knowledge_core",
+    "services/knowledge_retrieval_app/src/knowledge_retrieval_app",
     "services/agent_runtime/src/agent_runtime",
     "services/aiops_agent/src/aiops_agent",
     "services/data_query/src/data_query",
@@ -63,6 +64,7 @@ def _tracked_inputs() -> list[Path]:
         "services/main_api/pyproject.toml",
         "services/agent_runtime/pyproject.toml",
         "services/knowledge_core/pyproject.toml",
+        "services/knowledge_retrieval_app/pyproject.toml",
         "services/aiops_agent/pyproject.toml",
         "services/data_query/pyproject.toml",
         "services/model_serving/pyproject.toml",
@@ -219,11 +221,6 @@ def _checks(
                 (
                     "oracle_notifications_s6",
                     [python, "tests/smoke/smoke_notifications_oracle.py"],
-                    120,
-                ),
-                (
-                    "oracle_composition_s7",
-                    [python, "tests/smoke/smoke_composition_oracle.py"],
                     120,
                 ),
             )

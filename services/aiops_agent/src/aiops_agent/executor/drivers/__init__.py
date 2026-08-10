@@ -10,6 +10,7 @@ from .base import (
 )
 from .mysql import MySQLDiagnosticDriver, MySQLMutationDriver
 from .oracle import OracleDiagnosticDriver, OracleMutationDriver
+from .postgresql import PostgreSQLDiagnosticDriver
 
 __all__ = [
     "DiagnosticDriverError",
@@ -21,5 +22,6 @@ __all__ = [
     "MutationDriverResult",
     "OracleDiagnosticDriver",
     "OracleMutationDriver",
+    "PostgreSQLDiagnosticDriver",
     "ReadonlyDatabaseDriver",
 ]

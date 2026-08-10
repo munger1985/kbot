@@ -30,6 +30,7 @@ class _DomainRepository:
 class _Uow:
     def __init__(self, repository):
         self.domains = repository
+        self.access = _AccessRepository()
         self.committed = False
 
     async def __aenter__(self):
@@ -40,6 +41,22 @@ class _Uow:
 
     async def commit(self):
         self.committed = True
+
+
+class _AccessRepository:
+    def __init__(self):
+        self.users = {}
+        self.roles = []
+
+    async def get_user(self, user_id):
+        return self.users.get(user_id)
+
+    async def add_user(self, entity):
+        self.users[entity.user_id] = entity
+        return entity
+
+    async def upsert_member_role(self, **values):
+        self.roles.append(values)
 
 
 class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):

@@ -41,12 +41,10 @@ from aiops_agent.entities import (
     MonitorSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
-    CredentialEntity,
     TargetEntity,
     TargetMonitorEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
-from aiops_agent.ports.agent_runtime import AgentRuntimePort
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
@@ -110,28 +108,25 @@ class TargetConfigurationMixin:
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
         ) -> TargetDetail:
-            assert uow.targets is not None and uow.credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None
+            target_id = uuid7()
             diagnostic_id = execution_id = None
             for kind, value in (("DIAGNOSTIC", request.diagnostic_credential), ("EXECUTION", request.execution_credential)):
                 if value is None:
                     continue
-                credential_id = uuid7()
-                encrypted = self._credential_cipher.encrypt(
-                    domain_id=scope.domain_id, credential_id=credential_id,
-                    credential_kind=kind, username=value.username, password=value.password,
+                credential = await self._managed_credentials.put(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    external_key=target_id,
+                    credential_kind=f"target_{kind.lower()}",
+                    values={"username": value.username, "password": value.password},
+                    actor_id=scope.actor_id,
                 )
-                await uow.credentials.add(CredentialEntity(
-                    credential_id=credential_id, domain_id=scope.domain_id,
-                    credential_kind=kind, username_ciphertext=encrypted.username_ciphertext,
-                    username_nonce=encrypted.username_nonce, password_ciphertext=encrypted.password_ciphertext,
-                    password_nonce=encrypted.password_nonce, key_version=encrypted.key_version,
-                    status="ACTIVE", created_by=scope.actor_id, updated_by=scope.actor_id,
-                    created_at=now, updated_at=now,
-                ))
+                credential_id = credential.credential_id
                 if kind == "DIAGNOSTIC": diagnostic_id = credential_id
                 else: execution_id = credential_id
             entity = TargetEntity(
-                target_id=uuid7(),
+                target_id=target_id,
                 domain_id=scope.domain_id,
                 display_name=request.display_name,
                 db_type=request.db_type,
@@ -305,19 +300,21 @@ class TargetConfigurationMixin:
                                        credential_kind: str, username: str, password: str,
                                        expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
-            credential_id = uuid7()
-            encrypted = self._credential_cipher.encrypt(domain_id=scope.domain_id, credential_id=credential_id, credential_kind=credential_kind, username=username, password=password)
-            await uow.credentials.add(CredentialEntity(credential_id=credential_id, domain_id=scope.domain_id, credential_kind=credential_kind, username_ciphertext=encrypted.username_ciphertext, username_nonce=encrypted.username_nonce, password_ciphertext=encrypted.password_ciphertext, password_nonce=encrypted.password_nonce, key_version=encrypted.key_version, status="ACTIVE", created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now))
+            credential = await self._managed_credentials.put(
+                uow=uow,
+                domain_id=scope.domain_id,
+                external_key=target_id,
+                credential_kind=f"target_{credential_kind.lower()}",
+                values={"username": username, "password": password},
+                actor_id=scope.actor_id,
+            )
+            credential_id = credential.credential_id
             field = "diagnostic_credential_id" if credential_kind == "DIAGNOSTIC" else "execution_credential_id"
-            previous = getattr(target, field)
             setattr(target, field, credential_id)
-            if previous:
-                old = await uow.credentials.get_scoped(credential_id=previous, domain_id=scope.domain_id, credential_kind=credential_kind, lock=True)
-                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
             if credential_kind == "DIAGNOSTIC":
                 target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
                 target.health_version = int(target.health_version) + 1
@@ -329,13 +326,16 @@ class TargetConfigurationMixin:
 
     async def remove_execution_credential(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
             if target.execution_credential_id:
-                old = await uow.credentials.get_scoped(credential_id=target.execution_credential_id, domain_id=scope.domain_id, credential_kind="EXECUTION", lock=True)
-                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
+                await self._managed_credentials.revoke(
+                    uow=uow, domain_id=scope.domain_id,
+                    credential_id=target.execution_credential_id,
+                    credential_kind="target_execution", actor_id=scope.actor_id,
+                )
             target.execution_credential_id, target.updated_by, target.updated_at = None, scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
             return _target_detail(target)
@@ -343,13 +343,16 @@ class TargetConfigurationMixin:
 
     async def remove_diagnostic_credential(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
             if target.diagnostic_credential_id:
-                old = await uow.credentials.get_scoped(credential_id=target.diagnostic_credential_id, domain_id=scope.domain_id, credential_kind="DIAGNOSTIC", lock=True)
-                if old: await uow.credentials.revoke(old, actor_id=scope.actor_id, now=now)
+                await self._managed_credentials.revoke(
+                    uow=uow, domain_id=scope.domain_id,
+                    credential_id=target.diagnostic_credential_id,
+                    credential_kind="target_diagnostic", actor_id=scope.actor_id,
+                )
             target.diagnostic_credential_id = None
             target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
             target.health_version = int(target.health_version) + 1
@@ -361,7 +364,7 @@ class TargetConfigurationMixin:
 
     async def delete_target(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
@@ -369,8 +372,12 @@ class TargetConfigurationMixin:
             result = _target_detail(target)
             for credential_id, kind in ((target.diagnostic_credential_id, "DIAGNOSTIC"), (target.execution_credential_id, "EXECUTION")):
                 if credential_id:
-                    credential = await uow.credentials.get_scoped(credential_id=credential_id, domain_id=scope.domain_id, credential_kind=kind, lock=True)
-                    if credential: await uow.credentials.revoke(credential, actor_id=scope.actor_id, now=now)
+                    await self._managed_credentials.revoke(
+                        uow=uow, domain_id=scope.domain_id,
+                        credential_id=credential_id,
+                        credential_kind=f"target_{kind.lower()}",
+                        actor_id=scope.actor_id,
+                    )
             try:
                 await uow.targets.delete_target(target)
             except IntegrityError as exc:
@@ -445,7 +452,7 @@ class TargetConfigurationMixin:
         request: AgentBindingCreate,
         idempotency_key: str,
     ) -> AgentBindingView:
-        await self._agent_runtime.validate_aiops_agent(
+        await self._agent_catalog.validate_aiops_agent(
             agent_id=request.agent_id,
             domain_id=scope.domain_id,
             auth_context=auth_context,
@@ -639,7 +646,7 @@ class TargetConfigurationMixin:
                 if entity is None:
                     raise resource_not_found("Agent Binding")
                 agent_id = entity.agent_id
-            await self._agent_runtime.validate_aiops_agent(
+            await self._agent_catalog.validate_aiops_agent(
                 agent_id=agent_id,
                 domain_id=scope.domain_id,
                 auth_context=auth_context,

@@ -4,6 +4,7 @@ members = [
   "packages/platform_clients",
   "services/model_serving",
   "services/knowledge_core",
+  "services/knowledge_retrieval_app",
   "services/agent_runtime",
   "services/aiops_agent",
   "services/data_query",

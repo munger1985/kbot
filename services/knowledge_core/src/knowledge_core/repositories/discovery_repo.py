@@ -5,6 +5,7 @@ from sqlalchemy import (
     bindparam,
     func,
     literal_column,
+    delete,
     select,
     update,
 )
@@ -71,6 +72,14 @@ class DiscoveryRepository:
             KcDiscoveryObjectEntity.bundle_revision_id == bundle_revision_id,
             KcDiscoveryObjectEntity.discovery_status == "STAGED",
         ).values(discovery_status="ACTIVE"))
+
+    async def delete_by_revision(self, *, bundle_revision_id: UUID) -> None:
+        await self.session.execute(
+            delete(KcDiscoveryObjectEntity).where(
+                KcDiscoveryObjectEntity.bundle_revision_id
+                == bundle_revision_id
+            )
+        )
 
     async def retire_other_revisions(
         self,

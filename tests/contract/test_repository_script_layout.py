@@ -19,8 +19,6 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             {
                 "db/apply_oracle_schema.py",
                 "db/apply_notification_schema.py",
-                "db/apply_composition_schema.py",
-                "db/repair_agent_data_query_mode.py",
                 "db/repair_model_serving_s4.py",
                 "deployment/check_deployment.py",
                 "deployment/init_local_env.py",

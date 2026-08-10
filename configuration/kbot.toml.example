@@ -45,6 +45,7 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # 单机部署无需配置 endpoints。只有服务分散到不同主机时才覆盖对应地址。
 # [endpoints]
 # knowledge_core = "http://knowledge-core.internal:18090"
+# knowledge_retrieval_app = "http://knowledge-retrieval-app.internal:18150"
 # agent_runtime = "http://agent-runtime.internal:18100"
 # aiops = "http://aiops.internal:18110"
 # aiops_db_executor = "http://aiops.internal:18111"
@@ -52,6 +53,7 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # model_llm = "http://models.internal:18092"
 # model_visual = "http://models.internal:18093"
 # model_vlm = "http://models.internal:18094"
+# model_ocr = "http://models.internal:18096"
 
 # 以下集成均为可选项，未启用时无需填写。
 # [integrations.mcp_data]

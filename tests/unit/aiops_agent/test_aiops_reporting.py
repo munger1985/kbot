@@ -26,6 +26,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         report_artifact_id = uuid7()
         run = SimpleNamespace(
             ops_run_id=run_id,
+            actor_id="portal:user-1",
             target_id=target_id,
             inspection_fire_id=fire_id,
             plan_snapshot_json={
@@ -91,6 +92,9 @@ class InspectionReportPublishingTest(unittest.TestCase):
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
             ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
         )
         service = AIOpsRuntimeService(
             uow_factory=AsyncMock(),
@@ -132,6 +136,7 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
         created_at = datetime(2026, 7, 24, 1, tzinfo=UTC)
         run = SimpleNamespace(
             ops_run_id=run_id,
+            actor_id="portal:user-1",
             target_id=target_id,
             created_at=created_at,
             plan_snapshot_json={
@@ -192,6 +197,9 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
             ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
         )
         service = AIOpsRuntimeService(
             uow_factory=AsyncMock(),
@@ -244,6 +252,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         source_run = SimpleNamespace(
             ops_run_id=source_run_id,
             target_id=target_id,
+            actor_id="portal:user-1",
         )
         source_result = SimpleNamespace(
             artifact_id=source_result_id,
@@ -328,6 +337,9 @@ class ComparisonReportPublishingTest(unittest.TestCase):
             ),
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
             ),
         )
         service = AIOpsRuntimeService(

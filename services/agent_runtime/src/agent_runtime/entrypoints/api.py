@@ -17,7 +17,6 @@ from loguru import logger
 from sqlalchemy import text
 
 from agent_runtime.api import (
-    agent_router,
     conversation_router,
     data_router,
     internal_router,
@@ -25,7 +24,6 @@ from agent_runtime.api import (
     task_router,
 )
 from agent_runtime.application import (
-    AgentDefinitionService,
     AgentRuntimeService,
     ConversationService,
     ConversationAttachmentStore,
@@ -49,8 +47,6 @@ from platform_core.security import create_internal_auth_middleware
 from platform_clients import (
     AIModelClient,
     AIModelConfigClient,
-    DataQueryClient,
-    KnowledgeCoreClient,
     MCPDataClient,
 )
 from platform_core.dictionary import ModelCategory
@@ -109,25 +105,6 @@ async def lifespan(app: FastAPIOffline):
                 audience=settings.vlm.audience,
             ),
         }
-    )
-    data_query_client = DataQueryClient(
-        base_url=settings.data_query.base_url,
-        caller_service=SERVICE_NAME,
-        audience=settings.data_query.audience,
-        timeout_seconds=settings.data_query.timeout_seconds,
-    )
-    knowledge_core_client = KnowledgeCoreClient(
-        base_url=settings.knowledge_core.base_url,
-        caller_service=SERVICE_NAME,
-        audience=settings.knowledge_core.audience,
-        timeout_seconds=settings.knowledge_core.timeout_seconds,
-    )
-    app.state.agent_definition_service = AgentDefinitionService(
-        uow_factory=uow_factory,
-        model_resolver=model_resolver,
-        data_query_client=data_query_client,
-        knowledge_core_client=knowledge_core_client,
-        service_name=SERVICE_NAME,
     )
     model_client = AIModelClient(
         caller_service=SERVICE_NAME,
@@ -195,7 +172,6 @@ async def lifespan(app: FastAPIOffline):
     try:
         yield
     finally:
-        await data_query_client.close()
         await db_runtime.close()
         logger.info("正在停止服务 [{}]", SERVICE_NAME)
 
@@ -214,7 +190,6 @@ app.middleware("http")(
 )
 app.include_router(internal_router)
 app.include_router(task_router)
-app.include_router(agent_router)
 app.include_router(data_router)
 app.include_router(conversation_router)
 app.include_router(memory_router)

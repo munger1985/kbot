@@ -4,10 +4,6 @@ import unittest
 from types import SimpleNamespace
 
 from agent_runtime.application.commands import LeasedArtifact
-from agent_runtime.application.agent_definitions import (
-    AgentDefinitionService,
-)
-from agent_runtime.application.runtime_service import AgentRuntimeConflict
 from agent_runtime.runtime import ExecutionContext, SkillProgress, SkillResult
 from agent_runtime.specialists.conversation_response import (
     ConversationResponseSkill,
@@ -102,22 +98,6 @@ def _context(
 
 
 class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
-    def test_aiops_cannot_mix_with_chat_capabilities(self):
-        with self.assertRaises(AgentRuntimeConflict):
-            AgentDefinitionService._validate_capabilities(
-                ("aiops", "document")
-            )
-
-    def test_active_data_agent_requires_profile(self):
-        with self.assertRaises(AgentRuntimeConflict):
-            AgentDefinitionService._validate_runtime_configuration(
-                capabilities=("data_query",),
-                status="ACTIVE",
-                router_model=None,
-                data_query_mode="MCP",
-                data_profile_name=None,
-            )
-
     async def test_multi_capability_router_selects_data_chart(self):
         planner = RootAgentPlanner(
             model_client=_ModelClient(
@@ -281,6 +261,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             original_input="查询销售额",
             agent={
                 "data_query_mode": "SEMANTIC",
+                "agent_version_id": str(uuid7()),
                 "models": {"data_planner_llm": {"served_model_name": "planner"}},
             },
             policy_snapshot={"auth_context": auth.model_dump(mode="json")},

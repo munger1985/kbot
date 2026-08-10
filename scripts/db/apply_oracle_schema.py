@@ -29,6 +29,7 @@ OPTIONAL_SERVICE_ORDER = (
     "main_api",
     "model_serving",
     "knowledge_core",
+    "knowledge_retrieval_app",
     "agent_runtime",
     "data_query",
     "aiops_agent",

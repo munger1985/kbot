@@ -167,6 +167,9 @@ class ApprovalServiceTest(unittest.TestCase):
             outbox=SimpleNamespace(
                 add=AsyncMock(side_effect=lambda entity: entity)
             ),
+            platform_notifications=SimpleNamespace(
+                emit_proposal_event=AsyncMock()
+            ),
             commit=AsyncMock(),
             rollback=AsyncMock(),
         )

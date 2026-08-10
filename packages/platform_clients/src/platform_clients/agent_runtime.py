@@ -48,65 +48,6 @@ class AgentRuntimeClient:
             if owns_session:
                 await session.close()
 
-    async def create_agent(
-        self, *, payload: dict[str, Any], auth_context: AuthContext
-    ) -> dict[str, Any]:
-        return await self._json(
-            "POST",
-            f"{INTERNAL_API_V1}/agents",
-            payload=payload,
-            auth_context=auth_context,
-        )
-
-    async def list_agents(
-        self, *, auth_context: AuthContext
-    ) -> list[dict[str, Any]]:
-        return await self._json(
-            "GET",
-            f"{INTERNAL_API_V1}/agents",
-            auth_context=auth_context,
-        )
-
-    async def get_agent(
-        self, *, agent_id: UUID, auth_context: AuthContext
-    ) -> dict[str, Any]:
-        return await self._json(
-            "GET",
-            f"{INTERNAL_API_V1}/agents/{agent_id}",
-            auth_context=auth_context,
-        )
-
-    async def list_model_references(
-        self, *, model_id: UUID, auth_context: AuthContext,
-    ) -> list[dict[str, Any]]:
-        payload = await self._json(
-            "GET",
-            f"{INTERNAL_API_V1}/agents/model-references/{model_id}",
-            auth_context=auth_context,
-        )
-        references = payload.get("references", [])
-        if not isinstance(references, list):
-            raise AgentRuntimeClientError(
-                status_code=502,
-                code="AGENT_REFERENCE_RESPONSE_INVALID",
-                message="Agent Runtime 返回了无效模型引用",
-            )
-        return [item for item in references if isinstance(item, dict)]
-
-    async def update_agent(
-        self,
-        *,
-        agent_id: UUID,
-        payload: dict[str, Any],
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "PATCH",
-            f"{INTERNAL_API_V1}/agents/{agent_id}",
-            payload=payload,
-            auth_context=auth_context,
-        )
-
     async def list_data_profiles(
         self, *, auth_context: AuthContext
     ) -> Any:

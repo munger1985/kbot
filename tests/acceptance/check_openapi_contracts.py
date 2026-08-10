@@ -39,6 +39,10 @@ def build_contracts() -> dict[str, dict[str, Any]]:
     from knowledge_core.entrypoints.api import (  # noqa: PLC0415
         app as knowledge_core_app,
     )
+    from knowledge_retrieval_app.entrypoints.api import (  # noqa: PLC0415
+        app as knowledge_retrieval_app,
+    )
+    from model_serving.entrypoints.ocr import app as ocr_app  # noqa: PLC0415
     from main_api.app import create_main_api_app  # noqa: PLC0415
     from main_api.openapi_contracts import (  # noqa: PLC0415
         create_aiops_public_contract_app,
@@ -49,12 +53,16 @@ def build_contracts() -> dict[str, dict[str, Any]]:
             enable_access_log=False
         ),
         "knowledge_core_internal_v1.json": knowledge_core_app,
+        "knowledge_retrieval_app_internal_v1.json": (
+            knowledge_retrieval_app
+        ),
         "agent_runtime_internal_v1.json": agent_runtime_app,
         "data_query_internal_v1.json": create_data_query_contract_app(),
         "model_embedding_v1.json": embedding_app,
         "model_llm_v1.json": llm_app,
         "model_visual_v1.json": visual_app,
         "model_vlm_v1.json": vlm_app,
+        "model_ocr_v1.json": ocr_app,
         "aiops_public_v1.json": create_aiops_public_contract_app(),
         "aiops_internal_v1.json": create_internal_contract_app(),
         "aiops_executor_v1.json": create_executor_contract_app(),
@@ -79,6 +87,7 @@ def _route_boundary_errors(
             errors.append(f"{filename} 暴露非公开路径：{invalid}")
     elif filename in {
         "knowledge_core_internal_v1.json",
+        "knowledge_retrieval_app_internal_v1.json",
         "agent_runtime_internal_v1.json",
         "data_query_internal_v1.json",
         "aiops_internal_v1.json",

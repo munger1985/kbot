@@ -1769,6 +1769,21 @@
             "title": "Capabilities",
             "type": "object"
           },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -1787,20 +1802,6 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Secret Ref"
-          },
           "source_type": {
             "enum": [
               "PROMETHEUS",
@@ -1810,33 +1811,20 @@
             "title": "Source Type",
             "type": "string"
           },
-          "tls_profile_ref": {
+          "webhook_credentials": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Tls Profile Ref"
-          },
-          "webhook_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Secret Ref"
+            "title": "Webhook Credentials",
+            "writeOnly": true
           }
         },
         "required": [
@@ -2039,6 +2027,21 @@
             ],
             "title": "Capabilities"
           },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
           "display_name": {
             "anyOf": [
               {
@@ -2071,47 +2074,20 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "secret_ref": {
+          "webhook_credentials": {
             "anyOf": [
               {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Secret Ref"
-          },
-          "tls_profile_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tls Profile Ref"
-          },
-          "webhook_secret_ref": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "pattern": "^[a-z][a-z0-9+.-]*://.+",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Secret Ref"
+            "title": "Webhook Credentials",
+            "writeOnly": true
           }
         },
         "title": "MonitorSourcePatch",
@@ -3988,51 +3964,9 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/integrations/monitoring/{webhook_key}/events": {
-      "post": {
-        "operationId": "receive_monitor_event_api_v1_integrations_monitoring__webhook_key__events_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "webhook_key",
-            "required": true,
-            "schema": {
-              "title": "Webhook Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MonitoringEventReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Receive Monitor Event",
-        "tags": [
-          "Monitoring Integrations"
-        ]
-      }
-    },
-    "/api/v1/ops/hitl/{hitl_id}": {
+    "/api/v1/apps/aiops/hitl/{hitl_id}": {
       "get": {
-        "operationId": "get_hitl_input_api_v1_ops_hitl__hitl_id__get",
+        "operationId": "get_hitl_input_api_v1_apps_aiops_hitl__hitl_id__get",
         "parameters": [
           {
             "in": "path",
@@ -4073,9 +4007,9 @@
         ]
       }
     },
-    "/api/v1/ops/hitl/{hitl_id}/response": {
+    "/api/v1/apps/aiops/hitl/{hitl_id}/response": {
       "post": {
-        "operationId": "respond_hitl_api_v1_ops_hitl__hitl_id__response_post",
+        "operationId": "respond_hitl_api_v1_apps_aiops_hitl__hitl_id__response_post",
         "parameters": [
           {
             "in": "path",
@@ -4135,9 +4069,9 @@
         ]
       }
     },
-    "/api/v1/ops/hitl/{hitl_id}/skip": {
+    "/api/v1/apps/aiops/hitl/{hitl_id}/skip": {
       "post": {
-        "operationId": "skip_hitl_api_v1_ops_hitl__hitl_id__skip_post",
+        "operationId": "skip_hitl_api_v1_apps_aiops_hitl__hitl_id__skip_post",
         "parameters": [
           {
             "in": "path",
@@ -4203,9 +4137,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-fires": {
+    "/api/v1/apps/aiops/inspection-fires": {
       "get": {
-        "operationId": "list_inspection_fires_api_v1_ops_inspection_fires_get",
+        "operationId": "list_inspection_fires_api_v1_apps_aiops_inspection_fires_get",
         "parameters": [
           {
             "in": "query",
@@ -4298,9 +4232,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-fires/{fire_id}": {
+    "/api/v1/apps/aiops/inspection-fires/{fire_id}": {
       "get": {
-        "operationId": "get_inspection_fire_api_v1_ops_inspection_fires__fire_id__get",
+        "operationId": "get_inspection_fire_api_v1_apps_aiops_inspection_fires__fire_id__get",
         "parameters": [
           {
             "in": "path",
@@ -4341,9 +4275,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans": {
+    "/api/v1/apps/aiops/inspection-plans": {
       "get": {
-        "operationId": "list_inspection_plans_api_v1_ops_inspection_plans_get",
+        "operationId": "list_inspection_plans_api_v1_apps_aiops_inspection_plans_get",
         "parameters": [
           {
             "in": "query",
@@ -4419,7 +4353,7 @@
         ]
       },
       "post": {
-        "operationId": "create_inspection_plan_api_v1_ops_inspection_plans_post",
+        "operationId": "create_inspection_plan_api_v1_apps_aiops_inspection_plans_post",
         "parameters": [
           {
             "in": "header",
@@ -4469,9 +4403,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}": {
       "get": {
-        "operationId": "get_inspection_plan_api_v1_ops_inspection_plans__plan_id__get",
+        "operationId": "get_inspection_plan_api_v1_apps_aiops_inspection_plans__plan_id__get",
         "parameters": [
           {
             "in": "path",
@@ -4512,7 +4446,7 @@
         ]
       },
       "patch": {
-        "operationId": "patch_inspection_plan_api_v1_ops_inspection_plans__plan_id__patch",
+        "operationId": "patch_inspection_plan_api_v1_apps_aiops_inspection_plans__plan_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -4579,9 +4513,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}/activate": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}/activate": {
       "post": {
-        "operationId": "activate_inspection_plan_api_v1_ops_inspection_plans__plan_id__activate_post",
+        "operationId": "activate_inspection_plan_api_v1_apps_aiops_inspection_plans__plan_id__activate_post",
         "parameters": [
           {
             "in": "path",
@@ -4647,9 +4581,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}/disable": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}/disable": {
       "post": {
-        "operationId": "disable_inspection_plan_api_v1_ops_inspection_plans__plan_id__disable_post",
+        "operationId": "disable_inspection_plan_api_v1_apps_aiops_inspection_plans__plan_id__disable_post",
         "parameters": [
           {
             "in": "path",
@@ -4715,9 +4649,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}/pause": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}/pause": {
       "post": {
-        "operationId": "pause_inspection_plan_api_v1_ops_inspection_plans__plan_id__pause_post",
+        "operationId": "pause_inspection_plan_api_v1_apps_aiops_inspection_plans__plan_id__pause_post",
         "parameters": [
           {
             "in": "path",
@@ -4783,9 +4717,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}/targets": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}/targets": {
       "get": {
-        "operationId": "list_inspection_targets_api_v1_ops_inspection_plans__plan_id__targets_get",
+        "operationId": "list_inspection_targets_api_v1_apps_aiops_inspection_plans__plan_id__targets_get",
         "parameters": [
           {
             "in": "path",
@@ -4806,7 +4740,7 @@
                   "items": {
                     "$ref": "#/components/schemas/InspectionTargetView"
                   },
-                  "title": "Response List Inspection Targets Api V1 Ops Inspection Plans  Plan Id  Targets Get",
+                  "title": "Response List Inspection Targets Api V1 Apps Aiops Inspection Plans  Plan Id  Targets Get",
                   "type": "array"
                 }
               }
@@ -4830,7 +4764,7 @@
         ]
       },
       "post": {
-        "operationId": "add_inspection_target_api_v1_ops_inspection_plans__plan_id__targets_post",
+        "operationId": "add_inspection_target_api_v1_apps_aiops_inspection_plans__plan_id__targets_post",
         "parameters": [
           {
             "in": "path",
@@ -4906,9 +4840,9 @@
         ]
       }
     },
-    "/api/v1/ops/inspection-plans/{plan_id}/targets/{plan_target_id}": {
+    "/api/v1/apps/aiops/inspection-plans/{plan_id}/targets/{plan_target_id}": {
       "patch": {
-        "operationId": "patch_inspection_target_api_v1_ops_inspection_plans__plan_id__targets__plan_target_id__patch",
+        "operationId": "patch_inspection_target_api_v1_apps_aiops_inspection_plans__plan_id__targets__plan_target_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -4985,9 +4919,9 @@
         ]
       }
     },
-    "/api/v1/ops/monitor-sources": {
+    "/api/v1/apps/aiops/monitor-sources": {
       "get": {
-        "operationId": "list_monitor_sources_api_v1_ops_monitor_sources_get",
+        "operationId": "list_monitor_sources_api_v1_apps_aiops_monitor_sources_get",
         "parameters": [
           {
             "in": "query",
@@ -5063,7 +4997,7 @@
         ]
       },
       "post": {
-        "operationId": "create_monitor_source_api_v1_ops_monitor_sources_post",
+        "operationId": "create_monitor_source_api_v1_apps_aiops_monitor_sources_post",
         "parameters": [
           {
             "in": "header",
@@ -5113,9 +5047,9 @@
         ]
       }
     },
-    "/api/v1/ops/monitor-sources/{source_id}": {
+    "/api/v1/apps/aiops/monitor-sources/{source_id}": {
       "get": {
-        "operationId": "get_monitor_source_api_v1_ops_monitor_sources__source_id__get",
+        "operationId": "get_monitor_source_api_v1_apps_aiops_monitor_sources__source_id__get",
         "parameters": [
           {
             "in": "path",
@@ -5156,7 +5090,7 @@
         ]
       },
       "patch": {
-        "operationId": "patch_monitor_source_api_v1_ops_monitor_sources__source_id__patch",
+        "operationId": "patch_monitor_source_api_v1_apps_aiops_monitor_sources__source_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -5223,9 +5157,9 @@
         ]
       }
     },
-    "/api/v1/ops/monitor-sources/{source_id}/health-checks": {
+    "/api/v1/apps/aiops/monitor-sources/{source_id}/health-checks": {
       "post": {
-        "operationId": "request_monitor_health_check_api_v1_ops_monitor_sources__source_id__health_checks_post",
+        "operationId": "request_monitor_health_check_api_v1_apps_aiops_monitor_sources__source_id__health_checks_post",
         "parameters": [
           {
             "in": "path",
@@ -5291,9 +5225,9 @@
         ]
       }
     },
-    "/api/v1/ops/monitor-sources/{source_id}/webhook-key:rotate": {
+    "/api/v1/apps/aiops/monitor-sources/{source_id}/webhook-key:rotate": {
       "post": {
-        "operationId": "rotate_monitor_webhook_key_api_v1_ops_monitor_sources__source_id__webhook_key_rotate_post",
+        "operationId": "rotate_monitor_webhook_key_api_v1_apps_aiops_monitor_sources__source_id__webhook_key_rotate_post",
         "parameters": [
           {
             "in": "path",
@@ -5359,9 +5293,9 @@
         ]
       }
     },
-    "/api/v1/ops/monitor-sources/{source_id}/{command}": {
+    "/api/v1/apps/aiops/monitor-sources/{source_id}/{command}": {
       "post": {
-        "operationId": "command_monitor_source_api_v1_ops_monitor_sources__source_id___command__post",
+        "operationId": "command_monitor_source_api_v1_apps_aiops_monitor_sources__source_id___command__post",
         "parameters": [
           {
             "in": "path",
@@ -5440,9 +5374,9 @@
         ]
       }
     },
-    "/api/v1/ops/policies": {
+    "/api/v1/apps/aiops/policies": {
       "get": {
-        "operationId": "list_policies_api_v1_ops_policies_get",
+        "operationId": "list_policies_api_v1_apps_aiops_policies_get",
         "parameters": [
           {
             "in": "query",
@@ -5518,7 +5452,7 @@
         ]
       },
       "post": {
-        "operationId": "create_policy_api_v1_ops_policies_post",
+        "operationId": "create_policy_api_v1_apps_aiops_policies_post",
         "parameters": [
           {
             "in": "header",
@@ -5568,9 +5502,9 @@
         ]
       }
     },
-    "/api/v1/ops/policies/{policy_id}": {
+    "/api/v1/apps/aiops/policies/{policy_id}": {
       "get": {
-        "operationId": "get_policy_api_v1_ops_policies__policy_id__get",
+        "operationId": "get_policy_api_v1_apps_aiops_policies__policy_id__get",
         "parameters": [
           {
             "in": "path",
@@ -5611,9 +5545,9 @@
         ]
       }
     },
-    "/api/v1/ops/policies/{policy_id}/{command}": {
+    "/api/v1/apps/aiops/policies/{policy_id}/{command}": {
       "post": {
-        "operationId": "command_policy_api_v1_ops_policies__policy_id___command__post",
+        "operationId": "command_policy_api_v1_apps_aiops_policies__policy_id___command__post",
         "parameters": [
           {
             "in": "path",
@@ -5692,9 +5626,9 @@
         ]
       }
     },
-    "/api/v1/ops/proposals/{proposal_id}": {
+    "/api/v1/apps/aiops/proposals/{proposal_id}": {
       "get": {
-        "operationId": "get_proposal_api_v1_ops_proposals__proposal_id__get",
+        "operationId": "get_proposal_api_v1_apps_aiops_proposals__proposal_id__get",
         "parameters": [
           {
             "in": "path",
@@ -5735,9 +5669,9 @@
         ]
       }
     },
-    "/api/v1/ops/proposals/{proposal_id}/approve": {
+    "/api/v1/apps/aiops/proposals/{proposal_id}/approve": {
       "post": {
-        "operationId": "approve_proposal_api_v1_ops_proposals__proposal_id__approve_post",
+        "operationId": "approve_proposal_api_v1_apps_aiops_proposals__proposal_id__approve_post",
         "parameters": [
           {
             "in": "path",
@@ -5797,9 +5731,9 @@
         ]
       }
     },
-    "/api/v1/ops/proposals/{proposal_id}/manual-result": {
+    "/api/v1/apps/aiops/proposals/{proposal_id}/manual-result": {
       "post": {
-        "operationId": "record_manual_result_api_v1_ops_proposals__proposal_id__manual_result_post",
+        "operationId": "record_manual_result_api_v1_apps_aiops_proposals__proposal_id__manual_result_post",
         "parameters": [
           {
             "in": "path",
@@ -5859,9 +5793,9 @@
         ]
       }
     },
-    "/api/v1/ops/proposals/{proposal_id}/reject": {
+    "/api/v1/apps/aiops/proposals/{proposal_id}/reject": {
       "post": {
-        "operationId": "reject_proposal_api_v1_ops_proposals__proposal_id__reject_post",
+        "operationId": "reject_proposal_api_v1_apps_aiops_proposals__proposal_id__reject_post",
         "parameters": [
           {
             "in": "path",
@@ -5921,9 +5855,9 @@
         ]
       }
     },
-    "/api/v1/ops/reports": {
+    "/api/v1/apps/aiops/reports": {
       "get": {
-        "operationId": "list_reports_api_v1_ops_reports_get",
+        "operationId": "list_reports_api_v1_apps_aiops_reports_get",
         "parameters": [
           {
             "in": "query",
@@ -6016,9 +5950,9 @@
         ]
       }
     },
-    "/api/v1/ops/reports/{report_id}": {
+    "/api/v1/apps/aiops/reports/{report_id}": {
       "get": {
-        "operationId": "get_report_api_v1_ops_reports__report_id__get",
+        "operationId": "get_report_api_v1_apps_aiops_reports__report_id__get",
         "parameters": [
           {
             "in": "path",
@@ -6059,9 +5993,9 @@
         ]
       }
     },
-    "/api/v1/ops/reports/{report_id}/versions": {
+    "/api/v1/apps/aiops/reports/{report_id}/versions": {
       "get": {
-        "operationId": "list_report_versions_api_v1_ops_reports__report_id__versions_get",
+        "operationId": "list_report_versions_api_v1_apps_aiops_reports__report_id__versions_get",
         "parameters": [
           {
             "in": "path",
@@ -6131,9 +6065,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs": {
+    "/api/v1/apps/aiops/runs": {
       "post": {
-        "operationId": "create_ops_run_api_v1_ops_runs_post",
+        "operationId": "create_ops_run_api_v1_apps_aiops_runs_post",
         "parameters": [
           {
             "in": "header",
@@ -6183,9 +6117,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs/{run_id}": {
+    "/api/v1/apps/aiops/runs/{run_id}": {
       "get": {
-        "operationId": "get_ops_run_api_v1_ops_runs__run_id__get",
+        "operationId": "get_ops_run_api_v1_apps_aiops_runs__run_id__get",
         "parameters": [
           {
             "in": "path",
@@ -6226,9 +6160,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs/{run_id}/cancel": {
+    "/api/v1/apps/aiops/runs/{run_id}/cancel": {
       "post": {
-        "operationId": "cancel_ops_run_api_v1_ops_runs__run_id__cancel_post",
+        "operationId": "cancel_ops_run_api_v1_apps_aiops_runs__run_id__cancel_post",
         "parameters": [
           {
             "in": "path",
@@ -6294,9 +6228,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs/{run_id}/events": {
+    "/api/v1/apps/aiops/runs/{run_id}/events": {
       "get": {
-        "operationId": "stream_ops_run_events_api_v1_ops_runs__run_id__events_get",
+        "operationId": "stream_ops_run_events_api_v1_apps_aiops_runs__run_id__events_get",
         "parameters": [
           {
             "in": "path",
@@ -6351,9 +6285,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs/{run_id}/pending-input": {
+    "/api/v1/apps/aiops/runs/{run_id}/pending-input": {
       "get": {
-        "operationId": "get_pending_input_api_v1_ops_runs__run_id__pending_input_get",
+        "operationId": "get_pending_input_api_v1_apps_aiops_runs__run_id__pending_input_get",
         "parameters": [
           {
             "in": "path",
@@ -6394,9 +6328,9 @@
         ]
       }
     },
-    "/api/v1/ops/runs/{run_id}/result": {
+    "/api/v1/apps/aiops/runs/{run_id}/result": {
       "get": {
-        "operationId": "get_ops_run_result_api_v1_ops_runs__run_id__result_get",
+        "operationId": "get_ops_run_result_api_v1_apps_aiops_runs__run_id__result_get",
         "parameters": [
           {
             "in": "path",
@@ -6437,9 +6371,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets": {
+    "/api/v1/apps/aiops/targets": {
       "get": {
-        "operationId": "list_targets_api_v1_ops_targets_get",
+        "operationId": "list_targets_api_v1_apps_aiops_targets_get",
         "parameters": [
           {
             "in": "query",
@@ -6515,7 +6449,7 @@
         ]
       },
       "post": {
-        "operationId": "create_target_api_v1_ops_targets_post",
+        "operationId": "create_target_api_v1_apps_aiops_targets_post",
         "parameters": [
           {
             "in": "header",
@@ -6565,9 +6499,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}": {
+    "/api/v1/apps/aiops/targets/{target_id}": {
       "delete": {
-        "operationId": "delete_target_api_v1_ops_targets__target_id__delete",
+        "operationId": "delete_target_api_v1_apps_aiops_targets__target_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -6626,7 +6560,7 @@
         ]
       },
       "get": {
-        "operationId": "get_target_api_v1_ops_targets__target_id__get",
+        "operationId": "get_target_api_v1_apps_aiops_targets__target_id__get",
         "parameters": [
           {
             "in": "path",
@@ -6667,7 +6601,7 @@
         ]
       },
       "patch": {
-        "operationId": "patch_target_api_v1_ops_targets__target_id__patch",
+        "operationId": "patch_target_api_v1_apps_aiops_targets__target_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -6734,9 +6668,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/activate": {
+    "/api/v1/apps/aiops/targets/{target_id}/activate": {
       "post": {
-        "operationId": "activate_target_api_v1_ops_targets__target_id__activate_post",
+        "operationId": "activate_target_api_v1_apps_aiops_targets__target_id__activate_post",
         "parameters": [
           {
             "in": "path",
@@ -6802,9 +6736,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/agent-bindings": {
+    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings": {
       "get": {
-        "operationId": "list_agent_bindings_api_v1_ops_targets__target_id__agent_bindings_get",
+        "operationId": "list_agent_bindings_api_v1_apps_aiops_targets__target_id__agent_bindings_get",
         "parameters": [
           {
             "in": "path",
@@ -6825,7 +6759,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AgentBindingView"
                   },
-                  "title": "Response List Agent Bindings Api V1 Ops Targets  Target Id  Agent Bindings Get",
+                  "title": "Response List Agent Bindings Api V1 Apps Aiops Targets  Target Id  Agent Bindings Get",
                   "type": "array"
                 }
               }
@@ -6849,7 +6783,7 @@
         ]
       },
       "post": {
-        "operationId": "create_agent_binding_api_v1_ops_targets__target_id__agent_bindings_post",
+        "operationId": "create_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings_post",
         "parameters": [
           {
             "in": "path",
@@ -6909,9 +6843,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}": {
+    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}": {
       "patch": {
-        "operationId": "patch_agent_binding_api_v1_ops_targets__target_id__agent_bindings__binding_id__patch",
+        "operationId": "patch_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -6988,9 +6922,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/agent-bindings/{binding_id}/{command}": {
+    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}/{command}": {
       "post": {
-        "operationId": "command_agent_binding_api_v1_ops_targets__target_id__agent_bindings__binding_id___command__post",
+        "operationId": "command_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id___command__post",
         "parameters": [
           {
             "in": "path",
@@ -7079,9 +7013,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/diagnostic-credential:remove": {
+    "/api/v1/apps/aiops/targets/{target_id}/diagnostic-credential:remove": {
       "post": {
-        "operationId": "remove_diagnostic_credential_api_v1_ops_targets__target_id__diagnostic_credential_remove_post",
+        "operationId": "remove_diagnostic_credential_api_v1_apps_aiops_targets__target_id__diagnostic_credential_remove_post",
         "parameters": [
           {
             "in": "path",
@@ -7147,9 +7081,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/diagnostic-credential:rotate": {
+    "/api/v1/apps/aiops/targets/{target_id}/diagnostic-credential:rotate": {
       "post": {
-        "operationId": "rotate_diagnostic_credential_api_v1_ops_targets__target_id__diagnostic_credential_rotate_post",
+        "operationId": "rotate_diagnostic_credential_api_v1_apps_aiops_targets__target_id__diagnostic_credential_rotate_post",
         "parameters": [
           {
             "in": "path",
@@ -7225,9 +7159,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/disable": {
+    "/api/v1/apps/aiops/targets/{target_id}/disable": {
       "post": {
-        "operationId": "disable_target_api_v1_ops_targets__target_id__disable_post",
+        "operationId": "disable_target_api_v1_apps_aiops_targets__target_id__disable_post",
         "parameters": [
           {
             "in": "path",
@@ -7293,9 +7227,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/execution-credential:remove": {
+    "/api/v1/apps/aiops/targets/{target_id}/execution-credential:remove": {
       "post": {
-        "operationId": "remove_execution_credential_api_v1_ops_targets__target_id__execution_credential_remove_post",
+        "operationId": "remove_execution_credential_api_v1_apps_aiops_targets__target_id__execution_credential_remove_post",
         "parameters": [
           {
             "in": "path",
@@ -7361,9 +7295,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/execution-credential:rotate": {
+    "/api/v1/apps/aiops/targets/{target_id}/execution-credential:rotate": {
       "post": {
-        "operationId": "rotate_execution_credential_api_v1_ops_targets__target_id__execution_credential_rotate_post",
+        "operationId": "rotate_execution_credential_api_v1_apps_aiops_targets__target_id__execution_credential_rotate_post",
         "parameters": [
           {
             "in": "path",
@@ -7439,9 +7373,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/maintenance": {
+    "/api/v1/apps/aiops/targets/{target_id}/maintenance": {
       "post": {
-        "operationId": "maintain_target_api_v1_ops_targets__target_id__maintenance_post",
+        "operationId": "maintain_target_api_v1_apps_aiops_targets__target_id__maintenance_post",
         "parameters": [
           {
             "in": "path",
@@ -7507,9 +7441,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/monitor-bindings": {
+    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings": {
       "get": {
-        "operationId": "list_monitor_bindings_api_v1_ops_targets__target_id__monitor_bindings_get",
+        "operationId": "list_monitor_bindings_api_v1_apps_aiops_targets__target_id__monitor_bindings_get",
         "parameters": [
           {
             "in": "path",
@@ -7530,7 +7464,7 @@
                   "items": {
                     "$ref": "#/components/schemas/MonitorBindingView"
                   },
-                  "title": "Response List Monitor Bindings Api V1 Ops Targets  Target Id  Monitor Bindings Get",
+                  "title": "Response List Monitor Bindings Api V1 Apps Aiops Targets  Target Id  Monitor Bindings Get",
                   "type": "array"
                 }
               }
@@ -7554,7 +7488,7 @@
         ]
       },
       "post": {
-        "operationId": "create_monitor_binding_api_v1_ops_targets__target_id__monitor_bindings_post",
+        "operationId": "create_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings_post",
         "parameters": [
           {
             "in": "path",
@@ -7614,9 +7548,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}": {
+    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings/{binding_id}": {
       "patch": {
-        "operationId": "patch_monitor_binding_api_v1_ops_targets__target_id__monitor_bindings__binding_id__patch",
+        "operationId": "patch_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings__binding_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -7693,9 +7627,9 @@
         ]
       }
     },
-    "/api/v1/ops/targets/{target_id}/monitor-bindings/{binding_id}/{command}": {
+    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings/{binding_id}/{command}": {
       "post": {
-        "operationId": "command_monitor_binding_api_v1_ops_targets__target_id__monitor_bindings__binding_id___command__post",
+        "operationId": "command_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings__binding_id___command__post",
         "parameters": [
           {
             "in": "path",
@@ -7781,6 +7715,48 @@
         "summary": "Command Monitor Binding",
         "tags": [
           "AIOps"
+        ]
+      }
+    },
+    "/api/v1/integrations/monitoring/{webhook_key}/events": {
+      "post": {
+        "operationId": "receive_monitor_event_api_v1_integrations_monitoring__webhook_key__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_key",
+            "required": true,
+            "schema": {
+              "title": "Webhook Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringEventReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Monitor Event",
+        "tags": [
+          "Monitoring Integrations"
         ]
       }
     }

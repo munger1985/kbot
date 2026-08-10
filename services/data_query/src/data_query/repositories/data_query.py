@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from data_query.entities.data_query import (
     AgentBindingEntity,
-    CredentialEntity,
     DataQueryAuditEntity,
     DataQueryEventEntity,
     DataQueryExecutionEntity,
@@ -69,35 +68,6 @@ class DataSourceRepository(DataQueryRepository):
             statement = statement.where(DataSourceEntity.data_source_id > after_id)
         statement = statement.order_by(DataSourceEntity.data_source_id).limit(limit)
         return list((await self._session.execute(statement)).scalars())
-
-
-class CredentialRepository(DataQueryRepository):
-    """Data Query 专用凭据 Repository。"""
-
-    async def add(self, entity: CredentialEntity) -> CredentialEntity:
-        return await self._add(entity)
-
-    async def get_scoped(
-        self, *, credential_id: UUID, domain_id: int,
-        data_source_id: UUID, active_only: bool = False,
-        lock: bool = False,
-    ) -> CredentialEntity | None:
-        statement: Select = select(CredentialEntity).where(
-            CredentialEntity.credential_id == credential_id,
-            CredentialEntity.domain_id == domain_id,
-            CredentialEntity.data_source_id == data_source_id,
-        )
-        if active_only:
-            statement = statement.where(CredentialEntity.status == "ACTIVE")
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def revoke(self, entity: CredentialEntity, *, actor_id: str) -> None:
-        self._assert_active()
-        entity.status = "REVOKED"
-        entity.updated_by = actor_id
-        await self._session.flush()
 
 
 class SchemaSnapshotRepository(DataQueryRepository):
@@ -457,19 +427,27 @@ class PolicyBindingRepository(DataQueryRepository):
 
 class AgentBindingRepository(DataQueryRepository):
     async def list_active_for_agent(
-        self, *, domain_id: int, agent_id: UUID
+        self, *, domain_id: int, consumer_app_id: str,
+        agent_id: UUID, agent_version_id: UUID,
     ) -> list[AgentBindingEntity]:
         statement = select(AgentBindingEntity).where(
             AgentBindingEntity.domain_id == domain_id,
+            AgentBindingEntity.consumer_app_id == consumer_app_id,
             AgentBindingEntity.agent_id == agent_id,
+            AgentBindingEntity.agent_version_id == agent_version_id,
             AgentBindingEntity.status == "ACTIVE",
         ).order_by(AgentBindingEntity.semantic_model_id, AgentBindingEntity.agent_binding_id)
         return list((await self._session.execute(statement)).scalars())
 
-    async def get_active(self, *, domain_id: int, agent_id: UUID, semantic_model_id: UUID) -> AgentBindingEntity | None:
+    async def get_active(
+        self, *, domain_id: int, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_id: UUID,
+    ) -> AgentBindingEntity | None:
         statement = select(AgentBindingEntity).where(
             AgentBindingEntity.domain_id == domain_id,
+            AgentBindingEntity.consumer_app_id == consumer_app_id,
             AgentBindingEntity.agent_id == agent_id,
+            AgentBindingEntity.agent_version_id == agent_version_id,
             AgentBindingEntity.semantic_model_id == semantic_model_id,
             AgentBindingEntity.status == "ACTIVE",
         )
@@ -500,10 +478,15 @@ class AgentBindingRepository(DataQueryRepository):
         statement = statement.order_by(AgentBindingEntity.agent_binding_id).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
-    async def list_active(self, *, domain_id: int, agent_id: UUID, semantic_model_id: UUID) -> list[AgentBindingEntity]:
+    async def list_active(
+        self, *, domain_id: int, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_id: UUID,
+    ) -> list[AgentBindingEntity]:
         statement = select(AgentBindingEntity).where(
             AgentBindingEntity.domain_id == domain_id,
+            AgentBindingEntity.consumer_app_id == consumer_app_id,
             AgentBindingEntity.agent_id == agent_id,
+            AgentBindingEntity.agent_version_id == agent_version_id,
             AgentBindingEntity.semantic_model_id == semantic_model_id,
             AgentBindingEntity.status == "ACTIVE",
         ).order_by(AgentBindingEntity.agent_binding_id)

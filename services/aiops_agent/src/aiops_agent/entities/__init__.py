@@ -9,6 +9,8 @@ from .change import (
 from .inspection import (
     InspectionFireEntity,
     InspectionPlanEntity,
+    InspectionReportTemplateEntity,
+    InspectionReportTemplateVersionEntity,
     InspectionTargetEntity,
     ReportEntity,
 )
@@ -26,17 +28,31 @@ from .runtime import (
     OpsTaskEntity,
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity
-from .credential import CredentialEntity
+from .conversation import (
+    ActionStepEntity, EvidenceRequestEntity, ImageEvidenceProcessingEntity,
+    OpsConversationEntity, OpsConversationMessageEntity,
+    OpsConversationRunEntity,
+)
 
 __all__ = [
+    "ActionStepEntity",
+    "EvidenceRequestEntity",
+    "ImageEvidenceProcessingEntity",
+    "OpsConversationEntity",
+    "OpsConversationMessageEntity",
+    "OpsConversationRunEntity",
+    "AIOpsAgentEntity",
+    "AIOpsAgentGrantEntity",
+    "AIOpsAgentVersionEntity",
     "ApprovalTokenEntity",
     "ChangeProposalEntity",
-    "CredentialEntity",
     "ExecutionEntity",
     "HitlEntity",
     "InboxEntity",
     "InspectionFireEntity",
     "InspectionPlanEntity",
+    "InspectionReportTemplateEntity",
+    "InspectionReportTemplateVersionEntity",
     "InspectionTargetEntity",
     "MonitorSourceEntity",
     "OpsAlertEntity",
@@ -52,3 +68,4 @@ __all__ = [
     "TargetEntity",
     "TargetMonitorEntity",
 ]
+from .agent import AIOpsAgentEntity, AIOpsAgentGrantEntity, AIOpsAgentVersionEntity

@@ -85,7 +85,10 @@ KBOT_ORACLE_PASSWORD="数据库密码"
 KBOT_MASTER_KEY="至少32字节的随机主密钥"
 ```
 
-KBot从主密钥按用途派生内部JWT、API Pepper、凭证加密和AIOps签名密钥。外部
+KBot从主密钥按用途派生内部JWT、API Pepper、统一托管凭据加密和AIOps签名密钥。
+如需独立轮换托管凭据密钥，可显式配置 `KBOT_MANAGED_CREDENTIAL_KEY` 与
+`KBOT_MANAGED_CREDENTIAL_KEY_VERSION`；AIOps、Data Query 和模型 Provider 共用
+`KBOT_MANAGED_CREDENTIAL` 表，不再使用业务密钥文件或各模块专用凭据表。外部
 问数服务启用时再增加 `KBOT_MCP_DATA_API_KEY`。模型厂商凭证仍由数据库加密
 保存。
 

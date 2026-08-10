@@ -28,6 +28,7 @@ from aiops_agent.executor.drivers import (
     MySQLDiagnosticDriver,
     MySQLMutationDriver,
     OracleDiagnosticDriver,
+    PostgreSQLDiagnosticDriver,
     OracleMutationDriver,
 )
 from platform_core.contracts.aiops.executor import DiagnosticLimits
@@ -66,6 +67,7 @@ def create_aiops_executor(
             drivers=(
                 OracleDiagnosticDriver(),
                 MySQLDiagnosticDriver(),
+                PostgreSQLDiagnosticDriver(),
             ),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=config.statement_timeout_seconds,
