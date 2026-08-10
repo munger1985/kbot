@@ -6,7 +6,7 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 
 ## 当前结构
 
-- `services/`：五个可独立构建服务及其进程入口。
+- `services/`：七个可独立构建服务及其进程入口。
 - `packages/`：`platform_core` 和 `platform_clients` 两个共享 Python 包。
 - `database/oracle/`：同一 Schema 下按服务所有权拆分的全量 DDL。
 - `configuration/`：唯一部署配置样例。
@@ -15,10 +15,11 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `tools/dev_console/`：仅开发环境启用的功能测试页面。
 - `var/`：本地日志、上传文件和生成物；不进入 Git。
 
-Agent Runtime 已启用持久化 Run/Task/Artifact/Event、固定 Document Plan、
-KC 两阶段检索 Skill、Grounded Response Composer、租约恢复和独立 Worker。
-Portal 可通过 Main API 的 `/api/v1/agents` 与 `/api/v1/runs` 使用该链路；
-内部 Plan、Task Claim 和 Artifact 写回不会公开。
+知识检索与 AIOps App 分别拥有私有 Agent、不可变版本和 Grant。Agent Runtime
+执行冻结的 Execution Spec，并提供持久化 Run/Task/Artifact/Event、文档、问数、
+Hybrid、AIOps 委派、Grounded Response Composer、租约恢复和独立 Worker。
+Portal 只通过 Main API 的 `/api/v1/apps/knowledge-retrieval/*` 与
+`/api/v1/apps/aiops/*` 使用这些能力。
 
 Portal 使用预配置 API Key 访问 Main API；Main API 校验 Domain 后，为内部调用签发
 短期 AuthContext JWT。`/internal/v1/*` 仅供服务间调用，不通过 Main API 暴露。
@@ -57,8 +58,12 @@ Key和私钥只能由环境变量或Secret管理系统注入。
 ```bash
 python3 -m main_api.entrypoints.api
 python3 -m main_api.entrypoints.slack_worker
+python3 -m main_api.entrypoints.notification_worker
+python3 -m knowledge_retrieval_app.entrypoints.api
 python3 -m agent_runtime.entrypoints.api
 python3 -m agent_runtime.entrypoints.worker
+python3 -m data_query.entrypoints.api
+python3 -m data_query.entrypoints.worker
 python3 -m aiops_agent.entrypoints.api
 python3 -m aiops_agent.entrypoints.worker
 python3 -m aiops_agent.entrypoints.scheduler
@@ -67,6 +72,10 @@ python3 -m knowledge_core.entrypoints.api
 python3 -m knowledge_core.entrypoints.parser
 python3 -m knowledge_core.entrypoints.projection
 python3 -m model_serving.entrypoints.embedding
+python3 -m model_serving.entrypoints.llm
+python3 -m model_serving.entrypoints.visual
+python3 -m model_serving.entrypoints.vlm
+python3 -m model_serving.entrypoints.ocr
 ```
 
 本地同时启动或停止当前服务：

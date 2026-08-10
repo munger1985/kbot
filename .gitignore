@@ -28,6 +28,7 @@ Thumbs.db
 # Log files and local runtime state
 *.log
 var/
+release-evidence.json
 
 # IDE directories
 .idea/

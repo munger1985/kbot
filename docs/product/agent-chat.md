@@ -6,17 +6,22 @@ KBot 4.0 将聊天从“一次模型调用”升级为可恢复、可追溯的 A
 Conversation 保存多轮历史和记忆，Run 保存本轮执行，Task 调用版本化 Skill，
 Artifact 保存中间及最终结果，SSE 负责实时展示进度。
 
-当前普通 Agent 支持四种单路由结果：
+当前知识检索 Agent 支持单能力、混合能力和显式 AIOps 委派：
 
 | 路由 | 用户场景 | 执行能力 | 最终依据 |
 | --- | --- | --- | --- |
 | `CONVERSATION` | 闲聊、解释、通用问答 | 通用对话 Skill | 模型回答 |
 | `DOCUMENT` | 查询文档、资产、附件 | Knowledge Core 两阶段检索 | KC Evidence |
-| `MCP_DATA` | 查询业务数据、Excel 数值 | SelectAI/AIReport MCP | Query Result |
+| `DATA_QUERY` | 查询业务数据、Excel 数值 | MCP 或 Semantic Data Query | Query Result |
+| `HYBRID_PARALLEL` | 文档与数据可独立求证 | 文档和问数并行 | Citation Pack + Query Result |
+| `HYBRID_DOCUMENT_FIRST` | 先从文档确定口径再问数 | 文档约束问数 | Citation Pack + Query Result |
+| `HYBRID_DATA_FIRST` | 先取数据再查解释依据 | 问数约束文档检索 | Query Result + Citation Pack |
+| `AIOPS` | 数据库诊断与运维分析 | 委派 AIOps App | AIOps Result |
 | `CLARIFY` | 意图或指代不明确 | 澄清回复 | 用户后续输入 |
 
-每轮只选择一个路由。Graph、跨领域混合任务不进入 4.0 当前实现；AIOps
-使用独立入口，未来由显式 Agent Group 负责多 Agent 组团。
+每轮选择一个确定路由；Hybrid 路由内部生成固定、可审计的多分支 DAG，不允许模型
+生成任意 Skill 名称、URL 或 SQL。AIOps 仍是独立 App 和状态机，Runtime 只通过
+类型化 Delegation 调用。
 
 ## 用户请求到最终回答
 
@@ -28,7 +33,7 @@ sequenceDiagram
     participant DB as Oracle
     participant W as Agent Runtime Worker
     participant S as Skill
-    participant KC as Knowledge Core / MCP
+    participant DS as KC / Data Query / AIOps
 
     UI->>API: 创建 Conversation / 提交 Turn
     API->>AR: AuthContext + Agent + 用户输入
@@ -40,7 +45,7 @@ sequenceDiagram
     UI->>API: 订阅 SSE（支持 Last-Event-ID）
     W->>DB: SKIP LOCKED 领取 Task 与租约
     W->>S: 执行版本化 Skill
-    S->>KC: 按需调用 KC / MCP / Model Serving
+    S->>DS: 按冻结计划调用领域服务
     S-->>W: Progress + Artifact
     W->>DB: 写事件、Artifact、Task 状态
     API-->>UI: thinking / retrieval / answer SSE
@@ -106,20 +111,33 @@ context-rewrite
 回答只能引用 `CITATION_PACK` 中实际使用的 Evidence。若证据不足，返回
 `INSUFFICIENT_EVIDENCE`，不能由模型补写无来源结论。
 
-### MCP 问数与 ECharts
+### Data Query 与 ECharts
 
 ```text
 context-rewrite
-  → mcp-data-query
+  → data-query（MCP 或 Semantic）
   → QUERY_RESULT
   → [echarts，仅用户要求图表时]
   → response-composer
   → GROUNDED_ANSWER + query_result_id + visualization
 ```
 
-问数沿用 3.x 的 `profile/user/ask` 协议。`QUERY_RESULT` 有独立 UUID，
-不会伪装成文档引用；ECharts Skill 只输出安全 JSON，拒绝函数、JavaScript URL
-和原型污染字段。
+MCP 模式调用配置的外部问数 Provider；Semantic 模式通过 Data Query 服务执行冻结的
+数据源、语义模型、策略与 Agent Binding。两种模式都输出相同的 `QUERY_RESULT`
+Artifact。它有独立 UUID，不伪装成文档引用；ECharts Skill 只输出安全 JSON，拒绝
+函数、JavaScript URL 和原型污染字段。
+
+### Hybrid
+
+```text
+parallel:        context-rewrite → [knowledge-retrieval || data-query] → response-composer
+document-first:  context-rewrite → knowledge-retrieval → data-query → response-composer
+data-first:      context-rewrite → data-query → knowledge-retrieval → response-composer
+```
+
+每个分支独立产生类型化 Artifact。串行模式把前一分支的受控约束传给后一分支；
+Response Composer 只使用已完成且可追溯的 Citation Pack、Query Result 或 AIOps
+Result，不把模型推断伪装成来源事实。
 
 ## SSE 事件类型
 
@@ -191,8 +209,8 @@ Conversation 时直接渲染已提交的 Assistant Item，不重新执行模型�
 1. 从“聊天接口”到“可恢复 Agent Runtime”；
 2. Conversation、Run、Task、Artifact、Event 五层模型；
 3. 一张端到端时序图；
-4. 四种自然语言单路由；
-5. 三条 Skill DAG 对比；
+4. 单能力、三种 Hybrid 与 AIOps 委派路由；
+5. 不同 Skill DAG 对比；
 6. SSE 实时过程与断线续传；
 7. 文档 Evidence 与 Query Result 的真实引用；
 8. 多模型分工和长期记忆；

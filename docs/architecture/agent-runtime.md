@@ -1,16 +1,19 @@
 # Agent Runtime
 
-## Agent 与 Skill
+## Execution Spec 与 Skill
 
-Agent Definition 归属一个 Domain，声明能力、指令、模型角色和状态。模型配置采用
-`models_json`，值是对外稳定的 `served_model_name`；例如 `router_llm`、
-`context_llm`、`composer_llm`、`memory_llm` 和 `memory_embedding`。不同功能可
-使用不同成本和能力的模型。
+Agent Runtime 不拥有可编辑 Agent Definition。Knowledge Retrieval App 与 AIOps
+App 分别拥有自己的 Agent、不可变版本和 Grant；创建会话或运行前，所属 App 将
+已授权版本编译为 `AgentExecutionSpec`。Runtime 在 Conversation 和 Run 中冻结该
+快照，后续 Agent 修改不会改变既有执行事实。
 
-Skill 是 Runtime 内的版本化执行单元。当前文档链路由上下文改写、知识检索和回答
-组合等 Skill 构成；通用聊天、MCP 问数、ECharts 和 Dify Retrieval Adapter 使用
-各自的类型化 Artifact。AIOps 是独立服务和独立入口，不作为普通文档 Skill
-直接访问其数据库。
+Execution Spec 声明能力、指令、检索范围、问数绑定和功能模型。不同功能可使用
+不同成本和能力的模型；运行时使用冻结的模型身份和调用配置。
+
+Skill 是 Runtime 内的版本化执行单元。当前链路包括上下文改写、知识检索、
+Data Query、Hybrid、AIOps Delegation、回答组合和 ECharts。问数 Skill 可按冻结
+配置调用 MCP 或 Semantic Data Query；AIOps 始终通过独立服务契约委派，不直接
+访问其数据库。
 
 ## 执行模型
 

@@ -648,7 +648,7 @@ http://140.238.44.208:18099/api/v1/...
 前端应使用同源相对路径：
 
 ```javascript
-fetch("/api/v1/conversations?limit=200")
+fetch("/api/v1/apps/knowledge-retrieval/conversations?limit=200")
 ```
 
 如果前端统一维护 API Base URL，设置为：
@@ -712,7 +712,7 @@ curl --cacert /etc/nginx/ssl/kbot-local-ca.crt \
 ```bash
 curl --cacert /etc/nginx/ssl/kbot-local-ca.crt \
   --resolve 146.56.158.44:443:127.0.0.1 \
-  -i 'https://146.56.158.44/api/v1/conversations?limit=200'
+  -i 'https://146.56.158.44/api/v1/apps/knowledge-retrieval/conversations?limit=200'
 ```
 
 未提供认证头时，最后一条请求可能返回 400、401 或 403。这说明代理已转发到应用；不得出现 502、连接超时或证书地址错误。

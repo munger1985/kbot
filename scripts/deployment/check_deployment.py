@@ -9,6 +9,7 @@ import tomli
 
 
 ROOT = Path(__file__).resolve().parents[2]
+TOPOLOGY_PATH = ROOT / "resources" / "topology.toml"
 
 from main_api.config import MainApiSettings
 from platform_core.config import load_settings
@@ -58,6 +59,8 @@ def main() -> int:
 
     with path.open("rb") as stream:
         raw = tomli.load(stream)
+    with TOPOLOGY_PATH.open("rb") as stream:
+        process_count = len(tomli.load(stream).get("processes") or ())
     settings = load_settings(
         MainApiSettings,
         service="main_api",
@@ -75,7 +78,7 @@ def main() -> int:
     print(f"- 数据目录：{raw.get('data_dir', './data')}")
     print(f"- 日志目录：{settings.log.dir}")
     print(f"- 文本向量维度：{settings.vector.dimensions}")
-    print(f"- 内部服务：14个进程，{topology_mode}")
+    print(f"- 内部服务：{process_count}个进程，{topology_mode}")
     if settings.is_production():
         print("- Secret：生产必需项已配置")
     else:

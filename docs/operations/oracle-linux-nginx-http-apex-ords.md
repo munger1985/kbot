@@ -163,7 +163,7 @@ location = / {
 APEX 浏览器端的 Main API 地址使用相对路径：
 
 ```javascript
-fetch("/api/v1/conversations?limit=200")
+fetch("/api/v1/apps/knowledge-retrieval/conversations?limit=200")
 ```
 
 不要直接请求 `http://140.238.44.208:18099`。

@@ -2,11 +2,13 @@
 
 ## Domain 与 APEX
 
-Domain 是 KBot 的强隔离边界。Portal 登录成功后把可信 Domain 和用户上下文传给
-由配置固定，不作为普通业务参数在服务之间自由传递。
+Domain 是 KBot 的强隔离边界。Portal 登录成功后，通过受信请求头把 Domain 和
+用户上下文传给 Main API。Main API 校验 Portal API Key 后构造 AuthContext；下游
+服务只信任该上下文，不信任普通业务参数中的 Domain、Actor 或授权声明。
 
-当前 4.0 保留认证和安全等级过滤，暂不实现完整角色权限。未来权限声明加入
-AuthContext，由资源所属服务执行，不改变 Domain 边界。
+Main API 拥有平台用户、App Role、Permission、Role-Permission 和 Domain 内成员
+角色。知识检索与 AIOps App 在公开 BFF 层校验 App 权限，执行私有 Agent 时还必须
+同时满足 Agent Grant。用户、角色和权限不改变 Domain 数据隔离边界。
 
 ## 公开认证
 
@@ -28,9 +30,17 @@ Main API 调用下游时同时携带：
 1. 服务凭据，证明调用进程身份；
 2. audience 绑定、短期有效的 AuthContext JWT，传递用户、Domain、请求和 Trace。
 
-内部 JWT 每次调用签发，不缓存到长生命周期 HTTP Session。KC、Agent Runtime、
-AIOps 和模型管理的 `/internal/v1/*` 不接受 Portal API Key，且不得通过公网或
-APEX 代理暴露。
+内部 JWT 每次调用签发，不缓存到长生命周期 HTTP Session。Knowledge Retrieval
+App、KC、Agent Runtime、Data Query、AIOps 和模型管理的 `/internal/v1/*` 不接受
+Portal API Key，且不得通过公网或 APEX 代理暴露。
+
+## 权限执行边界
+
+- Main API 校验 App 成员角色和权限，不把浏览器提交的角色视为可信输入；
+- Knowledge Retrieval App 与 AIOps App 拥有私有 Agent 和 Grant；
+- Agent Runtime 只执行调用方冻结的不可变 Execution Spec，不查询 App 权限表；
+- 内部 AuthContext 只携带本次调用所需身份和授权上下文，不替代资源服务的 Domain
+  条件与对象所有权校验。
 
 ## 版本规则
 

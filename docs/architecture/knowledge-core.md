@@ -3,8 +3,8 @@
 ## 边界与数据模型
 
 Knowledge Core（KC）是封闭的知识生成与检索服务。Domain 是强隔离边界，一个
-Domain 可有多个 Collection；Agent 通过绑定表关联多个平权 Collection。Collection
-Collection 关联，不重复保存 Domain。
+Domain 可有多个 Collection；App 私有 Agent 通过 Execution Spec 关联多个平权
+Collection。Collection 之间可建立关系，但不会重复保存 Domain 身份。
 
 核心聚合如下：
 

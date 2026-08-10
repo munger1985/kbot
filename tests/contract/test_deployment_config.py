@@ -9,9 +9,19 @@ import unittest
 from unittest.mock import patch
 
 from scripts.deployment.check_deployment import check_deployment
+from scripts.deployment.check_deployment import TOPOLOGY_PATH
 
 
 class DeploymentConfigTest(unittest.TestCase):
+    def test_deployment_summary_uses_canonical_topology(self):
+        self.assertTrue(TOPOLOGY_PATH.is_file())
+        self.assertNotIn(
+            "14个进程",
+            Path("scripts/deployment/check_deployment.py").read_text(
+                encoding="utf-8"
+            ),
+        )
+
     def _write_production_config(self, root: Path) -> Path:
         path = root / "kbot.toml"
         path.write_text(

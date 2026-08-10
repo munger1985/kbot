@@ -2,7 +2,8 @@
 
 ## 服务边界
 
-AIOps Agent 是独立领域服务，面向 Oracle 和 MySQL 的监控、故障与性能诊断。
+AIOps Agent 是独立领域服务，面向 Oracle、MySQL 和 PostgreSQL 的监控、故障与
+性能诊断。
 它拥有 `KBOT_OPS_*` 表、状态机、调度器、Worker 和 DB Executor，不把运维流程
 塞入通用 Agent Runtime。Prometheus、Zabbix 和 OEM 通过 Monitor Provider
 适配；后续监控或数据库类型通过注册协议扩展。
@@ -25,8 +26,9 @@ Agent 给出受控只读 SQL，用户手工执行并粘贴结果，系统持续�
 
 监控采集保存来源、时间窗、单位和质量标记。数据库直连查询不允许模型生成任意
 SQL：LLM 只能选择版本化诊断工具和参数，DB Executor 根据数据库方言使用预审计
-模板，执行只读、超时、行数和敏感字段限制。Oracle/MySQL 的权限和能力在 Target
-启用时探测，凭据只保存加密引用。
+模板，执行只读、超时、行数和敏感字段限制。三类数据库均支持版本化只读诊断；
+当前受控变更与人工 SQL 模板只覆盖 Oracle/MySQL。Target 启用时探测权限和能力，
+凭据只保存统一托管凭据引用。
 
 ## 建议、审批与执行
 

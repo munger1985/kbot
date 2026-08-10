@@ -344,6 +344,19 @@ def verify(
     }
 
 
+def resolve_profile_options(
+    *,
+    profile: str,
+    include_oracle: bool,
+    include_external_databases: bool,
+    require_clean: bool,
+) -> tuple[bool, bool, bool]:
+    """发布候选档位强制启用实库检查和干净工作树门禁。"""
+    if profile == "rc":
+        return True, True, True
+    return include_oracle, include_external_databases, require_clean
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="执行 KBot 4.0 发布验证并输出 JSON 证据"
@@ -381,12 +394,20 @@ def main() -> int:
         help="工作树有任何改动时令验证失败",
     )
     args = parser.parse_args()
+    include_oracle, include_external_databases, require_clean = (
+        resolve_profile_options(
+            profile=args.profile,
+            include_oracle=args.oracle,
+            include_external_databases=args.external_databases,
+            require_clean=args.require_clean,
+        )
+    )
     evidence = verify(
         profile=args.profile,
-        include_oracle=args.oracle,
-        include_external_databases=args.external_databases,
+        include_oracle=include_oracle,
+        include_external_databases=include_external_databases,
         prometheus_url=args.prometheus_url,
-        require_clean=args.require_clean,
+        require_clean=require_clean,
     )
     output = args.output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

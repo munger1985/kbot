@@ -18,6 +18,7 @@ Model Serving 是一个服务包，按资源类型运行独立进程：
 
 - LLM；
 - VLM；
+- OCR；
 - Text Embedding；
 - Visual Embedding。
 
@@ -27,7 +28,8 @@ Model Serving 是一个服务包，按资源类型运行独立进程：
 
 目录写入统一经过 `ModelServingUnitOfWork` 和 Model Repository。生命周期为
 `DRAFT → ACTIVE → ARCHIVED`，归档不可逆；所有更新、状态变更和删除都携带
-`expected_row_version`。只有没有 Agent Runtime、Knowledge Core、Data Query 引用，
+`expected_row_version`。只有没有 Knowledge Retrieval App、AIOps App、Knowledge
+Core、Data Query 引用，
 引用服务全部可用，且本进程没有运行实例的归档模型才能物理删除。
 
 Provider Options 由代码目录控制，按模型类别声明必要连接字段、Secret 字段和允许的
@@ -46,10 +48,11 @@ Model Pool 按 `served_model_name` 缓存已加载实例，负责并发加载、
 
 ## 功能绑定
 
-Collection 和 Agent 的 `models_json` 都保存模型 UUID；运行时快照再固化
-`served_model_name`，用于调用 OpenAI 兼容推理接口。
+Collection 和 App 私有 Agent 的模型绑定保存模型 UUID；运行时 Execution Spec
+再固化 `served_model_name`，用于调用 OpenAI 兼容推理接口。
 Collection 的文本 Embedding 是必选且不可原地替换；VLM 和视觉 Embedding 可选。
 Agent 可为路由、上下文、回答和记忆分别绑定不同模型。
 
-DeepSeek OCR 是 Parser 的独立 OpenAI 兼容依赖，不登记到 Model Serving，也不由
-Model Pool 托管。
+`model_ocr` 是 Model Serving 的通用 OCR 进程。DeepSeek OCR 则是 Parser 的独立
+OpenAI 兼容依赖，不登记到 Model Serving，也不由 Model Pool 托管；两者不是同一
+部署单元。

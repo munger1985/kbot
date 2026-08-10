@@ -11,6 +11,26 @@
 生产环境应为每个服务构建独立运行单元。当前共享 Oracle Schema，但服务可以部署
 在不同主机；仅在开发机使用 `start_kbot.sh` 一次启动全部进程。
 
+## 空白环境一键部署
+
+先准备 `configuration/kbot.toml` 和 Secret。目标必须是没有任何 `KBOT_%` 表或
+视图的空白 Schema，然后在仓库根目录执行：
+
+```bash
+bash scripts/deployment/bootstrap_kbot.sh --production
+```
+
+脚本依次安装锁定依赖和 9 个内部包、校验配置与 20 进程拓扑、解析 8 个服务的
+规范 DDL、检查 Oracle 权限与空库条件、创建表/视图/索引/约束，并初始化默认 App
+角色、权限、角色映射和 Prompt Catalog。它不会重置已有 Schema，也不会创建
+Domain、用户、成员授权、业务 Agent、模型或知识库数据。
+
+只验证安装、配置和 Schema 计划而不连接数据库：
+
+```bash
+bash scripts/deployment/bootstrap_kbot.sh --production --schema-dry-run
+```
+
 ## 安装
 
 下载或克隆明确的 4.0 Release/Commit 后，开发环境安装锁定的第三方依赖和全部
@@ -43,7 +63,7 @@ KBOT_CONDA_ENV=kbot4 bash scripts/deployment/install_workspace.sh
 KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
 一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过
 调整 `PYTHONPATH` 或忽略来源检查绕过。
-脚本会创建或补齐本地 `.env` 中的 AIOps 凭据加密密钥与版本；已有值不会覆盖。
+脚本会创建或补齐本地 `.env` 中的统一托管凭据加密密钥与版本；已有值不会覆盖。
 生产使用外部 Secret 时设置 `KBOT_SKIP_LOCAL_ENV_INIT=1`。
 
 ## 配置与 Secret
@@ -78,15 +98,6 @@ python3 scripts/security/generate_portal_api_key.py --key-id portal-prod
 Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
 `api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
 OpenAPI JSON 位于 `/openapi.json`。
-
-若远端数据库是在移除 `APP_ID` 前初始化，执行一次性修复脚本清理遗留列：
-
-```bash
-sqlplus <kbot-schema-user>/<password>@<service> @scripts/db/remove_app_id_columns.sql
-```
-
-脚本仅处理当前 Schema 中名称以 `KBOT_` 开头的表，执行 DDL 前应先完成数据库备份。
-它会先删除依赖 `APP_ID` 的外键和其他约束，再删除该列。
 
 若门户页面在浏览器中直连 Main API，还必须在 `kbot.toml` 配置精确的跨域来源，例如：
 
@@ -133,26 +144,6 @@ python3 scripts/db/apply_oracle_schema.py \
 初始化器拒绝覆盖已有 `KBOT_%` 对象。4.0 不读取、迁移或兼容 3.x 表和数据。完整
 权限、表空间和执行顺序见 [Oracle 初始化说明](../../database/oracle/README.md)。
 
-### 从迁移前 KBot 4.0 原地同步
-
-若只要求补齐表结构和字段，不迁移历史业务数据，执行：
-
-```bash
-sqlplus user/password@service \
-  @scripts/db/align_ammolite_aiops_knowledge_schema.sql
-```
-
-该脚本不执行业务数据 `INSERT`、`UPDATE`、`DELETE`，也不删除旧业务表。为避免
-改写历史行，补到既有表上的新上下文字段保持可空；新写入路径的凭据外键使用
-`ENABLE NOVALIDATE`，约束新数据但不扫描或改写旧记录。
-
-表结构对齐后，只补默认角色和权限、不创建用户或成员授权时执行：
-
-```bash
-sqlplus user/password@service \
-  @scripts/db/seed_aiops_knowledge_roles_permissions.sql
-```
-
 ## 启动前检查
 
 ```bash
@@ -165,9 +156,11 @@ python3 tests/acceptance/check_oracle_schema.py
 
 1. Model Serving；
 2. Knowledge Core API、Parser、Projection Worker；
-3. Agent Runtime API、Worker；
-4. AIOps API、Worker、Scheduler、DB Executor；
-5. Main API、Slack Worker、Notification Worker。
+3. Knowledge Retrieval App API；
+4. Data Query API、Worker；
+5. Agent Runtime API、Worker；
+6. AIOps API、DB Executor、Worker、Scheduler；
+7. Main API、Slack Worker、Notification Worker。
 
 各模块入口位于 `services/<service>/src/<package>/entrypoints/`。开发环境可执行：
 
@@ -205,8 +198,11 @@ export KBOT_DQ_SMOKE_POSTGRES_PASSWORD='由测试环境 Secret 提供'
 export KBOT_DQ_SMOKE_POSTGRES_DATABASE='kbot_dq_smoke'
 export KBOT_DQ_SMOKE_POSTGRES_USERNAME='kbot_smoke'
 export KBOT_DQ_SMOKE_MYSQL_PASSWORD='由测试环境 Secret 提供'
-python3 scripts/release/verify_release.py --oracle --external-databases
+python3 scripts/release/verify_release.py --profile rc
 ```
+
+`rc` 档位自动强制 Oracle 实库、Data Query 外部数据库 Smoke 和干净工作树门禁；
+缺少相应测试环境或 Secret 时会失败，不会降级成 developer 证据。
 
 PostgreSQL/MySQL 的主机、端口、数据库、账号和 Schema 可通过同名前缀的
 `KBOT_DQ_SMOKE_POSTGRES_*`、`KBOT_DQ_SMOKE_MYSQL_*` 环境变量覆盖。Smoke 只创建固定

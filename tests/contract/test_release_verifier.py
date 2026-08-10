@@ -6,10 +6,22 @@ from scripts.release.verify_release import (
     ACTIVE_PACKAGES,
     _checks,
     build_input_manifest,
+    resolve_profile_options,
 )
 
 
 class ReleaseVerifierTest(unittest.TestCase):
+    def test_rc_profile_enforces_external_gates_and_clean_worktree(self):
+        self.assertEqual(
+            (True, True, True),
+            resolve_profile_options(
+                profile="rc",
+                include_oracle=False,
+                include_external_databases=False,
+                require_clean=False,
+            ),
+        )
+
     def test_manifest_covers_schema_configuration_and_openapi(self):
         manifest = build_input_manifest()
 

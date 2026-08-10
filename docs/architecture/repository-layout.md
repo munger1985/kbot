@@ -4,7 +4,7 @@ KBot 使用服务型单仓库。各服务共享一个 Oracle Schema，但源码�
 私有资源按可独立构建边界组织。
 
 ```text
-services/       可独立构建的 Main API、Agent Runtime、KC、AIOps、Data Query、模型服务
+services/       Main API、Knowledge Retrieval App、Agent Runtime、KC、AIOps、Data Query、模型服务
 packages/       platform_core 与 platform_clients 共享包
 database/       同一 Schema 下按所有者拆分的 Oracle DDL
 configuration/  唯一部署配置及说明

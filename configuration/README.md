@@ -15,6 +15,15 @@ cp .env.example .env
 然后填写数据库地址、`KBOT_ORACLE_PASSWORD`、`KBOT_MASTER_KEY`，并生成
 Portal API Key 摘要。
 
+配置完成后，可用一个入口安装依赖、检查配置并初始化空白 Schema：
+
+```bash
+bash scripts/deployment/bootstrap_kbot.sh
+```
+
+生产使用 `--production` 构建并安装 Wheel。只检查安装和建表计划、不连接数据库时
+增加 `--schema-dry-run`。
+
 ## 生产配置
 
 生产环境通常只需以下内容：

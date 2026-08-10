@@ -547,7 +547,7 @@ async def _validate_schema(
             )
         )
     ).one()
-    if tuple(schema_version) != ("AIOPS", 6, "aiops-oracle-v1"):
+    if tuple(schema_version) != ("AIOPS", 8, "aiops-oracle-v1"):
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 

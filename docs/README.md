@@ -7,7 +7,7 @@ Git 历史保存，不再作为有效文档。
 
 - [系统架构](architecture/overview.md)：服务边界、运行拓扑和依赖规则。
 - [Knowledge Core](architecture/knowledge-core.md)：文件入库、解析、索引和二阶段检索。
-- [Agent Runtime](architecture/agent-runtime.md)：多 Agent、Skill、记忆、Artifact 和 SSE。
+- [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
 - [Model Serving](architecture/model-serving.md)：模型注册、托管进程和功能模型绑定。
 - [身份与 API](architecture/security-and-api.md)：Domain、Portal API Key 和内部 AuthContext。

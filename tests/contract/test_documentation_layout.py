@@ -51,7 +51,6 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 "agent-chat.md",
                 "aiops-agent.md",
-                "kbot-backend-migration-s0-baseline-report.md",
                 "knowledge-lifecycle.md",
                 "slack-integration.md",
             },
@@ -60,13 +59,7 @@ class DocumentationLayoutTest(unittest.TestCase):
                 for path in (DOCS_ROOT / "product").glob("*.md")
             },
         )
-        self.assertEqual(
-            {"ammolite-aiops-knowledge-backend.md"},
-            {
-                path.name
-                for path in (DOCS_ROOT / "migrations").glob("*.md")
-            },
-        )
+        self.assertFalse(any((DOCS_ROOT / "migrations").glob("*.md")))
 
     def test_obsolete_design_directories_do_not_return(self):
         self.assertFalse((DOCS_ROOT / "kbot_4.0_design").exists())

@@ -21,6 +21,16 @@
 建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
 其他服务目录中的表。
 
+空白环境推荐从仓库根目录使用统一部署入口：
+
+```bash
+bash scripts/deployment/bootstrap_kbot.sh --production
+```
+
+它会安装依赖、执行配置与静态契约检查、确认目标为空 Schema、创建全部已选服务
+对象，并初始化默认 App 角色/权限/映射和 Prompt Catalog。它不会自动清库，也不会
+创建 Domain、用户、成员关系、业务 Agent、模型或知识库数据。
+
 `aiops_agent` 已提供八段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
 初始化配置中选择。其脚本必须整体启用或禁用，不能跳过中间依赖段。
 
@@ -28,19 +38,10 @@
 Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图或回滚逻辑。
 已有开发 Schema 无需保留数据时，先使用 KBot Schema 用户执行
 `scripts/db/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
-命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。
-需要保留当前数据并应用资源标识字段清理时，停止 KBot 服务并执行
-`scripts/db/remove_redundant_resource_key_columns.sql`。该脚本原地删除
-`AGENT_KEY`、`COLLECTION_KEY`、`TARGET_KEY`、`SOURCE_KEY`、`PLAN_KEY`
-及相关约束，并重建受影响的 AIOps 视图；不删除表和业务数据。
-需要保留当前数据并修复 Delegation 子运行唯一性时，停止 Agent Runtime
-Worker 后执行 `scripts/db/fix_agent_delegation_child_unique.sql`。该脚本将
-旧组合唯一约束替换为仅在 `CHILD_RUN_ID` 非空时生效的函数唯一索引；不删除表和
-业务数据。
+命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。KBot 4.0 不保留一次性
+升级、字段修复或数据补种脚本；结构变化直接更新规范 DDL，并在新的空白 Schema
+重新初始化。
 
-现有 KBot 4.0 Schema 只补齐 AIOps 与知识检索 App 表结构和字段时，使用
-`scripts/db/align_ammolite_aiops_knowledge_schema.sql`。该脚本不迁移历史业务数据、
-不写权限种子、不删除旧业务表；既有表上的新上下文字段保持可空。
 执行前运行：
 
 ```bash
