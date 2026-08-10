@@ -168,8 +168,10 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             _context(
                 original_input="查询销售额",
                 agent={
-                    "data_query_mode": "MCP",
-                    "data_profile_name": "SALES_PROFILE",
+                    "config": {
+                        "data_query_mode": "MCP",
+                        "data_profile_name": "SALES_PROFILE",
+                    },
                 },
                 artifacts=(
                     _artifact(
@@ -260,7 +262,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         ).execute(_context(
             original_input="查询销售额",
             agent={
-                "data_query_mode": "SEMANTIC",
+                "config": {"data_query_mode": "SEMANTIC"},
                 "agent_version_id": str(uuid7()),
                 "models": {"data_planner_llm": {"served_model_name": "planner"}},
             },

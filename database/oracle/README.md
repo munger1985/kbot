@@ -37,6 +37,10 @@ Schema。脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图�
 Worker 后执行 `scripts/db/fix_agent_delegation_child_unique.sql`。该脚本将
 旧组合唯一约束替换为仅在 `CHILD_RUN_ID` 非空时生效的函数唯一索引；不删除表和
 业务数据。
+
+现有 KBot 4.0 Schema 只补齐 AIOps 与知识检索 App 表结构和字段时，使用
+`scripts/db/align_ammolite_aiops_knowledge_schema.sql`。该脚本不迁移历史业务数据、
+不写权限种子、不删除旧业务表；既有表上的新上下文字段保持可空。
 执行前运行：
 
 ```bash

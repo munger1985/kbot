@@ -24,9 +24,9 @@ class MCPDataQueryExecutor:
     async def execute(self, *, context: ExecutionContext, question: str) -> QueryResult:
         if self._client is None:
             raise RuntimeError("DATA_QUERY_MCP_PROVIDER_UNAVAILABLE")
-        profile = str(
-            context.config_snapshot.get("agent", {}).get("data_profile_name") or ""
-        ).strip()
+        agent = dict(context.config_snapshot.get("agent") or {})
+        agent_config = dict(agent.get("config") or {})
+        profile = str(agent_config.get("data_profile_name") or "").strip()
         if not profile:
             raise ValueError("MCP 问数模式未配置 data_profile_name")
         result = await self._client.query(
@@ -199,7 +199,9 @@ class DataQuerySkill:
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
         question = self._standalone_query(context)
-        mode = str(context.config_snapshot.get("agent", {}).get("data_query_mode") or "")
+        agent = dict(context.config_snapshot.get("agent") or {})
+        agent_config = dict(agent.get("config") or {})
+        mode = str(agent_config.get("data_query_mode") or "")
         executor = self._executors.get(mode)
         if executor is None:
             raise ValueError("Agent data_query_mode 无效")

@@ -133,6 +133,26 @@ python3 scripts/db/apply_oracle_schema.py \
 初始化器拒绝覆盖已有 `KBOT_%` 对象。4.0 不读取、迁移或兼容 3.x 表和数据。完整
 权限、表空间和执行顺序见 [Oracle 初始化说明](../../database/oracle/README.md)。
 
+### 从迁移前 KBot 4.0 原地同步
+
+若只要求补齐表结构和字段，不迁移历史业务数据，执行：
+
+```bash
+sqlplus user/password@service \
+  @scripts/db/align_ammolite_aiops_knowledge_schema.sql
+```
+
+该脚本不执行业务数据 `INSERT`、`UPDATE`、`DELETE`，也不删除旧业务表。为避免
+改写历史行，补到既有表上的新上下文字段保持可空；新写入路径的凭据外键使用
+`ENABLE NOVALIDATE`，约束新数据但不扫描或改写旧记录。
+
+表结构对齐后，只补默认角色和权限、不创建用户或成员授权时执行：
+
+```bash
+sqlplus user/password@service \
+  @scripts/db/seed_aiops_knowledge_roles_permissions.sql
+```
+
 ## 启动前检查
 
 ```bash
