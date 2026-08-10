@@ -5972,6 +5972,32 @@
         "title": "ReturnSemanticModelForRevisionRequest",
         "type": "object"
       },
+      "RevisionReprocessRequest": {
+        "properties": {
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Version Id"
+          }
+        },
+        "required": [
+          "collection_id"
+        ],
+        "title": "RevisionReprocessRequest",
+        "type": "object"
+      },
       "RootCauseGrade": {
         "enum": [
           "CONFIRMED",
@@ -14705,6 +14731,67 @@
           }
         },
         "summary": "Get Revision Members",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/knowledge/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess": {
+      "post": {
+        "operationId": "reprocess_revision_api_v1_apps_knowledge_retrieval_knowledge_bundles__bundle_id__revisions__bundle_revision_id__reprocess_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionReprocessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reprocess Revision",
         "tags": [
           "Knowledge"
         ]

@@ -30,6 +30,9 @@ from platform_core.security import (
 
 TEST_PEPPER = "main-api-test-pepper"
 TEST_COLLECTION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
+TEST_BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a021")
+TEST_BUNDLE_REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a022")
+TEST_DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a023")
 
 
 class _FakeKnowledgeCoreClient:
@@ -39,6 +42,9 @@ class _FakeKnowledgeCoreClient:
         self.multipart_body = b""
         self.raise_error = False
         self.last_bundle_id: UUID | None = None
+        self.last_bundle_revision_id: UUID | None = None
+        self.last_collection_id: UUID | None = None
+        self.last_document_version_id: UUID | None = None
 
     async def list_collections(
         self,
@@ -93,6 +99,28 @@ class _FakeKnowledgeCoreClient:
     ) -> dict[str, Any]:
         self.last_bundle_id = bundle_id
         return {"bundle_id": str(bundle_id), "status": "PROCESSING"}
+
+    async def reprocess_revision(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        document_version_id: UUID | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        self.last_context = auth_context
+        self.last_domain_id = domain_id
+        self.last_collection_id = collection_id
+        self.last_bundle_id = bundle_id
+        self.last_bundle_revision_id = bundle_revision_id
+        self.last_document_version_id = document_version_id
+        return {
+            "bundle_revision_id": str(bundle_revision_id),
+            "generation": "019f8eae-2c25-7d48-b044-350ec3f5a024",
+            "scheduled_file_count": 1,
+        }
 
 
 class _FakeAgentRuntimeClient:
@@ -331,6 +359,9 @@ class _FakeAccessControlService:
         }
     )
 
+    def __init__(self):
+        self.last_permission_code: str | None = None
+
     async def snapshot(self, *, app_id, domain_id, user_id):
         return SimpleNamespace(
             app_id=app_id,
@@ -341,6 +372,7 @@ class _FakeAccessControlService:
         )
 
     async def require(self, *, app_id, domain_id, user_id, permission_code):
+        self.last_permission_code = permission_code
         return await self.snapshot(
             app_id=app_id, domain_id=domain_id, user_id=user_id
         )
@@ -665,6 +697,38 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(
             "REQUEST_VALIDATION_FAILED",
             invalid.json()["code"],
+        )
+
+    def test_public_revision_reprocess_schedules_selected_file(self) -> None:
+        response = self.client.post(
+            (
+                "/api/v1/apps/knowledge-retrieval/knowledge/bundles/"
+                f"{TEST_BUNDLE_ID}/revisions/{TEST_BUNDLE_REVISION_ID}"
+                "/reprocess"
+            ),
+            headers=self._headers(),
+            json={
+                "collection_id": str(TEST_COLLECTION_ID),
+                "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
+            },
+        )
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual(1, response.json()["scheduled_file_count"])
+        self.assertEqual(100, self.kc.last_domain_id)
+        self.assertEqual(TEST_COLLECTION_ID, self.kc.last_collection_id)
+        self.assertEqual(TEST_BUNDLE_ID, self.kc.last_bundle_id)
+        self.assertEqual(
+            TEST_BUNDLE_REVISION_ID,
+            self.kc.last_bundle_revision_id,
+        )
+        self.assertEqual(
+            TEST_DOCUMENT_VERSION_ID,
+            self.kc.last_document_version_id,
+        )
+        self.assertEqual(
+            "knowledge_retrieval:knowledge_manage",
+            self.app.state.access_control_service.last_permission_code,
         )
 
     def test_validation_error_uses_problem_details(self) -> None:

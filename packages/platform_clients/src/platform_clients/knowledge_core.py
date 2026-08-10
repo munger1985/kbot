@@ -291,6 +291,30 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def reprocess_revision(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        document_version_id: UUID | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/bundles/{bundle_id}/revisions/{bundle_revision_id}"
+                "/reprocess"
+            ),
+            payload={
+                "collection_id": collection_id,
+                "document_version_id": document_version_id,
+            },
+            auth_context=auth_context,
+        )
+
     async def list_pending_approvals(
         self,
         *,

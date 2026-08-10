@@ -78,6 +78,11 @@ class IntakeReviewRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=1000)
 
 
+class RevisionReprocessRequest(BaseModel):
+    collection_id: UUID
+    document_version_id: UUID | None = None
+
+
 def _domain_id(request: Request) -> int:
     context = get_auth_context(request)
     if context.domain_id is None:
@@ -255,6 +260,27 @@ async def get_revision_members(
         bundle_id=bundle_id,
         bundle_revision_id=bundle_revision_id,
         include_members=True,
+        auth_context=context,
+    )
+
+
+@router.post(
+    "/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def reprocess_revision(
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
+    payload: RevisionReprocessRequest,
+    request: Request,
+):
+    context = get_auth_context(request)
+    return await _client(request).reprocess_revision(
+        domain_id=_domain_id(request),
+        collection_id=payload.collection_id,
+        bundle_id=bundle_id,
+        bundle_revision_id=bundle_revision_id,
+        document_version_id=payload.document_version_id,
         auth_context=context,
     )
 
