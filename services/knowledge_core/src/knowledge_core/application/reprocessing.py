@@ -10,6 +10,7 @@ from knowledge_core.application.parse_policy import (
     build_parse_plan,
     validate_parse_policy_overrides,
 )
+from knowledge_core.application.notifications import KnowledgeOutboxPublisher
 from knowledge_core.entities import KcIngestionJobEntity, KcParseViewEntity
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 from knowledge_core.ports.parser_artifact_store import ParserArtifactStore
@@ -201,6 +202,8 @@ class KnowledgeCoreReprocessingService:
                                 version.document_version_id
                             ),
                             "reprocess_generation": str(generation),
+                            "notification_operation_id": str(generation),
+                            "notification_actor_id": actor_id,
                             "previous_parse_job_id": str(
                                 previous.ingestion_job_id
                             ),
@@ -228,6 +231,20 @@ class KnowledgeCoreReprocessingService:
                 bundle.availability_status = "PROCESSING"
                 bundle.updated_by = actor_id
                 bundle.row_version = int(bundle.row_version) + 1
+            await KnowledgeOutboxPublisher().publish(
+                uow=uow,
+                event_type="knowledge.ingestion.started",
+                actor_id=actor_id,
+                resource_id=str(collection.collection_id),
+                payload={
+                    "event_key": str(generation),
+                    "operation_id": str(generation),
+                    "correlation_id": str(bundle_revision_id),
+                    "display_name": collection.display_name,
+                    "progress_current": 0,
+                    "progress_total": len(targets),
+                },
+            )
             await uow.flush()
             await uow.commit()
         for manifest in cleanup_manifests:

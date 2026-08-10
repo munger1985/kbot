@@ -425,6 +425,7 @@ class KnowledgeCoreParseTaskService:
                 input_fingerprint=index_fingerprint,
             )
             if index_job is None:
+                parse_payload = dict(job.payload_json or {})
                 index_job = await uow.jobs.add(KcIngestionJobEntity(
                     collection_id=job.collection_id,
                     bundle_revision_id=job.bundle_revision_id,
@@ -432,7 +433,15 @@ class KnowledgeCoreParseTaskService:
                     parse_view_id=view.parse_view_id,
                     job_type="INDEX", idempotency_key=index_key,
                     input_fingerprint=index_fingerprint,
-                    payload_json={"parse_output_fingerprint": normalized_output_fingerprint},
+                    payload_json={
+                        "parse_output_fingerprint": normalized_output_fingerprint,
+                        "notification_operation_id": parse_payload.get(
+                            "notification_operation_id"
+                        ),
+                        "notification_actor_id": parse_payload.get(
+                            "notification_actor_id"
+                        ),
+                    },
                     job_status="PENDING", priority=job.priority,
                     max_attempts=job.max_attempts, created_by=worker_id, updated_by=worker_id,
                 ))

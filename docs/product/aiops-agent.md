@@ -3,8 +3,7 @@
 ## 一页产品概述
 
 AIOps Agent 是独立部署、独立入口、拥有自己领域状态机的运维 Agent。它接入
-Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL、PostgreSQL 的性能
-与故障进行
+Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL 的性能与故障进行
 诊断，生成故障、性能、日巡检、周巡检和处理前后对比报告，并在受控策略下给出
 或执行解决命令。
 
@@ -16,7 +15,7 @@ Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL、Postgr
 
 | 能力域 | 4.0 能力 |
 | --- | --- |
-| 目标管理 | Oracle/MySQL/PostgreSQL Target、环境、版本、能力和托管凭据引用 |
+| 目标管理 | Oracle/MySQL Target、环境、版本、能力和托管凭据引用 |
 | 监控接入 | Prometheus、Zabbix、OEM；同一 Target 可绑定多个来源 |
 | 触发入口 | Chat、Critical Alert Webhook、定时巡检、内部 API |
 | 诊断数据 | 指标、告警、只读数据库诊断、用户回贴结果、KC SOP |
@@ -30,9 +29,9 @@ Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL、Postgr
 IM/Email 当前只保留扩展端口，没有实现实际 Adapter。Shell、OEM Job 和
 Zabbix Remote Command 只作为人工建议，不由系统执行。
 
-三类数据库均提供版本化只读诊断目录。当前 PostgreSQL 只进入只读诊断链路；
-Oracle/MySQL 还支持受控人工 SQL 和审批后变更。产品界面不能把 PostgreSQL Target
-展示为具备相同的变更执行能力。
+Oracle/MySQL 均提供版本化只读诊断目录，并支持受控人工 SQL 和审批后变更。
+PostgreSQL 已有内部只读诊断驱动与目录，但当前公开产品契约未开放 PostgreSQL
+Target，产品界面不能将其展示为当前可用的托管目标。
 
 ## 服务边界
 

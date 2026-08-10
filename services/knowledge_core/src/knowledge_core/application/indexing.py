@@ -286,11 +286,23 @@ class KnowledgeCoreEvidenceIndexService:
                     if revision.status == "PARTIAL"
                     else "knowledge.ingestion.completed"
                 ),
-                actor_id=str(collection.created_by or revision.created_by or ""),
+                actor_id=str(
+                    payload.get("notification_actor_id")
+                    or revision.created_by
+                    or collection.created_by
+                    or ""
+                ),
                 resource_id=str(collection.collection_id),
                 payload={
-                    "event_key": str(revision.bundle_revision_id),
+                    "event_key": str(
+                        payload.get("notification_operation_id")
+                        or revision.bundle_revision_id
+                    ),
                     "job_id": str(job_id),
+                    "operation_id": str(
+                        payload.get("notification_operation_id")
+                        or revision.bundle_revision_id
+                    ),
                     "display_name": collection.display_name,
                 },
             )
@@ -362,11 +374,29 @@ class KnowledgeCoreEvidenceIndexService:
                                 await KnowledgeOutboxPublisher().publish(
                                     uow=uow,
                                     event_type="knowledge.ingestion.failed",
-                                    actor_id=str(collection.created_by or revision.created_by or ""),
+                                    actor_id=str(
+                                        (job.payload_json or {}).get(
+                                            "notification_actor_id"
+                                        )
+                                        or revision.created_by
+                                        or collection.created_by
+                                        or ""
+                                    ),
                                     resource_id=str(collection.collection_id),
                                     payload={
-                                        "event_key": str(revision.bundle_revision_id),
+                                        "event_key": str(
+                                            (job.payload_json or {}).get(
+                                                "notification_operation_id"
+                                            )
+                                            or revision.bundle_revision_id
+                                        ),
                                         "job_id": str(job_id),
+                                        "operation_id": str(
+                                            (job.payload_json or {}).get(
+                                                "notification_operation_id"
+                                            )
+                                            or revision.bundle_revision_id
+                                        ),
                                         "display_name": collection.display_name,
                                         "error_code": failure_code,
                                     },
@@ -460,12 +490,21 @@ class KnowledgeCoreEvidenceIndexService:
                     input_fingerprint=profile_fingerprint,
                 )
                 if existing_profile is None:
+                    source_payload = dict(job.payload_json or {})
                     await uow.jobs.add(KcIngestionJobEntity(
                         collection_id=revision.collection_id,
                         bundle_revision_id=revision.bundle_revision_id,
                         job_type="PROFILE", idempotency_key=profile_key,
                         input_fingerprint=profile_fingerprint,
-                        payload_json={"profile_schema_version": "profile/v1"},
+                        payload_json={
+                            "profile_schema_version": "profile/v1",
+                            "notification_operation_id": source_payload.get(
+                                "notification_operation_id"
+                            ),
+                            "notification_actor_id": source_payload.get(
+                                "notification_actor_id"
+                            ),
+                        },
                         job_status="PENDING", priority=job.priority,
                         max_attempts=job.max_attempts, created_by=worker_id, updated_by=worker_id,
                     ))

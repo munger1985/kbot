@@ -130,6 +130,21 @@ class NotificationCenterS6Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(repository.work_items))
         self.assertEqual("OPEN", next(iter(repository.work_items.values())).status)
 
+    async def test_knowledge_ingestion_start_creates_running_workflow(self):
+        repository = _Repository()
+        await NotificationProjectionService().project(
+            uow=_Uow(repository),
+            outbox=_outbox(
+                event_type="knowledge.ingestion.started",
+                occurred_at=datetime.now(timezone.utc),
+                recipients=["actor-1"],
+                event_key="knowledge-start-1",
+            ),
+        )
+        operation = repository.operations[("knowledge-core", "run-1")]
+        self.assertEqual("RUNNING", operation.status)
+        self.assertEqual(1, len(repository.inbox))
+
     async def test_out_of_order_event_does_not_regress_operation_or_work_item(self):
         repository = _Repository()
         now = datetime.now(timezone.utc)

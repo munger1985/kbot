@@ -13,6 +13,7 @@ from knowledge_core.application.intake import (
 from knowledge_core.domain.intake import KmAssetIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
 from platform_core.identity import uuid7
+from platform_core.notifications import EVENT_TYPES
 
 
 def manifest():
@@ -52,6 +53,7 @@ class Uow:
         self.revisions = Repository(values); self.documents = Repository(values); self.versions = Repository(values)
         self.members = Repository(values); self.jobs = Repository(values); self.commit = AsyncMock()
         self.parse_views = Repository(values)
+        self.notification_outbox = SimpleNamespace(add=AsyncMock())
         self.session = SimpleNamespace(flush=AsyncMock())
     async def __aenter__(self): return self
     async def __aexit__(self, *args): return None
@@ -68,7 +70,9 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         if parser_vlm_model_id:
             models["parser_vlm"] = str(parser_vlm_model_id)
         return SimpleNamespace(
-            collection_id=1,
+            collection_id=uuid7(),
+            domain_id=1,
+            display_name="测试知识库",
             status="ACTIVE",
             models_json=models,
         )
@@ -102,6 +106,19 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(uow.jobs.added))
         self.assertEqual(50, uow.jobs.added[0].parse_view_id)
         self.assertEqual("ACCEPTED", uow.receipts.added[0].receipt_status)
+        notification = uow.notification_outbox.add.await_args.kwargs
+        self.assertEqual(
+            "knowledge.ingestion.started",
+            notification["envelope"].event_type,
+        )
+        self.assertEqual(
+            "svc:portal",
+            notification["envelope"].initiator_actor_id,
+        )
+        self.assertEqual(
+            "RUNNING",
+            EVENT_TYPES[notification["envelope"].event_type].operation_status,
+        )
         uow.commit.assert_awaited_once()
 
     async def test_user_upload_waits_for_review_without_parse_job(self):
@@ -141,6 +158,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             reviewed_at=None,
             review_comment=None,
             updated_by=None,
+            created_by="user:uploader",
             completed_at=None,
         )
         version = SimpleNamespace(

@@ -20,6 +20,7 @@ from knowledge_core.application.parse_policy import (
     build_parse_plan,
     validate_parse_policy_overrides,
 )
+from knowledge_core.application.notifications import KnowledgeOutboxPublisher
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
 
@@ -546,6 +547,23 @@ class KnowledgeCoreIntakeService:
                 if uow.session is None:
                     raise RuntimeError("Knowledge Core Unit of Work session is not initialized")
                 await uow.session.flush()
+            if not command.approval_required:
+                await KnowledgeOutboxPublisher().publish(
+                    uow=uow,
+                    event_type="knowledge.ingestion.started",
+                    actor_id=command.actor_id,
+                    resource_id=str(collection.collection_id),
+                    payload={
+                        "event_key": str(revision.bundle_revision_id),
+                        "operation_id": str(revision.bundle_revision_id),
+                        "correlation_id": str(revision.bundle_revision_id),
+                        "display_name": collection.display_name,
+                        "progress_current": 0,
+                        "progress_total": len(command.manifest.documents) + int(
+                            command.generate_manifest
+                        ),
+                    },
+                )
             await uow.commit()
             return IntakeAcceptance(
                 bundle.bundle_id,
@@ -655,6 +673,22 @@ class KnowledgeCoreIntakeService:
                         version,
                         command.actor_id,
                     )
+                await KnowledgeOutboxPublisher().publish(
+                    uow=uow,
+                    event_type="knowledge.ingestion.started",
+                    actor_id=str(revision.created_by or command.actor_id),
+                    resource_id=str(collection.collection_id),
+                    payload={
+                        "event_key": str(revision.bundle_revision_id),
+                        "operation_id": str(revision.bundle_revision_id),
+                        "correlation_id": str(revision.bundle_revision_id),
+                        "display_name": collection.display_name,
+                        "progress_current": 0,
+                        "progress_total": len(
+                            [item for item in members if item.document_version_id]
+                        ),
+                    },
+                )
                 revision.status = "PROCESSING"
             else:
                 revision.status = "REJECTED"
@@ -755,6 +789,11 @@ class KnowledgeCoreIntakeService:
             collection_id=collection_id, bundle_revision_id=bundle_revision_id,
             document_version_id=version.document_version_id, parse_view_id=view.parse_view_id, job_type="PARSE",
             idempotency_key=f"parse:{version.document_version_id}:{plan.fingerprint}", input_fingerprint=version.content_hash,
-            payload_json={"document_version_id": version.document_version_id}, job_status="PENDING",
+            payload_json={
+                "document_version_id": str(version.document_version_id),
+                "notification_operation_id": str(bundle_revision_id),
+                "notification_actor_id": actor_id,
+            },
+            job_status="PENDING",
             created_by=actor_id, updated_by=actor_id,
         ))

@@ -32,6 +32,7 @@ class KnowledgeOutboxPublisher:
             payload.get("display_name") or collection.display_name or resource_id
         )
         summary = {
+            "knowledge.ingestion.started": "知识内容已进入解析与索引流程。",
             "knowledge.collection.purge_completed": "知识库已安全删除。",
             "knowledge.collection.purge_failed": "知识库删除失败，请检查任务状态。",
             "knowledge.ingestion.completed": "知识内容处理完成。",
@@ -54,11 +55,21 @@ class KnowledgeOutboxPublisher:
                 initiator_actor_id=initiator,
                 recipient_actor_ids=[initiator] if initiator else [],
                 summary=summary,
-                correlation_id=str(payload.get("job_id") or resource_id),
-                operation_id=str(payload.get("job_id") or resource_id),
+                correlation_id=str(
+                    payload.get("correlation_id")
+                    or payload.get("job_id")
+                    or resource_id
+                ),
+                operation_id=str(
+                    payload.get("operation_id")
+                    or payload.get("job_id")
+                    or resource_id
+                ),
                 safe_data={
                     "error_code": payload.get("error_code"),
                     "objects_deleted": payload.get("objects_deleted"),
+                    "progress_current": payload.get("progress_current"),
+                    "progress_total": payload.get("progress_total"),
                 },
             ),
         )

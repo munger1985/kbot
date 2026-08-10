@@ -213,12 +213,22 @@ class KnowledgeCoreProfileService:
                 input_fingerprint=profile_fingerprint,
             )
             if existing_index is None:
+                source_payload = dict(job.payload_json or {})
                 await uow.jobs.add(KcIngestionJobEntity(
                     collection_id=revision.collection_id,
                     bundle_revision_id=revision.bundle_revision_id,
                     job_type="INDEX", idempotency_key=profile_index_key,
                     input_fingerprint=profile_fingerprint,
-                    payload_json={"target": "DISCOVERY", "profile_schema_version": PROFILE_SCHEMA_VERSION},
+                    payload_json={
+                        "target": "DISCOVERY",
+                        "profile_schema_version": PROFILE_SCHEMA_VERSION,
+                        "notification_operation_id": source_payload.get(
+                            "notification_operation_id"
+                        ),
+                        "notification_actor_id": source_payload.get(
+                            "notification_actor_id"
+                        ),
+                    },
                     job_status="PENDING", priority=job.priority,
                     max_attempts=job.max_attempts, created_by=worker_id, updated_by=worker_id,
                 ))

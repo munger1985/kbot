@@ -49,6 +49,7 @@ _EVENTS = (
     _event("agent.run.input_required", "agent-runtime", "ACTION_REQUIRED", "WARNING", "Agent 运行等待输入", operation_status="WAITING_USER", work_item_action="agent.run.input"),
     _event("agent.run.completed", "agent-runtime", "RESULT", "INFO", "Agent 运行完成", operation_status="SUCCEEDED", work_item_action="agent.run.input", resolve_work_item=True),
     _event("agent.run.failed", "agent-runtime", "RESULT", "WARNING", "Agent 运行失败", operation_status="FAILED", work_item_action="agent.run.input", resolve_work_item=True),
+    _event("knowledge.ingestion.started", "knowledge-core", "TASK", "INFO", "知识处理已开始", operation_status="RUNNING"),
     _event("knowledge.ingestion.completed", "knowledge-core", "RESULT", "INFO", "知识处理完成", operation_status="SUCCEEDED"),
     _event("knowledge.ingestion.partial", "knowledge-core", "ACTION_REQUIRED", "WARNING", "知识处理部分完成", operation_status="PARTIAL", work_item_action="knowledge.ingestion.repair"),
     _event("knowledge.ingestion.failed", "knowledge-core", "RESULT", "WARNING", "知识处理失败", operation_status="FAILED", work_item_action="knowledge.ingestion.repair", resolve_work_item=True),
