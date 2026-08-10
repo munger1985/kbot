@@ -303,7 +303,9 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
     def test_aiops_owns_eight_ordered_ddl_scripts(self) -> None:
         root = Path(__file__).resolve().parents[3]
         sql_files = sorted(
-            (root / "database" / "oracle" / "aiops_agent").glob("*.sql")
+            (root / "database" / "oracle" / "aiops_agent").glob(
+                "[0-9][0-9][0-9]_*.sql"
+            )
         )
         self.assertEqual(
             [
@@ -317,6 +319,23 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 "008_ops_conversations_reports.sql",
             ],
             [path.name for path in sql_files],
+        )
+
+    def test_aiops_ready_check_uses_canonical_schema_version(self) -> None:
+        root = Path(__file__).resolve().parents[3]
+        manifest = json.loads(
+            (
+                root / "database" / "oracle" / "aiops_agent"
+                / "schema_manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        source = (
+            root / "services" / "aiops_agent" / "src" / "aiops_agent"
+            / "bootstrap" / "common.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            f"AND schema_version = {manifest['schema_version']}",
+            source,
         )
 
     def test_openapi_snapshots_match_frozen_contracts(self) -> None:
