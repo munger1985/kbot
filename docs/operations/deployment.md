@@ -60,6 +60,38 @@ bash scripts/deployment/install_workspace.sh --production
 KBOT_CONDA_ENV=kbot4 bash scripts/deployment/install_workspace.sh
 ```
 
+### Conda OCR 依赖
+
+Knowledge Core Parser 默认通过 Docling 的 `TesseractOcrOptions` 执行中英文 OCR。
+`requirements.txt` 中的 Docling 不包含可选的 Tesseract Python 绑定，因此使用 Conda
+环境部署时，还必须在 KBot 实际运行的同一个环境中安装 `tesseract` 和 `tesserocr`：
+
+```bash
+conda install -n kbot4 -c conda-forge tesseract tesserocr
+```
+
+激活环境后，将 Tesseract 语言数据目录保存为该环境的持久变量：
+
+```bash
+conda activate kbot4
+conda env config vars set TESSDATA_PREFIX="$CONDA_PREFIX/share/tessdata/"
+conda deactivate
+conda activate kbot4
+```
+
+安装后必须确认 Python 绑定可导入，并且语言列表至少包含简体中文 `chi_sim` 和英文
+`eng`：
+
+```bash
+tesseract --version
+tesseract --list-langs
+python -c "import tesserocr; print(tesserocr.tesseract_version()); print(tesserocr.get_languages())"
+```
+
+如果部署使用 `KBOT_CONDA_ENV` 指定了其他环境，应将以上命令中的 `kbot4` 替换为
+实际环境名。Parser 进程由 systemd 或其他进程管理器启动时，也必须继承该环境保存的
+`TESSDATA_PREFIX`，否则 Docling 可能能导入 `tesserocr`，但仍无法加载中文语言数据。
+
 KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
 一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过
 调整 `PYTHONPATH` 或忽略来源检查绕过。
