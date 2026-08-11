@@ -262,6 +262,30 @@ def _context(*, input_artifacts=()):
 
 class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
+    def _ambiguous_rewrite_artifact() -> LeasedArtifact:
+        return LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type="CONTEXT_REWRITE",
+            schema_version="ContextRewriteOutput.v1",
+            producer="context-rewrite",
+            producer_version="1.0.0",
+            payload={
+                "raw_input": "移动套餐",
+                "standalone_query": "员工可选的移动通信套餐有哪些？",
+                "retrieval_queries": ["员工可选的移动通信套餐有哪些？"],
+                "resolved_references": [],
+                "active_topic": "员工套餐",
+                "ambiguity": True,
+                "clarification_question": "请说明移动套餐的具体类型。",
+                "memory_refs": [],
+            },
+            content_hash="rewrite-hash",
+            provenance={},
+            security_level=2,
+        )
+
+    @staticmethod
     async def _retrieval_artifact() -> LeasedArtifact:
         retrieval = await KnowledgeRetrievalSkill(
             knowledge_core_client=_KnowledgeCoreClient(),
@@ -470,6 +494,24 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(citation["document_id"], str(client.document_id))
         self.assertEqual(citation["locator"], {"page": 3})
 
+    async def test_document_skill_retrieves_before_asking_for_clarification(self):
+        client = _KnowledgeCoreClient()
+        rewrite = self._ambiguous_rewrite_artifact()
+
+        result = await KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        ).execute(_context(input_artifacts=(rewrite,)))
+
+        self.assertEqual(
+            client.last_discovery_query,
+            "员工可选的移动通信套餐有哪些？",
+        )
+        self.assertEqual(
+            len(result.artifact.payload["citation_pack"]["citations"]),
+            1,
+        )
+
     async def test_document_skill_propagates_agent_rerank_switch(self):
         client = _KnowledgeCoreClient()
         context = _context()
@@ -614,6 +656,20 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["document_id"],
             str(client.document_id),
+        )
+
+    async def test_composer_prefers_document_evidence_over_clarification(self):
+        rewrite = self._ambiguous_rewrite_artifact()
+        retrieval = await self._retrieval_artifact()
+
+        result = await ResponseComposerSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(_context(input_artifacts=(rewrite, retrieval)))
+
+        self.assertEqual(result.artifact.payload["status"], "READY")
+        self.assertEqual(
+            result.artifact.payload["used_citation_labels"], ["C1"]
         )
 
     async def test_composer_streams_real_answer_deltas(self):

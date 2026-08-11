@@ -52,7 +52,7 @@ class ResponseComposerSkill:
         self._prompt_resolver = prompt_resolver
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
-        clarification = self._clarification(context)
+        clarification = self._blocking_clarification(context)
         if clarification is not None:
             return self._result(
                 context,
@@ -135,7 +135,7 @@ class ResponseComposerSkill:
 
     async def execute_stream(self, context: ExecutionContext):
         """流式生成回答；最终 Artifact 仍执行完整引用校验。"""
-        clarification = self._clarification(context)
+        clarification = self._blocking_clarification(context)
         if clarification is not None:
             grounded = GroundedAnswer(
                 answer=clarification,
@@ -349,6 +349,19 @@ class ResponseComposerSkill:
             return None
         value = str(payload.get("clarification_question") or "").strip()
         return value or "请补充说明当前问题所指的对象。"
+
+    @classmethod
+    def _blocking_clarification(
+        cls, context: ExecutionContext
+    ) -> str | None:
+        """文档已命中可引用证据时，不让上下文歧义阻断回答。"""
+        clarification = cls._clarification(context)
+        if clarification is None:
+            return None
+        retrieval = cls._document_result(context)
+        if retrieval is not None and retrieval.citation_pack.citations:
+            return None
+        return clarification
 
     @staticmethod
     def _aiops_result(

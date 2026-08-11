@@ -39,13 +39,6 @@ class KnowledgeRetrievalSkill:
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
         query = self._standalone_query(context)
-        clarification = self._clarification(context)
-        if clarification is not None:
-            return self._empty_result(
-                context,
-                status="CLARIFICATION_REQUIRED",
-                warning=clarification,
-            )
         collection_ids = await self._resolve_collection_ids(context)
         if not collection_ids:
             return self._empty_result(
@@ -462,23 +455,6 @@ class KnowledgeRetrievalSkill:
             (artifacts[-1].payload or {}).get("standalone_query") or ""
         ).strip()
         return query or context.original_input
-
-    @staticmethod
-    def _clarification(context: ExecutionContext) -> str | None:
-        artifacts = [
-            item
-            for item in context.input_artifacts
-            if item.artifact_type == "CONTEXT_REWRITE"
-        ]
-        if not artifacts:
-            return None
-        payload = artifacts[-1].payload or {}
-        if not bool(payload.get("ambiguity", False)):
-            return None
-        return str(
-            payload.get("clarification_question")
-            or "请补充说明当前问题所指的对象。"
-        )
 
     def _auth_context(self, context: ExecutionContext) -> AuthContext:
         return AuthContext(
