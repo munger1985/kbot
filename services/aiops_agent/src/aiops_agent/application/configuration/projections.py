@@ -178,13 +178,16 @@ def _monitor_summary(entity: MonitorSourceEntity) -> MonitorSourceSummary:
     )
 
 def _monitor_detail(entity: MonitorSourceEntity) -> MonitorSourceDetail:
+    capabilities = dict(entity.capabilities_json or {})
+    prometheus_instance = capabilities.pop("prometheus_instance", None)
     return MonitorSourceDetail(
         **_monitor_summary(entity).model_dump(),
         endpoint=entity.endpoint or "",
+        prometheus_instance=prometheus_instance,
         secret=_secret_status(entity.secret_ref),
         webhook_secret=_secret_status(entity.webhook_secret_ref),
         tls_profile=_secret_status(entity.tls_profile_ref),
-        capabilities=entity.capabilities_json or {},
+        capabilities=capabilities,
         webhook_configured=entity.webhook_key_hash is not None,
         health_version=int(entity.health_version),
         last_health_check_at=(

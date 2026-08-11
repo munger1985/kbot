@@ -1797,6 +1797,19 @@
             "title": "Endpoint",
             "type": "string"
           },
+          "prometheus_instance": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Instance"
+          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
@@ -1901,6 +1914,17 @@
               }
             ],
             "title": "Last Health Check At"
+          },
+          "prometheus_instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Instance"
           },
           "row_version": {
             "minimum": 1.0,
@@ -2068,6 +2092,19 @@
               }
             ],
             "title": "Endpoint"
+          },
+          "prometheus_instance": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prometheus Instance"
           },
           "schema_version": {
             "default": "aiops.public.v1",

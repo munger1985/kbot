@@ -233,7 +233,7 @@ async def main() -> None:
                         webhook_key.encode()
                     ).hexdigest(),
                     capabilities_json={
-                        "external_target_label": "instance"
+                        "prometheus_instance": "db-smoke-1"
                     },
                     status="ACTIVE",
                     health_status="HEALTHY",

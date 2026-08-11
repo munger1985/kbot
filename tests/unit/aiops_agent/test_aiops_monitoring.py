@@ -175,7 +175,7 @@ class PrometheusWebhookTest(unittest.IsolatedAsyncioTestCase):
                 source_version=1,
                 endpoint="https://prometheus.example.com",
                 credentials={"webhook_secret": secret},
-                capabilities={"external_target_label": "instance"},
+                capabilities={"prometheus_instance": "db-prod-1"},
             )
         )
 

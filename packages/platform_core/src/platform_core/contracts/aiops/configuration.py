@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from pydantic import Field, HttpUrl, model_validator
@@ -30,13 +29,12 @@ InspectionTargetStatus = Literal["ACTIVE", "DISABLED"]
 def _validate_monitor_capabilities(capabilities: JsonObject | None) -> None:
     if capabilities is None:
         return
-    label = capabilities.get("external_target_label")
-    if label is not None and (
-        not isinstance(label, str)
-        or re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,127}", label)
-        is None
-    ):
-        raise ValueError("external_target_label 不是合法的监控标签名")
+    reserved = {
+        "external_target_label",
+        "prometheus_instance",
+    } & capabilities.keys()
+    if reserved:
+        raise ValueError("Prometheus instance 必须使用 prometheus_instance 字段配置")
 
 
 class SecretRefStatus(AIOpsContract):
@@ -180,6 +178,9 @@ class MonitorSourceCreate(AIOpsContract):
     display_name: str = Field(min_length=1, max_length=256)
     source_type: Literal["PROMETHEUS", "ZABBIX", "OEM"]
     endpoint: HttpUrl
+    prometheus_instance: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
@@ -197,6 +198,20 @@ class MonitorSourceCreate(AIOpsContract):
             or self.endpoint.fragment
         ):
             raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
+        if (
+            self.source_type == "PROMETHEUS"
+            and self.prometheus_instance is None
+        ):
+            raise ValueError(
+                "Prometheus Monitor Source 必须设置 prometheus_instance"
+            )
+        if (
+            self.source_type != "PROMETHEUS"
+            and self.prometheus_instance is not None
+        ):
+            raise ValueError(
+                "只有 Prometheus Monitor Source 可以设置 prometheus_instance"
+            )
         _validate_monitor_capabilities(self.capabilities)
         return self
 
@@ -205,6 +220,9 @@ class MonitorSourcePatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     endpoint: HttpUrl | None = None
+    prometheus_instance: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
@@ -222,6 +240,11 @@ class MonitorSourcePatch(AIOpsContract):
             or self.endpoint.fragment
         ):
             raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
+        if (
+            "prometheus_instance" in self.model_fields_set
+            and self.prometheus_instance is None
+        ):
+            raise ValueError("prometheus_instance 不能为空")
         _validate_monitor_capabilities(self.capabilities)
         return self
 
@@ -240,6 +263,7 @@ class MonitorSourceSummary(AIOpsContract):
 
 class MonitorSourceDetail(MonitorSourceSummary):
     endpoint: str
+    prometheus_instance: str | None = None
     secret: SecretRefStatus
     webhook_secret: SecretRefStatus
     tls_profile: SecretRefStatus

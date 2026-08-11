@@ -145,7 +145,14 @@ class MonitorConfigurationMixin:
                 secret_ref=secret_ref,
                 webhook_secret_ref=webhook_secret_ref,
                 tls_profile_ref=None,
-                capabilities_json=request.capabilities,
+                capabilities_json={
+                    **request.capabilities,
+                    **(
+                        {"prometheus_instance": request.prometheus_instance}
+                        if request.prometheus_instance is not None
+                        else {}
+                    ),
+                },
                 status="DISABLED",
                 health_status="UNKNOWN",
                 row_version=1,
@@ -248,6 +255,8 @@ class MonitorConfigurationMixin:
             "monitor_source": fields.pop("credentials", ...),
             "monitor_webhook": fields.pop("webhook_credentials", ...),
         }
+        prometheus_instance = fields.pop("prometheus_instance", ...)
+        capabilities = fields.pop("capabilities", ...)
         if "endpoint" in fields:
             if request.endpoint is None:
                 raise validation_failed("Monitor Endpoint 不能为空")
@@ -260,8 +269,6 @@ class MonitorConfigurationMixin:
             }
             & request.model_fields_set
         )
-        if "capabilities" in fields:
-            fields["capabilities_json"] = fields.pop("capabilities")
         async with self._uow_factory() as uow:
             assert uow.monitor_sources is not None
             assert uow.managed_credentials is not None
@@ -273,6 +280,33 @@ class MonitorConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Monitor Source")
             self._check_version(entity.row_version, expected_version)
+            if (
+                prometheus_instance is not ...
+                and entity.source_type != "PROMETHEUS"
+            ):
+                raise validation_failed(
+                    "只有 Prometheus Monitor Source 可以设置 prometheus_instance"
+                )
+            if capabilities is not ... or prometheus_instance is not ...:
+                next_capabilities = (
+                    dict(capabilities)
+                    if capabilities is not ...
+                    else dict(entity.capabilities_json or {})
+                )
+                if entity.source_type == "PROMETHEUS":
+                    instance = (
+                        prometheus_instance
+                        if prometheus_instance is not ...
+                        else (entity.capabilities_json or {}).get(
+                            "prometheus_instance"
+                        )
+                    )
+                    if not instance:
+                        raise validation_failed(
+                            "Prometheus Monitor Source 必须设置 prometheus_instance"
+                        )
+                    next_capabilities["prometheus_instance"] = instance
+                fields["capabilities_json"] = next_capabilities
             for kind, values in credential_updates.items():
                 if values is ...:
                     continue

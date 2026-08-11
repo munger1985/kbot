@@ -43,6 +43,16 @@ def _escape_prometheus_label(value: str) -> str:
 
 
 class PrometheusAdapter(BaseMonitorAdapter):
+    def _prometheus_instance(self) -> str:
+        """返回该监控源登记的 Prometheus instance 标签值。"""
+        value = self.context.capabilities.get("prometheus_instance")
+        if not isinstance(value, str) or not value.strip():
+            raise MonitorAdapterError(
+                "MONITOR_CONFIGURATION_INVALID",
+                "Prometheus 监控源未配置 prometheus_instance",
+            )
+        return value.strip()
+
     async def health_check(
         self, request: MonitorHealthRequest
     ) -> MonitorHealthResult:
@@ -96,12 +106,8 @@ class PrometheusAdapter(BaseMonitorAdapter):
     async def query_alerts(
         self, request: AlertQueryRequest
     ) -> AlertQueryResult:
-        external_label = str(
-            self.context.capabilities.get(
-                "external_target_label", "instance"
-            )
-        )
         try:
+            prometheus_instance = self._prometheus_instance()
             async with self._session.get(
                 f"{self.context.endpoint.rstrip('/')}/api/v1/alerts",
                 headers=self._headers(),
@@ -113,7 +119,7 @@ class PrometheusAdapter(BaseMonitorAdapter):
             alerts = []
             for item in payload.get("data", {}).get("alerts", []):
                 labels = item.get("labels") or {}
-                if labels.get(external_label) != request.external_target_key:
+                if labels.get("instance") != prometheus_instance:
                     continue
                 alerts.append(
                     {
@@ -158,6 +164,20 @@ class PrometheusAdapter(BaseMonitorAdapter):
     ) -> MetricQueryResult:
         observations = []
         gaps = []
+        try:
+            prometheus_instance = self._prometheus_instance()
+        except MonitorAdapterError as exc:
+            return MetricQueryResult(
+                gaps=tuple(
+                    self._gap(
+                        request,
+                        metric_code=definition.metric_code,
+                        code=exc.code,
+                        detail=str(exc),
+                    )
+                    for definition in request.metric_definitions
+                )
+            )
         for definition in request.metric_definitions:
             provider = definition.providers.get("PROMETHEUS")
             if provider is None or provider.query_template is None:
@@ -180,7 +200,7 @@ class PrometheusAdapter(BaseMonitorAdapter):
             )
             query = provider.query_template.replace(
                 "${external_target}",
-                _escape_prometheus_label(request.external_target_key),
+                _escape_prometheus_label(prometheus_instance),
             )
             try:
                 async with self._session.get(
@@ -269,21 +289,19 @@ class PrometheusAdapter(BaseMonitorAdapter):
                 "Alertmanager Webhook 格式无效",
             )
         batch_status = str(payload.get("status", "firing")).lower()
+        prometheus_instance = self._prometheus_instance()
         events = []
         for item in payload["alerts"]:
             labels = item.get("labels") or {}
             annotations = item.get("annotations") or {}
-            external_label = str(
-                self.context.capabilities.get(
-                    "external_target_label", "instance"
-                )
-            )
-            external = str(labels.get(external_label, "")).strip()
+            external = str(labels.get("instance", "")).strip()
             if not external:
                 raise MonitorAdapterError(
                     "MONITOR_TARGET_NOT_FOUND",
                     "Alertmanager 告警缺少登记的目标标签",
                 )
+            if external != prometheus_instance:
+                continue
             starts_at = str(item.get("startsAt", ""))
             occurred = datetime.fromisoformat(
                 starts_at.replace("Z", "+00:00")

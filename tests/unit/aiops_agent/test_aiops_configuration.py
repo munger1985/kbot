@@ -330,5 +330,29 @@ class ConfigurationContractTest(unittest.TestCase):
                     "display_name": "Prometheus",
                     "source_type": "PROMETHEUS",
                     "endpoint": "https://user:pass@prom.example.com",
+                    "prometheus_instance": "oracle-dev-01",
+                }
+            )
+
+    def test_prometheus_source_accepts_instance_label_value(self) -> None:
+        source = MonitorSourceCreate.model_validate(
+            {
+                "display_name": "Prometheus",
+                "source_type": "PROMETHEUS",
+                "endpoint": "https://prom.example.com",
+                "prometheus_instance": "oracle-dev-01",
+            }
+        )
+        self.assertEqual("oracle-dev-01", source.prometheus_instance)
+
+    def test_prometheus_source_rejects_configurable_label_name(self) -> None:
+        with self.assertRaises(ValidationError):
+            MonitorSourceCreate.model_validate(
+                {
+                    "display_name": "Prometheus",
+                    "source_type": "PROMETHEUS",
+                    "endpoint": "https://prom.example.com",
+                    "prometheus_instance": "oracle-dev-01",
+                    "capabilities": {"external_target_label": "instance"},
                 }
             )
