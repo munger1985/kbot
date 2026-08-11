@@ -26,6 +26,7 @@ class AIOpsAgentRepository:
     async def add_agent(self, row: AIOpsAgentEntity) -> None:
         self._write_guard()
         self._session.add(row)
+        await self._session.flush()
 
     async def add_version(self, row: AIOpsAgentVersionEntity) -> None:
         self._write_guard()

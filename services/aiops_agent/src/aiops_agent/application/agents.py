@@ -112,28 +112,28 @@ class AIOpsAgentService:
             self._validate_resources(
                 states, command.status, command.model_dump()
             )
-            await uow.agents.add_agent(
-                AIOpsAgentEntity(
-                    agent_id=agent_id,
-                    domain_id=command.domain_id,
-                    display_name=command.display_name.strip(),
-                    description=command.description,
-                    status=command.status,
-                    current_version_id=version_id,
-                    created_by=command.actor_id,
-                    updated_by=command.actor_id,
-                )
-            )
-            await uow.agents.add_version(
-                self._new_version(
-                    agent_id=agent_id,
-                    version_id=version_id,
-                    version_no=1,
-                    values=command.model_dump(),
-                    actor_id=command.actor_id,
-                )
+            agent = AIOpsAgentEntity(
+                agent_id=agent_id,
+                domain_id=command.domain_id,
+                display_name=command.display_name.strip(),
+                description=command.description,
+                status=command.status,
+                current_version_id=None,
+                created_by=command.actor_id,
+                updated_by=command.actor_id,
             )
             try:
+                await uow.agents.add_agent(agent)
+                await uow.agents.add_version(
+                    self._new_version(
+                        agent_id=agent_id,
+                        version_id=version_id,
+                        version_no=1,
+                        values=command.model_dump(),
+                        actor_id=command.actor_id,
+                    )
+                )
+                agent.current_version_id = version_id
                 await uow.commit()
             except IntegrityError as exc:
                 raise AIOpsAgentError(
