@@ -182,7 +182,7 @@ Cards 的数量必须来自受控聚合 API 或安全视图，不在页面拼接
 `domain_id`。后续需要大规模搜索时，先补 Agent/状态/关键词筛选、排序及 cursor 分页 API，
 不得为了筛选而读取跨页或跨 Domain 的会话数据。
 
-**P21 对话工作区**采用左右布局：左侧会话树/列表，右侧消息时间线与输入区。输入区支持文本、最多允许数量内的图片预览和提交；提交后立即写入一条本地“已提交”状态，再按 Run 状态刷新。消息只能渲染以下安全内容：Markdown、结构化表格、引用卡、图片缩略图、报告卡、HITL 卡、审批卡和只读图表 JSON。不得渲染任意 HTML 或执行模型返回的 JavaScript。
+**P21 对话工作区**采用左右布局：左侧会话树/列表，右侧消息时间线与输入区。输入区支持文本、最多允许数量内的图片预览和提交；提交后立即写入一条本地“已提交”状态，再按 Run 状态刷新。消息只能渲染以下安全内容：Markdown、结构化表格、引用卡、图片缩略图、报告卡、HITL 卡、审批卡和只读图表 JSON。不得渲染任意 HTML 或执行模型返回的 JavaScript。文档引用卡点击后，以 `run_id + citation_label` 调用引用预览描述接口；PDF 打开源文件并跳到 `page_no`，图片和纯文本打开源文件，其他格式只提供下载。前端不得提交或拼装 Collection、Bundle、Document 等内部定位主键，也不再把 Chunk 正文作为文档预览。
 
 **P22 Run 详情**是所有长任务的通用查看页。展示公开状态、时间线、引用和最终结果；终态后读取 Result，不从 SSE 事件片段拼接最终答案。取消必须调用 Run cancel API，并显示“取消请求已受理”，不能直接假设已停止。
 
@@ -361,7 +361,7 @@ Domain 内运行。页面使用 `KBOT_V_PLATFORM_DOMAIN` 展示 Domain ID、名�
 | --- | --- | --- |
 | 状态徽标 | Run、Bundle、Target、Proposal、Plan 的一致状态文案和颜色 | Shared LOV + Template Directive |
 | 资源时间线 | 显示公开事件、最后事件游标和刷新时间 | Classic Report/Template Component + 定时 DA/SSE Gateway |
-| 安全引用卡 | 显示来源标签、定位摘要、授权跳转 | Template Component，不嵌原始证据 |
+| 安全引用卡 | 显示来源标签、页码摘要、按 Run 授权打开源文件 | Template Component；仅携带 `run_id + citation_label`，使用 `document-preview.js`，不嵌 Chunk 或内部主键 |
 | 待办卡 | HITL、审批、报告、失败入库的统一入口 | Cards Region + Authorization Scheme |
 | 并发冲突提示 | 处理 `412` / 行版本冲突 | APEX Error Handler + 重读详情按钮 |
 | 空态/无权态 | 避免暴露跨 Domain 资源存在性 | 统一显示“资源不存在或无访问权限” |

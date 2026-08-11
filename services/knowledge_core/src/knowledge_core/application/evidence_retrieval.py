@@ -33,6 +33,7 @@ class EvidenceHit:
     retrieval_text: str
     heading_path: tuple[str, ...]
     locator: dict[str, Any]
+    locator_schema_version: str
     source_spans: tuple[dict[str, Any], ...]
     provenance: dict[str, Any]
     section_key: str | None

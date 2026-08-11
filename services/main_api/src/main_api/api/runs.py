@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 from time import monotonic
-from typing import AsyncIterator, cast
+from typing import Any, AsyncIterator, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from platform_clients import AgentRuntimeClient
+from platform_clients import AgentRuntimeClient, KnowledgeCoreClient
 from platform_core.contracts import (
     AgentArtifact,
     AgentRunReceipt,
@@ -69,6 +69,36 @@ class KnowledgeRunCreateRequest(BaseModel):
     client_metadata: dict = Field(default_factory=dict)
 
 
+class DocumentReferencePreview(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reference_type: Literal["DOCUMENT"] = "DOCUMENT"
+    citation_label: str
+    title: str
+    mime_type: str
+    preview_type: Literal["PDF", "IMAGE", "TEXT", "DOWNLOAD"]
+    page_no: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    bbox: tuple[float, float, float, float] | None = None
+    content_url: str
+    download_available: bool = True
+
+
+class _DocumentReference(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    reference_type: Literal["DOCUMENT"]
+    citation_label: str
+    collection_id: UUID
+    bundle_id: UUID
+    bundle_revision_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    title: str
+    locator: dict[str, Any] = Field(default_factory=dict)
+    locator_schema_version: str
+
+
 def _client(request: Request) -> AgentRuntimeClient:
     return cast(
         AgentRuntimeClient,
@@ -76,7 +106,25 @@ def _client(request: Request) -> AgentRuntimeClient:
     )
 
 
+def _knowledge_client(request: Request) -> KnowledgeCoreClient:
+    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
+
+
 async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
+    await _authorize_agent_access(request, agent_id)
+    context = get_auth_context(request)
+    domain_id = int(context.domain_id or "0")
+    client: KnowledgeRetrievalAppClient = (
+        request.app.state.knowledge_retrieval_app_client
+    )
+    return await client.execution_spec(
+        agent_id=agent_id, domain_id=domain_id, auth_context=context
+    )
+
+
+async def _authorize_agent_access(
+    request: Request, agent_id: UUID
+) -> None:
     context = get_auth_context(request)
     domain_id = int(context.domain_id or "0")
     actor_id = context.asserted_user_id or context.client_id
@@ -96,9 +144,6 @@ async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
             },
             auth_context=context,
         )
-    return await client.execution_spec(
-        agent_id=agent_id, domain_id=domain_id, auth_context=context
-    )
 
 
 @router.post("", status_code=202, response_model=AgentRunReceipt)
@@ -139,6 +184,201 @@ async def get_run_result(
         auth_context=request.state.auth_context,
     )
     return AgentArtifact.model_validate(result)
+
+
+@router.get(
+    "/{run_id}/references/{citation_label}/preview",
+    response_model=DocumentReferencePreview,
+)
+async def get_document_reference_preview(
+    run_id: UUID,
+    citation_label: str,
+    request: Request,
+) -> DocumentReferencePreview:
+    reference = await _authorized_document_reference(
+        request=request,
+        run_id=run_id,
+        citation_label=citation_label,
+    )
+    preview = await _knowledge_client(request).get_bundle_revision_preview(
+        domain_id=int(request.state.auth_context.domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        auth_context=request.state.auth_context,
+    )
+    source_file = next(
+        (
+            item
+            for item in preview.get("files", [])
+            if str(item.get("document_version_id"))
+            == str(reference.document_version_id)
+            and bool(item.get("preview_available"))
+        ),
+        None,
+    )
+    if source_file is None:
+        raise _reference_not_found()
+    mime_type = str(
+        source_file.get("detected_mime_type")
+        or source_file.get("declared_mime_type")
+        or "application/octet-stream"
+    ).split(";", 1)[0].strip().lower()
+    page_no, page_end, bbox = _document_locator(reference)
+    return DocumentReferencePreview(
+        citation_label=reference.citation_label,
+        title=reference.title,
+        mime_type=mime_type,
+        preview_type=_preview_type(mime_type),
+        page_no=page_no,
+        page_end=page_end,
+        bbox=bbox,
+        content_url=(
+            f"{PUBLIC_API_V1}/apps/knowledge-retrieval/runs/{run_id}"
+            f"/references/{reference.citation_label}/content"
+        ),
+    )
+
+
+@router.get("/{run_id}/references/{citation_label}/content")
+async def stream_document_reference_content(
+    run_id: UUID,
+    citation_label: str,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+) -> StreamingResponse:
+    reference = await _authorized_document_reference(
+        request=request,
+        run_id=run_id,
+        citation_label=citation_label,
+    )
+    upstream = await _knowledge_client(request).stream_source_file(
+        domain_id=int(request.state.auth_context.domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        document_version_id=reference.document_version_id,
+        range_header=range_header,
+        auth_context=request.state.auth_context,
+    )
+    forwarded_headers = {
+        header: upstream.headers[header]
+        for header in (
+            "accept-ranges",
+            "cache-control",
+            "content-disposition",
+            "content-length",
+            "content-range",
+            "content-security-policy",
+            "x-content-type-options",
+        )
+        if header in upstream.headers
+    }
+    return StreamingResponse(
+        upstream.body,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get(
+            "content-type", "application/octet-stream"
+        ),
+        headers=forwarded_headers,
+    )
+
+
+async def _authorized_document_reference(
+    *, request: Request, run_id: UUID, citation_label: str
+) -> _DocumentReference:
+    summary = await _client(request).get_run(
+        run_id=run_id,
+        auth_context=request.state.auth_context,
+    )
+    await _authorize_agent_access(
+        request, UUID(str(summary["agent_id"]))
+    )
+    artifact = await _client(request).get_result(
+        run_id=run_id,
+        auth_context=request.state.auth_context,
+    )
+    payload = artifact.get("payload")
+    references = payload.get("references") if isinstance(payload, dict) else None
+    if not isinstance(references, list):
+        raise _reference_not_found()
+    raw_reference = next(
+        (
+            item
+            for item in references
+            if isinstance(item, dict)
+            and item.get("reference_type") == "DOCUMENT"
+            and item.get("citation_label") == citation_label
+        ),
+        None,
+    )
+    if raw_reference is None:
+        raise _reference_not_found()
+    try:
+        return _DocumentReference.model_validate(raw_reference)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DOCUMENT_REFERENCE_INVALID",
+                "message": "Run 引用缺少不可变文档定位信息",
+            },
+        ) from exc
+
+
+def _document_locator(
+    reference: _DocumentReference,
+) -> tuple[
+    int | None,
+    int | None,
+    tuple[float, float, float, float] | None,
+]:
+    if reference.locator_schema_version != "document/v1":
+        return None, None, None
+    pages = reference.locator.get("pages")
+    if not isinstance(pages, list):
+        return None, None, None
+    page_numbers = [
+        int(item["page_no"])
+        for item in pages
+        if isinstance(item, dict)
+        and isinstance(item.get("page_no"), int)
+        and int(item["page_no"]) >= 1
+    ]
+    first = pages[0] if pages and isinstance(pages[0], dict) else {}
+    raw_bbox = first.get("bbox")
+    bbox = (
+        tuple(float(value) for value in raw_bbox)
+        if isinstance(raw_bbox, list)
+        and len(raw_bbox) == 4
+        and all(isinstance(value, (int, float)) for value in raw_bbox)
+        else None
+    )
+    if not page_numbers:
+        return None, None, bbox
+    return min(page_numbers), max(page_numbers), bbox
+
+
+def _preview_type(
+    mime_type: str,
+) -> Literal["PDF", "IMAGE", "TEXT", "DOWNLOAD"]:
+    if mime_type == "application/pdf":
+        return "PDF"
+    if mime_type in {"image/gif", "image/jpeg", "image/png", "image/webp"}:
+        return "IMAGE"
+    if mime_type == "text/plain":
+        return "TEXT"
+    return "DOWNLOAD"
+
+
+def _reference_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "code": "DOCUMENT_REFERENCE_NOT_FOUND",
+            "message": "引用不存在或当前用户无权访问",
+        },
+    )
 
 
 @router.post(

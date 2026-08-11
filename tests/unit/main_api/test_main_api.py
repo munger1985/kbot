@@ -16,6 +16,7 @@ from main_api.config import get_main_api_settings
 from platform_clients import (
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
+    KnowledgeCoreStreamResponse,
 )
 from platform_core.contracts import AuthContext
 from platform_core.security import (
@@ -33,6 +34,7 @@ TEST_COLLECTION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
 TEST_BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a021")
 TEST_BUNDLE_REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a022")
 TEST_DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a023")
+TEST_DOCUMENT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a025")
 
 
 class _FakeKnowledgeCoreClient:
@@ -141,6 +143,59 @@ class _FakeKnowledgeCoreClient:
             "generation": "019f8eae-2c25-7d48-b044-350ec3f5a024",
             "scheduled_file_count": 1,
         }
+
+    async def get_bundle_revision_preview(
+        self,
+        *,
+        domain_id,
+        collection_id,
+        bundle_id,
+        bundle_revision_id,
+        auth_context,
+    ):
+        self.last_domain_id = domain_id
+        self.last_collection_id = collection_id
+        self.last_bundle_id = bundle_id
+        self.last_bundle_revision_id = bundle_revision_id
+        return {
+            "files": [{
+                "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
+                "detected_mime_type": "application/pdf",
+                "declared_mime_type": "application/pdf",
+                "preview_available": True,
+            }]
+        }
+
+    async def stream_source_file(
+        self,
+        *,
+        domain_id,
+        collection_id,
+        bundle_id,
+        bundle_revision_id,
+        document_version_id,
+        range_header,
+        auth_context,
+    ):
+        self.last_document_version_id = document_version_id
+
+        async def body():
+            yield b"%PDF-preview"
+
+        return KnowledgeCoreStreamResponse(
+            status_code=206 if range_header else 200,
+            headers={
+                "content-type": "application/pdf",
+                "content-length": "12",
+                "accept-ranges": "bytes",
+                **(
+                    {"content-range": "bytes 0-11/12"}
+                    if range_header
+                    else {}
+                ),
+            },
+            body=body(),
+        )
 
 
 class _FakeAgentRuntimeClient:
@@ -264,7 +319,26 @@ class _FakeAgentRuntimeClient:
             "schema_version": "GroundedAnswer.v1",
             "producer": "response-composer",
             "producer_version": "1.0.0",
-            "payload": {"answer": "回答 [C1]"},
+            "payload": {
+                "answer": "回答 [C1]",
+                "references": [{
+                    "reference_type": "DOCUMENT",
+                    "citation_label": "C1",
+                    "collection_id": str(TEST_COLLECTION_ID),
+                    "bundle_id": str(TEST_BUNDLE_ID),
+                    "bundle_revision_id": str(TEST_BUNDLE_REVISION_ID),
+                    "document_id": str(TEST_DOCUMENT_ID),
+                    "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
+                    "title": "员工移动套餐.pdf",
+                    "locator_schema_version": "document/v1",
+                    "locator": {
+                        "pages": [{
+                            "page_no": 3,
+                            "bbox": [0.1, 0.2, 0.9, 0.4],
+                        }]
+                    },
+                }],
+            },
             "storage_uri": None,
             "content_hash": "hash",
             "provenance": {},
@@ -708,6 +782,42 @@ class MainApiTest(unittest.TestCase):
         self.assertIn("id: 8", body)
         self.assertIn("event: RUN_COMPLETED", body)
         self.assertIn("event: done", body)
+
+    def test_document_reference_preview_uses_run_reference_scope(self) -> None:
+        base = (
+            "/api/v1/apps/knowledge-retrieval/runs/"
+            f"{self.agent_runtime.run_id}/references/C1"
+        )
+        descriptor = self.client.get(
+            f"{base}/preview", headers=self._headers()
+        )
+
+        self.assertEqual(200, descriptor.status_code)
+        self.assertEqual("PDF", descriptor.json()["preview_type"])
+        self.assertEqual(3, descriptor.json()["page_no"])
+        self.assertEqual(
+            TEST_BUNDLE_REVISION_ID, self.kc.last_bundle_revision_id
+        )
+
+        content = self.client.get(
+            f"{base}/content",
+            headers={**self._headers(), "Range": "bytes=0-11"},
+        )
+        self.assertEqual(206, content.status_code)
+        self.assertEqual("bytes 0-11/12", content.headers["content-range"])
+        self.assertEqual(b"%PDF-preview", content.content)
+
+    def test_document_reference_preview_rejects_unknown_label(self) -> None:
+        response = self.client.get(
+            (
+                "/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.agent_runtime.run_id}/references/C99/preview"
+            ),
+            headers=self._headers(),
+        )
+
+        self.assertEqual(404, response.status_code)
+        self.assertEqual("DOCUMENT_REFERENCE_NOT_FOUND", response.json()["code"])
 
     def test_regular_user_still_requires_agent_grant(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(

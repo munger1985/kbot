@@ -24,6 +24,7 @@ class Citation(_Contract):
     document_role: str | None = None
     excerpt: str
     locator: dict[str, Any] = Field(default_factory=dict)
+    locator_schema_version: str
     heading_path: tuple[str, ...] = ()
     relevance_reason: str
     source_hash: str | None = None

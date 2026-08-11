@@ -2050,6 +2050,108 @@
         "title": "DifyRetrievalSetting",
         "type": "object"
       },
+      "DocumentReferencePreview": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "citation_label": {
+            "title": "Citation Label",
+            "type": "string"
+          },
+          "content_url": {
+            "title": "Content Url",
+            "type": "string"
+          },
+          "download_available": {
+            "default": true,
+            "title": "Download Available",
+            "type": "boolean"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "page_end": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page End"
+          },
+          "page_no": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page No"
+          },
+          "preview_type": {
+            "enum": [
+              "PDF",
+              "IMAGE",
+              "TEXT",
+              "DOWNLOAD"
+            ],
+            "title": "Preview Type",
+            "type": "string"
+          },
+          "reference_type": {
+            "const": "DOCUMENT",
+            "default": "DOCUMENT",
+            "title": "Reference Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_label",
+          "title",
+          "mime_type",
+          "preview_type",
+          "content_url"
+        ],
+        "title": "DocumentReferencePreview",
+        "type": "object"
+      },
       "DomainCreateRequest": {
         "properties": {
           "description": {
@@ -15751,6 +15853,124 @@
           }
         },
         "summary": "Stream Run Events",
+        "tags": [
+          "Knowledge Retrieval Runs"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/content": {
+      "get": {
+        "operationId": "stream_document_reference_content_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "citation_label",
+            "required": true,
+            "schema": {
+              "title": "Citation Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Document Reference Content",
+        "tags": [
+          "Knowledge Retrieval Runs"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/preview": {
+      "get": {
+        "operationId": "get_document_reference_preview_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "citation_label",
+            "required": true,
+            "schema": {
+              "title": "Citation Label",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReferencePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Reference Preview",
         "tags": [
           "Knowledge Retrieval Runs"
         ]

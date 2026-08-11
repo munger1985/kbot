@@ -71,6 +71,7 @@ def _citation(collection_id):
         retrieval_text="联合索引 查询耗时",
         heading_path=("优化结果",),
         locator={"page": 3},
+        locator_schema_version="document/v1",
         source_spans=(),
         provenance={},
         section_key="section-1",

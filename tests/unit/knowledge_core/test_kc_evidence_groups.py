@@ -17,7 +17,9 @@ def hit(evidence_id, version=1, view=1, rank=1, content="fact"):
         document_id=30, document_version_id=version, parse_view_id=view,
         evidence_key=f"e-{evidence_id}", evidence_type="PARAGRAPH",
         content_text=content, retrieval_text=content, heading_path=("Overview",),
-        locator={"page": evidence_id}, source_spans=(), provenance={},
+        locator={"page": evidence_id},
+        locator_schema_version="document/v1",
+        source_spans=(), provenance={},
         section_key="s1", parent_evidence_key=None, ordinal=evidence_id,
         quality_score=0.9, local_rank=rank, channel="TEXT",
     )

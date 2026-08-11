@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -32,6 +32,15 @@ class KnowledgeCoreClientError(RuntimeError):
 class KnowledgeCoreResponse:
     status_code: int
     payload: Any
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeCoreStreamResponse:
+    """KC 二进制响应；body 消费结束后自动释放 HTTP 连接。"""
+
+    status_code: int
+    headers: dict[str, str]
+    body: AsyncIterable[bytes]
 
 
 def _json_value(value: Any) -> Any:
@@ -289,6 +298,50 @@ class KnowledgeCoreClient:
                 f"/bundles/{bundle_id}/revisions/{bundle_revision_id}{suffix}"
             ),
             auth_context=auth_context,
+        )
+
+    async def get_bundle_revision_preview(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/bundles/{bundle_id}"
+                f"/revisions/{bundle_revision_id}/preview"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def stream_source_file(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        document_version_id: UUID,
+        range_header: str | None,
+        auth_context: AuthContext,
+    ) -> KnowledgeCoreStreamResponse:
+        headers = self._headers(auth_context)
+        headers["Accept"] = "*/*"
+        if range_header:
+            headers["Range"] = range_header
+        return await self._stream(
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/bundles/{bundle_id}"
+                f"/revisions/{bundle_revision_id}/documents/"
+                f"{document_version_id}/content"
+            ),
+            headers=headers,
         )
 
     async def reprocess_revision(
@@ -563,6 +616,72 @@ class KnowledgeCoreClient:
         finally:
             if owns_session:
                 await session.close()
+
+    async def _stream(
+        self,
+        path: str,
+        *,
+        headers: dict[str, str],
+    ) -> KnowledgeCoreStreamResponse:
+        owns_session = self._session is None
+        session = self._session or aiohttp.ClientSession(timeout=self._timeout)
+        try:
+            response = await session.get(
+                f"{self._base_url}{path}", headers=headers
+            )
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            if owns_session:
+                await session.close()
+            raise KnowledgeCoreClientError(
+                status_code=503,
+                code="KNOWLEDGE_CORE_UNAVAILABLE",
+                message="Knowledge Core 暂时不可用",
+            ) from exc
+        if response.status >= 400:
+            try:
+                payload = await self._response_payload(response)
+                detail = (
+                    payload.get("detail", payload)
+                    if isinstance(payload, dict)
+                    else payload
+                )
+                code = (
+                    detail.get("code", "KNOWLEDGE_CORE_ERROR")
+                    if isinstance(detail, dict)
+                    else "KNOWLEDGE_CORE_ERROR"
+                )
+                message = (
+                    detail.get("message", str(detail))
+                    if isinstance(detail, dict)
+                    else str(detail)
+                )
+            finally:
+                response.release()
+                if owns_session:
+                    await session.close()
+            raise KnowledgeCoreClientError(
+                status_code=response.status,
+                code=code,
+                message=message,
+            )
+
+        async def iter_body() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    yield chunk
+            finally:
+                response.release()
+                if owns_session:
+                    await session.close()
+
+        return KnowledgeCoreStreamResponse(
+            status_code=response.status,
+            headers={
+                key.lower(): value
+                for key, value in response.headers.items()
+            },
+            body=iter_body(),
+        )
 
     @staticmethod
     async def _response_payload(response: aiohttp.ClientResponse) -> Any:

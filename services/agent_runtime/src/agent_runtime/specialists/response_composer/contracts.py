@@ -15,10 +15,12 @@ class ReferenceCard(_Contract):
     citation_label: str
     collection_id: UUID
     bundle_id: UUID
+    bundle_revision_id: UUID
     document_id: UUID
     document_version_id: UUID
     title: str
     locator: dict[str, Any] = Field(default_factory=dict)
+    locator_schema_version: str
 
 
 class AIOpsReferenceCard(_Contract):

@@ -117,10 +117,14 @@ class ResponseComposerSkill:
                 citation_label=label,
                 collection_id=allowed[label].collection_id,
                 bundle_id=allowed[label].bundle_id,
+                bundle_revision_id=allowed[label].bundle_revision_id,
                 document_id=allowed[label].document_id,
                 document_version_id=allowed[label].document_version_id,
                 title=allowed[label].title,
                 locator=allowed[label].locator,
+                locator_schema_version=(
+                    allowed[label].locator_schema_version
+                ),
             )
             for label in used_labels
         )
@@ -303,10 +307,14 @@ class ResponseComposerSkill:
                 citation_label=label,
                 collection_id=allowed[label].collection_id,
                 bundle_id=allowed[label].bundle_id,
+                bundle_revision_id=allowed[label].bundle_revision_id,
                 document_id=allowed[label].document_id,
                 document_version_id=allowed[label].document_version_id,
                 title=allowed[label].title,
                 locator=allowed[label].locator,
+                locator_schema_version=(
+                    allowed[label].locator_schema_version
+                ),
             )
             for label in used_labels
         )

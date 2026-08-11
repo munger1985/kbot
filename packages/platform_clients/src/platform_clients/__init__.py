@@ -12,6 +12,7 @@ from .knowledge_core import (
     KnowledgeCoreClient,
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
+    KnowledgeCoreStreamResponse,
 )
 from .mcp_data import MCPDataClient, MCPDataClientError
 from .data_query import DataQueryClient, DataQueryClientError
@@ -32,6 +33,7 @@ __all__ = [
     "KnowledgeCoreClient",
     "KnowledgeCoreClientError",
     "KnowledgeCoreResponse",
+    "KnowledgeCoreStreamResponse",
     "MCPDataClient",
     "MCPDataClientError",
     "DataQueryClient",

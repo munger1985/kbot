@@ -83,7 +83,10 @@ class _KnowledgeCoreClient:
             "evidence_id": str(self.evidence_id),
             "document_id": str(self.document_id),
             "content_text": "该案例通过调整索引降低了查询延迟。",
-            "locator": {"page": 3},
+            "locator": {
+                "pages": [{"page_no": 3, "bbox": [0.1, 0.2, 0.9, 0.4]}]
+            },
+            "locator_schema_version": "document/v1",
             "heading_path": ["优化方案"],
             "provenance": {"source_hash": "source-hash"},
         }
@@ -463,7 +466,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifact.artifact_type, "CITATION_PACK")
         self.assertEqual(citation["title"], "数据库优化案例")
         self.assertEqual(citation["document_id"], str(client.document_id))
-        self.assertEqual(citation["locator"], {"page": 3})
+        self.assertEqual(citation["locator"]["pages"][0]["page_no"], 3)
 
     async def test_document_skill_retrieves_before_asking_for_clarification(self):
         client = _KnowledgeCoreClient()
@@ -627,6 +630,14 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["document_id"],
             str(client.document_id),
+        )
+        self.assertEqual(
+            payload["references"][0]["bundle_revision_id"],
+            str(client.revision_id),
+        )
+        self.assertEqual(
+            payload["references"][0]["locator_schema_version"],
+            "document/v1",
         )
 
     async def test_composer_prefers_document_evidence_over_clarification(self):

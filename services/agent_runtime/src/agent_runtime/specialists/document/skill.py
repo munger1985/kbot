@@ -569,6 +569,9 @@ class KnowledgeRetrievalSkill:
                     document_role=first.get("document_role"),
                     excerpt=excerpt,
                     locator=dict(first.get("locator") or {}),
+                    locator_schema_version=str(
+                        first["locator_schema_version"]
+                    ),
                     heading_path=tuple(first.get("heading_path") or ()),
                     relevance_reason="由 KC 两阶段检索选中的正文证据组",
                     source_hash=(
