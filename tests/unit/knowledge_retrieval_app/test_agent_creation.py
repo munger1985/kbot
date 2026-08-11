@@ -3,9 +3,12 @@
 import unittest
 
 from knowledge_retrieval_app.application import (
+    AgentApplicationError,
     CreateAgentCommand,
     KnowledgeRetrievalAgentService,
+    UpdateAgentCommand,
 )
+from platform_core.identity import uuid7
 
 
 class _Repository:
@@ -27,7 +30,8 @@ class _Repository:
             raise AssertionError("创建 Version 前必须先创建所属 Agent")
         self.version = row
 
-    async def get(self, *, domain_id, agent_id):
+    async def get(self, *, domain_id, agent_id, lock=False):
+        del lock
         if (
             self.agent is not None
             and self.agent.domain_id == domain_id
@@ -44,6 +48,11 @@ class _Repository:
         ):
             return self.version
         return None
+
+    async def next_version_no(self, *, agent_id):
+        if self.version is None or self.version.agent_id != agent_id:
+            return 1
+        return int(self.version.version_no) + 1
 
 
 class _UnitOfWork:
@@ -75,6 +84,7 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAgentCommand(
                 domain_id=41,
                 display_name="知识助手",
+                enabled_capabilities=("document",),
                 actor_id="user-41",
             )
         )
@@ -85,6 +95,61 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
             result["agent_version_id"],
             str(repository.agent.current_version_id),
         )
+        self.assertEqual(result["enabled_capabilities"], ["document"])
+        self.assertEqual(
+            result["config"]["resource_mode"], "managed_resources"
+        )
+
+    async def test_active_multi_capability_requires_router_model(self) -> None:
+        service = KnowledgeRetrievalAgentService(
+            uow_factory=lambda: _UnitOfWork(_Repository())
+        )
+
+        with self.assertRaises(AgentApplicationError) as raised:
+            await service.create(
+                CreateAgentCommand(
+                    domain_id=41,
+                    display_name="综合助手",
+                    enabled_capabilities=("conversation", "document"),
+                    models={"composer_llm": uuid7()},
+                    status="ACTIVE",
+                    actor_id="user-41",
+                )
+            )
+
+        self.assertEqual(
+            raised.exception.code, "AGENT_ROUTER_MODEL_REQUIRED"
+        )
+
+    async def test_update_creates_version_with_selected_capabilities(self) -> None:
+        repository = _Repository()
+        service = KnowledgeRetrievalAgentService(
+            uow_factory=lambda: _UnitOfWork(repository)
+        )
+        created = await service.create(
+            CreateAgentCommand(
+                domain_id=41,
+                display_name="知识助手",
+                enabled_capabilities=("document",),
+                actor_id="user-41",
+            )
+        )
+
+        updated = await service.update(
+            UpdateAgentCommand(
+                domain_id=41,
+                agent_id=repository.agent.agent_id,
+                expected_row_version=created["row_version"],
+                enabled_capabilities=("data_query", "conversation"),
+                actor_id="user-41",
+            )
+        )
+
+        self.assertEqual(
+            updated["enabled_capabilities"],
+            ["conversation", "data_query"],
+        )
+        self.assertEqual(repository.version.version_no, 2)
 
 
 if __name__ == "__main__":

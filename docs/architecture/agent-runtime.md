@@ -10,10 +10,10 @@ App 分别拥有自己的 Agent、不可变版本和 Grant；创建会话或运�
 Execution Spec 声明能力、指令、检索范围、问数绑定和功能模型。不同功能可使用
 不同成本和能力的模型；运行时使用冻结的模型身份和调用配置。
 
-Skill 是 Runtime 内的版本化执行单元。当前链路包括上下文改写、知识检索、
-Data Query、Hybrid、AIOps Delegation、回答组合和 ECharts。问数 Skill 可按冻结
-配置调用 MCP 或 Semantic Data Query；AIOps 始终通过独立服务契约委派，不直接
-访问其数据库。
+Skill 是 Runtime 内的版本化执行单元。知识检索 Agent 链路包括上下文改写、
+知识检索、Data Query、Hybrid、回答组合和 ECharts。问数 Skill 可按冻结配置调用
+MCP 或 Semantic Data Query。AIOps Agent 使用独立的 AIOps Run、Worker 和状态机，
+不进入知识检索 Root Planner。
 
 ## 执行模型
 

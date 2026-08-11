@@ -16,6 +16,9 @@ from knowledge_retrieval_app.entities import (
 from platform_core.identity import uuid7
 
 
+KnowledgeCapability = Literal["conversation", "document", "data_query"]
+
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -24,6 +27,9 @@ class CreateAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[KnowledgeCapability, ...] = Field(
+        min_length=1, max_length=3
+    )
     models: dict[str, UUID] = Field(default_factory=dict)
     do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
@@ -38,6 +44,9 @@ class UpdateAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[KnowledgeCapability, ...] | None = Field(
+        default=None, min_length=1, max_length=3
+    )
     models: dict[str, UUID] | None = None
     do_rerank: bool | None = None
     instruction: str | None = Field(default=None, max_length=32000)
@@ -71,9 +80,14 @@ class KnowledgeRetrievalAgentService:
         self._uow_factory = uow_factory
 
     async def create(self, command: CreateAgentCommand) -> dict[str, Any]:
+        capabilities = self._capabilities(command.enabled_capabilities)
         models = self._models(command.models)
+        config = self._config(command.config, capabilities)
         self._validate_activation(
-            status=command.status, models=models, config=command.config
+            status=command.status,
+            models=models,
+            capabilities=capabilities,
+            config=config,
         )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
@@ -94,11 +108,11 @@ class KnowledgeRetrievalAgentService:
                         agent_version_id=version_id,
                         agent_id=agent_id,
                         version_no=1,
-                        enabled_capabilities_json=list(self.CAPABILITIES),
+                        enabled_capabilities_json=list(capabilities),
                         models_json=models,
                         do_rerank=command.do_rerank,
                         instruction=command.instruction,
-                        config_json=command.config,
+                        config_json=config,
                         created_by=command.actor_id,
                     )
                 )
@@ -141,13 +155,29 @@ class KnowledgeRetrievalAgentService:
                 exclude_unset=True,
             )
             version_changed = bool(
-                {"models", "do_rerank", "instruction", "config"}.intersection(changes)
+                {
+                    "enabled_capabilities",
+                    "models",
+                    "do_rerank",
+                    "instruction",
+                    "config",
+                }.intersection(changes)
+            )
+            requested_capabilities = changes.get("enabled_capabilities")
+            capabilities = self._capabilities(
+                requested_capabilities
+                if requested_capabilities is not None
+                else current.enabled_capabilities_json
             )
             models = self._models(changes.get("models", current.models_json))
-            config = dict(changes.get("config", current.config_json or {}))
+            config = self._config(
+                changes.get("config", current.config_json or {}),
+                capabilities,
+            )
             self._validate_activation(
                 status=str(changes.get("status", agent.status)),
                 models=models,
+                capabilities=capabilities,
                 config=config,
             )
             for role in self.IMMUTABLE_MODEL_ROLES:
@@ -166,7 +196,7 @@ class KnowledgeRetrievalAgentService:
                         version_no=await uow.agents.next_version_no(
                             agent_id=agent.agent_id
                         ),
-                        enabled_capabilities_json=list(self.CAPABILITIES),
+                        enabled_capabilities_json=list(capabilities),
                         models_json=models,
                         do_rerank=bool(changes.get("do_rerank", current.do_rerank)),
                         instruction=changes.get("instruction", current.instruction),
@@ -320,9 +350,53 @@ class KnowledgeRetrievalAgentService:
             for role, model_id in models.items()
         }
 
+    @classmethod
+    def _capabilities(
+        cls, capabilities: tuple[str, ...] | list[str]
+    ) -> tuple[str, ...]:
+        """校验知识检索 Agent 能力并按稳定顺序保存。"""
+        values = tuple(str(value).strip() for value in capabilities)
+        if not values:
+            raise AgentApplicationError(
+                "AGENT_CAPABILITIES_REQUIRED",
+                "知识检索 Agent 至少需要启用一项能力",
+                status_code=422,
+            )
+        if len(set(values)) != len(values):
+            raise AgentApplicationError(
+                "AGENT_CAPABILITY_DUPLICATED",
+                "知识检索 Agent 能力不能重复",
+                status_code=422,
+            )
+        unsupported = sorted(set(values) - set(cls.CAPABILITIES))
+        if unsupported:
+            raise AgentApplicationError(
+                "AGENT_CAPABILITY_UNSUPPORTED",
+                f"知识检索 Agent 不支持能力：{unsupported}",
+                status_code=422,
+            )
+        return tuple(value for value in cls.CAPABILITIES if value in values)
+
+    @staticmethod
+    def _config(
+        config: dict[str, Any], capabilities: tuple[str, ...]
+    ) -> dict[str, Any]:
+        """由能力组合推导资源模式，避免前端提交相互矛盾的状态。"""
+        normalized = dict(config)
+        normalized["resource_mode"] = (
+            "conversation_only"
+            if capabilities == ("conversation",)
+            else "managed_resources"
+        )
+        return normalized
+
     @staticmethod
     def _validate_activation(
-        *, status: str, models: dict[str, str], config: dict[str, Any]
+        *,
+        status: str,
+        models: dict[str, str],
+        capabilities: tuple[str, ...],
+        config: dict[str, Any],
     ) -> None:
         if status != "ACTIVE":
             return
@@ -332,13 +406,27 @@ class KnowledgeRetrievalAgentService:
                 "启用 Agent 前必须完成模型配置",
                 status_code=422,
             )
-        if config.get("resource_mode") not in {
-            "conversation_only",
-            "managed_resources",
-        }:
+        if len(capabilities) > 1 and "router_llm" not in models:
             raise AgentApplicationError(
-                "AGENT_RESOURCE_SETUP_REQUIRED",
-                "启用 Agent 前必须明确选择业务资源模式",
+                "AGENT_ROUTER_MODEL_REQUIRED",
+                "启用多能力 Agent 前必须配置 router_llm",
+                status_code=422,
+            )
+        if "data_query" not in capabilities:
+            return
+        mode = str(config.get("data_query_mode") or "").upper()
+        if mode not in {"MCP", "SEMANTIC"}:
+            raise AgentApplicationError(
+                "AGENT_DATA_QUERY_MODE_REQUIRED",
+                "启用业务问数能力前必须选择 MCP 或 SEMANTIC 模式",
+                status_code=422,
+            )
+        if mode == "MCP" and not str(
+            config.get("data_profile_name") or ""
+        ).strip():
+            raise AgentApplicationError(
+                "AGENT_DATA_PROFILE_REQUIRED",
+                "MCP 问数模式必须配置 data_profile_name",
                 status_code=422,
             )
 

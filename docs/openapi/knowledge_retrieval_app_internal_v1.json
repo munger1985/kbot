@@ -73,6 +73,20 @@
             "title": "Domain Id",
             "type": "integer"
           },
+          "enabled_capabilities": {
+            "items": {
+              "enum": [
+                "conversation",
+                "document",
+                "data_query"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Enabled Capabilities",
+            "type": "array"
+          },
           "instruction": {
             "anyOf": [
               {
@@ -105,7 +119,8 @@
         },
         "required": [
           "domain_id",
-          "display_name"
+          "display_name",
+          "enabled_capabilities"
         ],
         "title": "AgentCreateRequest",
         "type": "object"
@@ -165,6 +180,27 @@
             "minimum": 1.0,
             "title": "Domain Id",
             "type": "integer"
+          },
+          "enabled_capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "conversation",
+                    "document",
+                    "data_query"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled Capabilities"
           },
           "expected_row_version": {
             "minimum": 1.0,

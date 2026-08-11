@@ -27,7 +27,7 @@ from agent_runtime.domain.skills import (
     ArtifactDeclaration,
     DataClassification,
 )
-from platform_core.contracts import CreateAgentRunRequest
+from platform_core.contracts import AgentExecutionSpec, CreateAgentRunRequest
 
 
 class AgentStateMachineTest(unittest.TestCase):
@@ -164,6 +164,20 @@ class SkillRegistryTest(unittest.TestCase):
 
 
 class AgentContractAndSchemaTest(unittest.TestCase):
+    def test_execution_spec_separates_knowledge_and_aiops_agents(self):
+        with self.assertRaisesRegex(ValidationError, "不能启用 AIOps"):
+            AgentExecutionSpec(
+                schema_version="1.0",
+                owner_app_id="knowledge_retrieval",
+                domain_id=100,
+                consumer_agent_id=uuid4(),
+                consumer_agent_version_id=uuid4(),
+                agent_kind="KNOWLEDGE_RETRIEVAL",
+                display_name="错误 Agent",
+                enabled_capabilities=("document", "aiops"),
+                models={},
+            )
+
     def test_create_request_does_not_accept_domain_from_body(self):
         with self.assertRaises(ValidationError):
             CreateAgentRunRequest(

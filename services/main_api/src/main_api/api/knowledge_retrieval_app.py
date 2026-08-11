@@ -34,6 +34,9 @@ class KnowledgeMemberRolePayload(_Payload):
 class KnowledgeAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[
+        Literal["conversation", "document", "data_query"], ...
+    ] = Field(min_length=1, max_length=3)
     models: dict[str, UUID] = Field(default_factory=dict)
     do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
@@ -45,6 +48,9 @@ class KnowledgeAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    enabled_capabilities: tuple[
+        Literal["conversation", "document", "data_query"], ...
+    ] | None = Field(default=None, min_length=1, max_length=3)
     models: dict[str, UUID] | None = None
     do_rerank: bool | None = None
     instruction: str | None = Field(default=None, max_length=32000)

@@ -155,6 +155,12 @@
           },
           "enabled_capabilities": {
             "items": {
+              "enum": [
+                "conversation",
+                "document",
+                "data_query",
+                "aiops"
+              ],
               "type": "string"
             },
             "minItems": 1,

@@ -132,6 +132,15 @@ class AgentRuntimeService:
     async def create_run(
         self, command: CreateRunCommand
     ) -> AgentRunReceipt:
+        if (
+            command.execution_spec.owner_app_id != "knowledge_retrieval"
+            or command.execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL"
+        ):
+            raise AgentRuntimeConflict(
+                "AGENT_KIND_UNSUPPORTED",
+                "Agent Runtime 聊天运行只接受知识检索 Agent；"
+                "AIOps Agent 必须使用 AIOps Run 接口",
+            )
         fingerprint = _canonical_hash(
             {
                 "agent_id": command.agent_id,

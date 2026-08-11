@@ -3188,6 +3188,20 @@
             "title": "Do Rerank",
             "type": "boolean"
           },
+          "enabled_capabilities": {
+            "items": {
+              "enum": [
+                "conversation",
+                "document",
+                "data_query"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Enabled Capabilities",
+            "type": "array"
+          },
           "instruction": {
             "anyOf": [
               {
@@ -3219,7 +3233,8 @@
           }
         },
         "required": [
-          "display_name"
+          "display_name",
+          "enabled_capabilities"
         ],
         "title": "KnowledgeAgentCreatePayload",
         "type": "object"
@@ -3338,6 +3353,27 @@
               }
             ],
             "title": "Do Rerank"
+          },
+          "enabled_capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "conversation",
+                    "document",
+                    "data_query"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled Capabilities"
           },
           "expected_row_version": {
             "minimum": 1.0,

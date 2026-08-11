@@ -14,7 +14,6 @@ from agent_runtime.application import (
     CreateRunCommand,
     FailTaskCommand,
     InstallPlanCommand,
-    StartDelegationCommand,
     StaleTaskLease,
 )
 from agent_runtime.domain.planning import (
@@ -422,15 +421,12 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         run = self.store.runs[created.run_id]
         self.assertIsNotNone(run.final_task_id)
 
-    async def test_delegation_task_releases_worker_lease(self):
+    async def test_create_run_rejects_aiops_agent(self):
         aiops_spec = self.execution_spec.model_copy(
             update={
                 "owner_app_id": "aiops",
                 "agent_kind": "AIOPS",
                 "enabled_capabilities": ("aiops",),
-                "resource_context": {
-                    "aiops_target_id": str(uuid7())
-                },
             }
         )
         service = AgentRuntimeService(
@@ -448,77 +444,18 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             model_resolver=self.model_resolver,
             notification_publisher=_NoopNotificationPublisher(),
         )
-        created = await service.create_run(
-            self.create_command.model_copy(
-                update={
-                    "idempotency_key": "create-aiops",
-                    "original_input": "分析数据库性能问题",
-                    "execution_spec": aiops_spec,
-                }
+        with self.assertRaises(AgentRuntimeConflict) as raised:
+            await service.create_run(
+                self.create_command.model_copy(
+                    update={
+                        "idempotency_key": "create-aiops",
+                        "original_input": "分析数据库性能问题",
+                        "execution_spec": aiops_spec,
+                    }
+                )
             )
-        )
-        lease = await service.claim_task(
-            ClaimTaskCommand(
-                worker_id="worker-1",
-                lease_seconds=120,
-                trace_id="trace-aiops",
-            )
-        )
-        await service.complete_task(
-            CompleteTaskCommand(
-                task_id=lease.task_id,
-                expected_row_version=lease.row_version,
-                worker_id="worker-1",
-                lease_token=lease.lease_token,
-                artifact=ArtifactInput(
-                    artifact_type="CONTEXT_REWRITE",
-                    schema_version="ContextRewriteOutput.v1",
-                    producer="context-rewrite",
-                    producer_version="1.0.0",
-                    payload={
-                        "raw_input": "分析数据库性能问题",
-                        "standalone_query": "分析数据库性能问题",
-                        "retrieval_queries": ["分析数据库性能问题"],
-                        "resolved_references": [],
-                        "active_topic": None,
-                        "ambiguity": False,
-                        "clarification_question": None,
-                        "memory_refs": [],
-                    },
-                ),
-                actor_id="worker-1",
-                trace_id="trace-aiops",
-                idempotency_key="rewrite-complete",
-            )
-        )
-        lease = await service.claim_task(
-            ClaimTaskCommand(
-                worker_id="worker-1",
-                lease_seconds=120,
-                trace_id="trace-aiops",
-            )
-        )
 
-        delegation_id = await service.start_delegation(
-            StartDelegationCommand(
-                task_id=lease.task_id,
-                expected_row_version=lease.row_version,
-                worker_id="worker-1",
-                lease_token=lease.lease_token,
-                trace_id="trace-aiops",
-            )
-        )
-
-        task = self.store.tasks[lease.task_id]
-        delegation = self.store.delegations[delegation_id]
-        self.assertEqual(created.status, "RUNNING")
-        self.assertEqual(task.status, "WAITING_EXTERNAL")
-        self.assertIsNone(task.lease_token)
-        self.assertEqual(delegation.status, "SUBMITTING")
-        self.assertEqual(
-            delegation.idempotency_key,
-            f"task:{task.task_id}:delegation",
-        )
+        self.assertEqual(raised.exception.code, "AGENT_KIND_UNSUPPORTED")
 
     async def test_create_run_freezes_agent_configuration(self):
         receipt = await self.service.create_run(self.create_command)

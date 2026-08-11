@@ -6,7 +6,7 @@ KBot 4.0 将聊天从“一次模型调用”升级为可恢复、可追溯的 A
 Conversation 保存多轮历史和记忆，Run 保存本轮执行，Task 调用版本化 Skill，
 Artifact 保存中间及最终结果，SSE 负责实时展示进度。
 
-当前知识检索 Agent 支持单能力、混合能力和显式 AIOps 委派：
+当前知识检索 Agent 可从通用对话、知识库问答和业务问数中选择任意非空能力组合：
 
 | 路由 | 用户场景 | 执行能力 | 最终依据 |
 | --- | --- | --- | --- |
@@ -16,12 +16,11 @@ Artifact 保存中间及最终结果，SSE 负责实时展示进度。
 | `HYBRID_PARALLEL` | 文档与数据可独立求证 | 文档和问数并行 | Citation Pack + Query Result |
 | `HYBRID_DOCUMENT_FIRST` | 先从文档确定口径再问数 | 文档约束问数 | Citation Pack + Query Result |
 | `HYBRID_DATA_FIRST` | 先取数据再查解释依据 | 问数约束文档检索 | Query Result + Citation Pack |
-| `AIOPS` | 数据库诊断与运维分析 | 委派 AIOps App | AIOps Result |
 | `CLARIFY` | 意图或指代不明确 | 澄清回复 | 用户后续输入 |
 
 每轮选择一个确定路由；Hybrid 路由内部生成固定、可审计的多分支 DAG，不允许模型
-生成任意 Skill 名称、URL 或 SQL。AIOps 仍是独立 App 和状态机，Runtime 只通过
-类型化 Delegation 调用。
+生成任意 Skill 名称、URL 或 SQL。AIOps Agent 属于独立 App，使用 AIOps Run 接口
+和状态机，不进入知识检索 Agent 的 Router 或 Task DAG。
 
 ## 用户请求到最终回答
 
@@ -33,7 +32,7 @@ sequenceDiagram
     participant DB as Oracle
     participant W as Agent Runtime Worker
     participant S as Skill
-    participant DS as KC / Data Query / AIOps
+    participant DS as KC / Data Query
 
     UI->>API: 创建 Conversation / 提交 Turn
     API->>AR: AuthContext + Agent + 用户输入
@@ -136,8 +135,8 @@ data-first:      context-rewrite → data-query → knowledge-retrieval → resp
 ```
 
 每个分支独立产生类型化 Artifact。串行模式把前一分支的受控约束传给后一分支；
-Response Composer 只使用已完成且可追溯的 Citation Pack、Query Result 或 AIOps
-Result，不把模型推断伪装成来源事实。
+Response Composer 只使用已完成且可追溯的 Citation Pack 或 Query Result，
+不把模型推断伪装成来源事实。
 
 ## SSE 事件类型
 

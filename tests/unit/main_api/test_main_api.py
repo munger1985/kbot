@@ -653,6 +653,7 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
             json={
                 "display_name": "文档助手",
+                "enabled_capabilities": ["document"],
                 "models": {
                     "context_llm": "019f8eae-2c25-7d48-b044-350ec3f5a011",
                     "composer_llm": "019f8eae-2c25-7d48-b044-350ec3f5a012",

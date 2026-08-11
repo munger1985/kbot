@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 import json
 from typing import Any
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +23,6 @@ class RouteType(StrEnum):
     HYBRID_PARALLEL = "HYBRID_PARALLEL"
     HYBRID_DOCUMENT_FIRST = "HYBRID_DOCUMENT_FIRST"
     HYBRID_DATA_FIRST = "HYBRID_DATA_FIRST"
-    AIOPS = "AIOPS"
     CLARIFY = "CLARIFY"
 
 
@@ -42,6 +40,10 @@ class RouteDecision(BaseModel):
 class RootAgentPlanner:
     """按冻结 Agent 配置确定单一领域路由并生成可校验计划。"""
 
+    _KNOWLEDGE_CAPABILITIES = frozenset(
+        {"conversation", "document", "data_query"}
+    )
+
     def __init__(self, *, model_client=None, prompt_resolver=None):
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
@@ -54,6 +56,7 @@ class RootAgentPlanner:
         capabilities = set(
             agent_snapshot.get("enabled_capabilities") or []
         )
+        self._validate_capabilities(capabilities)
         default_route = str(
             (agent_snapshot.get("config") or {}).get(
                 "default_route", ""
@@ -73,30 +76,6 @@ class RootAgentPlanner:
                 route_type=RouteType.DOCUMENT,
                 confidence=1.0,
                 reason="Agent 配置明确限定为 Document 路由",
-            )
-        if capabilities == {"aiops"} or (
-            "aiops" in capabilities and default_route == "AIOPS"
-        ):
-            config = agent_snapshot.get("config") or {}
-            try:
-                target_id = UUID(str(config["aiops_target_id"]))
-                if target_id.version != 7:
-                    raise ValueError
-            except (KeyError, TypeError, ValueError):
-                return RouteDecision(
-                    route_type=RouteType.CLARIFY,
-                    confidence=0.0,
-                    reason="AIOps 路由尚未选择有效的默认 Target",
-                    clarification_question=(
-                        "请先将 Agent 绑定到一个可用 Target，"
-                        "并将该绑定选为聊天默认目标。"
-                    ),
-                )
-            return RouteDecision(
-                route_type=RouteType.AIOPS,
-                confidence=1.0,
-                reason="Agent 配置明确限定为 AIOps 路由",
-                classifier_version="deterministic-aiops-v1",
             )
         if capabilities == {"data_query"}:
             return RouteDecision(
@@ -126,6 +105,7 @@ class RootAgentPlanner:
         capabilities = set(
             agent_snapshot.get("enabled_capabilities") or []
         )
+        self._validate_capabilities(capabilities)
         if (
             "document" in capabilities
             and (client_metadata or {}).get("query_images")
@@ -141,7 +121,7 @@ class RootAgentPlanner:
             return decision.model_copy(
                 update={"requires_chart": self._requests_chart(objective)}
             )
-        if len(capabilities) == 1 or "aiops" in capabilities:
+        if len(capabilities) == 1:
             return self.decide(agent_snapshot=agent_snapshot)
         enabled_routes = [
             route
@@ -294,6 +274,17 @@ class RootAgentPlanner:
             )
         )
 
+    @classmethod
+    def _validate_capabilities(cls, capabilities: set[str]) -> None:
+        """Root Planner 只处理知识检索 Agent 的三类能力。"""
+        if not capabilities:
+            raise ValueError("知识检索 Agent 至少需要启用一项能力")
+        unsupported = sorted(capabilities - cls._KNOWLEDGE_CAPABILITIES)
+        if unsupported:
+            raise ValueError(
+                f"知识检索 Agent 路由不支持能力：{unsupported}"
+            )
+
     def build_plan(
         self,
         *,
@@ -301,10 +292,6 @@ class RootAgentPlanner:
         decision: RouteDecision,
         ttl_seconds: int = 300,
     ) -> PlanDraft:
-        if decision.route_type == RouteType.AIOPS:
-            return self._build_aiops_plan(
-                objective=objective, ttl_seconds=ttl_seconds
-            )
         if decision.route_type == RouteType.CONVERSATION:
             return self._build_conversation_plan(
                 objective=objective, ttl_seconds=ttl_seconds
@@ -700,67 +687,6 @@ class RootAgentPlanner:
             plan_version=version,
             objective=objective,
             tasks=tasks,
-            final_task_key="response_compose",
-            expires_at=(
-                datetime.now(timezone.utc)
-                + timedelta(seconds=ttl_seconds)
-            ),
-        )
-
-    @staticmethod
-    def _build_aiops_plan(
-        *, objective: str, ttl_seconds: int
-    ) -> PlanDraft:
-        return PlanDraft(
-            plan_version="aiops-delegation-plan-v1",
-            objective=objective,
-            tasks=(
-                TaskSpec(
-                    task_key="context_rewrite",
-                    task_type="CONTEXT_REWRITE",
-                    execution_kind=ExecutionKind.LOCAL_SKILL,
-                    specialist="conversation",
-                    skill_id="context-rewrite",
-                    skill_version="1.0.0",
-                    input_refs=("RUN_INPUT", "CONVERSATION_CONTEXT"),
-                    expected_outputs=("CONTEXT_REWRITE",),
-                    timeout_seconds=60,
-                    max_retries=1,
-                    execution_mode=ExecutionMode.READ_ONLY,
-                ),
-                TaskSpec(
-                    task_key="aiops_diagnosis",
-                    task_type="DELEGATE",
-                    execution_kind=ExecutionKind.DELEGATION,
-                    specialist="aiops",
-                    delegate_service="aiops_agent",
-                    delegate_capability="diagnosis",
-                    depends_on=("context_rewrite",),
-                    input_refs=("task_output:context_rewrite",),
-                    expected_outputs=("DELEGATED_AIOPS_RESULT",),
-                    required_scopes=("aiops.delegate",),
-                    timeout_seconds=600,
-                    max_retries=2,
-                    execution_mode=ExecutionMode.DELEGATED,
-                ),
-                TaskSpec(
-                    task_key="response_compose",
-                    task_type="COMPOSE",
-                    execution_kind=ExecutionKind.LOCAL_SKILL,
-                    specialist="response_composer",
-                    skill_id="response-composer",
-                    skill_version="1.0.0",
-                    depends_on=("context_rewrite", "aiops_diagnosis"),
-                    input_refs=(
-                        "task_output:context_rewrite",
-                        "task_output:aiops_diagnosis",
-                    ),
-                    expected_outputs=("GROUNDED_ANSWER",),
-                    timeout_seconds=120,
-                    max_retries=1,
-                    execution_mode=ExecutionMode.READ_ONLY,
-                ),
-            ),
             final_task_key="response_compose",
             expires_at=(
                 datetime.now(timezone.utc)

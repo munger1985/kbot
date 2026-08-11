@@ -1,5 +1,6 @@
 """4.0 通用对话、问数、图表与 Dify Adapter 的聚焦测试。"""
 
+import json
 import unittest
 from types import SimpleNamespace
 
@@ -32,8 +33,10 @@ class _ModelClient:
     def __init__(self, *, response=None, chunks=()):
         self.response = response or {}
         self.chunks = chunks
+        self.last_json_request = None
 
     async def get_llm_json(self, **kwargs):
+        self.last_json_request = kwargs
         return self.response
 
     async def stream_llm_chunks(self, **kwargs):
@@ -98,6 +101,41 @@ def _context(
 
 
 class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
+    async def test_router_only_exposes_selected_knowledge_capabilities(self):
+        model = _ModelClient(
+            response={
+                "route_type": "HYBRID_PARALLEL",
+                "confidence": 0.9,
+                "reason": "需要同时查询制度和业务数据",
+                "clarification_question": None,
+                "requires_chart": False,
+            }
+        )
+        planner = RootAgentPlanner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {
+                        "served_model_name": "router-model"
+                    }
+                },
+            },
+            objective="根据员工套餐制度统计本月使用人数",
+        )
+
+        request = json.loads(
+            model.last_json_request["prompt"][1]["content"]
+        )
+        self.assertNotIn("CONVERSATION", request["enabled_routes"])
+        self.assertIn("DOCUMENT", request["enabled_routes"])
+        self.assertIn("DATA_QUERY", request["enabled_routes"])
+        self.assertEqual(decision.route_type, RouteType.HYBRID_PARALLEL)
+
     async def test_multi_capability_router_selects_data_chart(self):
         planner = RootAgentPlanner(
             model_client=_ModelClient(

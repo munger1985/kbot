@@ -361,31 +361,12 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             ("context_rewrite", "knowledge_retrieval"),
         )
 
-    def test_root_planner_builds_aiops_delegation_dag(self):
+    def test_root_planner_rejects_aiops_agent_capability(self):
         planner = RootAgentPlanner()
-        decision = planner.decide(
-            agent_snapshot={
-                "enabled_capabilities": ["aiops"],
-                "config": {
-                    "aiops_target_id": str(uuid7()),
-                },
-            }
-        )
-        plan = planner.build_plan(
-            objective="分析数据库性能下降原因",
-            decision=decision,
-        )
-
-        self.assertEqual(decision.route_type, RouteType.AIOPS)
-        self.assertEqual(plan.tasks[1].execution_kind, "DELEGATION")
-        self.assertEqual(plan.tasks[1].delegate_service, "aiops_agent")
-        self.assertEqual(
-            plan.tasks[2].input_refs,
-            (
-                "task_output:context_rewrite",
-                "task_output:aiops_diagnosis",
-            ),
-        )
+        with self.assertRaisesRegex(ValueError, "不支持能力"):
+            planner.decide(
+                agent_snapshot={"enabled_capabilities": ["aiops"]}
+            )
 
     async def test_context_rewrite_uses_frozen_conversation_context(self):
         context = _context()
@@ -469,16 +450,6 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             ).execute(context)
 
         self.assertEqual(2, model_client.call_count)
-
-    def test_root_planner_rejects_aiops_without_frozen_target(self):
-        decision = RootAgentPlanner().decide(
-            agent_snapshot={
-                "enabled_capabilities": ["aiops"],
-                "config": {},
-            }
-        )
-
-        self.assertEqual(decision.route_type, RouteType.CLARIFY)
 
     async def test_document_skill_builds_document_level_citation(self):
         client = _KnowledgeCoreClient()

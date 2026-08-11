@@ -19,12 +19,31 @@ class AgentExecutionSpec(BaseModel):
     consumer_agent_version_id: UUID
     agent_kind: Literal["KNOWLEDGE_RETRIEVAL", "AIOPS"]
     display_name: str = Field(min_length=1, max_length=256)
-    enabled_capabilities: tuple[str, ...] = Field(min_length=1)
+    enabled_capabilities: tuple[
+        Literal["conversation", "document", "data_query", "aiops"], ...
+    ] = Field(min_length=1)
     models: dict[str, UUID]
     do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
     resource_context: dict[str, Any] = Field(default_factory=dict)
     runtime_policy: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_agent_boundary(self) -> "AgentExecutionSpec":
+        """禁止知识检索与 AIOps Agent 混用所有权和能力。"""
+        capabilities = set(self.enabled_capabilities)
+        if len(capabilities) != len(self.enabled_capabilities):
+            raise ValueError("enabled_capabilities 不能包含重复能力")
+        if self.agent_kind == "KNOWLEDGE_RETRIEVAL":
+            if self.owner_app_id != "knowledge_retrieval":
+                raise ValueError("知识检索 Agent 必须由 knowledge_retrieval 拥有")
+            if not capabilities.issubset(
+                {"conversation", "document", "data_query"}
+            ):
+                raise ValueError("知识检索 Agent 不能启用 AIOps 能力")
+        elif self.owner_app_id != "aiops" or capabilities != {"aiops"}:
+            raise ValueError("AIOps Agent 必须由 aiops 拥有且只能启用 aiops")
+        return self
 
 
 class CreateAgentRunRequest(BaseModel):
@@ -43,6 +62,8 @@ class CreateAgentRunRequest(BaseModel):
     def reject_internal_attachment_metadata(self) -> "CreateAgentRunRequest":
         if self.execution_spec.consumer_agent_id != self.agent_id:
             raise ValueError("execution_spec 与 agent_id 不一致")
+        if self.execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL":
+            raise ValueError("Agent Runtime 聊天运行只接受知识检索 Agent")
         if "query_images" in self.client_metadata:
             raise ValueError(
                 "查询图片只能通过 Conversation multipart 接口上传"
