@@ -14,6 +14,7 @@ from main_api.app import create_main_api_app
 from main_api.application import DomainValidationService
 from main_api.config import get_main_api_settings
 from platform_clients import (
+    AIOpsClientError,
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
     KnowledgeCoreStreamResponse,
@@ -386,9 +387,36 @@ class _FakeAgentRuntimeClient:
 class _FakeAIOpsClient:
     def __init__(self):
         self.binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a101")
+        self.authorize_agent_calls = 0
+        self.raise_agent_access_denied = False
 
     async def is_ready(self):
         return True
+
+    async def authorize_private_agent(self, payload, *, auth_context):
+        del payload, auth_context
+        self.authorize_agent_calls += 1
+        if self.raise_agent_access_denied:
+            raise AIOpsClientError(
+                status_code=403,
+                code="AIOPS_AGENT_ACCESS_DENIED",
+                message="当前用户无权使用该 AIOps Agent",
+            )
+        return {"allowed": True}
+
+    async def conversation_request(
+        self, method, suffix, *, auth_context, payload=None
+    ):
+        del method, suffix, auth_context
+        return {
+            "conversation_id": str(
+                UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
+            ),
+            "agent_id": payload["agent_id"],
+            "run_id": str(
+                UUID("019f8eae-2c25-7d48-b044-350ec3f5a103")
+            ),
+        }
 
     async def create_agent_binding(
         self,
@@ -923,6 +951,41 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(428, response.status_code)
         self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
+
+    def test_aiops_manager_starts_chat_without_agent_grant(self) -> None:
+        response = self.client.post(
+            "/api/v1/apps/aiops/conversations",
+            headers=self._headers(),
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "message": "检查数据库负载",
+            },
+        )
+
+        self.assertEqual(201, response.status_code)
+        self.assertEqual(0, self.aiops.authorize_agent_calls)
+        self.assertEqual(
+            str(self.agent_runtime.agent_id), response.json()["agent_id"]
+        )
+
+    def test_aiops_agent_access_denial_remains_public_403(self) -> None:
+        self.app.state.access_control_service.permissions = frozenset(
+            {"aiops:use"}
+        )
+        self.aiops.raise_agent_access_denied = True
+
+        response = self.client.post(
+            "/api/v1/apps/aiops/conversations",
+            headers=self._headers(),
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "message": "检查数据库负载",
+            },
+        )
+
+        self.assertEqual(403, response.status_code)
+        self.assertEqual("AIOPS_AGENT_ACCESS_DENIED", response.json()["code"])
+        self.assertEqual(1, self.aiops.authorize_agent_calls)
 
     def test_aiops_binding_selects_agent_chat_target(self) -> None:
         target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")

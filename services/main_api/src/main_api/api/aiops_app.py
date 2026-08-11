@@ -142,6 +142,8 @@ async def _require(request: Request, permission: str):
 
 
 async def _authorize_agent(request: Request, agent_id: UUID, snapshot, actor_id: str):
+    if "aiops:agent_manage" in snapshot.permissions:
+        return
     await _client(request).authorize_private_agent(
         {
             "agent_id": str(agent_id),

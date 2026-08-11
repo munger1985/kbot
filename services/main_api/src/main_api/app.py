@@ -369,7 +369,21 @@ def create_main_api_app(
             service_name="aiops",
             exc=exc,
         )
-        if exc.status_code in {401, 403}:
+        internal_auth_codes = {
+            "AUTH_CONTEXT_REQUIRED",
+            "AUTH_CONTEXT_EXPIRED",
+            "INVALID_AUTH_CONTEXT",
+            "SERVICE_IDENTITY_NOT_CONFIGURED",
+            "SERVICE_IDENTITY_REQUIRED",
+            "SERVICE_IDENTITY_EXPIRED",
+            "INVALID_SERVICE_IDENTITY",
+            "SERVICE_CALLER_DENIED",
+            "SERVICE_SCOPE_DENIED",
+            "SERVICE_CONTEXT_MISMATCH",
+        }
+        if exc.status_code == 401 or (
+            exc.status_code == 403 and exc.code in internal_auth_codes
+        ):
             return _problem_response(
                 request=request,
                 status_code=502,
