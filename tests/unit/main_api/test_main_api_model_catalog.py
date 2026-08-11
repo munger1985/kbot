@@ -6,6 +6,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from main_api.api.models import router
+from main_api.entrypoints.api import (
+    _configure_model_config_clients,
+    settings,
+)
 from platform_core.identity import uuid7
 
 
@@ -18,6 +22,40 @@ class _ModelClient:
 
 
 class MainApiModelCatalogTest(unittest.TestCase):
+    def test_startup_configures_all_model_catalog_clients(self):
+        app = FastAPI()
+
+        _configure_model_config_clients(app)
+
+        clients = app.state.model_config_clients
+        self.assertEqual(4, len(clients))
+        self.assertEqual(
+            tuple(
+                dependency.base_url.rstrip("/").replace(
+                    "://0.0.0.0", "://127.0.0.1"
+                )
+                for dependency in (
+                    settings.model_embedding,
+                    settings.model_llm,
+                    settings.model_visual,
+                    settings.model_vlm,
+                )
+            ),
+            tuple(client.base_url for client in clients),
+        )
+
+    def test_catalog_returns_503_when_clients_are_not_initialized(self):
+        app = FastAPI()
+        app.include_router(router)
+
+        response = TestClient(app).get("/api/v1/model-catalog")
+
+        self.assertEqual(503, response.status_code)
+        self.assertEqual(
+            "MODEL_CATALOG_UNAVAILABLE",
+            response.json()["detail"]["code"],
+        )
+
     def test_catalog_returns_only_enabled_models_and_keeps_uuid(self):
         llm_id = uuid7()
         embedding_id = uuid7()

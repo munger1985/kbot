@@ -31,7 +31,13 @@ class ModelCatalogItem(BaseModel):
 def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:
     clients = getattr(request.app.state, "model_config_clients", None)
     if not clients:
-        raise RuntimeError("模型目录客户端尚未初始化")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "MODEL_CATALOG_UNAVAILABLE",
+                "message": "模型目录客户端尚未初始化",
+            },
+        )
     return tuple(clients)
 
 

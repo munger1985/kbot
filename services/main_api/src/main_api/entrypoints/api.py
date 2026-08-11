@@ -24,6 +24,7 @@ from platform_clients import (
     AIOpsClientAuth,
     AIOpsManagementClient,
     AgentRuntimeClient,
+    AIModelConfigClient,
     KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
     DataQueryClient,
@@ -39,6 +40,25 @@ from platform_core.security import (
 
 settings = get_main_api_settings()
 config = settings.api
+
+
+def _configure_model_config_clients(app: FastAPI) -> None:
+    """把四类模型配置服务接入 Main API 的公开目录聚合。"""
+    dependencies = (
+        settings.model_embedding,
+        settings.model_llm,
+        settings.model_visual,
+        settings.model_vlm,
+    )
+    app.state.model_config_clients = tuple(
+        AIModelConfigClient(
+            base_url=dependency.base_url,
+            timeout=dependency.timeout_seconds,
+            caller_service=config.service_name,
+            audience=dependency.audience,
+        )
+        for dependency in dependencies
+    )
 
 
 @asynccontextmanager
@@ -110,6 +130,7 @@ async def lifespan(app: FastAPI):
         timeout_seconds=settings.data_query.timeout_seconds,
         session=client_session,
     )
+    _configure_model_config_clients(app)
     app.state.aiops_client = AIOpsManagementClient(
         base_url=settings.aiops.base_url,
         auth=AIOpsClientAuth(
