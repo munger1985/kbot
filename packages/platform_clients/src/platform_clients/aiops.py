@@ -416,6 +416,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def delete_monitor_source(
+        self,
+        source_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{self._CONFIG}/monitor-sources/{source_id}",
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def command_monitor_source(
         self,
         source_id: UUID,

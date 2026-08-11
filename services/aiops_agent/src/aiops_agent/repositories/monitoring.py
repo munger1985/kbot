@@ -28,6 +28,12 @@ class MonitorSourceRepository(AIOpsRepository):
     ) -> MonitorSourceEntity:
         return await self._add(entity)
 
+    async def delete_source(self, entity: MonitorSourceEntity) -> None:
+        """仅由用例层在确认停用后删除无关联监控源。"""
+        self._check_active()
+        await self._session.delete(entity)
+        await self._session.flush()
+
     async def get_scoped(
         self,
         *,

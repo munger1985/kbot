@@ -394,6 +394,64 @@ class MonitorConfigurationMixin:
             handler=handler,
         )
 
+    async def delete_monitor_source(
+        self,
+        *,
+        scope: ConfigurationScope,
+        source_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> MonitorSourceDetail:
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> MonitorSourceDetail:
+            assert uow.monitor_sources is not None
+            assert uow.managed_credentials is not None
+            entity = await uow.monitor_sources.get_scoped(
+                monitor_source_id=source_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Monitor Source")
+            self._check_version(entity.row_version, expected_version)
+            if entity.status != "DISABLED":
+                raise state_conflict("仅允许删除已停用的 Monitor Source")
+
+            result = _monitor_detail(entity)
+            for reference, kind in (
+                (entity.secret_ref, "monitor_source"),
+                (entity.webhook_secret_ref, "monitor_webhook"),
+            ):
+                if reference:
+                    _, _, _, credential_id = (
+                        self._managed_credentials.parse_reference(reference)
+                    )
+                    await self._managed_credentials.revoke(
+                        uow=uow,
+                        domain_id=scope.domain_id,
+                        credential_id=credential_id,
+                        credential_kind=kind,
+                        actor_id=scope.actor_id,
+                    )
+            try:
+                await uow.monitor_sources.delete_source(entity)
+            except IntegrityError as exc:
+                raise state_conflict(
+                    "Monitor Source 仍有关联的 Target、Agent 或运行历史，不能删除"
+                ) from exc
+            return result
+
+        return await self._idempotent(
+            scope=scope,
+            operation="MONITOR_SOURCE_DELETE",
+            parent_resource=str(source_id),
+            idempotency_key=idempotency_key,
+            payload={"row_version": expected_version},
+            response_type=MonitorSourceDetail,
+            handler=handler,
+        )
+
     async def request_monitor_health_check(
         self,
         *,

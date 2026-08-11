@@ -857,6 +857,25 @@ async def patch_monitor_source(
     return _validated(MonitorSourceDetail, payload, response)
 
 
+@router.delete(
+    "/monitor-sources/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_monitor_source(
+    source_id: UUID,
+    request: Request,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> Response:
+    await _client(request).delete_monitor_source(
+        source_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/monitor-sources/{source_id}/health-checks",
     response_model=HealthCheckReceipt,

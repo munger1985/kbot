@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 from pydantic import ValidationError
 
@@ -24,8 +25,12 @@ from aiops_agent.application.configuration.schedule import (
 from aiops_agent.application.configuration.policy_service import (
     PolicyConfigurationMixin,
 )
+from aiops_agent.application.configuration.service import (
+    AIOpsConfigurationService,
+)
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
+from aiops_agent.entities import MonitorSourceEntity
 from platform_core.contracts.aiops import MonitorSourceCreate, TargetCreate
 from platform_core.identity import uuid7
 
@@ -177,6 +182,111 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         metadata = await adapter.validate_ref("managed://credential-id")
         self.assertEqual("managed-credential", metadata.provider)
         self.assertNotIn("plain-secret-value", repr(metadata))
+
+
+class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.scope = ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:km_portal",
+            actor_id="portal-user-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+        self.source_id = uuid7()
+        self.source_credential_id = uuid7()
+        self.webhook_credential_id = uuid7()
+        now = datetime.now(UTC)
+        self.entity = MonitorSourceEntity(
+            monitor_source_id=self.source_id,
+            domain_id=self.scope.domain_id,
+            display_name="OEM",
+            source_type="OEM",
+            endpoint="https://oem.example.com/em",
+            secret_ref="source-secret",
+            webhook_secret_ref="webhook-secret",
+            tls_profile_ref=None,
+            webhook_key_hash=None,
+            previous_webhook_key_hash=None,
+            previous_webhook_key_expires_at=None,
+            capabilities_json={},
+            status="DISABLED",
+            health_status="UNKNOWN",
+            health_check_request_id=None,
+            health_check_requested_at=None,
+            last_health_check_at=None,
+            last_error_code=None,
+            row_version=3,
+            health_version=1,
+            created_by=self.scope.actor_id,
+            updated_by=self.scope.actor_id,
+            created_at=now,
+            updated_at=now,
+        )
+        self.repository = AsyncMock()
+        self.repository.get_scoped.return_value = self.entity
+        self.uow = SimpleNamespace(
+            monitor_sources=self.repository,
+            managed_credentials=object(),
+        )
+        self.managed_credentials = SimpleNamespace(
+            parse_reference=Mock(
+                side_effect=(
+                    (
+                        "monitor_source",
+                        self.scope.domain_id,
+                        self.source_id,
+                        self.source_credential_id,
+                    ),
+                    (
+                        "monitor_webhook",
+                        self.scope.domain_id,
+                        self.source_id,
+                        self.webhook_credential_id,
+                    ),
+                )
+            ),
+            revoke=AsyncMock(),
+        )
+        self.service = object.__new__(AIOpsConfigurationService)
+        self.service._managed_credentials = self.managed_credentials
+
+        async def execute_handler(**kwargs):
+            return await kwargs["handler"](self.uow, datetime.now(UTC))
+
+        self.service._idempotent = AsyncMock(side_effect=execute_handler)
+
+    async def test_deletes_disabled_source_and_revokes_credentials(self) -> None:
+        result = await self.service.delete_monitor_source(
+            scope=self.scope,
+            source_id=self.source_id,
+            expected_version=3,
+            idempotency_key="delete-monitor-source-1",
+        )
+
+        self.assertEqual(self.source_id, result.source_id)
+        self.repository.get_scoped.assert_awaited_once_with(
+            monitor_source_id=self.source_id,
+            domain_id=self.scope.domain_id,
+            lock=True,
+        )
+        self.repository.delete_source.assert_awaited_once_with(self.entity)
+        self.assertEqual(2, self.managed_credentials.revoke.await_count)
+
+    async def test_rejects_deleting_active_source(self) -> None:
+        self.entity.status = "ACTIVE"
+
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await self.service.delete_monitor_source(
+                scope=self.scope,
+                source_id=self.source_id,
+                expected_version=3,
+                idempotency_key="delete-monitor-source-2",
+            )
+
+        self.assertEqual(409, caught.exception.status_code)
+        self.repository.delete_source.assert_not_awaited()
+        self.managed_credentials.revoke.assert_not_awaited()
 
 
 class ConfigurationContractTest(unittest.TestCase):
