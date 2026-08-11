@@ -659,7 +659,7 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(201, agent.status_code)
         bindings = self.client.get(
             (
-                "/api/v1/apps/knowledge-retrieval/agents/"
+                "/api/v1/apps/knowledge-retrieval/knowledge/agents/"
                 f"{self.agent_runtime.agent_id}/collection-bindings"
             ),
             headers=self._headers(),

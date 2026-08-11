@@ -1035,8 +1035,7 @@
         "title": "CancelRunRequest",
         "type": "object"
       },
-      "CollectionBindingPayload": {
-        "additionalProperties": false,
+      "CollectionBindingRequest": {
         "properties": {
           "note": {
             "anyOf": [
@@ -1051,7 +1050,7 @@
             "title": "Note"
           }
         },
-        "title": "CollectionBindingPayload",
+        "title": "CollectionBindingRequest",
         "type": "object"
       },
       "CollectionCreateRequest": {
@@ -11948,159 +11947,6 @@
         ]
       }
     },
-    "/api/v1/apps/knowledge-retrieval/agents/{agent_id}/collection-bindings": {
-      "get": {
-        "operationId": "list_agent_collection_bindings_api_v1_apps_knowledge_retrieval_agents__agent_id__collection_bindings_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Agent Collection Bindings",
-        "tags": [
-          "Knowledge Retrieval App"
-        ]
-      }
-    },
-    "/api/v1/apps/knowledge-retrieval/agents/{agent_id}/collections/{collection_id}/binding": {
-      "delete": {
-        "operationId": "unbind_agent_collection_api_v1_apps_knowledge_retrieval_agents__agent_id__collections__collection_id__binding_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Unbind Agent Collection",
-        "tags": [
-          "Knowledge Retrieval App"
-        ]
-      },
-      "put": {
-        "operationId": "bind_agent_collection_api_v1_apps_knowledge_retrieval_agents__agent_id__collections__collection_id__binding_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/CollectionBindingPayload"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Bind Agent Collection",
-        "tags": [
-          "Knowledge Retrieval App"
-        ]
-      }
-    },
     "/api/v1/apps/knowledge-retrieval/conversations": {
       "get": {
         "operationId": "list_conversations_api_v1_apps_knowledge_retrieval_conversations_get",
@@ -14687,6 +14533,159 @@
         "summary": "Promote Verified Query",
         "tags": [
           "Data Query"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/knowledge/agents/{agent_id}/collection-bindings": {
+      "get": {
+        "operationId": "list_agent_bindings_api_v1_apps_knowledge_retrieval_knowledge_agents__agent_id__collection_bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Bindings",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/knowledge/agents/{agent_id}/collections/{collection_id}/binding": {
+      "delete": {
+        "operationId": "unbind_collection_api_v1_apps_knowledge_retrieval_knowledge_agents__agent_id__collections__collection_id__binding_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unbind Collection",
+        "tags": [
+          "Knowledge"
+        ]
+      },
+      "put": {
+        "operationId": "bind_collection_api_v1_apps_knowledge_retrieval_knowledge_agents__agent_id__collections__collection_id__binding_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CollectionBindingRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bind Collection",
+        "tags": [
+          "Knowledge"
         ]
       }
     },

@@ -69,6 +69,10 @@ class CollectionModelsRequest(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class CollectionBindingRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
 class IntakeReviewRequest(BaseModel):
     decision: str = Field(pattern=r"^(APPROVE|REJECT)$")
     comment: str | None = Field(default=None, max_length=1000)
@@ -164,6 +168,54 @@ async def delete_collection(collection_id: UUID, request: Request):
     return await _client(request).delete_collection(
         domain_id=_domain_id(request),
         collection_id=collection_id,
+        auth_context=context,
+    )
+
+
+@router.put(
+    "/agents/{agent_id}/collections/{collection_id}/binding",
+)
+async def bind_collection(
+    agent_id: UUID,
+    collection_id: UUID,
+    request: Request,
+    payload: CollectionBindingRequest | None = None,
+):
+    context = get_auth_context(request)
+    return await _client(request).bind_collection(
+        domain_id=_domain_id(request),
+        agent_id=agent_id,
+        collection_id=collection_id,
+        note=payload.note if payload is not None else None,
+        auth_context=context,
+    )
+
+
+@router.delete(
+    "/agents/{agent_id}/collections/{collection_id}/binding",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unbind_collection(
+    agent_id: UUID,
+    collection_id: UUID,
+    request: Request,
+) -> Response:
+    context = get_auth_context(request)
+    await _client(request).unbind_collection(
+        domain_id=_domain_id(request),
+        agent_id=agent_id,
+        collection_id=collection_id,
+        auth_context=context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/agents/{agent_id}/collection-bindings")
+async def list_agent_bindings(agent_id: UUID, request: Request):
+    context = get_auth_context(request)
+    return await _client(request).list_agent_bindings(
+        domain_id=_domain_id(request),
+        agent_id=agent_id,
         auth_context=context,
     )
 
