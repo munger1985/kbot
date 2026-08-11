@@ -99,6 +99,7 @@ class AIOpsAgentService:
         self._validate_shape(
             target_id=command.target_id,
             inspection_plan_id=command.inspection_plan_id,
+            status=command.status,
         )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
@@ -111,6 +112,13 @@ class AIOpsAgentService:
             )
             self._validate_resources(
                 states, command.status, command.model_dump()
+            )
+            await self._validate_monitor_binding(
+                uow=uow,
+                domain_id=command.domain_id,
+                target_id=command.target_id,
+                monitor_source_id=command.monitor_source_id,
+                status=command.status,
             )
             agent = AIOpsAgentEntity(
                 agent_id=agent_id,
@@ -192,6 +200,7 @@ class AIOpsAgentService:
             self._validate_shape(
                 target_id=effective["target_id"],
                 inspection_plan_id=effective["inspection_plan_id"],
+                status=str(changes.get("status", agent.status)),
             )
             states = await uow.agents.resource_states(
                 domain_id=command.domain_id,
@@ -202,6 +211,13 @@ class AIOpsAgentService:
             )
             self._validate_resources(
                 states, str(changes.get("status", agent.status)), effective
+            )
+            await self._validate_monitor_binding(
+                uow=uow,
+                domain_id=command.domain_id,
+                target_id=effective["target_id"],
+                monitor_source_id=effective["monitor_source_id"],
+                status=str(changes.get("status", agent.status)),
             )
             version_fields = {
                 "monitor_source_id",
@@ -377,7 +393,13 @@ class AIOpsAgentService:
             return self._grant_view(row)
 
     @staticmethod
-    def _validate_shape(*, target_id, inspection_plan_id):
+    def _validate_shape(*, target_id, inspection_plan_id, status):
+        if status == "ACTIVE" and target_id is None:
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_TARGET_REQUIRED",
+                "启用 AIOps Agent 前必须绑定诊断目标",
+                status_code=422,
+            )
         if inspection_plan_id is not None and target_id is None:
             raise AIOpsAgentError(
                 "AIOPS_AGENT_TARGET_REQUIRED", "巡检计划必须绑定诊断目标"
@@ -412,6 +434,34 @@ class AIOpsAgentService:
                         f"启用 Agent 前资源 {key} 必须处于 ACTIVE",
                         status_code=422,
                     )
+
+    @staticmethod
+    async def _validate_monitor_binding(
+        *,
+        uow,
+        domain_id: int,
+        target_id: UUID | None,
+        monitor_source_id: UUID,
+        status: str,
+    ) -> None:
+        """启用 Agent 前确认运行时能够冻结到显式监控绑定。"""
+        if status != "ACTIVE" or target_id is None:
+            return
+        monitors = await uow.targets.list_monitors(
+            target_id=target_id,
+            domain_id=domain_id,
+            active_only=True,
+        )
+        if any(
+            item.monitor_source_id == monitor_source_id
+            for item in monitors
+        ):
+            return
+        raise AIOpsAgentError(
+            "AIOPS_AGENT_MONITOR_BINDING_REQUIRED",
+            "启用 Agent 前必须将所选监控源绑定到诊断目标",
+            status_code=422,
+        )
 
     @staticmethod
     def _new_version(*, agent_id, version_id, version_no, values, actor_id):

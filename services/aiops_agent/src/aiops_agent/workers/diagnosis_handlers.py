@@ -244,6 +244,18 @@ class DiagnosisRoundDraftHandler:
                 f"diagnosis:evidence:r{round_no - 1}",
             )
         )
+        direct_answer = DiagnosisReportHandler._direct_answer(
+            question=context.plan_snapshot.get("diagnosis", {}).get(
+                "question_summary"
+            ),
+            evidence=evidence,
+        )
+        if direct_answer is not None and direct_answer.status == "ANSWERED":
+            return DiagnosisRoundDraft(
+                round_no=round_no,
+                stop_recommendation="FINALIZE",
+                stop_reason="可信监控事实已直接回答用户问题",
+            )
         prior_assessments = _artifacts(
             context, "DIAGNOSIS_ROUND_ASSESSMENT.v1"
         )
@@ -543,6 +555,19 @@ class DiagnosisRoundAssessmentHandler:
         draft = DiagnosisRoundDraft.model_validate(
             _artifact(context, "DIAGNOSIS_ROUND_DRAFT.v1")
         )
+        direct_answer = DiagnosisReportHandler._direct_answer(
+            question=context.plan_snapshot.get("diagnosis", {}).get(
+                "question_summary"
+            ),
+            evidence=evidence,
+        )
+        if direct_answer is not None and direct_answer.status == "ANSWERED":
+            return DiagnosisRoundAssessment(
+                round_no=round_no,
+                suggested_root_cause_level="INCONCLUSIVE",
+                recommended_next_step="FINALIZE",
+                rationale_summary="可信监控事实已直接回答用户问题",
+            )
         plan = ValidatedEvidencePlan.model_validate(
             _artifact(context, "VALIDATED_EVIDENCE_PLAN.v1")
         )

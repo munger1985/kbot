@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 
@@ -27,7 +28,12 @@ from aiops_agent.orchestration import (
     build_multi_round_diagnosis_blueprint,
 )
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
-from aiops_agent.workers.diagnosis_handlers import DiagnosisReportHandler
+from aiops_agent.workers.diagnosis_handlers import (
+    DiagnosisReportHandler,
+    DiagnosisRoundAssessmentHandler,
+    DiagnosisRoundDraftHandler,
+)
+from aiops_agent.workers.handlers import TaskExecutionContext
 
 
 def _monitor_artifact() -> dict:
@@ -470,6 +476,108 @@ class RootCausePolicyTest(unittest.TestCase):
         )
         self.assertEqual((), evidence.gaps)
         self.assertEqual((), evidence.facts)
+
+
+class DirectAnswerShortCircuitTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _evidence():
+        artifact = _monitor_artifact()
+        observation = artifact["payload"]["observations"][0]
+        observation["metric_code"] = "db.storage.utilization"
+        observation["unit"] = "percent"
+        observation["summary"] = {"last": 66.14}
+        observation["series"] = [
+            {
+                "dimensions": {"tablespace": "USERS"},
+                "points": [
+                    {
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "value": 66.14,
+                        "quality": "GOOD",
+                    }
+                ],
+            }
+        ]
+        return normalize_evidence_artifacts(
+            (artifact,), target_id="target-1"
+        )
+
+    @staticmethod
+    def _context(*, task_key, artifacts):
+        return TaskExecutionContext(
+            run_id="run-1",
+            task_id="task-1",
+            task_key=task_key,
+            target_id="target-1",
+            agent_id="agent-1",
+            trigger_type="CHAT",
+            actor_id="user-1",
+            original_request="当前表空间使用率是多少",
+            trace_id="trace-1",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "diagnosis": {
+                    "question_summary": "当前表空间使用率是多少",
+                    "model": {"enabled": True},
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=artifacts,
+        )
+
+    async def test_round_draft_skips_llm_for_complete_monitor_answer(self):
+        model = AsyncMock()
+        context = self._context(
+            task_key="diagnosis:r1:draft",
+            artifacts=(
+                {
+                    "schema_version": "EVIDENCE_INDEX.v1",
+                    "payload": self._evidence().model_dump(mode="json"),
+                    "provenance": {"task_key": "diagnosis:evidence:r0"},
+                },
+            ),
+        )
+
+        draft = await DiagnosisRoundDraftHandler(
+            model_client=model,
+            prompts=DiagnosisPromptRegistry.load(),
+        ).execute(context)
+
+        self.assertEqual("FINALIZE", draft.stop_recommendation)
+        self.assertEqual((), draft.hypotheses)
+        model.generate_structured.assert_not_awaited()
+
+    async def test_round_assessment_skips_llm_for_complete_monitor_answer(self):
+        model = AsyncMock()
+        evidence = self._evidence()
+        context = self._context(
+            task_key="diagnosis:r1:assess",
+            artifacts=(
+                {
+                    "schema_version": "EVIDENCE_INDEX.v1",
+                    "payload": evidence.model_dump(mode="json"),
+                    "provenance": {"task_key": "diagnosis:evidence:r1"},
+                },
+                {
+                    "schema_version": "DIAGNOSIS_ROUND_DRAFT.v1",
+                    "payload": DiagnosisRoundDraft(
+                        round_no=1,
+                        stop_recommendation="FINALIZE",
+                        stop_reason="可信监控事实已直接回答用户问题",
+                    ).model_dump(mode="json"),
+                },
+            ),
+        )
+
+        assessment = await DiagnosisRoundAssessmentHandler(
+            model_client=model,
+            prompts=DiagnosisPromptRegistry.load(),
+        ).execute(context)
+
+        self.assertEqual("FINALIZE", assessment.recommended_next_step)
+        self.assertIsNone(assessment.model_gap_code)
+        model.generate_structured.assert_not_awaited()
 
 
 class DiagnosisAssetsTest(unittest.TestCase):

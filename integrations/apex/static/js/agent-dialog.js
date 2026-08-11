@@ -2,6 +2,17 @@
   "use strict";
 
   const state = { agent: null, models: [], resources: {} };
+  const ORACLE_PROMETHEUS_METRICS = [
+    "db.availability",
+    "db.storage.utilization",
+    "db.storage.free_bytes",
+    "db.storage.max_bytes"
+  ];
+  const ORACLE_PROMETHEUS_QUERIES = {
+    "db.storage.utilization": 'oracledb_tablespace_used_percent{instance="${external_target}"}',
+    "db.storage.free_bytes": 'oracledb_tablespace_free{instance="${external_target}"}',
+    "db.storage.max_bytes": 'oracledb_tablespace_max_bytes{instance="${external_target}"}'
+  };
   const byId = (id) => document.getElementById(id);
   const value = (id) => String(byId(id)?.value || "").trim();
   const request = (path, options = {}) => KBotApi.request(path, {
@@ -17,6 +28,12 @@
 
   function showError(error) {
     KBotValidation.show(error, "保存 Agent 失败。");
+  }
+
+  function idempotencyKey(prefix) {
+    const suffix = globalThis.crypto?.randomUUID?.()
+      || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `${prefix}-${suffix}`;
   }
 
   function kind() {
@@ -131,10 +148,14 @@
       const missing = [
         !monitorSourceId && "p76-monitor",
         !policyId && "p76-policy",
+        status === "ACTIVE" && !targetId && "p76-target",
         !diagnosisLlm && "p76-diagnosis-llm"
       ].filter(Boolean);
       if (missing.length) {
-        KBotValidation.fail(missing, "AIOps Agent 必须配置监控源、Policy 和诊断 LLM。");
+        KBotValidation.fail(
+          missing,
+          "启用 AIOps Agent 必须配置监控源、Policy、诊断目标和诊断 LLM。"
+        );
       }
       if (inspectionPlanId && !targetId) {
         KBotValidation.fail("p76-target", "配置巡检计划时必须同时选择 Target。");
@@ -196,6 +217,79 @@
     return { ...base, models, do_rerank: byId("p76-rerank").checked, config };
   }
 
+  async function ensureMonitorBinding(body) {
+    if (!body.target_id || !body.monitor_source_id) return;
+    const [source, bindings] = await Promise.all([
+      request(`/api/v1/apps/aiops/monitor-sources/${encodeURIComponent(body.monitor_source_id)}`),
+      request(`/api/v1/apps/aiops/targets/${encodeURIComponent(body.target_id)}/monitor-bindings`)
+    ]);
+    const existing = items(bindings).find(
+      (item) => item.source_id === body.monitor_source_id
+    );
+    if (source.source_type !== "PROMETHEUS") {
+      if (!existing || existing.status !== "ACTIVE") {
+        throw new Error("所选监控源尚未绑定到诊断目标，请先完成 Target 监控绑定。");
+      }
+      return;
+    }
+    const externalTargetKey = String(source.prometheus_instance || "").trim();
+    if (!externalTargetKey) {
+      throw new Error("Prometheus 监控源缺少 instance 标签值。");
+    }
+    const target = state.resources.targets.find(
+      (item) => item.target_id === body.target_id
+    );
+    const existingMetricCodes = existing?.metric_scope?.metric_codes;
+    const metricCodes = Array.from(new Set([
+      ...(Array.isArray(existingMetricCodes) ? existingMetricCodes : []),
+      ...(target?.db_type === "ORACLE" ? ORACLE_PROMETHEUS_METRICS : ["db.availability"])
+    ]));
+    const existingQueries = existing?.mapping_overrides?.prometheus_queries || {};
+    const prometheusQueries = target?.db_type === "ORACLE"
+      ? { ...ORACLE_PROMETHEUS_QUERIES, ...existingQueries }
+      : { ...existingQueries };
+    const bindingPayload = {
+      external_target_key: externalTargetKey,
+      role: existing?.role || "PRIMARY",
+      priority: Number(existing?.priority ?? 100),
+      metric_scope: { metric_codes: metricCodes },
+      mapping_overrides: Object.keys(prometheusQueries).length
+        ? { ...(existing?.mapping_overrides || {}), prometheus_queries: prometheusQueries }
+        : existing?.mapping_overrides || null
+    };
+    if (!existing) {
+      await request(
+        `/api/v1/apps/aiops/targets/${encodeURIComponent(body.target_id)}/monitor-bindings`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey("aiops-monitor-binding") },
+          body: JSON.stringify({ source_id: body.monitor_source_id, ...bindingPayload })
+        }
+      );
+      return;
+    }
+    const updated = await request(
+      `/api/v1/apps/aiops/targets/${encodeURIComponent(body.target_id)}/monitor-bindings/${encodeURIComponent(existing.binding_id)}`,
+      {
+        method: "PATCH",
+        headers: { "If-Match": `"rv-${existing.row_version}"` },
+        body: JSON.stringify(bindingPayload)
+      }
+    );
+    if (updated.status !== "ACTIVE") {
+      await request(
+        `/api/v1/apps/aiops/targets/${encodeURIComponent(body.target_id)}/monitor-bindings/${encodeURIComponent(existing.binding_id)}/activate`,
+        {
+          method: "POST",
+          headers: {
+            "If-Match": `"rv-${updated.row_version}"`,
+            "Idempotency-Key": idempotencyKey("aiops-monitor-binding-activate")
+          }
+        }
+      );
+    }
+  }
+
   async function save() {
     const spinner = apex.util.showSpinner(document.body);
     try {
@@ -205,6 +299,9 @@
       const basePath = agentKind === "aiops"
         ? "/api/v1/apps/aiops/agents"
         : "/api/v1/apps/knowledge-retrieval/agents";
+      if (agentKind === "aiops") {
+        await ensureMonitorBinding(body);
+      }
       if (state.agent && agentKind === "knowledge" && body.status === "ACTIVE" && body.config.resource_mode === "managed_resources") {
         const bindings = await request(`/api/v1/apps/knowledge-retrieval/knowledge/agents/${encodeURIComponent(state.agent.agent_id)}/collection-bindings`);
         if (!(bindings?.bindings || []).some((binding) => binding.status === "ACTIVE")) {
