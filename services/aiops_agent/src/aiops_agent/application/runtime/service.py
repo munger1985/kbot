@@ -187,6 +187,7 @@ class AIOpsRuntimeService:
             command.client_metadata.get("trace_id", command.command_id)
         )
         diagnosis_model = None
+        private_agent_binding = None
         if command.blueprint_id == "diagnosis.root-cause":
             if self._agent_catalog is None:
                 raise dependency_unavailable(
@@ -199,6 +200,16 @@ class AIOpsRuntimeService:
                     trace_id=trace_id,
                 )
             )
+            private_agent_binding = (
+                await self._agent_catalog.resolve_runtime_binding(
+                    agent_id=command.agent_id,
+                    domain_id=command.domain_id,
+                )
+            )
+            if private_agent_binding.target_id != command.target_id:
+                raise validation_failed(
+                    "Run Target 与 AIOps Agent 当前版本不一致"
+                )
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             deadline = command.deadline or (
@@ -233,14 +244,16 @@ class AIOpsRuntimeService:
             )
             if target is None or target.status != "ACTIVE":
                 raise resource_not_found("可用 Target")
-            binding = await uow.targets.get_agent_binding(
-                target_id=command.target_id,
-                agent_id=command.agent_id,
-                domain_id=command.domain_id,
-                lock=True,
-            )
-            if binding is None or binding.status != "ACTIVE":
-                raise resource_not_found("Active Agent Binding")
+            binding = private_agent_binding
+            if binding is None:
+                binding = await uow.targets.get_agent_binding(
+                    target_id=command.target_id,
+                    agent_id=command.agent_id,
+                    domain_id=command.domain_id,
+                    lock=True,
+                )
+                if binding is None or binding.status != "ACTIVE":
+                    raise resource_not_found("Active Agent Binding")
             policy = None
             configured_policy_status = None
             if binding.policy_id is not None:

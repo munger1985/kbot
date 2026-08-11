@@ -9,6 +9,7 @@ from aiops_agent.application.errors import (
 )
 from platform_clients.model import AIModelConfigClient
 from platform_core.contracts import AuthContext
+from aiops_agent.ports.agent_catalog import AgentRuntimeBinding
 
 
 class AIOpsAgentValidator:
@@ -59,6 +60,37 @@ class AIOpsAgentValidator:
         if not served_name:
             raise validation_failed("诊断模型缺少 served_model_name")
         return {"technical_name": served_name, "revision": str(model_id)}
+
+    async def resolve_runtime_binding(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+    ) -> AgentRuntimeBinding:
+        """将私有 Agent 当前版本转换为 Run 的唯一配置绑定。"""
+        agent = await self._get_active(
+            agent_id=agent_id, domain_id=domain_id
+        )
+        target_id = agent.get("target_id")
+        policy_id = agent.get("policy_id")
+        version_id = agent.get("agent_version_id")
+        if not target_id:
+            raise validation_failed("AIOps Agent 必须绑定诊断目标")
+        if not policy_id or not version_id:
+            raise validation_failed("AIOps Agent 当前版本配置不完整")
+        config = dict(agent.get("config") or {})
+        return AgentRuntimeBinding(
+            binding_id=UUID(str(version_id)),
+            agent_id=agent_id,
+            target_id=UUID(str(target_id)),
+            policy_id=UUID(str(policy_id)),
+            status="ACTIVE",
+            row_version=int(agent.get("row_version") or 1),
+            allow_mutation=bool(config.get("allow_mutation", False)),
+            allowed_actions_json=tuple(
+                str(item) for item in config.get("allowed_actions", [])
+            ),
+        )
 
     async def _get_active(self, *, agent_id: UUID, domain_id: int) -> dict:
         try:

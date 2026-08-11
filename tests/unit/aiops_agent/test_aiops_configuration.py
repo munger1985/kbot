@@ -140,6 +140,39 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(422, caught.exception.status_code)
 
+    async def test_runtime_binding_comes_from_private_agent_version(self) -> None:
+        agent_id = uuid7()
+        version_id = uuid7()
+        target_id = uuid7()
+        policy_id = uuid7()
+        agent_service = AsyncMock()
+        agent_service.get.return_value = {
+            "agent_id": str(agent_id),
+            "agent_version_id": str(version_id),
+            "domain_id": 100,
+            "status": "ACTIVE",
+            "target_id": str(target_id),
+            "policy_id": str(policy_id),
+            "row_version": 3,
+            "config": {
+                "allow_mutation": True,
+                "allowed_actions": ["db.session.terminate"],
+            },
+        }
+        resolver = AIOpsAgentValidator(agent_service)
+
+        binding = await resolver.resolve_runtime_binding(
+            agent_id=agent_id, domain_id=100
+        )
+
+        self.assertEqual(version_id, binding.binding_id)
+        self.assertEqual(target_id, binding.target_id)
+        self.assertEqual(policy_id, binding.policy_id)
+        self.assertTrue(binding.allow_mutation)
+        self.assertEqual(
+            ("db.session.terminate",), binding.allowed_actions_json
+        )
+
 
 class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
     def test_cron_uses_iana_timezone_and_returns_utc(self) -> None:
