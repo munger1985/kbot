@@ -4,7 +4,7 @@ schema_version = "kbot-prompt-catalog.v1"
 [[prompts]]
 prompt_key = "agent_runtime.intent_route"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "在单个聊天 Agent 的已启用能力中选择唯一执行路由"
 input_variables = []
@@ -14,11 +14,14 @@ content = """
 只能从输入明确列出的 enabled_routes 中选择一个 route_type：
 CONVERSATION 表示问候、常识、代码、写作、解释和无需私有数据的问题；
 DOCUMENT 表示查询已入库文档、制度、案例、附件、知识库内容；
+涉及企业内部的员工套餐、福利、产品方案、规章制度、服务说明、操作手册等问题，
+即使用户没有明确说“查询文档”，也应选择 DOCUMENT，不要要求用户自行判断问题类型；
 DATA_QUERY 表示查询业务数据库中的数值、明细、统计、排行或聚合结果；
 HYBRID_PARALLEL 表示文档证据和业务数据可以独立检索后合并；
 HYBRID_DOCUMENT_FIRST 表示必须先从文档确定口径或阈值，再查询业务数据；
 HYBRID_DATA_FIRST 表示必须先从业务数据确定对象或时间范围，再检索相关文档。
-只有输入 enabled_routes 明确包含对应 Hybrid 路由时才可选择；无法确定执行顺序时返回 CLARIFY。
+只有输入 enabled_routes 明确包含对应 Hybrid 路由时才可选择；仅当问题缺少继续执行所必需的
+对象、范围或条件，且无法通过已启用的文档检索获得时，才返回 CLARIFY。
 只有用户明确要求图表、可视化、趋势图、柱状图、饼图等时，requires_chart 才为 true，
 且 requires_chart=true 时 route_type 必须为 DATA_QUERY。
 输出 JSON 字段必须为 route_type、confidence、reason、clarification_question、

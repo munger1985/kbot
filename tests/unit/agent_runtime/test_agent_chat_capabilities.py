@@ -159,6 +159,50 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(decision.route_type, RouteType.DOCUMENT)
 
+    async def test_managed_resources_falls_back_to_document(self):
+        planner = RootAgentPlanner(
+            model_client=_ModelClient(
+                response={
+                    "route_type": "CLARIFY",
+                    "confidence": 0.35,
+                    "reason": "套餐含义不明确",
+                    "clarification_question": (
+                        "请说明这是通用问题、文档查询还是业务数据查询。"
+                    ),
+                    "requires_chart": False,
+                }
+            ),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "enabled_capabilities": [
+                    "conversation",
+                    "document",
+                    "data_query",
+                ],
+                "models": {
+                    "router_llm": {
+                        "served_model_name": "router-model"
+                    }
+                },
+                "config": {"resource_mode": "managed_resources"},
+            },
+            objective="员工有哪些套餐",
+        )
+        plan = planner.build_plan(
+            objective="员工有哪些套餐",
+            decision=decision,
+        )
+
+        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertIsNone(decision.clarification_question)
+        self.assertIn(
+            "knowledge_retrieval",
+            [task.task_key for task in plan.tasks],
+        )
+
     async def test_mcp_data_skill_preserves_profile_and_rows(self):
         client = _DataClient()
         result = await DataQuerySkill(

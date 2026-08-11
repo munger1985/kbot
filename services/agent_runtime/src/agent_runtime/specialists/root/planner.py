@@ -210,11 +210,21 @@ class RootAgentPlanner:
         route_value = str(
             response.get("route_type") or "CLARIFY"
         ).upper()
+        document_fallback = (
+            "document" in capabilities
+            and str(
+                (agent_snapshot.get("config") or {}).get(
+                    "resource_mode", ""
+                )
+            ).lower()
+            == "managed_resources"
+        )
         if route_value not in {*enabled_routes, "CLARIFY"}:
-            route_value = "CLARIFY"
-            response["reason"] = "模型选择了未启用的路由"
-            response["clarification_question"] = (
-                "请说明这是通用问题、文档查询还是业务数据查询。"
+            route_value = "DOCUMENT" if document_fallback else "CLARIFY"
+            response["reason"] = (
+                "模型选择了未启用的路由，按托管资源配置进入文档检索"
+                if document_fallback
+                else "模型选择了未启用的路由"
             )
         confidence = max(
             0.0, min(float(response.get("confidence", 0)), 1.0)
@@ -230,12 +240,25 @@ class RootAgentPlanner:
                 1.0,
             ),
         )
-        if route_value != "CLARIFY" and confidence < threshold:
-            route_value = "CLARIFY"
-            response["reason"] = "自然语言路由置信度低于执行阈值"
-            response["clarification_question"] = (
-                "请说明这是通用问题、文档查询还是业务数据查询。"
+        if route_value == "CLARIFY" and document_fallback:
+            route_value = "DOCUMENT"
+            response["reason"] = (
+                "托管资源 Agent 对不明确的企业知识问题优先检索文档"
             )
+        elif route_value != "CLARIFY" and confidence < threshold:
+            route_value = "DOCUMENT" if document_fallback else "CLARIFY"
+            response["reason"] = (
+                "自然语言路由置信度低，按托管资源配置进入文档检索"
+                if document_fallback
+                else "自然语言路由置信度低于执行阈值"
+            )
+        if route_value == "CLARIFY":
+            response["clarification_question"] = (
+                str(response.get("clarification_question") or "").strip()
+                or "请说明这是通用问题、文档查询还是业务数据查询。"
+            )
+        else:
+            response["clarification_question"] = None
         requires_chart = bool(response.get("requires_chart", False))
         if route_value != "DATA_QUERY":
             requires_chart = False
@@ -248,7 +271,7 @@ class RootAgentPlanner:
                 or None
             ),
             requires_chart=requires_chart,
-            classifier_version="llm-single-route-v1",
+            classifier_version="llm-single-route-v2",
         )
 
     @staticmethod
