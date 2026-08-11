@@ -16,7 +16,11 @@ from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.platform.port_check import check_port_available
-from platform_core.security import create_scoped_internal_auth_middleware
+from platform_core.security import (
+    create_auth_context_codec,
+    create_scoped_internal_auth_middleware,
+    create_service_identity_codec,
+)
 
 
 settings = get_knowledge_retrieval_app_settings()
@@ -42,6 +46,8 @@ async def lifespan(app: FastAPIOffline):
             database_runtime.session_factory
         )
     )
+    app.state.auth_context_codec = create_auth_context_codec()
+    app.state.service_identity_codec = create_service_identity_codec()
     try:
         yield
     finally:
