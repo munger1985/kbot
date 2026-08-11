@@ -381,6 +381,7 @@ class _FakeAccessControlService:
 
     def __init__(self):
         self.last_permission_code: str | None = None
+        self.permissions = self._PERMISSIONS
 
     async def snapshot(self, *, app_id, domain_id, user_id):
         return SimpleNamespace(
@@ -388,7 +389,7 @@ class _FakeAccessControlService:
             domain_id=domain_id,
             user_id=user_id,
             roles=("manager",),
-            permissions=self._PERMISSIONS,
+            permissions=self.permissions,
         )
 
     async def require(self, *, app_id, domain_id, user_id, permission_code):
@@ -401,8 +402,10 @@ class _FakeAccessControlService:
 class _FakeKnowledgeRetrievalAppClient:
     def __init__(self, runtime):
         self.runtime = runtime
+        self.authorize_calls = 0
 
     async def authorize(self, *, payload, auth_context):
+        self.authorize_calls += 1
         return {"authorized": True}
 
     async def execution_spec(self, *, agent_id, domain_id, auth_context):
@@ -480,6 +483,9 @@ class MainApiTest(unittest.TestCase):
         self.app.state.agent_runtime_client = self.agent_runtime
         self.app.state.knowledge_retrieval_app_client = (
             _FakeKnowledgeRetrievalAppClient(self.agent_runtime)
+        )
+        self.knowledge_retrieval_app = (
+            self.app.state.knowledge_retrieval_app_client
         )
         self.app.state.access_control_service = _FakeAccessControlService()
         self.aiops = _FakeAIOpsClient()
@@ -681,6 +687,7 @@ class MainApiTest(unittest.TestCase):
                 "input": "总结文档",
             },
         )
+        self.assertEqual(0, self.knowledge_retrieval_app.authorize_calls)
         self.assertEqual(202, run.status_code)
         self.assertEqual("RUNNING", run.json()["status"])
         self.assertEqual(
@@ -700,6 +707,26 @@ class MainApiTest(unittest.TestCase):
         self.assertIn("id: 8", body)
         self.assertIn("event: RUN_COMPLETED", body)
         self.assertIn("event: done", body)
+
+    def test_regular_user_still_requires_agent_grant(self) -> None:
+        self.app.state.access_control_service.permissions = frozenset(
+            {"knowledge_retrieval:use"}
+        )
+
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/runs",
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "run-regular-user",
+            },
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "input": "总结文档",
+            },
+        )
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual(1, self.knowledge_retrieval_app.authorize_calls)
 
     def test_sse_rejects_cursor_beyond_current_run(self) -> None:
         response = self.client.get(

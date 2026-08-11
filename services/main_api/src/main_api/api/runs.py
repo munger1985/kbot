@@ -86,15 +86,16 @@ async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
     client: KnowledgeRetrievalAppClient = (
         request.app.state.knowledge_retrieval_app_client
     )
-    await client.authorize(
-        payload={
-            "domain_id": domain_id,
-            "agent_id": str(agent_id),
-            "user_id": actor_id,
-            "role_codes": list(snapshot.roles),
-        },
-        auth_context=context,
-    )
+    if "knowledge_retrieval:agent_manage" not in snapshot.permissions:
+        await client.authorize(
+            payload={
+                "domain_id": domain_id,
+                "agent_id": str(agent_id),
+                "user_id": actor_id,
+                "role_codes": list(snapshot.roles),
+            },
+            auth_context=context,
+        )
     return await client.execution_spec(
         agent_id=agent_id, domain_id=domain_id, auth_context=context
     )
