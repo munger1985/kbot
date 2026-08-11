@@ -45,6 +45,26 @@ class _FakeKnowledgeCoreClient:
         self.last_bundle_revision_id: UUID | None = None
         self.last_collection_id: UUID | None = None
         self.last_document_version_id: UUID | None = None
+        self.last_agent_id: UUID | None = None
+
+    async def list_agent_bindings(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        self.last_context = auth_context
+        self.last_domain_id = domain_id
+        self.last_agent_id = agent_id
+        return {
+            "bindings": [
+                {
+                    "agent_id": str(agent_id),
+                    "collection_id": str(TEST_COLLECTION_ID),
+                }
+            ]
+        }
 
     async def list_collections(
         self,
@@ -637,6 +657,19 @@ class MainApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(201, agent.status_code)
+        bindings = self.client.get(
+            (
+                "/api/v1/apps/knowledge-retrieval/agents/"
+                f"{self.agent_runtime.agent_id}/collection-bindings"
+            ),
+            headers=self._headers(),
+        )
+        self.assertEqual(200, bindings.status_code)
+        self.assertEqual(
+            str(TEST_COLLECTION_ID),
+            bindings.json()["bindings"][0]["collection_id"],
+        )
+        self.assertEqual(self.agent_runtime.agent_id, self.kc.last_agent_id)
         run = self.client.post(
             "/api/v1/apps/knowledge-retrieval/runs",
             headers={

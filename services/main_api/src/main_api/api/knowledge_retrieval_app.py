@@ -3,7 +3,7 @@
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from main_api.application import (
@@ -11,7 +11,7 @@ from main_api.application import (
     AccessControlService,
     AccessDeniedError,
 )
-from platform_clients import KnowledgeRetrievalAppClient
+from platform_clients import KnowledgeCoreClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
 
@@ -64,6 +64,10 @@ class KnowledgeAgentGrantStatusPayload(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
+class CollectionBindingPayload(_Payload):
+    note: str | None = Field(default=None, max_length=1000)
+
+
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     try:
@@ -84,6 +88,10 @@ def _client(request: Request) -> KnowledgeRetrievalAppClient:
         KnowledgeRetrievalAppClient,
         request.app.state.knowledge_retrieval_app_client,
     )
+
+
+def _knowledge_client(request: Request) -> KnowledgeCoreClient:
+    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
 
 
 async def _require(request: Request, permission: str):
@@ -216,6 +224,61 @@ async def update_agent(
         },
         auth_context=request.state.auth_context,
     )
+
+
+@router.get("/agents/{agent_id}/collection-bindings")
+async def list_agent_collection_bindings(
+    agent_id: UUID,
+    request: Request,
+):
+    domain_id, _, _ = await _require(
+        request, "knowledge_retrieval:agent_manage"
+    )
+    return await _knowledge_client(request).list_agent_bindings(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/agents/{agent_id}/collections/{collection_id}/binding")
+async def bind_agent_collection(
+    agent_id: UUID,
+    collection_id: UUID,
+    request: Request,
+    payload: CollectionBindingPayload | None = None,
+):
+    domain_id, _, _ = await _require(
+        request, "knowledge_retrieval:agent_manage"
+    )
+    return await _knowledge_client(request).bind_collection(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        collection_id=collection_id,
+        note=payload.note if payload is not None else None,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.delete(
+    "/agents/{agent_id}/collections/{collection_id}/binding",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unbind_agent_collection(
+    agent_id: UUID,
+    collection_id: UUID,
+    request: Request,
+) -> Response:
+    domain_id, _, _ = await _require(
+        request, "knowledge_retrieval:agent_manage"
+    )
+    await _knowledge_client(request).unbind_collection(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        collection_id=collection_id,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/agent-grants")
