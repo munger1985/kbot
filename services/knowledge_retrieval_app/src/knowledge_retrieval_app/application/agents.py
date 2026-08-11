@@ -77,32 +77,32 @@ class KnowledgeRetrievalAgentService:
         )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
-            await uow.agents.add_agent(
-                KnowledgeRetrievalAgentEntity(
-                    agent_id=agent_id,
-                    domain_id=command.domain_id,
-                    display_name=command.display_name.strip(),
-                    description=command.description,
-                    status=command.status,
-                    current_version_id=version_id,
-                    created_by=command.actor_id,
-                    updated_by=command.actor_id,
-                )
-            )
-            await uow.agents.add_version(
-                KnowledgeRetrievalAgentVersionEntity(
-                    agent_version_id=version_id,
-                    agent_id=agent_id,
-                    version_no=1,
-                    enabled_capabilities_json=list(self.CAPABILITIES),
-                    models_json=models,
-                    do_rerank=command.do_rerank,
-                    instruction=command.instruction,
-                    config_json=command.config,
-                    created_by=command.actor_id,
-                )
+            agent = KnowledgeRetrievalAgentEntity(
+                agent_id=agent_id,
+                domain_id=command.domain_id,
+                display_name=command.display_name.strip(),
+                description=command.description,
+                status=command.status,
+                current_version_id=None,
+                created_by=command.actor_id,
+                updated_by=command.actor_id,
             )
             try:
+                await uow.agents.add_agent(agent)
+                await uow.agents.add_version(
+                    KnowledgeRetrievalAgentVersionEntity(
+                        agent_version_id=version_id,
+                        agent_id=agent_id,
+                        version_no=1,
+                        enabled_capabilities_json=list(self.CAPABILITIES),
+                        models_json=models,
+                        do_rerank=command.do_rerank,
+                        instruction=command.instruction,
+                        config_json=command.config,
+                        created_by=command.actor_id,
+                    )
+                )
+                agent.current_version_id = version_id
                 await uow.commit()
             except IntegrityError as exc:
                 raise AgentApplicationError(

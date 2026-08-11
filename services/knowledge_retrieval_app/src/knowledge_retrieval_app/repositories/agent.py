@@ -20,6 +20,7 @@ class KnowledgeRetrievalAgentRepository:
 
     async def add_agent(self, row: KnowledgeRetrievalAgentEntity) -> None:
         self._session.add(row)
+        await self._session.flush()
 
     async def add_version(self, row: KnowledgeRetrievalAgentVersionEntity) -> None:
         self._session.add(row)
