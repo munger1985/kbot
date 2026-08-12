@@ -59,6 +59,10 @@ Agent 和智能问答。部署到 APEX 时按 `ui/README.md` 接入可信登录�
 SQL Developer 中执行 `scripts/db/bootstrap_km_default_user.sql` 初始化默认用户。页面只
 调用 Main API 公开 BFF，不能把 Portal API Key 或内部身份 Header 写入静态 JavaScript。
 
+既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。应先在 SQL Developer
+中运行 `scripts/db/bootstrap_km_asset_permissions.sql` 幂等补充 KM 权限和角色，再运行
+`scripts/db/bootstrap_km_default_user.sql` 给实际 APEX 用户分配 `km_asset/manager`。
+
 来源创建请求示例：
 
 ```json

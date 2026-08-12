@@ -108,6 +108,16 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("'km_asset' AS APP_ID", source)
         self.assertNotIn("@@", source)
 
+    def test_existing_schema_permission_script_is_idempotent_and_standalone(self):
+        source = (
+            ROOT / "scripts" / "db" / "bootstrap_km_asset_permissions.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("MERGE INTO KBOT_PERMISSION", source)
+        self.assertIn("MERGE INTO KBOT_APP_ROLE", source)
+        self.assertIn("MERGE INTO KBOT_APP_ROLE_PERMISSION", source)
+        self.assertIn("km_asset:operations_manage", source)
+        self.assertNotIn("@@", source)
+
 
 if __name__ == "__main__":
     unittest.main()

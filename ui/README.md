@@ -8,7 +8,7 @@
 
 APEX 登录成功后使用 `:APP_USER`（JavaScript 中为 `apex.env.APP_USER`）作为 KBot `USER_ID`。该值区分大小写，必须在 `KBOT_PLATFORM_USER` 中为 `ACTIVE`，并在当前 Domain 的 `KBOT_APP_MEMBER_ROLE` 中拥有启用的 `km_asset` 角色。表中不保存密码，因此登录口令仍由 APEX Authentication Scheme 校验，KBot 用户表只负责登录后的准入和授权。
 
-首次部署可在 SQL Developer 中运行 `scripts/db/bootstrap_km_default_user.sql`。先修改脚本顶部的 `KM_DEFAULT_USER_ID`，使其与实际 `APP_USER` 完全一致，然后使用 Run Script（F5）执行一次。脚本不包含 `@@` 文件引用，可重复执行。
+现有 Schema 首次启用 KM Asset 时，先在 SQL Developer 中运行 `scripts/db/bootstrap_km_asset_permissions.sql` 补充应用权限，再运行 `scripts/db/bootstrap_km_default_user.sql`。修改默认用户脚本顶部的 `KM_DEFAULT_USER_ID`，使其与实际 `APP_USER` 完全一致，然后使用 Run Script（F5）执行。两个脚本都不包含 `@@` 文件引用，可重复执行。
 
 页面会优先复用 APEX 已加载的 `window.KBotApi.request`。如果宿主使用其他请求封装，可在页面脚本执行前配置：
 

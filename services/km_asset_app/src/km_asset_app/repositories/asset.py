@@ -91,24 +91,42 @@ class KmAssetRepository:
 
     async def claim_job(self, *, worker_id: str, lease_until: datetime):
         now = datetime.now(timezone.utc)
-        statement = (
-            select(KmJobEntity)
+        eligibility = (
+            or_(
+                KmJobEntity.status.in_(("PENDING", "RETRY_WAIT")),
+                (KmJobEntity.status == "RUNNING")
+                & (KmJobEntity.lease_until < now),
+            ),
+            KmJobEntity.available_at <= now,
+        )
+        # Oracle 不允许 FETCH FIRST 与 FOR UPDATE 作用于同一查询块。
+        # 先无锁读取少量有序候选主键，再逐个按主键锁定并跳过并发 Worker 已锁行。
+        candidate_statement = (
+            select(KmJobEntity.job_id)
             .where(
-                or_(
-                    KmJobEntity.status.in_(("PENDING", "RETRY_WAIT")),
-                    (KmJobEntity.status == "RUNNING") & (KmJobEntity.lease_until < now),
-                ),
-                KmJobEntity.available_at <= now,
+                *eligibility,
             )
             .order_by(KmJobEntity.priority.desc(), KmJobEntity.created_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
+            .limit(32)
         )
-        row = (await self._session.execute(statement)).scalar_one_or_none()
-        if row is not None:
+        candidate_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for job_id in candidate_ids:
+            lock_statement = (
+                select(KmJobEntity)
+                .where(KmJobEntity.job_id == job_id, *eligibility)
+                .with_for_update(skip_locked=True)
+            )
+            row = (
+                await self._session.execute(lock_statement)
+            ).scalar_one_or_none()
+            if row is None:
+                continue
             row.status = "RUNNING"
             row.lease_owner = worker_id
             row.lease_until = lease_until
             row.attempt_count += 1
             await self._session.flush()
-        return row
+            return row
+        return None
