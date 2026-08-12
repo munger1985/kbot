@@ -49,7 +49,7 @@ get_service_pid() {
 
 # UI 不属于生产进程拓扑，但开发环境下由统一脚本托管。
 get_ui_pid() {
-    pgrep -f "python.*-m[[:space:]]+http\\.server[[:space:]]+8080[[:space:]]+-d[[:space:]]+tools/dev_console" \
+    pgrep -f "python.*((tools/dev_console/server\\.py.*--port[[:space:]]+8080)|(-m[[:space:]]+http\\.server[[:space:]]+8080[[:space:]]+-d[[:space:]]+tools/dev_console))" \
         | grep -v "$CURRENT_PID" \
         | while read pid; do
         if [ -d "/proc/$pid" ]; then

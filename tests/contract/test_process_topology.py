@@ -76,6 +76,7 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertIn("无监听端口", start)
         self.assertNotIn("logs/startup", start)
         self.assertIn("get_ui_pid()", stop)
+        self.assertIn("tools/dev_console/server\\\\.py", stop)
         self.assertIn("http\\\\.server", stop)
 
 
