@@ -148,13 +148,12 @@
       const missing = [
         !monitorSourceId && "p76-monitor",
         !policyId && "p76-policy",
-        status === "ACTIVE" && !targetId && "p76-target",
         !diagnosisLlm && "p76-diagnosis-llm"
       ].filter(Boolean);
       if (missing.length) {
         KBotValidation.fail(
           missing,
-          "启用 AIOps Agent 必须配置监控源、Policy、诊断目标和诊断 LLM。"
+          "AIOps Agent 必须配置监控源、Policy 和诊断 LLM。"
         );
       }
       if (inspectionPlanId && !targetId) {

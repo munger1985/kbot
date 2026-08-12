@@ -99,7 +99,6 @@ class AIOpsAgentService:
         self._validate_shape(
             target_id=command.target_id,
             inspection_plan_id=command.inspection_plan_id,
-            status=command.status,
         )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
@@ -200,7 +199,6 @@ class AIOpsAgentService:
             self._validate_shape(
                 target_id=effective["target_id"],
                 inspection_plan_id=effective["inspection_plan_id"],
-                status=str(changes.get("status", agent.status)),
             )
             states = await uow.agents.resource_states(
                 domain_id=command.domain_id,
@@ -393,13 +391,7 @@ class AIOpsAgentService:
             return self._grant_view(row)
 
     @staticmethod
-    def _validate_shape(*, target_id, inspection_plan_id, status):
-        if status == "ACTIVE" and target_id is None:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_TARGET_REQUIRED",
-                "启用 AIOps Agent 前必须绑定诊断目标",
-                status_code=422,
-            )
+    def _validate_shape(*, target_id, inspection_plan_id):
         if inspection_plan_id is not None and target_id is None:
             raise AIOpsAgentError(
                 "AIOPS_AGENT_TARGET_REQUIRED", "巡检计划必须绑定诊断目标"

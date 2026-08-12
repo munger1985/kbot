@@ -115,22 +115,25 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-    async def test_active_agent_requires_target(self):
+    async def test_active_agent_allows_optional_target(self):
+        unit_of_work = _UnitOfWork(_AgentRepository())
         service = AIOpsAgentService(
-            uow_factory=lambda: _UnitOfWork(_AgentRepository())
+            uow_factory=lambda: unit_of_work
         )
 
-        with self.assertRaisesRegex(ValueError, "必须绑定诊断目标"):
-            await service.create(
-                CreateAIOpsAgentCommand(
-                    domain_id=100,
-                    display_name="数据库诊断助手",
-                    monitor_source_id=uuid7(),
-                    policy_id=uuid7(),
-                    status="ACTIVE",
-                    actor_id="kbotui_dev",
-                )
+        result = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库诊断助手",
+                monitor_source_id=uuid7(),
+                policy_id=uuid7(),
+                status="ACTIVE",
+                actor_id="kbotui_dev",
             )
+        )
+
+        self.assertEqual("ACTIVE", result["status"])
+        self.assertIsNone(result["target_id"])
 
     async def test_active_agent_accepts_matching_monitor_binding(self):
         repository = _AgentRepository()
