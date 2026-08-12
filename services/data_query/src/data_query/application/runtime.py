@@ -74,7 +74,9 @@ class DataQueryRuntimeService:
                 subjects = policy.subject_selector_json
                 actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
                 roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
-                if actor_id not in actor_ids and not set(actor_roles).intersection(roles):
+                managed_app = policy.policy_json.get("managed_consumer_app_id") if isinstance(policy.policy_json, dict) else None
+                managed_access = managed_app == consumer_app_id == "km_asset"
+                if not managed_access and actor_id not in actor_ids and not set(actor_roles).intersection(roles):
                     continue
                 if model.domain_id != resolved_domain_id:
                     continue

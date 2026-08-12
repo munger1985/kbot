@@ -39,6 +39,7 @@ class DocumentationLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "deployment.md",
+                "km-asset-migration.md",
                 "oracle-linux-nginx-http-apex-ords.md",
                 "oracle-linux-nginx-https-gateway.md",
             },

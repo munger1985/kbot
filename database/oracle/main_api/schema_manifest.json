@@ -5,7 +5,7 @@
   "oracle_baseline": "26ai",
   "scripts": [
     {"name": "001_slack_integration.sql", "statements": 7, "sha256": "10b9319d2c5785f040758907a16dc6de75b44ec21630630504eb8dbbe8b15c2e"},
-    {"name": "002_access_control.sql", "statements": 16, "sha256": "64d1cf6d0c68e9d7ff3948db2463cf251fc6d31f4b26bc08fbebca23e995253f"}
+    {"name": "002_access_control.sql", "statements": 18, "sha256": "e229768d4d74270ab21b4b36de8859d3475562326356a318dbd0aa590b4ba699"}
   ],
   "tables": [
     "KBOT_MAIN_SLACK_INBOX", "KBOT_MAIN_SLACK_THREAD",

@@ -1,0 +1,30 @@
+# KM Asset 页面接入说明
+
+`ui/km/` 提供 KM Asset 的正式无框架 JavaScript 页面：工作台、MetaDB、数据来源、Asset、同步任务、Agent 和智能问答。KC Collection 创建与文件上传继续使用现有 APEX 页面。
+
+## APEX 接入
+
+这些页面只调用同源公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 Portal API Key、Domain ID 或用户 ID。生产环境必须由 APEX/网关完成身份验证，并在服务端向 Main API 注入可信的 API Key、Domain 和用户上下文。
+
+APEX 登录成功后使用 `:APP_USER`（JavaScript 中为 `apex.env.APP_USER`）作为 KBot `USER_ID`。该值区分大小写，必须在 `KBOT_PLATFORM_USER` 中为 `ACTIVE`，并在当前 Domain 的 `KBOT_APP_MEMBER_ROLE` 中拥有启用的 `km_asset` 角色。表中不保存密码，因此登录口令仍由 APEX Authentication Scheme 校验，KBot 用户表只负责登录后的准入和授权。
+
+首次部署可在 SQL Developer 中运行 `scripts/db/bootstrap_km_default_user.sql`。先修改脚本顶部的 `KM_DEFAULT_USER_ID`，使其与实际 `APP_USER` 完全一致，然后使用 Run Script（F5）执行一次。脚本不包含 `@@` 文件引用，可重复执行。
+
+页面会优先复用 APEX 已加载的 `window.KBotApi.request`。如果宿主使用其他请求封装，可在页面脚本执行前配置：
+
+```javascript
+KBotKmApi.configure({
+  request: (path, options) => portalRequest(path, options),
+  blob: (path, options) => portalBlobRequest(path, options)
+});
+```
+
+若要显示现有 APEX Collection 页面入口，由宿主注入真实 URL：
+
+```javascript
+window.KBOT_UI_CONTEXT = {
+  collectionPageUrl: "真实的 APEX Collection 页面 URL"
+};
+```
+
+不要把 API Key 或可信身份 Header 放入 `KBOT_UI_CONTEXT`。

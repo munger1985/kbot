@@ -90,6 +90,23 @@ kind = "http"
 port = 18150
 
 [[processes]]
+process_key = "km_asset_app_api"
+module = "km_asset_app.entrypoints.api"
+service_config = "km_asset_app"
+config_section = "api"
+service_name = "kbot-km-asset-app-api"
+kind = "http"
+port = 18160
+
+[[processes]]
+process_key = "km_asset_app_worker"
+module = "km_asset_app.entrypoints.worker"
+service_config = "km_asset_app"
+config_section = "worker"
+service_name = "kbot-km-asset-app-worker"
+kind = "worker"
+
+[[processes]]
 process_key = "agent_runtime_worker"
 module = "agent_runtime.entrypoints.worker"
 service_config = "agent_runtime"
@@ -180,6 +197,7 @@ kind = "worker"
 [endpoints]
 knowledge_core = "knowledge_core_api"
 knowledge_retrieval_app = "knowledge_retrieval_app_api"
+km_asset_app = "km_asset_app_api"
 agent_runtime = "agent_runtime_api"
 data_query = "data_query_api"
 aiops = "aiops_api"
@@ -197,6 +215,18 @@ timeout_seconds = 120
 [dependencies.main_api.knowledge_retrieval_app]
 endpoint = "knowledge_retrieval_app"
 timeout_seconds = 120
+
+[dependencies.main_api.km_asset_app]
+endpoint = "km_asset_app"
+timeout_seconds = 120
+
+[dependencies.km_asset_app.knowledge_core]
+endpoint = "knowledge_core"
+timeout_seconds = 300
+
+[dependencies.km_asset_app.data_query]
+endpoint = "data_query"
+timeout_seconds = 300
 
 [dependencies.main_api.agent_runtime]
 endpoint = "agent_runtime"

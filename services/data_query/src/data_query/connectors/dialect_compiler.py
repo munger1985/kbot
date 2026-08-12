@@ -15,7 +15,7 @@ class CompiledDialectQuery:
     parameters: tuple[Any, ...]
 
 
-def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQueryPlanV1, model: SemanticModelDefinition, policy_max_limit: int) -> CompiledDialectQuery:
+def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQueryPlanV1, model: SemanticModelDefinition, policy_max_limit: int, scope_value: int | None = None) -> CompiledDialectQuery:
     validate_query_plan(plan=plan, model=model, policy_max_limit=policy_max_limit)
     quote = (lambda name: f"`{name}`") if dialect == "MYSQL" else (lambda name: f'"{name}"')
     placeholder = (lambda index: "%s") if dialect == "MYSQL" else (lambda index: f":p{index}")
@@ -23,6 +23,11 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     dimensions = {item.name: item for item in model.dimensions if item.dataset == plan.dataset}
     measures = {item.name: item for item in model.measures if item.dataset == plan.dataset}
     select: list[str] = []; group: list[str] = []; params: list[Any] = []; where: list[str] = []
+    if dataset.scope_column is not None:
+        if scope_value is None:
+            raise ValueError("受 Domain 约束的数据集缺少 scope_value")
+        params.append(scope_value)
+        where.append(f"{quote(dataset.scope_column)} = {placeholder(len(params))}")
     for name in plan.dimensions:
         column = quote(dimensions[name].physical_column); select.append(f"{column} AS {quote(name)}"); group.append(column)
     for item in plan.measures:

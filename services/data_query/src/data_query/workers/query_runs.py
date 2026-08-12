@@ -84,9 +84,9 @@ class DataQueryWorkerService:
             if not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
                 raise ValueError("POLICY_INVALID")
             if claimed.connector_type == "POSTGRESQL":
-                compiled = compile_postgresql_query(plan=plan, model=definition, policy_max_limit=budget["max_rows"])
+                compiled = compile_postgresql_query(plan=plan, model=definition, policy_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
             elif claimed.connector_type in {"MYSQL", "ORACLE"}:
-                compiled = compile_dialect_query(dialect=claimed.connector_type, plan=plan, model=definition, policy_max_limit=budget["max_rows"])
+                compiled = compile_dialect_query(dialect=claimed.connector_type, plan=plan, model=definition, policy_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
             else:
                 raise ValueError("CONNECTOR_NOT_SUPPORTED")
             if hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest() != claimed.compiled_query_hash:

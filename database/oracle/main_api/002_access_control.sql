@@ -69,6 +69,12 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:data_manage', 'knowledge_retrieval', '管理问数资源')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:agent_manage', 'knowledge_retrieval', '管理知识检索 Agent')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:operations_manage', 'knowledge_retrieval', '管理知识检索运行')
+    INTO KBOT_PERMISSION VALUES ('km_asset:use', 'km_asset', '使用 KM Asset')
+    INTO KBOT_PERMISSION VALUES ('km_asset:source_manage', 'km_asset', '管理 KM Asset 来源')
+    INTO KBOT_PERMISSION VALUES ('km_asset:data_manage', 'km_asset', '管理 KM Asset 问数模型')
+    INTO KBOT_PERMISSION VALUES ('km_asset:agent_manage', 'km_asset', '管理 KM Asset Agent')
+    INTO KBOT_PERMISSION VALUES ('km_asset:operations_manage', 'km_asset', '管理 KM Asset 同步运行')
+    INTO KBOT_PERMISSION VALUES ('km_asset:member_manage', 'km_asset', '管理 KM Asset 成员')
     INTO KBOT_PERMISSION VALUES ('aiops:use', 'aiops', '使用 AIOps')
     INTO KBOT_PERMISSION VALUES ('aiops:domain_manage', 'aiops', '管理 AIOps Domain 配置')
     INTO KBOT_PERMISSION VALUES ('aiops:member_manage', 'aiops', '管理 AIOps 成员')
@@ -86,6 +92,8 @@ INSERT ALL
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'contributor', '贡献者', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'reviewer', '审核人', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'manager', '管理员', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('km_asset', 'user', '用户', 'ACTIVE')
+    INTO KBOT_APP_ROLE VALUES ('km_asset', 'manager', '管理员', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('aiops', 'operator', '运维操作员', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('aiops', 'approver', '审批人', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('aiops', 'manager', '管理员', 'ACTIVE')
@@ -109,6 +117,14 @@ WHERE PERMISSION_CODE IN (
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'knowledge_retrieval', 'manager', PERMISSION_CODE FROM KBOT_PERMISSION
 WHERE APP_ID = 'knowledge_retrieval';
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'km_asset', 'user', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE = 'km_asset:use';
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'km_asset', 'manager', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE APP_ID = 'km_asset';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'operator', PERMISSION_CODE FROM KBOT_PERMISSION

@@ -32,6 +32,18 @@ UUIDv7，并以 Oracle `RAW(16)` 保存。
 Bundle、Revision、Document Version 均保留不可变事实。重解析创建新的 Parse
 View，成功激活后删除旧解析产物；失败时继续保留上一成功视图。
 
+### KM Asset 元数据的问文与问数边界
+
+KM Asset App 从 Asset MetaDB 读取完整业务元数据和全部附件，并通过 KBot 内部服务身份
+调用 KC 的 `km-assets` 入库接口。外部 Portal 不得直接调用 KC 内部接口。元数据保存在不可变
+`Bundle Revision.manifest_json.metadata` 中，并进入 Manifest 与 Discovery Profile，
+用于标题、主题、行业、解决方案等语义检索。
+
+`KBOT_V_KM_ASSET_CURRENT` 由 KM Asset App 投影当前同步状态，并把作者、主题、产品、
+行业和时间等常用字段展开为关系列。KM App 自动维护固定语义模型；按作者计数、
+分组、排序等结构化问题走问数，文档正文
+及语义主题问题走 Knowledge Core，避免用向量召回结果估算聚合值。
+
 ## 自适应解析
 
 Docling 是底层转换引擎，其后由 KC 自有流水线完成：

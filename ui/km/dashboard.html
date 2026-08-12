@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KM Asset 工作台</title><link rel="stylesheet" href="./css/km.css"></head>
+<body data-page="dashboard"><main class="km-main">
+  <header class="km-page-head"><div><h1>工作台</h1><p>查看当前加载范围内的数据来源、Asset 处理与同步任务状态。</p></div><div class="km-actions"><button id="refresh-dashboard">刷新</button></div></header>
+  <section class="km-grid" aria-label="当前加载概览">
+    <article class="km-metric span-3"><span class="label">数据来源</span><strong id="metric-sources">—</strong><small>当前加载</small></article>
+    <article class="km-metric span-3"><span class="label">就绪 Asset</span><strong id="metric-ready">—</strong><small>当前加载</small></article>
+    <article class="km-metric span-3"><span class="label">失败 Asset</span><strong id="metric-failed">—</strong><small>当前加载</small></article>
+    <article class="km-metric span-3"><span class="label">同步任务</span><strong id="metric-jobs">—</strong><small>最近 100 条</small></article>
+    <article class="km-panel span-6"><div class="km-panel-head"><div><h2>数据来源</h2><p>连接与固定数据模型状态</p></div></div><div class="km-table-wrap"><table class="km-table"><thead><tr><th>名称</th><th>状态</th><th>同步游标</th><th>更新时间</th></tr></thead><tbody id="dashboard-source-rows"></tbody></table></div></article>
+    <article class="km-panel span-6"><div class="km-panel-head"><div><h2>失败 Asset</h2><p>需要重试或检查上游数据</p></div><a class="km-button small" href="./assets.html">查看全部</a></div><div class="km-table-wrap"><table class="km-table"><thead><tr><th>Asset</th><th>来源</th><th>错误</th><th>更新时间</th></tr></thead><tbody id="dashboard-failure-rows"></tbody></table></div></article>
+    <article class="km-panel span-12"><div class="km-panel-head"><div><h2>最近同步任务</h2><p>任务状态来自 KM Asset 服务</p></div><a class="km-button small" href="./jobs.html">任务中心</a></div><div class="km-table-wrap"><table class="km-table"><thead><tr><th>任务</th><th>来源</th><th>状态</th><th>处理结果</th><th>开始时间</th></tr></thead><tbody id="dashboard-job-rows"></tbody></table></div></article>
+  </section>
+</main><script src="../shared/kbot-api-client.js"></script><script src="../shared/kbot-shell.js"></script><script src="./js/km-dashboard.js"></script></body></html>

@@ -109,7 +109,9 @@ async def create_data_query_run(
         subjects = policy.subject_selector_json
         actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
         roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
-        if actor_id not in actor_ids and not set(actor_roles).intersection(roles):
+        managed_app = policy.policy_json.get("managed_consumer_app_id") if isinstance(policy.policy_json, dict) else None
+        managed_access = managed_app == command.consumer_app_id == "km_asset"
+        if not managed_access and actor_id not in actor_ids and not set(actor_roles).intersection(roles):
             raise DataQueryRunError("POLICY_SUBJECT_DENIED")
         budget = policy.policy_json.get("budget") if isinstance(policy.policy_json, dict) else None
         if not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
@@ -134,6 +136,7 @@ async def create_data_query_run(
                 plan=command.plan,
                 model=definition,
                 policy_max_limit=budget["max_rows"],
+                scope_value=domain_id,
             )
         else:
             compiled = compile_dialect_query(
@@ -141,6 +144,7 @@ async def create_data_query_run(
                 plan=command.plan,
                 model=definition,
                 policy_max_limit=budget["max_rows"],
+                scope_value=domain_id,
             )
         compiled_hash = hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest()
         run = DataQueryRunEntity(

@@ -32,6 +32,7 @@ class BundleProfileInput:
     source_id: str
     canonical_url: str | None
     facet: dict[str, Any] | None
+    metadata: dict[str, Any] | None
     members: tuple[MemberProfileInput, ...]
     missing_members: tuple[str, ...] = ()
 
@@ -60,6 +61,8 @@ def build_bundle_profile(value: BundleProfileInput) -> DiscoveryProfile:
         lines.append(f"规范地址: {value.canonical_url}")
     if value.facet:
         lines.append("属性: " + _stable_json(value.facet))
+    if value.metadata:
+        lines.append("Asset 元数据: " + _stable_json(value.metadata))
     lines.append("文件成员:")
     for member in members:
         name = member.declared_name or member.external_document_id
@@ -87,6 +90,7 @@ def build_bundle_profile(value: BundleProfileInput) -> DiscoveryProfile:
         "source_id": value.source_id,
         "canonical_url": value.canonical_url,
         "facet": value.facet or {},
+        "metadata": value.metadata or {},
         "members": [member.__dict__ for member in members],
         "missing_members": sorted(value.missing_members),
         "profile_schema_version": PROFILE_SCHEMA_VERSION,
@@ -149,6 +153,7 @@ class KnowledgeCoreProfileService:
                 title=revision.title, source_system=bundle.source_system,
                 source_type=bundle.source_type, source_id=bundle.source_id,
                 canonical_url=revision.canonical_url, facet=revision.facet_json,
+                metadata=dict((revision.manifest_json or {}).get("metadata") or {}),
                 members=tuple(profile_members), missing_members=tuple(missing),
             ))
             existing = await uow.discovery.get_by_key(

@@ -110,6 +110,18 @@ class DataQueryClient:
             auth_context=auth_context, scopes=("data_query.manage",),
         )
 
+    async def reconcile_km_asset_dataset(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        """由 KM Asset App 调和系统托管问数资源。"""
+        return await self._json(
+            "POST",
+            "/internal/v1/data-query/managed-datasets/km-asset/reconcile",
+            payload={},
+            auth_context=auth_context,
+            scopes=("data_query.managed",),
+        )
+
     async def management_get(
         self, *, resource: str, resource_id: UUID, auth_context: AuthContext
     ) -> dict[str, Any]:

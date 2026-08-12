@@ -13,7 +13,7 @@ class AgentExecutionSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str = Field(pattern=r"^1\.0$")
-    owner_app_id: Literal["knowledge_retrieval", "aiops"]
+    owner_app_id: Literal["knowledge_retrieval", "km_asset", "aiops"]
     domain_id: int = Field(ge=1)
     consumer_agent_id: UUID
     consumer_agent_version_id: UUID
@@ -35,8 +35,8 @@ class AgentExecutionSpec(BaseModel):
         if len(capabilities) != len(self.enabled_capabilities):
             raise ValueError("enabled_capabilities 不能包含重复能力")
         if self.agent_kind == "KNOWLEDGE_RETRIEVAL":
-            if self.owner_app_id != "knowledge_retrieval":
-                raise ValueError("知识检索 Agent 必须由 knowledge_retrieval 拥有")
+            if self.owner_app_id not in {"knowledge_retrieval", "km_asset"}:
+                raise ValueError("知识类 Agent 必须由知识应用拥有")
             if not capabilities.issubset(
                 {"conversation", "document", "data_query"}
             ):

@@ -192,6 +192,12 @@ class MainApiSettings(Settings):
             audience="kbot-knowledge-retrieval-app-api",
         )
     )
+    km_asset_app: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18160",
+            audience="kbot-km-asset-app-api",
+        )
+    )
     agent_runtime: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18100",

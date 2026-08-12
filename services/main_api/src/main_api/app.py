@@ -28,6 +28,7 @@ from main_api.api import (
     integration_router,
     knowledge_router,
     knowledge_retrieval_app_router,
+    km_asset_app_router,
     memory_router,
     model_catalog_router,
     notification_router,
@@ -42,6 +43,7 @@ from platform_clients import (
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
     KnowledgeRetrievalAppClientError,
+    KmAssetClientError,
     DataQueryClientError,
 )
 from platform_core.middleware.log_middleware import log_requests
@@ -208,6 +210,7 @@ def create_main_api_app(
         )
     app.include_router(knowledge_router)
     app.include_router(knowledge_retrieval_app_router)
+    app.include_router(km_asset_app_router)
     app.include_router(aiops_app_router)
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
@@ -290,6 +293,13 @@ def create_main_api_app(
             request=request, status_code=exc.status_code, code=exc.code,
             title="知识检索应用请求失败", detail=str(exc),
         )
+
+    @app.exception_handler(KmAssetClientError)
+    async def km_asset_app_error_handler(request: Request, exc: KmAssetClientError):
+        _log_downstream_failure(request=request, service_name="km-asset-app", exc=exc)
+        if exc.status_code >= 500:
+            return _problem_response(request=request, status_code=503, code="KM_ASSET_APP_UNAVAILABLE", title="KM Asset 应用暂时不可用", detail="KM Asset 应用暂时无法完成请求")
+        return _problem_response(request=request, status_code=exc.status_code, code=exc.code, title="KM Asset 应用请求失败", detail=str(exc))
 
     @app.exception_handler(DataQueryClientError)
     async def data_query_error_handler(

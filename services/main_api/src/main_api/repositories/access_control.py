@@ -38,11 +38,22 @@ class AccessControlRepository:
                 PermissionEntity.permission_code
                 == AppRolePermissionEntity.permission_code,
             )
+            .join(
+                AppRoleEntity,
+                (AppRoleEntity.app_id == AppMemberRoleEntity.app_id)
+                & (AppRoleEntity.role_code == AppMemberRoleEntity.role_code),
+            )
+            .join(
+                PlatformUserEntity,
+                PlatformUserEntity.user_id == AppMemberRoleEntity.user_id,
+            )
             .where(
                 AppMemberRoleEntity.app_id == app_id,
                 AppMemberRoleEntity.domain_id == domain_id,
                 AppMemberRoleEntity.user_id == user_id,
                 AppMemberRoleEntity.status == "ACTIVE",
+                AppRoleEntity.status == "ACTIVE",
+                PlatformUserEntity.status == "ACTIVE",
                 PermissionEntity.app_id == app_id,
             )
         )
@@ -53,11 +64,22 @@ class AccessControlRepository:
     ) -> tuple[str, ...]:
         rows = await self._session.scalars(
             select(AppMemberRoleEntity.role_code)
+            .join(
+                AppRoleEntity,
+                (AppRoleEntity.app_id == AppMemberRoleEntity.app_id)
+                & (AppRoleEntity.role_code == AppMemberRoleEntity.role_code),
+            )
+            .join(
+                PlatformUserEntity,
+                PlatformUserEntity.user_id == AppMemberRoleEntity.user_id,
+            )
             .where(
                 AppMemberRoleEntity.app_id == app_id,
                 AppMemberRoleEntity.domain_id == domain_id,
                 AppMemberRoleEntity.user_id == user_id,
                 AppMemberRoleEntity.status == "ACTIVE",
+                AppRoleEntity.status == "ACTIVE",
+                PlatformUserEntity.status == "ACTIVE",
             )
             .order_by(AppMemberRoleEntity.role_code)
         )

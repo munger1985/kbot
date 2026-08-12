@@ -2,7 +2,7 @@
 
 from fastapi_offline import FastAPIOffline
 
-from data_query.api import management_router, model_reference_router, runtime_router
+from data_query.api import managed_dataset_router, management_router, model_reference_router, runtime_router
 
 
 def create_data_query_contract_app() -> FastAPIOffline:
@@ -11,6 +11,7 @@ def create_data_query_contract_app() -> FastAPIOffline:
         version="4.0.0",
     )
     app.include_router(management_router)
+    app.include_router(managed_dataset_router)
     app.include_router(runtime_router)
     app.include_router(model_reference_router)
     return app

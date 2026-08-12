@@ -13,6 +13,7 @@ import aiops_agent.entities as aiops_entities  # noqa: E402
 import data_query.entities as data_query_entities  # noqa: E402
 import knowledge_core.entities as kc_entities  # noqa: E402
 import knowledge_retrieval_app.entities as kr_entities  # noqa: E402
+import km_asset_app.entities as km_asset_entities  # noqa: E402
 import main_api.entities.access_control as access_entities  # noqa: E402
 import main_api.entities.domain as domain_entities  # noqa: E402
 import main_api.entities.notification as notification_projection_entities  # noqa: E402
@@ -36,6 +37,7 @@ ENTITY_MODULES = {
     "model_serving": model_entities,
     "knowledge_core": kc_entities,
     "knowledge_retrieval_app": kr_entities,
+    "km_asset_app": km_asset_entities,
     "agent_runtime": agent_entities,
     "data_query": data_query_entities,
     "aiops_agent": aiops_entities,

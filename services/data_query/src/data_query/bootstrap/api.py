@@ -5,7 +5,7 @@ from data_query.bootstrap.common import (
     configure_process_logging,
     create_process_app,
 )
-from data_query.api import management_router, model_reference_router, runtime_router
+from data_query.api import managed_dataset_router, management_router, model_reference_router, runtime_router
 from data_query.application import (
     DataQueryManagementError,
     DataSourceConnectionError,
@@ -16,6 +16,7 @@ from data_query.application import (
     SchemaMetadataError,
     SemanticModelValidationError,
 )
+from data_query.application.managed_datasets import ManagedDatasetError, ManagedDatasetService
 from data_query.config import DataQuerySettings, get_data_query_settings
 from data_query.adapters import DatabaseCredentialService
 from platform_core.managed_credentials import ManagedCredentialCipher
@@ -55,12 +56,13 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
     app.state.auth_context_codec = create_auth_context_codec()
     app.state.service_identity_codec = create_service_identity_codec()
     app.state.uow_factory = uow_factory
+    credential_service = DatabaseCredentialService(
+        uow_factory=uow_factory,
+        cipher=ManagedCredentialCipher.from_environment(),
+    )
     app.state.management_service = DataQueryManagementService(
         uow_factory=uow_factory,
-        credential_service=DatabaseCredentialService(
-            uow_factory=uow_factory,
-            cipher=ManagedCredentialCipher.from_environment(),
-        ),
+        credential_service=credential_service,
         connection_tester=test_data_source_connection,
         model_config_client=AIModelConfigClient(
             base_url=resolved.llm.base_url,
@@ -76,6 +78,11 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
     app.state.runtime_service = DataQueryRuntimeService(
         uow_factory=uow_factory
     )
+    app.state.managed_dataset_service = ManagedDatasetService(
+        uow_factory=uow_factory,
+        credential_service=credential_service,
+        database_config=resolved.database,
+    )
     app.middleware("http")(
         create_scoped_internal_auth_middleware(
             audience=resolved.api.service_name,
@@ -83,6 +90,7 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
                 "kbot-main-api": frozenset({"data_query.manage", "data_query.delegate"}),
                 "kbot-agent-runtime-api": frozenset({"data_query.delegate"}),
                 "kbot-agent-runtime-worker": frozenset({"data_query.delegate"}),
+                "kbot-km-asset-app-api": frozenset({"data_query.manage", "data_query.managed"}),
                 "kbot-data-query-worker": frozenset({"data_query.worker"}),
                 "kbot-model-embedding": frozenset({"model.references"}),
                 "kbot-model-llm": frozenset({"model.references"}),
@@ -92,10 +100,12 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
         )
     )
     app.include_router(management_router)
+    app.include_router(managed_dataset_router)
     app.include_router(runtime_router)
     app.include_router(model_reference_router)
 
     @app.exception_handler(DataQueryManagementError)
+    @app.exception_handler(ManagedDatasetError)
     @app.exception_handler(SemanticModelPublicationError)
     @app.exception_handler(SchemaMetadataError)
     @app.exception_handler(SemanticModelValidationError)

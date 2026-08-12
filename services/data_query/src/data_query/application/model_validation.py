@@ -165,6 +165,7 @@ async def create_model_validation_run(
             plan=plan,
             model=definition,
             policy_max_limit=20,
+            scope_value=domain_id,
         )
     else:
         compiled = compile_dialect_query(
@@ -172,6 +173,7 @@ async def create_model_validation_run(
             plan=plan,
             model=definition,
             policy_max_limit=20,
+            scope_value=domain_id,
         )
     compiled_hash = hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest()
     async with uow_factory() as uow:

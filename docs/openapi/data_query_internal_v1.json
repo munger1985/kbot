@@ -984,6 +984,18 @@
               }
             ],
             "title": "Primary Time Dimension"
+          },
+          "scope_column": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Column"
           }
         },
         "required": [
@@ -2830,6 +2842,25 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/internal/v1/data-query/managed-datasets/km-asset/reconcile": {
+      "post": {
+        "operationId": "reconcile_km_asset_internal_v1_data_query_managed_datasets_km_asset_reconcile_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reconcile Km Asset",
+        "tags": [
+          "Data Query Managed Datasets"
+        ]
+      }
+    },
     "/internal/v1/data-query/management/agent-bindings": {
       "get": {
         "operationId": "list_agent_bindings_internal_v1_data_query_management_agent_bindings_get",

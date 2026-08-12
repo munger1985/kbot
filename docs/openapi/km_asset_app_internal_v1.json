@@ -1,0 +1,1447 @@
+{
+  "components": {
+    "schemas": {
+      "AgentActivateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "domain_id",
+          "expected_row_version"
+        ],
+        "title": "AgentActivateRequest",
+        "type": "object"
+      },
+      "AgentCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "do_rerank": {
+            "default": false,
+            "title": "Do Rerank",
+            "type": "boolean"
+          },
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "DRAFT",
+            "pattern": "^(DRAFT|ACTIVE)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "source_id",
+          "display_name"
+        ],
+        "title": "AgentCreateRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "RawAssetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "source_id",
+          "payload"
+        ],
+        "title": "RawAssetRequest",
+        "type": "object"
+      },
+      "SourceCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_size": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "type": "integer"
+          },
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "metadb_credentials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 2,
+            "minProperties": 2,
+            "title": "Metadb Credentials",
+            "type": "object"
+          },
+          "metadb_endpoint": {
+            "format": "uri",
+            "minLength": 1,
+            "title": "Metadb Endpoint",
+            "type": "string"
+          },
+          "poll_interval_seconds": {
+            "default": 60,
+            "maximum": 86400.0,
+            "minimum": 10.0,
+            "title": "Poll Interval Seconds",
+            "type": "integer"
+          },
+          "sharepoint_credentials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 3,
+            "minProperties": 3,
+            "title": "Sharepoint Credentials",
+            "type": "object"
+          },
+          "sharepoint_site_path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Sharepoint Site Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "display_name",
+          "metadb_endpoint",
+          "metadb_credentials",
+          "sharepoint_credentials",
+          "sharepoint_site_path",
+          "collection_id"
+        ],
+        "title": "SourceCreateRequest",
+        "type": "object"
+      },
+      "SourceUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_size": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "metadb_credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "maxProperties": 2,
+                "minProperties": 2,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadb Credentials"
+          },
+          "metadb_endpoint": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadb Endpoint"
+          },
+          "poll_interval_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Interval Seconds"
+          },
+          "sharepoint_credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "maxProperties": 3,
+                "minProperties": 3,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharepoint Credentials"
+          },
+          "sharepoint_site_path": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharepoint Site Path"
+          }
+        },
+        "required": [
+          "domain_id",
+          "expected_row_version"
+        ],
+        "title": "SourceUpdateRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "domain_id",
+          "expected_row_version"
+        ],
+        "title": "VersionRequest",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "KBot KM Asset App Internal API",
+    "version": "4.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "live_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live"
+      }
+    },
+    "/internal/v1/km-asset/agents": {
+      "get": {
+        "operationId": "list_agents_internal_v1_km_asset_agents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agents",
+        "tags": [
+          "KM Asset Agents"
+        ]
+      },
+      "post": {
+        "operationId": "create_agent_internal_v1_km_asset_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent",
+        "tags": [
+          "KM Asset Agents"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/agents/{agent_id}": {
+      "get": {
+        "operationId": "get_agent_internal_v1_km_asset_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent",
+        "tags": [
+          "KM Asset Agents"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/agents/{agent_id}/activate": {
+      "post": {
+        "operationId": "activate_agent_internal_v1_km_asset_agents__agent_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentActivateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Agent",
+        "tags": [
+          "KM Asset Agents"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/agents/{agent_id}/execution-spec": {
+      "get": {
+        "operationId": "execution_spec_internal_v1_km_asset_agents__agent_id__execution_spec_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execution Spec",
+        "tags": [
+          "KM Asset Agents"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/assets": {
+      "get": {
+        "operationId": "list_assets_internal_v1_km_asset_assets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ingestion_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "DISCOVERED",
+                    "SYNC_PENDING",
+                    "DOWNLOADING",
+                    "DOWNLOAD_FAILED",
+                    "READY_FOR_INGESTION",
+                    "INGESTING",
+                    "KC_ACCEPTED",
+                    "PARSING",
+                    "READY",
+                    "RETRY_PENDING",
+                    "FAILED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ingestion Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assets",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/assets/snapshots": {
+      "post": {
+        "operationId": "persist_raw_asset_internal_v1_km_asset_assets_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RawAssetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Persist Raw Asset",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/assets/{km_asset_id}": {
+      "get": {
+        "operationId": "get_asset_internal_v1_km_asset_assets__km_asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "km_asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Km Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Asset",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/assets/{km_asset_id}/retry": {
+      "post": {
+        "operationId": "retry_asset_internal_v1_km_asset_assets__km_asset_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "km_asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Km Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Asset",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/jobs": {
+      "get": {
+        "operationId": "list_jobs_internal_v1_km_asset_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources": {
+      "get": {
+        "operationId": "list_sources_internal_v1_km_asset_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sources",
+        "tags": [
+          "KM Asset App"
+        ]
+      },
+      "post": {
+        "operationId": "create_source_internal_v1_km_asset_sources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Source",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}": {
+      "patch": {
+        "operationId": "update_source_internal_v1_km_asset_sources__source_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Source",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/activate": {
+      "post": {
+        "operationId": "activate_source_internal_v1_km_asset_sources__source_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Source",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/data-model": {
+      "get": {
+        "operationId": "get_data_model_internal_v1_km_asset_sources__source_id__data_model_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data Model",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/data-model/reconcile": {
+      "post": {
+        "operationId": "reconcile_data_model_internal_v1_km_asset_sources__source_id__data_model_reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconcile Data Model",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/metadb/assets": {
+      "get": {
+        "operationId": "list_metadb_assets_internal_v1_km_asset_sources__source_id__metadb_assets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "processed",
+            "required": false,
+            "schema": {
+              "default": "N",
+              "enum": [
+                "N",
+                "Y",
+                "F"
+              ],
+              "title": "Processed",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Metadb Assets",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/metadb/assets/{external_asset_id}/retry": {
+      "post": {
+        "operationId": "retry_metadb_asset_internal_v1_km_asset_sources__source_id__metadb_assets__external_asset_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "external_asset_id",
+            "required": true,
+            "schema": {
+              "title": "External Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Metadb Asset",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/sources/{source_id}/sync": {
+      "post": {
+        "operationId": "sync_source_internal_v1_km_asset_sources__source_id__sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Source",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "ready_readyz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready"
+      }
+    }
+  }
+}

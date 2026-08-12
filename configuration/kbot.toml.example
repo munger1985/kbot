@@ -46,6 +46,7 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # [endpoints]
 # knowledge_core = "http://knowledge-core.internal:18090"
 # knowledge_retrieval_app = "http://knowledge-retrieval-app.internal:18150"
+# km_asset_app = "http://km-asset-app.internal:18160"
 # agent_runtime = "http://agent-runtime.internal:18100"
 # aiops = "http://aiops.internal:18110"
 # aiops_db_executor = "http://aiops.internal:18111"

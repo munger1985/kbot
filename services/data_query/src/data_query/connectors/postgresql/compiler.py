@@ -27,6 +27,7 @@ def compile_postgresql_query(
     plan: DataQueryPlanV1,
     model: SemanticModelDefinition,
     policy_max_limit: int,
+    scope_value: int | None = None,
 ) -> CompiledPostgreSQLQuery:
     """编译单条参数化 SELECT；不接受 SQL、函数、Join 或标识符片段输入。"""
     validate_query_plan(plan=plan, model=model, policy_max_limit=policy_max_limit)
@@ -51,6 +52,11 @@ def compile_postgresql_query(
 
     parameters: list[Any] = []
     where_parts: list[str] = []
+    if dataset.scope_column is not None:
+        if scope_value is None:
+            raise ValueError("受 Domain 约束的数据集缺少 scope_value")
+        parameters.append(scope_value)
+        where_parts.append(f"{_quote(dataset.scope_column)} = ${len(parameters)}")
     for filter_ in plan.filters:
         column = _quote(dimensions[filter_.field].physical_column)
         operator = filter_.operator

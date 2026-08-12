@@ -51,6 +51,12 @@ class DataQueryHealthRepository(DataQueryRepository):
 
 
 class DataSourceRepository(DataQueryRepository):
+    async def find_by_name(self, *, domain_id: int, display_name: str, lock: bool = False) -> DataSourceEntity | None:
+        statement = select(DataSourceEntity).where(DataSourceEntity.domain_id == domain_id, DataSourceEntity.display_name == display_name)
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_by_id(self, *, data_source_id: UUID, lock: bool = False) -> DataSourceEntity | None:
         statement: Select = select(DataSourceEntity).where(DataSourceEntity.data_source_id == data_source_id)
         if lock:
@@ -206,6 +212,12 @@ class SchemaSnapshotObjectRepository(DataQueryRepository):
 
 
 class SemanticModelRepository(DataQueryRepository):
+    async def find_by_name(self, *, domain_id: int, display_name: str, lock: bool = False) -> SemanticModelEntity | None:
+        statement = select(SemanticModelEntity).where(SemanticModelEntity.domain_id == domain_id, SemanticModelEntity.display_name == display_name)
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_by_id(self, *, semantic_model_id: UUID, lock: bool = False) -> SemanticModelEntity | None:
         statement: Select = select(SemanticModelEntity).where(SemanticModelEntity.semantic_model_id == semantic_model_id)
         if lock:

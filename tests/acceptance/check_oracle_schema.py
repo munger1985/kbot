@@ -120,6 +120,16 @@ SERVICE_TABLES = {
         "KBOT_KR_AGENT_VERSION",
         "KBOT_KR_AGENT_GRANT",
     },
+    "km_asset_app": {
+        "KBOT_KM_SOURCE",
+        "KBOT_KM_ASSET",
+        "KBOT_KM_ASSET_REVISION",
+        "KBOT_KM_ATTACHMENT",
+        "KBOT_KM_JOB",
+        "KBOT_KM_AGENT",
+        "KBOT_KM_AGENT_VERSION",
+        "KBOT_KM_AGENT_GRANT",
+    },
 }
 SERVICE_VIEWS = {
     "platform_core": {"KBOT_V_PLATFORM_DOMAIN"},
@@ -145,6 +155,7 @@ SERVICE_VIEWS = {
         "KBOT_V_OPS_SCHEMA_VERSION",
     },
     "knowledge_retrieval_app": set(),
+    "km_asset_app": {"KBOT_V_KM_ASSET_CURRENT"},
 }
 FORBIDDEN_TOKENS = (
     "KBOT_MD_",
@@ -431,6 +442,7 @@ def main() -> int:
         ("platform_core", "Platform Core"),
         ("data_query", "Data Query"),
         ("aiops_agent", "AIOps"),
+        ("km_asset_app", "KM Asset App"),
     ):
         manifest_path = SCHEMA_ROOT / manifest_service / "schema_manifest.json"
         try:

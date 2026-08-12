@@ -74,6 +74,7 @@ class DatasetDefinition(_Contract):
     physical_schema: str = Field(pattern=_OBJECT_PATTERN)
     physical_object: str = Field(pattern=_OBJECT_PATTERN)
     primary_time_dimension: str | None = Field(default=None, pattern=_KEY_PATTERN)
+    scope_column: str | None = Field(default=None, pattern=_OBJECT_PATTERN)
 
 
 class DimensionDefinition(_Contract):

@@ -15,6 +15,8 @@ SERVICES=(
     "knowledge_core.entrypoints.parser"
     "knowledge_core.entrypoints.projection"
     "knowledge_retrieval_app.entrypoints.api"
+    "km_asset_app.entrypoints.api"
+    "km_asset_app.entrypoints.worker"
     "agent_runtime.entrypoints.api"
     "agent_runtime.entrypoints.worker"
     "data_query.entrypoints.api"

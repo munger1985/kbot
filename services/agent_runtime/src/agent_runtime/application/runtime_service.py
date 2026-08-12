@@ -133,7 +133,7 @@ class AgentRuntimeService:
         self, command: CreateRunCommand
     ) -> AgentRunReceipt:
         if (
-            command.execution_spec.owner_app_id != "knowledge_retrieval"
+            command.execution_spec.owner_app_id not in {"knowledge_retrieval", "km_asset"}
             or command.execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL"
         ):
             raise AgentRuntimeConflict(
