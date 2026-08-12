@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · KM Asset</title><link rel="stylesheet" href="./css/km.css"></head>
+<body class="km-login-page"><main class="km-login-card">
+  <div class="km-brand"><span class="km-brand-mark">KM</span><span><strong>Asset Desk</strong><small>KBot 4.0</small></span></div>
+  <section id="login-section"><h1>登录 KM Asset</h1><p>使用初始化脚本创建的 KM 管理员账号登录。</p>
+    <form id="km-login-form" class="km-form-grid">
+      <div class="km-field span-12"><label>Main API 地址</label><input name="baseUrl" required></div>
+      <div class="km-field span-12"><label>用户名</label><input name="userId" autocomplete="username" required></div>
+      <div class="km-field span-12"><label>密码</label><input name="password" type="password" autocomplete="current-password" required></div>
+      <div class="km-field span-12"><label>Domain ID（可选）</label><input name="domainId" type="number" min="1" placeholder="留空时使用第一个已授权 Domain"></div>
+      <p id="login-error" class="km-form-error span-12" hidden></p><button class="primary span-12" type="submit">登录</button>
+    </form>
+  </section>
+  <section id="password-section" hidden><h1>修改初始化密码</h1><p>首次登录必须设置新密码，完成后才能进入 KM 页面。</p>
+    <form id="km-password-form" class="km-form-grid">
+      <div class="km-field span-12"><label>当前密码</label><input name="currentPassword" type="password" autocomplete="current-password" required></div>
+      <div class="km-field span-12"><label>新密码</label><input name="newPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+      <div class="km-field span-12"><label>确认新密码</label><input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+      <p class="km-help span-12">至少 12 位，同时包含大小写字母、数字和特殊字符。</p>
+      <p id="password-error" class="km-form-error span-12" hidden></p><button class="primary span-12" type="submit">修改密码并进入</button>
+    </form>
+  </section>
+</main><script src="../shared/kbot-api-client.js"></script><script src="../shared/kbot-dev-adapter.js"></script><script src="./js/km-login.js"></script></body></html>

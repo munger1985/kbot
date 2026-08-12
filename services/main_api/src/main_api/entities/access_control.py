@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKeyConstraint, Numeric, String, func
+from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.persistence.orm import BaseEntity
@@ -16,6 +16,29 @@ class PlatformUserEntity(BaseEntity):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PlatformUserCredentialEntity(BaseEntity):
+    __tablename__ = "KBOT_PLATFORM_USER_CREDENTIAL"
+
+    user_id: Mapped[str] = mapped_column(
+        String(256),
+        ForeignKey("KBOT_PLATFORM_USER.user_id"),
+        primary_key=True,
+    )
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    must_change_password: Mapped[str] = mapped_column(
+        String(1), nullable=False, default="Y"
+    )
+    password_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -82,5 +105,6 @@ __all__ = [
     "AppRoleEntity",
     "AppRolePermissionEntity",
     "PermissionEntity",
+    "PlatformUserCredentialEntity",
     "PlatformUserEntity",
 ]

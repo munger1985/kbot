@@ -3376,6 +3376,64 @@
         "title": "IntakeReviewRequest",
         "type": "object"
       },
+      "KmLoginPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Id"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password"
+        ],
+        "title": "KmLoginPayload",
+        "type": "object"
+      },
+      "KmPasswordChangePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "KmPasswordChangePayload",
+        "type": "object"
+      },
       "KnowledgeAgentCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -12468,6 +12526,86 @@
           }
         },
         "summary": "Retry Asset",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/api/v1/apps/km-asset/auth/login": {
+      "post": {
+        "description": "使用 KM 本地用户凭据换取仅适用于 KM 页面的短期 Token。",
+        "operationId": "login_api_v1_apps_km_asset_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KmLoginPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/api/v1/apps/km-asset/auth/password": {
+      "post": {
+        "description": "首次登录或后续主动修改 KM 本地用户密码。",
+        "operationId": "change_password_api_v1_apps_km_asset_auth_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KmPasswordChangePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password",
         "tags": [
           "KM Asset App"
         ]

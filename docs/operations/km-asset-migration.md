@@ -55,13 +55,16 @@ AES-256-GCM 密文保存在 `KBOT_MANAGED_CREDENTIAL`，查询接口不返回凭
    Collection、语义模型和查询策略不由前端选择。DRAFT Agent 可通过激活接口重试并修复问数绑定。
 
 正式 JavaScript 页面位于 `ui/km/`，包括工作台、MetaDB、数据来源、Asset、同步任务、
-Agent 和智能问答。部署到 APEX 时按 `ui/README.md` 接入可信登录上下文；首次部署可在
-SQL Developer 中执行 `scripts/db/bootstrap_km_default_user.sql` 初始化默认用户。页面只
+Agent 和智能问答。没有 APEX 用户管理页面时，
+首次部署在 SQL Developer 中执行 `scripts/db/bootstrap_km_initial_admin.sql`
+创建可登录用户及 KM 管理员权限。用户先在 `ui/km/login.html`
+使用用户名和密码换取短期 Token，再访问其余 KM 页面。页面只
 调用 Main API 公开 BFF，不能把 Portal API Key 或内部身份 Header 写入静态 JavaScript。
 
-既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。应先在 SQL Developer
-中运行 `scripts/db/bootstrap_km_asset_permissions.sql` 幂等补充 KM 权限和角色，再运行
-`scripts/db/bootstrap_km_default_user.sql` 给实际 APEX 用户分配 `km_asset/manager`。
+既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
+`scripts/db/bootstrap_km_initial_admin.sql`，它会幂等创建用户凭据表、初始化
+KM 权限和角色、创建 `kmadmin` 用户，并授予全部启用 Domain 的
+`km_asset/manager`。
 
 来源创建请求示例：
 

@@ -7,17 +7,15 @@
 development 环境执行 `start_kbot.sh` 后，Python UI 服务会同时发布既有测试台和 KM 页面：
 
 - 测试台：`http://<python-host>:8080/`
-- KM 页面：`http://<python-host>:8080/ui/km/dashboard.html`
+- KM 登录页：`http://<python-host>:8080/ui/km/login.html`
 
-KM 页面在 8080 端口访问时会显示“连接设置”，默认 Main API 为同一主机的 18099 端口。填写已启用的 Domain ID 和具备 `km_asset` 角色的 User ID 后，页面使用开发认证绕过访问 Main API。`configuration/kbot.toml` 必须处于 development 环境、启用 `development_auth_bypass`，并在 `api_allowed_origins` 中允许该 8080 Origin。生产环境不会启用此适配器。
+KM 页面默认连接同一主机的 Main API 18099 端口。先使用初始化脚本创建的用户名和密码登录，Main API 签发仅可用于 KM 页面的短期 Token，其余页面请求统一携带该 Token。首次登录必须修改初始密码。`configuration/kbot.toml` 的 `api_allowed_origins` 需要允许该 8080 Origin。
 
 ## APEX 接入
 
-这些页面只调用同源公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 Portal API Key、Domain ID 或用户 ID。生产环境必须由 APEX/网关完成身份验证，并在服务端向 Main API 注入可信的 API Key、Domain 和用户上下文。
+这些页面只调用公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 Portal API Key 或伪造可信用户 Header。KM 登录 Token 保存在 `sessionStorage`，关闭标签页会话后需要重新登录。Token 中的 Domain 和用户由 Main API 签名保护。
 
-APEX 登录成功后使用 `:APP_USER`（JavaScript 中为 `apex.env.APP_USER`）作为 KBot `USER_ID`。该值区分大小写，必须在 `KBOT_PLATFORM_USER` 中为 `ACTIVE`，并在当前 Domain 的 `KBOT_APP_MEMBER_ROLE` 中拥有启用的 `km_asset` 角色。表中不保存密码，因此登录口令仍由 APEX Authentication Scheme 校验，KBot 用户表只负责登录后的准入和授权。
-
-现有 Schema 首次启用 KM Asset 时，先在 SQL Developer 中运行 `scripts/db/bootstrap_km_asset_permissions.sql` 补充应用权限，再运行 `scripts/db/bootstrap_km_default_user.sql`。修改默认用户脚本顶部的 `KM_DEFAULT_USER_ID`，使其与实际 `APP_USER` 完全一致，然后使用 Run Script（F5）执行。两个脚本都不包含 `@@` 文件引用，可重复执行。
+首次启用 KM Asset 时直接运行 `scripts/db/bootstrap_km_initial_admin.sql`，在 SQL Developer 中使用 Run Script（F5）执行。脚本创建用户 `kmadmin`，初始密码为 `KmAdmin@2026!`，并在全部启用 Domain 中授予 `km_asset/manager`。初始密码只供首次登录，页面会强制修改。脚本不使用输入弹窗或 `@@` 文件引用。
 
 页面会优先复用 APEX 已加载的 `window.KBotApi.request`。如果宿主使用其他请求封装，可在页面脚本执行前配置：
 

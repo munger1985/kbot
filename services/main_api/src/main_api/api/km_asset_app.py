@@ -7,7 +7,11 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from main_api.application import AccessControlService, AccessDeniedError
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    KmUserAuthService,
+)
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
 from platform_core.contracts import CreateConversationTurnRequest, PUBLIC_API_V1, UpdateConversationRequest
 from fastapi import Response
@@ -28,6 +32,29 @@ router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/km-asset", tags=["KM Asset App"
 
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class KmLoginPayload(_Payload):
+    user_id: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=256)
+    domain_id: int | None = Field(default=None, ge=1)
+
+
+class KmPasswordChangePayload(_Payload):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        if not (
+            any(char.islower() for char in value)
+            and any(char.isupper() for char in value)
+            and any(char.isdigit() for char in value)
+            and any(not char.isalnum() for char in value)
+        ):
+            raise ValueError("新密码必须同时包含大小写字母、数字和特殊字符")
+        return value
 
 
 class SourceCreatePayload(_Payload):
@@ -168,6 +195,29 @@ async def _km_run(request: Request, run_id: UUID, domain_id: int):
         auth_context=request.state.auth_context,
     )
     return run
+
+
+@router.post("/auth/login")
+async def login(payload: KmLoginPayload, request: Request):
+    """使用 KM 本地用户凭据换取仅适用于 KM 页面的短期 Token。"""
+    service = cast(KmUserAuthService, request.app.state.km_user_auth_service)
+    return await service.login(
+        user_id=payload.user_id.strip(),
+        password=payload.password,
+        domain_id=payload.domain_id,
+    )
+
+
+@router.post("/auth/password")
+async def change_password(payload: KmPasswordChangePayload, request: Request):
+    """首次登录或后续主动修改 KM 本地用户密码。"""
+    service = cast(KmUserAuthService, request.app.state.km_user_auth_service)
+    claims = request.state.km_user_token_claims
+    return await service.change_password(
+        claims=claims,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
 
 
 @router.get("/access")

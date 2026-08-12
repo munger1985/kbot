@@ -5,6 +5,7 @@ from .api_key import (
     PortalApiKeyVerifier,
     PortalPrincipal,
     digest_portal_api_key,
+    extract_bearer_token,
     generate_portal_api_key,
 )
 from .auth_context import (
@@ -71,6 +72,7 @@ __all__ = [
     "create_service_auth_context",
     "create_service_identity_codec",
     "digest_portal_api_key",
+    "extract_bearer_token",
     "generate_portal_api_key",
     "get_actor_id",
     "get_auth_context",

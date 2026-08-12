@@ -6,6 +6,7 @@ from .access_control import (
     AppRoleEntity,
     AppRolePermissionEntity,
     PermissionEntity,
+    PlatformUserCredentialEntity,
     PlatformUserEntity,
 )
 from .notification import (
@@ -27,6 +28,7 @@ __all__ = [
     "OperationWatchEntity",
     "PlatformDomainEntity",
     "PlatformUserEntity",
+    "PlatformUserCredentialEntity",
     "PermissionEntity",
     "SlackDeliveryEntity",
     "SlackInboxEntity",

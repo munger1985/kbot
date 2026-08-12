@@ -118,6 +118,42 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("km_asset:operations_manage", source)
         self.assertNotIn("@@", source)
 
+    def test_initial_admin_script_bootstraps_full_km_access(self):
+        source = (
+            ROOT / "scripts" / "db" / "bootstrap_km_initial_admin.sql"
+        ).read_text(encoding="utf-8")
+        for statement in (
+            "MERGE INTO KBOT_PERMISSION",
+            "MERGE INTO KBOT_APP_ROLE",
+            "MERGE INTO KBOT_APP_ROLE_PERMISSION",
+            "MERGE INTO KBOT_PLATFORM_USER",
+            "MERGE INTO KBOT_APP_MEMBER_ROLE",
+        ):
+            self.assertIn(statement, source)
+        self.assertIn("'manager' AS ROLE_CODE", source)
+        self.assertIn("WHERE domain.STATUS = 'ACTIVE'", source)
+        self.assertIn("VARIABLE KM_ADMIN_USER_ID", source)
+        self.assertIn(":KM_ADMIN_USER_ID := 'kmadmin'", source)
+        self.assertNotIn("&&", source)
+        self.assertNotIn("@@", source)
+
+    def test_km_pages_use_login_token_flow(self):
+        login_html = (ROOT / "ui" / "km" / "login.html").read_text(
+            encoding="utf-8"
+        )
+        login_js = (ROOT / "ui" / "km" / "js" / "km-login.js").read_text(
+            encoding="utf-8"
+        )
+        adapter = (
+            ROOT / "ui" / "shared" / "kbot-dev-adapter.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("km-login-form", login_html)
+        self.assertIn("KBotKmAuth.login", login_js)
+        self.assertIn("/api/v1/apps/km-asset/auth/login", adapter)
+        self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
+        self.assertNotIn("X-KBot-Test-Auth", adapter)
+        self.assertNotIn("X-KBot-User-ID", adapter)
+
 
 if __name__ == "__main__":
     unittest.main()

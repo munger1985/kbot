@@ -161,3 +161,5 @@ body[data-access="denied"] .km-main { opacity: .55; pointer-events: none; }
   .km-session { font-size: 10px; }
   .km-message { max-width: 92%; }
 }
+/* KM 独立登录 */
+.km-login-page{min-height:100vh;display:grid;place-items:center;background:#f3f6f8;padding:24px}.km-login-card{width:min(440px,100%);background:#fff;border:1px solid #dfe5e8;border-radius:18px;padding:32px;box-shadow:0 18px 48px rgba(25,45,55,.12)}.km-login-card .km-brand{position:static;margin-bottom:30px;color:#17333c}.km-login-card h1{margin:0 0 8px}.km-login-card>section>p{color:#63747b;margin:0 0 24px}.km-form-error{color:#b42318;background:#fef3f2;border-radius:8px;padding:10px 12px;margin:0}.km-login-card button.span-12{width:100%;padding:12px}

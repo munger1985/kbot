@@ -22,6 +22,13 @@ from .access_control import (
     AccessDeniedError,
     AccessSnapshot,
 )
+from .km_user_auth import (
+    KmUserAuthenticationError,
+    KmUserAuthService,
+    KmUserTokenClaims,
+    KmUserTokenCodec,
+    create_km_user_token_codec,
+)
 
 __all__ = [
     "AccessControlService",
@@ -31,6 +38,10 @@ __all__ = [
     "DomainConflictError",
     "DomainManagementService",
     "DomainValidationService",
+    "KmUserAuthenticationError",
+    "KmUserAuthService",
+    "KmUserTokenClaims",
+    "KmUserTokenCodec",
     "NotificationCenterError",
     "NotificationCenterService",
     "NotificationDispatcher",
@@ -39,4 +50,5 @@ __all__ = [
     "SlackIntakeService",
     "SlackWebhookError",
     "SlackDispatchService",
+    "create_km_user_token_codec",
 ]

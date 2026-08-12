@@ -17,6 +17,8 @@ from main_api.application import (
     DomainValidationService,
     NotificationCenterService,
     SlackIntakeService,
+    KmUserAuthService,
+    create_km_user_token_codec,
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
@@ -90,6 +92,10 @@ async def lifespan(app: FastAPI):
     )
     app.state.access_control_service = AccessControlService(
         uow_factory=uow_factory,
+    )
+    app.state.km_user_auth_service = KmUserAuthService(
+        uow_factory=uow_factory,
+        codec=create_km_user_token_codec(settings=settings),
     )
     app.state.slack_intake_service = SlackIntakeService(
         uow_factory=uow_factory,

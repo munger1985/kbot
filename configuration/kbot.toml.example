@@ -8,6 +8,8 @@ api_docs_enabled = false
 # 允许浏览器直接访问 Main API 的来源。必须精确匹配 scheme、主机和端口，不要带末尾斜杠。
 # api_allowed_origins = ["https://portal.example.com"]
 # 若需要允许任意网页来源，可设置：api_allowed_origins = ["*"]
+# KM 用户 Token 默认有效期为 8 小时。签名密钥由 KBOT_MASTER_KEY 自动派生；
+# 只有需要单独轮换时才显式设置 KBOT_KM_USER_JWT_SECRET（至少 32 字节）。
 
 [database]
 host = "oracle.example.internal"

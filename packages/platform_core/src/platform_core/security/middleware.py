@@ -50,6 +50,7 @@ PUBLIC_PATHS = {
 }
 DomainValidator = Callable[[str], Awaitable[bool]]
 TenantValidator = Callable[[str], Awaitable[bool]]
+AlternateAuthenticator = Callable[[Request], Awaitable[AuthContext | None]]
 
 
 def _problem(
@@ -136,6 +137,7 @@ def create_public_auth_middleware(
     public_prefixes: set[str] | None = None,
     domainless_paths: set[str] | None = None,
     allow_test_bypass: bool = False,
+    alternate_authenticator: AlternateAuthenticator | None = None,
 ):
     """创建 Main API 使用的 Portal API Key 认证中间件。"""
     resolved_verifier = verifier
@@ -159,6 +161,40 @@ def create_public_auth_middleware(
                 and request.headers.get(TEST_AUTH_BYPASS_HEADER, "").lower()
                 == "true"
             )
+            alternate_context = None
+            if not test_bypass and alternate_authenticator is not None:
+                alternate_context = await alternate_authenticator(request)
+            if alternate_context is not None:
+                domain_id = alternate_context.domain_id
+                user_id = alternate_context.asserted_user_id
+                if not domain_id or not user_id:
+                    raise PortalApiKeyError(
+                        "INVALID_IDENTITY_CONTEXT",
+                        "备用认证没有提供完整的 Domain 和用户上下文",
+                    )
+                try:
+                    domain_is_active = await domain_validator(domain_id)
+                except Exception as exc:
+                    logger.error(
+                        "Domain 校验依赖不可用：method={} path={} type={}",
+                        request.method,
+                        request.url.path,
+                        type(exc).__name__,
+                    )
+                    return _problem(
+                        request=request,
+                        status_code=503,
+                        code="IDENTITY_SERVICE_UNAVAILABLE",
+                        detail="身份上下文暂时无法校验",
+                    )
+                if not domain_is_active:
+                    raise PortalApiKeyError("INVALID_DOMAIN", "Domain 不存在或已停用")
+                request.state.auth_context = alternate_context
+                response = await call_next(request)
+                response.headers.setdefault(
+                    "X-Request-ID", alternate_context.request_id
+                )
+                return response
             if test_bypass:
                 principal_client_id = "kbot-development-test"
                 principal_key_id = "development-test-bypass"
@@ -267,6 +303,9 @@ def create_public_auth_middleware(
                     "INVALID_API_KEY",
                     "API_KEY_DISABLED",
                     "API_KEY_EXPIRED",
+                    "INVALID_KM_TOKEN",
+                    "KM_TOKEN_EXPIRED",
+                    "PASSWORD_CHANGE_REQUIRED",
                 } else 400,
                 code=exc.code,
                 detail=str(exc),

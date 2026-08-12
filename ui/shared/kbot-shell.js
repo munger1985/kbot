@@ -76,7 +76,6 @@
 
   function shellMarkup() {
     const current = document.body.dataset.page || "";
-    const development = Boolean(globalThis.KBotKmDev?.active);
     return `
       <aside class="km-sidebar">
         <a class="km-brand" href="./dashboard.html" aria-label="KM Asset 首页">
@@ -89,34 +88,22 @@
       </aside>
       <header class="km-topbar">
         <div><span class="km-context-label">当前工作域</span><strong>KM Asset</strong></div>
-        <div class="km-session"><span id="km-domain">Domain —</span><span class="km-session-user" id="km-user">验证用户中…</span>${development ? '<button id="km-dev-settings" class="small">连接设置</button>' : ""}</div>
+        <div class="km-session"><span id="km-domain">Domain —</span><span class="km-session-user" id="km-user">验证用户中…</span><button id="km-logout" class="small">退出登录</button></div>
       </header>
       <div id="km-toast-region" class="km-toast-region" aria-live="polite"></div>
-      ${development ? `<dialog id="km-dev-dialog"><form id="km-dev-form"><div class="km-dialog-head"><h2>开发连接设置</h2><button type="button" class="km-close" data-close aria-label="关闭">×</button></div><div class="km-dialog-body"><div class="km-form-grid"><div class="km-field span-12"><label>Main API 地址</label><input name="baseUrl" required></div><div class="km-field span-6"><label>Domain ID</label><input name="domainId" required></div><div class="km-field span-6"><label>User ID</label><input name="userId" required></div><p class="km-help span-12">仅适用于 development_auth_bypass；生产环境禁止使用测试认证。</p></div></div><div class="km-dialog-foot"><button type="button" data-close>取消</button><button class="primary" type="submit">保存并刷新</button></div></form></dialog>` : ""}`;
-  }
-
-  function bindDevelopmentSettings() {
-    if (!globalThis.KBotKmDev?.active) return;
-    const form = document.getElementById("km-dev-form");
-    const config = KBotKmDev.load();
-    form.elements.baseUrl.value = config.baseUrl;
-    form.elements.domainId.value = config.domainId;
-    form.elements.userId.value = config.userId;
-    document.getElementById("km-dev-settings").addEventListener("click", () => openDialog("km-dev-dialog"));
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      KBotKmDev.save(Object.fromEntries(new FormData(form)));
-      window.location.reload();
-    });
-    if (!config.domainId || !config.userId) openDialog("km-dev-dialog");
+      `;
   }
 
   async function initialize() {
+    KBotKmAuth.requireSession();
     document.body.insertAdjacentHTML("afterbegin", shellMarkup());
     document.querySelectorAll("dialog [data-close]").forEach((button) => {
       button.addEventListener("click", () => button.closest("dialog")?.close());
     });
-    bindDevelopmentSettings();
+    document.getElementById("km-logout").addEventListener("click", () => {
+      KBotKmAuth.clearSession();
+      location.replace("./login.html");
+    });
     try {
       access = await KBotKmApi.request("/api/v1/apps/km-asset/access");
       document.getElementById("km-domain").textContent = `Domain ${access.domain_id}`;

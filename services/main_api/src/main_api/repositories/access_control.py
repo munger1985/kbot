@@ -8,6 +8,7 @@ from main_api.entities.access_control import (
     AppRoleEntity,
     AppRolePermissionEntity,
     PermissionEntity,
+    PlatformUserCredentialEntity,
     PlatformUserEntity,
 )
 
@@ -22,6 +23,47 @@ class AccessControlRepository:
     async def add_user(self, row: PlatformUserEntity) -> None:
         self._session.add(row)
         await self._session.flush()
+
+    async def get_user_credential(
+        self, user_id: str
+    ) -> PlatformUserCredentialEntity | None:
+        return await self._session.get(PlatformUserCredentialEntity, user_id)
+
+    async def set_user_password(
+        self,
+        *,
+        credential: PlatformUserCredentialEntity,
+        password_hash: str,
+    ) -> None:
+        credential.password_hash = password_hash
+        credential.must_change_password = "N"
+        credential.password_updated_at = func.now()
+        credential.updated_at = func.now()
+        await self._session.flush()
+
+    async def list_active_km_domain_ids(self, user_id: str) -> tuple[int, ...]:
+        rows = await self._session.scalars(
+            select(AppMemberRoleEntity.domain_id)
+            .join(
+                AppRoleEntity,
+                (AppRoleEntity.app_id == AppMemberRoleEntity.app_id)
+                & (AppRoleEntity.role_code == AppMemberRoleEntity.role_code),
+            )
+            .join(
+                PlatformUserEntity,
+                PlatformUserEntity.user_id == AppMemberRoleEntity.user_id,
+            )
+            .where(
+                AppMemberRoleEntity.app_id == "km_asset",
+                AppMemberRoleEntity.user_id == user_id,
+                AppMemberRoleEntity.status == "ACTIVE",
+                AppRoleEntity.status == "ACTIVE",
+                PlatformUserEntity.status == "ACTIVE",
+            )
+            .distinct()
+            .order_by(AppMemberRoleEntity.domain_id)
+        )
+        return tuple(int(value) for value in rows)
 
     async def permissions_for(
         self, *, app_id: str, domain_id: int, user_id: str
