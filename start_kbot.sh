@@ -318,7 +318,7 @@ start_development_ui() {
     echo "🚀 正在启动 UI 测试服务器..."
     (
         cd "$SERVICE_ROOT" || exit 1
-        exec python3 -m http.server "$port" -d tools/dev_console
+        exec python3 tools/dev_console/server.py --port "$port"
     ) >>"$runtime_log" 2>>"$access_log" &
     local pid=$!
     sleep 1

@@ -19,7 +19,7 @@
           页面只访问公开 <code>/api/v1</code>。请通过本地 HTTP Server 打开，
           并在 Main API 的 CORS 白名单中允许该 Origin。
         </p>
-        <pre>python3 -m http.server 8088 -d tools/dev_console
+        <pre>python3 tools/dev_console/server.py --port 8088
 # 浏览器访问 http://127.0.0.1:8088</pre>
       </section>
       <section class="launchers">
@@ -46,6 +46,10 @@
         <a class="launcher" href="./agent-debug.html">
           <h2>Agent Run 调试台</h2>
           <p>按一次聊天聚合 Task、KC 两阶段检索、重排、Artifact、SSE 和跨服务日志。</p>
+        </a>
+        <a class="launcher" href="/ui/km/dashboard.html">
+          <h2>KM Asset 工作台</h2>
+          <p>查看 MetaDB、来源、Asset、同步任务、KM Agent，并进行问文问数验收。</p>
         </a>
       </section>
     </main>

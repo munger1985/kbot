@@ -44,7 +44,15 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertIn('ENVIRONMENT="${ENVIRONMENT:-$CONFIG_ENVIRONMENT}"', start)
         self.assertIn("python scripts/deployment/check_deployment.py", start)
         self.assertIn('KBOT_UI_ENABLED="${KBOT_UI_ENABLED:-true}"', start)
-        self.assertIn('python3 -m http.server "$port" -d tools/dev_console', start)
+        self.assertIn(
+            'python3 tools/dev_console/server.py --port "$port"',
+            start,
+        )
+        ui_server = (
+            root / "tools" / "dev_console" / "server.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('request_path.startswith("/ui/")', ui_server)
+        self.assertIn('"/ui/km/dashboard.html"', ui_server)
         for group in (
             "Model Serving",
             "Knowledge Core",

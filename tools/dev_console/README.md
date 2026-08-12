@@ -6,7 +6,7 @@
 启动静态服务器：
 
 ```bash
-python3 -m http.server 8080 -d tools/dev_console
+python3 tools/dev_console/server.py --port 8080
 ```
 
 执行 `./start_kbot.sh` 时，UI 在 `ENVIRONMENT=development` 下默认随 KBot

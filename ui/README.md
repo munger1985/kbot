@@ -2,6 +2,15 @@
 
 `ui/km/` 提供 KM Asset 的正式无框架 JavaScript 页面：工作台、MetaDB、数据来源、Asset、同步任务、Agent 和智能问答。KC Collection 创建与文件上传继续使用现有 APEX 页面。
 
+## 后端开发服务器访问
+
+development 环境执行 `start_kbot.sh` 后，Python UI 服务会同时发布既有测试台和 KM 页面：
+
+- 测试台：`http://<python-host>:8080/`
+- KM 页面：`http://<python-host>:8080/ui/km/dashboard.html`
+
+KM 页面在 8080 端口访问时会显示“连接设置”，默认 Main API 为同一主机的 18099 端口。填写已启用的 Domain ID 和具备 `km_asset` 角色的 User ID 后，页面使用开发认证绕过访问 Main API。`configuration/kbot.toml` 必须处于 development 环境、启用 `development_auth_bypass`，并在 `api_allowed_origins` 中允许该 8080 Origin。生产环境不会启用此适配器。
+
 ## APEX 接入
 
 这些页面只调用同源公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 Portal API Key、Domain ID 或用户 ID。生产环境必须由 APEX/网关完成身份验证，并在服务端向 Main API 注入可信的 API Key、Domain 和用户上下文。
