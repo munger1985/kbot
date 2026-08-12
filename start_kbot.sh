@@ -155,6 +155,7 @@ service_port() {
 
 is_process_only_service() {
     [ "$1" = "knowledge_core.entrypoints.projection" ] \
+        || [ "$1" = "km_asset_app.entrypoints.worker" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
         || [ "$1" = "main_api.entrypoints.slack_worker" ] \
         || [ "$1" = "main_api.entrypoints.notification_worker" ]
@@ -268,7 +269,7 @@ wait_for_services() {
             if is_process_only_service "$module" && [ "$elapsed" -ge 1 ]; then
                 STARTED_STATES[$index]="READY"
                 remaining=$((remaining - 1))
-                echo "✅ ${name} Worker 已启动（PID: $pid）"
+                echo "✅ ${name} 已启动（PID: $pid，无监听端口）"
                 continue
             fi
             if [ -n "$port" ] \
