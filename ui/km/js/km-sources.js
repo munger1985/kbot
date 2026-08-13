@@ -35,7 +35,7 @@
   }
   async function save(event) {
     event.preventDefault();
-    const form = event.currentTarget;
+    const form = event.target;
     const values = Object.fromEntries(new FormData(form));
     const payload = {
       display_name: values.display_name, metadb_endpoint: values.metadb_endpoint,
@@ -58,7 +58,7 @@
     KBotKmShell.openDialog("source-edit-dialog");
   }
   async function update(event) {
-    event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form));
+    event.preventDefault(); const form = event.target; const values = Object.fromEntries(new FormData(form));
     const metadbPair = [values.metadb_username, values.metadb_password];
     const sharepointGroup = [values.tenant_id, values.client_id, values.client_secret];
     if (metadbPair.some(Boolean) && !metadbPair.every(Boolean)) return KBotKmShell.toast("MetaDB 用户名和密码必须同时填写", "error");

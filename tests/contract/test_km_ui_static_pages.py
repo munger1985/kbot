@@ -46,6 +46,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
             parser.feed(page.read_text(encoding="utf-8"))
             self.assertTrue(expected_ids.issubset(parser.ids), page_name)
             for reference in parser.assets:
+                if reference.startswith("data:"):
+                    continue
                 asset_path = reference.partition("?")[0]
                 self.assertTrue(
                     (page.parent / asset_path).resolve().is_file(),
@@ -196,6 +198,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn('name="collection_id"', source_html)
         self.assertNotIn("values.collection_id", source_js)
+        self.assertIn("const form = event.target", source_js)
+        self.assertNotIn("const form = event.currentTarget", source_js)
         self.assertIn('KM_ASSET_COLLECTION_NAME = "assets"', api_source)
         self.assertIn("_fixed_collection_id", api_source)
         openapi = json.loads(
