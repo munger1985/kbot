@@ -90,6 +90,9 @@ class KmAssetClient:
     async def get_agent(self, *, agent_id: UUID, domain_id: int, auth_context: AuthContext):
         return await self._json("GET", f"{self._BASE}/agents/{agent_id}?{urlencode({'domain_id': domain_id})}", auth_context=auth_context)
 
+    async def update_agent(self, *, agent_id: UUID, payload: dict[str, Any], auth_context: AuthContext):
+        return await self._json("PATCH", f"{self._BASE}/agents/{agent_id}", payload=payload, auth_context=auth_context)
+
     async def activate_agent(self, *, agent_id: UUID, payload: dict[str, Any], auth_context: AuthContext):
         return await self._json("POST", f"{self._BASE}/agents/{agent_id}/activate", payload=payload, auth_context=auth_context)
 

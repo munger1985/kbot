@@ -133,6 +133,95 @@ class KmAssetCatalogTest(unittest.TestCase):
 
 
 class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_update_agent_creates_new_version_and_keeps_active_status(self):
+        agent_id = UUID("01900000-0000-7000-8000-000000000061")
+        source_id = UUID("01900000-0000-7000-8000-000000000062")
+        collection_id = UUID("01900000-0000-7000-8000-000000000063")
+        semantic_model_id = UUID("01900000-0000-7000-8000-000000000064")
+        policy_binding_id = UUID("01900000-0000-7000-8000-000000000065")
+        router_model_id = UUID("01900000-0000-7000-8000-000000000066")
+        agent = SimpleNamespace(
+            agent_id=agent_id,
+            domain_id=43,
+            display_name="旧名称",
+            description=None,
+            status="ACTIVE",
+            current_version_id=UUID(
+                "01900000-0000-7000-8000-000000000067"
+            ),
+            row_version=3,
+            updated_by="old-user",
+        )
+        source = SimpleNamespace(
+            model_status="READY",
+            semantic_model_id=semantic_model_id,
+            policy_binding_id=policy_binding_id,
+            collection_id=collection_id,
+        )
+        versions = []
+
+        class Agents:
+            async def get(self, **_):
+                return agent
+
+            async def next_version_no(self, **_):
+                return 2
+
+            async def add(self, value):
+                versions.append(value)
+
+        class Assets:
+            async def get_source(self, **_):
+                return source
+
+        class Uow:
+            agents = Agents()
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        data_query = SimpleNamespace(management_create=AsyncMock())
+        knowledge_core = SimpleNamespace(bind_collection=AsyncMock())
+        service = KmAgentService(
+            uow_factory=Uow,
+            data_query_client=data_query,
+            knowledge_core_client=knowledge_core,
+        )
+
+        result = await service.update(
+            domain_id=43,
+            agent_id=agent_id,
+            expected_row_version=3,
+            source_id=source_id,
+            display_name="新名称",
+            description="新的描述",
+            models={"router_llm": router_model_id},
+            do_rerank=True,
+            instruction="只回答 KM Asset 问题",
+            actor_id="kmadmin",
+        )
+
+        self.assertEqual(1, len(versions))
+        self.assertEqual(2, versions[0].version_no)
+        self.assertEqual(versions[0].agent_version_id, agent.current_version_id)
+        self.assertEqual("ACTIVE", agent.status)
+        self.assertEqual(4, agent.row_version)
+        self.assertEqual("新名称", result["display_name"])
+        self.assertTrue(result["do_rerank"])
+        binding = data_query.management_create.await_args.kwargs["payload"]
+        self.assertEqual("km_asset", binding["consumer_app_id"])
+        self.assertEqual(
+            str(versions[0].agent_version_id), binding["agent_version_id"]
+        )
+        knowledge_core.bind_collection.assert_awaited_once()
+
     async def test_execution_spec_fixes_km_security_level(self):
         service = KmAgentService(
             uow_factory=None,

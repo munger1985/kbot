@@ -109,6 +109,125 @@ class KmAgentService:
             await uow.commit()
             return self._view(agent, version)
 
+    async def update(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        expected_row_version: int,
+        source_id: UUID,
+        display_name: str,
+        description: str | None,
+        models: dict[str, UUID],
+        do_rerank: bool,
+        instruction: str | None,
+        actor_id: str,
+    ) -> dict[str, Any]:
+        """创建不可变 Agent Version，并原子切换当前版本。"""
+        async with self._uow_factory() as uow:
+            agent = await uow.agents.get(
+                domain_id=domain_id, agent_id=agent_id
+            )
+            if agent is None:
+                raise KmAssetApplicationError(
+                    status_code=404,
+                    code="KM_AGENT_NOT_FOUND",
+                    message="KM Asset Agent 不存在",
+                )
+            if int(agent.row_version) != expected_row_version:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="ROW_VERSION_CONFLICT",
+                    message="Agent 已被其他请求修改",
+                )
+            source = await uow.assets.get_source(
+                domain_id=domain_id, source_id=source_id
+            )
+            if source is None:
+                raise KmAssetApplicationError(
+                    status_code=404,
+                    code="KM_SOURCE_NOT_FOUND",
+                    message="KM Asset 来源不存在",
+                )
+            if (
+                source.model_status != "READY"
+                or source.semantic_model_id is None
+                or source.policy_binding_id is None
+            ):
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="MANAGED_MODEL_NOT_READY",
+                    message="系统托管问数模型尚未就绪",
+                )
+            if agent.status == "ACTIVE":
+                self._validate_models(models)
+            new_version_id = uuid7()
+            next_version_no = await uow.agents.next_version_no(
+                agent_id=agent_id
+            )
+            collection_id = source.collection_id
+            semantic_model_id = source.semantic_model_id
+            policy_binding_id = source.policy_binding_id
+
+        await self._data_query.management_create(
+            resource="agent-bindings",
+            payload={
+                "consumer_app_id": "km_asset",
+                "agent_id": str(agent_id),
+                "agent_version_id": str(new_version_id),
+                "semantic_model_id": str(semantic_model_id),
+                "policy_binding_id": str(policy_binding_id),
+            },
+            auth_context=self._auth_context(
+                domain_id=domain_id, actor_id=actor_id
+            ),
+        )
+        await self._ensure_collection_binding(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_id=collection_id,
+            actor_id=actor_id,
+        )
+
+        async with self._uow_factory() as uow:
+            agent = await uow.agents.get(
+                domain_id=domain_id, agent_id=agent_id, lock=True
+            )
+            if agent is None or int(agent.row_version) != expected_row_version:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="ROW_VERSION_CONFLICT",
+                    message="Agent 已被其他请求修改",
+                )
+            version = KmAgentVersionEntity(
+                agent_version_id=new_version_id,
+                agent_id=agent_id,
+                version_no=next_version_no,
+                source_id=source_id,
+                collection_id=collection_id,
+                semantic_model_id=semantic_model_id,
+                policy_binding_id=policy_binding_id,
+                models_json={
+                    role: str(value) for role, value in models.items()
+                },
+                do_rerank=do_rerank,
+                instruction=instruction,
+                config_json={
+                    "resource_mode": "managed_resources",
+                    "data_query_mode": "SEMANTIC",
+                    "managed_model": True,
+                },
+                created_by=actor_id,
+            )
+            await uow.agents.add(version)
+            agent.display_name = display_name.strip()
+            agent.description = description
+            agent.current_version_id = new_version_id
+            agent.row_version += 1
+            agent.updated_by = actor_id
+            await uow.commit()
+            return self._view(agent, version)
+
     async def list(self, *, domain_id: int):
         async with self._uow_factory() as uow:
             result = []

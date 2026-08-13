@@ -142,6 +142,16 @@ class AgentActivatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
+class AgentUpdatePayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+    source_id: UUID
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    models: dict[str, UUID] = Field(default_factory=dict)
+    do_rerank: bool = False
+    instruction: str | None = Field(default=None, max_length=32000)
+
+
 class ConversationCreatePayload(_Payload):
     agent_id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=512)
@@ -399,6 +409,18 @@ async def create_agent(payload: AgentCreatePayload, request: Request):
 async def get_agent(agent_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
     return await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
+
+
+@router.patch("/agents/{agent_id}")
+async def update_agent(
+    agent_id: UUID, payload: AgentUpdatePayload, request: Request
+):
+    domain_id = await _require(request, "km_asset:agent_manage")
+    return await _client(request).update_agent(
+        agent_id=agent_id,
+        payload={"domain_id": domain_id, **payload.model_dump(mode="json")},
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.post("/agents/{agent_id}/activate")

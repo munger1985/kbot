@@ -105,7 +105,7 @@ Collection 时会选择最近更新的启用 LLM 和文本 Embedding 模型作�
 - `POST /api/v1/apps/km-asset/assets/{km_asset_id}/retry`
 - `GET /api/v1/apps/km-asset/jobs`
 - `GET|POST /api/v1/apps/km-asset/agents`
-- `GET /api/v1/apps/km-asset/agents/{agent_id}`
+- `GET|PATCH /api/v1/apps/km-asset/agents/{agent_id}`
 - `POST /api/v1/apps/km-asset/agents/{agent_id}/activate`
 - `POST /api/v1/apps/km-asset/conversations`
 - `GET|PATCH|DELETE /api/v1/apps/km-asset/conversations/{conversation_id}`

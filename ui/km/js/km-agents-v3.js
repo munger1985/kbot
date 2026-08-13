@@ -52,18 +52,52 @@
   function render() {
     const body = $("agent-rows");
     if (!agents.length) return KBotKmShell.renderEmpty(body, 7, "尚未创建 KM Agent");
-    body.innerHTML = agents.map((row, index) => `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.display_name)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.agent_id))}</div></td><td>${KBotKmShell.escapeHtml(sourceName(row.source_id))}</td><td>${KBotKmShell.badge(row.status)}</td><td>${KBotKmShell.escapeHtml(`${Object.keys(row.models || {}).length} 项`)}</td><td>${row.do_rerank ? "启用" : "关闭"}</td><td>${row.row_version}</td><td>${row.status === "ACTIVE" ? '<a class="km-button small" href="./chat.html">开始问答</a>' : `<button class="small" data-activate="${index}">激活</button>`}</td></tr>`).join("");
+    body.innerHTML = agents.map((row, index) => `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.display_name)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.agent_id))}</div></td><td>${KBotKmShell.escapeHtml(sourceName(row.source_id))}</td><td>${KBotKmShell.badge(row.status)}</td><td>${KBotKmShell.escapeHtml(`${Object.keys(row.models || {}).length} 项`)}</td><td>${row.do_rerank ? "启用" : "关闭"}</td><td>${row.row_version}</td><td><div class="km-actions"><button class="small" data-edit="${index}">编辑</button>${row.status === "ACTIVE" ? '<a class="km-button small" href="./chat.html">开始问答</a>' : `<button class="small" data-activate="${index}">激活</button>`}</div></td></tr>`).join("");
+  }
+  function openCreate() {
+    const form = $("agent-form");
+    form.reset();
+    form.elements.agent_id.value = "";
+    form.elements.expected_row_version.value = "";
+    populateModels();
+    $("agent-dialog-title").textContent = "创建 KM Agent";
+    $("agent-status-field").hidden = false;
+    $("save-agent").textContent = "创建";
+    KBotKmShell.openDialog("agent-dialog");
+  }
+  function openEdit(index) {
+    const row = agents[index];
+    const form = $("agent-form");
+    form.reset();
+    populateModels();
+    form.elements.agent_id.value = row.agent_id;
+    form.elements.expected_row_version.value = row.row_version;
+    form.elements.source_id.value = row.source_id;
+    form.elements.display_name.value = row.display_name || "";
+    form.elements.description.value = row.description || "";
+    form.elements.instruction.value = row.instruction || "";
+    form.elements.do_rerank.checked = Boolean(row.do_rerank);
+    Object.entries(row.models || {}).forEach(([role, modelIdValue]) => {
+      if (form.elements[role]) form.elements[role].value = modelIdValue;
+    });
+    $("agent-dialog-title").textContent = "编辑 KM Agent";
+    $("agent-status-field").hidden = true;
+    $("save-agent").textContent = "保存修改";
+    KBotKmShell.openDialog("agent-dialog");
   }
   async function save(event) {
     event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form)); const modelRoles = ["context_llm", "composer_llm", "memory_llm", "memory_embedding", "router_llm", "data_planner_llm"]; const selected = {};
     modelRoles.forEach((role) => { if (values[role]) selected[role] = values[role]; });
-    const payload = { source_id: values.source_id, display_name: values.display_name, description: values.description || null, instruction: values.instruction || null, models: selected, do_rerank: form.elements.do_rerank.checked, status: values.status };
-    KBotKmShell.setBusy($("save-agent"), true, "创建中…");
-    try { await KBotKmApi.json(`${base}/agents`, "POST", payload); form.reset(); populateModels(); KBotKmShell.closeDialog("agent-dialog"); KBotKmShell.toast("KM Agent 已创建", "success"); await load(); }
-    catch (error) { KBotKmShell.showError(error, "KM Agent 创建失败"); }
+    const editing = Boolean(values.agent_id);
+    const payload = { source_id: values.source_id, display_name: values.display_name, description: values.description || null, instruction: values.instruction || null, models: selected, do_rerank: form.elements.do_rerank.checked };
+    if (editing) payload.expected_row_version = Number(values.expected_row_version);
+    else payload.status = values.status;
+    KBotKmShell.setBusy($("save-agent"), true, editing ? "保存中…" : "创建中…");
+    try { await KBotKmApi.json(editing ? `${base}/agents/${values.agent_id}` : `${base}/agents`, editing ? "PATCH" : "POST", payload); form.reset(); populateModels(); KBotKmShell.closeDialog("agent-dialog"); KBotKmShell.toast(editing ? "KM Agent 已更新" : "KM Agent 已创建", "success"); await load(); }
+    catch (error) { KBotKmShell.showError(error, editing ? "KM Agent 更新失败" : "KM Agent 创建失败"); }
     finally { KBotKmShell.setBusy($("save-agent"), false); }
   }
   async function activate(index, button) { const row = agents[index]; KBotKmShell.setBusy(button, true); try { await KBotKmApi.json(`${base}/agents/${row.agent_id}/activate`, "POST", { expected_row_version: row.row_version }); KBotKmShell.toast("KM Agent 已激活", "success"); await load(); } catch (error) { KBotKmShell.showError(error, "Agent 激活失败"); } finally { KBotKmShell.setBusy(button, false); } }
-  window.addEventListener("DOMContentLoaded", () => { $("new-agent").addEventListener("click", () => KBotKmShell.openDialog("agent-dialog")); $("refresh-agents").addEventListener("click", load); $("agent-form").addEventListener("submit", save); $("agent-rows").addEventListener("click", (event) => { const button = event.target.closest("[data-activate]"); if (button) activate(Number(button.dataset.activate), button); }); });
+  window.addEventListener("DOMContentLoaded", () => { $("new-agent").addEventListener("click", openCreate); $("refresh-agents").addEventListener("click", load); $("agent-form").addEventListener("submit", save); $("agent-rows").addEventListener("click", (event) => { const editButton = event.target.closest("[data-edit]"); if (editButton) { openEdit(Number(editButton.dataset.edit)); return; } const activateButton = event.target.closest("[data-activate]"); if (activateButton) activate(Number(activateButton.dataset.activate), activateButton); }); });
   KBotKmShell.ready.then(initialize).catch(() => {});
 })();
