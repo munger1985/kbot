@@ -24,6 +24,7 @@ from main_api.api.runs import (
     _preview_type,
     _reference_not_found,
 )
+from main_api.api.models import ModelCatalogItem, load_model_catalog
 from platform_core.security import get_auth_context
 
 
@@ -257,6 +258,13 @@ async def get_access(request: Request):
             },
         )
     return {"app_id": snapshot.app_id, "domain_id": snapshot.domain_id, "user_id": snapshot.user_id, "roles": snapshot.roles, "permissions": sorted(snapshot.permissions)}
+
+
+@router.get("/model-catalog", response_model=list[ModelCatalogItem])
+async def list_km_model_catalog(request: Request):
+    """在 KM Token 的访问边界内返回创建 KM Agent 所需模型。"""
+    await _require(request, "km_asset:agent_manage")
+    return await load_model_catalog(request)
 
 
 @router.get("/sources")

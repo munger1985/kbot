@@ -41,9 +41,8 @@ def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:
     return tuple(clients)
 
 
-@router.get("", response_model=list[ModelCatalogItem])
-async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
-    """聚合各模型进程中的已启用模型，供门户配置业务对象。"""
+async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
+    """聚合各模型进程中的已启用模型，供各公开 App 安全复用。"""
     results = await asyncio.gather(
         *(client.list_models() for client in _clients(request)),
         return_exceptions=True,
@@ -76,3 +75,9 @@ async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
         )
     )
     return rows
+
+
+@router.get("", response_model=list[ModelCatalogItem])
+async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
+    """返回全局模型目录，供使用 Portal API Key 的管理页面配置业务对象。"""
+    return await load_model_catalog(request)

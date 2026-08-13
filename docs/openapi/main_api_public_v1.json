@@ -13023,6 +13023,32 @@
         ]
       }
     },
+    "/api/v1/apps/km-asset/model-catalog": {
+      "get": {
+        "description": "在 KM Token 的访问边界内返回创建 KM Agent 所需模型。",
+        "operationId": "list_km_model_catalog_api_v1_apps_km_asset_model_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelCatalogItem"
+                  },
+                  "title": "Response List Km Model Catalog Api V1 Apps Km Asset Model Catalog Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Km Model Catalog",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
     "/api/v1/apps/km-asset/runs/{run_id}": {
       "get": {
         "operationId": "get_run_api_v1_apps_km_asset_runs__run_id__get",
@@ -18638,7 +18664,7 @@
     },
     "/api/v1/model-catalog": {
       "get": {
-        "description": "聚合各模型进程中的已启用模型，供门户配置业务对象。",
+        "description": "返回全局模型目录，供使用 Portal API Key 的管理页面配置业务对象。",
         "operationId": "list_model_catalog_api_v1_model_catalog_get",
         "responses": {
           "200": {

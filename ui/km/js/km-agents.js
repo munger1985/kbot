@@ -6,7 +6,10 @@
 
   async function initialize() {
     try {
-      const [sourcePayload, modelPayload] = await Promise.all([KBotKmApi.request(`${base}/sources`), KBotKmApi.request("/api/v1/model-catalog")]);
+      const [sourcePayload, modelPayload] = await Promise.all([
+        KBotKmApi.request(`${base}/sources`),
+        KBotKmApi.request(`${base}/model-catalog`),
+      ]);
       sources = KBotKmApi.items(sourcePayload); models = KBotKmApi.items(modelPayload);
       $("agent-source").innerHTML = sources.map((row) => `<option value="${KBotKmShell.escapeHtml(row.source_id)}">${KBotKmShell.escapeHtml(row.display_name)}</option>`).join("");
       populateModels(); await load();

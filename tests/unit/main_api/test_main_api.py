@@ -709,6 +709,28 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("portal-user-1", response.json()["members"][0]["id"])
         self.assertEqual("manager", response.json()["roles"][0]["code"])
 
+    def test_km_model_catalog_is_available_inside_km_app_boundary(self) -> None:
+        class _ModelCatalogClient:
+            async def list_models(self):
+                return [{
+                    "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
+                    "served_model_name": "km-test-llm",
+                    "display_name": "KM 测试模型",
+                    "category": 1,
+                    "provider": "test",
+                    "status": "ACTIVE",
+                    "model_params": {},
+                }]
+
+        self.app.state.model_config_clients = (_ModelCatalogClient(),)
+        response = self.client.get(
+            "/api/v1/apps/km-asset/model-catalog",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("km-test-llm", response.json()[0]["served_model_name"])
+
     def test_policy_binding_requires_subject(self) -> None:
         response = self.client.post(
             "/api/v1/apps/knowledge-retrieval/data-query/policy-bindings",
