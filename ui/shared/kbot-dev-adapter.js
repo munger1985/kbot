@@ -54,7 +54,15 @@
     error.status = response.status;
     error.code = payload?.code || payload?.detail?.code || "KM_REQUEST_FAILED";
     error.requestId = payload?.request_id || response.headers.get("X-Request-ID") || "";
+    error.payload = payload;
     return error;
+  }
+
+  function sessionIsInvalid(error) {
+    return error?.status === 401 && [
+      "INVALID_KM_TOKEN",
+      "KM_TOKEN_EXPIRED",
+    ].includes(String(error?.code || ""));
   }
 
   async function raw(path, options = {}, token = "") {
@@ -95,7 +103,9 @@
     try {
       return await raw(path, options, session.access_token);
     } catch (error) {
-      if (error.status === 401) {
+      // 只有 Main API 明确判定 KM Token 无效或过期时才退出。
+      // 其他接口的 401 可能是路由或下游认证问题，不能破坏当前登录态。
+      if (sessionIsInvalid(error)) {
         clearSession();
         if (!location.pathname.endsWith("/login.html")) location.replace("./login.html");
       }
@@ -145,5 +155,6 @@
   KBotKmApi.configure({ request, blob, stream });
   window.KBotKmAuth = {
     changePassword, clearSession, loadSession, login, requireSession,
+    sessionIsInvalid,
   };
 })();

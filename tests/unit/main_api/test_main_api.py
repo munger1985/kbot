@@ -11,7 +11,11 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from main_api.app import create_main_api_app
-from main_api.application import DomainValidationService
+from main_api.application import (
+    DomainValidationService,
+    KmUserAuthService,
+    KmUserTokenCodec,
+)
 from main_api.config import get_main_api_settings
 from platform_clients import (
     AIOpsClientError,
@@ -730,6 +734,45 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("km-test-llm", response.json()[0]["served_model_name"])
+
+    def test_km_model_catalog_accepts_km_user_token(self) -> None:
+        class _ModelCatalogClient:
+            async def list_models(self):
+                return [{
+                    "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
+                    "served_model_name": "km-user-token-llm",
+                    "display_name": "KM 用户模型",
+                    "category": 1,
+                    "provider": "test",
+                    "status": "ACTIVE",
+                    "model_params": {},
+                }]
+
+        codec = KmUserTokenCodec(
+            secret="km-user-token-test-secret-value-32-bytes",
+            issuer="main-api-test",
+            ttl_seconds=3600,
+        )
+        token, _expires_at = codec.issue(
+            user_id="portal-user-1",
+            domain_id=100,
+            must_change_password=False,
+        )
+        self.app.state.km_user_auth_service = KmUserAuthService(
+            uow_factory=None,
+            codec=codec,
+        )
+        self.app.state.model_config_clients = (_ModelCatalogClient(),)
+
+        response = self.client.get(
+            "/api/v1/apps/km-asset/model-catalog",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            "km-user-token-llm", response.json()[0]["served_model_name"]
+        )
 
     def test_policy_binding_requires_subject(self) -> None:
         response = self.client.post(

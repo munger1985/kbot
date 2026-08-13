@@ -54,6 +54,13 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
 
     main_api_base_url = ""
 
+    def end_headers(self) -> None:
+        """开发 UI 始终重新校验静态资源，避免部署后继续执行旧认证脚本。"""
+        path = urlsplit(self.path).path
+        if path.startswith("/ui/") and path != "/ui/runtime-config.js":
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def _empty_favicon(self) -> bool:
         if urlsplit(self.path).path != "/favicon.ico":
             return False
