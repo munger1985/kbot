@@ -89,7 +89,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
             for path in (KM_ROOT / "js").glob("*.js")
         )
         self.assertIn('/api/v1/apps/km-asset', source)
-        self.assertIn('/api/v1/model-catalog', source)
+        self.assertIn('/model-catalog', source)
+        self.assertNotIn('/api/v1/apps/knowledge-retrieval', source)
         self.assertIn('"PATCH"', source)
         self.assertNotIn('/internal/v1', source)
         for path in (
@@ -176,7 +177,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         adapter = (
-            ROOT / "ui" / "shared" / "kbot-dev-adapter.js"
+            ROOT / "ui" / "shared" / "kbot-km-auth-v2.js"
         ).read_text(encoding="utf-8")
         self.assertIn("km-login-form", login_html)
         self.assertNotIn("Main API 地址", login_html)
@@ -189,7 +190,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("saveConnection", login_js)
         self.assertIn("/api/v1/apps/km-asset/auth/login", adapter)
         self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", adapter)
-        self.assertNotIn("localStorage", adapter)
+        self.assertIn("sessionStorage", adapter)
         self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
         self.assertNotIn("X-KBot-Test-Auth", adapter)
         self.assertNotIn("X-KBot-User-ID", adapter)

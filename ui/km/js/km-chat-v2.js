@@ -1,3 +1,4 @@
+/* KM 聊天独立入口；新文件名用于绕过旧事件流地址的静态缓存。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
@@ -69,7 +70,10 @@
       const assistant = contentText(turn.assistant_item);
       return `${user ? messageMarkup("user", "你", user) : ""}${assistant ? messageMarkup("assistant", "KM Agent", assistant, turn.run_id) : (turn.status && turn.status !== "COMPLETED" ? messageMarkup("assistant", "KM Agent", `处理状态：${turn.status}`) : "")}`;
     }).join("");
-    const runIds = turns.map((turn) => turn.run_id).filter(Boolean).slice(-20);
+    const runIds = turns
+      .filter((turn) => turn.status === "COMPLETED" && turn.run_id)
+      .map((turn) => turn.run_id)
+      .slice(-20);
     await Promise.allSettled(runIds.map(async (runId) => {
       const result = await KBotKmApi.request(`${base}/runs/${runId}/result`);
       renderReferences(runId, result);
@@ -91,15 +95,16 @@
     $("chat-progress").hidden = false; $("chat-progress").textContent = "正在创建 Turn";
     try {
       const receipt = await KBotKmApi.json(`${base}/conversations/${active.conversation_id}/turns`, "POST", { input, expected_conversation_version: active.row_version, collection_ids: [], security_level: 0, client_metadata: { source: "km-asset-ui" }, images: [] }, { headers: { "Idempotency-Key": KBotKmApi.uuid() } });
-      if (receipt.run_id && receipt.events_url) {
+      if (receipt.run_id) {
         $("chat-progress").textContent = "Agent 正在执行";
-        await KBotKmApi.stream(receipt.events_url, { lastEventId: receipt.event_cursor, onEvent: (item) => { const data = item.json || {}; $("chat-progress").textContent = data.title || data.summary || item.type || "Agent 正在执行"; } });
+        const eventsUrl = `${base}/runs/${encodeURIComponent(receipt.run_id)}/events`;
+        await KBotKmApi.stream(eventsUrl, { lastEventId: receipt.event_cursor, onEvent: (item) => { const data = item.json || {}; $("chat-progress").textContent = data.title || data.summary || item.type || "Agent 正在执行"; } });
         const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
         await refreshActive();
         await loadConversations(active.conversation_id);
         renderReferences(receipt.run_id, result);
       } else { await refreshActive(); await loadTurns(); }
-      if (!receipt.run_id || !receipt.events_url) await loadConversations(active.conversation_id);
+      if (!receipt.run_id) await loadConversations(active.conversation_id);
     } catch (error) { KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
     finally { $("chat-progress").hidden = true; KBotKmShell.setBusy($("send-message"), false); }
   }

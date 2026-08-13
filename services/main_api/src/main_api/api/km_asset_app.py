@@ -173,6 +173,17 @@ def _client(request: Request) -> KmAssetClient:
     return cast(KmAssetClient, request.app.state.km_asset_client)
 
 
+def _km_turn_receipt(receipt: dict) -> dict:
+    """将运行时收据投影为 KM App 自有的公开访问地址。"""
+    projected = dict(receipt)
+    run_id = projected.get("run_id")
+    if run_id:
+        projected["events_url"] = (
+            f"{PUBLIC_API_V1}/apps/km-asset/runs/{run_id}/events"
+        )
+    return projected
+
+
 async def _fixed_collection_id(request: Request, *, domain_id: int) -> UUID:
     """解析 KM 固定 Collection，拒绝缺失、停用或重复配置。"""
     catalog = await cast(
@@ -504,7 +515,13 @@ async def create_conversation_turn(conversation_id: UUID, payload: CreateConvers
     fixed_collections = tuple(spec.get("resource_context", {}).get("collection_ids") or ())
     body = payload.model_dump(mode="json")
     body["collection_ids"] = list(fixed_collections)
-    return await runtime.create_conversation_turn(conversation_id=conversation_id, payload=body, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    receipt = await runtime.create_conversation_turn(
+        conversation_id=conversation_id,
+        payload=body,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _km_turn_receipt(receipt)
 
 
 @router.get("/conversations/{conversation_id}/turns")
