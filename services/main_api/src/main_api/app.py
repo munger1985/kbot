@@ -516,13 +516,20 @@ def create_main_api_app(
             request.url.path,
             type(exc).__name__,
         )
-        return _problem_response(
+        response = _problem_response(
             request=request,
             status_code=500,
             code="INTERNAL_SERVER_ERROR",
             title="服务内部错误",
             detail="请求暂时无法完成",
         )
+        origin = request.headers.get("Origin")
+        if origin and "*" in config.allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        elif origin and origin.rstrip("/") in config.allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        return response
 
     @app.get("/healthz", tags=["System"], summary="存活检查")
     async def healthz():

@@ -632,6 +632,27 @@ class MainApiTest(unittest.TestCase):
             response.headers.get("access-control-allow-origin"),
         )
 
+    def test_cors_headers_are_present_on_unhandled_failure(self) -> None:
+        @self.app.get("/api/v1/test-unhandled-cors")
+        async def raise_unhandled_error():
+            raise RuntimeError("测试未处理异常")
+
+        response = TestClient(
+            self.app, raise_server_exceptions=False
+        ).get(
+            "/api/v1/test-unhandled-cors",
+            headers={
+                **self._headers(),
+                "Origin": "http://127.0.0.1:8080",
+            },
+        )
+
+        self.assertEqual(500, response.status_code)
+        self.assertEqual(
+            "http://127.0.0.1:8080",
+            response.headers.get("access-control-allow-origin"),
+        )
+
     def test_create_domain_does_not_require_existing_domain(self) -> None:
         response = self.client.post(
             "/api/v1/domains",

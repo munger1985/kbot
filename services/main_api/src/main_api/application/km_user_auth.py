@@ -119,14 +119,24 @@ class KmUserAuthService:
             user = await uow.access.get_user(user_id)
             credential = await uow.access.get_user_credential(user_id)
             domain_ids = await uow.access.list_active_km_domain_ids(user_id)
+            user_status = user.status if user is not None else None
+            display_name = user.display_name if user is not None else None
+            password_hash = (
+                credential.password_hash if credential is not None else None
+            )
+            must_change = bool(
+                credential is not None
+                and credential.must_change_password == "Y"
+            )
         valid_password = bool(
             user is not None
-            and user.status == "ACTIVE"
+            and user_status == "ACTIVE"
             and credential is not None
+            and password_hash is not None
             and await asyncio.to_thread(
                 bcrypt.checkpw,
                 password.encode("utf-8"),
-                credential.password_hash.encode("ascii"),
+                password_hash.encode("ascii"),
             )
         )
         if not valid_password:
@@ -136,7 +146,6 @@ class KmUserAuthService:
         selected_domain = domain_id if domain_id is not None else domain_ids[0]
         if selected_domain not in domain_ids:
             raise KmUserAuthenticationError("KM_ACCESS_DENIED", "用户无权访问指定 Domain")
-        must_change = credential.must_change_password == "Y"
         token, expires_at = self._codec.issue(
             user_id=user_id,
             domain_id=selected_domain,
@@ -147,7 +156,7 @@ class KmUserAuthService:
             "token_type": "Bearer",
             "expires_at": expires_at,
             "user_id": user_id,
-            "display_name": user.display_name,
+            "display_name": display_name,
             "domain_id": selected_domain,
             "available_domain_ids": list(domain_ids),
             "must_change_password": must_change,
