@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from main_api.entities import (
+from km_asset_app.entities import (
     SlackDeliveryEntity,
     SlackInboxEntity,
     SlackThreadEntity,

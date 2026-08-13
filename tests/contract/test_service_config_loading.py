@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from agent_runtime.config import AgentRuntimeSettings
 from knowledge_core.config import KnowledgeCoreSettings
+from km_asset_app.config import KmAssetAppSettings
 from main_api.config import MainApiSettings
 from platform_core.config import Settings, load_settings
 from platform_core.config.settings import _prepare_runtime_secrets
@@ -118,6 +119,8 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 stream.write(
                     "[integrations.slack]\n"
                     "enabled=true\n"
+                    "max_webhook_bytes=2048\n"
+                    "requests_per_minute=42\n"
                     "[[integrations.slack.workspaces]]\n"
                     "workspace_id='T1'\n"
                     "domain_id=1001\n"
@@ -128,8 +131,8 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 )
 
             settings = load_settings(
-                MainApiSettings,
-                service="main_api",
+                KmAssetAppSettings,
+                service="km_asset_app",
                 config_file=path,
             )
 
@@ -141,6 +144,20 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 "https://callback.example.com/events",
                 slack.external_callback.url,
             )
+            main_api = load_settings(
+                MainApiSettings,
+                service="main_api",
+                config_file=path,
+            )
+            self.assertEqual(
+                2048,
+                main_api.integrations.slack_public_max_webhook_bytes,
+            )
+            self.assertEqual(
+                42,
+                main_api.integrations.slack_public_requests_per_minute,
+            )
+            self.assertFalse(hasattr(main_api.integrations, "slack"))
 
     def test_database_password_is_read_only_from_environment(self):
         settings = Settings()

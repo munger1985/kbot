@@ -57,7 +57,8 @@ Key和私钥只能由环境变量或Secret管理系统注入。
 
 ```bash
 python3 -m main_api.entrypoints.api
-python3 -m main_api.entrypoints.slack_worker
+python3 -m km_asset_app.entrypoints.api
+python3 -m km_asset_app.entrypoints.slack_worker
 python3 -m main_api.entrypoints.notification_worker
 python3 -m knowledge_retrieval_app.entrypoints.api
 python3 -m agent_runtime.entrypoints.api

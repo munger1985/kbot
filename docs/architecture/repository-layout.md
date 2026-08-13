@@ -28,7 +28,7 @@ bash scripts/deployment/install_workspace.sh
 Entity、Repository 或应用服务。
 
 `database/oracle/` 保持集中，是因为 4.0 使用同一 Schema 并需要统一初始化；
-目录内部仍按表所有者拆分，包括 Main API 的 Slack Inbox/Outbox。将来拆库时可直接
+目录内部仍按表所有者拆分，包括 KM Asset 的 Slack Inbox/Outbox。将来拆库时可直接
 把对应服务的 DDL 目录随服务迁走。
 
 文档只保留当前架构、产品说明、部署指南和冻结契约，入口见

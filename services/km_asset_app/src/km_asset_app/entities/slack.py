@@ -1,4 +1,4 @@
-"""Main API 拥有的 Slack 集成持久化实体。"""
+"""KM Asset App 拥有的 Slack 集成持久化实体。"""
 
 from datetime import datetime
 from uuid import UUID
@@ -14,7 +14,7 @@ from platform_core.persistence.orm import (
 
 
 class SlackInboxEntity(BaseEntity):
-    __tablename__ = "KBOT_MAIN_SLACK_INBOX"
+    __tablename__ = "KBOT_KM_SLACK_INBOX"
 
     inbox_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
     event_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
@@ -51,14 +51,14 @@ class SlackInboxEntity(BaseEntity):
 
 
 class SlackThreadEntity(BaseEntity):
-    __tablename__ = "KBOT_MAIN_SLACK_THREAD"
+    __tablename__ = "KBOT_KM_SLACK_THREAD"
     __table_args__ = (
         UniqueConstraint(
             "workspace_id",
             "channel_id",
             "root_thread_ts",
             "slack_user_id",
-            name="UK_MAIN_SLACK_THREAD_SCOPE",
+            name="UK_KM_SLACK_THREAD_SCOPE",
         ),
     )
 
@@ -79,10 +79,10 @@ class SlackThreadEntity(BaseEntity):
 
 
 class SlackDeliveryEntity(BaseEntity):
-    __tablename__ = "KBOT_MAIN_SLACK_DELIVERY"
+    __tablename__ = "KBOT_KM_SLACK_DELIVERY"
     __table_args__ = (
         UniqueConstraint(
-            "inbox_id", "delivery_type", name="UK_MAIN_SLACK_DELIVERY_KIND"
+            "inbox_id", "delivery_type", name="UK_KM_SLACK_DELIVERY_KIND"
         ),
     )
 

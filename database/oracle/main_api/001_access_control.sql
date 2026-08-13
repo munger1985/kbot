@@ -1,4 +1,4 @@
--- KBot 4.0 单 Domain 应用成员、角色和权限。
+-- KBot 4.0 Main API 单 Domain 应用成员、角色和权限。
 
 CREATE TABLE KBOT_PLATFORM_USER (
     USER_ID VARCHAR2(256 CHAR) PRIMARY KEY,

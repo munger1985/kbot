@@ -9,15 +9,24 @@ from fastapi.responses import JSONResponse
 from fastapi_offline import FastAPIOffline
 from sqlalchemy import text
 
-from km_asset_app.api import agent_router, asset_router
-from km_asset_app.application import KmAgentService, KmAssetService, KmCredentialService
+from km_asset_app.api import agent_router, asset_router, slack_router
+from km_asset_app.application import (
+    KmAgentService,
+    KmAssetService,
+    KmCredentialService,
+    SlackIntakeService,
+)
 from km_asset_app.config import get_km_asset_settings
 from km_asset_app.persistence import create_km_asset_uow
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.platform.port_check import check_port_available
-from platform_core.security import create_auth_context_codec, create_scoped_internal_auth_middleware, create_service_identity_codec
+from platform_core.security import (
+    create_auth_context_codec,
+    create_scoped_internal_auth_middleware,
+    create_service_identity_codec,
+)
 from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_clients import (
     DataQueryClient,
@@ -51,6 +60,14 @@ async def lifespan(app: FastAPIOffline):
         data_query_client=data_query_client,
         knowledge_core_client=knowledge_core_client,
     )
+    slack_config = settings.integrations.slack
+    if slack_config.enabled:
+        for workspace in slack_config.workspaces:
+            workspace.require_signing_secret()
+    app.state.slack_intake_service = SlackIntakeService(
+        uow_factory=create_km_asset_uow(runtime.session_factory),
+        slack_config=slack_config,
+    )
     app.state.auth_context_codec = create_auth_context_codec()
     app.state.service_identity_codec = create_service_identity_codec()
     try:
@@ -61,10 +78,23 @@ async def lifespan(app: FastAPIOffline):
 
 
 app = FastAPIOffline(title="KBot KM Asset App Internal API", version=config.service_version, lifespan=lifespan, docs_url="/docs" if settings.platform.debug else None)
-app.middleware("http")(create_scoped_internal_auth_middleware(audience=config.service_name, allowed_callers={"kbot-main-api": frozenset({"km_asset.manage"}), "kbot-km-asset-app-worker": frozenset({"km_asset.worker"}), "kbot-data-query-api": frozenset({"km_asset.reconcile"}), "kbot-agent-runtime-api": frozenset({"km_asset.manage"})}))
+app.middleware("http")(
+    create_scoped_internal_auth_middleware(
+        audience=config.service_name,
+        allowed_callers={
+            "kbot-main-api": frozenset(
+                {"km_asset.manage", "km_asset.slack.intake"}
+            ),
+            "kbot-km-asset-app-worker": frozenset({"km_asset.worker"}),
+            "kbot-data-query-api": frozenset({"km_asset.reconcile"}),
+            "kbot-agent-runtime-api": frozenset({"km_asset.manage"}),
+        },
+    )
+)
 app.middleware("http")(log_requests)
 app.include_router(asset_router)
 app.include_router(agent_router)
+app.include_router(slack_router)
 
 
 @app.exception_handler(DataQueryClientError)

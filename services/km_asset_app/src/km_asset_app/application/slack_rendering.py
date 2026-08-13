@@ -1,4 +1,4 @@
-"""KBot Artifact 到 Slack chat.postMessage 报文的转换。"""
+"""KM Asset 将 KBot Artifact 转换为 Slack chat.postMessage 报文。"""
 
 from __future__ import annotations
 

@@ -178,11 +178,11 @@ kind = "http"
 port = 18099
 
 [[processes]]
-process_key = "main_api_slack_worker"
-module = "main_api.entrypoints.slack_worker"
-service_config = "main_api"
+process_key = "km_asset_app_slack_worker"
+module = "km_asset_app.entrypoints.slack_worker"
+service_config = "km_asset_app"
 config_section = "slack_worker"
-service_name = "kbot-main-api-slack-worker"
+service_name = "kbot-km-asset-app-slack-worker"
 kind = "worker"
 
 [[processes]]
@@ -227,6 +227,10 @@ timeout_seconds = 300
 [dependencies.km_asset_app.data_query]
 endpoint = "data_query"
 timeout_seconds = 300
+
+[dependencies.km_asset_app.agent_runtime]
+endpoint = "agent_runtime"
+timeout_seconds = 120
 
 [dependencies.main_api.agent_runtime]
 endpoint = "agent_runtime"

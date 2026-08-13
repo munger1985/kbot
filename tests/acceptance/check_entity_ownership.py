@@ -17,7 +17,6 @@ import km_asset_app.entities as km_asset_entities  # noqa: E402
 import main_api.entities.access_control as access_entities  # noqa: E402
 import main_api.entities.domain as domain_entities  # noqa: E402
 import main_api.entities.notification as notification_projection_entities  # noqa: E402
-import main_api.entities.slack as slack_entities  # noqa: E402
 import model_serving.common.entities as model_entities  # noqa: E402
 import platform_core.prompts as prompt_entities  # noqa: E402
 import platform_core.notifications as notification_entities  # noqa: E402
@@ -33,7 +32,7 @@ ENTITY_MODULES = {
         prompt_entities,
         notification_entities,
     ),
-    "main_api": (access_entities, slack_entities),
+    "main_api": access_entities,
     "model_serving": model_entities,
     "knowledge_core": kc_entities,
     "knowledge_retrieval_app": kr_entities,

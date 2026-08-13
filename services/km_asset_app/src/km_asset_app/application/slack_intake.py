@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from main_api.entities import SlackInboxEntity
+from km_asset_app.entities import SlackInboxEntity
 from platform_core.identity import uuid7
 
 

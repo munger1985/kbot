@@ -17,6 +17,7 @@ SERVICES=(
     "knowledge_retrieval_app.entrypoints.api"
     "km_asset_app.entrypoints.api"
     "km_asset_app.entrypoints.worker"
+    "km_asset_app.entrypoints.slack_worker"
     "agent_runtime.entrypoints.api"
     "agent_runtime.entrypoints.worker"
     "data_query.entrypoints.api"
@@ -26,7 +27,6 @@ SERVICES=(
     "aiops_agent.entrypoints.scheduler"
     "aiops_agent.entrypoints.db_executor"
     "main_api.entrypoints.api"
-    "main_api.entrypoints.slack_worker"
     "main_api.entrypoints.notification_worker"
 )
 

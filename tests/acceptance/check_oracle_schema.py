@@ -24,9 +24,6 @@ SERVICE_TABLES = {
         "KBOT_MANAGED_CREDENTIAL",
     },
     "main_api": {
-        "KBOT_MAIN_SLACK_INBOX",
-        "KBOT_MAIN_SLACK_THREAD",
-        "KBOT_MAIN_SLACK_DELIVERY",
         "KBOT_PLATFORM_USER",
         "KBOT_PLATFORM_USER_CREDENTIAL",
         "KBOT_PERMISSION",
@@ -130,6 +127,9 @@ SERVICE_TABLES = {
         "KBOT_KM_AGENT",
         "KBOT_KM_AGENT_VERSION",
         "KBOT_KM_AGENT_GRANT",
+        "KBOT_KM_SLACK_INBOX",
+        "KBOT_KM_SLACK_THREAD",
+        "KBOT_KM_SLACK_DELIVERY",
     },
 }
 SERVICE_VIEWS = {

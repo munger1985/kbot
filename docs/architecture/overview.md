@@ -2,7 +2,7 @@
 
 ## 架构形态
 
-KBot 4.0 是服务型单仓库。七个服务可独立构建、启动和
+KBot 4.0 是服务型单仓库。八个服务可独立构建、启动和
 扩缩容，但受 APEX 约束，当前共享一个 Oracle 26ai Schema。每个服务只访问自己
 拥有的 `KBOT_*` 表；共享 Schema 不代表共享 Repository 或事务。
 
@@ -13,7 +13,8 @@ KBot 4.0 是服务型单仓库。七个服务可独立构建、启动和
 
 | 服务 | 职责 | 主要进程 |
 |---|---|---|
-| Main API | Portal/APEX 的公开 BFF、认证、App RBAC、Domain 上下文、Slack、通知和 SSE 转发 | API、Slack Worker、Notification Worker |
+| Main API | Portal/APEX 的公开 BFF、认证、App RBAC、Domain 上下文、Slack 公共入口、通知和 SSE 转发 | API、Notification Worker |
+| KM Asset App | KM 资产与 Agent 管理、Slack 验签/Inbox/Outbox/外部 Callback | API、Worker、Slack Worker |
 | Knowledge Retrieval App | 知识检索私有 Agent、不可变版本和 Agent Grant | API |
 | Agent Runtime | Execution Spec、Conversation、计划、Task、Skill、Artifact、事件和记忆 | API、Worker |
 | Knowledge Core | Collection、Bundle、解析、Evidence、索引和检索 | API、Parser、Projection Worker |
@@ -35,11 +36,12 @@ Portal / APEX
       │ /internal/v1 + Service Credential + AuthContext JWT
       ├────────► Knowledge Retrieval App ──► Agent Runtime
       ├────────► Agent Runtime ─────► Knowledge Core / Data Query / AIOps
+      ├────────► KM Asset App ──────► Agent Runtime / Slack
       ├────────► Knowledge Core ────► Model Serving
       ├────────► Data Query ────────► Oracle / PostgreSQL / MySQL
       └────────► AIOps Agent ───────► DB Executor / Monitor Provider
 
-Slack Events API ──► Main API Slack Inbox/Outbox ──► Agent Runtime
+Slack Events API ──► Main API 公共适配器 ──► KM Asset Inbox/Outbox ──► Agent Runtime
 ```
 
 跨服务调用只使用 HTTP、版本化 DTO 或持久化任务。Repository 不跨服务导入，

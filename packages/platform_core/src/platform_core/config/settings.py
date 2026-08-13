@@ -488,10 +488,30 @@ def load_settings(
                 merged = _deep_merge(
                     merged, {"parse_policy": {"ocr_model": ocr_model}}
                 )
-        if service == "main_api" and integrations.get("slack"):
+        slack_integration = integrations.get("slack")
+        if service == "main_api" and isinstance(slack_integration, dict):
+            public_limits = {
+                target: slack_integration[source]
+                for source, target in (
+                    (
+                        "max_webhook_bytes",
+                        "slack_public_max_webhook_bytes",
+                    ),
+                    (
+                        "requests_per_minute",
+                        "slack_public_requests_per_minute",
+                    ),
+                )
+                if source in slack_integration
+            }
             merged = _deep_merge(
                 merged,
-                {"integrations": {"slack": integrations["slack"]}},
+                {"integrations": public_limits},
+            )
+        if service == "km_asset_app" and slack_integration:
+            merged = _deep_merge(
+                merged,
+                {"integrations": {"slack": slack_integration}},
             )
 
     merged["environment"] = resolved_environment

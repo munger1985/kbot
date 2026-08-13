@@ -24,6 +24,7 @@ from .conversation import (
     UpdateConversationRequest,
 )
 from .identity import AuthContext, PrincipalKind, ServiceIdentity
+from .slack import SlackWebhookEnvelope, SlackWebhookReceipt
 from .model import (
     EmbeddingDataItem,
     ModelArchiveRequest,
@@ -70,6 +71,8 @@ __all__ = [
     "ModelUpdateRequest",
     "PrincipalKind",
     "ServiceIdentity",
+    "SlackWebhookEnvelope",
+    "SlackWebhookReceipt",
     "PUBLIC_API_V1",
     "INTERNAL_API_V1",
     "data_query",

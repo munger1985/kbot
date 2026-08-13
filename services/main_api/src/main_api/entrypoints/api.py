@@ -16,7 +16,6 @@ from main_api.application import (
     DomainManagementService,
     DomainValidationService,
     NotificationCenterService,
-    SlackIntakeService,
     KmUserAuthService,
     create_km_user_token_codec,
 )
@@ -77,10 +76,6 @@ async def lifespan(app: FastAPI):
         rotation=settings.log.rotation,
         retention=settings.log.retention,
     )).setup()
-    slack_config = settings.integrations.slack
-    if slack_config.enabled:
-        for workspace in slack_config.workspaces:
-            workspace.require_signing_secret()
     db_runtime = create_database_runtime()
     app.state.db_runtime = db_runtime
     uow_factory = create_main_api_uow(db_runtime.session_factory)
@@ -96,10 +91,6 @@ async def lifespan(app: FastAPI):
     app.state.km_user_auth_service = KmUserAuthService(
         uow_factory=uow_factory,
         codec=create_km_user_token_codec(settings=settings),
-    )
-    app.state.slack_intake_service = SlackIntakeService(
-        uow_factory=uow_factory,
-        slack_config=slack_config,
     )
     app.state.notification_center_service = NotificationCenterService(
         uow_factory=uow_factory,

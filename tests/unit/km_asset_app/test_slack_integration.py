@@ -13,16 +13,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from main_api.application.slack_dispatch import SlackDispatchService
-from main_api.application.slack_intake import (
+from km_asset_app.application.slack_dispatch import SlackDispatchService
+from km_asset_app.application.slack_intake import (
     parse_message_event,
     verify_slack_signature,
 )
-from main_api.application.slack_rendering import (
+from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
 )
-from main_api.config import SlackExternalCallbackConfig, SlackIntegrationConfig
+from km_asset_app.config import SlackExternalCallbackConfig, SlackIntegrationConfig
 
 
 class SlackSignatureTest(unittest.TestCase):

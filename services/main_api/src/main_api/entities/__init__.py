@@ -16,7 +16,6 @@ from .notification import (
     OperationWatchEntity,
     WorkItemEntity,
 )
-from .slack import SlackDeliveryEntity, SlackInboxEntity, SlackThreadEntity
 
 __all__ = [
     "AppMemberRoleEntity",
@@ -30,8 +29,5 @@ __all__ = [
     "PlatformUserEntity",
     "PlatformUserCredentialEntity",
     "PermissionEntity",
-    "SlackDeliveryEntity",
-    "SlackInboxEntity",
-    "SlackThreadEntity",
     "WorkItemEntity",
 ]

@@ -116,6 +116,7 @@ SERVICES=(
     "Knowledge Retrieval App:API:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.api"
     "KM Asset App:API:km_asset_app:km_asset_app.entrypoints.api"
     "KM Asset App:Worker:km_asset_app:km_asset_app.entrypoints.worker"
+    "KM Asset App:Slack Worker:km_asset_app:km_asset_app.entrypoints.slack_worker"
     "Agent Runtime:API:agent_runtime:agent_runtime.entrypoints.api"
     "Agent Runtime:Worker:agent_runtime:agent_runtime.entrypoints.worker"
     "Data Query:API:data_query:data_query.entrypoints.api"
@@ -125,7 +126,6 @@ SERVICES=(
     "AIOps Agent:Scheduler:aiops_agent:aiops_agent.entrypoints.scheduler"
     "AIOps Agent:DB Executor:aiops_agent:aiops_agent.entrypoints.db_executor"
     "Main API:API:main_api:main_api.entrypoints.api"
-    "Main API:Slack Worker:main_api:main_api.entrypoints.slack_worker"
     "Main API:Notification Worker:main_api:main_api.entrypoints.notification_worker"
 )
 
@@ -156,8 +156,8 @@ service_port() {
 is_process_only_service() {
     [ "$1" = "knowledge_core.entrypoints.projection" ] \
         || [ "$1" = "km_asset_app.entrypoints.worker" ] \
+        || [ "$1" = "km_asset_app.entrypoints.slack_worker" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
-        || [ "$1" = "main_api.entrypoints.slack_worker" ] \
         || [ "$1" = "main_api.entrypoints.notification_worker" ]
 }
 

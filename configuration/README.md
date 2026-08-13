@@ -78,9 +78,11 @@ Agent UUID，并通过 `KBOT_SLACK_SIGNING_SECRET`、`KBOT_SLACK_BOT_TOKEN`
 注入密钥。Slack Event Subscription 地址为
 `/api/v1/integrations/slack/events`。可选 `external_callback` 按 3.3 格式发送
 用户 ID、姓名、邮箱、问题与请求日期，不附加鉴权 Header。
+该配置段仅由 KM Asset App 与其 Slack Worker 加载；Main API 只保留公开入口并
+保真转发原始正文和 Slack 验签 Header。
 
 `callback_payload_log_enabled` 会把 Callback 完整报文写入
-`<log_dir>/main_api/slack_callback_debug.log`；`slack_reply_dump_enabled` 会把
+`<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 会把
 发往 Slack 的完整 JSON Body 写入 `/tmp/slackmess`。两项均默认关闭，且不会记录
 Bot Token 或 Signing Secret，只能在确认数据访问范围后临时开启。
 

@@ -1,4 +1,4 @@
-"""Main API Slack Inbox/Outbox 独立 Worker。"""
+"""KM Asset Slack Inbox/Outbox 独立 Worker。"""
 
 from __future__ import annotations
 
@@ -9,21 +9,21 @@ from pathlib import Path
 import aiohttp
 from loguru import logger
 
-from main_api.application import SlackDispatchService
-from main_api.config import get_main_api_settings
-from main_api.persistence import create_main_api_uow
+from km_asset_app.application import SlackDispatchService
+from km_asset_app.config import get_km_asset_settings
+from km_asset_app.persistence import create_km_asset_uow
 from platform_clients import AgentRuntimeClient
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 
 
 async def main() -> None:
-    settings = get_main_api_settings()
+    settings = get_km_asset_settings()
     worker_config = settings.slack_worker
     slack_config = settings.integrations.slack
     LogManager(
         LogConfig(
-            service="main_api",
+            service="km_asset_app",
             process="slack_worker",
             log_dir=settings.log.dir,
             level=settings.log.level,
@@ -37,7 +37,11 @@ async def main() -> None:
             workspace.require_bot_token()
     debug_file: Path | None = None
     if slack_config.debug.callback_payload_log_enabled:
-        debug_file = Path(settings.log.dir) / "main_api" / "slack_callback_debug.log"
+        debug_file = (
+            Path(settings.log.dir)
+            / "km_asset_app"
+            / "slack_callback_debug.log"
+        )
         logger.warning("Slack Callback 完整报文调试日志已启用")
     if slack_config.debug.slack_reply_dump_enabled:
         logger.warning(
@@ -65,7 +69,7 @@ async def main() -> None:
         return
     try:
         dispatcher = SlackDispatchService(
-            uow_factory=create_main_api_uow(database.session_factory),
+            uow_factory=create_km_asset_uow(database.session_factory),
             agent_client=AgentRuntimeClient(
                 base_url=settings.agent_runtime.base_url,
                 caller_service=worker_config.service_name,

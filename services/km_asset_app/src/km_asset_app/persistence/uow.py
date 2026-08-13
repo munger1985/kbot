@@ -2,7 +2,11 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from km_asset_app.repositories import KmAgentRepository, KmAssetRepository
+from km_asset_app.repositories import (
+    KmAgentRepository,
+    KmAssetRepository,
+    SlackIntegrationRepository,
+)
 from platform_core.managed_credentials import ManagedCredentialRepository
 
 
@@ -13,6 +17,7 @@ class KmAssetUnitOfWork:
         self.assets: KmAssetRepository | None = None
         self.agents: KmAgentRepository | None = None
         self.managed_credentials: ManagedCredentialRepository | None = None
+        self.slack: SlackIntegrationRepository | None = None
         self._committed = False
 
     async def __aenter__(self):
@@ -20,6 +25,7 @@ class KmAssetUnitOfWork:
         self.assets = KmAssetRepository(self.session)
         self.agents = KmAgentRepository(self.session)
         self.managed_credentials = ManagedCredentialRepository(self.session)
+        self.slack = SlackIntegrationRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -40,6 +46,7 @@ class KmAssetUnitOfWork:
             self.assets = None
             self.agents = None
             self.managed_credentials = None
+            self.slack = None
 
 
 def create_km_asset_uow(session_factory: async_sessionmaker[AsyncSession]):

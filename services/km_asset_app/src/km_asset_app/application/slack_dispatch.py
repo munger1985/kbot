@@ -15,8 +15,8 @@ import aiohttp
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
-from main_api.entities import SlackDeliveryEntity, SlackThreadEntity
-from main_api.application.slack_rendering import (
+from km_asset_app.entities import SlackDeliveryEntity, SlackThreadEntity
+from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
     waiting_message,
@@ -81,7 +81,7 @@ class SlackDispatchService:
         return AuthContext(
             principal_kind=PrincipalKind.SERVICE,
             client_id="slack-integration",
-            calling_service="kbot-main-api-slack-worker",
+            calling_service="kbot-km-asset-app-slack-worker",
             request_id=request_id,
             trace_id=request_id,
             domain_id=str(workspace.domain_id),

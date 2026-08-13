@@ -7,7 +7,7 @@ from uuid import UUID
 
 import aiohttp
 
-from platform_core.contracts import AuthContext
+from platform_core.contracts import AuthContext, SlackWebhookEnvelope
 from platform_core.security import build_scoped_internal_auth_headers
 
 
@@ -99,10 +99,33 @@ class KmAssetClient:
     async def execution_spec(self, *, agent_id: UUID, domain_id: int, auth_context: AuthContext):
         return await self._json("GET", f"{self._BASE}/agents/{agent_id}/execution-spec?{urlencode({'domain_id': domain_id})}", auth_context=auth_context)
 
-    async def _json(self, method: str, path: str, *, auth_context: AuthContext, payload: dict[str, Any] | None = None):
+    async def intake_slack_event(
+        self,
+        *,
+        envelope: SlackWebhookEnvelope,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """将 Slack 原始报文提交给 KM Asset 完成验签和持久化。"""
+        return await self._json(
+            "POST",
+            f"{self._BASE}/integrations/slack/events",
+            payload=envelope.model_dump(mode="json"),
+            auth_context=auth_context,
+            scopes=("km_asset.slack.intake",),
+        )
+
+    async def _json(
+        self,
+        method: str,
+        path: str,
+        *,
+        auth_context: AuthContext,
+        payload: dict[str, Any] | None = None,
+        scopes: tuple[str, ...] = ("km_asset.manage",),
+    ):
         owns_session = self._session is None
         session = self._session or aiohttp.ClientSession(timeout=self._timeout)
-        headers = {"Accept": "application/json", **build_scoped_internal_auth_headers(audience=self._audience, caller_service=self._caller_service, scopes=("km_asset.manage",), context=auth_context)}
+        headers = {"Accept": "application/json", **build_scoped_internal_auth_headers(audience=self._audience, caller_service=self._caller_service, scopes=scopes, context=auth_context)}
         if payload is not None:
             headers["Content-Type"] = "application/json"
         try:

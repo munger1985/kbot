@@ -8,7 +8,6 @@ from main_api.repositories import (
     AccessControlRepository,
     NotificationRepository,
     PlatformDomainRepository,
-    SlackIntegrationRepository,
 )
 
 
@@ -17,14 +16,12 @@ class MainApiUnitOfWork:
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
         self.domains: PlatformDomainRepository | None = None
-        self.slack: SlackIntegrationRepository | None = None
         self.notifications: NotificationRepository | None = None
         self.access: AccessControlRepository | None = None
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
         self.domains = PlatformDomainRepository(self.session)
-        self.slack = SlackIntegrationRepository(self.session)
         self.notifications = NotificationRepository(self.session)
         self.access = AccessControlRepository(self.session)
         return self
@@ -37,7 +34,6 @@ class MainApiUnitOfWork:
         await self.session.close()
         self.session = None
         self.domains = None
-        self.slack = None
         self.notifications = None
         self.access = None
 

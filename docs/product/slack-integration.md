@@ -7,7 +7,8 @@ Events API 的普通消息、`app_mention` 和 URL Verification；机器人消�
 及其他事件会被安全忽略。Slack 请求使用原始正文、请求时间戳和 Signing Secret
 执行 HMAC 校验，不使用 Portal API Key。
 
-入站事件先写入 Main API 自有 Inbox，再由独立 Slack Worker 映射为 Agent Runtime
+Main API 仅保真转发原始正文和 Slack 验签 Header；KM Asset 完成验签并将入站事件
+写入自有 Inbox，再由 KM Asset 的独立 Slack Worker 映射为 Agent Runtime
 Conversation 与 Turn。会话按 Workspace、频道、根线程和 Slack 用户隔离。Agent
 执行仍由持久化 Run/Task/Artifact 完成；Slack Worker 读取最终
 `GROUNDED_ANSWER`，通过 Outbox 调用 `chat.postMessage` 在线程内回复。进程重启后
@@ -34,7 +35,7 @@ Slack App 至少需要接收消息与 `app_mention` 的 Event Subscription，以
 ## 临时调试输出
 
 `callback_payload_log_enabled` 将实际发送给 Callback 的完整五字段报文写入
-`<log_dir>/main_api/slack_callback_debug.log`；`slack_reply_dump_enabled` 将
+`<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 将
 `chat.postMessage` 的完整 JSON Body 写入配置目录，默认是 `/tmp/slackmess`。
 两项均默认关闭，不写入 Bot Token、Signing Secret、内部 JWT 或 Authorization
 Header。调试文件包含个人资料和业务问题，只能临时开启并限制文件访问权限。

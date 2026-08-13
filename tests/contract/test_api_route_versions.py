@@ -15,6 +15,7 @@ from knowledge_core.api.parse_task_router import router as parse_task_router
 from knowledge_core.api.profile_task_router import router as profile_task_router
 from knowledge_core.api.purge_task_router import router as purge_task_router
 from knowledge_core.api.status_router import router as status_router
+from km_asset_app.api import slack_router as km_asset_slack_router
 from main_api.api import knowledge_router, slack_router
 from model_serving.common.management_router import create_model_management_router
 from model_serving.common.openai_router import create_openai_models_router
@@ -31,6 +32,7 @@ INTERNAL_ROUTERS = (
     profile_task_router,
     purge_task_router,
     status_router,
+    km_asset_slack_router,
     create_model_management_router(category=1),
 )
 
