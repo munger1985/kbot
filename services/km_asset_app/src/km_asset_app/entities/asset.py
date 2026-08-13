@@ -31,6 +31,7 @@ class KmSourceEntity(BaseEntity):
     model_catalog_hash: Mapped[str | None] = mapped_column(String(64))
     model_status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
+    auto_sync_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     poll_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     batch_size: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

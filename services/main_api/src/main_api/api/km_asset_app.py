@@ -92,6 +92,7 @@ class SourceUpdatePayload(_Payload):
     metadb_credentials: dict[str, str] | None = Field(default=None, min_length=2, max_length=2)
     sharepoint_credentials: dict[str, str] | None = Field(default=None, min_length=3, max_length=3)
     sharepoint_site_path: str | None = Field(default=None, min_length=1, max_length=512)
+    auto_sync_enabled: bool | None = None
     poll_interval_seconds: int | None = Field(default=None, ge=10, le=86400)
     batch_size: int | None = Field(default=None, ge=1, le=1000)
 

@@ -51,7 +51,8 @@ AES-256-GCM 密文保存在 `KBOT_MANAGED_CREDENTIAL`，查询接口不返回凭
 3. 调用 `POST /api/v1/apps/km-asset/sources` 创建来源；Main API 固定绑定 `assets`，不接收 Collection ID。
 4. 创建来源时，Data Query 自动调和固定模型 `KM Asset 元数据（系统托管）`。
 5. 调用 `POST /api/v1/apps/km-asset/sources/{source_id}/activate` 激活来源。
-6. 创建 KM Agent，并选择聊天需要的模型；问文问数模式至少要配置 `router_llm`。
+6. 新来源的后台自动同步默认关闭；在数据来源页面确认配置后再点击“开启后台同步”。“立即同步”始终可用，不受开关影响。
+7. 创建 KM Agent，并选择聊天需要的模型；问文问数模式至少要配置 `router_llm`。
    Collection、语义模型和查询策略不由前端选择。DRAFT Agent 可通过激活接口重试并修复问数绑定。
 
 正式 JavaScript 页面位于 `ui/km/`，包括工作台、MetaDB、数据来源、Asset、同步任务、
@@ -118,8 +119,13 @@ Collection 时会选择最近更新的启用 LLM 和文本 Embedding 模型作�
 
 修改来源时必须提交 `expected_row_version`。可修改显示名称、MetaDB Endpoint、
 SharePoint Site Path、`poll_interval_seconds`（10～86400 秒）和 `batch_size`（1～1000）；
-也可以提交完整的新凭据组进行密文轮换。省略凭据字段表示保留原凭据。Collection 属于
+也可以通过 `auto_sync_enabled` 开启或关闭后台自动同步，或提交完整的新凭据组进行密文轮换。
+省略凭据字段表示保留原凭据。Collection 属于
 Agent 版本的固定资源定位，不能通过该接口修改。
+
+既有数据库升级时，先在 SQL Developer 中执行
+`scripts/db/upgrade_km_source_auto_sync.sql`。脚本会新增持久化开关，并将所有现有来源
+保持为默认关闭；不会因部署或 Worker 重启自动开始轮询。
 
 ## 问文与问数
 

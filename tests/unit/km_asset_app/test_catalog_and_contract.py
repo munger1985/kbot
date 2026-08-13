@@ -8,7 +8,11 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from km_asset_app.application import KmAgentService, KmAssetApplicationError, KmAssetService
-from km_asset_app.application.worker import KmAssetWorker, _JobSnapshot
+from km_asset_app.application.worker import (
+    KmAssetWorker,
+    _JobSnapshot,
+    _SourceSnapshot,
+)
 from km_asset_app.integrations import SharePointClient
 from km_asset_app.api.assets import SourceUpdateRequest
 from data_query.application.managed_datasets import km_asset_definition
@@ -119,6 +123,7 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
             model_status="READY",
             model_catalog_hash="hash",
             status="ACTIVE",
+            auto_sync_enabled=0,
             poll_interval_seconds=60,
             batch_size=100,
             last_sync_at=None,
@@ -152,11 +157,16 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
             domain_id=1,
             source_id=row.source_id,
             expected_row_version=2,
-            changes={"poll_interval_seconds": 300, "batch_size": 250},
+            changes={
+                "poll_interval_seconds": 300,
+                "batch_size": 250,
+                "auto_sync_enabled": True,
+            },
             actor_id="kbotui_dev",
         )
         self.assertEqual(300, result["poll_interval_seconds"])
         self.assertEqual(250, result["batch_size"])
+        self.assertTrue(result["auto_sync_enabled"])
         self.assertEqual(3, result["row_version"])
         self.assertEqual("kbotui_dev", row.updated_by)
 
@@ -222,6 +232,44 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
 
 
 class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_source_skips_automatic_sync_job(self):
+        source_id = UUID("01900000-0000-7000-8000-000000000031")
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+
+        async def source_and_credentials(*_):
+            return (
+                _SourceSnapshot(
+                    source_id=source_id,
+                    domain_id=41,
+                    metadb_endpoint="https://metadb.example.com/assets",
+                    batch_size=100,
+                    sharepoint_site_path="/sites/km",
+                    collection_id=UUID(
+                        "01900000-0000-7000-8000-000000000032"
+                    ),
+                    auto_sync_enabled=False,
+                ),
+                {"username": "user", "password": "secret"},
+            )
+
+        worker._source_and_credentials = source_and_credentials
+        await worker._source_sync(
+            _JobSnapshot(
+                job_id=UUID("01900000-0000-7000-8000-000000000033"),
+                job_type="SOURCE_SYNC",
+                domain_id=41,
+                source_id=source_id,
+                km_asset_id=None,
+                asset_revision_id=None,
+                payload_json={"trigger": "AUTO"},
+            )
+        )
+
     async def test_source_credentials_returns_detached_safe_snapshot(self):
         source_id = UUID("01900000-0000-7000-8000-000000000021")
         credential_id = UUID("01900000-0000-7000-8000-000000000022")
@@ -238,6 +286,7 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
                 self.sharepoint_site_path = "/sites/km"
                 self.collection_id = collection_id
                 self.batch_size = 100
+                self.auto_sync_enabled = 0
 
             def __getattribute__(self, name):
                 if name not in {"attached", "__class__"} and not object.__getattribute__(self, "attached"):
@@ -284,6 +333,7 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(source_id, snapshot.source_id)
         self.assertEqual(collection_id, snapshot.collection_id)
+        self.assertFalse(snapshot.auto_sync_enabled)
         self.assertEqual({"username": "user", "password": "secret"}, values)
 
 

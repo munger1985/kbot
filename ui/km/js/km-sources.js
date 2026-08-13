@@ -12,7 +12,7 @@
   function render() {
     const body = $("source-rows");
     if (!rows.length) return KBotKmShell.renderEmpty(body, 7, "尚未配置 KM 数据来源");
-    body.innerHTML = rows.map((row, index) => `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.display_name)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.source_id))}</div></td><td>${KBotKmShell.escapeHtml(row.metadb_endpoint)}</td><td><code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.collection_id))}</code></td><td>${KBotKmShell.badge(row.status)} ${KBotKmShell.badge(row.model_status)}</td><td>${KBotKmShell.escapeHtml(`${row.poll_interval_seconds}s / ${row.batch_size}条`)}</td><td>${row.row_version}</td><td><button class="small" data-edit="${index}">修改</button> <button class="small" data-model="${index}">数据模型</button>${row.status === "DRAFT" ? ` <button class="small" data-activate="${index}">激活</button>` : ` <button class="small" data-sync="${index}">立即同步</button>`}</td></tr>`).join("");
+    body.innerHTML = rows.map((row, index) => `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.display_name)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.source_id))}</div></td><td>${KBotKmShell.escapeHtml(row.metadb_endpoint)}</td><td><code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.collection_id))}</code></td><td>${KBotKmShell.badge(row.status)} ${KBotKmShell.badge(row.model_status)}</td><td>${KBotKmShell.badge(row.auto_sync_enabled ? "AUTO_ON" : "AUTO_OFF")}<div class="km-cell-sub">${KBotKmShell.escapeHtml(`${row.poll_interval_seconds}s / ${row.batch_size}条`)}</div></td><td>${row.row_version}</td><td><button class="small" data-edit="${index}">修改</button> <button class="small" data-model="${index}">数据模型</button>${row.status === "DRAFT" ? ` <button class="small" data-activate="${index}">激活</button>` : ` <button class="small" data-auto="${index}">${row.auto_sync_enabled ? "关闭后台同步" : "开启后台同步"}</button> <button class="small" data-sync="${index}">立即同步</button>`}</td></tr>`).join("");
   }
   async function action(index, kind, button) {
     const row = rows[index];
@@ -20,7 +20,9 @@
     try {
       if (kind === "activate") await KBotKmApi.json(`${base}/sources/${row.source_id}/activate`, "POST", { expected_row_version: row.row_version });
       if (kind === "sync") await KBotKmApi.json(`${base}/sources/${row.source_id}/sync`, "POST");
-      KBotKmShell.toast(kind === "activate" ? "数据来源已激活" : "同步任务已提交", "success");
+      if (kind === "auto") await KBotKmApi.json(`${base}/sources/${row.source_id}`, "PATCH", { expected_row_version: row.row_version, auto_sync_enabled: !row.auto_sync_enabled });
+      const message = kind === "activate" ? "数据来源已激活" : kind === "sync" ? "同步任务已提交" : row.auto_sync_enabled ? "后台自动同步已关闭" : "后台自动同步已开启";
+      KBotKmShell.toast(message, "success");
       await load();
     } catch (error) { KBotKmShell.showError(error); }
     finally { KBotKmShell.setBusy(button, false); }
@@ -94,7 +96,7 @@
         finally { KBotKmShell.setBusy(reconcileButton, false); }
         return;
       }
-      for (const kind of ["edit", "model", "activate", "sync"]) {
+      for (const kind of ["edit", "model", "activate", "auto", "sync"]) {
         const button = event.target.closest(`[data-${kind}]`);
         if (!button) continue;
         if (kind === "edit") openEdit(Number(button.dataset.edit));

@@ -6676,6 +6676,17 @@
             ],
             "title": "Batch Size"
           },
+          "auto_sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Sync Enabled"
+          },
           "display_name": {
             "anyOf": [
               {

@@ -39,6 +39,7 @@ class _SourceSnapshot:
     batch_size: int
     sharepoint_site_path: str
     collection_id: UUID
+    auto_sync_enabled: bool
 
 
 class KmAssetWorker:
@@ -78,13 +79,13 @@ class KmAssetWorker:
     async def _schedule_active_sources(self) -> None:
         now = datetime.now(timezone.utc)
         async with self._uow_factory() as uow:
-            for source in await uow.assets.list_active_sources():
+            for source in await uow.assets.list_auto_sync_sources():
                 interval = max(10, int(source.poll_interval_seconds))
                 bucket = int(now.timestamp()) // interval
                 key = f"source-sync:{source.source_id}:{bucket}"
                 if await uow.assets.find_job_by_key(domain_id=int(source.domain_id), idempotency_key=key) is not None:
                     continue
-                await uow.assets.add(KmJobEntity(domain_id=source.domain_id, source_id=source.source_id, job_type="SOURCE_SYNC", idempotency_key=key, payload_json={"source_id": str(source.source_id), "scheduled": True}, status="PENDING", created_by=self._worker_id))
+                await uow.assets.add(KmJobEntity(domain_id=source.domain_id, source_id=source.source_id, job_type="SOURCE_SYNC", idempotency_key=key, payload_json={"source_id": str(source.source_id), "trigger": "AUTO"}, status="PENDING", created_by=self._worker_id))
             await uow.commit()
 
     async def _dispatch(self, job: _JobSnapshot) -> None:
@@ -101,6 +102,12 @@ class KmAssetWorker:
 
     async def _source_sync(self, job: _JobSnapshot) -> None:
         source, metadb_values = await self._source_and_credentials(job, "METADB_BASIC")
+        if (
+            job.payload_json.get("trigger") == "AUTO"
+            or job.payload_json.get("scheduled") is True
+        ) and not source.auto_sync_enabled:
+            logger.info("KM 来源后台同步已关闭，跳过自动任务：source_id={}", source.source_id)
+            return
         client = AssetMetaDbClient(endpoint=source.metadb_endpoint, username=str(metadb_values["username"]), password=str(metadb_values["password"]))
         rows = await client.list_assets(offset=0, limit=source.batch_size, processed="N")
         for payload in rows:
@@ -302,6 +309,7 @@ class KmAssetWorker:
                 batch_size=int(source.batch_size),
                 sharepoint_site_path=str(source.sharepoint_site_path),
                 collection_id=source.collection_id,
+                auto_sync_enabled=bool(source.auto_sync_enabled),
             )
             return snapshot, dict(values)
 

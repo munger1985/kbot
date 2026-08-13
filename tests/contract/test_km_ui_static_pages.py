@@ -131,6 +131,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("km_asset:operations_manage", source)
         self.assertNotIn("@@", source)
 
+    def test_existing_schema_auto_sync_upgrade_defaults_to_off(self):
+        source = (
+            ROOT / "scripts" / "db" / "upgrade_km_source_auto_sync.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("AUTO_SYNC_ENABLED NUMBER(1) DEFAULT 0 NOT NULL", source)
+        self.assertIn("CK_KM_SOURCE_AUTO_SYNC", source)
+        self.assertNotIn("&&", source)
+        self.assertNotIn("@@", source)
+
     def test_initial_admin_script_bootstraps_full_km_access(self):
         source = (
             ROOT / "scripts" / "db" / "bootstrap_km_initial_admin.sql"
@@ -202,6 +211,9 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("const form = event.currentTarget", source_js)
         self.assertIn('KM_ASSET_COLLECTION_NAME = "assets"', api_source)
         self.assertIn("_fixed_collection_id", api_source)
+        self.assertIn("auto_sync_enabled", source_js)
+        self.assertIn("开启后台同步", source_js)
+        self.assertIn("关闭后台同步", source_js)
         openapi = json.loads(
             (ROOT / "docs" / "openapi" / "main_api_public_v1.json").read_text(
                 encoding="utf-8"
@@ -211,6 +223,9 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("domain_id", schemas["KmLoginPayload"]["properties"])
         self.assertNotIn(
             "collection_id", schemas["SourceCreatePayload"]["properties"]
+        )
+        self.assertIn(
+            "auto_sync_enabled", schemas["SourceUpdatePayload"]["properties"]
         )
 
     def test_every_km_page_loads_server_runtime_configuration_first(self):

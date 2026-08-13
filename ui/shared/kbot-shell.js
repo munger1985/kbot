@@ -33,7 +33,7 @@
 
   function badge(value) {
     const text = String(value || "UNKNOWN").toUpperCase();
-    const tone = ["ACTIVE", "READY", "SUCCEEDED", "Y", "COMPLETED"].includes(text)
+    const tone = ["ACTIVE", "READY", "SUCCEEDED", "Y", "COMPLETED", "AUTO_ON"].includes(text)
       ? "good" : ["FAILED", "ERROR", "F", "REJECTED"].includes(text)
         ? "bad" : ["RUNNING", "PROCESSING", "PENDING", "RETRY_WAIT", "N"].includes(text)
           ? "warn" : "neutral";

@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KM 数据来源</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./css/km.css"></head>
 <body data-page="sources"><main class="km-main">
   <header class="km-page-head"><div><h1>数据来源</h1><p>管理 MetaDB、SharePoint 与固定 assets Collection 的映射及专用问数模型。</p></div><div class="km-actions"><button id="refresh-sources">刷新</button><button id="new-source" class="primary">新建来源</button></div></header>
-  <section class="km-panel"><div class="km-table-wrap"><table class="km-table"><thead><tr><th>来源</th><th>MetaDB</th><th>Collection</th><th>状态</th><th>轮询</th><th>版本</th><th>操作</th></tr></thead><tbody id="source-rows"></tbody></table></div></section>
+  <section class="km-panel"><div class="km-table-wrap"><table class="km-table"><thead><tr><th>来源</th><th>MetaDB</th><th>Collection</th><th>状态</th><th>后台同步</th><th>版本</th><th>操作</th></tr></thead><tbody id="source-rows"></tbody></table></div></section>
 </main>
 <dialog id="source-dialog"><form id="source-form"><div class="km-dialog-head"><h2>新建数据来源</h2><button type="button" class="km-close" data-close aria-label="关闭">×</button></div><div class="km-dialog-body"><div class="km-form-grid">
   <div class="km-field span-12"><label>显示名称</label><input name="display_name" required maxlength="256"></div>
@@ -20,4 +20,4 @@
   <div class="km-field span-6"><label>新 MetaDB 用户名</label><input name="metadb_username" autocomplete="off"></div><div class="km-field span-6"><label>新 MetaDB 密码</label><input name="metadb_password" type="password" autocomplete="new-password"></div>
   <div class="km-field span-4"><label>新 Tenant ID</label><input name="tenant_id" autocomplete="off"></div><div class="km-field span-4"><label>新 Client ID</label><input name="client_id" autocomplete="off"></div><div class="km-field span-4"><label>新 Client Secret</label><input name="client_secret" type="password" autocomplete="new-password"></div>
 </div></div><div class="km-dialog-foot"><button type="button" data-close>取消</button><button id="update-source" class="primary" type="submit">保存修改</button></div></form></dialog>
-<script src="../runtime-config.js"></script><script src="../shared/kbot-api-client.js"></script><script src="../shared/kbot-dev-adapter.js"></script><script src="../shared/kbot-shell.js"></script><script src="./js/km-sources.js?v=20260813_2"></script></body></html>
+<script src="../runtime-config.js"></script><script src="../shared/kbot-api-client.js"></script><script src="../shared/kbot-dev-adapter.js"></script><script src="../shared/kbot-shell.js"></script><script src="./js/km-sources.js?v=20260813_3"></script></body></html>

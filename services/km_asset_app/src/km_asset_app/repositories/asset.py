@@ -27,8 +27,15 @@ class KmAssetRepository:
         rows = await self._session.scalars(select(KmSourceEntity).where(KmSourceEntity.domain_id == domain_id).order_by(KmSourceEntity.updated_at.desc()))
         return list(rows)
 
-    async def list_active_sources(self):
-        rows = await self._session.scalars(select(KmSourceEntity).where(KmSourceEntity.status == "ACTIVE").order_by(KmSourceEntity.source_id))
+    async def list_auto_sync_sources(self):
+        rows = await self._session.scalars(
+            select(KmSourceEntity)
+            .where(
+                KmSourceEntity.status == "ACTIVE",
+                KmSourceEntity.auto_sync_enabled == 1,
+            )
+            .order_by(KmSourceEntity.source_id)
+        )
         return list(rows)
 
     async def get_asset(self, *, domain_id: int, km_asset_id: UUID, lock: bool = False):

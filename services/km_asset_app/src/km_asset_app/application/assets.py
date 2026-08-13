@@ -68,6 +68,7 @@ class KmAssetService:
                 model_catalog_hash=str(managed["catalog_hash"]),
                 model_status="READY",
                 status="DRAFT",
+                auto_sync_enabled=0,
                 poll_interval_seconds=command.poll_interval_seconds,
                 batch_size=command.batch_size,
                 created_by=command.actor_id,
@@ -130,6 +131,8 @@ class KmAssetService:
                     value = str(value).strip()
                 elif field == "metadb_endpoint":
                     value = str(value).strip()
+                elif field == "auto_sync_enabled":
+                    value = 1 if value else 0
                 setattr(row, field, value)
             row.row_version += 1
             row.updated_by = actor_id
@@ -244,7 +247,7 @@ class KmAssetService:
             if source.status != "ACTIVE":
                 raise KmAssetApplicationError(status_code=409, code="KM_SOURCE_NOT_ACTIVE", message="KM Asset 来源未激活")
             bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
-            job = KmJobEntity(domain_id=domain_id, source_id=source_id, job_type="SOURCE_SYNC", idempotency_key=f"source-sync:{source_id}:{bucket}", payload_json={"source_id": str(source_id)}, status="PENDING", created_by=actor_id)
+            job = KmJobEntity(domain_id=domain_id, source_id=source_id, job_type="SOURCE_SYNC", idempotency_key=f"source-sync:{source_id}:{bucket}", payload_json={"source_id": str(source_id), "trigger": "MANUAL"}, status="PENDING", created_by=actor_id)
             await uow.assets.add(job)
             await uow.commit()
             return self._job(job)
@@ -349,7 +352,7 @@ class KmAssetService:
 
     @staticmethod
     def _source(row):
-        return {"source_id": row.source_id, "domain_id": int(row.domain_id), "display_name": row.display_name, "metadb_endpoint": row.metadb_endpoint, "sharepoint_site_path": row.sharepoint_site_path, "collection_id": row.collection_id, "semantic_model_id": row.semantic_model_id, "policy_binding_id": row.policy_binding_id, "model_status": row.model_status, "catalog_hash": row.model_catalog_hash, "status": row.status, "poll_interval_seconds": row.poll_interval_seconds, "batch_size": row.batch_size, "last_sync_at": row.last_sync_at, "error_code": row.error_code, "error_message": row.error_message, "row_version": row.row_version}
+        return {"source_id": row.source_id, "domain_id": int(row.domain_id), "display_name": row.display_name, "metadb_endpoint": row.metadb_endpoint, "sharepoint_site_path": row.sharepoint_site_path, "collection_id": row.collection_id, "semantic_model_id": row.semantic_model_id, "policy_binding_id": row.policy_binding_id, "model_status": row.model_status, "catalog_hash": row.model_catalog_hash, "status": row.status, "auto_sync_enabled": bool(row.auto_sync_enabled), "poll_interval_seconds": row.poll_interval_seconds, "batch_size": row.batch_size, "last_sync_at": row.last_sync_at, "error_code": row.error_code, "error_message": row.error_message, "row_version": row.row_version}
 
     @staticmethod
     def _asset(row):
