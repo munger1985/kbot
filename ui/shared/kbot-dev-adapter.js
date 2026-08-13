@@ -3,6 +3,7 @@
   "use strict";
 
   const sessionKey = "kbot.km.session.v1";
+  const authFailureKey = "kbot.km.last-auth-failure.v1";
 
   function mainApiBaseUrl() {
     const value = String(globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "")
@@ -24,17 +25,36 @@
     sessionStorage.removeItem(sessionKey);
   }
 
-  function tokenExpired(session) {
-    return !session?.access_token || !session?.expires_at
-      || new Date(session.expires_at).getTime() <= Date.now();
+  function recordAuthFailure(value) {
+    try {
+      localStorage.setItem(authFailureKey, JSON.stringify({
+        occurred_at: new Date().toISOString(),
+        ...value,
+      }));
+    } catch (_) { /* 浏览器禁用持久化时不影响主流程。 */ }
+  }
+
+  function loadAuthFailure() {
+    try { return JSON.parse(localStorage.getItem(authFailureKey) || "null"); }
+    catch (_) { return null; }
+  }
+
+  function clearAuthFailure() {
+    try { localStorage.removeItem(authFailureKey); } catch (_) { /* 无需处理。 */ }
   }
 
   function requireSession() {
     const session = loadSession();
-    if (tokenExpired(session)) {
-      clearSession();
+    // Token 是否过期由 Main API 的签名与 exp 校验决定，避免浏览器时钟偏差
+    // 或序列化差异在页面切换时提前销毁仍有效的登录态。
+    if (!session?.access_token) {
+      recordAuthFailure({
+        path: location.pathname,
+        code: "KM_SESSION_MISSING",
+        message: "浏览器中没有 KM 登录 Session",
+      });
       if (!location.pathname.endsWith("/login.html")) location.replace("./login.html");
-      throw new Error("KM 登录已过期，请重新登录");
+      throw new Error("请先登录 KM Asset");
     }
     return session;
   }
@@ -45,7 +65,7 @@
     try { return JSON.parse(text); } catch (_) { return text; }
   }
 
-  function failure(response, payload) {
+  function failure(response, payload, path = "") {
     const detail = payload?.detail;
     const message = typeof detail === "string"
       ? detail : detail?.message || payload?.message || payload?.title
@@ -55,6 +75,7 @@
     error.code = payload?.code || payload?.detail?.code || "KM_REQUEST_FAILED";
     error.requestId = payload?.request_id || response.headers.get("X-Request-ID") || "";
     error.payload = payload;
+    error.path = path;
     return error;
   }
 
@@ -77,7 +98,7 @@
     }
     const response = await fetch(`${mainApiBaseUrl()}${path}`, { ...options, headers });
     const payload = await decode(response);
-    if (!response.ok) throw failure(response, payload);
+    if (!response.ok) throw failure(response, payload, path);
     return payload;
   }
 
@@ -103,11 +124,17 @@
     try {
       return await raw(path, options, session.access_token);
     } catch (error) {
-      // 只有 Main API 明确判定 KM Token 无效或过期时才退出。
-      // 其他接口的 401 可能是路由或下游认证问题，不能破坏当前登录态。
-      if (sessionIsInvalid(error)) {
-        clearSession();
-        if (!location.pathname.endsWith("/login.html")) location.replace("./login.html");
+      // 网络认证错误必须留在当前页面展示，不能自动清除 Session 或跳转，
+      // 否则会把 Main API 路由、内部凭据和 Token 错误混成“回到登录页”。
+      if (error?.status === 401) {
+        recordAuthFailure({
+          path,
+          status: error.status,
+          code: error.code,
+          message: error.message,
+          request_id: error.requestId,
+          session_invalid: sessionIsInvalid(error),
+        });
       }
       throw error;
     }
@@ -121,7 +148,7 @@
       ...(options.headers || {}),
     };
     const response = await fetch(`${mainApiBaseUrl()}${path}`, { ...options, headers });
-    if (!response.ok) throw failure(response, await decode(response));
+    if (!response.ok) throw failure(response, await decode(response), path);
     return { data: await response.blob(), contentType: response.headers.get("Content-Type") || "application/octet-stream" };
   }
 
@@ -136,7 +163,7 @@
       },
       signal,
     });
-    if (!response.ok || !response.body) throw failure(response, await decode(response));
+    if (!response.ok || !response.body) throw failure(response, await decode(response), path);
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
     while (true) {
       const result = await reader.read(); buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
@@ -154,7 +181,7 @@
 
   KBotKmApi.configure({ request, blob, stream });
   window.KBotKmAuth = {
-    changePassword, clearSession, loadSession, login, requireSession,
-    sessionIsInvalid,
+    changePassword, clearAuthFailure, clearSession, loadAuthFailure,
+    loadSession, login, recordAuthFailure, requireSession, sessionIsInvalid,
   };
 })();

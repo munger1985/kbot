@@ -4,7 +4,23 @@
   const $ = (id) => document.getElementById(id);
   let agents = [], sources = [], models = [];
 
+  function showPageError(error, fallback) {
+    const element = $("agent-page-error");
+    const path = error?.path ? `；接口: ${error.path}` : "";
+    const code = error?.code ? `；错误码: ${error.code}` : "";
+    const request = error?.requestId ? `；request_id: ${error.requestId}` : "";
+    element.textContent = `${error?.message || fallback}${path}${code}${request}`;
+    element.hidden = false;
+    KBotKmShell.showError(error, fallback);
+  }
+
+  function clearPageError() {
+    $("agent-page-error").hidden = true;
+    $("agent-page-error").textContent = "";
+  }
+
   async function initialize() {
+    clearPageError();
     try {
       const [sourcePayload, modelPayload] = await Promise.all([
         KBotKmApi.request(`${base}/sources`),
@@ -13,7 +29,7 @@
       sources = KBotKmApi.items(sourcePayload); models = KBotKmApi.items(modelPayload);
       $("agent-source").innerHTML = sources.map((row) => `<option value="${KBotKmShell.escapeHtml(row.source_id)}">${KBotKmShell.escapeHtml(row.display_name)}</option>`).join("");
       populateModels(); await load();
-    } catch (error) { KBotKmShell.showError(error, "Agent 配置依赖加载失败"); }
+    } catch (error) { showPageError(error, "Agent 配置依赖加载失败"); }
   }
   function modelCategory(row) { return String(row.category ?? row.model_type ?? row.model_category ?? "").toUpperCase(); }
   function isEmbedding(row) { return ["2", "TXT_EMBEDDING", "EMBEDDING"].includes(modelCategory(row)); }
@@ -30,7 +46,7 @@
   function sourceName(id) { return sources.find((row) => String(row.source_id) === String(id))?.display_name || KBotKmShell.shortId(id); }
   async function load() {
     try { agents = KBotKmApi.items(await KBotKmApi.request(`${base}/agents`)); render(); }
-    catch (error) { KBotKmShell.showError(error, "KM Agent 加载失败"); }
+    catch (error) { showPageError(error, "KM Agent 加载失败"); }
   }
   function render() {
     const body = $("agent-rows");
