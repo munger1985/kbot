@@ -338,7 +338,7 @@ class KmAssetService:
         expected_row_version: int,
         actor_id: str,
     ):
-        """重新处理 KC Revision，以重建全文与向量 Discovery Profile。"""
+        """重建 KC Revision 的全文与向量 Discovery Profile。"""
         if self._knowledge_core is None:
             raise KmAssetApplicationError(
                 status_code=503,
@@ -374,12 +374,11 @@ class KmAssetService:
             collection_id = source.collection_id
             bundle_id = row.kc_bundle_id
             bundle_revision_id = row.kc_bundle_revision_id
-        receipt = await self._knowledge_core.reprocess_revision(
+        receipt = await self._knowledge_core.reindex_discovery(
             domain_id=domain_id,
             collection_id=collection_id,
             bundle_id=bundle_id,
             bundle_revision_id=bundle_revision_id,
-            document_version_id=None,
             auth_context=self._auth_context(
                 domain_id=domain_id,
                 actor_id=actor_id,
@@ -416,6 +415,9 @@ class KmAssetService:
                 payload_json={
                     "bundle_id": str(bundle_id),
                     "bundle_revision_id": str(bundle_revision_id),
+                    "expected_bundle_row_version": int(
+                        receipt["expected_bundle_row_version"]
+                    ),
                 },
                 status="PENDING",
                 max_attempts=120,
@@ -427,7 +429,7 @@ class KmAssetService:
             return {
                 "asset": self._asset(row),
                 "job": self._job(job),
-                "kc_reprocess": receipt,
+                "kc_reindex": receipt,
             }
 
     async def list_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int):

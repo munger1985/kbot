@@ -294,9 +294,17 @@ class KmAssetWorker:
             availability = str(
                 bundle.get("availability_status") or ""
             ).upper()
+            expected_bundle_row_version = job.payload_json.get(
+                "expected_bundle_row_version"
+            )
             if (
                 str(published_revision_id or "") != str(bundle_revision_id)
                 or availability not in {"READY", "PARTIAL"}
+                or (
+                    expected_bundle_row_version is not None
+                    and int(bundle.get("row_version") or 0)
+                    < int(expected_bundle_row_version)
+                )
             ):
                 raise _KcRevisionPending("DISCOVERY_PUBLISHING")
         async with self._uow_factory() as uow:

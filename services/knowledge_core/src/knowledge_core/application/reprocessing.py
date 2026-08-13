@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
@@ -32,6 +33,16 @@ class ReprocessingResult:
     scheduled_file_count: int
 
 
+@dataclass(frozen=True)
+class DiscoveryReindexResult:
+    """Discovery 检索画像重建的调度回执。"""
+
+    bundle_revision_id: UUID
+    generation: UUID
+    profile_job_id: UUID
+    expected_bundle_row_version: int
+
+
 class KnowledgeCoreReprocessingService:
     def __init__(
         self,
@@ -44,6 +55,103 @@ class KnowledgeCoreReprocessingService:
         self._artifact_store = artifact_store
         self._parse_policy_overrides = parse_policy_overrides or {}
         validate_parse_policy_overrides(self._parse_policy_overrides)
+
+    async def reindex_discovery(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        actor_id: str,
+    ) -> DiscoveryReindexResult:
+        """只重建全文与向量检索画像，不删除解析结果和 Evidence。"""
+        generation = uuid7()
+        async with self._uow_factory() as uow:
+            if not all(
+                (
+                    uow.collections,
+                    uow.bundles,
+                    uow.revisions,
+                    uow.members,
+                    uow.jobs,
+                )
+            ):
+                raise RuntimeError("Knowledge Core UoW 未初始化")
+            collection = await uow.collections.get_by_id_scope(
+                domain_id=domain_id,
+                collection_id=collection_id,
+            )
+            bundle = await uow.bundles.get_by_id(bundle_id=bundle_id, lock=True)
+            revision = await uow.revisions.get_by_id(
+                bundle_revision_id=bundle_revision_id,
+                lock=True,
+            )
+            if (
+                collection is None
+                or collection.status != "ACTIVE"
+                or bundle is None
+                or bundle.collection_id != collection_id
+                or revision is None
+                or revision.bundle_id != bundle_id
+                or revision.collection_id != collection_id
+            ):
+                raise ReprocessingNotFoundError("检索画像对象不存在")
+            if revision.status not in {"READY", "PARTIAL"}:
+                raise ReprocessingConflictError(
+                    "Revision 尚未完成解析，不能重新索引"
+                )
+            members = await uow.members.list_by_revision(
+                bundle_revision_id=bundle_revision_id
+            )
+            manifest = next(
+                (item for item in members if item.document_role == "MANIFEST"),
+                None,
+            )
+            if manifest is not None and manifest.member_status != "READY":
+                raise ReprocessingConflictError(
+                    "Revision 的 Manifest 尚未就绪，不能重新索引"
+                )
+            fingerprint = sha256(
+                f"discovery-reindex:{bundle_revision_id}:{generation}".encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            profile_job = await uow.jobs.add(
+                KcIngestionJobEntity(
+                    collection_id=collection_id,
+                    bundle_revision_id=bundle_revision_id,
+                    job_type="PROFILE",
+                    idempotency_key=(
+                        f"PROFILE:REINDEX:{bundle_revision_id}:{generation}"
+                    ),
+                    input_fingerprint=fingerprint,
+                    payload_json={
+                        "profile_schema_version": "profile/v1",
+                        "reindex_generation": str(generation),
+                        "notification_operation_id": str(generation),
+                        "notification_actor_id": actor_id,
+                    },
+                    job_status="PENDING",
+                    priority=100,
+                    max_attempts=5,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+            )
+            profile_job_id = profile_job.ingestion_job_id
+            # 发布 Discovery INDEX 时还会再递增一次。KM Worker 使用该版本
+            # 判断本次异步重建是否真正完成，避免把旧的 ACTIVE 画像误判为成功。
+            bundle.row_version = int(bundle.row_version) + 1
+            expected_bundle_row_version = int(bundle.row_version) + 1
+            await uow.flush()
+            await uow.commit()
+        return DiscoveryReindexResult(
+            bundle_revision_id=bundle_revision_id,
+            generation=generation,
+            profile_job_id=profile_job_id,
+            expected_bundle_row_version=expected_bundle_row_version,
+        )
 
     async def reprocess(
         self,
@@ -228,7 +336,9 @@ class KnowledgeCoreReprocessingService:
             revision.failure_message = None
             revision.updated_by = actor_id
             if bundle.current_revision_id == bundle_revision_id:
-                bundle.availability_status = "PROCESSING"
+                # Oracle 约束不允许 PROCESSING；重新解析期间当前 Revision
+                # 已无可发布的 Discovery，因此回到合法的 EMPTY 状态。
+                bundle.availability_status = "EMPTY"
                 bundle.updated_by = actor_id
                 bundle.row_version = int(bundle.row_version) + 1
             await KnowledgeOutboxPublisher().publish(

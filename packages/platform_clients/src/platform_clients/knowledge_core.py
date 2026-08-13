@@ -368,6 +368,27 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def reindex_discovery(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """调度 KC Discovery 全文与向量索引重建。"""
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/bundles/{bundle_id}/revisions/{bundle_revision_id}"
+                "/reindex-discovery"
+            ),
+            payload={"collection_id": collection_id},
+            auth_context=auth_context,
+        )
+
     async def list_pending_approvals(
         self,
         *,

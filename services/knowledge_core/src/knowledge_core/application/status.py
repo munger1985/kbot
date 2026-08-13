@@ -47,6 +47,7 @@ class BundleStatus:
     source_id: str
     availability_status: str
     current_revision_id: UUID | None
+    row_version: int
     revisions: list[RevisionStatus]
 
 
@@ -144,6 +145,7 @@ class KnowledgeCoreStatusService:
                 source_id=bundle.source_id,
                 availability_status=bundle.availability_status,
                 current_revision_id=bundle.current_revision_id,
+                row_version=int(bundle.row_version),
                 revisions=[self._revision(item) for item in revisions],
             )
 

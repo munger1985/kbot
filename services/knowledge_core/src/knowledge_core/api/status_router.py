@@ -66,6 +66,37 @@ async def reprocess_revision(
     }
 
 
+@router.post("/{bundle_id}/revisions/{bundle_revision_id}/reindex-discovery")
+async def reindex_discovery(
+    domain_id: int,
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
+    payload: ReprocessRequest,
+    request: Request,
+):
+    """强制重建 Revision 的全文与向量 Discovery 索引。"""
+    require_domain_match(request, domain_id)
+    try:
+        result = await request.app.state.kc_reprocessing_service.reindex_discovery(
+            domain_id=domain_id,
+            collection_id=payload.collection_id,
+            bundle_id=bundle_id,
+            bundle_revision_id=bundle_revision_id,
+            actor_id=get_actor_id(request),
+        )
+    except ReprocessingNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "REINDEX_TARGET_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except ReprocessingConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "REINDEX_CONFLICT", "message": str(exc)},
+        ) from exc
+    return asdict(result)
+
+
 @router.get("/{bundle_id}")
 async def get_bundle_status(domain_id: int, bundle_id: UUID, request: Request):
     require_domain_match(request, domain_id)

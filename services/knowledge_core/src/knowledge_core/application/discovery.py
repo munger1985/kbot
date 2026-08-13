@@ -208,8 +208,15 @@ class KnowledgeCoreProfileService:
             job.job_status, job.completed_at = "SUCCEEDED", datetime.now(timezone.utc)
             job.result_json = {"profile_count": 1 + len(profile_members), "status": "STAGED"}
             job.lease_owner = job.lease_until = None
+            source_payload = dict(job.payload_json or {})
+            reindex_generation = str(
+                source_payload.get("reindex_generation") or ""
+            )
             profile_fingerprint = sha256(
-                f"{revision.bundle_revision_id}:{profile.profile_hash}".encode("utf-8")
+                (
+                    f"{revision.bundle_revision_id}:{profile.profile_hash}:"
+                    f"{reindex_generation}"
+                ).encode("utf-8")
             ).hexdigest()
             profile_index_key = f"INDEX:DISCOVERY:{revision.bundle_revision_id}:{profile_fingerprint}"
             existing_index = await uow.jobs.get_by_idempotency_key(
@@ -218,7 +225,6 @@ class KnowledgeCoreProfileService:
                 input_fingerprint=profile_fingerprint,
             )
             if existing_index is None:
-                source_payload = dict(job.payload_json or {})
                 await uow.jobs.add(KcIngestionJobEntity(
                     collection_id=revision.collection_id,
                     bundle_revision_id=revision.bundle_revision_id,
@@ -227,6 +233,7 @@ class KnowledgeCoreProfileService:
                     payload_json={
                         "target": "DISCOVERY",
                         "profile_schema_version": PROFILE_SCHEMA_VERSION,
+                        "reindex_generation": reindex_generation or None,
                         "notification_operation_id": source_payload.get(
                             "notification_operation_id"
                         ),
