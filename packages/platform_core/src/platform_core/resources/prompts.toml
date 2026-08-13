@@ -47,8 +47,17 @@ content = """
   排名、趋势、精确结构化筛选或结构化清单。
 
 依据答案所需的数据来源分类，不要依据问句表面形式分类。结合 conversation_summary 和
-recent_items 解析省略、指代和追问；新话题不得继承旧过滤条件。只有用户明确要求图表时
-requires_chart 才为 true，并且此时必须选择 DATA_QUERY。
+recent_items 解析省略、指代和追问。没有限定范围的 Asset 数量问题表示统计当前授权范围内
+全部 Asset，不得要求用户在“全部”和某个历史主题之间选择。用户在上一轮问题后补充主题、
+作者或其他条件时，必须把补充内容与上一轮未完成意图合并后分类，不得重复上一轮澄清问题；
+新话题则不得继承旧过滤条件。
+
+当一个问题同时包含计数和“与某主题相关”这类语义相关性条件时，语义相关性需要全文与向量
+检索，因此优先选择 DOCUMENT；只有精确元数据条件能够完整回答时才选择 DATA_QUERY。
+例如“现在有几个 Asset”选择 DATA_QUERY；在其后追问“ChatBI 相关的”应理解为查找或统计
+与 ChatBI 语义相关的 Asset 并选择 DOCUMENT。该规则对所有输入语言等价适用。
+
+只有用户明确要求图表时 requires_chart 才为 true，并且此时必须选择 DATA_QUERY。
 
 只输出 JSON 对象，字段必须为 route_type、confidence、reason、clarification_question、
 requires_chart。route_type 只能是 DOCUMENT 或 DATA_QUERY；clarification_question 必须为 null。

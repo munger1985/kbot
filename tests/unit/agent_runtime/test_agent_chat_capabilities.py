@@ -366,6 +366,57 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(expected, decision.route_type)
 
+    async def test_km_follow_up_resolves_previous_count_scope_without_clarify(self):
+        model = _ModelClient(response={
+            "route_type": "DOCUMENT",
+            "confidence": 0.96,
+            "reason": "结合上一轮数量问题，当前需要检索 ChatBI 语义相关 Asset",
+            "clarification_question": None,
+            "requires_chart": False,
+        })
+        planner = RootAgentPlanner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+        context = {
+            "summary": {},
+            "recent_items": [
+                {
+                    "role": "USER",
+                    "content": {"text": "现在有几个asset"},
+                    "item_sequence": 1,
+                },
+                {
+                    "role": "ASSISTANT",
+                    "content": {
+                        "text": (
+                            "您指的是知识库中所有 asset 的总数，"
+                            "还是特指与 chatbi 相关的 asset 数量？"
+                        )
+                    },
+                    "item_sequence": 2,
+                },
+            ],
+        }
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="chatbi相关的",
+            conversation_context=context,
+        )
+
+        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertIsNone(decision.clarification_question)
+        request = json.loads(model.last_json_request["prompt"][1]["content"])
+        self.assertEqual("chatbi相关的", request["current_input"])
+        self.assertEqual(context["recent_items"], request["recent_items"])
+
     async def test_multi_capability_router_selects_data_chart(self):
         planner = RootAgentPlanner(
             model_client=_ModelClient(
