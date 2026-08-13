@@ -1,5 +1,6 @@
 """KM Asset 固定问数模型与执行边界测试。"""
 
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -15,7 +16,11 @@ from km_asset_app.application.worker import (
     _KcRevisionPending,
     _SourceSnapshot,
 )
-from km_asset_app.integrations import SharePointClient
+from km_asset_app.integrations import (
+    SharePointClient,
+    SharePointDownloadError,
+    SharePointFile,
+)
 from km_asset_app.api.agents import AgentCreateRequest
 from km_asset_app.api.assets import SourceUpdateRequest
 from data_query.application.managed_datasets import km_asset_definition
@@ -406,6 +411,181 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
                 "bundle_id": "01900000-0000-7000-8000-000000000045",
                 "bundle_revision_id": "01900000-0000-7000-8000-000000000046",
             },
+        )
+
+    async def test_failed_attachment_keeps_metadata_bundle_ingestable(self):
+        source_id = UUID("01900000-0000-7000-8000-000000000051")
+        asset_id = UUID("01900000-0000-7000-8000-000000000052")
+        revision_id = UUID("01900000-0000-7000-8000-000000000053")
+        collection_id = UUID("01900000-0000-7000-8000-000000000054")
+        bundle_id = UUID("01900000-0000-7000-8000-000000000055")
+        kc_revision_id = UUID("01900000-0000-7000-8000-000000000056")
+        bad_url = "https://example.sharepoint.com/broken/ChatBI.pdf"
+        good_url = "https://example.sharepoint.com/files/Overview.pdf"
+        asset = SimpleNamespace(
+            km_asset_id=asset_id,
+            external_asset_id="ASSET-1",
+            asset_title="ChatBI Asset",
+            raw_metadata_json={
+                "first_sp_url": f"{bad_url}^^^{good_url}"
+            },
+            normalized_metadata_json={"asset_title": "ChatBI Asset"},
+            ingestion_status="SYNC_PENDING",
+            kc_bundle_id=None,
+            kc_bundle_revision_id=None,
+            failure_stage="ATTACHMENT_DOWNLOAD",
+            error_code="OLD_ERROR",
+            error_message="旧错误",
+        )
+        source = SimpleNamespace(
+            source_id=source_id,
+            sharepoint_credential_id=UUID(
+                "01900000-0000-7000-8000-000000000057"
+            ),
+            sharepoint_site_path="/sites/km",
+            collection_id=collection_id,
+        )
+        revision = SimpleNamespace(
+            source_revision="1",
+            snapshot_hash="a" * 64,
+            status="DISCOVERED",
+            kc_bundle_revision_id=None,
+        )
+        added = []
+        attachments = {}
+
+        class Assets:
+            async def get_asset(self, **_):
+                return asset
+
+            async def get_source(self, **_):
+                return source
+
+            async def get_revision(self, **_):
+                return revision
+
+            async def find_attachment(
+                self, *, asset_revision_id, external_document_id
+            ):
+                return attachments.get(external_document_id)
+
+            async def add(self, value):
+                added.append(value)
+                if hasattr(value, "external_document_id"):
+                    attachments[value.external_document_id] = value
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        class Credentials:
+            async def read(self, **_):
+                return {
+                    "tenant_id": "tenant",
+                    "client_id": "client",
+                    "client_secret": "secret",
+                }
+
+        class SharePoint:
+            def __init__(self, **_):
+                pass
+
+            async def download(self, source_url):
+                if source_url == bad_url:
+                    raise SharePointDownloadError("附件地址不存在")
+                return SharePointFile(
+                    external_document_id="drive-item-good",
+                    name="Overview.pdf",
+                    mime_type="application/pdf",
+                    content=b"valid attachment",
+                )
+
+        class MultipartPart:
+            def __init__(self, owner, value):
+                self._owner = owner
+                self._value = value
+
+            def set_content_disposition(self, _, *, name, **__):
+                self._owner.values[name] = self._value
+
+        class Multipart:
+            def __init__(self, _):
+                self.content_type = "multipart/form-data; boundary=test"
+                self.values = {}
+
+            def append(self, value, _headers=None):
+                return MultipartPart(self, value)
+
+        class KnowledgeCore:
+            request = None
+
+            async def ingest_multipart(self, **values):
+                self.request = values
+                return SimpleNamespace(payload={
+                    "bundle_id": str(bundle_id),
+                    "bundle_revision_id": str(kc_revision_id),
+                })
+
+        knowledge_core = KnowledgeCore()
+        worker = KmAssetWorker(
+            uow_factory=Uow,
+            credential_service=Credentials(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=knowledge_core,
+        )
+        job = _JobSnapshot(
+            job_id=UUID("01900000-0000-7000-8000-000000000058"),
+            job_type="ATTACHMENT_DOWNLOAD",
+            domain_id=41,
+            source_id=source_id,
+            km_asset_id=asset_id,
+            asset_revision_id=revision_id,
+            payload_json={},
+        )
+
+        with (
+            patch(
+                "km_asset_app.application.worker.SharePointClient",
+                SharePoint,
+            ),
+            patch(
+                "km_asset_app.application.worker.aiohttp.MultipartWriter",
+                Multipart,
+            ),
+        ):
+            await worker._download_and_ingest(job)
+
+        parts = knowledge_core.request["body"].values
+        documents = json.loads(parts["documents"])
+        self.assertEqual(1, len(documents))
+        self.assertEqual("drive-item-good", documents[0]["external_document_id"])
+        failures = json.loads(parts["document_failures"])
+        self.assertEqual(1, len(failures))
+        self.assertEqual("SOURCE_DOWNLOAD_FAILED", failures[0]["failure_code"])
+        self.assertEqual(bad_url, failures[0]["source_url"])
+        failed_attachment = next(
+            item
+            for item in added
+            if getattr(item, "status", None) == "FAILED"
+        )
+        self.assertEqual("FAILED", failed_attachment.status)
+        self.assertTrue(
+            any(getattr(item, "status", None) == "AVAILABLE" for item in added)
+        )
+        self.assertEqual("KC_ACCEPTED", asset.ingestion_status)
+        self.assertIsNone(asset.failure_stage)
+        self.assertIsNone(asset.error_code)
+        self.assertEqual("PROCESSING", revision.status)
+        self.assertTrue(
+            any(getattr(item, "job_type", None) == "KC_STATUS_SYNC" for item in added)
         )
 
     async def test_kc_status_sync_tracks_exact_revision(self):

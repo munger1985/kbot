@@ -7,6 +7,7 @@ import socket
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import unquote, urlparse
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -15,7 +16,11 @@ from loguru import logger
 from km_asset_app.application.assets import KmAssetService
 from km_asset_app.application.credentials import KmCredentialService
 from km_asset_app.entities import KmAttachmentEntity, KmJobEntity
-from km_asset_app.integrations import AssetMetaDbClient, SharePointClient
+from km_asset_app.integrations import (
+    AssetMetaDbClient,
+    SharePointClient,
+    SharePointDownloadError,
+)
 from platform_clients import KnowledgeCoreClient
 from platform_core.contracts import AuthContext, PrincipalKind
 
@@ -135,11 +140,22 @@ class KmAssetWorker:
             revision = await uow.assets.get_revision(asset_revision_id=job.asset_revision_id)
             if asset is None or source is None or revision is None:
                 raise RuntimeError("附件任务引用的资源不存在")
-            values = await self._credentials.read(uow=uow, domain_id=int(job.domain_id), credential_id=source.sharepoint_credential_id, credential_kind="SHAREPOINT_GRAPH", source_id=source.source_id)
             asset.ingestion_status = "DOWNLOADING"
             source_site_path = str(source.sharepoint_site_path)
             source_collection_id = source.collection_id
             raw_metadata = dict(asset.raw_metadata_json)
+            urls = [item.strip() for field in ("first_sp_url", "second_sp_url") for item in str(raw_metadata.get(field) or "").split("^^^") if item.strip()]
+            values = (
+                await self._credentials.read(
+                    uow=uow,
+                    domain_id=int(job.domain_id),
+                    credential_id=source.sharepoint_credential_id,
+                    credential_kind="SHAREPOINT_GRAPH",
+                    source_id=source.source_id,
+                )
+                if urls
+                else None
+            )
             external_asset_id = str(asset.external_asset_id)
             asset_title = asset.asset_title
             normalized_metadata = dict(asset.normalized_metadata_json)
@@ -147,19 +163,38 @@ class KmAssetWorker:
             source_revision = str(revision.source_revision)
             revision_snapshot_hash = str(revision.snapshot_hash)
             await uow.commit()
-        urls = [item.strip() for field in ("first_sp_url", "second_sp_url") for item in str(raw_metadata.get(field) or "").split("^^^") if item.strip()]
-        if not urls:
-            raise RuntimeError("Asset 没有可下载的 SharePoint 附件")
-        sp = SharePointClient(
-            tenant_id=str(values["tenant_id"]),
-            client_id=str(values["client_id"]),
-            client_secret=str(values["client_secret"]),
-            site_path=source_site_path,
+        sp = (
+            SharePointClient(
+                tenant_id=str(values["tenant_id"]),
+                client_id=str(values["client_id"]),
+                client_secret=str(values["client_secret"]),
+                site_path=source_site_path,
+            )
+            if values is not None
+            else None
         )
         downloaded = []
+        download_failures = []
         for ordinal, url in enumerate(urls):
-            item = await sp.download(url)
-            downloaded.append((ordinal, url, item, hashlib.sha256(item.content).hexdigest()))
+            try:
+                item = await sp.download(url)
+                downloaded.append((ordinal, url, item, hashlib.sha256(item.content).hexdigest()))
+            except SharePointDownloadError as exc:
+                failure = {
+                    "external_document_id": self._unavailable_document_id(url),
+                    "source_url": url,
+                    "declared_name": self._attachment_name(url, ordinal),
+                    "ordinal": ordinal,
+                    "failure_code": "SOURCE_DOWNLOAD_FAILED",
+                    "failure_message": str(exc)[:1000] or "SharePoint 附件下载失败",
+                }
+                download_failures.append(failure)
+                logger.warning(
+                    "KM Asset 附件下载失败，继续提交元数据：asset_id={} ordinal={} error={}",
+                    external_asset_id,
+                    ordinal,
+                    failure["failure_message"],
+                )
         form = aiohttp.MultipartWriter("form-data")
         bundle = {
             "source_id": external_asset_id,
@@ -192,7 +227,7 @@ class KmAssetWorker:
         for ordinal, source_url, item, digest in downloaded:
             part_name = f"attachment_{ordinal}"
             declarations.append({"part_name": part_name, "external_document_id": item.external_document_id, "role": "ATTACHMENT", "source_url": source_url, "declared_name": item.name, "declared_mime_type": item.mime_type, "ordinal": ordinal, "required_flag": False, "byte_size": len(item.content), "content_sha256": digest})
-        for name, value in (("bundle", bundle), ("documents", declarations), ("document_failures", [])):
+        for name, value in (("bundle", bundle), ("documents", declarations), ("document_failures", download_failures)):
             part = form.append(json.dumps(value, ensure_ascii=False))
             part.set_content_disposition("form-data", name=name)
         for declaration, (_, _, item, _) in zip(declarations, downloaded):
@@ -206,6 +241,9 @@ class KmAssetWorker:
             locked.ingestion_status = "KC_ACCEPTED"
             locked.kc_bundle_id = UUID(str(accepted["bundle_id"]))
             locked.kc_bundle_revision_id = UUID(str(accepted["bundle_revision_id"]))
+            locked.failure_stage = None
+            locked.error_code = None
+            locked.error_message = None
             revision_row = await uow.assets.get_revision(asset_revision_id=job.asset_revision_id)
             revision_row.status = "PROCESSING"
             revision_row.kc_bundle_revision_id = locked.kc_bundle_revision_id
@@ -237,8 +275,45 @@ class KmAssetWorker:
                     attachment.status = "AVAILABLE"
                     attachment.error_code = None
                     attachment.error_message = None
+            for failure in download_failures:
+                attachment = await uow.assets.find_attachment(
+                    asset_revision_id=job.asset_revision_id,
+                    external_document_id=failure["external_document_id"],
+                )
+                if attachment is None:
+                    attachment = KmAttachmentEntity(
+                        asset_revision_id=job.asset_revision_id,
+                        external_document_id=failure["external_document_id"],
+                        source_url=failure["source_url"],
+                        file_name=failure["declared_name"],
+                        ordinal_no=failure["ordinal"],
+                        status="FAILED",
+                        error_code=failure["failure_code"],
+                        error_message=failure["failure_message"],
+                    )
+                    await uow.assets.add(attachment)
+                else:
+                    attachment.source_url = failure["source_url"]
+                    attachment.file_name = failure["declared_name"]
+                    attachment.ordinal_no = failure["ordinal"]
+                    attachment.status = "FAILED"
+                    attachment.error_code = failure["failure_code"]
+                    attachment.error_message = failure["failure_message"]
             await uow.assets.add(KmJobEntity(domain_id=job.domain_id, source_id=job.source_id, km_asset_id=job.km_asset_id, asset_revision_id=job.asset_revision_id, job_type="KC_STATUS_SYNC", idempotency_key=f"kc-status:{accepted['bundle_revision_id']}", payload_json={"bundle_id": accepted["bundle_id"], "bundle_revision_id": accepted["bundle_revision_id"]}, status="PENDING", max_attempts=120, available_at=datetime.now(timezone.utc) + timedelta(seconds=10), created_by=self._worker_id))
             await uow.commit()
+
+    @staticmethod
+    def _unavailable_document_id(source_url: str) -> str:
+        """为无法取得 Graph ID 的附件生成稳定文档标识。"""
+        digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+        return f"unavailable:{digest}"
+
+    @staticmethod
+    def _attachment_name(source_url: str, ordinal: int) -> str:
+        """从错误链接提取仅用于展示的附件名。"""
+        path = unquote(urlparse(source_url).path).rstrip("/")
+        name = path.rsplit("/", 1)[-1].strip() if path else ""
+        return (name or f"attachment-{ordinal + 1}")[:512]
 
     async def _source_status_update(self, job: _JobSnapshot) -> None:
         source, values = await self._source_and_credentials(job, "METADB_BASIC")
