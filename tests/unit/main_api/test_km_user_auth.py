@@ -10,6 +10,7 @@ from main_api.application.km_user_auth import (
     KmUserAuthenticationError,
     KmUserAuthService,
     KmUserTokenCodec,
+    KmUserTokenClaims,
 )
 
 
@@ -74,6 +75,10 @@ class _AccessRepository:
     async def list_active_km_domain_ids(self, user_id):
         return (41,)
 
+    async def set_user_password(self, *, credential, password_hash):
+        credential.password_hash = password_hash
+        credential.must_change_password = "N"
+
 
 class _UnitOfWork:
     def __init__(self, access):
@@ -86,19 +91,25 @@ class _UnitOfWork:
         self.access.user.attached = False
         self.access.credential.attached = False
 
+    async def commit(self):
+        return None
+
 
 class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _service(access):
+        return KmUserAuthService(
+            uow_factory=lambda: _UnitOfWork(access),
+            codec=KmUserTokenCodec(
+                secret="test-km-user-secret-with-at-least-32-bytes",
+                issuer="test-km",
+                ttl_seconds=3600,
+            ),
+        )
+
     async def test_login_does_not_read_entities_after_uow_closes(self):
         access = _AccessRepository()
-        codec = KmUserTokenCodec(
-            secret="test-km-user-secret-with-at-least-32-bytes",
-            issuer="test-km",
-            ttl_seconds=3600,
-        )
-        service = KmUserAuthService(
-            uow_factory=lambda: _UnitOfWork(access),
-            codec=codec,
-        )
+        service = self._service(access)
 
         result = await service.login(
             user_id="kmadmin",
@@ -109,6 +120,29 @@ class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("KM 管理员", result["display_name"])
         self.assertEqual(41, result["domain_id"])
         self.assertTrue(result["must_change_password"])
+
+    async def test_change_password_updates_hash_and_issues_normal_token(self):
+        access = _AccessRepository()
+        service = self._service(access)
+
+        result = await service.change_password(
+            claims=KmUserTokenClaims(
+                user_id="kmadmin",
+                domain_id=41,
+                must_change_password=True,
+                expires_at=None,
+            ),
+            current_password="KmAdmin@2026!",
+            new_password="Changed@Password2026!",
+        )
+
+        self.assertFalse(result["must_change_password"])
+        self.assertTrue(
+            bcrypt.checkpw(
+                b"Changed@Password2026!",
+                access.credential.password_hash.encode("ascii"),
+            )
+        )
 
 
 if __name__ == "__main__":

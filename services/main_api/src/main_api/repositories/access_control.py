@@ -1,5 +1,7 @@
 """应用成员与权限 Repository。"""
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,8 +39,9 @@ class AccessControlRepository:
     ) -> None:
         credential.password_hash = password_hash
         credential.must_change_password = "N"
-        credential.password_updated_at = func.now()
-        credential.updated_at = func.now()
+        now = datetime.now(timezone.utc)
+        credential.password_updated_at = now
+        credential.updated_at = now
         await self._session.flush()
 
     async def list_active_km_domain_ids(self, user_id: str) -> tuple[int, ...]:
