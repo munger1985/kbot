@@ -42,6 +42,10 @@ class _SourceSnapshot:
     auto_sync_enabled: bool
 
 
+class _KcRevisionPending(Exception):
+    """KC Revision 仍在正常处理，当前任务应延后再次检查。"""
+
+
 class KmAssetWorker:
     def __init__(self, *, uow_factory, credential_service: KmCredentialService, asset_service: KmAssetService, knowledge_core_client: KnowledgeCoreClient, poll_seconds: float = 5, lease_seconds: int = 120):
         self._uow_factory = uow_factory
@@ -65,6 +69,9 @@ class KmAssetWorker:
                 await self._complete(job.job_id, succeeded=True)
             except asyncio.CancelledError:
                 raise
+            except _KcRevisionPending as exc:
+                logger.debug("KC Revision 尚未完成：job_id={} status={}", job.job_id, exc)
+                await self._defer_kc_status_sync(job.job_id)
             except Exception as exc:
                 logger.exception("KM Asset 任务失败：job_id={} type={}", job.job_id, job.job_type)
                 await self._complete(job.job_id, succeeded=False, error=exc)
@@ -262,13 +269,24 @@ class KmAssetWorker:
 
     async def _kc_status_sync(self, job: _JobSnapshot) -> None:
         bundle_id = UUID(str(job.payload_json["bundle_id"]))
-        status = await self._kc.get_bundle_status(domain_id=int(job.domain_id), bundle_id=bundle_id, auth_context=self._auth_context(domain_id=int(job.domain_id)))
-        value = str(status.get("status") or status.get("processing_status") or "").upper()
-        if value not in {"READY", "FAILED", "REJECTED"}:
-            raise RuntimeError(f"KC Bundle 尚未完成：{value or 'UNKNOWN'}")
+        bundle_revision_id = UUID(str(job.payload_json["bundle_revision_id"]))
+        status = await self._kc.get_revision_status(
+            domain_id=int(job.domain_id),
+            bundle_id=bundle_id,
+            bundle_revision_id=bundle_revision_id,
+            include_members=False,
+            auth_context=self._auth_context(domain_id=int(job.domain_id)),
+        )
+        value = str(status.get("status") or "").upper()
+        if not value:
+            raise RuntimeError("KC Revision 状态响应缺少 status")
+        if value in {"ACCEPTED", "PENDING_REVIEW", "PROCESSING"}:
+            raise _KcRevisionPending(value)
+        if value not in {"READY", "PARTIAL", "FAILED", "REJECTED"}:
+            raise RuntimeError(f"KC Revision 返回未知状态：{value}")
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_asset(domain_id=int(job.domain_id), km_asset_id=job.km_asset_id, lock=True)
-            if value == "READY":
+            if value in {"READY", "PARTIAL"}:
                 asset.ingestion_status = "READY"
                 asset.completed_at = datetime.now(timezone.utc)
                 revision = await uow.assets.get_revision(asset_revision_id=job.asset_revision_id)
@@ -334,6 +352,8 @@ class KmAssetWorker:
             if succeeded:
                 job.status = "SUCCEEDED"
                 job.completed_at = datetime.now(timezone.utc)
+                job.error_code = None
+                job.error_message = None
             elif job.attempt_count < job.max_attempts:
                 job.status = "RETRY_WAIT"
                 job.available_at = datetime.now(timezone.utc) + timedelta(seconds=min(300, 2 ** job.attempt_count * 5))
@@ -354,6 +374,21 @@ class KmAssetWorker:
                         asset.row_version += 1
                         if job.job_type != "SOURCE_STATUS_UPDATE":
                             await uow.assets.add(KmJobEntity(domain_id=job.domain_id, source_id=job.source_id, km_asset_id=job.km_asset_id, asset_revision_id=job.asset_revision_id, job_type="SOURCE_STATUS_UPDATE", idempotency_key=f"source-failed:{job.asset_revision_id}:{job.job_type}", payload_json={"asset_id": asset.external_asset_id, "processed": "F", "next_job_type": None}, status="PENDING", priority=100, created_by=self._worker_id))
+            job.lease_owner = None
+            job.lease_until = None
+            await uow.commit()
+
+    async def _defer_kc_status_sync(self, job_id: UUID) -> None:
+        """延后正常进行中的 KC 状态检查，不消耗失败重试额度。"""
+        async with self._uow_factory() as uow:
+            job = await uow.assets.get_job_by_id(job_id=job_id, lock=True)
+            if job is None:
+                return
+            job.status = "RETRY_WAIT"
+            job.available_at = datetime.now(timezone.utc) + timedelta(seconds=10)
+            job.attempt_count = max(0, job.attempt_count - 1)
+            job.error_code = None
+            job.error_message = None
             job.lease_owner = None
             job.lease_until = None
             await uow.commit()

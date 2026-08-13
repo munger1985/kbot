@@ -11,6 +11,7 @@ from km_asset_app.application import KmAgentService, KmAssetApplicationError, Km
 from km_asset_app.application.worker import (
     KmAssetWorker,
     _JobSnapshot,
+    _KcRevisionPending,
     _SourceSnapshot,
 )
 from km_asset_app.integrations import SharePointClient
@@ -232,6 +233,130 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
 
 
 class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _kc_job() -> _JobSnapshot:
+        return _JobSnapshot(
+            job_id=UUID("01900000-0000-7000-8000-000000000041"),
+            job_type="KC_STATUS_SYNC",
+            domain_id=41,
+            source_id=UUID("01900000-0000-7000-8000-000000000042"),
+            km_asset_id=UUID("01900000-0000-7000-8000-000000000043"),
+            asset_revision_id=UUID("01900000-0000-7000-8000-000000000044"),
+            payload_json={
+                "bundle_id": "01900000-0000-7000-8000-000000000045",
+                "bundle_revision_id": "01900000-0000-7000-8000-000000000046",
+            },
+        )
+
+    async def test_kc_status_sync_tracks_exact_revision(self):
+        asset = SimpleNamespace(
+            ingestion_status="PARSING",
+            completed_at=None,
+            external_asset_id="ASSET-1",
+            row_version=1,
+        )
+        revision = SimpleNamespace(status="PROCESSING")
+        added = []
+
+        class Assets:
+            async def get_asset(self, **_):
+                return asset
+
+            async def get_revision(self, **_):
+                return revision
+
+            async def add(self, value):
+                added.append(value)
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        class KnowledgeCore:
+            request = None
+
+            async def get_revision_status(self, **values):
+                self.request = values
+                return {"status": "PARTIAL"}
+
+        kc = KnowledgeCore()
+        worker = KmAssetWorker(
+            uow_factory=Uow,
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=kc,
+        )
+        await worker._kc_status_sync(self._kc_job())
+
+        self.assertEqual(
+            UUID("01900000-0000-7000-8000-000000000046"),
+            kc.request["bundle_revision_id"],
+        )
+        self.assertFalse(kc.request["include_members"])
+        self.assertEqual("READY", asset.ingestion_status)
+        self.assertEqual("READY", revision.status)
+        self.assertEqual("SOURCE_STATUS_UPDATE", added[0].job_type)
+
+    async def test_processing_kc_revision_is_deferred_without_failure(self):
+        class KnowledgeCore:
+            async def get_revision_status(self, **_):
+                return {"status": "PROCESSING"}
+
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=KnowledgeCore(),
+        )
+        with self.assertRaises(_KcRevisionPending):
+            await worker._kc_status_sync(self._kc_job())
+
+    async def test_successful_job_clears_previous_error(self):
+        job = SimpleNamespace(
+            status="RUNNING",
+            completed_at=None,
+            error_code="DetachedInstanceError",
+            error_message="旧错误",
+            lease_owner="worker",
+            lease_until=object(),
+        )
+
+        class Assets:
+            async def get_job_by_id(self, **_):
+                return job
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        worker = KmAssetWorker(
+            uow_factory=Uow,
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+        await worker._complete(self._kc_job().job_id, succeeded=True)
+
+        self.assertEqual("SUCCEEDED", job.status)
+        self.assertIsNone(job.error_code)
+        self.assertIsNone(job.error_message)
+
     async def test_disabled_source_skips_automatic_sync_job(self):
         source_id = UUID("01900000-0000-7000-8000-000000000031")
         worker = KmAssetWorker(
