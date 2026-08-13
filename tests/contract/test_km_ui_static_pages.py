@@ -234,6 +234,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('os.getenv("KBOT_CONFIG_FILE")', server)
         self.assertIn('get("main_api_base_url")', server)
         self.assertIn('"/ui/runtime-config.js"', server)
+        self.assertIn('urlsplit(self.path).path != "/favicon.ico"', server)
+        self.assertIn("self.send_response(204)", server)
         self.assertIn("main_api_base_url =", example)
 
 

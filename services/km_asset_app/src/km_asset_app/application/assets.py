@@ -141,9 +141,22 @@ class KmAssetService:
             source = await uow.assets.get_source(domain_id=domain_id, source_id=source_id)
             if source is None:
                 self._not_found("KM_SOURCE_NOT_FOUND", "KM Asset 来源不存在")
-            values = await self._credentials.read(uow=uow, domain_id=domain_id, credential_id=source.metadb_credential_id, credential_kind="METADB_BASIC", source_id=source.source_id)
+            metadb_endpoint = str(source.metadb_endpoint)
+            metadb_credential_id = source.metadb_credential_id
+            persisted_source_id = source.source_id
+            values = await self._credentials.read(
+                uow=uow,
+                domain_id=domain_id,
+                credential_id=metadb_credential_id,
+                credential_kind="METADB_BASIC",
+                source_id=persisted_source_id,
+            )
         try:
-            rows = await AssetMetaDbClient(endpoint=source.metadb_endpoint, username=str(values["username"]), password=str(values["password"])).list_assets(offset=offset, limit=limit, processed=processed)
+            rows = await AssetMetaDbClient(
+                endpoint=metadb_endpoint,
+                username=str(values["username"]),
+                password=str(values["password"]),
+            ).list_assets(offset=offset, limit=limit, processed=processed)
         except AssetMetaDbError as exc:
             raise KmAssetApplicationError(status_code=503, code="KM_METADB_UNAVAILABLE", message=str(exc)) from exc
         return {"source_id": source_id, "processed": processed, "offset": offset, "limit": limit, "items": rows}

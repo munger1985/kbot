@@ -2,6 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -157,6 +158,66 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(250, result["batch_size"])
         self.assertEqual(3, result["row_version"])
         self.assertEqual("kbotui_dev", row.updated_by)
+
+    async def test_metadb_query_does_not_read_source_after_uow_closes(self):
+        source_id = UUID("01900000-0000-7000-8000-000000000011")
+        credential_id = UUID("01900000-0000-7000-8000-000000000012")
+
+        class Source:
+            def __init__(self):
+                self.attached = True
+                self.metadb_endpoint = "https://metadb.example.com/assets"
+                self.metadb_credential_id = credential_id
+                self.source_id = source_id
+
+            def __getattribute__(self, name):
+                if name not in {"attached", "__class__"} and not object.__getattribute__(self, "attached"):
+                    raise RuntimeError("来源实体已脱离 Session")
+                return object.__getattribute__(self, name)
+
+        source = Source()
+
+        class Assets:
+            async def get_source(self, **_):
+                return source
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                source.attached = False
+
+        class Credentials:
+            async def read(self, **_):
+                return {"username": "user", "password": "secret"}
+
+        class MetaDbClient:
+            def __init__(self, **values):
+                self.values = values
+
+            async def list_assets(self, **_):
+                return [{"asset_id": "A-1"}]
+
+        service = KmAssetService(
+            uow_factory=Uow,
+            credential_service=Credentials(),
+        )
+        with patch(
+            "km_asset_app.application.assets.AssetMetaDbClient",
+            MetaDbClient,
+        ):
+            result = await service.list_metadb_assets(
+                domain_id=1,
+                source_id=source_id,
+                processed="N",
+                offset=0,
+                limit=100,
+            )
+
+        self.assertEqual([{"asset_id": "A-1"}], result["items"])
 
 
 if __name__ == "__main__":

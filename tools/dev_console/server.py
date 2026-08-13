@@ -54,6 +54,14 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
 
     main_api_base_url = ""
 
+    def _empty_favicon(self) -> bool:
+        if urlsplit(self.path).path != "/favicon.ico":
+            return False
+        self.send_response(204)
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        return True
+
     def _redirect_ui_root(self) -> bool:
         path = urlsplit(self.path).path
         if path in {"/ui", "/ui/", "/km", "/km/"}:
@@ -64,6 +72,8 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
         return False
 
     def do_GET(self):
+        if self._empty_favicon():
+            return
         if urlsplit(self.path).path == "/ui/runtime-config.js":
             payload = (
                 "globalThis.KBOT_UI_CONFIG = Object.freeze("
@@ -86,6 +96,8 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_HEAD(self):
+        if self._empty_favicon():
+            return
         if self._redirect_ui_root():
             return
         super().do_HEAD()
