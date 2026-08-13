@@ -3,10 +3,23 @@
 import unittest
 from uuid import UUID
 
-from main_api.api.km_asset_app import _km_turn_receipt
+from pydantic import ValidationError
+
+from main_api.api.km_asset_app import AgentCreatePayload, _km_turn_receipt
 
 
 class KmAssetAppContractTest(unittest.TestCase):
+    def test_public_agent_create_rejects_caller_supplied_capabilities(self) -> None:
+        with self.assertRaises(ValidationError) as raised:
+            AgentCreatePayload(
+                source_id=UUID("01900000-0000-7000-8000-000000000001"),
+                display_name="KM Agent",
+                enabled_capabilities=["conversation", "document", "data_query"],
+            )
+
+        self.assertEqual("extra_forbidden", raised.exception.errors()[0]["type"])
+        self.assertEqual(("enabled_capabilities",), raised.exception.errors()[0]["loc"])
+
     def test_turn_receipt_uses_km_owned_event_stream(self) -> None:
         run_id = UUID("019ff999-fb22-7d92-8e87-49a20b1d18fa")
         upstream = {

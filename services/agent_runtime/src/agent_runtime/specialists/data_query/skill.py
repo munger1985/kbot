@@ -228,6 +228,36 @@ class SemanticDataQueryExecutor:
                     "aggregation": catalog.get("aggregation"),
                 }]
         normalized["measures"] = measures
+        catalog_dimensions = {
+            str(item.get("name"))
+            for item in selected.get("dimensions") or ()
+            if isinstance(item, dict) and item.get("name")
+        }
+        filters = []
+        for raw in normalized.get("filters") or ():
+            if not isinstance(raw, dict):
+                continue
+            field = str(raw.get("field") or raw.get("dimension") or "")
+            if field not in catalog_dimensions:
+                field = str(raw.get("field") or "")
+            operator = str(raw.get("operator") or "").upper()
+            if "values" in raw:
+                raw_values = raw.get("values")
+                values = (
+                    list(raw_values)
+                    if isinstance(raw_values, (list, tuple))
+                    else [raw_values]
+                )
+            elif "value" in raw:
+                values = [raw.get("value")]
+            else:
+                values = []
+            filters.append({
+                "field": field,
+                "operator": operator,
+                "values": values,
+            })
+        normalized["filters"] = filters
         raw_limit = normalized.get("limit")
         if isinstance(raw_limit, str) and raw_limit.strip().isdigit():
             raw_limit = int(raw_limit.strip())
@@ -237,7 +267,7 @@ class SemanticDataQueryExecutor:
         if isinstance(max_rows, int):
             raw_limit = min(raw_limit, max_rows)
         normalized["limit"] = max(1, min(raw_limit, 10_000))
-        for field in ("dimensions", "filters", "order_by"):
+        for field in ("dimensions", "order_by"):
             normalized.setdefault(field, [])
         normalized.setdefault("time_zone", "Asia/Shanghai")
         return normalized

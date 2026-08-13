@@ -18,6 +18,7 @@ from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import RootAgentPlanner, RouteType
 from main_api.api.dify import _records
 from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.identity import uuid7
 
 
@@ -165,6 +166,46 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             normalized["measures"],
         )
         self.assertEqual(50, normalized["limit"])
+
+    def test_km_semantic_plan_normalizes_catalog_filter_shape(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "contract_version": "DataQueryPlan.v1",
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["title"],
+                "filters": [{
+                    "dimension": "solution",
+                    "operator": "contains",
+                    "value": "chatbi",
+                }],
+                "limit": 100,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": [
+                    {"name": "title"},
+                    {"name": "solution"},
+                ],
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="查一下关于 chatbi 的 asset",
+            consumer_app_id="km_asset",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        self.assertEqual("solution", plan.filters[0].field)
+        self.assertEqual("CONTAINS", plan.filters[0].operator)
+        self.assertEqual(("chatbi",), plan.filters[0].values)
 
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(

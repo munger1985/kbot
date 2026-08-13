@@ -57,7 +57,7 @@ query 仅用于后续文档检索；禁止 SQL、物理字段、原始数据行�
 [[prompts]]
 prompt_key = "agent_runtime.data_query_plan"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "从受控逻辑语义模型生成 DataQueryPlan.v1"
 input_variables = []
@@ -68,6 +68,11 @@ content = """
 禁止输出 SQL、物理表名、物理列名、函数、连接字符串或未给出的字段。
 筛选值只能来自用户问题中的字面量；存在模型、指标或筛选歧义时不得猜测。
 measures 至少包含一项，每项必须同时复制 models 中的 name 和 aggregation。
+dimensions 每项必须是 models 中的逻辑维度 name。
+filters 每项只能包含 field、operator、values：field 必须是 models 中的逻辑维度 name，
+operator 必须是 EQ、NE、IN、NOT_IN、BETWEEN、GT、GTE、LT、LTE、CONTAINS、
+STARTS_WITH、IS_NULL、IS_NOT_NULL 之一，values 必须是 JSON 数组；禁止使用 dimension 或 value 字段。
+order_by 每项只能包含 field 和 direction，direction 只能是 ASC 或 DESC。
 limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符串或 null。
 """
 

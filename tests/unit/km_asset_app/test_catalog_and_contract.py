@@ -16,6 +16,7 @@ from km_asset_app.application.worker import (
     _SourceSnapshot,
 )
 from km_asset_app.integrations import SharePointClient
+from km_asset_app.api.agents import AgentCreateRequest
 from km_asset_app.api.assets import SourceUpdateRequest
 from data_query.application.managed_datasets import km_asset_definition
 from data_query.contracts import DataQueryPlanV1, SemanticModelDefinition
@@ -24,6 +25,18 @@ from platform_core.contracts import AgentExecutionSpec
 
 
 class KmAssetCatalogTest(unittest.TestCase):
+    def test_internal_agent_create_rejects_caller_supplied_capabilities(self):
+        with self.assertRaises(ValidationError) as raised:
+            AgentCreateRequest(
+                domain_id=1,
+                source_id=UUID("01900000-0000-7000-8000-000000000001"),
+                display_name="KM Agent",
+                enabled_capabilities=["conversation", "document", "data_query"],
+            )
+
+        self.assertEqual("extra_forbidden", raised.exception.errors()[0]["type"])
+        self.assertEqual(("enabled_capabilities",), raised.exception.errors()[0]["loc"])
+
     def test_catalog_is_managed_and_domain_scoped(self):
         model = SemanticModelDefinition.model_validate(
             km_asset_definition(schema_name="KBOTUI_DEV")
