@@ -103,6 +103,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(path, source)
 
+    def test_km_chat_retries_turn_confirmation_with_same_idempotency_key(self):
+        source = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v3.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("createTurn(input, idempotencyKey)", source)
+        self.assertIn('"Idempotency-Key": idempotencyKey', source)
+        self.assertIn("isRetryableTurnTransportError", source)
+        self.assertIn("正在确认已提交的 Turn", source)
+
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")
         script = (KM_ROOT / "js" / "km-sources.js").read_text(

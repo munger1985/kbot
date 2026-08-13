@@ -1,4 +1,4 @@
-/* KM 聊天独立入口；新文件名用于绕过旧事件流地址的静态缓存。 */
+/* KM 聊天独立入口；v3 增加幂等确认重试并绕过旧静态缓存。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
@@ -87,6 +87,22 @@
     stream.insertAdjacentHTML("beforeend", `${messageMarkup("user", "你", input)}${messageMarkup("assistant", "KM Agent", "正在分析问题并选择文档检索或元数据问数路径…")}`);
     stream.scrollTop = stream.scrollHeight;
   }
+  function isRetryableTurnTransportError(error) {
+    return error instanceof TypeError || [502, 503, 504].includes(Number(error?.status));
+  }
+  async function createTurn(input, idempotencyKey) {
+    const path = `${base}/conversations/${active.conversation_id}/turns`;
+    const options = { headers: { "Idempotency-Key": idempotencyKey } };
+    const payload = { input, expected_conversation_version: active.row_version, collection_ids: [], security_level: 0, client_metadata: { source: "km-asset-ui" }, images: [] };
+    try {
+      return await KBotKmApi.json(path, "POST", payload, options);
+    } catch (error) {
+      if (!isRetryableTurnTransportError(error)) throw error;
+      $("chat-progress").textContent = "连接中断，正在确认已提交的 Turn";
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      return KBotKmApi.json(path, "POST", payload, options);
+    }
+  }
   async function send(event) {
     event.preventDefault();
     if (!active) return KBotKmShell.toast("请先创建或选择会话", "error");
@@ -94,7 +110,7 @@
     appendPending(input); $("chat-input").value = ""; KBotKmShell.setBusy($("send-message"), true, "处理中…");
     $("chat-progress").hidden = false; $("chat-progress").textContent = "正在创建 Turn";
     try {
-      const receipt = await KBotKmApi.json(`${base}/conversations/${active.conversation_id}/turns`, "POST", { input, expected_conversation_version: active.row_version, collection_ids: [], security_level: 0, client_metadata: { source: "km-asset-ui" }, images: [] }, { headers: { "Idempotency-Key": KBotKmApi.uuid() } });
+      const receipt = await createTurn(input, KBotKmApi.uuid());
       if (receipt.run_id) {
         $("chat-progress").textContent = "Agent 正在执行";
         const eventsUrl = `${base}/runs/${encodeURIComponent(receipt.run_id)}/events`;
