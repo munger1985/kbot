@@ -14,9 +14,10 @@ KM_AGENT_CAPABILITIES = ("document", "data_query")
 
 
 class KmAgentService:
-    def __init__(self, *, uow_factory, data_query_client):
+    def __init__(self, *, uow_factory, data_query_client, knowledge_core_client):
         self._uow_factory = uow_factory
         self._data_query = data_query_client
+        self._knowledge_core = knowledge_core_client
 
     async def create(self, *, domain_id: int, source_id: UUID, display_name: str, description: str | None, models: dict[str, UUID], do_rerank: bool, instruction: str | None, actor_id: str, status: str):
         async with self._uow_factory() as uow:
@@ -34,12 +35,19 @@ class KmAgentService:
             await uow.agents.add(version)
             agent.current_version_id = version_id
             await uow.commit()
+            collection_id = source.collection_id
             semantic_model_id = source.semantic_model_id
             policy_binding_id = source.policy_binding_id
         await self._data_query.management_create(
             resource="agent-bindings",
             payload={"consumer_app_id": "km_asset", "agent_id": str(agent_id), "agent_version_id": str(version_id), "semantic_model_id": str(semantic_model_id), "policy_binding_id": str(policy_binding_id)},
             auth_context=self._auth_context(domain_id=domain_id, actor_id=actor_id),
+        )
+        await self._ensure_collection_binding(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_id=collection_id,
+            actor_id=actor_id,
         )
         async with self._uow_factory() as uow:
             agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
@@ -84,6 +92,12 @@ class KmAgentService:
         except DataQueryClientError as exc:
             if exc.code != "AGENT_BINDING_CONFLICT":
                 raise
+        await self._ensure_collection_binding(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_id=version.collection_id,
+            actor_id=actor_id,
+        )
         async with self._uow_factory() as uow:
             agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
             if agent is None or int(agent.row_version) != expected_row_version:
@@ -109,11 +123,39 @@ class KmAgentService:
                 raise KmAssetApplicationError(status_code=404, code="KM_AGENT_NOT_FOUND", message="KM Asset Agent 不存在")
             return self._view(agent, await self._version(uow, agent))
 
-    async def execution_spec(self, *, domain_id: int, agent_id: UUID):
+    async def execution_spec(
+        self, *, domain_id: int, agent_id: UUID, actor_id: str
+    ):
         row = await self.get(domain_id=domain_id, agent_id=agent_id)
         if row["status"] != "ACTIVE":
             raise KmAssetApplicationError(status_code=422, code="KM_AGENT_NOT_ACTIVE", message="KM Asset Agent 未激活")
+        await self._ensure_collection_binding(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_id=UUID(row["collection_id"]),
+            actor_id=actor_id,
+        )
         return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
+
+    async def _ensure_collection_binding(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        collection_id: UUID,
+        actor_id: str,
+    ) -> None:
+        """幂等建立 KC Agent 与固定 Collection 的检索授权。"""
+        await self._knowledge_core.bind_collection(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_id=collection_id,
+            note="KM Asset App 系统托管绑定",
+            auth_context=self._auth_context(
+                domain_id=domain_id,
+                actor_id=actor_id,
+            ),
+        )
 
     @staticmethod
     async def _version(uow, agent):

@@ -78,9 +78,13 @@ async def activate_agent(agent_id: UUID, payload: AgentActivateRequest, request:
 
 @router.get("/{agent_id}/execution-spec")
 async def execution_spec(agent_id: UUID, domain_id: int, request: Request):
-    _context(request, domain_id)
+    actor_id = _context(request, domain_id)
     try:
-        return await request.app.state.km_agent_service.execution_spec(domain_id=domain_id, agent_id=agent_id)
+        return await request.app.state.km_agent_service.execution_spec(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            actor_id=actor_id,
+        )
     except Exception as exc:
         from km_asset_app.application import KmAssetApplicationError
         if isinstance(exc, KmAssetApplicationError):

@@ -2,7 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -36,6 +36,9 @@ class KmAssetCatalogTest(unittest.TestCase):
 
         self.assertEqual("extra_forbidden", raised.exception.errors()[0]["type"])
         self.assertEqual(("enabled_capabilities",), raised.exception.errors()[0]["loc"])
+
+    def test_agent_uses_fixed_document_and_data_capabilities(self):
+        self.assertEqual(("document", "data_query"), KM_AGENT_CAPABILITIES)
 
     def test_catalog_is_managed_and_domain_scoped(self):
         model = SemanticModelDefinition.model_validate(
@@ -122,6 +125,32 @@ class KmAssetCatalogTest(unittest.TestCase):
                 expected_row_version=1,
                 metadb_credentials={"username": "user", "token": "bad"},
             )
+
+
+class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_km_agent_ensures_kc_collection_binding(self):
+        knowledge_core = SimpleNamespace(bind_collection=AsyncMock())
+        service = KmAgentService(
+            uow_factory=None,
+            data_query_client=None,
+            knowledge_core_client=knowledge_core,
+        )
+        agent_id = UUID("01900000-0000-7000-8000-000000000001")
+        collection_id = UUID("01900000-0000-7000-8000-000000000002")
+
+        await service._ensure_collection_binding(
+            domain_id=43,
+            agent_id=agent_id,
+            collection_id=collection_id,
+            actor_id="kmadmin",
+        )
+
+        call = knowledge_core.bind_collection.await_args.kwargs
+        self.assertEqual(43, call["domain_id"])
+        self.assertEqual(agent_id, call["agent_id"])
+        self.assertEqual(collection_id, call["collection_id"])
+        self.assertEqual("43", call["auth_context"].domain_id)
+        self.assertEqual("kmadmin", call["auth_context"].asserted_user_id)
 
 
 class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):

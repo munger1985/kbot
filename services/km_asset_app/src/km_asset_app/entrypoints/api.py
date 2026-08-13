@@ -19,7 +19,12 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.platform.port_check import check_port_available
 from platform_core.security import create_auth_context_codec, create_scoped_internal_auth_middleware, create_service_identity_codec
 from platform_core.managed_credentials import ManagedCredentialCipher
-from platform_clients import DataQueryClient, DataQueryClientError
+from platform_clients import (
+    DataQueryClient,
+    DataQueryClientError,
+    KnowledgeCoreClient,
+    KnowledgeCoreClientError,
+)
 
 
 settings = get_km_asset_settings()
@@ -32,11 +37,19 @@ async def lifespan(app: FastAPIOffline):
     runtime = create_database_runtime(settings)
     app.state.db_runtime = runtime
     data_query_client = DataQueryClient(base_url=settings.data_query.base_url, caller_service=config.service_name, audience=settings.data_query.audience, timeout_seconds=settings.data_query.timeout_seconds)
+    knowledge_core_client = KnowledgeCoreClient(
+        base_url=settings.knowledge_core.base_url,
+        caller_service=config.service_name,
+        audience=settings.knowledge_core.audience,
+        timeout_seconds=settings.knowledge_core.timeout_seconds,
+    )
     app.state.data_query_client = data_query_client
+    app.state.knowledge_core_client = knowledge_core_client
     app.state.km_asset_service = KmAssetService(uow_factory=create_km_asset_uow(runtime.session_factory), credential_service=KmCredentialService(cipher=ManagedCredentialCipher.from_environment()), data_query_client=data_query_client)
     app.state.km_agent_service = KmAgentService(
         uow_factory=create_km_asset_uow(runtime.session_factory),
         data_query_client=data_query_client,
+        knowledge_core_client=knowledge_core_client,
     )
     app.state.auth_context_codec = create_auth_context_codec()
     app.state.service_identity_codec = create_service_identity_codec()
@@ -58,6 +71,17 @@ app.include_router(agent_router)
 async def data_query_error_handler(_request: Request, exc: DataQueryClientError):
     status_code = 503 if exc.status_code >= 500 else exc.status_code
     return JSONResponse(status_code=status_code, content={"detail": {"code": exc.code, "message": str(exc)}})
+
+
+@app.exception_handler(KnowledgeCoreClientError)
+async def knowledge_core_error_handler(
+    _request: Request, exc: KnowledgeCoreClientError
+):
+    status_code = 503 if exc.status_code >= 500 else exc.status_code
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": {"code": exc.code, "message": str(exc)}},
+    )
 
 
 @app.get("/healthz")
