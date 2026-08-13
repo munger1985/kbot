@@ -46,8 +46,9 @@ class KmUiStaticPagesTest(unittest.TestCase):
             parser.feed(page.read_text(encoding="utf-8"))
             self.assertTrue(expected_ids.issubset(parser.ids), page_name)
             for reference in parser.assets:
+                asset_path = reference.partition("?")[0]
                 self.assertTrue(
-                    (page.parent / reference).resolve().is_file(),
+                    (page.parent / asset_path).resolve().is_file(),
                     f"{page_name} 缺少资源 {reference}",
                 )
 
@@ -213,7 +214,10 @@ class KmUiStaticPagesTest(unittest.TestCase):
             parser = _PageParser()
             parser.feed((KM_ROOT / page_name).read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(parser.assets), 1, page_name)
-            scripts = [item for item in parser.assets if item.endswith(".js")]
+            scripts = [
+                item for item in parser.assets
+                if item.partition("?")[0].endswith(".js")
+            ]
             self.assertEqual("../runtime-config.js", scripts[0], page_name)
 
     def test_ui_server_injects_main_api_address_from_deployment_config(self):

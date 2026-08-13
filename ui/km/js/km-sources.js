@@ -72,12 +72,37 @@
     finally { KBotKmShell.setBusy($("update-source"), false); }
   }
   window.addEventListener("DOMContentLoaded", () => {
-    $("new-source").addEventListener("click", () => KBotKmShell.openDialog("source-dialog"));
-    $("refresh-sources").addEventListener("click", load);
-    $("source-form").addEventListener("submit", save);
-    $("source-edit-form").addEventListener("submit", update);
-    $("source-rows").addEventListener("click", (event) => { for (const kind of ["edit", "model", "activate", "sync"]) { const button = event.target.closest(`[data-${kind}]`); if (button) { if (kind === "edit") openEdit(Number(button.dataset.edit)); else if (kind === "model") showModel(Number(button.dataset.model)); else action(Number(button.dataset[kind]), kind, button); break; } } });
-    $("reconcile-data-model").addEventListener("click", async (event) => { if (!modelSource) return; KBotKmShell.setBusy(event.currentTarget, true); try { const result = await KBotKmApi.json(`${base}/sources/${modelSource.source_id}/data-model/reconcile`, "POST"); $("data-model-json").textContent = JSON.stringify(result, null, 2); KBotKmShell.toast("固定数据模型已对账", "success"); await load(); } catch (error) { KBotKmShell.showError(error); } finally { KBotKmShell.setBusy(event.currentTarget, false); } });
+    document.addEventListener("submit", (event) => {
+      if (event.target.id === "source-form") save(event);
+      if (event.target.id === "source-edit-form") update(event);
+    });
+    document.addEventListener("click", async (event) => {
+      const newButton = event.target.closest("#new-source");
+      if (newButton) { KBotKmShell.openDialog("source-dialog"); return; }
+      const refreshButton = event.target.closest("#refresh-sources");
+      if (refreshButton) { await load(); return; }
+      const reconcileButton = event.target.closest("#reconcile-data-model");
+      if (reconcileButton) {
+        if (!modelSource) return;
+        KBotKmShell.setBusy(reconcileButton, true);
+        try {
+          const result = await KBotKmApi.json(`${base}/sources/${modelSource.source_id}/data-model/reconcile`, "POST");
+          $("data-model-json").textContent = JSON.stringify(result, null, 2);
+          KBotKmShell.toast("固定数据模型已对账", "success");
+          await load();
+        } catch (error) { KBotKmShell.showError(error); }
+        finally { KBotKmShell.setBusy(reconcileButton, false); }
+        return;
+      }
+      for (const kind of ["edit", "model", "activate", "sync"]) {
+        const button = event.target.closest(`[data-${kind}]`);
+        if (!button) continue;
+        if (kind === "edit") openEdit(Number(button.dataset.edit));
+        else if (kind === "model") showModel(Number(button.dataset.model));
+        else action(Number(button.dataset[kind]), kind, button);
+        break;
+      }
+    });
   });
   KBotKmShell.ready.then(load).catch(() => {});
 })();
