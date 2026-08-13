@@ -9,7 +9,7 @@ development 环境执行 `start_kbot.sh` 后，Python UI 服务会同时发布�
 - 测试台：`http://<python-host>:8080/`
 - KM 登录页：`http://<python-host>:8080/ui/km/login.html`
 
-KM 页面默认连接同一主机的 Main API 18099 端口。先使用初始化脚本创建的用户名和密码登录，Main API 签发仅可用于 KM 页面的短期 Token，其余页面请求统一携带该 Token。首次登录必须修改初始密码。`configuration/kbot.toml` 的 `api_allowed_origins` 需要允许该 8080 Origin。
+KM 页面的 Main API 地址只从 `configuration/kbot.toml` 的 `[ui].main_api_base_url` 读取，由 Python UI 服务注入 `/ui/runtime-config.js`。登录页不显示也不允许修改该地址；未配置时 UI 服务拒绝启动。先使用初始化脚本创建的用户名和密码登录，Main API 签发仅可用于 KM 页面的短期 Token，其余页面请求统一携带该 Token。首次登录必须修改初始密码。`configuration/kbot.toml` 的 `api_allowed_origins` 需要允许该 8080 Origin。
 
 ## APEX 接入
 

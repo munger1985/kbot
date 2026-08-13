@@ -4,8 +4,6 @@
   const passwordSection = document.getElementById("password-section");
   const loginForm = document.getElementById("km-login-form");
   const passwordForm = document.getElementById("km-password-form");
-  const connection = KBotKmAuth.loadConnection();
-  loginForm.elements.baseUrl.value = connection.baseUrl;
   loginForm.elements.userId.value = "kmadmin";
 
   function showError(id, error) {
@@ -25,7 +23,6 @@
     event.preventDefault();
     document.getElementById("login-error").hidden = true;
     const values = Object.fromEntries(new FormData(loginForm));
-    KBotKmAuth.saveConnection({ baseUrl: values.baseUrl });
     try {
       const session = await KBotKmAuth.login({
         user_id: values.userId.trim(),

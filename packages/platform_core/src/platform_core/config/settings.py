@@ -317,6 +317,7 @@ def load_settings(
         "paths",
         "integrations",
         "notifications",
+        "ui",
     }
     if unknown_keys:
         names = "、".join(sorted(unknown_keys))
@@ -375,12 +376,14 @@ def load_settings(
     paths = deployment.get("paths") or {}
     integrations = deployment.get("integrations") or {}
     notifications = deployment.get("notifications") or {}
+    ui = deployment.get("ui") or {}
     for name, value in (
         ("database", database),
         ("endpoints", endpoints_override),
         ("paths", paths),
         ("integrations", integrations),
         ("notifications", notifications),
+        ("ui", ui),
     ):
         if not isinstance(value, dict):
             raise ValueError(f"kbot.toml 的 [{name}] 必须是对象")

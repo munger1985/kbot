@@ -231,30 +231,3 @@ WHEN NOT MATCHED THEN
     );
 
 COMMIT;
-
-PROMPT === KM Asset 初始管理员与权限 ===
-
-SELECT
-    member_role.USER_ID,
-    platform_user.DISPLAY_NAME,
-    platform_user.STATUS AS USER_STATUS,
-    credential.MUST_CHANGE_PASSWORD,
-    member_role.DOMAIN_ID,
-    domain.NAME AS DOMAIN_NAME,
-    member_role.ROLE_CODE,
-    member_role.STATUS AS MEMBER_STATUS,
-    role_permission.PERMISSION_CODE
-FROM KBOT_APP_MEMBER_ROLE member_role
-JOIN KBOT_PLATFORM_USER platform_user
-  ON platform_user.USER_ID = member_role.USER_ID
-JOIN KBOT_PLATFORM_DOMAIN domain
-  ON domain.DOMAIN_ID = member_role.DOMAIN_ID
-JOIN KBOT_PLATFORM_USER_CREDENTIAL credential
-  ON credential.USER_ID = member_role.USER_ID
-JOIN KBOT_APP_ROLE_PERMISSION role_permission
-  ON role_permission.APP_ID = member_role.APP_ID
- AND role_permission.ROLE_CODE = member_role.ROLE_CODE
-WHERE member_role.USER_ID = :KM_ADMIN_USER_ID
-  AND member_role.APP_ID = 'km_asset'
-  AND member_role.ROLE_CODE = 'manager'
-ORDER BY member_role.DOMAIN_ID, role_permission.PERMISSION_CODE;

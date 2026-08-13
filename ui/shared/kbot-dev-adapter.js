@@ -2,22 +2,13 @@
 (function () {
   "use strict";
 
-  const connectionKey = "kbot.km.connection.v2";
   const sessionKey = "kbot.km.session.v1";
 
-  function loadConnection() {
-    let value = {};
-    try { value = JSON.parse(localStorage.getItem(connectionKey) || "{}"); } catch (_) { value = {}; }
-    return {
-      baseUrl: String(value.baseUrl || `${location.protocol}//${location.hostname}:18099`).replace(/\/+$/, ""),
-    };
-  }
-
-  function saveConnection(value) {
-    localStorage.setItem(connectionKey, JSON.stringify({
-      baseUrl: String(value.baseUrl || "").replace(/\/+$/, ""),
-    }));
-    return loadConnection();
+  function mainApiBaseUrl() {
+    const value = String(globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "")
+      .trim().replace(/\/+$/, "");
+    if (!value) throw new Error("KM UI 未加载 Main API 部署配置");
+    return value;
   }
 
   function loadSession() {
@@ -76,7 +67,7 @@
     if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
-    const response = await fetch(`${loadConnection().baseUrl}${path}`, { ...options, headers });
+    const response = await fetch(`${mainApiBaseUrl()}${path}`, { ...options, headers });
     const payload = await decode(response);
     if (!response.ok) throw failure(response, payload);
     return payload;
@@ -119,14 +110,14 @@
       "X-Request-ID": KBotKmApi.uuid(),
       ...(options.headers || {}),
     };
-    const response = await fetch(`${loadConnection().baseUrl}${path}`, { ...options, headers });
+    const response = await fetch(`${mainApiBaseUrl()}${path}`, { ...options, headers });
     if (!response.ok) throw failure(response, await decode(response));
     return { data: await response.blob(), contentType: response.headers.get("Content-Type") || "application/octet-stream" };
   }
 
   async function stream(path, handlers = {}, signal) {
     const session = requireSession();
-    const response = await fetch(`${loadConnection().baseUrl}${path}`, {
+    const response = await fetch(`${mainApiBaseUrl()}${path}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
         Accept: "text/event-stream",
@@ -153,7 +144,6 @@
 
   KBotKmApi.configure({ request, blob, stream });
   window.KBotKmAuth = {
-    changePassword, clearSession, loadConnection, loadSession, login,
-    requireSession, saveConnection,
+    changePassword, clearSession, loadSession, login, requireSession,
   };
 })();

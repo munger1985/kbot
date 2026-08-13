@@ -148,11 +148,36 @@ class KmUiStaticPagesTest(unittest.TestCase):
             ROOT / "ui" / "shared" / "kbot-dev-adapter.js"
         ).read_text(encoding="utf-8")
         self.assertIn("km-login-form", login_html)
+        self.assertNotIn("Main API 地址", login_html)
+        self.assertNotIn('name="baseUrl"', login_html)
         self.assertIn("KBotKmAuth.login", login_js)
+        self.assertNotIn("saveConnection", login_js)
         self.assertIn("/api/v1/apps/km-asset/auth/login", adapter)
+        self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", adapter)
+        self.assertNotIn("localStorage", adapter)
         self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
         self.assertNotIn("X-KBot-Test-Auth", adapter)
         self.assertNotIn("X-KBot-User-ID", adapter)
+
+    def test_every_km_page_loads_server_runtime_configuration_first(self):
+        for page_name in (*self.pages, "login.html"):
+            parser = _PageParser()
+            parser.feed((KM_ROOT / page_name).read_text(encoding="utf-8"))
+            self.assertGreaterEqual(len(parser.assets), 1, page_name)
+            scripts = [item for item in parser.assets if item.endswith(".js")]
+            self.assertEqual("../runtime-config.js", scripts[0], page_name)
+
+    def test_ui_server_injects_main_api_address_from_deployment_config(self):
+        server = (ROOT / "tools" / "dev_console" / "server.py").read_text(
+            encoding="utf-8"
+        )
+        example = (
+            ROOT / "configuration" / "kbot.toml.example"
+        ).read_text(encoding="utf-8")
+        self.assertIn('os.getenv("KBOT_CONFIG_FILE")', server)
+        self.assertIn('get("main_api_base_url")', server)
+        self.assertIn('"/ui/runtime-config.js"', server)
+        self.assertIn("main_api_base_url =", example)
 
 
 if __name__ == "__main__":

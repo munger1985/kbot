@@ -11,6 +11,10 @@ api_docs_enabled = false
 # KM 用户 Token 默认有效期为 8 小时。签名密钥由 KBOT_MASTER_KEY 自动派生；
 # 只有需要单独轮换时才显式设置 KBOT_KM_USER_JWT_SECRET（至少 32 字节）。
 
+[ui]
+# 浏览器访问 Main API 的公开地址，由 UI 服务读取并注入页面，用户不能在登录页修改。
+main_api_base_url = "http://kbot.example.com:18099"
+
 [database]
 host = "oracle.example.internal"
 port = 1521
