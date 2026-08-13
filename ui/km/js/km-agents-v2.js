@@ -1,3 +1,4 @@
+/* 独立物理文件名用于绕过忽略查询参数的旧代理缓存。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
