@@ -522,9 +522,15 @@ async def create_conversation_turn(conversation_id: UUID, payload: CreateConvers
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await _km_conversation(request, conversation_id, domain_id)
     spec = await _client(request).execution_spec(agent_id=UUID(str(conversation["agent_id"])), domain_id=domain_id, auth_context=request.state.auth_context)
-    fixed_collections = tuple(spec.get("resource_context", {}).get("collection_ids") or ())
+    resource_context = spec.get("resource_context", {})
+    fixed_collections = tuple(resource_context.get("collection_ids") or ())
+    fixed_security_level = int(resource_context.get("security_level") or 1)
     body = payload.model_dump(mode="json")
     body["collection_ids"] = list(fixed_collections)
+    # KM Asset 统一按内部级别 1 入库。检索等级必须来自 Agent 的受信
+    # 执行契约，不能沿用浏览器请求的默认 0，否则所有 Asset 都会被 KC
+    # 的 security_level 条件过滤。
+    body["security_level"] = fixed_security_level
     receipt = await runtime.create_conversation_turn(
         conversation_id=conversation_id,
         payload=body,

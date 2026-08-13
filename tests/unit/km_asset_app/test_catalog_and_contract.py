@@ -128,6 +128,36 @@ class KmAssetCatalogTest(unittest.TestCase):
 
 
 class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_execution_spec_fixes_km_security_level(self):
+        service = KmAgentService(
+            uow_factory=None,
+            data_query_client=None,
+            knowledge_core_client=SimpleNamespace(bind_collection=AsyncMock()),
+        )
+        service.get = AsyncMock(return_value={
+            "status": "ACTIVE",
+            "agent_id": "01900000-0000-7000-8000-000000000001",
+            "agent_version_id": "01900000-0000-7000-8000-000000000002",
+            "collection_id": "01900000-0000-7000-8000-000000000003",
+            "semantic_model_id": "01900000-0000-7000-8000-000000000004",
+            "policy_binding_id": "01900000-0000-7000-8000-000000000005",
+            "source_id": "01900000-0000-7000-8000-000000000006",
+            "display_name": "KM Agent",
+            "models": {"router_llm": {}},
+            "do_rerank": False,
+            "instruction": None,
+            "config": {},
+        })
+        service._ensure_collection_binding = AsyncMock()
+
+        result = await service.execution_spec(
+            domain_id=43,
+            agent_id=UUID("01900000-0000-7000-8000-000000000001"),
+            actor_id="kmadmin",
+        )
+
+        self.assertEqual(1, result["resource_context"]["security_level"])
+
     async def test_km_agent_ensures_kc_collection_binding(self):
         knowledge_core = SimpleNamespace(bind_collection=AsyncMock())
         service = KmAgentService(

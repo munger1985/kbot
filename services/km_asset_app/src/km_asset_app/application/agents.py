@@ -135,7 +135,7 @@ class KmAgentService:
             collection_id=UUID(row["collection_id"]),
             actor_id=actor_id,
         )
-        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
+        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"], "security_level": 1}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
 
     async def _ensure_collection_binding(
         self,
