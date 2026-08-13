@@ -242,6 +242,47 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("DATA_QUERY", request["enabled_routes"])
         self.assertEqual(decision.route_type, RouteType.HYBRID_PARALLEL)
 
+    async def test_km_topic_search_uses_document_retrieval_only(self):
+        model = _ModelClient(
+            response={
+                "route_type": "HYBRID_DOCUMENT_FIRST",
+                "confidence": 0.9,
+                "reason": "不应调用模型路由",
+            }
+        )
+        planner = RootAgentPlanner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="查一下关于 ChatBI 的 asset",
+        )
+
+        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertEqual("deterministic-km-asset-v1", decision.classifier_version)
+        self.assertIsNone(model.last_json_request)
+
+    async def test_km_aggregate_question_uses_data_query(self):
+        planner = RootAgentPlanner()
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+            },
+            objective="THASNEEM.FATHIMA 发布了多少个 asset",
+        )
+
+        self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
+
     async def test_multi_capability_router_selects_data_chart(self):
         planner = RootAgentPlanner(
             model_client=_ModelClient(

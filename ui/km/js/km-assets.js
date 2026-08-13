@@ -27,7 +27,8 @@
     if (!rows.length) return KBotKmShell.renderEmpty(body, 7, "当前筛选条件下没有 Asset");
     body.innerHTML = rows.map((row, index) => {
       const retryable = ["FAILED", "DOWNLOAD_FAILED"].includes(row.ingestion_status) || row.source_status === "F";
-      return `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div></td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}</td></tr>`;
+      const reindexable = row.ingestion_status === "READY" && row.kc_bundle_revision_id;
+      return `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div></td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}${reindexable ? ` <button class="small" data-reindex="${index}">重新索引</button>` : ""}</td></tr>`;
     }).join("");
   }
   async function detail(index) {
@@ -40,11 +41,17 @@
     catch (error) { KBotKmShell.showError(error, "Asset 重试失败"); }
     finally { KBotKmShell.setBusy(button, false); }
   }
+  async function reindex(index, button) {
+    const row = rows[index]; KBotKmShell.setBusy(button, true, "提交中…");
+    try { await KBotKmApi.json(`${base}/assets/${row.km_asset_id}/reindex`, "POST", { expected_row_version: row.row_version }); KBotKmShell.toast("Asset 全文与向量重新索引任务已提交", "success"); await load(); }
+    catch (error) { KBotKmShell.showError(error, "Asset 重新索引失败"); }
+    finally { KBotKmShell.setBusy(button, false); }
+  }
   window.addEventListener("DOMContentLoaded", () => {
     $("asset-form").addEventListener("submit", (event) => { event.preventDefault(); $("asset-offset").value = "0"; load(); });
     $("asset-prev").addEventListener("click", () => { $("asset-offset").value = String(Math.max(0, Number($("asset-offset").value) - Number($("asset-limit").value))); load(); });
     $("asset-next").addEventListener("click", () => { if (rows.length < Number($("asset-limit").value)) return; $("asset-offset").value = String(Number($("asset-offset").value) + Number($("asset-limit").value)); load(); });
-    $("asset-rows").addEventListener("click", (event) => { const view = event.target.closest("[data-view]"); const again = event.target.closest("[data-retry]"); if (view) detail(Number(view.dataset.view)); if (again) retry(Number(again.dataset.retry), again); });
+    $("asset-rows").addEventListener("click", (event) => { const view = event.target.closest("[data-view]"); const again = event.target.closest("[data-retry]"); const reindexButton = event.target.closest("[data-reindex]"); if (view) detail(Number(view.dataset.view)); if (again) retry(Number(again.dataset.retry), again); if (reindexButton) reindex(Number(reindexButton.dataset.reindex), reindexButton); });
   });
   KBotKmShell.ready.then(initialize).catch(() => {});
 })();

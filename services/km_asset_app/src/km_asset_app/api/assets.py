@@ -245,6 +245,20 @@ async def retry_asset(km_asset_id: UUID, payload: VersionRequest, request: Reque
         _raise(exc)
 
 
+@router.post("/assets/{km_asset_id}/reindex", status_code=202)
+async def reindex_asset(km_asset_id: UUID, payload: VersionRequest, request: Request):
+    actor_id = _context(request, payload.domain_id)
+    try:
+        return await _service(request).reindex_asset(
+            domain_id=payload.domain_id,
+            km_asset_id=km_asset_id,
+            expected_row_version=payload.expected_row_version,
+            actor_id=actor_id,
+        )
+    except KmAssetApplicationError as exc:
+        _raise(exc)
+
+
 @router.get("/jobs")
 async def list_jobs(domain_id: int, request: Request, source_id: UUID | None = None, limit: int = Query(default=100, ge=1, le=500)):
     _context(request, domain_id)

@@ -367,6 +367,16 @@ async def retry_asset(km_asset_id: UUID, payload: VersionPayload, request: Reque
     return await _client(request).retry_asset(km_asset_id=km_asset_id, payload={"domain_id": domain_id, **payload.model_dump()}, auth_context=request.state.auth_context)
 
 
+@router.post("/assets/{km_asset_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
+async def reindex_asset(km_asset_id: UUID, payload: VersionPayload, request: Request):
+    domain_id = await _require(request, "km_asset:operations_manage")
+    return await _client(request).reindex_asset(
+        km_asset_id=km_asset_id,
+        payload={"domain_id": domain_id, **payload.model_dump()},
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.get("/jobs")
 async def list_jobs(request: Request, source_id: UUID | None = None, limit: int = Query(default=100, ge=1, le=500)):
     domain_id = await _require(request, "km_asset:operations_manage")

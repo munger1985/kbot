@@ -45,7 +45,7 @@ async def lifespan(app: FastAPIOffline):
     )
     app.state.data_query_client = data_query_client
     app.state.knowledge_core_client = knowledge_core_client
-    app.state.km_asset_service = KmAssetService(uow_factory=create_km_asset_uow(runtime.session_factory), credential_service=KmCredentialService(cipher=ManagedCredentialCipher.from_environment()), data_query_client=data_query_client)
+    app.state.km_asset_service = KmAssetService(uow_factory=create_km_asset_uow(runtime.session_factory), credential_service=KmCredentialService(cipher=ManagedCredentialCipher.from_environment()), data_query_client=data_query_client, knowledge_core_client=knowledge_core_client)
     app.state.km_agent_service = KmAgentService(
         uow_factory=create_km_asset_uow(runtime.session_factory),
         data_query_client=data_query_client,

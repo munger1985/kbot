@@ -71,6 +71,9 @@ class KmAssetClient:
     async def retry_asset(self, *, km_asset_id: UUID, payload: dict[str, Any], auth_context: AuthContext):
         return await self._json("POST", f"{self._BASE}/assets/{km_asset_id}/retry", payload=payload, auth_context=auth_context)
 
+    async def reindex_asset(self, *, km_asset_id: UUID, payload: dict[str, Any], auth_context: AuthContext):
+        return await self._json("POST", f"{self._BASE}/assets/{km_asset_id}/reindex", payload=payload, auth_context=auth_context)
+
     async def list_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int, auth_context: AuthContext):
         values: dict[str, Any] = {"domain_id": domain_id, "limit": limit}
         if source_id is not None:

@@ -284,6 +284,21 @@ class KmAssetWorker:
             raise _KcRevisionPending(value)
         if value not in {"READY", "PARTIAL", "FAILED", "REJECTED"}:
             raise RuntimeError(f"KC Revision 返回未知状态：{value}")
+        if value in {"READY", "PARTIAL"}:
+            bundle = await self._kc.get_bundle_status(
+                domain_id=int(job.domain_id),
+                bundle_id=bundle_id,
+                auth_context=self._auth_context(domain_id=int(job.domain_id)),
+            )
+            published_revision_id = bundle.get("current_revision_id")
+            availability = str(
+                bundle.get("availability_status") or ""
+            ).upper()
+            if (
+                str(published_revision_id or "") != str(bundle_revision_id)
+                or availability not in {"READY", "PARTIAL"}
+            ):
+                raise _KcRevisionPending("DISCOVERY_PUBLISHING")
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_asset(domain_id=int(job.domain_id), km_asset_id=job.km_asset_id, lock=True)
             if value in {"READY", "PARTIAL"}:

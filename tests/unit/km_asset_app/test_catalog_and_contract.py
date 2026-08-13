@@ -332,6 +332,14 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
                 self.request = values
                 return {"status": "PARTIAL"}
 
+            async def get_bundle_status(self, **_):
+                return {
+                    "availability_status": "PARTIAL",
+                    "current_revision_id": (
+                        "01900000-0000-7000-8000-000000000046"
+                    ),
+                }
+
         kc = KnowledgeCore()
         worker = KmAssetWorker(
             uow_factory=Uow,
@@ -349,6 +357,29 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("READY", asset.ingestion_status)
         self.assertEqual("READY", revision.status)
         self.assertEqual("SOURCE_STATUS_UPDATE", added[0].job_type)
+
+    async def test_kc_status_sync_waits_for_discovery_publication(self):
+        class KnowledgeCore:
+            async def get_revision_status(self, **_):
+                return {"status": "READY"}
+
+            async def get_bundle_status(self, **_):
+                return {
+                    "availability_status": "PROCESSING",
+                    "current_revision_id": None,
+                }
+
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=KnowledgeCore(),
+        )
+
+        with self.assertRaisesRegex(
+            _KcRevisionPending, "DISCOVERY_PUBLISHING"
+        ):
+            await worker._kc_status_sync(self._kc_job())
 
     async def test_processing_kc_revision_is_deferred_without_failure(self):
         class KnowledgeCore:

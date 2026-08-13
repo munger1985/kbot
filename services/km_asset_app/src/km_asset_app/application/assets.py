@@ -37,10 +37,11 @@ class CreateSourceCommand:
 
 
 class KmAssetService:
-    def __init__(self, *, uow_factory: Callable, credential_service: KmCredentialService, data_query_client=None):
+    def __init__(self, *, uow_factory: Callable, credential_service: KmCredentialService, data_query_client=None, knowledge_core_client=None):
         self._uow_factory = uow_factory
         self._credentials = credential_service
         self._data_query = data_query_client
+        self._knowledge_core = knowledge_core_client
 
     async def create_source(self, command: CreateSourceCommand) -> dict[str, Any]:
         self._require_data_query()
@@ -328,6 +329,106 @@ class KmAssetService:
             await uow.assets.add(job)
             await uow.commit()
             return {"asset": self._asset(row), "job": self._job(job)}
+
+    async def reindex_asset(
+        self,
+        *,
+        domain_id: int,
+        km_asset_id: UUID,
+        expected_row_version: int,
+        actor_id: str,
+    ):
+        """重新处理 KC Revision，以重建全文与向量 Discovery Profile。"""
+        if self._knowledge_core is None:
+            raise KmAssetApplicationError(
+                status_code=503,
+                code="KNOWLEDGE_CORE_UNAVAILABLE",
+                message="Knowledge Core 服务未配置",
+            )
+        async with self._uow_factory() as uow:
+            row = await uow.assets.get_asset(
+                domain_id=domain_id,
+                km_asset_id=km_asset_id,
+                lock=True,
+            )
+            if row is None:
+                self._not_found("KM_ASSET_NOT_FOUND", "KM Asset 不存在")
+            if int(row.row_version) != expected_row_version:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="ROW_VERSION_CONFLICT",
+                    message="Asset 已被其他请求修改",
+                )
+            if row.kc_bundle_id is None or row.kc_bundle_revision_id is None:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="KM_ASSET_KC_REVISION_MISSING",
+                    message="Asset 尚未形成可重新索引的 KC Revision",
+                )
+            source = await uow.assets.get_source(
+                domain_id=domain_id,
+                source_id=row.source_id,
+            )
+            if source is None:
+                self._not_found("KM_SOURCE_NOT_FOUND", "KM Asset 来源不存在")
+            collection_id = source.collection_id
+            bundle_id = row.kc_bundle_id
+            bundle_revision_id = row.kc_bundle_revision_id
+        receipt = await self._knowledge_core.reprocess_revision(
+            domain_id=domain_id,
+            collection_id=collection_id,
+            bundle_id=bundle_id,
+            bundle_revision_id=bundle_revision_id,
+            document_version_id=None,
+            auth_context=self._auth_context(
+                domain_id=domain_id,
+                actor_id=actor_id,
+            ),
+        )
+        async with self._uow_factory() as uow:
+            row = await uow.assets.get_asset(
+                domain_id=domain_id,
+                km_asset_id=km_asset_id,
+                lock=True,
+            )
+            if row is None or int(row.row_version) != expected_row_version:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="ROW_VERSION_CONFLICT",
+                    message="Asset 已被其他请求修改",
+                )
+            row.ingestion_status = "PARSING"
+            row.completed_at = None
+            row.error_code = None
+            row.error_message = None
+            row.failure_stage = None
+            row.row_version += 1
+            row.updated_by = actor_id
+            job = KmJobEntity(
+                domain_id=domain_id,
+                source_id=row.source_id,
+                km_asset_id=row.km_asset_id,
+                asset_revision_id=row.current_revision_id,
+                job_type="KC_STATUS_SYNC",
+                idempotency_key=(
+                    f"kc-reindex:{bundle_revision_id}:{row.row_version}"
+                ),
+                payload_json={
+                    "bundle_id": str(bundle_id),
+                    "bundle_revision_id": str(bundle_revision_id),
+                },
+                status="PENDING",
+                max_attempts=120,
+                available_at=datetime.now(timezone.utc) + timedelta(seconds=10),
+                created_by=actor_id,
+            )
+            await uow.assets.add(job)
+            await uow.commit()
+            return {
+                "asset": self._asset(row),
+                "job": self._job(job),
+                "kc_reprocess": receipt,
+            }
 
     async def list_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int):
         async with self._uow_factory() as uow:

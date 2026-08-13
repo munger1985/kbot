@@ -123,6 +123,11 @@ class RootAgentPlanner:
             )
         if len(capabilities) == 1:
             return self.decide(agent_snapshot=agent_snapshot)
+        if (
+            str(agent_snapshot.get("owner_app_id") or "") == "km_asset"
+            and {"document", "data_query"}.issubset(capabilities)
+        ):
+            return self._decide_km_asset_route(objective)
         enabled_routes = [
             route
             for capability, route in (
@@ -272,6 +277,36 @@ class RootAgentPlanner:
                 "plot ",
                 "visualize",
             )
+        )
+
+    @classmethod
+    def _decide_km_asset_route(cls, objective: str) -> RouteDecision:
+        """KM 内容主题走 KC 检索，明确结构化统计才走问数。"""
+        normalized = " ".join(objective.casefold().split())
+        structured_terms = (
+            "多少", "数量", "统计", "汇总", "合计", "占比", "比例",
+            "平均", "最多", "最少", "排行", "排名", "分布", "趋势",
+            "按作者", "按用户", "按状态", "按产品", "按行业", "按日期",
+            "count", "total", "average", "group by", "top ",
+        )
+        route = (
+            RouteType.DATA_QUERY
+            if any(term in normalized for term in structured_terms)
+            else RouteType.DOCUMENT
+        )
+        return RouteDecision(
+            route_type=route,
+            confidence=1,
+            reason=(
+                "KM 问题包含明确统计或聚合意图，进入 Asset 元数据问数"
+                if route == RouteType.DATA_QUERY
+                else "KM 内容、主题或语义查找统一进入 KC 全文与向量检索"
+            ),
+            requires_chart=(
+                route == RouteType.DATA_QUERY
+                and cls._requests_chart(objective)
+            ),
+            classifier_version="deterministic-km-asset-v1",
         )
 
     @classmethod
