@@ -176,16 +176,6 @@ def create_main_api_app(
         if context is None:
             return None
         claims = service.verify(request.headers.get("Authorization"))
-        if (
-            claims.must_change_password
-            and request.url.path != "/api/v1/apps/km-asset/auth/password"
-        ):
-            from platform_core.security import PortalApiKeyError
-
-            raise PortalApiKeyError(
-                "PASSWORD_CHANGE_REQUIRED",
-                "首次登录必须修改初始化密码",
-            )
         request.state.km_user_token_claims = claims
         return context
 

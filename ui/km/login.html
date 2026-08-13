@@ -6,17 +6,7 @@
     <form id="km-login-form" class="km-form-grid">
       <div class="km-field span-12"><label>用户名</label><input name="userId" autocomplete="username" required></div>
       <div class="km-field span-12"><label>密码</label><input name="password" type="password" autocomplete="current-password" required></div>
-      <div class="km-field span-12"><label>Domain ID（可选）</label><input name="domainId" type="number" min="1" placeholder="留空时使用第一个已授权 Domain"></div>
       <p id="login-error" class="km-form-error span-12" hidden></p><button class="primary span-12" type="submit">登录</button>
-    </form>
-  </section>
-  <section id="password-section" hidden><h1>修改初始化密码</h1><p>首次登录必须设置新密码，完成后才能进入 KM 页面。</p>
-    <form id="km-password-form" class="km-form-grid">
-      <div class="km-field span-12"><label>当前密码</label><input name="currentPassword" type="password" autocomplete="current-password" required></div>
-      <div class="km-field span-12"><label>新密码</label><input name="newPassword" type="password" autocomplete="new-password" minlength="12" required></div>
-      <div class="km-field span-12"><label>确认新密码</label><input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></div>
-      <p class="km-help span-12">至少 12 位，同时包含大小写字母、数字和特殊字符。</p>
-      <p id="password-error" class="km-form-error span-12" hidden></p><button class="primary span-12" type="submit">修改密码并进入</button>
     </form>
   </section>
 </main><script src="../runtime-config.js"></script><script src="../shared/kbot-api-client.js"></script><script src="../shared/kbot-dev-adapter.js"></script><script src="./js/km-login.js"></script></body></html>

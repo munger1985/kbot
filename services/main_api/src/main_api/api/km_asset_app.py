@@ -28,6 +28,7 @@ from platform_core.security import get_auth_context
 
 
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/km-asset", tags=["KM Asset App"])
+KM_ASSET_COLLECTION_NAME = "assets"
 
 
 class _Payload(BaseModel):
@@ -37,7 +38,6 @@ class _Payload(BaseModel):
 class KmLoginPayload(_Payload):
     user_id: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=256)
-    domain_id: int | None = Field(default=None, ge=1)
 
 
 class KmPasswordChangePayload(_Payload):
@@ -63,7 +63,6 @@ class SourceCreatePayload(_Payload):
     metadb_credentials: dict[str, str] = Field(min_length=2, max_length=2)
     sharepoint_credentials: dict[str, str] = Field(min_length=3, max_length=3)
     sharepoint_site_path: str = Field(min_length=1, max_length=512)
-    collection_id: UUID
     poll_interval_seconds: int = Field(default=60, ge=10, le=86400)
     batch_size: int = Field(default=100, ge=1, le=1000)
 
@@ -172,6 +171,31 @@ def _client(request: Request) -> KmAssetClient:
     return cast(KmAssetClient, request.app.state.km_asset_client)
 
 
+async def _fixed_collection_id(request: Request, *, domain_id: int) -> UUID:
+    """解析 KM 固定 Collection，拒绝缺失、停用或重复配置。"""
+    catalog = await cast(
+        KnowledgeCoreClient, request.app.state.knowledge_core_client
+    ).list_collections(
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    matches = [
+        item
+        for item in catalog.get("collections", [])
+        if item.get("display_name") == KM_ASSET_COLLECTION_NAME
+        and item.get("status") == "ACTIVE"
+    ]
+    if len(matches) != 1:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {
+                "code": "KM_FIXED_COLLECTION_UNAVAILABLE",
+                "message": "KM 固定 Collection assets 尚未初始化、未启用或存在重复记录",
+            },
+        )
+    return UUID(str(matches[0]["collection_id"]))
+
+
 async def _km_conversation(request: Request, conversation_id: UUID, domain_id: int):
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await runtime.get_conversation(
@@ -204,7 +228,6 @@ async def login(payload: KmLoginPayload, request: Request):
     return await service.login(
         user_id=payload.user_id.strip(),
         password=payload.password,
-        domain_id=payload.domain_id,
     )
 
 
@@ -244,7 +267,15 @@ async def list_sources(request: Request):
 @router.post("/sources", status_code=status.HTTP_201_CREATED)
 async def create_source(payload: SourceCreatePayload, request: Request):
     domain_id = await _require(request, "km_asset:source_manage")
-    return await _client(request).create_source(payload={"domain_id": domain_id, **payload.model_dump(mode="json")}, auth_context=request.state.auth_context)
+    collection_id = await _fixed_collection_id(request, domain_id=domain_id)
+    return await _client(request).create_source(
+        payload={
+            "domain_id": domain_id,
+            "collection_id": str(collection_id),
+            **payload.model_dump(mode="json"),
+        },
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.patch("/sources/{source_id}")

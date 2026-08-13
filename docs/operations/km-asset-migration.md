@@ -46,9 +46,9 @@ AES-256-GCM 密文保存在 `KBOT_MANAGED_CREDENTIAL`，查询接口不返回凭
 
 ## 首次配置
 
-1. 给管理员分配 `km_asset/manager` App Role。
-2. 创建一个 KC Collection。
-3. 调用 `POST /api/v1/apps/km-asset/sources` 创建来源。
+1. 在 SQL Developer 中执行 `scripts/db/bootstrap_km_initial_admin.sql`，创建固定的 `km_portal/assets` 资源和 KM 管理员。
+2. 使用初始化管理员登录；登录接口固定解析 `km_portal`，不接收 Domain ID。
+3. 调用 `POST /api/v1/apps/km-asset/sources` 创建来源；Main API 固定绑定 `assets`，不接收 Collection ID。
 4. 创建来源时，Data Query 自动调和固定模型 `KM Asset 元数据（系统托管）`。
 5. 调用 `POST /api/v1/apps/km-asset/sources/{source_id}/activate` 激活来源。
 6. 创建 KM Agent，并选择聊天需要的模型；问文问数模式至少要配置 `router_llm`。
@@ -63,8 +63,9 @@ Agent 和智能问答。没有 APEX 用户管理页面时，
 
 既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
 `scripts/db/bootstrap_km_initial_admin.sql`，它会幂等创建用户凭据表、初始化
-KM 权限和角色、创建 `kmadmin` 用户，并授予全部启用 Domain 的
-`km_asset/manager`。
+固定 Domain `km_portal` 和 Collection `assets`、初始化 KM 权限和角色、创建
+`kmadmin` 用户，并仅在 `km_portal` 中授予 `km_asset/manager`。首次创建
+Collection 时会选择最近更新的启用 LLM 和文本 Embedding 模型作为初始模型绑定。
 
 来源创建请求示例：
 
@@ -82,7 +83,6 @@ KM 权限和角色、创建 `kmadmin` 用户，并授予全部启用 Domain 的
     "client_secret": "secret"
   },
   "sharepoint_site_path": "/sites/km",
-  "collection_id": "01900000-0000-7000-8000-000000000001",
   "poll_interval_seconds": 60,
   "batch_size": 100
 }

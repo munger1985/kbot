@@ -3379,18 +3379,6 @@
       "KmLoginPayload": {
         "additionalProperties": false,
         "properties": {
-          "domain_id": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Domain Id"
-          },
           "password": {
             "maxLength": 256,
             "minLength": 1,
@@ -6618,11 +6606,6 @@
             "title": "Batch Size",
             "type": "integer"
           },
-          "collection_id": {
-            "format": "uuid",
-            "title": "Collection Id",
-            "type": "string"
-          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -6672,8 +6655,7 @@
           "metadb_endpoint",
           "metadb_credentials",
           "sharepoint_credentials",
-          "sharepoint_site_path",
-          "collection_id"
+          "sharepoint_site_path"
         ],
         "title": "SourceCreatePayload",
         "type": "object"

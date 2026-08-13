@@ -80,9 +80,22 @@ class _AccessRepository:
         credential.must_change_password = "N"
 
 
+class _DomainRepository:
+    def __init__(self, *, domain_id=41, name="km_portal", status="ACTIVE"):
+        self.domain = _DetachedEntity(
+            domain_id=domain_id,
+            name=name,
+            status=status,
+        )
+
+    async def get_by_name(self, *, name):
+        return self.domain if name == self.domain.name else None
+
+
 class _UnitOfWork:
     def __init__(self, access):
         self.access = access
+        self.domains = _DomainRepository()
 
     async def __aenter__(self):
         return self
@@ -90,6 +103,7 @@ class _UnitOfWork:
     async def __aexit__(self, exc_type, exc, traceback):
         self.access.user.attached = False
         self.access.credential.attached = False
+        self.domains.domain.attached = False
 
     async def commit(self):
         return None
@@ -114,12 +128,23 @@ class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await service.login(
             user_id="kmadmin",
             password="KmAdmin@2026!",
-            domain_id=None,
         )
 
         self.assertEqual("KM 管理员", result["display_name"])
         self.assertEqual(41, result["domain_id"])
-        self.assertTrue(result["must_change_password"])
+        self.assertFalse(result["must_change_password"])
+
+    async def test_login_uses_only_fixed_km_portal_domain(self):
+        access = _AccessRepository()
+        service = self._service(access)
+
+        result = await service.login(
+            user_id="kmadmin",
+            password="KmAdmin@2026!",
+        )
+
+        self.assertEqual(41, result["domain_id"])
+        self.assertNotIn("available_domain_ids", result)
 
     async def test_change_password_updates_hash_and_issues_normal_token(self):
         access = _AccessRepository()

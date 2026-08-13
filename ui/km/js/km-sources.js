@@ -41,7 +41,7 @@
       display_name: values.display_name, metadb_endpoint: values.metadb_endpoint,
       metadb_credentials: { username: values.metadb_username, password: values.metadb_password },
       sharepoint_credentials: { tenant_id: values.tenant_id, client_id: values.client_id, client_secret: values.client_secret },
-      sharepoint_site_path: values.sharepoint_site_path, collection_id: values.collection_id,
+      sharepoint_site_path: values.sharepoint_site_path,
       poll_interval_seconds: Number(values.poll_interval_seconds), batch_size: Number(values.batch_size),
     };
     KBotKmShell.setBusy($("save-source"), true, "创建中…");
@@ -72,9 +72,6 @@
     finally { KBotKmShell.setBusy($("update-source"), false); }
   }
   window.addEventListener("DOMContentLoaded", () => {
-    const url = globalThis.KBOT_UI_CONTEXT?.collectionPageUrl;
-    if (url) { $("collection-page-link").href = url; $("collection-page-link").removeAttribute("aria-disabled"); }
-    else $("collection-page-link").addEventListener("click", (event) => { event.preventDefault(); KBotKmShell.toast("请由 APEX 注入 collectionPageUrl", "error"); });
     $("new-source").addEventListener("click", () => KBotKmShell.openDialog("source-dialog"));
     $("refresh-sources").addEventListener("click", load);
     $("source-form").addEventListener("submit", save);

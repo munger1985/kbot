@@ -19,6 +19,7 @@ from platform_core.security import PortalApiKeyError, extract_bearer_token
 _ALGORITHM = "HS256"
 _AUDIENCE = "kbot-km-ui"
 _TOKEN_TYPE = "kbot-km-user+jwt"
+KM_PORTAL_DOMAIN_NAME = "km_portal"
 
 
 class KmUserAuthenticationError(ValueError):
@@ -113,20 +114,22 @@ class KmUserAuthService:
         self._codec = codec
 
     async def login(
-        self, *, user_id: str, password: str, domain_id: int | None
+        self, *, user_id: str, password: str
     ) -> dict[str, object]:
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
             credential = await uow.access.get_user_credential(user_id)
             domain_ids = await uow.access.list_active_km_domain_ids(user_id)
+            domain = await uow.domains.get_by_name(name=KM_PORTAL_DOMAIN_NAME)
             user_status = user.status if user is not None else None
             display_name = user.display_name if user is not None else None
+            fixed_domain_id = (
+                int(domain.domain_id)
+                if domain is not None and domain.status == "ACTIVE"
+                else None
+            )
             password_hash = (
                 credential.password_hash if credential is not None else None
-            )
-            must_change = bool(
-                credential is not None
-                and credential.must_change_password == "Y"
             )
         valid_password = bool(
             user is not None
@@ -141,15 +144,18 @@ class KmUserAuthService:
         )
         if not valid_password:
             raise KmUserAuthenticationError("INVALID_CREDENTIALS", "用户名或密码错误")
-        if not domain_ids:
-            raise KmUserAuthenticationError("KM_ACCESS_DENIED", "用户没有启用的 KM 访问权限")
-        selected_domain = domain_id if domain_id is not None else domain_ids[0]
-        if selected_domain not in domain_ids:
-            raise KmUserAuthenticationError("KM_ACCESS_DENIED", "用户无权访问指定 Domain")
+        if fixed_domain_id is None:
+            raise KmUserAuthenticationError(
+                "KM_DOMAIN_UNAVAILABLE", "KM 固定 Domain 尚未初始化或未启用"
+            )
+        if fixed_domain_id not in domain_ids:
+            raise KmUserAuthenticationError(
+                "KM_ACCESS_DENIED", "用户没有 km_portal Domain 的 KM 访问权限"
+            )
         token, expires_at = self._codec.issue(
             user_id=user_id,
-            domain_id=selected_domain,
-            must_change_password=must_change,
+            domain_id=fixed_domain_id,
+            must_change_password=False,
         )
         return {
             "access_token": token,
@@ -157,9 +163,8 @@ class KmUserAuthService:
             "expires_at": expires_at,
             "user_id": user_id,
             "display_name": display_name,
-            "domain_id": selected_domain,
-            "available_domain_ids": list(domain_ids),
-            "must_change_password": must_change,
+            "domain_id": fixed_domain_id,
+            "must_change_password": False,
         }
 
     async def change_password(
@@ -237,6 +242,7 @@ def create_km_user_token_codec(*, settings) -> KmUserTokenCodec:
 
 
 __all__ = [
+    "KM_PORTAL_DOMAIN_NAME",
     "KmUserAuthenticationError",
     "KmUserAuthService",
     "KmUserTokenClaims",

@@ -1,21 +1,13 @@
 -- KM Asset 首次使用的一步初始化脚本。
--- 在 SQL Developer 中修改下方 BEGIN 块的用户赋值，然后使用 Run Script（F5）执行。
--- 本脚本会补齐 KM 权限与角色、创建或启用平台用户，并在全部启用 Domain
--- 中授予 km_asset/manager。USER_ID 区分大小写，必须与页面登录用户完全一致。
+-- 在 SQL Developer 中使用 Run Script（F5）执行；脚本不要求输入绑定变量。
+-- 本脚本会创建或启用固定 Domain km_portal、创建固定 Collection assets、
+-- 补齐 KM 权限与角色，并创建或启用平台管理员。
+-- USER_ID 区分大小写，必须与页面登录用户完全一致。
 -- 初始账号：kmadmin，初始密码：KmAdmin@2026!
--- 首次登录必须修改初始密码后才能访问其他 KM API。
+-- 登录后可直接使用；重新执行本脚本会将密码恢复为上述固定值。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
-
-VARIABLE KM_ADMIN_USER_ID VARCHAR2(256)
-VARIABLE KM_ADMIN_DISPLAY_NAME VARCHAR2(256)
-
-BEGIN
-    :KM_ADMIN_USER_ID := 'kmadmin';
-    :KM_ADMIN_DISPLAY_NAME := 'KM Asset 管理员';
-END;
-/
 
 DECLARE
     l_table_count PLS_INTEGER;
@@ -51,7 +43,6 @@ END;
 
 DECLARE
     l_table_count PLS_INTEGER;
-    l_domain_count PLS_INTEGER;
 BEGIN
     SELECT COUNT(*)
       INTO l_table_count
@@ -60,32 +51,164 @@ BEGIN
         'KBOT_PLATFORM_DOMAIN',
         'KBOT_PLATFORM_USER',
         'KBOT_PLATFORM_USER_CREDENTIAL',
+        'KBOT_AI_MODEL',
+        'KBOT_KC_COLLECTION',
         'KBOT_PERMISSION',
         'KBOT_APP_ROLE',
         'KBOT_APP_ROLE_PERMISSION',
         'KBOT_APP_MEMBER_ROLE'
      );
 
-    IF l_table_count <> 7 THEN
+    IF l_table_count <> 9 THEN
         raise_application_error(
             -20001,
-            'Main API 用户与权限基础表不完整，不能初始化 KM 管理员。'
+            'Domain、模型、KC Collection 或用户权限基础表不完整，不能初始化 KM。'
+        );
+    END IF;
+    dbms_output.put_line('KM 初始化依赖表检查通过。');
+END;
+/
+
+MERGE INTO KBOT_PLATFORM_DOMAIN target
+USING (
+    SELECT
+        'km_portal' AS NAME,
+        'KM Portal 固定业务 Domain' AS DESCRIPTION
+    FROM DUAL
+) source
+ON (target.NAME = source.NAME)
+WHEN MATCHED THEN
+    UPDATE SET
+        target.STATUS = 'ACTIVE',
+        target.DESCRIPTION = source.DESCRIPTION,
+        target.UPDATED_BY = 'bootstrap:km_initial_admin',
+        target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN
+    INSERT (
+        NAME, STATUS, DESCRIPTION, ROW_VERSION,
+        CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
+    )
+    VALUES (
+        source.NAME, 'ACTIVE', source.DESCRIPTION, 1,
+        'bootstrap:km_initial_admin', 'bootstrap:km_initial_admin',
+        SYSTIMESTAMP, SYSTIMESTAMP
+    );
+
+DECLARE
+    l_domain_id NUMBER(38);
+    l_collection_count PLS_INTEGER;
+    l_llm_model_id RAW(16);
+    l_embedding_model_id RAW(16);
+    l_llm_uuid VARCHAR2(36 CHAR);
+    l_embedding_uuid VARCHAR2(36 CHAR);
+    l_models_json VARCHAR2(1000 CHAR);
+
+    FUNCTION raw_uuid(value RAW) RETURN VARCHAR2 IS
+        hex_value VARCHAR2(32 CHAR) := LOWER(RAWTOHEX(value));
+    BEGIN
+        RETURN SUBSTR(hex_value, 1, 8) || '-'
+            || SUBSTR(hex_value, 9, 4) || '-'
+            || SUBSTR(hex_value, 13, 4) || '-'
+            || SUBSTR(hex_value, 17, 4) || '-'
+            || SUBSTR(hex_value, 21, 12);
+    END;
+BEGIN
+    SELECT DOMAIN_ID
+      INTO l_domain_id
+      FROM KBOT_PLATFORM_DOMAIN
+     WHERE NAME = 'km_portal'
+       AND STATUS = 'ACTIVE';
+
+    SELECT COUNT(*)
+      INTO l_collection_count
+      FROM KBOT_KC_COLLECTION
+     WHERE DOMAIN_ID = l_domain_id
+       AND DISPLAY_NAME = 'assets';
+
+    IF l_collection_count > 1 THEN
+        raise_application_error(
+            -20002,
+            'km_portal Domain 中存在多个 assets Collection，请先清理重复数据。'
         );
     END IF;
 
-    SELECT COUNT(*)
-      INTO l_domain_count
-      FROM KBOT_PLATFORM_DOMAIN
-     WHERE STATUS = 'ACTIVE';
+    IF l_collection_count = 0 THEN
+        BEGIN
+            SELECT MODEL_ID
+              INTO l_llm_model_id
+              FROM (
+                  SELECT MODEL_ID
+                    FROM KBOT_AI_MODEL
+                   WHERE CATEGORY = 1
+                     AND STATUS = 1
+                   ORDER BY UPDATED_AT DESC, CREATED_AT DESC
+              )
+             WHERE ROWNUM = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                raise_application_error(
+                    -20003,
+                    '缺少启用的 LLM 模型，无法创建 assets Collection。'
+                );
+        END;
 
-    IF l_domain_count = 0 THEN
-        raise_application_error(-20002, '不存在启用的 Domain，无法授权。');
+        BEGIN
+            SELECT MODEL_ID
+              INTO l_embedding_model_id
+              FROM (
+                  SELECT MODEL_ID
+                    FROM KBOT_AI_MODEL
+                   WHERE CATEGORY = 2
+                     AND STATUS = 1
+                   ORDER BY UPDATED_AT DESC, CREATED_AT DESC
+              )
+             WHERE ROWNUM = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                raise_application_error(
+                    -20004,
+                    '缺少启用的文本 Embedding 模型，无法创建 assets Collection。'
+                );
+        END;
+
+        l_llm_uuid := raw_uuid(l_llm_model_id);
+        l_embedding_uuid := raw_uuid(l_embedding_model_id);
+        l_models_json := '{"parser_llm":"' || l_llm_uuid
+            || '","retrieval_llm":"' || l_llm_uuid
+            || '","embedding":"' || l_embedding_uuid || '"}';
+
+        INSERT INTO KBOT_KC_COLLECTION (
+            COLLECTION_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION,
+            MODELS_JSON, PARSE_POLICY_JSON, STATUS,
+            DEFAULT_SECURITY_LEVEL, METADATA_JSON, ROW_VERSION,
+            CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
+        ) VALUES (
+            HEXTORAW(REPLACE('019ff8d2-ea17-765e-b167-6014a28d157b', '-', '')),
+            l_domain_id,
+            'assets',
+            'KM Portal Asset 文档固定 Collection',
+            l_models_json,
+            '{"parse_strategy":"AUTO","do_ocr":true,"ocr_engine":"tesseract","image_scale":2.0,"extract_page_images":true,"extract_picture_images":true,"detect_table_structure":true,"visual_min_text_characters":80,"visual_min_mean_confidence":0.65,"visual_max_gibberish_ratio":0.08}',
+            'ACTIVE',
+            1,
+            '{"owner_app_id":"km_asset","fixed_resource":true}',
+            1,
+            'bootstrap:km_initial_admin',
+            'bootstrap:km_initial_admin',
+            SYSTIMESTAMP,
+            SYSTIMESTAMP
+        );
+        dbms_output.put_line('已创建 km_portal/assets 固定 Collection。');
+    ELSE
+        UPDATE KBOT_KC_COLLECTION
+           SET STATUS = 'ACTIVE',
+               DESCRIPTION = 'KM Portal Asset 文档固定 Collection',
+               UPDATED_BY = 'bootstrap:km_initial_admin',
+               UPDATED_AT = SYSTIMESTAMP
+         WHERE DOMAIN_ID = l_domain_id
+           AND DISPLAY_NAME = 'assets';
+        dbms_output.put_line('已复用并启用 km_portal/assets 固定 Collection。');
     END IF;
-
-    dbms_output.put_line(
-        '将初始化用户 ' || :KM_ADMIN_USER_ID || '，并授权到 '
-        || l_domain_count || ' 个启用 Domain。'
-    );
 END;
 /
 
@@ -166,8 +289,8 @@ WHEN NOT MATCHED THEN
 MERGE INTO KBOT_PLATFORM_USER target
 USING (
     SELECT
-        :KM_ADMIN_USER_ID AS USER_ID,
-        :KM_ADMIN_DISPLAY_NAME AS DISPLAY_NAME
+        'kmadmin' AS USER_ID,
+        'KM Asset 管理员' AS DISPLAY_NAME
     FROM DUAL
 ) source
 ON (target.USER_ID = source.USER_ID)
@@ -186,19 +309,25 @@ WHEN NOT MATCHED THEN
 MERGE INTO KBOT_PLATFORM_USER_CREDENTIAL target
 USING (
     SELECT
-        :KM_ADMIN_USER_ID AS USER_ID,
+        'kmadmin' AS USER_ID,
         '$2b$12$QyA/YRNs6.JVOLh9saV7oeW7wskZ0qDEioAgV8oMBO7jOkxchNDQa'
             AS PASSWORD_HASH
     FROM DUAL
 ) source
 ON (target.USER_ID = source.USER_ID)
+WHEN MATCHED THEN
+    UPDATE SET
+        target.PASSWORD_HASH = source.PASSWORD_HASH,
+        target.MUST_CHANGE_PASSWORD = 'N',
+        target.PASSWORD_UPDATED_AT = SYSTIMESTAMP,
+        target.UPDATED_AT = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
     INSERT (
         USER_ID, PASSWORD_HASH, MUST_CHANGE_PASSWORD,
         PASSWORD_UPDATED_AT, CREATED_AT, UPDATED_AT
     )
     VALUES (
-        source.USER_ID, source.PASSWORD_HASH, 'Y',
+        source.USER_ID, source.PASSWORD_HASH, 'N',
         SYSTIMESTAMP, SYSTIMESTAMP, SYSTIMESTAMP
     );
 
@@ -207,10 +336,11 @@ USING (
     SELECT
         'km_asset' AS APP_ID,
         domain.DOMAIN_ID,
-        :KM_ADMIN_USER_ID AS USER_ID,
+        'kmadmin' AS USER_ID,
         'manager' AS ROLE_CODE
     FROM KBOT_PLATFORM_DOMAIN domain
-    WHERE domain.STATUS = 'ACTIVE'
+    WHERE domain.NAME = 'km_portal'
+      AND domain.STATUS = 'ACTIVE'
 ) source
 ON (
     target.APP_ID = source.APP_ID
@@ -231,3 +361,27 @@ WHEN NOT MATCHED THEN
     );
 
 COMMIT;
+
+DECLARE
+    l_domain_id NUMBER(38);
+    l_collection_id VARCHAR2(36 CHAR);
+BEGIN
+    SELECT domain.DOMAIN_ID,
+           LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 1, 8) || '-'
+               || SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 9, 4) || '-'
+               || SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 13, 4) || '-'
+               || SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 17, 4) || '-'
+               || SUBSTR(RAWTOHEX(collection.COLLECTION_ID), 21, 12))
+      INTO l_domain_id, l_collection_id
+      FROM KBOT_PLATFORM_DOMAIN domain
+      JOIN KBOT_KC_COLLECTION collection
+        ON collection.DOMAIN_ID = domain.DOMAIN_ID
+     WHERE domain.NAME = 'km_portal'
+       AND collection.DISPLAY_NAME = 'assets';
+
+    dbms_output.put_line('KM 初始化完成。');
+    dbms_output.put_line('登录用户：kmadmin');
+    dbms_output.put_line('固定 Domain：km_portal（ID=' || l_domain_id || '）');
+    dbms_output.put_line('固定 Collection：assets（ID=' || l_collection_id || '）');
+END;
+/

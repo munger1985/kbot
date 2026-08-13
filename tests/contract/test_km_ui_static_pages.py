@@ -1,6 +1,7 @@
 """KM Asset 正式页面静态契约检查。"""
 
 from html.parser import HTMLParser
+import json
 from pathlib import Path
 import subprocess
 import unittest
@@ -31,7 +32,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
     pages = {
         "dashboard.html": {"metric-sources", "metric-ready", "metric-failed", "dashboard-job-rows"},
         "metadb.html": {"metadb-form", "metadb-source", "metadb-rows", "metadb-detail-dialog"},
-        "sources.html": {"source-form", "source-edit-form", "source-rows", "data-model-dialog", "collection-page-link"},
+        "sources.html": {"source-form", "source-edit-form", "source-rows", "data-model-dialog"},
         "assets.html": {"asset-form", "asset-rows", "asset-detail-dialog"},
         "jobs.html": {"job-form", "job-rows", "job-detail-dialog"},
         "agents.html": {"agent-form", "agent-rows", "agent-source"},
@@ -98,6 +99,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(path, source)
 
+    def test_sources_page_has_no_apex_collection_shortcut(self):
+        html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")
+        script = (KM_ROOT / "js" / "km-sources.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("APEX Collection", html)
+        self.assertNotIn("collection-page-link", html)
+        self.assertNotIn("collectionPageUrl", script)
+
     def test_default_user_script_is_sql_developer_standalone(self):
         source = (
             ROOT / "scripts" / "db" / "bootstrap_km_default_user.sql"
@@ -123,6 +133,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
             ROOT / "scripts" / "db" / "bootstrap_km_initial_admin.sql"
         ).read_text(encoding="utf-8")
         for statement in (
+            "MERGE INTO KBOT_PLATFORM_DOMAIN",
+            "INSERT INTO KBOT_KC_COLLECTION",
             "MERGE INTO KBOT_PERMISSION",
             "MERGE INTO KBOT_APP_ROLE",
             "MERGE INTO KBOT_APP_ROLE_PERMISSION",
@@ -131,9 +143,16 @@ class KmUiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(statement, source)
         self.assertIn("'manager' AS ROLE_CODE", source)
-        self.assertIn("WHERE domain.STATUS = 'ACTIVE'", source)
-        self.assertIn("VARIABLE KM_ADMIN_USER_ID", source)
-        self.assertIn(":KM_ADMIN_USER_ID := 'kmadmin'", source)
+        self.assertIn("WHERE domain.NAME = 'km_portal'", source)
+        self.assertIn("DISPLAY_NAME = 'assets'", source)
+        self.assertIn("CATEGORY = 1", source)
+        self.assertIn("CATEGORY = 2", source)
+        self.assertIn("'kmadmin' AS USER_ID", source)
+        self.assertIn("'KM Asset 管理员' AS DISPLAY_NAME", source)
+        self.assertIn("target.MUST_CHANGE_PASSWORD = 'N'", source)
+        self.assertIn("source.USER_ID, source.PASSWORD_HASH, 'N'", source)
+        self.assertNotIn("VARIABLE KM_ADMIN", source)
+        self.assertNotIn(":KM_ADMIN", source)
         self.assertNotIn("&&", source)
         self.assertNotIn("@@", source)
 
@@ -151,6 +170,10 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("Main API 地址", login_html)
         self.assertNotIn('name="baseUrl"', login_html)
         self.assertIn("KBotKmAuth.login", login_js)
+        self.assertNotIn("km-password-form", login_html)
+        self.assertNotIn("changePassword", login_js)
+        self.assertNotIn('name="domainId"', login_html)
+        self.assertNotIn("domain_id:", login_js)
         self.assertNotIn("saveConnection", login_js)
         self.assertIn("/api/v1/apps/km-asset/auth/login", adapter)
         self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", adapter)
@@ -158,6 +181,32 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
         self.assertNotIn("X-KBot-Test-Auth", adapter)
         self.assertNotIn("X-KBot-User-ID", adapter)
+
+    def test_km_source_creation_uses_server_fixed_collection(self):
+        source_html = (ROOT / "ui" / "km" / "sources.html").read_text(
+            encoding="utf-8"
+        )
+        source_js = (ROOT / "ui" / "km" / "js" / "km-sources.js").read_text(
+            encoding="utf-8"
+        )
+        api_source = (
+            ROOT / "services" / "main_api" / "src" / "main_api" / "api"
+            / "km_asset_app.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('name="collection_id"', source_html)
+        self.assertNotIn("values.collection_id", source_js)
+        self.assertIn('KM_ASSET_COLLECTION_NAME = "assets"', api_source)
+        self.assertIn("_fixed_collection_id", api_source)
+        openapi = json.loads(
+            (ROOT / "docs" / "openapi" / "main_api_public_v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        schemas = openapi["components"]["schemas"]
+        self.assertNotIn("domain_id", schemas["KmLoginPayload"]["properties"])
+        self.assertNotIn(
+            "collection_id", schemas["SourceCreatePayload"]["properties"]
+        )
 
     def test_every_km_page_loads_server_runtime_configuration_first(self):
         for page_name in (*self.pages, "login.html"):
