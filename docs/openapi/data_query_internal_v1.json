@@ -41,6 +41,58 @@
         "title": "AgentBindingCreate",
         "type": "object"
       },
+      "AgentBindingMatch": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Consumer App Id",
+            "type": "string"
+          },
+          "semantic_model_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Semantic Model Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "consumer_app_id",
+          "agent_id",
+          "agent_version_id"
+        ],
+        "title": "AgentBindingMatch",
+        "type": "object"
+      },
+      "AgentBindingMatchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "matched": {
+            "title": "Matched",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "matched"
+        ],
+        "title": "AgentBindingMatchResult",
+        "type": "object"
+      },
       "AgentBindingPage": {
         "additionalProperties": false,
         "properties": {
@@ -621,6 +673,11 @@
       "DataSourceCreate": {
         "additionalProperties": false,
         "properties": {
+          "auto_discover_schema": {
+            "default": true,
+            "title": "Auto Discover Schema",
+            "type": "boolean"
+          },
           "credentials": {
             "$ref": "#/components/schemas/DataSourceCredentials"
           },
@@ -2957,6 +3014,47 @@
           }
         },
         "summary": "Create Agent Binding",
+        "tags": [
+          "Data Query Management"
+        ]
+      }
+    },
+    "/internal/v1/data-query/management/agent-bindings/active-match": {
+      "post": {
+        "operationId": "match_active_agent_binding_internal_v1_data_query_management_agent_bindings_active_match_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBindingMatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBindingMatchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Match Active Agent Binding",
         "tags": [
           "Data Query Management"
         ]

@@ -104,6 +104,36 @@ class AccessControlService:
             "roles": roles,
         } for user_id, roles in grouped.items()]
 
+    async def list_policy_subjects(
+        self, *, app_id: str, domain_id: int
+    ) -> dict[str, list[dict[str, object]]]:
+        """返回策略可选择的当前 Domain 成员及应用角色目录。"""
+        members = await self.list_members(app_id=app_id, domain_id=domain_id)
+        async with self._uow_factory() as uow:
+            roles = await uow.access.list_active_app_roles(app_id=app_id)
+        return {
+            "members": [
+                {
+                    "id": str(item["user_id"]),
+                    "display_name": item.get("display_name"),
+                    "username": str(item["user_id"]),
+                }
+                for item in members
+                if item.get("status") == "ACTIVE"
+                and any(
+                    role.get("status") == "ACTIVE"
+                    for role in item.get("roles", [])
+                )
+            ],
+            "roles": [
+                {
+                    "code": row.role_code,
+                    "display_name": row.display_name,
+                }
+                for row in roles
+            ],
+        }
+
     async def set_member_role(
         self, *, app_id: str, domain_id: int, user_id: str,
         display_name: str | None, role_code: str, status: str,

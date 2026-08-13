@@ -130,6 +130,15 @@ class AccessControlRepository:
         )
         return tuple(rows)
 
+    async def list_active_app_roles(self, *, app_id: str) -> list[AppRoleEntity]:
+        rows = await self._session.scalars(
+            select(AppRoleEntity).where(
+                AppRoleEntity.app_id == app_id,
+                AppRoleEntity.status == "ACTIVE",
+            ).order_by(AppRoleEntity.display_name, AppRoleEntity.role_code)
+        )
+        return list(rows)
+
     async def upsert_member_role(
         self,
         *,

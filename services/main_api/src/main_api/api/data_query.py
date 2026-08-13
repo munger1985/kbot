@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from platform_clients import DataQueryClient
+from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.security import get_auth_context
@@ -64,6 +64,7 @@ class DataSourceConnectionTestRequest(BaseModel):
 
 class DataSourceCreateRequest(DataSourceConnectionTestRequest):
     display_name: str = Field(min_length=1, max_length=256)
+    auto_discover_schema: bool = True
 
 
 class DataSourceUpdateRequest(BaseModel):
@@ -124,6 +125,8 @@ class QueryBudgetRequest(BaseModel):
 
 
 class PolicyBindingCreateRequest(BaseModel):
+    actor_ids: tuple[str, ...] = Field(default=(), max_length=1000)
+    roles: tuple[str, ...] = Field(default=(), max_length=100)
     semantic_model_ids: tuple[UUID, ...] = Field(min_length=1, max_length=64)
     budget: QueryBudgetRequest = Field(default_factory=QueryBudgetRequest)
 
@@ -177,6 +180,13 @@ def _client(request: Request) -> DataQueryClient:
     return cast(DataQueryClient, client)
 
 
+def _knowledge_retrieval_client(request: Request) -> KnowledgeRetrievalAppClient:
+    client = getattr(request.app.state, "knowledge_retrieval_app_client", None)
+    if client is None:
+        raise RuntimeError("Knowledge Retrieval App Client 尚未初始化")
+    return cast(KnowledgeRetrievalAppClient, client)
+
+
 def _internal_context(request: Request):
     return get_auth_context(request)
 
@@ -203,6 +213,16 @@ async def _list(resource: str, cursor: UUID | None, limit: int, request: Request
 @router.get("/connector-capabilities")
 async def list_connector_capabilities(request: Request) -> dict[str, Any]:
     return await _client(request).management_capabilities(auth_context=_internal_context(request))
+
+
+@router.get("/policy-subjects")
+async def list_policy_subjects(request: Request) -> dict[str, Any]:
+    """返回当前 Domain 可用于问数策略的成员和角色。"""
+    context = get_auth_context(request)
+    return await request.app.state.access_control_service.list_policy_subjects(
+        app_id="knowledge_retrieval",
+        domain_id=int(context.domain_id or "0"),
+    )
 
 
 @router.get("/data-sources")
@@ -381,10 +401,22 @@ async def change_policy_binding_status(policy_binding_id: UUID, body: StatusChan
 
 @router.post("/policy-bindings", status_code=201)
 async def create_policy_binding(body: PolicyBindingCreateRequest, request: Request) -> dict[str, Any]:
+    if not body.actor_ids and not body.roles:
+        raise HTTPException(
+            422,
+            {
+                "code": "POLICY_SUBJECT_REQUIRED",
+                "message": "至少选择一个用户或角色",
+            },
+        )
     return await _client(request).management_create(
         resource="policy-bindings",
         payload={
             "semantic_model_ids": [str(item) for item in body.semantic_model_ids],
+            "subject_selector": {
+                "actor_ids": list(body.actor_ids),
+                "roles": list(body.roles),
+            },
             "budget": body.budget.model_dump(),
         }, auth_context=_internal_context(request),
     )
@@ -402,8 +434,30 @@ async def change_agent_binding_status(agent_binding_id: UUID, body: StatusChange
 
 @router.post("/agent-bindings", status_code=201)
 async def create_agent_binding(body: AgentBindingCreateRequest, request: Request) -> dict[str, Any]:
+    context = get_auth_context(request)
+    domain_id = int(context.domain_id or "0")
+    agent = await _knowledge_retrieval_client(request).get_agent(
+        agent_id=body.agent_id,
+        domain_id=domain_id,
+        auth_context=context,
+    )
+    agent_version_id = agent.get("agent_version_id")
+    if not agent_version_id:
+        raise HTTPException(
+            409,
+            {
+                "code": "AGENT_VERSION_MISSING",
+                "message": "知识检索 Agent 缺少当前版本，无法创建问数绑定",
+            },
+        )
     return await _client(request).management_create(
-        resource="agent-bindings", payload=body.model_dump(mode="json"), auth_context=_internal_context(request)
+        resource="agent-bindings",
+        payload={
+            "consumer_app_id": "knowledge_retrieval",
+            "agent_version_id": str(agent_version_id),
+            **body.model_dump(mode="json"),
+        },
+        auth_context=context,
     )
 
 

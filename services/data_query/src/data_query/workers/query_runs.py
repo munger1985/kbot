@@ -42,6 +42,7 @@ class _ClaimedRun:
     execution_id: UUID
     lease_token: UUID
     run_id: UUID
+    domain_id: int
     connector_type: str
     plan_snapshot: dict[str, object]
     semantic_model_snapshot: dict[str, object]
@@ -134,6 +135,7 @@ class DataQueryWorkerService:
                 execution_id=execution.data_query_execution_id,
                 lease_token=execution.lease_token,
                 run_id=run.data_query_run_id,
+                domain_id=int(run.domain_id),
                 connector_type=execution.connector_type,
                 plan_snapshot=run.plan_snapshot_json,
                 semantic_model_snapshot=run.semantic_model_snapshot_json,

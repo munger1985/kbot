@@ -500,6 +500,16 @@ class _FakeAccessControlService:
             app_id=app_id, domain_id=domain_id, user_id=user_id
         )
 
+    async def list_policy_subjects(self, *, app_id, domain_id):
+        return {
+            "members": [{
+                "id": "portal-user-1",
+                "display_name": "Portal User",
+                "username": "portal-user-1",
+            }],
+            "roles": [{"code": "manager", "display_name": "管理员"}],
+        }
+
 
 class _FakeKnowledgeRetrievalAppClient:
     def __init__(self, runtime):
@@ -533,11 +543,44 @@ class _FakeKnowledgeRetrievalAppClient:
     async def create_agent(self, *, payload, auth_context):
         return self.runtime._agent()
 
+    async def get_agent(self, *, agent_id, domain_id, auth_context):
+        return {
+            **self.runtime._agent(),
+            "agent_id": str(agent_id),
+            "domain_id": domain_id,
+            "agent_version_id": "019f8eae-2c25-7d48-b044-350ec3f5a015",
+        }
+
+    async def update_agent(self, *, agent_id, payload, auth_context):
+        return {**self.runtime._agent(), **payload, "agent_id": str(agent_id)}
+
     async def list_agents(self, *, domain_id, auth_context):
         return [self.runtime._agent()]
 
     async def list_grants(self, *, domain_id, auth_context):
         return []
+
+
+class _FakeDataQueryClient:
+    def __init__(self):
+        self.last_resource: str | None = None
+        self.last_payload: dict[str, Any] | None = None
+        self.last_context: AuthContext | None = None
+        self.active_binding = True
+
+    async def management_create(self, *, resource, payload, auth_context):
+        self.last_resource = resource
+        self.last_payload = payload
+        self.last_context = auth_context
+        return {
+            "agent_binding_id": "019f8eae-2c25-7d48-b044-350ec3f5a016",
+            **payload,
+            "status": "ACTIVE",
+            "row_version": 1,
+        }
+
+    async def management_has_active_agent_binding(self, **_):
+        return self.active_binding
 
 
 class _FakeDomainRepository:
@@ -589,6 +632,8 @@ class MainApiTest(unittest.TestCase):
         self.knowledge_retrieval_app = (
             self.app.state.knowledge_retrieval_app_client
         )
+        self.data_query = _FakeDataQueryClient()
+        self.app.state.data_query_client = self.data_query
         self.app.state.access_control_service = _FakeAccessControlService()
         self.aiops = _FakeAIOpsClient()
         self.app.state.aiops_client = self.aiops
@@ -604,6 +649,117 @@ class MainApiTest(unittest.TestCase):
             USER_ID_HEADER: "portal-user-1",
             "X-Request-ID": "main-request-1",
         }
+
+    def test_agent_binding_enriches_internal_owner_and_current_version(self) -> None:
+        semantic_model_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a017")
+        policy_binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a018")
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/data-query/agent-bindings",
+            headers=self._headers(),
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "semantic_model_id": str(semantic_model_id),
+                "policy_binding_id": str(policy_binding_id),
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        self.assertEqual("agent-bindings", self.data_query.last_resource)
+        self.assertEqual(
+            {
+                "consumer_app_id": "knowledge_retrieval",
+                "agent_version_id": "019f8eae-2c25-7d48-b044-350ec3f5a015",
+                "agent_id": str(self.agent_runtime.agent_id),
+                "semantic_model_id": str(semantic_model_id),
+                "policy_binding_id": str(policy_binding_id),
+            },
+            self.data_query.last_payload,
+        )
+        self.assertEqual("portal-user-1", self.data_query.last_context.asserted_user_id)
+
+    def test_policy_binding_forwards_subject_selector(self) -> None:
+        semantic_model_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a017")
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/data-query/policy-bindings",
+            headers=self._headers(),
+            json={
+                "actor_ids": ["portal-user-1"],
+                "roles": ["manager"],
+                "semantic_model_ids": [str(semantic_model_id)],
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        self.assertEqual("policy-bindings", self.data_query.last_resource)
+        self.assertEqual(
+            {
+                "actor_ids": ["portal-user-1"],
+                "roles": ["manager"],
+            },
+            self.data_query.last_payload["subject_selector"],
+        )
+
+    def test_policy_subjects_use_current_domain_access_catalog(self) -> None:
+        response = self.client.get(
+            "/api/v1/apps/knowledge-retrieval/data-query/policy-subjects",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("portal-user-1", response.json()["members"][0]["id"])
+        self.assertEqual("manager", response.json()["roles"][0]["code"])
+
+    def test_policy_binding_requires_subject(self) -> None:
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/data-query/policy-bindings",
+            headers=self._headers(),
+            json={
+                "semantic_model_ids": [
+                    "019f8eae-2c25-7d48-b044-350ec3f5a017"
+                ],
+            },
+        )
+
+        self.assertEqual(422, response.status_code)
+        self.assertEqual("POLICY_SUBJECT_REQUIRED", response.json()["code"])
+
+    def test_semantic_data_query_agent_must_be_created_as_draft(self) -> None:
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/agents",
+            headers=self._headers(),
+            json={
+                "display_name": "问数助手",
+                "enabled_capabilities": ["conversation", "data_query"],
+                "models": {},
+                "config": {"data_query_mode": "SEMANTIC"},
+                "status": "ACTIVE",
+            },
+        )
+        self.assertEqual(422, response.status_code, response.text)
+        self.assertEqual(
+            "APP_AGENT_QUERY_BINDING_REQUIRED",
+            response.json()["code"],
+        )
+
+    def test_semantic_data_query_agent_activation_requires_active_binding(self) -> None:
+        original_agent = self.agent_runtime._agent
+        self.agent_runtime._agent = lambda: {
+            **original_agent(),
+            "status": "DRAFT",
+            "enabled_capabilities": ["conversation", "data_query"],
+            "config": {"data_query_mode": "SEMANTIC"},
+        }
+        self.data_query.active_binding = False
+        response = self.client.patch(
+            f"/api/v1/apps/knowledge-retrieval/agents/{self.agent_runtime.agent_id}",
+            headers=self._headers(),
+            json={"expected_row_version": 1, "status": "ACTIVE"},
+        )
+        self.assertEqual(422, response.status_code, response.text)
+        self.assertEqual(
+            "APP_AGENT_QUERY_BINDING_REQUIRED",
+            response.json()["code"],
+        )
 
     def test_public_collection_request_propagates_trusted_context(self) -> None:
         response = self.client.get(

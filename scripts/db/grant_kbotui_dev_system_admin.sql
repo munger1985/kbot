@@ -1,8 +1,8 @@
 -- 为 KBot 业务用户 kbotui_dev 和 KBOTUI_DEV 授予全部已启用 Domain 的应用管理员权限。
 -- 本脚本用于 SQL Developer：粘贴后使用 Run Script（F5）执行。
 -- 两个用户标识用于匹配 APEX 可能传递的小写或大写 APP_USER，不是 Oracle 数据库账号。
--- 当前权限模型没有跨应用的 system_admin 角色；本脚本授予
--- knowledge_retrieval 和 aiops 两个应用的 manager 角色，等同当前产品范围的系统管理员。
+-- 当前权限模型没有跨应用的 system_admin 角色；本脚本动态授予所有 App 的 manager
+-- 角色，并先把每个 App 的全部权限补齐到 manager，等同当前产品范围的系统管理员。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
@@ -14,16 +14,13 @@ BEGIN
     SELECT COUNT(*)
       INTO l_role_count
       FROM KBOT_APP_ROLE
-     WHERE (
-            (APP_ID = 'knowledge_retrieval' AND ROLE_CODE = 'manager')
-            OR (APP_ID = 'aiops' AND ROLE_CODE = 'manager')
-        )
+     WHERE ROLE_CODE = 'manager'
        AND STATUS = 'ACTIVE';
 
-    IF l_role_count <> 2 THEN
+    IF l_role_count = 0 THEN
         raise_application_error(
             -20001,
-            '缺少启用的应用管理员角色，请先完成 Main API 权限表初始化。'
+            '缺少启用的 manager 角色，请先完成 Main API 权限表初始化。'
         );
     END IF;
 
@@ -38,10 +35,29 @@ BEGIN
 
     dbms_output.put_line(
         '将向 ' || l_domain_count
-        || ' 个启用 Domain 的用户 kbotui_dev、KBOTUI_DEV 授予两个应用管理员角色。'
+        || ' 个启用 Domain 的用户 kbotui_dev、KBOTUI_DEV 授予全部应用管理员角色。'
     );
 END;
 /
+
+-- 修复增量升级场景：新增 Permission 后，既有 manager 角色也必须获得该权限。
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT role.APP_ID, role.ROLE_CODE, permission.PERMISSION_CODE
+      FROM KBOT_APP_ROLE role
+      JOIN KBOT_PERMISSION permission
+        ON permission.APP_ID = role.APP_ID
+     WHERE role.ROLE_CODE = 'manager'
+       AND role.STATUS = 'ACTIVE'
+) source
+ON (
+    target.APP_ID = source.APP_ID
+    AND target.ROLE_CODE = source.ROLE_CODE
+    AND target.PERMISSION_CODE = source.PERMISSION_CODE
+)
+WHEN NOT MATCHED THEN
+    INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+    VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
 
 MERGE INTO KBOT_PLATFORM_USER target
 USING (
@@ -78,10 +94,7 @@ USING (
     ) app_user
     WHERE domain.STATUS = 'ACTIVE'
       AND role.STATUS = 'ACTIVE'
-      AND (
-          (role.APP_ID = 'knowledge_retrieval' AND role.ROLE_CODE = 'manager')
-          OR (role.APP_ID = 'aiops' AND role.ROLE_CODE = 'manager')
-      )
+      AND role.ROLE_CODE = 'manager'
 ) source
 ON (
     target.APP_ID = source.APP_ID
@@ -117,5 +130,14 @@ JOIN KBOT_PLATFORM_DOMAIN domain
   ON domain.DOMAIN_ID = member_role.DOMAIN_ID
 WHERE member_role.USER_ID IN ('kbotui_dev', 'KBOTUI_DEV')
   AND member_role.ROLE_CODE = 'manager'
-  AND member_role.APP_ID IN ('knowledge_retrieval', 'aiops')
 ORDER BY member_role.USER_ID, member_role.DOMAIN_ID, member_role.APP_ID;
+
+PROMPT === manager 角色当前权限 ===
+
+SELECT
+    role_permission.APP_ID,
+    role_permission.ROLE_CODE,
+    role_permission.PERMISSION_CODE
+FROM KBOT_APP_ROLE_PERMISSION role_permission
+WHERE role_permission.ROLE_CODE = 'manager'
+ORDER BY role_permission.APP_ID, role_permission.PERMISSION_CODE;

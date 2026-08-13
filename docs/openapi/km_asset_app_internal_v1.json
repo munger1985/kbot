@@ -212,6 +212,17 @@
       "SourceUpdateRequest": {
         "additionalProperties": false,
         "properties": {
+          "auto_sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Sync Enabled"
+          },
           "batch_size": {
             "anyOf": [
               {
@@ -224,17 +235,6 @@
               }
             ],
             "title": "Batch Size"
-          },
-          "auto_sync_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Sync Enabled"
           },
           "display_name": {
             "anyOf": [

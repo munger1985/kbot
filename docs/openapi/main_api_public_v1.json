@@ -1898,6 +1898,11 @@
       },
       "DataSourceCreateRequest": {
         "properties": {
+          "auto_discover_schema": {
+            "default": true,
+            "title": "Auto Discover Schema",
+            "type": "boolean"
+          },
           "credentials": {
             "$ref": "#/components/schemas/DataSourceCredentialsRequest"
           },
@@ -5328,8 +5333,26 @@
       },
       "PolicyBindingCreateRequest": {
         "properties": {
+          "actor_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Actor Ids",
+            "type": "array"
+          },
           "budget": {
             "$ref": "#/components/schemas/QueryBudgetRequest"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Roles",
+            "type": "array"
           },
           "semantic_model_ids": {
             "items": {
@@ -6663,6 +6686,17 @@
       "SourceUpdatePayload": {
         "additionalProperties": false,
         "properties": {
+          "auto_sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Sync Enabled"
+          },
           "batch_size": {
             "anyOf": [
               {
@@ -6675,17 +6709,6 @@
               }
             ],
             "title": "Batch Size"
-          },
-          "auto_sync_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Sync Enabled"
           },
           "display_name": {
             "anyOf": [
@@ -15288,6 +15311,30 @@
           }
         },
         "summary": "Change Policy Binding Status",
+        "tags": [
+          "Data Query"
+        ]
+      }
+    },
+    "/api/v1/apps/knowledge-retrieval/data-query/policy-subjects": {
+      "get": {
+        "description": "返回当前 Domain 可用于问数策略的成员和角色。",
+        "operationId": "list_policy_subjects_api_v1_apps_knowledge_retrieval_data_query_policy_subjects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Policy Subjects Api V1 Apps Knowledge Retrieval Data Query Policy Subjects Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Policy Subjects",
         "tags": [
           "Data Query"
         ]

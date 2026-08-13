@@ -59,6 +59,7 @@ class DataSourceCreate(_Contract):
     source_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
     endpoint: DataSourceEndpoint
     credentials: DataSourceCredentials
+    auto_discover_schema: bool = True
 
 
 class DataSourceUpdate(_Contract):
@@ -173,6 +174,17 @@ class AgentBindingCreate(_Contract):
     agent_version_id: UUID
     semantic_model_id: UUID
     policy_binding_id: UUID
+
+
+class AgentBindingMatch(_Contract):
+    consumer_app_id: str = Field(min_length=1, max_length=128)
+    agent_id: UUID
+    agent_version_id: UUID
+    semantic_model_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+
+
+class AgentBindingMatchResult(_Contract):
+    matched: bool
 
 
 class PublishSemanticModelCommand(_Contract):

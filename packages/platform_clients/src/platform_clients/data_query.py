@@ -155,6 +155,25 @@ class DataQueryClient:
             auth_context=auth_context, scopes=("data_query.manage",),
         )
 
+    async def management_has_active_agent_binding(
+        self, *, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_ids: set[UUID],
+        auth_context: AuthContext,
+    ) -> bool:
+        result = await self._json(
+            "POST",
+            "/internal/v1/data-query/management/agent-bindings/active-match",
+            payload={
+                "consumer_app_id": consumer_app_id,
+                "agent_id": str(agent_id),
+                "agent_version_id": str(agent_version_id),
+                "semantic_model_ids": [str(item) for item in sorted(semantic_model_ids)],
+            },
+            auth_context=auth_context,
+            scopes=("data_query.manage",),
+        )
+        return result.get("matched") is True
+
     async def management_test_connection(
         self, *, payload: dict[str, Any], auth_context: AuthContext
     ) -> dict[str, Any]:

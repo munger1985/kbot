@@ -14,6 +14,7 @@ from data_query.application.semantic_models import retire_semantic_model_version
 from data_query.application.semantic_models import submit_semantic_model_version_for_review
 from data_query.application.semantic_models import update_semantic_model_draft
 from data_query.application.model_validation import create_model_validation_run, get_model_validation_result
+from data_query.application.notifications import publish_data_query_notification
 from data_query.application.sources import (
     DataQueryManagementError,
     create_data_source,
@@ -318,6 +319,20 @@ class DataQueryManagementService:
                 status="QUEUED",
             )
             await uow.semantic_model_generation_jobs.add(job)
+            await publish_data_query_notification(
+                uow=uow,
+                event_type="data_query.semantic_model.generation_started",
+                event_key=f"{job.generation_job_id}:generation-started",
+                domain_id=domain_id,
+                actor_id=actor_id,
+                resource_type="semantic_model_generation",
+                resource_id=str(job.generation_job_id),
+                resource_name=command.display_name,
+                correlation_id=str(job.generation_job_id),
+                operation_id=str(job.generation_job_id),
+                summary="正在根据已采集的数据库结构生成语义模型草稿。",
+                safe_data={"schema_snapshot_id": str(snapshot_id)},
+            )
             await uow.commit()
         return SemanticModelGenerationReceipt(generation_job_id=job.generation_job_id, status="QUEUED")
 
@@ -662,6 +677,25 @@ class DataQueryManagementService:
         return AgentBindingPage(
             items=tuple(self._agent_binding_view(item) for item in rows[:limit]),
             next_cursor=rows[limit].agent_binding_id if len(rows) > limit else None,
+        )
+
+    async def has_active_agent_binding(
+        self, *, domain_id: int, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_ids: tuple[UUID, ...],
+    ) -> bool:
+        """判断当前 Agent 版本是否至少绑定一个指定的有效语义模型。"""
+        async with self._uow_factory() as uow:
+            assert uow.agent_bindings
+            rows = await uow.agent_bindings.list_active_for_agent(
+                domain_id=domain_id,
+                consumer_app_id=consumer_app_id,
+                agent_id=agent_id,
+                agent_version_id=agent_version_id,
+            )
+            await uow.commit()
+        allowed = set(semantic_model_ids)
+        return bool(rows) if not allowed else any(
+            row.semantic_model_id in allowed for row in rows
         )
 
     async def change_agent_binding_status(

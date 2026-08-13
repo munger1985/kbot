@@ -11,7 +11,7 @@ from main_api.application import (
     AccessControlService,
     AccessDeniedError,
 )
-from platform_clients import KnowledgeRetrievalAppClient
+from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
 
@@ -89,6 +89,17 @@ def _client(request: Request) -> KnowledgeRetrievalAppClient:
     return cast(
         KnowledgeRetrievalAppClient,
         request.app.state.knowledge_retrieval_app_client,
+    )
+
+
+def _data_query_client(request: Request) -> DataQueryClient:
+    return cast(DataQueryClient, request.app.state.data_query_client)
+
+
+def _uses_semantic_data_query(*, capabilities, config) -> bool:
+    return (
+        "data_query" in set(capabilities or ())
+        and str((config or {}).get("data_query_mode") or "").upper() == "SEMANTIC"
     )
 
 
@@ -182,6 +193,16 @@ async def create_agent(payload: KnowledgeAgentCreatePayload, request: Request):
     domain_id, _, _ = await _require(
         request, "knowledge_retrieval:agent_manage"
     )
+    if payload.status == "ACTIVE" and _uses_semantic_data_query(
+        capabilities=payload.enabled_capabilities, config=payload.config,
+    ):
+        raise HTTPException(
+            422,
+            {
+                "code": "APP_AGENT_QUERY_BINDING_REQUIRED",
+                "message": "带问数能力的 Agent 必须先以草稿创建并配置有效查询绑定，再单独启用",
+            },
+        )
     return await _client(request).create_agent(
         payload={"domain_id": domain_id, **payload.model_dump(mode="json")},
         auth_context=request.state.auth_context,
@@ -214,11 +235,53 @@ async def update_agent(
     domain_id, _, _ = await _require(
         request, "knowledge_retrieval:agent_manage"
     )
+    current = await _client(request).get_agent(
+        agent_id=agent_id,
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    values = payload.model_dump(mode="json", exclude_unset=True)
+    capabilities = values.get(
+        "enabled_capabilities", current.get("enabled_capabilities") or ()
+    )
+    config = values.get("config", current.get("config") or {})
+    status_value = values.get("status", current.get("status"))
+    if status_value == "ACTIVE" and _uses_semantic_data_query(
+        capabilities=capabilities, config=config,
+    ):
+        version_fields = {
+            "enabled_capabilities", "models", "do_rerank", "instruction", "config"
+        }
+        if version_fields.intersection(values):
+            raise HTTPException(
+                422,
+                {
+                    "code": "APP_AGENT_QUERY_BINDING_VERSION_REQUIRED",
+                    "message": "请先保存 Agent 草稿版本、创建该版本的查询绑定，再单独启用",
+                },
+            )
+        version_id = current.get("agent_version_id")
+        if not version_id or not await _data_query_client(
+            request
+        ).management_has_active_agent_binding(
+            consumer_app_id="knowledge_retrieval",
+            agent_id=agent_id,
+            agent_version_id=UUID(str(version_id)),
+            semantic_model_ids=set(),
+            auth_context=request.state.auth_context,
+        ):
+            raise HTTPException(
+                422,
+                {
+                    "code": "APP_AGENT_QUERY_BINDING_REQUIRED",
+                    "message": "启用问数 Agent 前必须为当前版本配置至少一个有效查询绑定",
+                },
+            )
     return await _client(request).update_agent(
         agent_id=agent_id,
         payload={
             "domain_id": domain_id,
-            **payload.model_dump(mode="json", exclude_unset=True),
+            **values,
         },
         auth_context=request.state.auth_context,
     )

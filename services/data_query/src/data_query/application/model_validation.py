@@ -22,6 +22,7 @@ from data_query.entities import (
     DataQueryRunEntity,
 )
 from platform_core.identity import uuid7
+from data_query.application.notifications import publish_data_query_notification
 from data_query.connectors import compile_dialect_query
 from data_query.connectors.postgresql import compile_postgresql_query
 
@@ -229,6 +230,23 @@ async def create_model_validation_run(
             action="MODEL_VALIDATION_CREATED", payload_json=audit_payload,
             content_hash=_hash(audit_payload),
         ))
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.validation.started",
+            event_key=f"{run.data_query_run_id}:validation-started",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="semantic_model",
+            resource_id=str(semantic_model_id),
+            resource_name=model.display_name,
+            correlation_id=trace_id,
+            operation_id=str(run.data_query_run_id),
+            summary="系统正在使用该业务问题验证语义模型。",
+            safe_data={
+                "semantic_model_version_id": str(semantic_model_version_id),
+                "status": run.status,
+            },
+        )
         await uow.commit()
     return SemanticModelValidationReceipt(
         data_query_run_id=run.data_query_run_id, status=run.status,

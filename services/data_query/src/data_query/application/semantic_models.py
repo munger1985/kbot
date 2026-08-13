@@ -15,6 +15,7 @@ from data_query.domain import (
     can_transition,
 )
 from data_query.persistence import DataQueryUnitOfWork
+from data_query.application.notifications import publish_data_query_notification
 
 
 class SemanticModelPublicationError(ValueError):
@@ -147,6 +148,20 @@ async def publish_semantic_model_version(
         version.published_by = actor_id
         version.published_at = datetime.now(UTC)
         model.active_version = version.version_no
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.semantic_model.published",
+            event_key=f"{version.semantic_model_version_id}:published",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="semantic_model",
+            resource_id=str(model.semantic_model_id),
+            resource_name=model.display_name,
+            correlation_id=str(version.semantic_model_version_id),
+            operation_id=str(version.semantic_model_version_id),
+            summary=f"语义模型 v{version.version_no} 已发布。",
+            safe_data={"status": version.status, "version_no": int(version.version_no)},
+        )
         await uow.commit()
 
 
@@ -170,6 +185,20 @@ async def submit_semantic_model_version_for_review(
             raise SemanticModelPublicationError("MODEL_VERSION_NOT_SUBMITTABLE")
         version.status = SemanticModelVersionStatus.REVIEW.value
         version.submitted_by = actor_id
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.semantic_model.review_requested",
+            event_key=f"{version.semantic_model_version_id}:review-requested",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="semantic_model",
+            resource_id=str(model.semantic_model_id),
+            resource_name=model.display_name,
+            correlation_id=str(version.semantic_model_version_id),
+            operation_id=str(version.semantic_model_version_id),
+            summary=f"语义模型 v{version.version_no} 已提交审核。",
+            safe_data={"status": version.status, "version_no": int(version.version_no)},
+        )
         await uow.commit()
 
 
@@ -194,6 +223,20 @@ async def return_semantic_model_version_for_revision(
         version.status = SemanticModelVersionStatus.DRAFT.value
         version.review_comment = review_comment
         version.reviewed_by = actor_id
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.semantic_model.returned",
+            event_key=f"{version.semantic_model_version_id}:returned:{version.row_version}",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="semantic_model",
+            resource_id=str(model.semantic_model_id),
+            resource_name=model.display_name,
+            correlation_id=str(version.semantic_model_version_id),
+            operation_id=str(version.semantic_model_version_id),
+            summary="语义模型已退回修改，请查看审核意见。",
+            safe_data={"status": version.status, "version_no": int(version.version_no)},
+        )
         await uow.commit()
 
 
@@ -225,4 +268,18 @@ async def retire_semantic_model_version(
         version.status = SemanticModelVersionStatus.RETIRED.value
         model.active_version = None
         model.updated_by = actor_id
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.semantic_model.retired",
+            event_key=f"{version.semantic_model_version_id}:retired",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="semantic_model",
+            resource_id=str(model.semantic_model_id),
+            resource_name=model.display_name,
+            correlation_id=str(version.semantic_model_version_id),
+            operation_id=str(version.semantic_model_version_id),
+            summary=f"语义模型 v{version.version_no} 已停用。",
+            safe_data={"status": version.status, "version_no": int(version.version_no)},
+        )
         await uow.commit()

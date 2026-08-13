@@ -14,6 +14,8 @@ from data_query.api.dependencies import (
 from data_query.application import DataQueryManagementService
 from data_query.contracts import (
     AgentBindingCreate,
+    AgentBindingMatch,
+    AgentBindingMatchResult,
     AgentBindingPage,
     AgentBindingStatusChange,
     AgentBindingView,
@@ -296,6 +298,21 @@ async def create_agent_binding(body: AgentBindingCreate, request: Request, servi
 async def list_agent_bindings(request: Request, service: Service, context: Auth, cursor: UUID | None = None, limit: int = Query(default=50, ge=1, le=200)) -> AgentBindingPage:
     domain_id, _actor_id = _require_management(request, context)
     return await service.list_agent_bindings(domain_id=domain_id, after_id=cursor, limit=limit)
+
+
+@router.post("/agent-bindings/active-match", response_model=AgentBindingMatchResult)
+async def match_active_agent_binding(
+    body: AgentBindingMatch, request: Request, service: Service, context: Auth,
+) -> AgentBindingMatchResult:
+    domain_id, _actor_id = _require_management(request, context)
+    matched = await service.has_active_agent_binding(
+        domain_id=domain_id,
+        consumer_app_id=body.consumer_app_id,
+        agent_id=body.agent_id,
+        agent_version_id=body.agent_version_id,
+        semantic_model_ids=body.semantic_model_ids,
+    )
+    return AgentBindingMatchResult(matched=matched)
 
 
 @router.patch("/agent-bindings/{agent_binding_id}/status", response_model=AgentBindingView)

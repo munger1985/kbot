@@ -270,7 +270,37 @@ class SchemaSnapshotWorker:
             ready = [row for row in selected if row.status in {"READY", "MANUAL"}]
             failed = [row for row in selected if row.status == "FAILED"]
             pending = [row for row in selected if row.status in {"QUEUED", "CAPTURING"}]
+            source = await uow.data_sources.get_by_id(
+                data_source_id=snapshot.data_source_id
+            )
             if pending:
+                if source is not None:
+                    completed_count = len(ready) + len(failed)
+                    await publish_data_query_notification(
+                        uow=uow,
+                        event_type="data_query.schema.capture_progress",
+                        event_key=(
+                            f"{snapshot.schema_snapshot_id}:capture-progress:"
+                            f"{completed_count}:{len(failed)}"
+                        ),
+                        domain_id=int(source.domain_id),
+                        actor_id=snapshot.requested_by,
+                        resource_type="schema_snapshot",
+                        resource_id=str(snapshot.schema_snapshot_id),
+                        resource_name=source.display_name,
+                        correlation_id=str(snapshot.schema_snapshot_id),
+                        operation_id=str(snapshot.schema_snapshot_id),
+                        summary=(
+                            f"数据库结构采集进度：成功 {len(ready)}，"
+                            f"失败 {len(failed)}，待处理 {len(pending)}。"
+                        ),
+                        safe_data={
+                            "succeeded_count": len(ready),
+                            "failed_count": len(failed),
+                            "pending_count": len(pending),
+                            "selected_count": len(selected),
+                        },
+                    )
                 await uow.commit()
                 return
             if ready:
@@ -294,17 +324,17 @@ class SchemaSnapshotWorker:
                 "content_hash": content_hash if ready else None,
             }
             snapshot.completed_at = datetime.now(UTC)
-            source = await uow.data_sources.get_by_id(
-                data_source_id=snapshot.data_source_id
-            )
             if source is not None:
-                succeeded = bool(ready)
+                event_type = (
+                    "data_query.schema.capture_partial"
+                    if ready and failed
+                    else "data_query.schema.capture_completed"
+                    if ready
+                    else "data_query.schema.capture_failed"
+                )
                 await publish_data_query_notification(
                     uow=uow,
-                    event_type=(
-                        "data_query.schema.capture_completed"
-                        if succeeded else "data_query.schema.capture_failed"
-                    ),
+                    event_type=event_type,
                     event_key=f"{snapshot.schema_snapshot_id}:capture-terminal",
                     domain_id=int(source.domain_id), actor_id=source.created_by,
                     resource_type="schema_snapshot",
@@ -313,7 +343,11 @@ class SchemaSnapshotWorker:
                     correlation_id=str(snapshot.schema_snapshot_id),
                     operation_id=str(snapshot.schema_snapshot_id),
                     summary=(
-                        "数据库结构采集完成。" if succeeded else "数据库结构采集失败。"
+                        "数据库结构部分采集失败，请重试或补录元数据。"
+                        if ready and failed
+                        else "数据库结构采集完成。"
+                        if ready
+                        else "数据库结构采集失败。"
                     ),
                     safe_data={
                         "status": snapshot.status,

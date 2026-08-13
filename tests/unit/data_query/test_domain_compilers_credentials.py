@@ -2,11 +2,16 @@
 
 import unittest
 
+from data_query import entities as _data_query_entities  # noqa: F401
 from data_query.connectors import compile_dialect_query
 from data_query.connectors.postgresql import compile_postgresql_query
 from data_query.contracts import (
+    AgentBindingMatch,
     DataQueryPlanV1,
     DataSourceCredentialStatus,
+    DataSourceCreate,
+    DataSourceCredentials,
+    DataSourceEndpoint,
     DatasetDefinition,
     DimensionDefinition,
     MeasureDefinition,
@@ -25,6 +30,7 @@ from data_query.domain import (
 )
 from platform_core.identity import uuid7
 from platform_core.managed_credentials import ManagedCredentialCipher
+from platform_core.notifications.catalog import event_definition
 from platform_core.persistence.orm import BaseEntity
 
 
@@ -69,6 +75,54 @@ def _plan(*, limit: int = 20, field: str = "region") -> DataQueryPlanV1:
 
 
 class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
+    def test_new_data_source_enables_schema_discovery_by_default(self):
+        source = DataSourceCreate(
+            display_name="业务库",
+            source_type="POSTGRESQL",
+            endpoint=DataSourceEndpoint(
+                host="db.example.com",
+                port=5432,
+                database="warehouse",
+                allowed_schemas=("analytics",),
+            ),
+            credentials=DataSourceCredentials(
+                username="readonly", password="secret"
+            ),
+        )
+        self.assertTrue(source.auto_discover_schema)
+
+    def test_active_binding_match_can_check_any_model_for_exact_agent_version(self):
+        match = AgentBindingMatch(
+            consumer_app_id="knowledge_retrieval",
+            agent_id=uuid7(),
+            agent_version_id=uuid7(),
+        )
+        self.assertEqual((), match.semantic_model_ids)
+
+    def test_data_query_workflow_notification_events_are_registered(self):
+        event_types = (
+            "data_query.schema.discovery_started",
+            "data_query.schema.selection_required",
+            "data_query.schema.capture_started",
+            "data_query.schema.capture_progress",
+            "data_query.schema.capture_completed",
+            "data_query.schema.capture_partial",
+            "data_query.schema.capture_failed",
+            "data_query.semantic_model.generation_started",
+            "data_query.semantic_model.generation_completed",
+            "data_query.semantic_model.generation_failed",
+            "data_query.semantic_model.review_requested",
+            "data_query.semantic_model.returned",
+            "data_query.semantic_model.published",
+            "data_query.semantic_model.retired",
+            "data_query.validation.started",
+            "data_query.validation.completed",
+            "data_query.validation.failed",
+        )
+        for event_type in event_types:
+            with self.subTest(event_type=event_type):
+                self.assertEqual(event_type, event_definition(event_type).event_type)
+
     def test_data_source_credential_status_never_exposes_reference(self):
         fields = DataSourceCredentialStatus.model_fields
         self.assertNotIn("credential_id", fields)

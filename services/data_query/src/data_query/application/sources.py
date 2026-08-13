@@ -29,6 +29,7 @@ from data_query.entities import (
 )
 from data_query.persistence import DataQueryUnitOfWork
 from data_query.adapters import DatabaseCredentialService
+from data_query.application.notifications import publish_data_query_notification
 from platform_core.identity import uuid7
 
 
@@ -55,7 +56,7 @@ async def create_data_source(
     command: DataSourceCreate,
     credential_service: DatabaseCredentialService,
 ) -> DataSourceEntity:
-    """在同一事务创建 DRAFT 数据源和首版加密凭据。"""
+    """在同一事务创建数据源、首版加密凭据和可选的结构发现任务。"""
     configuration = command.endpoint.model_dump(mode="json")
     async with uow_factory() as uow:
         assert uow.data_sources and uow.managed_credentials
@@ -81,6 +82,55 @@ async def create_data_source(
             updated_by=actor_id,
         )
         await uow.data_sources.add(entity)
+        if command.auto_discover_schema:
+            assert uow.schema_snapshots and uow.audits
+            snapshot_id = uuid7()
+            request_hash = _canonical_hash({
+                "source_version": 1,
+                "configuration_hash": entity.configuration_hash,
+                "request_id": str(snapshot_id),
+            })
+            snapshot = SchemaSnapshotEntity(
+                schema_snapshot_id=snapshot_id,
+                data_source_id=data_source_id,
+                source_version=1,
+                status=SchemaSnapshotStatus.REQUESTED.value,
+                snapshot_hash=request_hash,
+                connector_type=command.source_type,
+                connector_version="pending",
+                capabilities_json={},
+                requested_by=actor_id,
+            )
+            await uow.schema_snapshots.add(snapshot)
+            audit_payload = {
+                "action": "SCHEMA_DISCOVERY_REQUESTED",
+                "schema_snapshot_id": str(snapshot_id),
+                "data_source_id": str(data_source_id),
+                "trigger": "DATA_SOURCE_CREATED",
+            }
+            await uow.audits.append(DataQueryAuditEntity(
+                data_query_run_id=None,
+                domain_id=domain_id,
+                actor_id=actor_id,
+                trace_id=f"management:{snapshot_id}",
+                action="SCHEMA_DISCOVERY_REQUESTED",
+                payload_json=audit_payload,
+                content_hash=_canonical_hash(audit_payload),
+            ))
+            await publish_data_query_notification(
+                uow=uow,
+                event_type="data_query.schema.discovery_started",
+                event_key=f"{snapshot_id}:discovery-started",
+                domain_id=domain_id,
+                actor_id=actor_id,
+                resource_type="schema_snapshot",
+                resource_id=str(snapshot_id),
+                resource_name=entity.display_name,
+                correlation_id=str(snapshot_id),
+                operation_id=str(snapshot_id),
+                summary="数据源已创建，正在自动发现允许 Schema 中的表和视图。",
+                safe_data={"data_source_id": str(data_source_id)},
+            )
         await uow.commit()
         return entity
 
@@ -168,6 +218,20 @@ async def request_schema_snapshot(
             trace_id=f"management:{uuid7()}", action="SCHEMA_DISCOVERY_REQUESTED",
             payload_json=audit_payload, content_hash=_canonical_hash(audit_payload),
         ))
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.schema.discovery_started",
+            event_key=f"{entity.schema_snapshot_id}:discovery-started",
+            domain_id=int(source.domain_id),
+            actor_id=actor_id,
+            resource_type="schema_snapshot",
+            resource_id=str(entity.schema_snapshot_id),
+            resource_name=source.display_name,
+            correlation_id=str(entity.schema_snapshot_id),
+            operation_id=str(entity.schema_snapshot_id),
+            summary="系统正在读取所选 Schema 的表和视图清单。",
+            safe_data={"data_source_id": str(source.data_source_id)},
+        )
         await uow.commit()
         return entity
 

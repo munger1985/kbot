@@ -18,6 +18,7 @@ from data_query.contracts import (
     SemanticModelDefinition,
 )
 from data_query.persistence import DataQueryUnitOfWork
+from data_query.application.notifications import publish_data_query_notification
 from data_query.entities import DataQueryAuditEntity
 from platform_core.identity import uuid7
 
@@ -133,6 +134,20 @@ async def confirm_snapshot_selection(
             action="SCHEMA_SNAPSHOT_SELECTION_CONFIRMED",
             payload={"schema_snapshot_id": str(snapshot_id), "selected_count": len(selected_ids)},
         )
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.schema.capture_started",
+            event_key=f"{snapshot_id}:capture-started",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="schema_snapshot",
+            resource_id=str(snapshot_id),
+            resource_name=source.display_name,
+            correlation_id=str(snapshot_id),
+            operation_id=str(snapshot_id),
+            summary=f"已选择 {len(selected_ids)} 个表或视图，正在采集结构。",
+            safe_data={"selected_count": len(selected_ids)},
+        )
         await uow.commit()
 
 
@@ -148,8 +163,6 @@ async def retry_snapshot_object(
             raise SchemaMetadataError("SCHEMA_OBJECT_NOT_FOUND")
         if item.status != "FAILED":
             raise SchemaMetadataError("SCHEMA_OBJECT_NOT_RETRYABLE")
-        if int(item.attempt_count) >= 3:
-            raise SchemaMetadataError("SCHEMA_OBJECT_RETRY_LIMIT_REACHED")
         item.selected = True
         item.status = "QUEUED"
         item.error_code = None
@@ -162,6 +175,20 @@ async def retry_snapshot_object(
             uow, domain_id=domain_id, actor_id=actor_id,
             action="SCHEMA_SNAPSHOT_OBJECT_RETRIED",
             payload={"schema_snapshot_id": str(snapshot_id), "schema_snapshot_object_id": str(object_id)},
+        )
+        await publish_data_query_notification(
+            uow=uow,
+            event_type="data_query.schema.capture_progress",
+            event_key=f"{snapshot_id}:{object_id}:retry:{item.attempt_count}",
+            domain_id=domain_id,
+            actor_id=actor_id,
+            resource_type="schema_snapshot",
+            resource_id=str(snapshot_id),
+            resource_name=source.display_name,
+            correlation_id=str(snapshot_id),
+            operation_id=str(snapshot_id),
+            summary=f"正在重试结构采集：{item.schema_name}.{item.object_name}。",
+            safe_data={"schema_snapshot_object_id": str(object_id)},
         )
         await uow.commit()
 
@@ -216,6 +243,27 @@ async def supply_manual_metadata(
                 current_snapshot_id=snapshot.schema_snapshot_id,
             )
             event_type = "data_query.schema.capture_partial" if failed else "data_query.schema.capture_completed"
+            await publish_data_query_notification(
+                uow=uow,
+                event_type=event_type,
+                event_key=f"{snapshot_id}:manual-capture-terminal",
+                domain_id=domain_id,
+                actor_id=actor_id,
+                resource_type="schema_snapshot",
+                resource_id=str(snapshot_id),
+                resource_name=source.display_name,
+                correlation_id=str(snapshot_id),
+                operation_id=str(snapshot_id),
+                summary=(
+                    "手工元数据已保存，仍有对象采集失败。"
+                    if failed else "手工元数据已保存，数据库结构采集完成。"
+                ),
+                safe_data={
+                    "status": snapshot.status,
+                    "succeeded_count": len(ready),
+                    "failed_count": len(failed),
+                },
+            )
         await uow.commit()
 
 
