@@ -10,6 +10,9 @@ from platform_core.contracts import AuthContext, PrincipalKind
 from platform_clients import DataQueryClientError
 
 
+KM_AGENT_CAPABILITIES = ("document", "data_query")
+
+
 class KmAgentService:
     def __init__(self, *, uow_factory, data_query_client):
         self._uow_factory = uow_factory
@@ -110,7 +113,7 @@ class KmAgentService:
         row = await self.get(domain_id=domain_id, agent_id=agent_id)
         if row["status"] != "ACTIVE":
             raise KmAssetApplicationError(status_code=422, code="KM_AGENT_NOT_ACTIVE", message="KM Asset Agent 未激活")
-        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": ["conversation", "document", "data_query"], "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data"}}
+        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
 
     @staticmethod
     async def _version(uow, agent):

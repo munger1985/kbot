@@ -132,9 +132,16 @@ class AgentRuntimeService:
     async def create_run(
         self, command: CreateRunCommand
     ) -> AgentRunReceipt:
+        execution_spec = command.execution_spec
+        if execution_spec.owner_app_id == "km_asset":
+            execution_spec = execution_spec.model_copy(
+                update={
+                    "enabled_capabilities": ("document", "data_query")
+                }
+            )
         if (
-            command.execution_spec.owner_app_id not in {"knowledge_retrieval", "km_asset"}
-            or command.execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL"
+            execution_spec.owner_app_id not in {"knowledge_retrieval", "km_asset"}
+            or execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL"
         ):
             raise AgentRuntimeConflict(
                 "AGENT_KIND_UNSUPPORTED",
@@ -144,7 +151,7 @@ class AgentRuntimeService:
         fingerprint = _canonical_hash(
             {
                 "agent_id": command.agent_id,
-                "execution_spec": command.execution_spec.model_dump(
+                "execution_spec": execution_spec.model_dump(
                     mode="json"
                 ),
                 "input": command.original_input,
@@ -176,24 +183,24 @@ class AgentRuntimeService:
                 )
                 return self._run_receipt(existing, cursor)
 
-            raw_models = dict(command.execution_spec.models)
+            raw_models = dict(execution_spec.models)
             agent_snapshot = {
-                "agent_id": str(command.execution_spec.consumer_agent_id),
+                "agent_id": str(execution_spec.consumer_agent_id),
                 "agent_version_id": str(
-                    command.execution_spec.consumer_agent_version_id
+                    execution_spec.consumer_agent_version_id
                 ),
-                "owner_app_id": command.execution_spec.owner_app_id,
-                "agent_kind": command.execution_spec.agent_kind,
-                "display_name": command.execution_spec.display_name,
+                "owner_app_id": execution_spec.owner_app_id,
+                "agent_kind": execution_spec.agent_kind,
+                "display_name": execution_spec.display_name,
                 "enabled_capabilities": list(
-                    command.execution_spec.enabled_capabilities
+                    execution_spec.enabled_capabilities
                 ),
                 "models": {},
-                "do_rerank": command.execution_spec.do_rerank,
-                "instruction": command.execution_spec.instruction,
-                "config": dict(command.execution_spec.resource_context),
+                "do_rerank": execution_spec.do_rerank,
+                "instruction": execution_spec.instruction,
+                "config": dict(execution_spec.resource_context),
                 "runtime_policy": dict(
-                    command.execution_spec.runtime_policy
+                    execution_spec.runtime_policy
                 ),
             }
 

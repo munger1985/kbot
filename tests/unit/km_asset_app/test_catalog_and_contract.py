@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from km_asset_app.application import KmAgentService, KmAssetApplicationError, KmAssetService
+from km_asset_app.application.agents import KM_AGENT_CAPABILITIES
 from km_asset_app.application.worker import (
     KmAssetWorker,
     _JobSnapshot,
@@ -67,11 +68,13 @@ class KmAssetCatalogTest(unittest.TestCase):
             consumer_agent_version_id=UUID("01900000-0000-7000-8000-000000000002"),
             agent_kind="KNOWLEDGE_RETRIEVAL",
             display_name="KM Agent",
-            enabled_capabilities=("conversation", "document", "data_query"),
+            enabled_capabilities=KM_AGENT_CAPABILITIES,
             models={},
             resource_context={"managed_model": True},
         )
         self.assertEqual("km_asset", spec.owner_app_id)
+        self.assertEqual(("document", "data_query"), spec.enabled_capabilities)
+        self.assertNotIn("conversation", spec.enabled_capabilities)
 
     def test_active_agent_requires_router_model(self):
         with self.assertRaises(KmAssetApplicationError) as raised:

@@ -216,11 +216,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         decision = await planner.decide_for_input(
             agent_snapshot={
-                "enabled_capabilities": [
-                    "conversation",
-                    "document",
-                    "data_query",
-                ],
+                "enabled_capabilities": ["document", "data_query"],
                 "models": {
                     "router_llm": {
                         "served_model_name": "router-model"

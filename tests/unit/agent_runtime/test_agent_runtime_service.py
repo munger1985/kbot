@@ -478,6 +478,30 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
 
+    async def test_km_run_removes_conversation_from_legacy_snapshot(self):
+        legacy_spec = self.execution_spec.model_copy(
+            update={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": (
+                    "conversation", "document", "data_query"
+                ),
+            }
+        )
+        receipt = await self.service.create_run(
+            self.create_command.model_copy(
+                update={
+                    "idempotency_key": "create-km-legacy",
+                    "execution_spec": legacy_spec,
+                }
+            )
+        )
+
+        snapshot = self.store.runs[receipt.run_id].config_snapshot_json
+        self.assertEqual(
+            ["document", "data_query"],
+            snapshot["agent"]["enabled_capabilities"],
+        )
+
     async def test_create_run_is_idempotent_and_checks_fingerprint(self):
         first = await self.service.create_run(self.create_command)
         second = await self.service.create_run(self.create_command)
