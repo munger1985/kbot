@@ -169,19 +169,6 @@ class KmAgentService:
             semantic_model_id = source.semantic_model_id
             policy_binding_id = source.policy_binding_id
 
-        await self._data_query.management_create(
-            resource="agent-bindings",
-            payload={
-                "consumer_app_id": "km_asset",
-                "agent_id": str(agent_id),
-                "agent_version_id": str(new_version_id),
-                "semantic_model_id": str(semantic_model_id),
-                "policy_binding_id": str(policy_binding_id),
-            },
-            auth_context=self._auth_context(
-                domain_id=domain_id, actor_id=actor_id
-            ),
-        )
         await self._ensure_collection_binding(
             domain_id=domain_id,
             agent_id=agent_id,
@@ -199,6 +186,12 @@ class KmAgentService:
                     code="ROW_VERSION_CONFLICT",
                     message="Agent 已被其他请求修改",
                 )
+            previous = {
+                "current_version_id": agent.current_version_id,
+                "display_name": agent.display_name,
+                "description": agent.description,
+                "updated_by": agent.updated_by,
+            }
             version = KmAgentVersionEntity(
                 agent_version_id=new_version_id,
                 agent_id=agent_id,
@@ -226,7 +219,74 @@ class KmAgentService:
             agent.row_version += 1
             agent.updated_by = actor_id
             await uow.commit()
+
+        try:
+            await self._data_query.management_create(
+                resource="agent-bindings",
+                payload={
+                    "consumer_app_id": "km_asset",
+                    "agent_id": str(agent_id),
+                    "agent_version_id": str(new_version_id),
+                    "semantic_model_id": str(semantic_model_id),
+                    "policy_binding_id": str(policy_binding_id),
+                },
+                auth_context=self._auth_context(
+                    domain_id=domain_id, actor_id=actor_id
+                ),
+            )
+        except Exception:
+            await self._restore_failed_update(
+                domain_id=domain_id,
+                agent_id=agent_id,
+                failed_version_id=new_version_id,
+                staged_row_version=expected_row_version + 1,
+                previous=previous,
+                actor_id=actor_id,
+            )
+            raise
+
+        async with self._uow_factory() as uow:
+            agent = await uow.agents.get(
+                domain_id=domain_id, agent_id=agent_id
+            )
+            version = await uow.agents.version(
+                agent_id=agent_id, version_id=new_version_id
+            )
+            if agent is None or version is None:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="KM_AGENT_PERSISTENCE_CONFLICT",
+                    message="KM Asset Agent 更新状态不完整",
+                )
             return self._view(agent, version)
+
+    async def _restore_failed_update(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        failed_version_id: UUID,
+        staged_row_version: int,
+        previous: dict[str, Any],
+        actor_id: str,
+    ) -> None:
+        """下游绑定失败时恢复可运行的旧 Agent Version。"""
+        async with self._uow_factory() as uow:
+            agent = await uow.agents.get(
+                domain_id=domain_id, agent_id=agent_id, lock=True
+            )
+            if (
+                agent is None
+                or agent.current_version_id != failed_version_id
+                or int(agent.row_version) != staged_row_version
+            ):
+                return
+            agent.current_version_id = previous["current_version_id"]
+            agent.display_name = previous["display_name"]
+            agent.description = previous["description"]
+            agent.updated_by = actor_id or previous["updated_by"]
+            agent.row_version += 1
+            await uow.commit()
 
     async def list(self, *, domain_id: int):
         async with self._uow_factory() as uow:

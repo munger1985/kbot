@@ -170,6 +170,16 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
             async def add(self, value):
                 versions.append(value)
 
+            async def version(self, *, version_id, **_):
+                return next(
+                    (
+                        item
+                        for item in versions
+                        if item.agent_version_id == version_id
+                    ),
+                    None,
+                )
+
         class Assets:
             async def get_source(self, **_):
                 return source
@@ -221,6 +231,97 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
             str(versions[0].agent_version_id), binding["agent_version_id"]
         )
         knowledge_core.bind_collection.assert_awaited_once()
+
+    async def test_update_agent_restores_previous_version_when_binding_fails(self):
+        agent_id = UUID("01900000-0000-7000-8000-000000000071")
+        old_version_id = UUID("01900000-0000-7000-8000-000000000072")
+        source_id = UUID("01900000-0000-7000-8000-000000000073")
+        agent = SimpleNamespace(
+            agent_id=agent_id,
+            domain_id=43,
+            display_name="可用版本",
+            description="旧描述",
+            status="ACTIVE",
+            current_version_id=old_version_id,
+            row_version=5,
+            updated_by="old-user",
+        )
+        source = SimpleNamespace(
+            model_status="READY",
+            semantic_model_id=UUID(
+                "01900000-0000-7000-8000-000000000074"
+            ),
+            policy_binding_id=UUID(
+                "01900000-0000-7000-8000-000000000075"
+            ),
+            collection_id=UUID(
+                "01900000-0000-7000-8000-000000000076"
+            ),
+        )
+        versions = []
+
+        class Agents:
+            async def get(self, **_):
+                return agent
+
+            async def next_version_no(self, **_):
+                return 2
+
+            async def add(self, value):
+                versions.append(value)
+
+        class Assets:
+            async def get_source(self, **_):
+                return source
+
+        class Uow:
+            agents = Agents()
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        service = KmAgentService(
+            uow_factory=Uow,
+            data_query_client=SimpleNamespace(
+                management_create=AsyncMock(
+                    side_effect=RuntimeError("Data Query 不可用")
+                )
+            ),
+            knowledge_core_client=SimpleNamespace(
+                bind_collection=AsyncMock()
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Data Query 不可用"):
+            await service.update(
+                domain_id=43,
+                agent_id=agent_id,
+                expected_row_version=5,
+                source_id=source_id,
+                display_name="失败的新名称",
+                description="新描述",
+                models={
+                    "router_llm": UUID(
+                        "01900000-0000-7000-8000-000000000077"
+                    )
+                },
+                do_rerank=False,
+                instruction=None,
+                actor_id="kmadmin",
+            )
+
+        self.assertEqual(old_version_id, agent.current_version_id)
+        self.assertEqual("可用版本", agent.display_name)
+        self.assertEqual("旧描述", agent.description)
+        self.assertEqual("ACTIVE", agent.status)
+        self.assertEqual(7, agent.row_version)
 
     async def test_execution_spec_fixes_km_security_level(self):
         service = KmAgentService(
