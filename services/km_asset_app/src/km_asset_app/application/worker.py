@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 import json
 import socket
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -16,6 +18,27 @@ from km_asset_app.entities import KmAttachmentEntity, KmJobEntity
 from km_asset_app.integrations import AssetMetaDbClient, SharePointClient
 from platform_clients import KnowledgeCoreClient
 from platform_core.contracts import AuthContext, PrincipalKind
+
+
+@dataclass(frozen=True, slots=True)
+class _JobSnapshot:
+    job_id: UUID
+    job_type: str
+    domain_id: int
+    source_id: UUID | None
+    km_asset_id: UUID | None
+    asset_revision_id: UUID | None
+    payload_json: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceSnapshot:
+    source_id: UUID
+    domain_id: int
+    metadb_endpoint: str
+    batch_size: int
+    sharepoint_site_path: str
+    collection_id: UUID
 
 
 class KmAssetWorker:
@@ -48,8 +71,9 @@ class KmAssetWorker:
     async def _claim(self):
         async with self._uow_factory() as uow:
             row = await uow.assets.claim_job(worker_id=self._worker_id, lease_until=datetime.now(timezone.utc) + timedelta(seconds=self._lease_seconds))
+            snapshot = self._job_snapshot(row) if row is not None else None
             await uow.commit()
-            return row
+            return snapshot
 
     async def _schedule_active_sources(self) -> None:
         now = datetime.now(timezone.utc)
@@ -63,7 +87,7 @@ class KmAssetWorker:
                 await uow.assets.add(KmJobEntity(domain_id=source.domain_id, source_id=source.source_id, job_type="SOURCE_SYNC", idempotency_key=key, payload_json={"source_id": str(source.source_id), "scheduled": True}, status="PENDING", created_by=self._worker_id))
             await uow.commit()
 
-    async def _dispatch(self, job: KmJobEntity) -> None:
+    async def _dispatch(self, job: _JobSnapshot) -> None:
         if job.job_type == "SOURCE_SYNC":
             await self._source_sync(job)
         elif job.job_type in {"ATTACHMENT_DOWNLOAD", "RETRY"}:
@@ -75,7 +99,7 @@ class KmAssetWorker:
         else:
             raise RuntimeError(f"不支持的 KM Asset 任务类型：{job.job_type}")
 
-    async def _source_sync(self, job: KmJobEntity) -> None:
+    async def _source_sync(self, job: _JobSnapshot) -> None:
         source, metadb_values = await self._source_and_credentials(job, "METADB_BASIC")
         client = AssetMetaDbClient(endpoint=source.metadb_endpoint, username=str(metadb_values["username"]), password=str(metadb_values["password"]))
         rows = await client.list_assets(offset=0, limit=source.batch_size, processed="N")
@@ -88,7 +112,7 @@ class KmAssetWorker:
             locked.error_message = None
             await uow.commit()
 
-    async def _download_and_ingest(self, job: KmJobEntity) -> None:
+    async def _download_and_ingest(self, job: _JobSnapshot) -> None:
         if job.km_asset_id is None or job.asset_revision_id is None:
             raise RuntimeError("附件任务缺少 Asset 定位信息")
         async with self._uow_factory() as uow:
@@ -99,8 +123,16 @@ class KmAssetWorker:
                 raise RuntimeError("附件任务引用的资源不存在")
             values = await self._credentials.read(uow=uow, domain_id=int(job.domain_id), credential_id=source.sharepoint_credential_id, credential_kind="SHAREPOINT_GRAPH", source_id=source.source_id)
             asset.ingestion_status = "DOWNLOADING"
-            await uow.commit()
+            source_site_path = str(source.sharepoint_site_path)
+            source_collection_id = source.collection_id
             raw_metadata = dict(asset.raw_metadata_json)
+            external_asset_id = str(asset.external_asset_id)
+            asset_title = asset.asset_title
+            normalized_metadata = dict(asset.normalized_metadata_json)
+            persisted_asset_id = asset.km_asset_id
+            source_revision = str(revision.source_revision)
+            revision_snapshot_hash = str(revision.snapshot_hash)
+            await uow.commit()
         urls = [item.strip() for field in ("first_sp_url", "second_sp_url") for item in str(raw_metadata.get(field) or "").split("^^^") if item.strip()]
         if not urls:
             raise RuntimeError("Asset 没有可下载的 SharePoint 附件")
@@ -108,7 +140,7 @@ class KmAssetWorker:
             tenant_id=str(values["tenant_id"]),
             client_id=str(values["client_id"]),
             client_secret=str(values["client_secret"]),
-            site_path=source.sharepoint_site_path,
+            site_path=source_site_path,
         )
         downloaded = []
         for ordinal, url in enumerate(urls):
@@ -116,9 +148,9 @@ class KmAssetWorker:
             downloaded.append((ordinal, url, item, hashlib.sha256(item.content).hexdigest()))
         form = aiohttp.MultipartWriter("form-data")
         bundle = {
-            "source_id": asset.external_asset_id,
-            "source_revision": revision.source_revision,
-            "title": asset.asset_title or "Untitled Asset",
+            "source_id": external_asset_id,
+            "source_revision": source_revision,
+            "title": asset_title or "Untitled Asset",
             "canonical_url": raw_metadata.get("osn_link") or None,
             "security_level": 1,
             "facet": {
@@ -137,9 +169,9 @@ class KmAssetWorker:
                 if value not in (None, "")
             },
             "metadata": {
-                **asset.normalized_metadata_json,
+                **normalized_metadata,
                 "metadata_schema": "km_asset/v1",
-                "km_asset_id": str(asset.km_asset_id),
+                "km_asset_id": str(persisted_asset_id),
             },
         }
         declarations = []
@@ -153,7 +185,7 @@ class KmAssetWorker:
             part = form.append(item.content, {"Content-Type": item.mime_type})
             part.set_content_disposition("form-data", name=declaration["part_name"], filename=item.name)
         context = self._auth_context(domain_id=int(job.domain_id))
-        response = await self._kc.ingest_multipart(domain_id=int(job.domain_id), collection_id=source.collection_id, intake_kind="km-assets", content_type=form.content_type, body=form, idempotency_key=f"km-{revision.snapshot_hash}", auth_context=context)
+        response = await self._kc.ingest_multipart(domain_id=int(job.domain_id), collection_id=source_collection_id, intake_kind="km-assets", content_type=form.content_type, body=form, idempotency_key=f"km-{revision_snapshot_hash}", auth_context=context)
         accepted = dict(response.payload)
         async with self._uow_factory() as uow:
             locked = await uow.assets.get_asset(domain_id=int(job.domain_id), km_asset_id=job.km_asset_id, lock=True)
@@ -194,7 +226,7 @@ class KmAssetWorker:
             await uow.assets.add(KmJobEntity(domain_id=job.domain_id, source_id=job.source_id, km_asset_id=job.km_asset_id, asset_revision_id=job.asset_revision_id, job_type="KC_STATUS_SYNC", idempotency_key=f"kc-status:{accepted['bundle_revision_id']}", payload_json={"bundle_id": accepted["bundle_id"], "bundle_revision_id": accepted["bundle_revision_id"]}, status="PENDING", max_attempts=120, available_at=datetime.now(timezone.utc) + timedelta(seconds=10), created_by=self._worker_id))
             await uow.commit()
 
-    async def _source_status_update(self, job: KmJobEntity) -> None:
+    async def _source_status_update(self, job: _JobSnapshot) -> None:
         source, values = await self._source_and_credentials(job, "METADB_BASIC")
         await AssetMetaDbClient(endpoint=source.metadb_endpoint, username=str(values["username"]), password=str(values["password"])).set_processed(asset_id=str(job.payload_json["asset_id"]), processed=str(job.payload_json["processed"]))
         async with self._uow_factory() as uow:
@@ -221,7 +253,7 @@ class KmAssetWorker:
                 ))
             await uow.commit()
 
-    async def _kc_status_sync(self, job: KmJobEntity) -> None:
+    async def _kc_status_sync(self, job: _JobSnapshot) -> None:
         bundle_id = UUID(str(job.payload_json["bundle_id"]))
         status = await self._kc.get_bundle_status(domain_id=int(job.domain_id), bundle_id=bundle_id, auth_context=self._auth_context(domain_id=int(job.domain_id)))
         value = str(status.get("status") or status.get("processing_status") or "").upper()
@@ -256,14 +288,35 @@ class KmAssetWorker:
             asset.row_version += 1
             await uow.commit()
 
-    async def _source_and_credentials(self, job: KmJobEntity, credential_kind: str):
+    async def _source_and_credentials(self, job: _JobSnapshot, credential_kind: str):
         async with self._uow_factory() as uow:
             source = await uow.assets.get_source(domain_id=int(job.domain_id), source_id=job.source_id)
             if source is None:
                 raise RuntimeError("KM Asset 来源不存在")
             credential_id = source.metadb_credential_id if credential_kind == "METADB_BASIC" else source.sharepoint_credential_id
             values = await self._credentials.read(uow=uow, domain_id=int(job.domain_id), credential_id=credential_id, credential_kind=credential_kind, source_id=source.source_id)
-            return source, values
+            snapshot = _SourceSnapshot(
+                source_id=source.source_id,
+                domain_id=int(source.domain_id),
+                metadb_endpoint=str(source.metadb_endpoint),
+                batch_size=int(source.batch_size),
+                sharepoint_site_path=str(source.sharepoint_site_path),
+                collection_id=source.collection_id,
+            )
+            return snapshot, dict(values)
+
+    @staticmethod
+    def _job_snapshot(row: KmJobEntity) -> _JobSnapshot:
+        """在任务领取事务内复制 Worker 后续需要的全部字段。"""
+        return _JobSnapshot(
+            job_id=row.job_id,
+            job_type=str(row.job_type),
+            domain_id=int(row.domain_id),
+            source_id=row.source_id,
+            km_asset_id=row.km_asset_id,
+            asset_revision_id=row.asset_revision_id,
+            payload_json=dict(row.payload_json or {}),
+        )
 
     async def _complete(self, job_id: UUID, *, succeeded: bool, error: Exception | None = None) -> None:
         async with self._uow_factory() as uow:

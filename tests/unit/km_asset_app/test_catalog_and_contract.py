@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from km_asset_app.application import KmAgentService, KmAssetApplicationError, KmAssetService
+from km_asset_app.application.worker import KmAssetWorker, _JobSnapshot
 from km_asset_app.integrations import SharePointClient
 from km_asset_app.api.assets import SourceUpdateRequest
 from data_query.application.managed_datasets import km_asset_definition
@@ -218,6 +219,72 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual([{"asset_id": "A-1"}], result["items"])
+
+
+class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
+    async def test_source_credentials_returns_detached_safe_snapshot(self):
+        source_id = UUID("01900000-0000-7000-8000-000000000021")
+        credential_id = UUID("01900000-0000-7000-8000-000000000022")
+        collection_id = UUID("01900000-0000-7000-8000-000000000023")
+
+        class Source:
+            def __init__(self):
+                self.attached = True
+                self.source_id = source_id
+                self.domain_id = 41
+                self.metadb_endpoint = "https://metadb.example.com/assets"
+                self.metadb_credential_id = credential_id
+                self.sharepoint_credential_id = credential_id
+                self.sharepoint_site_path = "/sites/km"
+                self.collection_id = collection_id
+                self.batch_size = 100
+
+            def __getattribute__(self, name):
+                if name not in {"attached", "__class__"} and not object.__getattribute__(self, "attached"):
+                    raise RuntimeError("来源实体已脱离 Session")
+                return object.__getattribute__(self, name)
+
+        source = Source()
+
+        class Assets:
+            async def get_source(self, **_):
+                return source
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                source.attached = False
+
+        class Credentials:
+            async def read(self, **_):
+                return {"username": "user", "password": "secret"}
+
+        worker = KmAssetWorker(
+            uow_factory=Uow,
+            credential_service=Credentials(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+        snapshot, values = await worker._source_and_credentials(
+            _JobSnapshot(
+                job_id=UUID("01900000-0000-7000-8000-000000000024"),
+                job_type="SOURCE_SYNC",
+                domain_id=41,
+                source_id=source_id,
+                km_asset_id=None,
+                asset_revision_id=None,
+                payload_json={},
+            ),
+            "METADB_BASIC",
+        )
+
+        self.assertEqual(source_id, snapshot.source_id)
+        self.assertEqual(collection_id, snapshot.collection_id)
+        self.assertEqual({"username": "user", "password": "secret"}, values)
 
 
 if __name__ == "__main__":
