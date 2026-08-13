@@ -105,7 +105,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
 
     def test_km_chat_retries_turn_confirmation_with_same_idempotency_key(self):
         source = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v4.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
         ).read_text(encoding="utf-8")
         self.assertIn("createTurn(input, idempotencyKey)", source)
         self.assertIn('"Idempotency-Key": idempotencyKey', source)
@@ -113,6 +113,17 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("正在确认已提交的 Turn", source)
         self.assertIn('run.status !== "COMPLETED"', source)
         self.assertIn("run.error_message", source)
+
+    def test_km_chat_uses_local_safe_markdown_renderer(self):
+        renderer = ROOT / "ui" / "shared" / "kbot-markdown.js"
+        source = renderer.read_text(encoding="utf-8")
+        chat = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("KBotMarkdown.render(text)", chat)
+        self.assertIn("escapeHtml(source)", source)
+        self.assertIn('target="_blank" rel="noopener noreferrer"', source)
+        self.assertNotIn("innerHTML = value", source)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")

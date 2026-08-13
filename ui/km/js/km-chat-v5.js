@@ -1,4 +1,4 @@
-/* KM 聊天独立入口；v4 增加 Run 终态错误展示并绕过旧静态缓存。 */
+/* KM 聊天独立入口；v5 增加安全 Markdown 渲染并绕过旧静态缓存。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
@@ -80,7 +80,12 @@
     }));
     stream.scrollTop = stream.scrollHeight;
   }
-  function messageMarkup(role, label, text, runId) { return `<div class="km-message ${role}"><div class="meta">${KBotKmShell.escapeHtml(label)}</div><div class="content">${KBotKmShell.escapeHtml(text)}</div>${runId ? `<div data-references-for="${KBotKmShell.escapeHtml(runId)}"></div>` : ""}</div>`; }
+  function messageMarkup(role, label, text, runId) {
+    const content = role === "assistant"
+      ? KBotMarkdown.render(text)
+      : KBotKmShell.escapeHtml(text);
+    return `<div class="km-message ${role}"><div class="meta">${KBotKmShell.escapeHtml(label)}</div><div class="content">${content}</div>${runId ? `<div data-references-for="${KBotKmShell.escapeHtml(runId)}"></div>` : ""}</div>`;
+  }
   function appendPending(input) {
     const stream = $("chat-stream");
     if (stream.querySelector(".km-empty")) stream.innerHTML = "";
