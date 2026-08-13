@@ -1386,6 +1386,7 @@ class AgentRuntimeService:
                 event_cursor=cursor,
                 result=artifact_ref,
                 error_code=run.error_code,
+                error_message=run.error_message,
                 created_at=run.created_at,
                 completed_at=run.completed_at,
             )

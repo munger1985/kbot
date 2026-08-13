@@ -702,6 +702,13 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         run = next(iter(self.store.runs.values()))
         self.assertEqual(run.status, "FAILED")
         self.assertEqual(run.error_code, "WORKER_LEASE_EXPIRED")
+        summary = await self.service.get_run(
+            run_id=run.run_id, domain_id=run.domain_id
+        )
+        self.assertEqual(
+            "Task 租约过期且已达到最大尝试次数",
+            summary.error_message,
+        )
 
     async def test_dependency_artifact_is_in_successor_lease(self):
         created = await self.service.create_run(self.create_command)

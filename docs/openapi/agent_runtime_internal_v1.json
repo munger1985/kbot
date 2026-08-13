@@ -343,6 +343,17 @@
             ],
             "title": "Error Code"
           },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "event_cursor": {
             "minimum": 0.0,
             "title": "Event Cursor",

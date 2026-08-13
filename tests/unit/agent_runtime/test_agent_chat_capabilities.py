@@ -421,6 +421,27 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifact.payload["provider"], "SEMANTIC")
         self.assertEqual(result.artifact.payload["rows"], [{"amount": 10}])
 
+    async def test_data_query_stream_only_returns_final_artifact(self):
+        skill = DataQuerySkill(
+            mcp_executor=MCPDataQueryExecutor(client=_DataClient()),
+            semantic_executor=_UnavailableSemanticExecutor(),
+        )
+
+        items = [
+            item async for item in skill.execute_stream(_context(
+                original_input="查询销售额",
+                agent={
+                    "config": {
+                        "data_query_mode": "MCP",
+                        "data_profile_name": "SALES_PROFILE",
+                    },
+                },
+            ))
+        ]
+
+        self.assertEqual(1, len(items))
+        self.assertIsInstance(items[0], SkillResult)
+
     async def test_conversation_response_streams_and_returns_answer(self):
         skill = ConversationResponseSkill(
             model_client=_ModelClient(chunks=("你", "好")),

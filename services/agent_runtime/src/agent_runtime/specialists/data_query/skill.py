@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from agent_runtime.domain.model_bindings import agent_model_name
-from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillProgress, SkillResult
+from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.contracts import AuthContext
 from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.identity import uuid7
@@ -303,17 +303,8 @@ class DataQuerySkill:
         )
 
     async def execute_stream(self, context: ExecutionContext):
+        """最终事件由 complete_task 与 QUERY_RESULT Artifact 原子发布。"""
         result = await self.execute(context)
-        payload = result.artifact.payload or {}
-        yield SkillProgress(
-            event_type="data.query.completed",
-            payload={
-                "query_result_id": payload.get("query_result_id"),
-                "provider": payload.get("provider"),
-                "row_count": payload.get("row_count", 0),
-                "truncated": payload.get("truncated", False),
-            },
-        )
         yield result
 
     @staticmethod

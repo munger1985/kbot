@@ -115,6 +115,7 @@ class AgentRunSummary(BaseModel):
     event_cursor: int = Field(ge=0)
     result: AgentArtifactRef | None = None
     error_code: str | None = None
+    error_message: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
 
