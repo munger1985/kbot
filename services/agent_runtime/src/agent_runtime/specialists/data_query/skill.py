@@ -159,7 +159,88 @@ class SemanticDataQueryExecutor:
             ],
             max_tokens=2048,
         )
-        return DataQueryPlanV1.model_validate(response)
+        normalized = self._normalize_plan_response(
+            response=response,
+            models=models,
+            question=question,
+            consumer_app_id=str(agent.get("owner_app_id") or ""),
+        )
+        return DataQueryPlanV1.model_validate(normalized)
+
+    @staticmethod
+    def _normalize_plan_response(
+        *, response, models, question: str, consumer_app_id: str
+    ) -> dict:
+        """只使用规划目录中的值修复常见 LLM JSON 类型与缺省字段。"""
+        if not isinstance(response, dict):
+            raise ValueError("问数 Planner 返回的计划不是 JSON Object")
+        normalized = dict(response)
+        selected = next(
+            (
+                item for item in models
+                if str(item.get("semantic_model_id"))
+                == str(normalized.get("semantic_model_id"))
+            ),
+            models[0] if len(models) == 1 else None,
+        )
+        if not isinstance(selected, dict):
+            return normalized
+        normalized.setdefault(
+            "semantic_model_id", selected.get("semantic_model_id")
+        )
+        normalized.setdefault(
+            "semantic_model_version",
+            selected.get("semantic_model_version"),
+        )
+        datasets = {
+            str(item.get("name")): item
+            for item in selected.get("datasets") or ()
+            if isinstance(item, dict) and item.get("name")
+        }
+        if normalized.get("dataset") not in datasets and len(datasets) == 1:
+            normalized["dataset"] = next(iter(datasets))
+        catalog_measures = {
+            str(item.get("name")): item
+            for item in selected.get("measures") or ()
+            if isinstance(item, dict) and item.get("name")
+        }
+        measures = []
+        for raw in normalized.get("measures") or ():
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            catalog = catalog_measures.get(str(item.get("name")))
+            if catalog is not None and not item.get("aggregation"):
+                item["aggregation"] = catalog.get("aggregation")
+            measures.append(item)
+        if not measures and consumer_app_id == "km_asset":
+            measure_name = "author_count" if any(
+                phrase in question.casefold()
+                for phrase in (
+                    "作者数量", "用户数量", "多少个作者",
+                    "多少位作者", "多少名作者",
+                )
+            ) else "asset_count"
+            catalog = catalog_measures.get(measure_name)
+            if catalog is not None:
+                measures = [{
+                    "name": measure_name,
+                    "aggregation": catalog.get("aggregation"),
+                }]
+        normalized["measures"] = measures
+        raw_limit = normalized.get("limit")
+        if isinstance(raw_limit, str) and raw_limit.strip().isdigit():
+            raw_limit = int(raw_limit.strip())
+        if isinstance(raw_limit, bool) or not isinstance(raw_limit, int):
+            raw_limit = 100
+        max_rows = selected.get("max_rows")
+        if isinstance(max_rows, int):
+            raw_limit = min(raw_limit, max_rows)
+        normalized["limit"] = max(1, min(raw_limit, 10_000))
+        for field in ("dimensions", "filters", "order_by"):
+            normalized.setdefault(field, [])
+        normalized.setdefault("time_zone", "Asia/Shanghai")
+        return normalized
 
     async def _wait_result(self, *, run_id, auth_context, deadline_at):
         while True:

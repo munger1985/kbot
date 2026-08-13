@@ -67,6 +67,8 @@ content = """
 只能使用输入 models 中给出的 semantic_model_id、semantic_model_version、dataset、measure、dimension 和字段名。
 禁止输出 SQL、物理表名、物理列名、函数、连接字符串或未给出的字段。
 筛选值只能来自用户问题中的字面量；存在模型、指标或筛选歧义时不得猜测。
+measures 至少包含一项，每项必须同时复制 models 中的 name 和 aggregation。
+limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符串或 null。
 """
 
 [[prompts]]

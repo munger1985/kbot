@@ -1,4 +1,4 @@
-/* KM 聊天独立入口；v3 增加幂等确认重试并绕过旧静态缓存。 */
+/* KM 聊天独立入口；v4 增加 Run 终态错误展示并绕过旧静态缓存。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
@@ -115,6 +115,13 @@
         $("chat-progress").textContent = "Agent 正在执行";
         const eventsUrl = `${base}/runs/${encodeURIComponent(receipt.run_id)}/events`;
         await KBotKmApi.stream(eventsUrl, { lastEventId: receipt.event_cursor, onEvent: (item) => { const data = item.json || {}; $("chat-progress").textContent = data.title || data.summary || item.type || "Agent 正在执行"; } });
+        const run = await KBotKmApi.request(`${base}/runs/${receipt.run_id}`);
+        if (run.status !== "COMPLETED") {
+          const error = new Error(run.error_message || `Run 执行结束但状态为 ${run.status}`);
+          error.code = run.error_code || "KM_RUN_NOT_COMPLETED";
+          error.requestId = run.request_id || "";
+          throw error;
+        }
         const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
         await refreshActive();
         await loadConversations(active.conversation_id);

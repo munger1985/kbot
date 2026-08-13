@@ -101,6 +101,71 @@ def _context(
 
 
 class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
+    def test_semantic_plan_normalizes_catalog_aggregation_and_limit(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "contract_version": "DataQueryPlan.v1",
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "limit": "100",
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="有多少个 Asset",
+            consumer_app_id="km_asset",
+        )
+
+        self.assertEqual(
+            [{"name": "asset_count", "aggregation": "COUNT"}],
+            normalized["measures"],
+        )
+        self.assertEqual(100, normalized["limit"])
+
+    def test_km_semantic_plan_restores_empty_measure_from_managed_catalog(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "contract_version": "DataQueryPlan.v1",
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [],
+                "limit": None,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "measures": [
+                    {"name": "asset_count", "aggregation": "COUNT"},
+                    {
+                        "name": "author_count",
+                        "aggregation": "COUNT_DISTINCT",
+                    },
+                ],
+                "max_rows": 50,
+            }],
+            question="AI 相关的 Asset 有哪些",
+            consumer_app_id="km_asset",
+        )
+
+        self.assertEqual(
+            [{"name": "asset_count", "aggregation": "COUNT"}],
+            normalized["measures"],
+        )
+        self.assertEqual(50, normalized["limit"])
+
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(
             response={
