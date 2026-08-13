@@ -34,6 +34,7 @@ class RouteDecision(BaseModel):
     reason: str
     clarification_question: str | None = None
     requires_chart: bool = False
+    context_required: bool | None = None
     classifier_version: str = "deterministic-document-v1"
 
 
@@ -300,15 +301,9 @@ class RootAgentPlanner:
             or self._prompt_resolver is None
         ):
             raise ValueError("KM Agent 未配置可用的 Router 模型")
-        prompt = await self._prompt_resolver.resolve(
-            "agent_runtime.km_asset_intent_route"
-        )
-        context = conversation_context or {}
-        request = {
+        base_request = {
             "current_input": objective,
-            "conversation_summary": context.get("summary") or {},
-            "recent_items": context.get("recent_items") or [],
-            "available_routes": ["DOCUMENT", "DATA_QUERY"],
+            "available_routes": ["DOCUMENT", "DATA_QUERY", "CLARIFY"],
             "managed_metadata": {
                 "dimensions": [
                     "asset_id", "title", "author", "product", "solution",
@@ -318,6 +313,43 @@ class RootAgentPlanner:
                 "measures": ["asset_count", "author_count"],
             },
         }
+        decision = await self._request_km_route_decision(
+            model_name=model_name,
+            prompt_key="agent_runtime.km_asset_intent_route",
+            request=base_request,
+        )
+        if not decision.context_required:
+            return decision
+        context = conversation_context or {}
+        if not (context.get("summary") or context.get("recent_items")):
+            if decision.route_type == RouteType.CLARIFY:
+                return decision
+            return decision.model_copy(update={
+                "route_type": RouteType.CLARIFY,
+                "confidence": 0,
+                "reason": "当前输入依赖历史语境，但没有可用会话上下文",
+                "clarification_question": "请补充您所指的 Asset、主题或统计范围。",
+                "requires_chart": False,
+            })
+        return await self._request_km_route_decision(
+            model_name=model_name,
+            prompt_key="agent_runtime.km_asset_context_route",
+            request={
+                **base_request,
+                "conversation_summary": context.get("summary") or {},
+                "recent_items": context.get("recent_items") or [],
+            },
+        )
+
+    async def _request_km_route_decision(
+        self,
+        *,
+        model_name: str,
+        prompt_key: str,
+        request: dict[str, Any],
+    ) -> RouteDecision:
+        """调用 KM 语义路由并严格校验可执行或澄清结果。"""
+        prompt = await self._prompt_resolver.resolve(prompt_key)
         messages = [
             {"role": "system", "content": prompt.content},
             {
@@ -336,17 +368,30 @@ class RootAgentPlanner:
                 if not isinstance(response, dict):
                     raise TypeError("输出必须是 JSON 对象")
                 route = RouteType(str(response.get("route_type") or ""))
-                if route not in {RouteType.DOCUMENT, RouteType.DATA_QUERY}:
-                    raise ValueError("route_type 只能是 DOCUMENT 或 DATA_QUERY")
+                if route not in {
+                    RouteType.DOCUMENT,
+                    RouteType.DATA_QUERY,
+                    RouteType.CLARIFY,
+                }:
+                    raise ValueError(
+                        "route_type 只能是 DOCUMENT、DATA_QUERY 或 CLARIFY"
+                    )
                 confidence = float(response.get("confidence"))
                 if not 0 <= confidence <= 1:
                     raise ValueError("confidence 必须在 0 到 1 之间")
                 reason = str(response.get("reason") or "").strip()
                 if not reason:
                     raise ValueError("reason 不能为空")
-                clarification = response.get("clarification_question")
-                if clarification is not None:
-                    raise ValueError("clarification_question 必须为 null")
+                clarification = str(
+                    response.get("clarification_question") or ""
+                ).strip()
+                if route == RouteType.CLARIFY and not clarification:
+                    raise ValueError("CLARIFY 必须提供 clarification_question")
+                if route != RouteType.CLARIFY and clarification:
+                    raise ValueError("可执行路由不得提供 clarification_question")
+                context_required = response.get("context_required")
+                if not isinstance(context_required, bool):
+                    raise ValueError("context_required 必须为布尔值")
                 requires_chart = response.get("requires_chart", False)
                 if not isinstance(requires_chart, bool):
                     raise ValueError("requires_chart 必须为布尔值")
@@ -356,7 +401,9 @@ class RootAgentPlanner:
                     route_type=route,
                     confidence=confidence,
                     reason=reason,
+                    clarification_question=clarification or None,
                     requires_chart=requires_chart,
+                    context_required=context_required,
                     classifier_version=(
                         f"llm-km-asset-v1:{prompt.version}"
                     ),

@@ -24,6 +24,23 @@ class ContextRewriteSkill:
             context.config_snapshot.get("conversation") or {}
         )
         memory_context = dict(conversation.get("context") or {})
+        route = dict(context.config_snapshot.get("route") or {})
+        if (
+            str(route.get("classifier_version") or "").startswith(
+                "llm-km-asset-v1:"
+            )
+            and route.get("context_required") is False
+        ):
+            output = ContextRewriteOutput(
+                raw_input=context.original_input,
+                standalone_query=context.original_input,
+                retrieval_queries=(context.original_input,),
+            )
+            return self._result(
+                context,
+                output,
+                prompt_ref={"source": "KM_ROUTER_SELF_CONTAINED"},
+            )
         if not (
             memory_context.get("summary")
             or memory_context.get("recent_items")

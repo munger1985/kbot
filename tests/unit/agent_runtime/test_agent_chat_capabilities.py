@@ -32,13 +32,18 @@ class _PromptResolver:
 
 
 class _ModelClient:
-    def __init__(self, *, response=None, chunks=()):
+    def __init__(self, *, response=None, responses=(), chunks=()):
         self.response = response or {}
+        self.responses = list(responses)
         self.chunks = chunks
         self.last_json_request = None
+        self.json_requests = []
 
     async def get_llm_json(self, **kwargs):
         self.last_json_request = kwargs
+        self.json_requests.append(kwargs)
+        if self.responses:
+            return self.responses.pop(0)
         return self.response
 
     async def stream_llm_chunks(self, **kwargs):
@@ -216,6 +221,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "reason": "需要同时查询制度和业务数据",
                 "clarification_question": None,
                 "requires_chart": False,
+                "context_required": False,
             }
         )
         planner = RootAgentPlanner(
@@ -251,6 +257,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "reason": "需要按语义检索 Asset 主题与文档内容",
                 "clarification_question": None,
                 "requires_chart": False,
+                "context_required": False,
             }
         )
         planner = RootAgentPlanner(
@@ -283,6 +290,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "reason": "需要按作者统计 Asset 数量",
                 "clarification_question": None,
                 "requires_chart": False,
+                "context_required": False,
             }),
             prompt_resolver=_PromptResolver(),
         )
@@ -307,6 +315,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "reason": "问题要求统计 Asset 数量",
             "clarification_question": None,
             "requires_chart": False,
+            "context_required": False,
         })
         planner = RootAgentPlanner(
             model_client=model,
@@ -357,6 +366,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                         "reason": "语义分类结果",
                         "clarification_question": None,
                         "requires_chart": False,
+                        "context_required": False,
                     }),
                     prompt_resolver=_PromptResolver(),
                 )
@@ -367,13 +377,24 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(expected, decision.route_type)
 
     async def test_km_follow_up_resolves_previous_count_scope_without_clarify(self):
-        model = _ModelClient(response={
-            "route_type": "DOCUMENT",
-            "confidence": 0.96,
-            "reason": "结合上一轮数量问题，当前需要检索 ChatBI 语义相关 Asset",
-            "clarification_question": None,
-            "requires_chart": False,
-        })
+        model = _ModelClient(responses=(
+            {
+                "route_type": "CLARIFY",
+                "confidence": 0.7,
+                "reason": "当前短语可能依赖上一轮问题",
+                "clarification_question": "请说明要查找还是统计相关 Asset。",
+                "requires_chart": False,
+                "context_required": True,
+            },
+            {
+                "route_type": "DOCUMENT",
+                "confidence": 0.96,
+                "reason": "用户已回答上一轮澄清，应检索 ChatBI 语义相关 Asset",
+                "clarification_question": None,
+                "requires_chart": False,
+                "context_required": False,
+            },
+        ))
         planner = RootAgentPlanner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
@@ -416,6 +437,35 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         request = json.loads(model.last_json_request["prompt"][1]["content"])
         self.assertEqual("chatbi相关的", request["current_input"])
         self.assertEqual(context["recent_items"], request["recent_items"])
+        self.assertEqual(2, len(model.json_requests))
+
+    async def test_km_genuine_ambiguity_can_request_clarification(self):
+        model = _ModelClient(response={
+            "route_type": "CLARIFY",
+            "confidence": 0.5,
+            "reason": "缺少可解析的对象和操作",
+            "clarification_question": "请说明您要查询哪个 Asset，以及需要内容还是统计数据。",
+            "requires_chart": False,
+            "context_required": True,
+        })
+        planner = RootAgentPlanner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="那个呢",
+        )
+
+        self.assertEqual(RouteType.CLARIFY, decision.route_type)
+        self.assertTrue(decision.clarification_question)
 
     async def test_multi_capability_router_selects_data_chart(self):
         planner = RootAgentPlanner(

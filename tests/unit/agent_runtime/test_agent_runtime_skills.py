@@ -400,6 +400,47 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             "数据库优化案例有什么优势？",
         )
 
+    async def test_km_self_contained_route_does_not_inherit_old_topic(self):
+        model = _MalformedRewriteModelClient()
+        context = _context().model_copy(
+            update={
+                "original_input": "现在有几个asset",
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "route": {
+                        "route_type": "DATA_QUERY",
+                        "classifier_version": "llm-km-asset-v1:1.0.0",
+                        "context_required": False,
+                    },
+                    "conversation": {
+                        "context": {
+                            "summary": {"active_topic": "ChatBI"},
+                            "recent_items": [
+                                {
+                                    "role": "ASSISTANT",
+                                    "content": {
+                                        "text": "您是指 ChatBI 相关 Asset 吗？"
+                                    },
+                                }
+                            ],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            "现在有几个asset",
+            result.artifact.payload["standalone_query"],
+        )
+        self.assertEqual(0, model.call_count)
+
     async def test_context_rewrite_normalizes_empty_object_sequences(self):
         context = _context().model_copy(
             update={
