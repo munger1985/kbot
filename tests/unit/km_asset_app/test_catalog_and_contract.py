@@ -277,6 +277,91 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([{"asset_id": "A-1"}], result["items"])
 
 
+class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reindex_returns_kc_receipt_without_local_status_job(self):
+        asset_id = UUID("01900000-0000-7000-8000-000000000031")
+        source_id = UUID("01900000-0000-7000-8000-000000000032")
+        collection_id = UUID("01900000-0000-7000-8000-000000000033")
+        bundle_id = UUID("01900000-0000-7000-8000-000000000034")
+        revision_id = UUID("01900000-0000-7000-8000-000000000035")
+        asset = SimpleNamespace(
+            km_asset_id=asset_id,
+            source_id=source_id,
+            external_asset_id="ASSET-1",
+            source_revision="1",
+            source_status="Y",
+            ingestion_status="READY",
+            asset_title="ChatBI",
+            author_mail="author@example.com",
+            asset_product=None,
+            asset_solution="ChatBI",
+            industry_id=None,
+            content_category=None,
+            asset_status="Published",
+            publish_date=None,
+            last_update_time=None,
+            kc_bundle_id=bundle_id,
+            kc_bundle_revision_id=revision_id,
+            failure_stage=None,
+            error_code=None,
+            error_message=None,
+            attempt_count=0,
+            synced_at=None,
+            completed_at=None,
+            row_version=2,
+        )
+        source = SimpleNamespace(collection_id=collection_id)
+        uow_entries = 0
+
+        class Assets:
+            async def get_asset(self, **_):
+                return asset
+
+            async def get_source(self, **_):
+                return source
+
+            async def add(self, _):
+                raise AssertionError("重新索引不应创建 KM 本地状态 Job")
+
+        class Uow:
+            assets = Assets()
+
+            async def __aenter__(self):
+                nonlocal uow_entries
+                uow_entries += 1
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        receipt = {
+            "generation": "01900000-0000-7000-8000-000000000036",
+            "profile_job_id": "01900000-0000-7000-8000-000000000037",
+            "expected_bundle_row_version": 4,
+        }
+        knowledge_core = SimpleNamespace(
+            reindex_discovery=AsyncMock(return_value=receipt)
+        )
+        service = KmAssetService(
+            uow_factory=Uow,
+            credential_service=SimpleNamespace(),
+            knowledge_core_client=knowledge_core,
+        )
+
+        result = await service.reindex_asset(
+            domain_id=43,
+            km_asset_id=asset_id,
+            expected_row_version=2,
+            actor_id="kmadmin",
+        )
+
+        self.assertEqual(1, uow_entries)
+        self.assertEqual("PENDING", result["status"])
+        self.assertEqual(receipt, result["kc_reindex"])
+        self.assertEqual("READY", result["asset"]["ingestion_status"])
+        knowledge_core.reindex_discovery.assert_awaited_once()
+
+
 class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _kc_job() -> _JobSnapshot:

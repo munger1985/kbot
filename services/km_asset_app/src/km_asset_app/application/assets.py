@@ -374,6 +374,7 @@ class KmAssetService:
             collection_id = source.collection_id
             bundle_id = row.kc_bundle_id
             bundle_revision_id = row.kc_bundle_revision_id
+            asset_snapshot = self._asset(row)
         receipt = await self._knowledge_core.reindex_discovery(
             domain_id=domain_id,
             collection_id=collection_id,
@@ -384,53 +385,14 @@ class KmAssetService:
                 actor_id=actor_id,
             ),
         )
-        async with self._uow_factory() as uow:
-            row = await uow.assets.get_asset(
-                domain_id=domain_id,
-                km_asset_id=km_asset_id,
-                lock=True,
-            )
-            if row is None or int(row.row_version) != expected_row_version:
-                raise KmAssetApplicationError(
-                    status_code=409,
-                    code="ROW_VERSION_CONFLICT",
-                    message="Asset 已被其他请求修改",
-                )
-            row.ingestion_status = "PARSING"
-            row.completed_at = None
-            row.error_code = None
-            row.error_message = None
-            row.failure_stage = None
-            row.row_version += 1
-            row.updated_by = actor_id
-            job = KmJobEntity(
-                domain_id=domain_id,
-                source_id=row.source_id,
-                km_asset_id=row.km_asset_id,
-                asset_revision_id=row.current_revision_id,
-                job_type="KC_STATUS_SYNC",
-                idempotency_key=(
-                    f"kc-reindex:{bundle_revision_id}:{row.row_version}"
-                ),
-                payload_json={
-                    "bundle_id": str(bundle_id),
-                    "bundle_revision_id": str(bundle_revision_id),
-                    "expected_bundle_row_version": int(
-                        receipt["expected_bundle_row_version"]
-                    ),
-                },
-                status="PENDING",
-                max_attempts=120,
-                available_at=datetime.now(timezone.utc) + timedelta(seconds=10),
-                created_by=actor_id,
-            )
-            await uow.assets.add(job)
-            await uow.commit()
-            return {
-                "asset": self._asset(row),
-                "job": self._job(job),
-                "kc_reindex": receipt,
-            }
+        # KC 已拥有 PROFILE/INDEX Job 与发布状态。这里不再重复创建
+        # KC_STATUS_SYNC，否则一次成功的 KC 调度可能被 KM 本地记账失败
+        # 错误包装成 503，造成“索引失败”的假象。
+        return {
+            "asset": asset_snapshot,
+            "status": "PENDING",
+            "kc_reindex": receipt,
+        }
 
     async def list_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int):
         async with self._uow_factory() as uow:

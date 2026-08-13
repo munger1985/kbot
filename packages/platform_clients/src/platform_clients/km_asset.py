@@ -1,5 +1,6 @@
 """KM Asset App 内部 Client。"""
 
+import json
 from typing import Any
 from urllib.parse import quote, urlencode
 from uuid import UUID
@@ -103,16 +104,20 @@ class KmAssetClient:
             headers["Content-Type"] = "application/json"
         try:
             async with session.request(method, f"{self._base_url}{path}", headers=headers, json=payload) as response:
-                body = await response.json(content_type=None)
+                response_text = await response.text()
+                try:
+                    body = json.loads(response_text) if response_text else None
+                except json.JSONDecodeError:
+                    body = response_text
                 if response.status >= 400:
                     detail = body.get("detail", body) if isinstance(body, dict) else body
                     code = str(detail.get("code", "KM_ASSET_APP_ERROR")) if isinstance(detail, dict) else "KM_ASSET_APP_ERROR"
-                    message = str(detail.get("message", detail)) if isinstance(detail, dict) else str(detail)
+                    message = str(detail.get("message", detail)) if isinstance(detail, dict) else str(detail or f"HTTP {response.status}")
                     raise KmAssetClientError(status_code=response.status, code=code, message=message)
                 return body
         except KmAssetClientError:
             raise
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        except (aiohttp.ClientError, TimeoutError) as exc:
             raise KmAssetClientError(status_code=503, code="KM_ASSET_APP_UNAVAILABLE", message="KM Asset App 暂时不可用") from exc
         finally:
             if owns_session:
