@@ -127,7 +127,11 @@ class RootAgentPlanner:
             str(agent_snapshot.get("owner_app_id") or "") == "km_asset"
             and {"document", "data_query"}.issubset(capabilities)
         ):
-            return self._decide_km_asset_route(objective)
+            return await self._decide_km_asset_route(
+                agent_snapshot=agent_snapshot,
+                objective=objective,
+                conversation_context=conversation_context,
+            )
         enabled_routes = [
             route
             for capability, route in (
@@ -279,35 +283,95 @@ class RootAgentPlanner:
             )
         )
 
-    @classmethod
-    def _decide_km_asset_route(cls, objective: str) -> RouteDecision:
-        """KM 内容主题走 KC 检索，明确结构化统计才走问数。"""
-        normalized = " ".join(objective.casefold().split())
-        structured_terms = (
-            "多少", "数量", "统计", "汇总", "合计", "占比", "比例",
-            "平均", "最多", "最少", "排行", "排名", "分布", "趋势",
-            "按作者", "按用户", "按状态", "按产品", "按行业", "按日期",
-            "count", "total", "average", "group by", "top ",
+    async def _decide_km_asset_route(
+        self,
+        *,
+        agent_snapshot: dict[str, Any],
+        objective: str,
+        conversation_context: dict[str, Any] | None,
+    ) -> RouteDecision:
+        """依据 KM 能力契约执行多语言语义路由，不匹配自然语言关键词。"""
+        model_name = str(
+            agent_model_name(agent_snapshot, "router_llm") or ""
+        ).strip()
+        if (
+            not model_name
+            or self._model_client is None
+            or self._prompt_resolver is None
+        ):
+            raise ValueError("KM Agent 未配置可用的 Router 模型")
+        prompt = await self._prompt_resolver.resolve(
+            "agent_runtime.km_asset_intent_route"
         )
-        route = (
-            RouteType.DATA_QUERY
-            if any(term in normalized for term in structured_terms)
-            else RouteType.DOCUMENT
-        )
-        return RouteDecision(
-            route_type=route,
-            confidence=1,
-            reason=(
-                "KM 问题包含明确统计或聚合意图，进入 Asset 元数据问数"
-                if route == RouteType.DATA_QUERY
-                else "KM 内容、主题或语义查找统一进入 KC 全文与向量检索"
-            ),
-            requires_chart=(
-                route == RouteType.DATA_QUERY
-                and cls._requests_chart(objective)
-            ),
-            classifier_version="deterministic-km-asset-v1",
-        )
+        context = conversation_context or {}
+        request = {
+            "current_input": objective,
+            "conversation_summary": context.get("summary") or {},
+            "recent_items": context.get("recent_items") or [],
+            "available_routes": ["DOCUMENT", "DATA_QUERY"],
+            "managed_metadata": {
+                "dimensions": [
+                    "asset_id", "title", "author", "product", "solution",
+                    "industry", "content_category", "status",
+                    "publish_date", "last_update_time",
+                ],
+                "measures": ["asset_count", "author_count"],
+            },
+        }
+        messages = [
+            {"role": "system", "content": prompt.content},
+            {
+                "role": "user",
+                "content": json.dumps(request, ensure_ascii=False, default=str),
+            },
+        ]
+        last_error = ""
+        for attempt in range(2):
+            response = await self._model_client.get_llm_json(
+                served_model_name=model_name,
+                prompt=messages,
+                max_tokens=1024,
+            )
+            try:
+                if not isinstance(response, dict):
+                    raise TypeError("输出必须是 JSON 对象")
+                route = RouteType(str(response.get("route_type") or ""))
+                if route not in {RouteType.DOCUMENT, RouteType.DATA_QUERY}:
+                    raise ValueError("route_type 只能是 DOCUMENT 或 DATA_QUERY")
+                confidence = float(response.get("confidence"))
+                if not 0 <= confidence <= 1:
+                    raise ValueError("confidence 必须在 0 到 1 之间")
+                reason = str(response.get("reason") or "").strip()
+                if not reason:
+                    raise ValueError("reason 不能为空")
+                clarification = response.get("clarification_question")
+                if clarification is not None:
+                    raise ValueError("clarification_question 必须为 null")
+                requires_chart = response.get("requires_chart", False)
+                if not isinstance(requires_chart, bool):
+                    raise ValueError("requires_chart 必须为布尔值")
+                if route != RouteType.DATA_QUERY:
+                    requires_chart = False
+                return RouteDecision(
+                    route_type=route,
+                    confidence=confidence,
+                    reason=reason,
+                    requires_chart=requires_chart,
+                    classifier_version=(
+                        f"llm-km-asset-v1:{prompt.version}"
+                    ),
+                )
+            except (TypeError, ValueError) as exc:
+                last_error = str(exc)
+                if attempt == 0:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "上一份输出不符合 RouteDecision 契约："
+                            f"{last_error}。请只重新输出合法 JSON。"
+                        ),
+                    })
+        raise ValueError(f"KM Router 模型输出不符合契约：{last_error}")
 
     @classmethod
     def _validate_capabilities(cls, capabilities: set[str]) -> None:
