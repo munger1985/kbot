@@ -8,6 +8,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import (
+    detect_unicode_language,
+    language_instruction,
+    localized_message,
+)
 from agent_runtime.domain.planning import (
     ExecutionKind,
     ExecutionMode,
@@ -101,12 +106,14 @@ class RootAgentPlanner:
         objective: str,
         conversation_context: dict[str, Any] | None = None,
         client_metadata: dict[str, Any] | None = None,
+        language: str | None = None,
     ) -> RouteDecision:
         """单能力确定性路由；多能力使用冻结 Router 模型选择唯一分支。"""
         capabilities = set(
             agent_snapshot.get("enabled_capabilities") or []
         )
         self._validate_capabilities(capabilities)
+        resolved_language = language or detect_unicode_language(objective)
         if (
             "document" in capabilities
             and (client_metadata or {}).get("query_images")
@@ -132,6 +139,7 @@ class RootAgentPlanner:
                 agent_snapshot=agent_snapshot,
                 objective=objective,
                 conversation_context=conversation_context,
+                language=resolved_language,
             )
         enabled_routes = [
             route
@@ -177,6 +185,10 @@ class RootAgentPlanner:
             served_model_name=model_name,
             prompt=[
                 {"role": "system", "content": prompt.content},
+                {
+                    "role": "system",
+                    "content": language_instruction(resolved_language),
+                },
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -245,7 +257,9 @@ class RootAgentPlanner:
         if route_value == "CLARIFY":
             response["clarification_question"] = (
                 str(response.get("clarification_question") or "").strip()
-                or "请说明这是通用问题、文档查询还是业务数据查询。"
+                or localized_message(
+                    "clarify_query_type", resolved_language
+                )
             )
         else:
             response["clarification_question"] = None
@@ -290,6 +304,7 @@ class RootAgentPlanner:
         agent_snapshot: dict[str, Any],
         objective: str,
         conversation_context: dict[str, Any] | None,
+        language: str,
     ) -> RouteDecision:
         """依据 KM 能力契约执行多语言语义路由，不匹配自然语言关键词。"""
         model_name = str(
@@ -302,6 +317,7 @@ class RootAgentPlanner:
         ):
             raise ValueError("KM Agent 未配置可用的 Router 模型")
         base_request = {
+            "language": language,
             "current_input": objective,
             "available_routes": ["DOCUMENT", "DATA_QUERY", "CLARIFY"],
             "managed_metadata": {
@@ -328,7 +344,9 @@ class RootAgentPlanner:
                 "route_type": RouteType.CLARIFY,
                 "confidence": 0,
                 "reason": "当前输入依赖历史语境，但没有可用会话上下文",
-                "clarification_question": "请补充您所指的 Asset、主题或统计范围。",
+                "clarification_question": localized_message(
+                    "clarify_asset_scope", language
+                ),
                 "requires_chart": False,
             })
         return await self._request_km_route_decision(
@@ -352,6 +370,10 @@ class RootAgentPlanner:
         prompt = await self._prompt_resolver.resolve(prompt_key)
         messages = [
             {"role": "system", "content": prompt.content},
+            {
+                "role": "system",
+                "content": language_instruction(str(request["language"])),
+            },
             {
                 "role": "user",
                 "content": json.dumps(request, ensure_ascii=False, default=str),

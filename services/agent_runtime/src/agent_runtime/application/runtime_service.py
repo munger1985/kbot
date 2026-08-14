@@ -28,6 +28,10 @@ from agent_runtime.entities import (
     AgentRunEventEntity,
     AgentTaskEntity,
 )
+from agent_runtime.language import (
+    conversation_fallback_texts,
+    detect_unicode_language,
+)
 from platform_core.contracts import (
     AgentArtifact,
     AgentArtifactRef,
@@ -148,6 +152,12 @@ class AgentRuntimeService:
                 "Agent Runtime 聊天运行只接受知识检索 Agent；"
                 "AIOps Agent 必须使用 AIOps Run 接口",
             )
+        language = detect_unicode_language(
+            command.original_input,
+            fallback_texts=conversation_fallback_texts(
+                command.conversation_context
+            ),
+        )
         fingerprint = _canonical_hash(
             {
                 "agent_id": command.agent_id,
@@ -226,6 +236,7 @@ class AgentRuntimeService:
                 objective=command.original_input,
                 conversation_context=command.conversation_context,
                 client_metadata=command.client_metadata,
+                language=language,
             )
             initial_plan = self._root_planner.build_plan(
                 objective=command.original_input,
@@ -273,6 +284,7 @@ class AgentRuntimeService:
                         status=RunStatus.CREATED.value,
                         policy_snapshot_json=command.policy_snapshot,
                         config_snapshot_json={
+                            "language": language,
                             "agent": agent_snapshot,
                             "retrieval": {
                                 "collection_ids": [

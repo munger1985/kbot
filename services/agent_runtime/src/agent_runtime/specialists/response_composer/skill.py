@@ -6,6 +6,11 @@ from typing import Any
 from loguru import logger
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import (
+    language_instruction,
+    localized_message,
+    response_language,
+)
 from agent_runtime.runtime import (
     ExecutionContext,
     SkillArtifact,
@@ -74,7 +79,12 @@ class ResponseComposerSkill:
                 retrieval.warnings if retrieval is not None else ()
             )
             answer = GroundedAnswer(
-                answer="当前授权知识范围内没有找到足够的可引用证据。",
+                answer=localized_message(
+                    "insufficient_evidence",
+                    response_language(
+                        context.config_snapshot, context.original_input
+                    ),
+                ),
                 status="INSUFFICIENT_EVIDENCE",
                 warnings=(
                     *retrieval_warnings,
@@ -175,7 +185,12 @@ class ResponseComposerSkill:
                 retrieval.warnings if retrieval is not None else ()
             )
             grounded = GroundedAnswer(
-                answer="当前授权知识范围内没有找到足够的可引用证据。",
+                answer=localized_message(
+                    "insufficient_evidence",
+                    response_language(
+                        context.config_snapshot, context.original_input
+                    ),
+                ),
                 status="INSUFFICIENT_EVIDENCE",
                 warnings=(
                     *retrieval_warnings,
@@ -283,7 +298,12 @@ class ResponseComposerSkill:
             break
         if validated is None:
             grounded = GroundedAnswer(
-                answer="当前授权知识范围内没有找到足够的可引用证据。",
+                answer=localized_message(
+                    "insufficient_evidence",
+                    response_language(
+                        context.config_snapshot, context.original_input
+                    ),
+                ),
                 status="INSUFFICIENT_EVIDENCE",
                 warnings=(
                     *retrieval.warnings,
@@ -356,7 +376,12 @@ class ResponseComposerSkill:
         if not bool(payload.get("ambiguity", False)):
             return None
         value = str(payload.get("clarification_question") or "").strip()
-        return value or "请补充说明当前问题所指的对象。"
+        return value or localized_message(
+            "clarify_asset_scope",
+            response_language(
+                context.config_snapshot, context.original_input
+            ),
+        )
 
     @classmethod
     def _blocking_clarification(
@@ -460,17 +485,22 @@ class ResponseComposerSkill:
         definition = await self._prompt_resolver.resolve(
             "agent_runtime.data_response_compose"
         )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
         return model_name, [
             {
                 "role": "system",
                 "content": (
                     f"{definition.content}\n\nAgent 指令：\n"
-                    f"{agent.get('instruction') or ''}"
+                    f"{agent.get('instruction') or ''}\n\n"
+                    f"{language_instruction(language)}"
                 ),
             },
             {
                 "role": "user",
                 "content": (
+                    f"language={language}\n"
                     f"用户问题：{context.original_input}\n"
                     f"QueryResult：{query.model_dump_json()}"
                 ),
@@ -607,7 +637,16 @@ class ResponseComposerSkill:
                 "evidence": evidence,
             },
         )
-        return [{"role": "system", "content": rendered}]
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        return [
+            {"role": "system", "content": rendered},
+            {
+                "role": "system",
+                "content": language_instruction(language),
+            },
+        ]
 
     @staticmethod
     def _validate_model_answer(

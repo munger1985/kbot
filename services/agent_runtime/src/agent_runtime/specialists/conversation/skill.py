@@ -8,6 +8,7 @@ from loguru import logger
 from pydantic import ValidationError
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.prompts import StrictPromptRenderer
 
@@ -77,9 +78,19 @@ class ContextRewriteSkill:
                 "recalled_memories": memory_context.get("memories") or [],
             },
         )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        messages = [
+            {"role": "system", "content": rendered},
+            {
+                "role": "system",
+                "content": language_instruction(language),
+            },
+        ]
         response = await self._model_client.get_llm_json(
             served_model_name=model_name,
-            prompt=rendered,
+            prompt=messages,
             max_tokens=2048,
         )
         try:
@@ -98,12 +109,17 @@ class ContextRewriteSkill:
             )
             corrected_response = await self._model_client.get_llm_json(
                 served_model_name=model_name,
-                prompt=(
-                    rendered
-                    + "\n\n上一份输出未通过字段校验。请仅重新输出一个 JSON 对象："
-                    "retrieval_queries 必须是包含至少一个非空字符串的数组；"
-                    "ambiguity 必须是 JSON 布尔值 true 或 false，不能是字符串。"
-                ),
+                prompt=[
+                    *messages,
+                    {
+                        "role": "system",
+                        "content": (
+                            "上一份输出未通过字段校验。请仅重新输出一个 JSON 对象："
+                            "retrieval_queries 必须是包含至少一个非空字符串的数组；"
+                            "ambiguity 必须是 JSON 布尔值 true 或 false，不能是字符串。"
+                        ),
+                    },
+                ],
                 max_tokens=2048,
             )
             try:

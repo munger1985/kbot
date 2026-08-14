@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import (
+    language_instruction,
+    localized_message,
+    response_language,
+)
 from agent_runtime.runtime import (
     ExecutionContext,
     SkillArtifact,
@@ -28,10 +33,13 @@ class ConversationResponseSkill:
 
     async def execute_stream(self, context: ExecutionContext):
         route = dict(context.config_snapshot.get("route") or {})
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
         if route.get("route_type") == "CLARIFY":
             question = str(
                 route.get("clarification_question")
-                or "请说明这是通用问题、文档查询还是业务数据查询。"
+                or localized_message("clarify_query_type", language)
             )
             yield SkillProgress(
                 event_type="answer.delta",
@@ -80,6 +88,10 @@ class ConversationResponseSkill:
                 "content": (
                     f"{prompt.content}\n\nAgent 指令：\n{instruction}"
                 ),
+            },
+            {
+                "role": "system",
+                "content": language_instruction(language),
             },
             {"role": "user", "content": standalone},
         ]

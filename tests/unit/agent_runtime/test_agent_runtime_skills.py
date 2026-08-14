@@ -133,6 +133,15 @@ class _ModelClient:
         return "图片中是数据库性能监控面板，显示查询延迟升高"
 
 
+class _RecordingModelClient(_ModelClient):
+    def __init__(self):
+        self.last_json_request = None
+
+    async def get_llm_json(self, **kwargs):
+        self.last_json_request = kwargs
+        return await super().get_llm_json(**kwargs)
+
+
 class _VariantCitationModelClient(_ModelClient):
     async def stream_llm_chunks(self, **kwargs):
         from platform_clients.model import LLMChunk
@@ -157,7 +166,11 @@ class _MissingCitationModelClient(_ModelClient):
 
 
 class _RewriteModelClient:
+    def __init__(self):
+        self.last_json_request = None
+
     async def get_llm_json(self, **kwargs):
+        self.last_json_request = kwargs
         return {
             "raw_input": "它有什么优势？",
             "standalone_query": "数据库优化案例有什么优势？",
@@ -222,8 +235,39 @@ class _PromptResolver:
         )
 
 
-def _context(*, input_artifacts=()):
+def _context(
+    *,
+    input_artifacts=(),
+    original_input="这个案例如何降低查询延迟？",
+    language=None,
+):
     run_id = uuid7()
+    config_snapshot = {
+        "agent": {
+            "models": {
+                "context_llm": {
+                    "served_model_name": "context-model"
+                },
+                "composer_llm": {
+                    "served_model_name": "composer-model"
+                },
+                "memory_llm": {
+                    "served_model_name": "memory-model"
+                },
+                "memory_embedding": {
+                    "served_model_name": "embedding-model"
+                },
+            },
+            "instruction": "准确回答。",
+            "config": {},
+        },
+        "retrieval": {
+            "collection_ids": [],
+            "security_level": 2,
+        },
+    }
+    if language is not None:
+        config_snapshot["language"] = language
     return ExecutionContext(
         domain_id=10,
         agent_id=uuid7(),
@@ -233,31 +277,8 @@ def _context(*, input_artifacts=()):
         actor_id="user-1",
         request_id="request-1",
         trace_id="trace-1",
-        original_input="这个案例如何降低查询延迟？",
-        config_snapshot={
-            "agent": {
-                "models": {
-                    "context_llm": {
-                        "served_model_name": "context-model"
-                    },
-                    "composer_llm": {
-                        "served_model_name": "composer-model"
-                    },
-                    "memory_llm": {
-                        "served_model_name": "memory-model"
-                    },
-                    "memory_embedding": {
-                        "served_model_name": "embedding-model"
-                    },
-                },
-                "instruction": "准确回答。",
-                "config": {},
-            },
-            "retrieval": {
-                "collection_ids": [],
-                "security_level": 2,
-            },
-        },
+        original_input=original_input,
+        config_snapshot=config_snapshot,
         deadline_at=datetime.now(timezone.utc),
         input_artifacts=input_artifacts,
     )
@@ -390,14 +411,19 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
                 },
             }
         )
+        model = _RewriteModelClient()
         result = await ContextRewriteSkill(
-            model_client=_RewriteModelClient(),
+            model_client=model,
             prompt_resolver=_PromptResolver(),
         ).execute(context)
 
         self.assertEqual(
             result.artifact.payload["standalone_query"],
             "数据库优化案例有什么优势？",
+        )
+        self.assertIn(
+            "language=zh-CN",
+            model.last_json_request["prompt"][1]["content"],
         )
 
     async def test_km_self_contained_route_does_not_inherit_old_topic(self):
@@ -679,6 +705,41 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["references"][0]["locator_schema_version"],
             "document/v1",
+        )
+
+    async def test_document_answer_prompt_uses_frozen_response_language(self):
+        retrieval = await self._retrieval_artifact()
+        model = _RecordingModelClient()
+
+        await ResponseComposerSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(
+            _context(
+                input_artifacts=(retrieval,),
+                original_input="この文書の内容は何ですか？",
+                language="ja-JP",
+            )
+        )
+
+        messages = model.last_json_request["prompt"]
+        self.assertIn("language=ja-JP", messages[1]["content"])
+
+    async def test_insufficient_evidence_uses_frozen_response_language(self):
+        result = await ResponseComposerSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(
+            _context(
+                original_input="관련 자료를 찾아주세요",
+                language="ko-KR",
+            )
+        )
+
+        self.assertEqual(
+            result.artifact.payload["answer"],
+            "현재 권한이 부여된 지식 범위에서 인용할 수 있는 "
+            "충분한 근거를 찾지 못했습니다.",
         )
 
     async def test_composer_prefers_document_evidence_over_clarification(self):

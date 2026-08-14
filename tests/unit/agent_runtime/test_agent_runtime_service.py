@@ -461,6 +461,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         receipt = await self.service.create_run(self.create_command)
         snapshot = self.store.runs[receipt.run_id].config_snapshot_json
 
+        self.assertEqual(snapshot["language"], "zh-CN")
         self.assertEqual(
             snapshot["agent"]["display_name"], "文档助手"
         )

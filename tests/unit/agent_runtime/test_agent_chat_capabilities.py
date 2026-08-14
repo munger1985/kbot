@@ -12,8 +12,10 @@ from agent_runtime.specialists.conversation_response import (
 from agent_runtime.specialists.data_query import (
     DataQuerySkill,
     MCPDataQueryExecutor,
+    QueryResult,
     SemanticDataQueryExecutor,
 )
+from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import RootAgentPlanner, RouteType
 from main_api.api.dify import _records
@@ -90,7 +92,11 @@ def _context(
     route=None,
     original_input="你好",
     policy_snapshot=None,
+    language=None,
 ):
+    config_snapshot = {"agent": agent or {}, "route": route}
+    if language is not None:
+        config_snapshot["language"] = language
     return ExecutionContext(
         domain_id=20,
         agent_id=uuid7(),
@@ -102,7 +108,7 @@ def _context(
         trace_id="trace-1",
         original_input=original_input,
         policy_snapshot=policy_snapshot or {},
-        config_snapshot={"agent": agent or {}, "route": route},
+        config_snapshot=config_snapshot,
         input_artifacts=tuple(artifacts),
     )
 
@@ -242,7 +248,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         request = json.loads(
-            model.last_json_request["prompt"][1]["content"]
+            model.last_json_request["prompt"][2]["content"]
         )
         self.assertNotIn("CONVERSATION", request["enabled_routes"])
         self.assertIn("DOCUMENT", request["enabled_routes"])
@@ -343,12 +349,32 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_km_multilingual_intents_use_semantic_router(self):
         cases = (
-            ("How many assets are available?", RouteType.DATA_QUERY),
-            ("현재 자산은 몇 개입니까?", RouteType.DATA_QUERY),
-            ("現在のアセット数はいくつですか？", RouteType.DATA_QUERY),
-            ("Find assets related to ChatBI", RouteType.DOCUMENT),
-            ("ChatBI 관련 자료를 찾아주세요", RouteType.DOCUMENT),
-            ("ChatBIに関連する資料を探してください", RouteType.DOCUMENT),
+            (
+                "How many assets are available?",
+                RouteType.DATA_QUERY,
+                "en-US",
+            ),
+            ("현재 자산은 몇 개입니까?", RouteType.DATA_QUERY, "ko-KR"),
+            (
+                "現在のアセット数はいくつですか？",
+                RouteType.DATA_QUERY,
+                "ja-JP",
+            ),
+            (
+                "Find assets related to ChatBI",
+                RouteType.DOCUMENT,
+                "en-US",
+            ),
+            (
+                "ChatBI 관련 자료를 찾아주세요",
+                RouteType.DOCUMENT,
+                "ko-KR",
+            ),
+            (
+                "ChatBIに関連する資料を探してください",
+                RouteType.DOCUMENT,
+                "ja-JP",
+            ),
         )
         agent = {
             "owner_app_id": "km_asset",
@@ -357,17 +383,18 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "router_llm": {"served_model_name": "router-model"}
             },
         }
-        for objective, expected in cases:
+        for objective, expected, expected_language in cases:
             with self.subTest(objective=objective):
+                model = _ModelClient(response={
+                    "route_type": expected.value,
+                    "confidence": 0.97,
+                    "reason": "语义分类结果",
+                    "clarification_question": None,
+                    "requires_chart": False,
+                    "context_required": False,
+                })
                 planner = RootAgentPlanner(
-                    model_client=_ModelClient(response={
-                        "route_type": expected.value,
-                        "confidence": 0.97,
-                        "reason": "语义分类结果",
-                        "clarification_question": None,
-                        "requires_chart": False,
-                        "context_required": False,
-                    }),
+                    model_client=model,
                     prompt_resolver=_PromptResolver(),
                 )
                 decision = await planner.decide_for_input(
@@ -375,6 +402,13 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                     objective=objective,
                 )
                 self.assertEqual(expected, decision.route_type)
+                messages = model.last_json_request["prompt"]
+                request = json.loads(messages[2]["content"])
+                self.assertEqual(expected_language, request["language"])
+                self.assertIn(
+                    f"language={expected_language}",
+                    messages[1]["content"],
+                )
 
     async def test_km_follow_up_resolves_previous_count_scope_without_clarify(self):
         model = _ModelClient(responses=(
@@ -434,7 +468,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(RouteType.DOCUMENT, decision.route_type)
         self.assertIsNone(decision.clarification_question)
-        request = json.loads(model.last_json_request["prompt"][1]["content"])
+        request = json.loads(model.last_json_request["prompt"][2]["content"])
         self.assertEqual("chatbi相关的", request["current_input"])
         self.assertEqual(context["recent_items"], request["recent_items"])
         self.assertEqual(2, len(model.json_requests))
@@ -602,6 +636,41 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             client.request["question"], "查询 2026 年 7 月销售额"
         )
+
+    async def test_data_answer_prompt_uses_frozen_response_language(self):
+        query = QueryResult.model_validate({
+            "schema": "QUERY_RESULT.v1",
+            "query_result_id": str(uuid7()),
+            "provider": "MCP",
+            "columns": [{"name": "asset_count"}],
+            "rows": [{"asset_count": 3}],
+            "row_count": 1,
+            "truncated": False,
+            "warnings": [],
+            "provenance": {"profile": "KM_ASSET"},
+        })
+        skill = ResponseComposerSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        _, messages = await skill._query_prompt(
+            _context(
+                original_input="현재 자산은 몇 개입니까?",
+                language="ko-KR",
+                agent={
+                    "models": {
+                        "composer_llm": {
+                            "served_model_name": "composer-model"
+                        }
+                    }
+                },
+            ),
+            query,
+        )
+
+        self.assertIn("language=ko-KR", messages[0]["content"])
+        self.assertIn("language=ko-KR", messages[1]["content"])
 
     async def test_semantic_and_mcp_share_query_result_contract(self):
         semantic_model_id = uuid7()
