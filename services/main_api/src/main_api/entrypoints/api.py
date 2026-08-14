@@ -12,12 +12,13 @@ from loguru import logger
 
 from main_api.app import create_main_api_app
 from main_api.application import (
+    AccessManagementService,
     AccessControlService,
     DomainManagementService,
     DomainValidationService,
     NotificationCenterService,
-    KmUserAuthService,
-    create_km_user_token_codec,
+    UserAuthService,
+    create_user_token_codec,
 )
 from main_api.config import get_main_api_settings
 from main_api.persistence import create_main_api_uow
@@ -88,9 +89,12 @@ async def lifespan(app: FastAPI):
     app.state.access_control_service = AccessControlService(
         uow_factory=uow_factory,
     )
-    app.state.km_user_auth_service = KmUserAuthService(
+    app.state.access_management_service = AccessManagementService(
         uow_factory=uow_factory,
-        codec=create_km_user_token_codec(settings=settings),
+    )
+    app.state.user_auth_service = UserAuthService(
+        uow_factory=uow_factory,
+        codec=create_user_token_codec(settings=settings),
     )
     app.state.notification_center_service = NotificationCenterService(
         uow_factory=uow_factory,

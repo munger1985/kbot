@@ -74,6 +74,8 @@ CREATE INDEX IX_APP_MEMBER_ROLE_USER ON KBOT_APP_MEMBER_ROLE
     (DOMAIN_ID, USER_ID, APP_ID, STATUS);
 
 INSERT ALL
+    INTO KBOT_PERMISSION VALUES ('platform:user_manage', 'platform', '管理平台用户与成员授权')
+    INTO KBOT_PERMISSION VALUES ('platform:role_manage', 'platform', '管理平台应用角色与权限')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:use', 'knowledge_retrieval', '使用知识检索')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:upload', 'knowledge_retrieval', '上传知识文件')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:review', 'knowledge_retrieval', '审核知识文件')
@@ -101,6 +103,7 @@ INSERT ALL
 SELECT 1 FROM DUAL;
 
 INSERT ALL
+    INTO KBOT_APP_ROLE VALUES ('platform', 'platform_admin', '平台管理员', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'user', '用户', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'contributor', '贡献者', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'reviewer', '审核人', 'ACTIVE')
@@ -111,6 +114,10 @@ INSERT ALL
     INTO KBOT_APP_ROLE VALUES ('aiops', 'approver', '审批人', 'ACTIVE')
     INTO KBOT_APP_ROLE VALUES ('aiops', 'manager', '管理员', 'ACTIVE')
 SELECT 1 FROM DUAL;
+
+INSERT INTO KBOT_APP_ROLE_PERMISSION
+SELECT 'platform', 'platform_admin', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE APP_ID = 'platform';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'knowledge_retrieval', 'user', PERMISSION_CODE FROM KBOT_PERMISSION

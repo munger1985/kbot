@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 from main_api.app import create_main_api_app
 from main_api.application import (
     DomainValidationService,
-    KmUserAuthService,
-    KmUserTokenCodec,
+    UserAuthService,
+    UserTokenCodec,
 )
 from main_api.config import get_main_api_settings
 from platform_clients import (
@@ -735,7 +735,7 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("km-test-llm", response.json()[0]["served_model_name"])
 
-    def test_km_model_catalog_accepts_km_user_token(self) -> None:
+    def test_km_model_catalog_accepts_platform_user_token(self) -> None:
         class _ModelCatalogClient:
             async def list_models(self):
                 return [{
@@ -748,7 +748,7 @@ class MainApiTest(unittest.TestCase):
                     "model_params": {},
                 }]
 
-        codec = KmUserTokenCodec(
+        codec = UserTokenCodec(
             secret="km-user-token-test-secret-value-32-bytes",
             issuer="main-api-test",
             ttl_seconds=3600,
@@ -757,11 +757,15 @@ class MainApiTest(unittest.TestCase):
             user_id="portal-user-1",
             domain_id=100,
             must_change_password=False,
+            password_version=1,
         )
-        self.app.state.km_user_auth_service = KmUserAuthService(
+        self.app.state.user_auth_service = UserAuthService(
             uow_factory=None,
             codec=codec,
         )
+        async def _accept_session(*, claims):
+            return None
+        self.app.state.user_auth_service.validate_session = _accept_session
         self.app.state.model_config_clients = (_ModelCatalogClient(),)
 
         response = self.client.get(
@@ -986,10 +990,57 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertIn("/api/v1/apps/knowledge-retrieval/agents", paths)
         self.assertIn("/api/v1/apps/knowledge-retrieval/runs", paths)
+        self.assertIn("/api/v1/auth/login", paths)
+        self.assertIn("/api/v1/auth/domains", paths)
+        self.assertIn("/api/v1/auth/me", paths)
+        self.assertIn("/api/v1/admin/users", paths)
+        self.assertIn("/api/v1/admin/roles", paths)
+        self.assertIn("/api/v1/admin/permissions", paths)
         self.assertIn("/api/v1/development/logs/events", paths)
         self.assertIn("/api/v1/development/agent-runs", paths)
         self.assertIn("/api/v1/development/agent-runs/{run_id}", paths)
         self.assertFalse(any(path.startswith("/internal/") for path in paths))
+
+    def test_platform_user_login_is_public_and_domain_bound(self) -> None:
+        class _UserAuthService:
+            async def login(self, *, user_id, password, domain_id):
+                return {
+                    "access_token": "signed-user-token",
+                    "token_type": "Bearer",
+                    "user_id": user_id,
+                    "domain_id": domain_id,
+                    "must_change_password": False,
+                }
+
+        self.app.state.user_auth_service = _UserAuthService()
+        response = self.client.post(
+            "/api/v1/auth/login",
+            json={
+                "user_id": "ordinary-user",
+                "password": "Example@Password2026!",
+                "domain_id": 100,
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("ordinary-user", response.json()["user_id"])
+        self.assertEqual(100, response.json()["domain_id"])
+
+    def test_user_management_requires_platform_permission_contract(self) -> None:
+        class _AccessManagementService:
+            async def list_users(self, **values):
+                return {"items": [], "offset": 0, "limit": 50, "total": 0}
+
+        self.app.state.access_management_service = _AccessManagementService()
+        response = self.client.get(
+            "/api/v1/admin/users", headers=self._headers()
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            "platform:user_manage",
+            self.app.state.access_control_service.last_permission_code,
+        )
 
     def test_agent_and_run_public_contracts(self) -> None:
         agent = self.client.post(

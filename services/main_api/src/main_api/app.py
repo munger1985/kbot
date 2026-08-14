@@ -18,7 +18,9 @@ from loguru import logger
 from sqlalchemy import text
 
 from main_api.api import (
+    access_management_router,
     aiops_app_router,
+    auth_router,
     conversation_router,
     data_query_router,
     development_agent_runs_router,
@@ -37,7 +39,7 @@ from main_api.api import (
     slack_router,
 )
 from main_api.config import get_main_api_settings
-from main_api.application import KmUserAuthenticationError
+from main_api.application import UserAuthenticationError
 from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
@@ -49,6 +51,7 @@ from platform_clients import (
 )
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.security import (
+    PortalApiKeyError,
     PortalApiKeyVerifier,
     create_public_auth_middleware,
 )
@@ -163,11 +166,9 @@ def create_main_api_app(
             return False
         return await service.is_active(domain_id)
 
-    async def authenticate_km_user(request: Request):
-        """仅为 KM 页面接受由 Main API 签发的用户 Token。"""
-        if not request.url.path.startswith("/api/v1/apps/km-asset/"):
-            return None
-        service = getattr(app.state, "km_user_auth_service", None)
+    async def authenticate_user(request: Request):
+        """接受由 Main API 签发、绑定用户与 Domain 的公开用户 Token。"""
+        service = getattr(app.state, "user_auth_service", None)
         if service is None:
             return None
         context = service.authenticate_request(
@@ -176,7 +177,19 @@ def create_main_api_app(
         if context is None:
             return None
         claims = service.verify(request.headers.get("Authorization"))
-        request.state.km_user_token_claims = claims
+        try:
+            await service.validate_session(claims=claims)
+        except UserAuthenticationError as exc:
+            raise PortalApiKeyError(exc.code, str(exc)) from exc
+        if claims.must_change_password and request.url.path not in {
+            "/api/v1/auth/me",
+            "/api/v1/auth/password",
+            "/api/v1/apps/km-asset/auth/password",
+        }:
+            raise PortalApiKeyError(
+                "PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码"
+            )
+        request.state.user_token_claims = claims
         return context
 
     if enable_access_log:
@@ -197,7 +210,7 @@ def create_main_api_app(
             verifier=verifier,
             domain_validator=validate_domain,
             allow_test_bypass=config.test_auth_bypass_enabled,
-            alternate_authenticator=authenticate_km_user,
+            alternate_authenticator=authenticate_user,
             public_paths={
                 "/health",
                 "/healthz",
@@ -208,6 +221,8 @@ def create_main_api_app(
                 "/docs",
                 "/redoc",
                 "/openapi.json",
+                "/api/v1/auth/login",
+                "/api/v1/auth/domains",
                 "/api/v1/apps/km-asset/auth/login",
             },
             domainless_paths=domainless_paths,
@@ -239,6 +254,8 @@ def create_main_api_app(
             ],
         )
     app.include_router(knowledge_router)
+    app.include_router(auth_router)
+    app.include_router(access_management_router)
     app.include_router(knowledge_retrieval_app_router)
     app.include_router(km_asset_app_router)
     app.include_router(aiops_app_router)
@@ -271,15 +288,15 @@ def create_main_api_app(
         app.include_router(development_logs_router)
         app.include_router(development_agent_runs_router)
 
-    @app.exception_handler(KmUserAuthenticationError)
-    async def km_user_authentication_error_handler(
-        request: Request, exc: KmUserAuthenticationError,
+    @app.exception_handler(UserAuthenticationError)
+    async def user_authentication_error_handler(
+        request: Request, exc: UserAuthenticationError,
     ):
         return _problem_response(
             request=request,
             status_code=401,
             code=exc.code,
-            title="KM 用户认证失败",
+            title="用户认证失败",
             detail=str(exc),
         )
 

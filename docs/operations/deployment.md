@@ -118,6 +118,9 @@ KBOT_ORACLE_PASSWORD="..."
 KBOT_MASTER_KEY="至少32字节的随机主密钥"
 ```
 
+`KBOT_MASTER_KEY` 会按用途派生 `KBOT_USER_JWT_SECRET`。如需单独轮换普通用户登录
+Token 的签名密钥，可显式注入同名环境变量，长度不得少于 32 字节。
+
 推荐使用 systemd `EnvironmentFile`、Kubernetes Secret 或企业 Secret Manager，
 不要把生产 `.env` 写入仓库。Portal API Key 使用以下命令生成摘要：
 
@@ -150,6 +153,16 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 待办和关注记录。
 
 ## 初始化 Oracle
+
+既有数据库升级普通登录、用户管理和角色管理功能时，在 SQL Developer 中执行：
+
+```text
+scripts/db/bootstrap_platform_access_management.sql
+```
+
+脚本不要求输入参数，不修改 admin 密码；它会幂等创建 `platform` 权限与角色，并在
+全部启用 Domain 中向 admin 授予受保护的 `system_admin`。全新数据库仍先执行标准
+Schema 初始化，再执行 `scripts/db/bootstrap_global_admin.sql`。
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
 始终创建。先预检：

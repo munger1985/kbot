@@ -1,22 +1,23 @@
-"""KM 独立页面用户认证测试。"""
+"""平台普通用户认证测试。"""
 
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 
 import bcrypt
 
-from main_api.application.km_user_auth import (
-    KmUserAuthenticationError,
-    KmUserAuthService,
-    KmUserTokenCodec,
-    KmUserTokenClaims,
+from main_api.application.user_auth import (
+    UserAuthenticationError,
+    UserAuthService,
+    UserTokenCodec,
+    UserTokenClaims,
 )
 
 
-class KmUserTokenCodecTest(unittest.TestCase):
+class UserTokenCodecTest(unittest.TestCase):
     def setUp(self):
-        self.codec = KmUserTokenCodec(
+        self.codec = UserTokenCodec(
             secret="test-km-user-secret-with-at-least-32-bytes",
             issuer="test-km",
             ttl_seconds=3600,
@@ -27,6 +28,7 @@ class KmUserTokenCodecTest(unittest.TestCase):
             user_id="kmadmin",
             domain_id=41,
             must_change_password=True,
+            password_version=123456,
         )
 
         claims = self.codec.verify_authorization(f"Bearer {token}")
@@ -34,15 +36,16 @@ class KmUserTokenCodecTest(unittest.TestCase):
         self.assertEqual("kmadmin", claims.user_id)
         self.assertEqual(41, claims.domain_id)
         self.assertTrue(claims.must_change_password)
+        self.assertEqual(123456, claims.password_version)
         self.assertEqual(expires_at.replace(microsecond=0), claims.expires_at)
 
-    def test_rejects_portal_api_key_as_km_user_token(self):
-        with self.assertRaises(KmUserAuthenticationError) as context:
+    def test_rejects_portal_api_key_as_user_token(self):
+        with self.assertRaises(UserAuthenticationError) as context:
             self.codec.verify_authorization(
                 "Bearer kbot_sk_portal.not-a-km-user-token"
             )
 
-        self.assertEqual("INVALID_KM_TOKEN", context.exception.code)
+        self.assertEqual("INVALID_USER_TOKEN", context.exception.code)
 
 
 class _DetachedEntity:
@@ -64,6 +67,7 @@ class _AccessRepository:
                 b"KmAdmin@2026!", bcrypt.gensalt(rounds=4)
             ).decode("ascii"),
             must_change_password="Y",
+            password_updated_at=datetime.now(timezone.utc),
         )
 
     async def get_user(self, user_id):
@@ -72,12 +76,14 @@ class _AccessRepository:
     async def get_user_credential(self, user_id):
         return self.credential
 
-    async def list_active_km_domain_ids(self, user_id):
+    async def list_active_domain_ids(self, user_id):
         return (41,)
 
-    async def set_user_password(self, *, credential, password_hash):
+    async def set_user_password(
+        self, *, credential, password_hash, must_change_password=False
+    ):
         credential.password_hash = password_hash
-        credential.must_change_password = "N"
+        credential.must_change_password = "Y" if must_change_password else "N"
 
 
 class _DomainRepository:
@@ -91,6 +97,12 @@ class _DomainRepository:
     async def get_by_name(self, *, name):
         return self.domain if name == self.domain.name else None
 
+    async def get(self, *, domain_id):
+        return self.domain if domain_id == self.domain.domain_id else None
+
+    async def list_by_ids(self, *, domain_ids):
+        return [self.domain] if self.domain.domain_id in domain_ids else []
+
 
 class _UnitOfWork:
     def __init__(self, access):
@@ -98,6 +110,9 @@ class _UnitOfWork:
         self.domains = _DomainRepository()
 
     async def __aenter__(self):
+        self.access.user.attached = True
+        self.access.credential.attached = True
+        self.domains.domain.attached = True
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
@@ -109,12 +124,12 @@ class _UnitOfWork:
         return None
 
 
-class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
+class UserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _service(access):
-        return KmUserAuthService(
+        return UserAuthService(
             uow_factory=lambda: _UnitOfWork(access),
-            codec=KmUserTokenCodec(
+            codec=UserTokenCodec(
                 secret="test-km-user-secret-with-at-least-32-bytes",
                 issuer="test-km",
                 ttl_seconds=3600,
@@ -128,19 +143,21 @@ class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await service.login(
             user_id="kmadmin",
             password="KmAdmin@2026!",
+            domain_id=41,
         )
 
         self.assertEqual("KM 管理员", result["display_name"])
         self.assertEqual(41, result["domain_id"])
-        self.assertFalse(result["must_change_password"])
+        self.assertTrue(result["must_change_password"])
 
     async def test_login_uses_only_fixed_km_portal_domain(self):
         access = _AccessRepository()
         service = self._service(access)
 
-        result = await service.login(
+        result = await service.login_for_domain_name(
             user_id="kmadmin",
             password="KmAdmin@2026!",
+            domain_name="km_portal",
         )
 
         self.assertEqual(41, result["domain_id"])
@@ -151,10 +168,11 @@ class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
         service = self._service(access)
 
         result = await service.change_password(
-            claims=KmUserTokenClaims(
+            claims=UserTokenClaims(
                 user_id="kmadmin",
                 domain_id=41,
                 must_change_password=True,
+                password_version=1,
                 expires_at=None,
             ),
             current_password="KmAdmin@2026!",
@@ -168,6 +186,35 @@ class KmUserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
                 access.credential.password_hash.encode("ascii"),
             )
         )
+
+    async def test_login_domain_options_are_derived_from_active_memberships(self):
+        access = _AccessRepository()
+        service = self._service(access)
+
+        result = await service.list_login_domains(
+            user_id="kmadmin", password="KmAdmin@2026!"
+        )
+
+        self.assertEqual(
+            [{"domain_id": 41, "name": "km_portal", "status": "ACTIVE"}],
+            result["domains"],
+        )
+
+    async def test_password_version_change_revokes_existing_session(self):
+        access = _AccessRepository()
+        service = self._service(access)
+        claims = UserTokenClaims(
+            user_id="kmadmin",
+            domain_id=41,
+            must_change_password=False,
+            password_version=0,
+            expires_at=None,
+        )
+
+        with self.assertRaises(UserAuthenticationError) as context:
+            await service.validate_session(claims=claims)
+
+        self.assertEqual("USER_SESSION_REVOKED", context.exception.code)
 
 
 if __name__ == "__main__":

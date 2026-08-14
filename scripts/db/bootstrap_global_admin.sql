@@ -40,6 +40,30 @@ BEGIN
         );
     END IF;
 
+    -- 确保已部署环境具备通用用户和角色管理权限目录。
+    MERGE INTO KBOT_PERMISSION target
+    USING (
+        SELECT 'platform:user_manage' AS PERMISSION_CODE,
+               'platform' AS APP_ID,
+               '管理平台用户与成员授权' AS DISPLAY_NAME
+          FROM DUAL
+        UNION ALL
+        SELECT 'platform:role_manage',
+               'platform',
+               '管理平台应用角色与权限'
+          FROM DUAL
+    ) source
+    ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
+    WHEN MATCHED THEN
+        UPDATE SET
+            target.APP_ID = source.APP_ID,
+            target.DISPLAY_NAME = source.DISPLAY_NAME
+    WHEN NOT MATCHED THEN
+        INSERT (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
+        VALUES (
+            source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME
+        );
+
     SELECT COUNT(DISTINCT APP_ID), COUNT(*)
       INTO l_app_count, l_permission_count
       FROM KBOT_PERMISSION;

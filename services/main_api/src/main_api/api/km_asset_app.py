@@ -10,7 +10,8 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, 
 from main_api.application import (
     AccessControlService,
     AccessDeniedError,
-    KmUserAuthService,
+    KM_PORTAL_DOMAIN_NAME,
+    UserAuthService,
 )
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
 from platform_core.contracts import CreateConversationTurnRequest, PUBLIC_API_V1, UpdateConversationRequest
@@ -246,19 +247,20 @@ async def _km_run(request: Request, run_id: UUID, domain_id: int):
 
 @router.post("/auth/login")
 async def login(payload: KmLoginPayload, request: Request):
-    """使用 KM 本地用户凭据换取仅适用于 KM 页面的短期 Token。"""
-    service = cast(KmUserAuthService, request.app.state.km_user_auth_service)
-    return await service.login(
+    """使用平台用户凭据进入固定的 KM Portal Domain。"""
+    service = cast(UserAuthService, request.app.state.user_auth_service)
+    return await service.login_for_domain_name(
         user_id=payload.user_id.strip(),
         password=payload.password,
+        domain_name=KM_PORTAL_DOMAIN_NAME,
     )
 
 
 @router.post("/auth/password")
 async def change_password(payload: KmPasswordChangePayload, request: Request):
     """首次登录或后续主动修改 KM 本地用户密码。"""
-    service = cast(KmUserAuthService, request.app.state.km_user_auth_service)
-    claims = request.state.km_user_token_claims
+    service = cast(UserAuthService, request.app.state.user_auth_service)
+    claims = request.state.user_token_claims
     return await service.change_password(
         claims=claims,
         current_password=payload.current_password,

@@ -1,6 +1,8 @@
 """Main API 的公开 HTTP 路由。"""
 
 from .aiops_app import router as aiops_app_router
+from .access_management import router as access_management_router
+from .auth import router as auth_router
 from .conversations import memory_router
 from .conversations import router as conversation_router
 from .data_query import router as data_query_router
@@ -20,7 +22,9 @@ from .slack import router as slack_router
 
 __all__ = [
     "conversation_router",
+    "access_management_router",
     "aiops_app_router",
+    "auth_router",
     "data_query_router",
     "development_logs_router",
     "development_agent_runs_router",

@@ -12,9 +12,31 @@ Main API 拥有平台用户、App Role、Permission、Role-Permission 和 Domain
 
 ## 公开认证
 
-Portal 保存预配置的 `sk-...` API Key，并调用 Main API `/api/v1/*`。KBot 不保存
-Portal 用户密码，也不重复登录。Main API 校验 Key 摘要，从可信请求头构造用户与
-Domain 上下文；业务服务不能信任外部直接提交的 actor、Domain 或内部身份头。
+Main API 支持两种公开用户入口：
+
+- APEX/Portal 后端保存预配置的 `kbot_sk_...` API Key，并通过可信请求头传递用户与
+  Domain；API Key 不能写入浏览器 JavaScript。
+- KBot 普通页面先调用 `POST /api/v1/auth/domains` 获取账号可访问的 Domain，再调用
+  `POST /api/v1/auth/login` 换取绑定用户、Domain 和密码版本的短期 JWT。用户停用、
+  成员关系失效或密码被重置后，既有 JWT 会在下一次请求时失效。
+
+`GET /api/v1/auth/me` 返回当前用户、Domain 和成员关系，
+`POST /api/v1/auth/switch-domain` 切换 Domain，`POST /api/v1/auth/password` 修改本人
+密码。KM 登录入口继续固定选择 `km_portal`，但签发相同的平台用户 Token，不再维护
+第二套身份协议。业务服务不能信任外部直接提交的 actor、Domain 或内部身份头。
+
+平台管理接口统一位于 `/api/v1/admin`：
+
+- `GET/POST /users`：分页查询或创建用户；
+- `GET/PATCH/DELETE /users/{user_id}`：查看、修改或逻辑删除用户；
+- `POST /users/{user_id}/password`：重置密码；
+- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：授予或停用 Domain 内角色；
+- `GET /permissions`：查询按 App 分组的权限目录；
+- `GET/POST /roles`：查询或创建应用角色；
+- `PUT/DELETE /roles/{app_id}/{role_code}`：更新权限集合或逻辑删除角色。
+
+逻辑删除用户会同时停用其全部成员关系；逻辑删除角色会立即使该角色不再参与权限
+计算，但保留历史成员关系和权限定义，便于审计和恢复。
 
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 
@@ -42,6 +64,10 @@ Portal API Key，且不得通过公网或 APEX 代理暴露。
 - Agent Runtime 只执行调用方冻结的不可变 Execution Spec，不查询 App 权限表；
 - 内部 AuthContext 只携带本次调用所需身份和授权上下文，不替代资源服务的 Domain
   条件与对象所有权校验。
+- 用户与角色管理接口位于 `/api/v1/admin/*`，分别要求
+  `platform:user_manage` 和 `platform:role_manage`。平台 `admin` 用户及各 App 的
+  `system_admin` 角色只能由初始化脚本维护；管理接口只能重置 admin 密码，不能创建、
+  停用、改名或变更其角色。
 
 ## 版本规则
 

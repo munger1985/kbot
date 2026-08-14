@@ -78,9 +78,9 @@ class SecurityConfig(BaseModel):
     service_identity_jwt_secret_env: str = (
         "KBOT_SERVICE_IDENTITY_JWT_SECRET"
     )
-    km_user_jwt_secret_env: str = "KBOT_KM_USER_JWT_SECRET"
-    km_user_jwt_issuer: str = "kbot-km-user-auth"
-    km_user_jwt_ttl_seconds: int = Field(default=28800, ge=300, le=86400)
+    user_jwt_secret_env: str = "KBOT_USER_JWT_SECRET"
+    user_jwt_issuer: str = "kbot-user-auth"
+    user_jwt_ttl_seconds: int = Field(default=28800, ge=300, le=86400)
     internal_jwt_issuer: str = "kbot-platform"
     internal_jwt_ttl_seconds: int = Field(default=60, ge=15, le=300)
     service_identity_jwt_ttl_seconds: int = Field(
@@ -189,7 +189,7 @@ def _prepare_runtime_secrets() -> None:
         "KBOT_INTERNAL_SERVICE_TOKEN",
         "KBOT_INTERNAL_JWT_SECRET",
         "KBOT_SERVICE_IDENTITY_JWT_SECRET",
-        "KBOT_KM_USER_JWT_SECRET",
+        "KBOT_USER_JWT_SECRET",
         "KBOT_AIOPS_CURSOR_SECRET",
         "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET",
         "KBOT_AIOPS_MUTATION_GRANT_SECRET",

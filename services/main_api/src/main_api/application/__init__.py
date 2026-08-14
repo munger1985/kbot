@@ -18,12 +18,18 @@ from .access_control import (
     GLOBAL_ADMIN_USER_ID,
     is_reserved_global_admin,
 )
-from .km_user_auth import (
-    KmUserAuthenticationError,
-    KmUserAuthService,
-    KmUserTokenClaims,
-    KmUserTokenCodec,
-    create_km_user_token_codec,
+from .access_management import (
+    AccessManagementError,
+    AccessManagementService,
+    SYSTEM_ADMIN_ROLE_CODE,
+)
+from .user_auth import (
+    KM_PORTAL_DOMAIN_NAME,
+    UserAuthenticationError,
+    UserAuthService,
+    UserTokenClaims,
+    UserTokenCodec,
+    create_user_token_codec,
 )
 
 __all__ = [
@@ -31,18 +37,22 @@ __all__ = [
     "AccessConfigurationError",
     "AccessDeniedError",
     "AccessSnapshot",
+    "AccessManagementError",
+    "AccessManagementService",
     "GLOBAL_ADMIN_USER_ID",
     "is_reserved_global_admin",
     "DomainConflictError",
     "DomainManagementService",
     "DomainValidationService",
-    "KmUserAuthenticationError",
-    "KmUserAuthService",
-    "KmUserTokenClaims",
-    "KmUserTokenCodec",
+    "KM_PORTAL_DOMAIN_NAME",
     "NotificationCenterError",
     "NotificationCenterService",
     "NotificationDispatcher",
     "NotificationProjectionService",
-    "create_km_user_token_codec",
+    "SYSTEM_ADMIN_ROLE_CODE",
+    "UserAuthenticationError",
+    "UserAuthService",
+    "UserTokenClaims",
+    "UserTokenCodec",
+    "create_user_token_codec",
 ]

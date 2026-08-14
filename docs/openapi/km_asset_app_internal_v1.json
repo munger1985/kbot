@@ -204,6 +204,115 @@
         "title": "RawAssetRequest",
         "type": "object"
       },
+      "SlackWebhookEnvelope": {
+        "additionalProperties": false,
+        "description": "保真传递 Slack 原始正文和验签 Header。",
+        "properties": {
+          "content_type": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "raw_body_base64": {
+            "maxLength": 30000000,
+            "minLength": 1,
+            "title": "Raw Body Base64",
+            "type": "string"
+          },
+          "raw_body_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Raw Body Hash",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "slack.webhook.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signature_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Signature Headers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "request_id",
+          "raw_body_base64",
+          "raw_body_hash",
+          "content_type",
+          "received_at"
+        ],
+        "title": "SlackWebhookEnvelope",
+        "type": "object"
+      },
+      "SlackWebhookReceipt": {
+        "additionalProperties": false,
+        "description": "KM Asset 完成验签和 Inbox 落库后的内部回执。",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Challenge"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "ignored": {
+            "default": false,
+            "title": "Ignored",
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "schema_version": {
+            "default": "slack.webhook.internal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "accepted",
+          "duplicate"
+        ],
+        "title": "SlackWebhookReceipt",
+        "type": "object"
+      },
       "SourceCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -407,116 +516,6 @@
           "expected_row_version"
         ],
         "title": "SourceUpdateRequest",
-        "type": "object"
-      },
-      "SlackWebhookEnvelope": {
-        "additionalProperties": false,
-        "description": "保真传递 Slack 原始正文和验签 Header。",
-        "properties": {
-          "content_type": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Content Type",
-            "type": "string"
-          },
-          "raw_body_base64": {
-            "maxLength": 30000000,
-            "minLength": 1,
-            "title": "Raw Body Base64",
-            "type": "string"
-          },
-          "raw_body_hash": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Raw Body Hash",
-            "type": "string"
-          },
-          "received_at": {
-            "format": "date-time",
-            "title": "Received At",
-            "type": "string"
-          },
-          "request_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Request Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "slack.webhook.internal.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "signature_headers": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Signature Headers",
-            "type": "object"
-          }
-        },
-        "required": [
-          "request_id",
-          "raw_body_base64",
-          "raw_body_hash",
-          "content_type",
-          "received_at"
-        ],
-        "title": "SlackWebhookEnvelope",
-        "type": "object"
-      },
-      "SlackWebhookReceipt": {
-        "additionalProperties": false,
-        "description": "KM Asset 完成验签和 Inbox 落库后的内部回执。",
-        "properties": {
-          "accepted": {
-            "title": "Accepted",
-            "type": "boolean"
-          },
-          "challenge": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Challenge"
-          },
-          "duplicate": {
-            "title": "Duplicate",
-            "type": "boolean"
-          },
-          "ignored": {
-            "default": false,
-            "title": "Ignored",
-            "type": "boolean"
-          },
-          "receipt_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Receipt Id"
-          },
-          "schema_version": {
-            "default": "slack.webhook.internal.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "receipt_id",
-          "accepted",
-          "duplicate"
-        ],
-        "title": "SlackWebhookReceipt",
         "type": "object"
       },
       "ValidationError": {
@@ -1174,6 +1173,48 @@
         ]
       }
     },
+    "/internal/v1/km-asset/integrations/slack/events": {
+      "post": {
+        "description": "校验内部信封后，将原始 Slack 报文交给业务接入服务。",
+        "operationId": "intake_slack_event_internal_v1_km_asset_integrations_slack_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackWebhookEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackWebhookReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Intake Slack Event",
+        "tags": [
+          "KM Asset Slack Integration"
+        ]
+      }
+    },
     "/internal/v1/km-asset/jobs": {
       "get": {
         "operationId": "list_jobs_internal_v1_km_asset_jobs_get",
@@ -1240,48 +1281,6 @@
         "summary": "List Jobs",
         "tags": [
           "KM Asset App"
-        ]
-      }
-    },
-    "/internal/v1/km-asset/integrations/slack/events": {
-      "post": {
-        "description": "校验内部信封后，将原始 Slack 报文交给业务接入服务。",
-        "operationId": "intake_slack_event_internal_v1_km_asset_integrations_slack_events_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlackWebhookEnvelope"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SlackWebhookReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Intake Slack Event",
-        "tags": [
-          "KM Asset Slack Integration"
         ]
       }
     },

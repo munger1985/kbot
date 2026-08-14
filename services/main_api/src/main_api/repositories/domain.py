@@ -29,6 +29,21 @@ class PlatformDomainRepository:
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
+    async def get(self, *, domain_id: int) -> PlatformDomainEntity | None:
+        return await self._session.get(PlatformDomainEntity, domain_id)
+
+    async def list_by_ids(
+        self, *, domain_ids: tuple[int, ...]
+    ) -> list[PlatformDomainEntity]:
+        if not domain_ids:
+            return []
+        rows = await self._session.scalars(
+            select(PlatformDomainEntity)
+            .where(PlatformDomainEntity.domain_id.in_(domain_ids))
+            .order_by(PlatformDomainEntity.name, PlatformDomainEntity.domain_id)
+        )
+        return list(rows)
+
     async def add(
         self,
         entity: PlatformDomainEntity,

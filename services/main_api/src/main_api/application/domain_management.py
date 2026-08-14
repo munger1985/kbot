@@ -58,15 +58,29 @@ class DomainManagementService:
                             status="ACTIVE",
                         )
                     )
-                for app_id in ("knowledge_retrieval", "aiops"):
-                    await uow.access.upsert_member_role(
-                        app_id=app_id,
-                        domain_id=int(entity.domain_id),
-                        user_id=actor_id,
-                        role_code="manager",
-                        status="ACTIVE",
-                        actor_id=actor_id,
-                    )
+                if is_reserved_global_admin(actor_id):
+                    roles = await uow.access.list_all_roles()
+                    for role in roles:
+                        if role.role_code != "system_admin":
+                            continue
+                        await uow.access.upsert_member_role(
+                            app_id=role.app_id,
+                            domain_id=int(entity.domain_id),
+                            user_id=actor_id,
+                            role_code=role.role_code,
+                            status="ACTIVE",
+                            actor_id=actor_id,
+                        )
+                else:
+                    for app_id in ("knowledge_retrieval", "aiops"):
+                        await uow.access.upsert_member_role(
+                            app_id=app_id,
+                            domain_id=int(entity.domain_id),
+                            user_id=actor_id,
+                            role_code="manager",
+                            status="ACTIVE",
+                            actor_id=actor_id,
+                        )
                 await uow.commit()
             except IntegrityError as exc:
                 raise DomainConflictError(
