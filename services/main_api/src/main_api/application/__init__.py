@@ -15,6 +15,8 @@ from .access_control import (
     AccessControlService,
     AccessDeniedError,
     AccessSnapshot,
+    GLOBAL_ADMIN_USER_ID,
+    is_reserved_global_admin,
 )
 from .km_user_auth import (
     KmUserAuthenticationError,
@@ -29,6 +31,8 @@ __all__ = [
     "AccessConfigurationError",
     "AccessDeniedError",
     "AccessSnapshot",
+    "GLOBAL_ADMIN_USER_ID",
+    "is_reserved_global_admin",
     "DomainConflictError",
     "DomainManagementService",
     "DomainValidationService",

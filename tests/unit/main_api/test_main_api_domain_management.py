@@ -96,6 +96,21 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="ui-tester",
             )
 
+    async def test_domain_api_cannot_bootstrap_reserved_admin(self):
+        repository = _DomainRepository()
+        service = DomainManagementService(
+            uow_factory=lambda: _Uow(repository),
+        )
+
+        with self.assertRaisesRegex(
+            DomainConflictError, "只能通过项目初始化脚本创建"
+        ):
+            await service.create(
+                name="非法初始化域",
+                description=None,
+                actor_id="admin",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

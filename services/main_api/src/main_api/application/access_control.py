@@ -7,6 +7,14 @@ from dataclasses import dataclass
 from main_api.entities.access_control import PlatformUserEntity
 
 
+GLOBAL_ADMIN_USER_ID = "admin"
+
+
+def is_reserved_global_admin(user_id: str) -> bool:
+    """保留所有大小写形式的全局管理员标识。"""
+    return user_id.strip().casefold() == GLOBAL_ADMIN_USER_ID
+
+
 class AccessDeniedError(PermissionError):
     def __init__(self, permission_code: str):
         super().__init__(f"缺少权限：{permission_code}")
@@ -68,6 +76,10 @@ class AccessControlService:
     ) -> None:
         async with self._uow_factory() as uow:
             row = await uow.access.get_user(user_id)
+            if is_reserved_global_admin(user_id) and row is None:
+                raise AccessConfigurationError(
+                    "admin 是平台保留账号，只能通过项目初始化脚本创建"
+                )
             if row is None:
                 await uow.access.add_user(
                     PlatformUserEntity(
@@ -101,6 +113,7 @@ class AccessControlService:
             if user_id in users else None,
             "status": users.get(user_id).status
             if user_id in users else "ACTIVE",
+            "protected": is_reserved_global_admin(user_id),
             "roles": roles,
         } for user_id, roles in grouped.items()]
 
@@ -141,6 +154,10 @@ class AccessControlService:
     ) -> dict[str, str]:
         if status not in {"ACTIVE", "DISABLED"}:
             raise AccessConfigurationError("成员角色状态无效")
+        if is_reserved_global_admin(user_id):
+            raise AccessConfigurationError(
+                "admin 是平台保留账号，不能通过成员角色管理修改或删除"
+            )
         async with self._uow_factory() as uow:
             role = await uow.access.get_role(
                 app_id=app_id, role_code=role_code
@@ -166,5 +183,6 @@ class AccessControlService:
 
 __all__ = [
     "AccessConfigurationError", "AccessControlService",
-    "AccessDeniedError", "AccessSnapshot",
+    "AccessDeniedError", "AccessSnapshot", "GLOBAL_ADMIN_USER_ID",
+    "is_reserved_global_admin",
 ]

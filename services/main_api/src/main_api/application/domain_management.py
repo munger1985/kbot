@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 
 from main_api.entities import PlatformDomainEntity, PlatformUserEntity
+from .access_control import is_reserved_global_admin
 
 
 class DomainConflictError(RuntimeError):
@@ -45,6 +46,10 @@ class DomainManagementService:
             try:
                 await uow.domains.add(entity)
                 user = await uow.access.get_user(actor_id)
+                if is_reserved_global_admin(actor_id) and user is None:
+                    raise DomainConflictError(
+                        "admin 是平台保留账号，只能通过项目初始化脚本创建"
+                    )
                 if user is None:
                     await uow.access.add_user(
                         PlatformUserEntity(
