@@ -7,12 +7,15 @@ from dataclasses import dataclass
 from main_api.entities.access_control import PlatformUserEntity
 
 
-GLOBAL_ADMIN_USER_ID = "admin"
+GLOBAL_ADMIN_USER_ID = "ADMIN"
 
 
 def is_reserved_global_admin(user_id: str) -> bool:
     """保留所有大小写形式的全局管理员标识。"""
-    return user_id.strip().casefold() == GLOBAL_ADMIN_USER_ID
+    return (
+        user_id.strip().casefold()
+        == GLOBAL_ADMIN_USER_ID.casefold()
+    )
 
 
 class AccessDeniedError(PermissionError):
@@ -78,7 +81,7 @@ class AccessControlService:
             row = await uow.access.get_user(user_id)
             if is_reserved_global_admin(user_id) and row is None:
                 raise AccessConfigurationError(
-                    "admin 是平台保留账号，只能通过项目初始化脚本创建"
+                    "ADMIN 是平台保留账号，只能通过项目初始化脚本创建"
                 )
             if row is None:
                 await uow.access.add_user(
@@ -156,7 +159,7 @@ class AccessControlService:
             raise AccessConfigurationError("成员角色状态无效")
         if is_reserved_global_admin(user_id):
             raise AccessConfigurationError(
-                "admin 是平台保留账号，不能通过成员角色管理修改或删除"
+                "ADMIN 是平台保留账号，不能通过成员角色管理修改或删除"
             )
         async with self._uow_factory() as uow:
             role = await uow.access.get_role(

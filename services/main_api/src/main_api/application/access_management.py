@@ -35,7 +35,7 @@ def _assert_mutable_user(user_id: str) -> None:
     if is_reserved_global_admin(user_id):
         raise AccessManagementError(
             "GLOBAL_ADMIN_PROTECTED",
-            "admin 是平台保留账号，不能通过用户或角色管理修改",
+            "ADMIN 是平台保留账号，不能通过用户或角色管理修改",
             status_code=409,
         )
 
@@ -213,7 +213,7 @@ class AccessManagementService:
         }
 
     async def delete_user(self, *, user_id: str) -> dict[str, object]:
-        """逻辑删除用户，并同时停用其全部 Domain 成员关系。"""
+        """物理删除普通用户、登录凭据及全部 Domain 成员关系。"""
         _assert_mutable_user(user_id)
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
@@ -221,14 +221,9 @@ class AccessManagementService:
                 raise AccessManagementError(
                     "USER_NOT_FOUND", "用户不存在", status_code=404
                 )
-            await uow.access.update_user(
-                user=user,
-                display_name=user.display_name,
-                status="DISABLED",
-            )
-            await uow.access.disable_user_memberships(user_id=user_id)
+            await uow.access.delete_user(user=user)
             await uow.commit()
-        return {"user_id": user_id, "status": "DISABLED", "deleted": True}
+        return {"user_id": user_id, "deleted": True}
 
     async def set_membership(
         self,

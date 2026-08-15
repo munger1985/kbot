@@ -1,12 +1,12 @@
 -- 为既有 KBot 4.0 数据库补充普通登录所需的平台用户和角色管理权限。
 -- 在 SQL Developer 中使用 Run Script（F5）直接执行；不读取外部文件、不要求输入参数。
--- 本脚本不会创建用户、不会修改 admin 密码，也不会修改现有业务角色。
+-- 本脚本不会创建用户、不会修改 ADMIN 密码，也不会修改现有业务角色。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
 DECLARE
-    c_admin_user_id CONSTANT VARCHAR2(256 CHAR) := 'admin';
+    c_admin_user_id CONSTANT VARCHAR2(256 CHAR) := 'ADMIN';
     c_actor_id      CONSTANT VARCHAR2(256 CHAR) := 'bootstrap:platform_access';
     l_admin_count   PLS_INTEGER;
 BEGIN
@@ -19,7 +19,7 @@ BEGIN
     IF l_admin_count <> 1 THEN
         raise_application_error(
             -20001,
-            '未找到启用的 admin，请先执行 bootstrap_global_admin.sql。'
+            '未找到启用的 ADMIN，请先执行 bootstrap_global_admin.sql。'
         );
     END IF;
 
@@ -144,6 +144,6 @@ SELECT PERMISSION_CODE, DISPLAY_NAME
 
 SELECT USER_ID, DOMAIN_ID, APP_ID, ROLE_CODE, STATUS
   FROM KBOT_APP_MEMBER_ROLE
- WHERE USER_ID = 'admin'
+ WHERE USER_ID = 'ADMIN'
    AND APP_ID = 'platform'
  ORDER BY DOMAIN_ID;

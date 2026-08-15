@@ -287,14 +287,21 @@ class AccessControlRepository:
         )
         return list(rows)
 
-    async def disable_user_memberships(self, *, user_id: str) -> None:
-        rows = await self._session.scalars(
-            select(AppMemberRoleEntity).where(
-                AppMemberRoleEntity.user_id == user_id
+    async def delete_user(
+        self, *, user: PlatformUserEntity
+    ) -> None:
+        """按外键依赖顺序物理删除普通用户及其认证、授权数据。"""
+        await self._session.execute(
+            delete(AppMemberRoleEntity).where(
+                AppMemberRoleEntity.user_id == user.user_id
             )
         )
-        for row in rows:
-            row.status = "DISABLED"
+        await self._session.execute(
+            delete(PlatformUserCredentialEntity).where(
+                PlatformUserCredentialEntity.user_id == user.user_id
+            )
+        )
+        await self._session.delete(user)
         await self._session.flush()
 
     async def list_permissions(

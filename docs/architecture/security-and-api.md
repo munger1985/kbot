@@ -28,15 +28,16 @@ Main API 支持两种公开用户入口：
 平台管理接口统一位于 `/api/v1/admin`：
 
 - `GET/POST /users`：分页查询或创建用户；
-- `GET/PATCH/DELETE /users/{user_id}`：查看、修改或逻辑删除用户；
+- `GET/PATCH/DELETE /users/{user_id}`：查看、修改或物理删除普通用户；
 - `POST /users/{user_id}/password`：重置密码；
 - `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：授予或停用 Domain 内角色；
 - `GET /permissions`：查询按 App 分组的权限目录；
 - `GET/POST /roles`：查询或创建应用角色；
 - `PUT/DELETE /roles/{app_id}/{role_code}`：更新权限集合或逻辑删除角色。
 
-逻辑删除用户会同时停用其全部成员关系；逻辑删除角色会立即使该角色不再参与权限
-计算，但保留历史成员关系和权限定义，便于审计和恢复。
+停用用户使用 `PATCH status=DISABLED`，保留用户、登录凭据和成员关系；删除用户会在
+同一事务中物理删除其全部成员关系、登录凭据和用户记录。逻辑删除角色会立即使该
+角色不再参与权限计算，但保留历史成员关系和权限定义，便于审计和恢复。
 
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 

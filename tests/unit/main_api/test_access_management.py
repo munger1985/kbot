@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from main_api.application import AccessManagementError, AccessManagementService
 
@@ -10,6 +11,33 @@ from main_api.application import AccessManagementError, AccessManagementService
 class _ForbiddenUowFactory:
     def __call__(self):
         raise AssertionError("保护规则应在访问数据库前生效")
+
+
+class _DeleteAccess:
+    def __init__(self):
+        self.user = SimpleNamespace(user_id="TEST_USER")
+        self.deleted_user = None
+
+    async def get_user(self, user_id):
+        return self.user if user_id == self.user.user_id else None
+
+    async def delete_user(self, *, user):
+        self.deleted_user = user
+
+
+class _DeleteUow:
+    def __init__(self):
+        self.access = _DeleteAccess()
+        self.committed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    async def commit(self):
+        self.committed = True
 
 
 class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
@@ -41,6 +69,19 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AccessManagementError) as context:
             await self.service.delete_user(user_id="admin")
         self.assertEqual("GLOBAL_ADMIN_PROTECTED", context.exception.code)
+
+    async def test_delete_user_physically_removes_user(self):
+        uow = _DeleteUow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        result = await service.delete_user(user_id="TEST_USER")
+
+        self.assertIs(uow.access.user, uow.access.deleted_user)
+        self.assertTrue(uow.committed)
+        self.assertEqual(
+            {"user_id": "TEST_USER", "deleted": True}, result
+        )
+        self.assertNotIn("status", result)
 
     async def test_reserved_admin_membership_cannot_be_changed(self):
         with self.assertRaises(AccessManagementError) as context:

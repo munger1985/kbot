@@ -1,12 +1,15 @@
 """应用授权必须同时校验平台用户为启用状态。"""
 
 import unittest
+from types import SimpleNamespace
 
 from sqlalchemy.dialects import oracle
 
 from main_api.application import (
     AccessConfigurationError,
     AccessControlService,
+    GLOBAL_ADMIN_USER_ID,
+    is_reserved_global_admin,
 )
 from main_api.repositories.access_control import AccessControlRepository
 
@@ -20,7 +23,42 @@ class _Session:
         return []
 
 
+class _DeleteSession:
+    def __init__(self):
+        self.actions = []
+
+    async def execute(self, statement):
+        sql = str(statement.compile(dialect=oracle.dialect()))
+        self.actions.append(("execute", sql))
+
+    async def delete(self, user):
+        self.actions.append(("delete", user.user_id))
+
+    async def flush(self):
+        self.actions.append(("flush", None))
+
+
 class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
+    def test_global_admin_uses_uppercase_canonical_identifier(self):
+        self.assertEqual("ADMIN", GLOBAL_ADMIN_USER_ID)
+        self.assertTrue(is_reserved_global_admin("ADMIN"))
+        self.assertTrue(is_reserved_global_admin("admin"))
+
+    async def test_physical_delete_respects_foreign_key_order(self):
+        session = _DeleteSession()
+        repository = AccessControlRepository(session)
+
+        await repository.delete_user(
+            user=SimpleNamespace(user_id="TEST_USER")
+        )
+
+        self.assertIn("KBOT_APP_MEMBER_ROLE", session.actions[0][1])
+        self.assertIn(
+            "KBOT_PLATFORM_USER_CREDENTIAL", session.actions[1][1]
+        )
+        self.assertEqual(("delete", "TEST_USER"), session.actions[2])
+        self.assertEqual(("flush", None), session.actions[3])
+
     async def test_permission_query_requires_active_platform_user(self):
         session = _Session()
         repository = AccessControlRepository(session)

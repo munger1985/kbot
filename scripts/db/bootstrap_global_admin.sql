@@ -1,14 +1,14 @@
 -- 一次性创建或重置 KBot 全局管理员，并授予当前全部 App、全部启用 Domain 的所有权限。
 -- 在 SQL Developer 中使用 Run Script（F5）执行；不使用绑定变量、替换变量或外部 SQL 文件。
--- 固定登录账号：admin
+-- 固定登录账号：ADMIN
 -- 固定初始密码：Admin@2026!
--- 重新执行本脚本会将 admin 密码恢复为上述初始密码。
+-- 重新执行本脚本会将 ADMIN 密码恢复为上述初始密码。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
 DECLARE
-    c_user_id       CONSTANT VARCHAR2(256 CHAR) := 'admin';
+    c_user_id       CONSTANT VARCHAR2(256 CHAR) := 'ADMIN';
     c_display_name  CONSTANT VARCHAR2(256 CHAR) := 'KBot 全局管理员';
     c_password_hash CONSTANT VARCHAR2(128 CHAR) :=
         '$2b$12$5WDXCasJPPANzr/QGlwbA.WOQxDa5Jq.RGGuFupPG1oossZZYKS3W';
@@ -217,7 +217,7 @@ EXCEPTION
 END;
 /
 
-PROMPT === admin 全局角色授权 ===
+PROMPT === ADMIN 全局角色授权 ===
 
 SELECT
     member_role.USER_ID,
@@ -229,11 +229,11 @@ SELECT
 FROM KBOT_APP_MEMBER_ROLE member_role
 JOIN KBOT_PLATFORM_DOMAIN domain
   ON domain.DOMAIN_ID = member_role.DOMAIN_ID
-WHERE member_role.USER_ID = 'admin'
+WHERE member_role.USER_ID = 'ADMIN'
   AND member_role.ROLE_CODE = 'system_admin'
 ORDER BY member_role.DOMAIN_ID, member_role.APP_ID;
 
-PROMPT === admin 当前有效权限 ===
+PROMPT === ADMIN 当前有效权限 ===
 
 SELECT DISTINCT
     member_role.DOMAIN_ID,
@@ -246,7 +246,7 @@ JOIN KBOT_PLATFORM_DOMAIN domain
 JOIN KBOT_APP_ROLE_PERMISSION role_permission
   ON role_permission.APP_ID = member_role.APP_ID
  AND role_permission.ROLE_CODE = member_role.ROLE_CODE
-WHERE member_role.USER_ID = 'admin'
+WHERE member_role.USER_ID = 'ADMIN'
   AND member_role.STATUS = 'ACTIVE'
   AND member_role.ROLE_CODE = 'system_admin'
 ORDER BY member_role.DOMAIN_ID,

@@ -48,7 +48,7 @@ class DomainManagementService:
                 user = await uow.access.get_user(actor_id)
                 if is_reserved_global_admin(actor_id) and user is None:
                     raise DomainConflictError(
-                        "admin 是平台保留账号，只能通过项目初始化脚本创建"
+                        "ADMIN 是平台保留账号，只能通过项目初始化脚本创建"
                     )
                 if user is None:
                     await uow.access.add_user(

@@ -207,7 +207,7 @@ async def reset_password(
 
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, request: Request):
-    """逻辑删除普通用户并撤销其全部成员授权。"""
+    """物理删除普通用户、登录凭据及全部成员授权。"""
     return await _call(
         request,
         "platform:user_manage",
