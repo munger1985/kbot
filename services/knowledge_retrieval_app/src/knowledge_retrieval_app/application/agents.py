@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 
 from knowledge_retrieval_app.entities import (
     KnowledgeRetrievalAgentEntity,
-    KnowledgeRetrievalAgentGrantEntity,
     KnowledgeRetrievalAgentVersionEntity,
 )
 from platform_core.identity import uuid7
@@ -52,15 +51,6 @@ class UpdateAgentCommand(_Model):
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
-    actor_id: str = Field(min_length=1, max_length=256)
-
-
-class UpsertAgentGrantCommand(_Model):
-    domain_id: int = Field(ge=1)
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
     actor_id: str = Field(min_length=1, max_length=256)
 
 
@@ -257,92 +247,6 @@ class KnowledgeRetrievalAgentService:
                 for agent, role in await uow.agents.model_references(model_id=model_id)
             ]
 
-    async def list_grants(self, *, domain_id: int) -> list[dict[str, Any]]:
-        async with self._uow_factory() as uow:
-            return [
-                self._grant_view(row)
-                for row in await uow.agents.list_grants(domain_id=domain_id)
-            ]
-
-    async def upsert_grant(self, command: UpsertAgentGrantCommand) -> dict[str, Any]:
-        async with self._uow_factory() as uow:
-            if await uow.agents.get(
-                domain_id=command.domain_id, agent_id=command.agent_id
-            ) is None:
-                self._not_found()
-            row = await uow.agents.find_grant(
-                domain_id=command.domain_id,
-                agent_id=command.agent_id,
-                subject_type=command.subject_type,
-                subject_id=command.subject_id,
-                lock=True,
-            )
-            if row is None:
-                row = KnowledgeRetrievalAgentGrantEntity(
-                    agent_grant_id=uuid7(),
-                    domain_id=command.domain_id,
-                    agent_id=command.agent_id,
-                    subject_type=command.subject_type,
-                    subject_id=command.subject_id,
-                    status=command.status,
-                    created_by=command.actor_id,
-                    updated_by=command.actor_id,
-                )
-                await uow.agents.add_grant(row)
-            else:
-                row.status = command.status
-                row.updated_by = command.actor_id
-                row.row_version = int(row.row_version) + 1
-            await uow.commit()
-            return self._grant_view(row)
-
-    async def update_grant_status(
-        self,
-        *,
-        domain_id: int,
-        grant_id: UUID,
-        status: Literal["ACTIVE", "DISABLED"],
-        expected_row_version: int,
-        actor_id: str,
-    ) -> dict[str, Any]:
-        async with self._uow_factory() as uow:
-            row = await uow.agents.get_grant(
-                domain_id=domain_id, grant_id=grant_id, lock=True
-            )
-            if row is None:
-                raise AgentApplicationError(
-                    "AGENT_GRANT_NOT_FOUND", "Agent 授权不存在", status_code=404
-                )
-            if int(row.row_version) != expected_row_version:
-                raise AgentApplicationError(
-                    "STATE_VERSION_CONFLICT", "Agent 授权版本已变化"
-                )
-            row.status = status
-            row.updated_by = actor_id
-            row.row_version = int(row.row_version) + 1
-            await uow.commit()
-            return self._grant_view(row)
-
-    async def authorize(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        user_id: str,
-        role_codes: tuple[str, ...],
-    ) -> None:
-        async with self._uow_factory() as uow:
-            allowed = await uow.agents.has_active_grant(
-                domain_id=domain_id,
-                agent_id=agent_id,
-                user_id=user_id,
-                role_codes=role_codes,
-            )
-        if not allowed:
-            raise AgentApplicationError(
-                "AGENT_ACCESS_DENIED", "未获得该 Agent 的使用授权", status_code=403
-            )
-
     @staticmethod
     def _models(models: dict[str, UUID | str]) -> dict[str, str]:
         return {
@@ -460,17 +364,6 @@ class KnowledgeRetrievalAgentService:
             "instruction": version.instruction,
             "config": dict(version.config_json or {}),
             "row_version": int(agent.row_version),
-        }
-
-    @staticmethod
-    def _grant_view(row) -> dict[str, Any]:
-        return {
-            "agent_grant_id": str(row.agent_grant_id),
-            "agent_id": str(row.agent_id),
-            "subject_type": row.subject_type,
-            "subject_id": row.subject_id,
-            "status": row.status,
-            "row_version": int(row.row_version),
         }
 
     @staticmethod

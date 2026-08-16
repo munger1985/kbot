@@ -151,6 +151,29 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(repository.version.version_no, 2)
 
+    async def test_execution_spec_rejects_inactive_agent(self) -> None:
+        repository = _Repository()
+        service = KnowledgeRetrievalAgentService(
+            uow_factory=lambda: _UnitOfWork(repository)
+        )
+        created = await service.create(
+            CreateAgentCommand(
+                domain_id=41,
+                display_name="未启用助手",
+                enabled_capabilities=("document",),
+                actor_id="user-41",
+            )
+        )
+
+        with self.assertRaises(AgentApplicationError) as raised:
+            await service.execution_spec(
+                domain_id=41,
+                agent_id=repository.agent.agent_id,
+            )
+
+        self.assertEqual("AGENT_NOT_ACTIVE", raised.exception.code)
+        self.assertEqual("DRAFT", created["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

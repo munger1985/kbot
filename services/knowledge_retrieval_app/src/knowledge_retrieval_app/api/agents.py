@@ -11,7 +11,6 @@ from knowledge_retrieval_app.application import (
     CreateAgentCommand,
     KnowledgeRetrievalAgentService,
     UpdateAgentCommand,
-    UpsertAgentGrantCommand,
 )
 from platform_core.contracts import AuthContext, ServiceIdentity
 
@@ -53,27 +52,6 @@ class AgentUpdateRequest(_Request):
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
-
-
-class GrantUpsertRequest(_Request):
-    domain_id: int = Field(ge=1)
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
-
-
-class GrantStatusRequest(_Request):
-    domain_id: int = Field(ge=1)
-    status: Literal["ACTIVE", "DISABLED"]
-    expected_row_version: int = Field(ge=1)
-
-
-class AgentAuthorizeRequest(_Request):
-    domain_id: int = Field(ge=1)
-    agent_id: UUID
-    user_id: str = Field(min_length=1, max_length=256)
-    role_codes: tuple[str, ...] = ()
 
 
 def _service(request: Request) -> KnowledgeRetrievalAgentService:
@@ -132,49 +110,6 @@ async def create_agent(payload: AgentCreateRequest, request: Request):
     try:
         return await _service(request).create(
             CreateAgentCommand(actor_id=actor_id, **payload.model_dump())
-        )
-    except AgentApplicationError as exc:
-        _raise(exc)
-
-
-@router.get("/grants/list")
-async def list_grants(domain_id: int, request: Request):
-    _context(request, domain_id)
-    return await _service(request).list_grants(domain_id=domain_id)
-
-
-@router.put("/grants")
-async def upsert_grant(payload: GrantUpsertRequest, request: Request):
-    _, actor_id = _context(request, payload.domain_id)
-    try:
-        return await _service(request).upsert_grant(
-            UpsertAgentGrantCommand(actor_id=actor_id, **payload.model_dump())
-        )
-    except AgentApplicationError as exc:
-        _raise(exc)
-
-
-@router.post("/authorize", status_code=204)
-async def authorize_agent(payload: AgentAuthorizeRequest, request: Request):
-    _context(request, payload.domain_id)
-    try:
-        await _service(request).authorize(**payload.model_dump())
-    except AgentApplicationError as exc:
-        _raise(exc)
-
-
-@router.patch("/grants/{grant_id}")
-async def update_grant(
-    grant_id: UUID, payload: GrantStatusRequest, request: Request
-):
-    _, actor_id = _context(request, payload.domain_id)
-    try:
-        return await _service(request).update_grant_status(
-            domain_id=payload.domain_id,
-            grant_id=grant_id,
-            status=payload.status,
-            expected_row_version=payload.expected_row_version,
-            actor_id=actor_id,
         )
     except AgentApplicationError as exc:
         _raise(exc)

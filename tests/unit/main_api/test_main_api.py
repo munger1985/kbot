@@ -207,6 +207,9 @@ class _FakeAgentRuntimeClient:
     def __init__(self):
         self.agent_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
         self.run_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a002")
+        self.conversation_id = UUID(
+            "019f8eae-2c25-7d48-b044-350ec3f5a004"
+        )
         self.last_context: AuthContext | None = None
         self.last_update_payload: dict[str, Any] | None = None
 
@@ -294,6 +297,62 @@ class _FakeAgentRuntimeClient:
             "run_id": str(self.run_id),
             "status": "RUNNING",
             "event_cursor": 2,
+            "events_url": (
+                f"/api/v1/apps/knowledge-retrieval/runs/"
+                f"{self.run_id}/events"
+            ),
+        }
+
+    async def create_conversation(self, *, payload, auth_context):
+        self.last_context = auth_context
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "conversation_id": str(self.conversation_id),
+            "agent_id": payload["agent_id"],
+            "title": payload.get("title"),
+            "status": "ACTIVE",
+            "row_version": 1,
+            "last_turn_sequence": 0,
+            "last_active_at": now,
+            "created_at": now,
+            "retention_policy": payload["retention_policy"],
+            "purge_after": None,
+        }
+
+    async def get_conversation(self, *, conversation_id, auth_context):
+        self.last_context = auth_context
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "conversation_id": str(conversation_id),
+            "agent_id": str(self.agent_id),
+            "title": None,
+            "status": "ACTIVE",
+            "row_version": 1,
+            "last_turn_sequence": 0,
+            "last_active_at": now,
+            "created_at": now,
+            "retention_policy": "DEFAULT",
+            "purge_after": None,
+        }
+
+    async def create_conversation_turn(
+        self,
+        *,
+        conversation_id,
+        payload,
+        idempotency_key,
+        auth_context,
+    ):
+        del payload, idempotency_key
+        self.last_context = auth_context
+        return {
+            "conversation_id": str(conversation_id),
+            "turn_id": "019f8eae-2c25-7d48-b044-350ec3f5a005",
+            "turn_sequence": 1,
+            "turn_status": "ACCEPTED",
+            "run_id": str(self.run_id),
+            "run_status": "RUNNING",
+            "event_cursor": 0,
             "events_url": (
                 f"/api/v1/apps/knowledge-retrieval/runs/"
                 f"{self.run_id}/events"
@@ -518,11 +577,6 @@ class _FakeAccessControlService:
 class _FakeKnowledgeRetrievalAppClient:
     def __init__(self, runtime):
         self.runtime = runtime
-        self.authorize_calls = 0
-
-    async def authorize(self, *, payload, auth_context):
-        self.authorize_calls += 1
-        return {"authorized": True}
 
     async def execution_spec(self, *, agent_id, domain_id, auth_context):
         agent = self.runtime._agent()
@@ -560,9 +614,6 @@ class _FakeKnowledgeRetrievalAppClient:
 
     async def list_agents(self, *, domain_id, auth_context):
         return [self.runtime._agent()]
-
-    async def list_grants(self, *, domain_id, auth_context):
-        return []
 
 
 class _FakeDataQueryClient:
@@ -990,6 +1041,9 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertIn("/api/v1/apps/knowledge-retrieval/agents", paths)
         self.assertIn("/api/v1/apps/knowledge-retrieval/runs", paths)
+        self.assertNotIn(
+            "/api/v1/apps/knowledge-retrieval/agent-grants", paths
+        )
         self.assertIn("/api/v1/auth/login", paths)
         self.assertIn("/api/v1/auth/domains", paths)
         self.assertIn("/api/v1/auth/me", paths)
@@ -1083,7 +1137,6 @@ class MainApiTest(unittest.TestCase):
                 "input": "总结文档",
             },
         )
-        self.assertEqual(0, self.knowledge_retrieval_app.authorize_calls)
         self.assertEqual(202, run.status_code)
         self.assertEqual("RUNNING", run.json()["status"])
         self.assertEqual(
@@ -1140,9 +1193,40 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(404, response.status_code)
         self.assertEqual("DOCUMENT_REFERENCE_NOT_FOUND", response.json()["code"])
 
-    def test_regular_user_still_requires_agent_grant(self) -> None:
+    def test_regular_user_with_use_permission_can_use_active_agent(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(
             {"knowledge_retrieval:use"}
+        )
+
+        agents = self.client.get(
+            "/api/v1/apps/knowledge-retrieval/agents",
+            headers=self._headers(),
+        )
+        agent = self.client.get(
+            (
+                "/api/v1/apps/knowledge-retrieval/agents/"
+                f"{self.agent_runtime.agent_id}"
+            ),
+            headers=self._headers(),
+        )
+        conversation = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/conversations",
+            headers=self._headers(),
+            json={"agent_id": str(self.agent_runtime.agent_id)},
+        )
+        turn = self.client.post(
+            (
+                "/api/v1/apps/knowledge-retrieval/conversations/"
+                f"{self.agent_runtime.conversation_id}/turns"
+            ),
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "turn-regular-user",
+            },
+            json={
+                "input": "继续总结文档",
+                "expected_conversation_version": 1,
+            },
         )
 
         response = self.client.post(
@@ -1157,8 +1241,41 @@ class MainApiTest(unittest.TestCase):
             },
         )
 
+        self.assertEqual(200, agents.status_code, agents.text)
+        self.assertEqual(1, len(agents.json()))
+        self.assertEqual(200, agent.status_code, agent.text)
+        self.assertEqual(201, conversation.status_code, conversation.text)
+        self.assertEqual(202, turn.status_code, turn.text)
         self.assertEqual(202, response.status_code)
-        self.assertEqual(1, self.knowledge_retrieval_app.authorize_calls)
+
+    def test_regular_user_cannot_read_inactive_agent(self) -> None:
+        self.app.state.access_control_service.permissions = frozenset(
+            {"knowledge_retrieval:use"}
+        )
+        original_agent = self.agent_runtime._agent
+        self.agent_runtime._agent = lambda: {
+            **original_agent(),
+            "status": "DISABLED",
+        }
+        try:
+            agents = self.client.get(
+                "/api/v1/apps/knowledge-retrieval/agents",
+                headers=self._headers(),
+            )
+            agent = self.client.get(
+                (
+                    "/api/v1/apps/knowledge-retrieval/agents/"
+                    f"{self.agent_runtime.agent_id}"
+                ),
+                headers=self._headers(),
+            )
+        finally:
+            self.agent_runtime._agent = original_agent
+
+        self.assertEqual(200, agents.status_code, agents.text)
+        self.assertEqual([], agents.json())
+        self.assertEqual(404, agent.status_code, agent.text)
+        self.assertEqual("AGENT_NOT_FOUND", agent.json()["code"])
 
     def test_sse_rejects_cursor_beyond_current_run(self) -> None:
         response = self.client.get(

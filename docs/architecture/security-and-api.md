@@ -7,8 +7,10 @@ Domain 是 KBot 的强隔离边界。Portal 登录成功后，通过受信请求
 服务只信任该上下文，不信任普通业务参数中的 Domain、Actor 或授权声明。
 
 Main API 拥有平台用户、App Role、Permission、Role-Permission 和 Domain 内成员
-角色。知识检索与 AIOps App 在公开 BFF 层校验 App 权限，执行私有 Agent 时还必须
-同时满足 Agent Grant。用户、角色和权限不改变 Domain 数据隔离边界。
+角色。知识检索用户拥有 `knowledge_retrieval:use` 后，可以读取和使用当前 Domain
+内全部 ACTIVE Agent；`knowledge_retrieval:agent_manage` 仅控制 Agent 的创建、编辑
+和状态维护。AIOps 私有 Agent 仍要求额外 Agent Grant。所有授权都不能跨越 Domain
+数据隔离边界。
 
 ## 公开认证
 

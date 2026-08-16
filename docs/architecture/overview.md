@@ -15,7 +15,7 @@ KBot 4.0 是服务型单仓库。八个服务可独立构建、启动和
 |---|---|---|
 | Main API | Portal/APEX 的公开 BFF、认证、App RBAC、Domain 上下文、Slack 公共入口、通知和 SSE 转发 | API、Notification Worker |
 | KM Asset App | KM 资产与 Agent 管理、Slack 验签/Inbox/Outbox/外部 Callback | API、Worker、Slack Worker |
-| Knowledge Retrieval App | 知识检索私有 Agent、不可变版本和 Agent Grant | API |
+| Knowledge Retrieval App | 知识检索 Agent、不可变版本和 Domain 隔离 | API |
 | Agent Runtime | Execution Spec、Conversation、计划、Task、Skill、Artifact、事件和记忆 | API、Worker |
 | Knowledge Core | Collection、Bundle、解析、Evidence、索引和检索 | API、Parser、Projection Worker |
 | Data Query | 数据源、Schema 快照、语义模型、策略、绑定和受控查询运行 | API、Worker |

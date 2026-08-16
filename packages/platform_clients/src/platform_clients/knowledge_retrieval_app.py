@@ -92,48 +92,6 @@ class KnowledgeRetrievalAppClient:
         )
         return list(payload.get("references") or [])
 
-    async def list_grants(
-        self, *, domain_id: int, auth_context: AuthContext
-    ):
-        query = urlencode({"domain_id": str(domain_id)})
-        return await self._json(
-            "GET",
-            f"{self._BASE}/grants/list?{query}",
-            auth_context=auth_context,
-        )
-
-    async def upsert_grant(
-        self, *, payload: dict[str, Any], auth_context: AuthContext
-    ):
-        return await self._json(
-            "PUT",
-            f"{self._BASE}/grants",
-            payload=payload,
-            auth_context=auth_context,
-        )
-
-    async def update_grant(
-        self,
-        *,
-        grant_id: UUID,
-        payload: dict[str, Any],
-        auth_context: AuthContext,
-    ):
-        return await self._json(
-            "PATCH",
-            f"{self._BASE}/grants/{grant_id}",
-            payload=payload,
-            auth_context=auth_context,
-        )
-
-    async def authorize(
-        self, *, payload: dict[str, Any], auth_context: AuthContext
-    ):
-        return await self._json(
-            "POST", f"{self._BASE}/authorize",
-            payload=payload, auth_context=auth_context,
-        )
-
     async def _json(
         self,
         method: str,

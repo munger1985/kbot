@@ -58,18 +58,6 @@ class KnowledgeAgentUpdatePayload(_Payload):
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
 
 
-class KnowledgeAgentGrantPayload(_Payload):
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
-
-
-class KnowledgeAgentGrantStatusPayload(_Payload):
-    status: Literal["ACTIVE", "DISABLED"]
-    expected_row_version: int = Field(ge=1)
-
-
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     try:
@@ -161,7 +149,7 @@ async def set_member_role(
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    domain_id, actor_id, snapshot = await _require(
+    domain_id, _, snapshot = await _require(
         request, "knowledge_retrieval:use"
     )
     agents = await _client(request).list_agents(
@@ -169,22 +157,8 @@ async def list_agents(request: Request):
     )
     if "knowledge_retrieval:agent_manage" in snapshot.permissions:
         return agents
-    grants = await _client(request).list_grants(
-        domain_id=domain_id, auth_context=request.state.auth_context
-    )
-    allowed = {
-        str(item["agent_id"])
-        for item in grants
-        if item.get("status") == "ACTIVE" and (
-            (item.get("subject_type") == "USER"
-             and item.get("subject_id") == actor_id)
-            or (item.get("subject_type") == "ROLE"
-                and item.get("subject_id") in snapshot.roles)
-        )
-    }
     return [
-        item for item in agents
-        if item.get("status") == "ACTIVE" and str(item.get("agent_id")) in allowed
+        item for item in agents if item.get("status") == "ACTIVE"
     ]
 
 
@@ -211,21 +185,22 @@ async def create_agent(payload: KnowledgeAgentCreatePayload, request: Request):
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
-    domain_id, actor_id, snapshot = await _require(
+    domain_id, _, snapshot = await _require(
         request, "knowledge_retrieval:use"
     )
-    if "knowledge_retrieval:agent_manage" not in snapshot.permissions:
-        await _client(request).authorize(
-            payload={
-                "domain_id": domain_id, "agent_id": str(agent_id),
-                "user_id": actor_id, "role_codes": list(snapshot.roles),
-            },
-            auth_context=request.state.auth_context,
-        )
-    return await _client(request).get_agent(
+    agent = await _client(request).get_agent(
         agent_id=agent_id, domain_id=domain_id,
         auth_context=request.state.auth_context,
     )
+    if (
+        "knowledge_retrieval:agent_manage" not in snapshot.permissions
+        and agent.get("status") != "ACTIVE"
+    ):
+        raise HTTPException(
+            404,
+            {"code": "AGENT_NOT_FOUND", "message": "Agent 不存在"},
+        )
+    return agent
 
 
 @router.patch("/agents/{agent_id}")
@@ -283,40 +258,5 @@ async def update_agent(
             "domain_id": domain_id,
             **values,
         },
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/agent-grants")
-async def list_agent_grants(request: Request):
-    domain_id, _, _ = await _require(
-        request, "knowledge_retrieval:agent_manage"
-    )
-    return await _client(request).list_grants(
-        domain_id=domain_id, auth_context=request.state.auth_context
-    )
-
-
-@router.put("/agent-grants")
-async def upsert_agent_grant(payload: KnowledgeAgentGrantPayload, request: Request):
-    domain_id, _, _ = await _require(
-        request, "knowledge_retrieval:agent_manage"
-    )
-    return await _client(request).upsert_grant(
-        payload={"domain_id": domain_id, **payload.model_dump(mode="json")},
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.patch("/agent-grants/{grant_id}")
-async def update_agent_grant(
-    grant_id: UUID, payload: KnowledgeAgentGrantStatusPayload, request: Request
-):
-    domain_id, _, _ = await _require(
-        request, "knowledge_retrieval:agent_manage"
-    )
-    return await _client(request).update_grant(
-        grant_id=grant_id,
-        payload={"domain_id": domain_id, **payload.model_dump(mode="json")},
         auth_context=request.state.auth_context,
     )

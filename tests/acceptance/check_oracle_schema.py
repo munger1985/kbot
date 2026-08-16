@@ -116,7 +116,6 @@ SERVICE_TABLES = {
     "knowledge_retrieval_app": {
         "KBOT_KR_AGENT",
         "KBOT_KR_AGENT_VERSION",
-        "KBOT_KR_AGENT_GRANT",
     },
     "km_asset_app": {
         "KBOT_KM_SOURCE",

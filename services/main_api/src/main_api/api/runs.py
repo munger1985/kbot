@@ -111,7 +111,6 @@ def _knowledge_client(request: Request) -> KnowledgeCoreClient:
 
 
 async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
-    await _authorize_agent_access(request, agent_id)
     context = get_auth_context(request)
     domain_id = int(context.domain_id or "0")
     client: KnowledgeRetrievalAppClient = (
@@ -120,30 +119,6 @@ async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
     return await client.execution_spec(
         agent_id=agent_id, domain_id=domain_id, auth_context=context
     )
-
-
-async def _authorize_agent_access(
-    request: Request, agent_id: UUID
-) -> None:
-    context = get_auth_context(request)
-    domain_id = int(context.domain_id or "0")
-    actor_id = context.asserted_user_id or context.client_id
-    snapshot = await request.app.state.access_control_service.snapshot(
-        app_id="knowledge_retrieval", domain_id=domain_id, user_id=actor_id
-    )
-    client: KnowledgeRetrievalAppClient = (
-        request.app.state.knowledge_retrieval_app_client
-    )
-    if "knowledge_retrieval:agent_manage" not in snapshot.permissions:
-        await client.authorize(
-            payload={
-                "domain_id": domain_id,
-                "agent_id": str(agent_id),
-                "user_id": actor_id,
-                "role_codes": list(snapshot.roles),
-            },
-            auth_context=context,
-        )
 
 
 @router.post("", status_code=202, response_model=AgentRunReceipt)
@@ -287,13 +262,6 @@ async def stream_document_reference_content(
 async def _authorized_document_reference(
     *, request: Request, run_id: UUID, citation_label: str
 ) -> _DocumentReference:
-    summary = await _client(request).get_run(
-        run_id=run_id,
-        auth_context=request.state.auth_context,
-    )
-    await _authorize_agent_access(
-        request, UUID(str(summary["agent_id"]))
-    )
     artifact = await _client(request).get_result(
         run_id=run_id,
         auth_context=request.state.auth_context,

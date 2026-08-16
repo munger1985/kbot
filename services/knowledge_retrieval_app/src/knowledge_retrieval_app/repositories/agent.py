@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from knowledge_retrieval_app.entities import (
     KnowledgeRetrievalAgentEntity,
-    KnowledgeRetrievalAgentGrantEntity,
     KnowledgeRetrievalAgentVersionEntity,
 )
 
@@ -81,79 +80,3 @@ class KnowledgeRetrievalAgentRepository:
             for role, value in dict(version.models_json or {}).items()
             if str(value) == expected
         ]
-
-    async def add_grant(self, row: KnowledgeRetrievalAgentGrantEntity) -> None:
-        self._session.add(row)
-        await self._session.flush()
-
-    async def list_grants(
-        self, *, domain_id: int
-    ) -> list[KnowledgeRetrievalAgentGrantEntity]:
-        rows = await self._session.scalars(
-            select(KnowledgeRetrievalAgentGrantEntity)
-            .where(KnowledgeRetrievalAgentGrantEntity.domain_id == domain_id)
-            .order_by(
-                KnowledgeRetrievalAgentGrantEntity.updated_at.desc(),
-                KnowledgeRetrievalAgentGrantEntity.agent_grant_id,
-            )
-        )
-        return list(rows)
-
-    async def get_grant(
-        self, *, domain_id: int, grant_id: UUID, lock: bool = False
-    ) -> KnowledgeRetrievalAgentGrantEntity | None:
-        statement = select(KnowledgeRetrievalAgentGrantEntity).where(
-            KnowledgeRetrievalAgentGrantEntity.domain_id == domain_id,
-            KnowledgeRetrievalAgentGrantEntity.agent_grant_id == grant_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def find_grant(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        subject_type: str,
-        subject_id: str,
-        lock: bool = False,
-    ) -> KnowledgeRetrievalAgentGrantEntity | None:
-        statement = select(KnowledgeRetrievalAgentGrantEntity).where(
-            KnowledgeRetrievalAgentGrantEntity.domain_id == domain_id,
-            KnowledgeRetrievalAgentGrantEntity.agent_id == agent_id,
-            KnowledgeRetrievalAgentGrantEntity.subject_type == subject_type,
-            KnowledgeRetrievalAgentGrantEntity.subject_id == subject_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def has_active_grant(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        user_id: str,
-        role_codes: tuple[str, ...],
-    ) -> bool:
-        conditions = [
-            (KnowledgeRetrievalAgentGrantEntity.subject_type == "USER")
-            & (KnowledgeRetrievalAgentGrantEntity.subject_id == user_id)
-        ]
-        if role_codes:
-            conditions.append(
-                (KnowledgeRetrievalAgentGrantEntity.subject_type == "ROLE")
-                & KnowledgeRetrievalAgentGrantEntity.subject_id.in_(role_codes)
-            )
-        from sqlalchemy import or_
-
-        value = await self._session.scalar(
-            select(KnowledgeRetrievalAgentGrantEntity.agent_grant_id).where(
-                KnowledgeRetrievalAgentGrantEntity.domain_id == domain_id,
-                KnowledgeRetrievalAgentGrantEntity.agent_id == agent_id,
-                KnowledgeRetrievalAgentGrantEntity.status == "ACTIVE",
-                or_(*conditions),
-            )
-        )
-        return value is not None

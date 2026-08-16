@@ -5,7 +5,6 @@ from .agents import (
     CreateAgentCommand,
     KnowledgeRetrievalAgentService,
     UpdateAgentCommand,
-    UpsertAgentGrantCommand,
 )
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "CreateAgentCommand",
     "KnowledgeRetrievalAgentService",
     "UpdateAgentCommand",
-    "UpsertAgentGrantCommand",
 ]
