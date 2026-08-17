@@ -13,6 +13,9 @@ from km_asset_app.entities import (
 )
 
 
+_CLAIM_SCAN_LIMIT = 32
+
+
 class SlackIntegrationRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -48,27 +51,47 @@ class SlackIntegrationRepository:
         self, *, worker_id: str, lease_seconds: int
     ) -> SlackInboxEntity | None:
         now = datetime.now(UTC)
-        result = await self._session.execute(
-            select(SlackInboxEntity)
-            .where(
-                SlackInboxEntity.status.in_(("RECEIVED", "RUNNING")),
-                or_(
-                    SlackInboxEntity.lease_until.is_(None),
-                    SlackInboxEntity.lease_until < now,
-                ),
-            )
-            .order_by(SlackInboxEntity.created_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
+        eligibility = (
+            SlackInboxEntity.status.in_(("RECEIVED", "RUNNING")),
+            or_(
+                SlackInboxEntity.lease_until.is_(None),
+                SlackInboxEntity.lease_until < now,
+            ),
         )
-        entity = result.scalar_one_or_none()
-        if entity is None:
-            return None
-        entity.lease_owner = worker_id
-        entity.lease_until = now + timedelta(seconds=lease_seconds)
-        entity.updated_at = now
-        await self._session.flush()
-        return entity
+        # Oracle 禁止 FETCH FIRST 与 FOR UPDATE 作用于同一查询块。
+        # 先读取少量候选主键，再逐个锁定基表行并跳过其他 Worker 已锁行。
+        candidate_statement = (
+            select(SlackInboxEntity.inbox_id)
+            .where(*eligibility)
+            .order_by(
+                SlackInboxEntity.created_at,
+                SlackInboxEntity.inbox_id,
+            )
+            .limit(_CLAIM_SCAN_LIMIT)
+        )
+        candidate_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for inbox_id in candidate_ids:
+            lock_statement = (
+                select(SlackInboxEntity)
+                .where(
+                    SlackInboxEntity.inbox_id == inbox_id,
+                    *eligibility,
+                )
+                .with_for_update(skip_locked=True)
+            )
+            entity = (
+                await self._session.execute(lock_statement)
+            ).scalar_one_or_none()
+            if entity is None:
+                continue
+            entity.lease_owner = worker_id
+            entity.lease_until = now + timedelta(seconds=lease_seconds)
+            entity.updated_at = now
+            await self._session.flush()
+            return entity
+        return None
 
     async def get_thread(
         self,
@@ -111,28 +134,46 @@ class SlackIntegrationRepository:
         self, *, worker_id: str, lease_seconds: int
     ) -> SlackDeliveryEntity | None:
         now = datetime.now(UTC)
-        result = await self._session.execute(
-            select(SlackDeliveryEntity)
-            .where(
-                SlackDeliveryEntity.status == "PENDING",
-                or_(
-                    SlackDeliveryEntity.next_attempt_at.is_(None),
-                    SlackDeliveryEntity.next_attempt_at <= now,
-                ),
-                or_(
-                    SlackDeliveryEntity.lease_until.is_(None),
-                    SlackDeliveryEntity.lease_until < now,
-                ),
-            )
-            .order_by(SlackDeliveryEntity.created_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
+        eligibility = (
+            SlackDeliveryEntity.status == "PENDING",
+            or_(
+                SlackDeliveryEntity.next_attempt_at.is_(None),
+                SlackDeliveryEntity.next_attempt_at <= now,
+            ),
+            or_(
+                SlackDeliveryEntity.lease_until.is_(None),
+                SlackDeliveryEntity.lease_until < now,
+            ),
         )
-        entity = result.scalar_one_or_none()
-        if entity is None:
-            return None
-        entity.lease_owner = worker_id
-        entity.lease_until = now + timedelta(seconds=lease_seconds)
-        entity.attempt_count += 1
-        await self._session.flush()
-        return entity
+        candidate_statement = (
+            select(SlackDeliveryEntity.delivery_id)
+            .where(*eligibility)
+            .order_by(
+                SlackDeliveryEntity.created_at,
+                SlackDeliveryEntity.delivery_id,
+            )
+            .limit(_CLAIM_SCAN_LIMIT)
+        )
+        candidate_ids = list(
+            (await self._session.execute(candidate_statement)).scalars()
+        )
+        for delivery_id in candidate_ids:
+            lock_statement = (
+                select(SlackDeliveryEntity)
+                .where(
+                    SlackDeliveryEntity.delivery_id == delivery_id,
+                    *eligibility,
+                )
+                .with_for_update(skip_locked=True)
+            )
+            entity = (
+                await self._session.execute(lock_statement)
+            ).scalar_one_or_none()
+            if entity is None:
+                continue
+            entity.lease_owner = worker_id
+            entity.lease_until = now + timedelta(seconds=lease_seconds)
+            entity.attempt_count += 1
+            await self._session.flush()
+            return entity
+        return None
