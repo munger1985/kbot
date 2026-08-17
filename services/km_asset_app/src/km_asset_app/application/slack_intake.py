@@ -71,6 +71,8 @@ def parse_message_event(payload: dict[str, Any]) -> dict[str, str] | None:
     event_type = str(event.get("type") or "")
     if event_type not in {"message", "app_mention"}:
         return None
+    event_ts = str(event.get("event_ts") or event.get("ts") or "")
+    message_ts = str(event.get("ts") or event_ts)
     values = {
         "event_id": str(payload.get("event_id") or ""),
         "workspace_id": str(payload.get("team_id") or ""),
@@ -78,14 +80,12 @@ def parse_message_event(payload: dict[str, Any]) -> dict[str, str] | None:
         "channel_id": str(event.get("channel") or ""),
         "slack_user_id": str(event.get("user") or ""),
         "message_text": str(event.get("text") or "").strip(),
-        "event_ts": str(event.get("event_ts") or event.get("ts") or ""),
-        "root_thread_ts": str(
-            event.get("thread_ts") or event.get("event_ts") or event.get("ts") or ""
-        ),
-        "message_identity": str(
-            event.get("client_msg_id")
-            or str(event.get("event_ts") or event.get("ts") or "").split(".")[0]
-        ),
+        "event_ts": event_ts,
+        "root_thread_ts": str(event.get("thread_ts") or message_ts),
+        # Slack 可为同一条 @mention 同时投递 message 与 app_mention。
+        # 两类事件的 client_msg_id 并不总是同时存在，而 ts 精确标识
+        # 原始 Slack 消息；统一使用它可避免生成两个 Inbox 和两条等待回复。
+        "message_identity": message_ts,
     }
     if any(not values[key] for key in values):
         return None
@@ -203,8 +203,10 @@ class SlackIntakeService:
                 status="RECEIVED",
                 attempt_count=0,
             )
-            await uow.slack.add_inbox(entity)
             try:
+                # add_inbox 会 flush；并发重复事件可能在这里就触发唯一约束，
+                # 因此 flush 与 commit 必须由同一个冲突处理覆盖。
+                await uow.slack.add_inbox(entity)
                 await uow.commit()
             except IntegrityError:
                 pass

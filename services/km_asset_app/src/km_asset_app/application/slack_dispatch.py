@@ -38,6 +38,7 @@ class SlackDispatchService:
         *,
         uow_factory: Callable,
         agent_client,
+        km_asset_client,
         slack_config,
         worker_id: str,
         http_session: aiohttp.ClientSession,
@@ -45,6 +46,7 @@ class SlackDispatchService:
     ):
         self._uow_factory = uow_factory
         self._agent_client = agent_client
+        self._km_asset_client = km_asset_client
         self._config = slack_config
         self._worker_id = worker_id
         self._http_session = http_session
@@ -132,9 +134,16 @@ class SlackDispatchService:
 
         context = self._context(inbox, workspace)
         if thread is None:
+            execution_spec = await self._km_asset_client.execution_spec(
+                agent_id=workspace.agent_id,
+                domain_id=workspace.domain_id,
+                auth_context=context,
+                scopes=("km_asset.slack.dispatch",),
+            )
             conversation = await self._agent_client.create_conversation(
                 payload={
                     "agent_id": str(workspace.agent_id),
+                    "execution_spec": execution_spec,
                     "title": "Slack 对话",
                     "retention_policy": "DEFAULT",
                 },

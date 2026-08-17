@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from km_asset_app.application.slack_dispatch import SlackDispatchService
 from km_asset_app.application.slack_intake import (
@@ -91,6 +92,39 @@ class SlackEventParsingTest(unittest.TestCase):
             parsed = parse_message_event(payload)
             self.assertEqual(event_type, parsed["event_type"])
             self.assertEqual("1.001", parsed["root_thread_ts"])
+
+    def test_message_and_mention_share_message_identity(self):
+        message = {
+            "type": "event_callback",
+            "team_id": "T1",
+            "event_id": "E-message",
+            "event": {
+                "type": "message",
+                "user": "U1",
+                "channel": "C1",
+                "text": "<@BOT> hello",
+                "ts": "1723880000.123456",
+                "event_ts": "1723880000.223456",
+                "client_msg_id": "client-message-id",
+            },
+        }
+        mention = json.loads(json.dumps(message))
+        mention["event_id"] = "E-mention"
+        mention["event"]["type"] = "app_mention"
+        mention["event"]["event_ts"] = "1723880000.323456"
+        mention["event"].pop("client_msg_id")
+
+        parsed_message = parse_message_event(message)
+        parsed_mention = parse_message_event(mention)
+
+        self.assertEqual(
+            parsed_message["message_identity"],
+            parsed_mention["message_identity"],
+        )
+        self.assertEqual(
+            "1723880000.123456",
+            parsed_message["message_identity"],
+        )
 
     def test_rejects_bot_and_edited_messages(self):
         base = {
@@ -435,6 +469,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             service = SlackDispatchService(
                 uow_factory=None,
                 agent_client=None,
+                km_asset_client=None,
                 slack_config=config,
                 worker_id="test-worker",
                 http_session=None,
@@ -490,6 +525,7 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
         service = SlackDispatchService(
             uow_factory=None,
             agent_client=None,
+            km_asset_client=None,
             slack_config=config,
             worker_id="test-worker",
             http_session=session,
@@ -525,6 +561,90 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
             },
             set(session.kwargs["json"]),
         )
+
+
+class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
+    async def test_new_conversation_uses_authoritative_execution_spec(self):
+        agent_id = UUID("019ff999-6789-799b-97c3-500879812f7b")
+        inbox_id = UUID("01a00e17-084d-7370-935e-5d8702b26ad1")
+        conversation_id = UUID("01a00e17-084d-7370-935e-5d8702b26ad2")
+        inbox = SimpleNamespace(
+            inbox_id=inbox_id,
+            workspace_id="T1",
+            channel_id="C1",
+            slack_user_id="U1",
+            root_thread_ts="1723880000.123456",
+            message_text="<@BOT> hello",
+            event_id="E1",
+            callback_sent_at=None,
+        )
+        slack_repository = SimpleNamespace(
+            get_inbox=AsyncMock(return_value=inbox),
+            get_delivery=AsyncMock(return_value=None),
+            add_delivery=AsyncMock(),
+            get_thread=AsyncMock(side_effect=[None, None, None]),
+            add_thread=AsyncMock(),
+        )
+
+        class UnitOfWork:
+            slack = slack_repository
+            commit = AsyncMock()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+        execution_spec = {
+            "agent_id": str(agent_id),
+            "domain_id": 1001,
+            "model_bindings": {},
+        }
+        km_asset_client = SimpleNamespace(
+            execution_spec=AsyncMock(return_value=execution_spec)
+        )
+        agent_client = SimpleNamespace(
+            create_conversation=AsyncMock(
+                return_value={"conversation_id": str(conversation_id)}
+            ),
+            get_conversation=AsyncMock(return_value={"row_version": 1}),
+            create_conversation_turn=AsyncMock(
+                return_value={
+                    "turn_id": "01a00e17-084d-7370-935e-5d8702b26ad3",
+                    "run_id": "01a00e17-084d-7370-935e-5d8702b26ad4",
+                }
+            ),
+        )
+        config = SlackIntegrationConfig(
+            enabled=True,
+            workspaces=[
+                {
+                    "workspace_id": "T1",
+                    "domain_id": 1001,
+                    "agent_id": str(agent_id),
+                }
+            ],
+        )
+        service = SlackDispatchService(
+            uow_factory=UnitOfWork,
+            agent_client=agent_client,
+            km_asset_client=km_asset_client,
+            slack_config=config,
+            worker_id="test-worker",
+            http_session=None,
+        )
+
+        await service._start_run(inbox_id)
+
+        km_call = km_asset_client.execution_spec.await_args.kwargs
+        self.assertEqual(agent_id, km_call["agent_id"])
+        self.assertEqual(1001, km_call["domain_id"])
+        self.assertEqual(("km_asset.slack.dispatch",), km_call["scopes"])
+        create_payload = agent_client.create_conversation.await_args.kwargs[
+            "payload"
+        ]
+        self.assertIs(execution_spec, create_payload["execution_spec"])
 
 
 if __name__ == "__main__":

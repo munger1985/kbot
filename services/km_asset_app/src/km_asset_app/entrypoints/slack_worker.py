@@ -12,7 +12,7 @@ from loguru import logger
 from km_asset_app.application import SlackDispatchService
 from km_asset_app.config import get_km_asset_settings
 from km_asset_app.persistence import create_km_asset_uow
-from platform_clients import AgentRuntimeClient
+from platform_clients import AgentRuntimeClient, KmAssetClient
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
 
@@ -51,6 +51,7 @@ async def main() -> None:
     database = create_database_runtime()
     timeout = max(
         settings.agent_runtime.timeout_seconds,
+        settings.km_asset_api.timeout_seconds,
         slack_config.external_callback.timeout_seconds,
         30,
     )
@@ -75,6 +76,13 @@ async def main() -> None:
                 caller_service=worker_config.service_name,
                 audience=settings.agent_runtime.audience,
                 timeout_seconds=settings.agent_runtime.timeout_seconds,
+                session=http_session,
+            ),
+            km_asset_client=KmAssetClient(
+                base_url=settings.km_asset_api.base_url,
+                caller_service=worker_config.service_name,
+                audience=settings.km_asset_api.audience,
+                timeout_seconds=settings.km_asset_api.timeout_seconds,
                 session=http_session,
             ),
             slack_config=slack_config,

@@ -96,8 +96,23 @@ class KmAssetClient:
     async def activate_agent(self, *, agent_id: UUID, payload: dict[str, Any], auth_context: AuthContext):
         return await self._json("POST", f"{self._BASE}/agents/{agent_id}/activate", payload=payload, auth_context=auth_context)
 
-    async def execution_spec(self, *, agent_id: UUID, domain_id: int, auth_context: AuthContext):
-        return await self._json("GET", f"{self._BASE}/agents/{agent_id}/execution-spec?{urlencode({'domain_id': domain_id})}", auth_context=auth_context)
+    async def execution_spec(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+        auth_context: AuthContext,
+        scopes: tuple[str, ...] = ("km_asset.manage",),
+    ):
+        return await self._json(
+            "GET",
+            (
+                f"{self._BASE}/agents/{agent_id}/execution-spec?"
+                f"{urlencode({'domain_id': domain_id})}"
+            ),
+            auth_context=auth_context,
+            scopes=scopes,
+        )
 
     async def intake_slack_event(
         self,

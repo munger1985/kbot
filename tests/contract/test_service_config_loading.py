@@ -157,6 +157,14 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 "https://apex.example.com/f?p=2018:130",
                 slack.reply.km_portal_base_url,
             )
+            self.assertEqual(
+                "http://127.0.0.1:18160",
+                settings.km_asset_api.base_url,
+            )
+            self.assertEqual(
+                "kbot-km-asset-app-api",
+                settings.km_asset_api.audience,
+            )
             main_api = load_settings(
                 MainApiSettings,
                 service="main_api",

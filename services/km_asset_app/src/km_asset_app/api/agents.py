@@ -108,7 +108,13 @@ async def activate_agent(agent_id: UUID, payload: AgentActivateRequest, request:
 
 @router.get("/{agent_id}/execution-spec")
 async def execution_spec(agent_id: UUID, domain_id: int, request: Request):
-    actor_id = _context(request, domain_id)
+    identity = request.state.service_identity
+    scope = (
+        "km_asset.manage"
+        if "km_asset.manage" in identity.scopes
+        else "km_asset.slack.dispatch"
+    )
+    actor_id = _context(request, domain_id, scope)
     try:
         return await request.app.state.km_agent_service.execution_spec(
             domain_id=domain_id,

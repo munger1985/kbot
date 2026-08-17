@@ -86,6 +86,9 @@ app.middleware("http")(
                 {"km_asset.manage", "km_asset.slack.intake"}
             ),
             "kbot-km-asset-app-worker": frozenset({"km_asset.worker"}),
+            "kbot-km-asset-app-slack-worker": frozenset(
+                {"km_asset.slack.dispatch"}
+            ),
             "kbot-data-query-api": frozenset({"km_asset.reconcile"}),
             "kbot-agent-runtime-api": frozenset({"km_asset.manage"}),
         },

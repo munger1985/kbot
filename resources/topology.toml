@@ -232,6 +232,10 @@ timeout_seconds = 300
 endpoint = "agent_runtime"
 timeout_seconds = 120
 
+[dependencies.km_asset_app.km_asset_api]
+endpoint = "km_asset_app"
+timeout_seconds = 120
+
 [dependencies.main_api.agent_runtime]
 endpoint = "agent_runtime"
 timeout_seconds = 120

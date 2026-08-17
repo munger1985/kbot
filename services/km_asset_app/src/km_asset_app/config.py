@@ -181,6 +181,13 @@ class KmAssetAppSettings(Settings):
     integrations: KmAssetIntegrationConfig = Field(
         default_factory=KmAssetIntegrationConfig
     )
+    km_asset_api: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18160",
+            audience="kbot-km-asset-app-api",
+            timeout_seconds=120,
+        )
+    )
     knowledge_core: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18090",
