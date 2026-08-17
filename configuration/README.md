@@ -87,8 +87,9 @@ URL、调试开关和 `[integrations.slack.reply]` 展示策略。TOML 中的
 `signing_secret_env`、`bot_token_env` 仅填写环境变量名称，不能填写真实凭证。
 回复策略可设置助手名称、最多展示的引用数，以及是否显示警告、查询结果摘要和
 可视化提示；`km_portal_base_url` 保存 KM Portal 的非敏感基础地址。非 `READY`
-状态始终展示；完成 Asset ID 映射和链接鉴权核对前，Slack 不会使用该地址生成
-文档链接，也不会输出定位框、内部 UUID、查询结果明细或可视化原始数据。
+状态始终展示；Asset 回复使用该地址拼接经过 URL 编码的 `asset_id` 生成 KM Link，
+Portal 继续负责目标页面的访问控制。Slack 不会输出定位框、内部 UUID、查询结果
+明细或可视化原始数据。
 
 `callback_payload_log_enabled` 会把 Callback 完整报文写入
 `<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 会把

@@ -15,6 +15,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
+from km_asset_app.application.slack_assets import (
+    assemble_slack_asset_cards,
+    extract_answer_asset_cards,
+    parse_manifest_asset_fields,
+)
 from km_asset_app.application.slack_dispatch import SlackDispatchService
 from km_asset_app.application.slack_intake import (
     SlackIntakeService,
@@ -234,6 +239,130 @@ class SlackUrlVerificationTest(unittest.IsolatedAsyncioTestCase):
                 ).receive(raw_body=body, headers=headers)
 
 
+class SlackAssetExtractionTest(unittest.TestCase):
+    def test_extracts_4_0_answer_fields_without_citations(self):
+        cards = extract_answer_asset_cards(
+            "**资产名称**：Conversational Banking [C1]\n"
+            "**解决方案简介**：第一行 [C1]\n"
+            "第二行说明 [C1]\n\n"
+            "**作者邮箱**：AUTHOR@EXAMPLE.COM [C1]"
+        )
+
+        self.assertEqual(1, len(cards))
+        self.assertEqual("Conversational Banking", cards[0]["asset_title"])
+        self.assertEqual(
+            "第一行 第二行说明",
+            cards[0]["solution_briefing"],
+        )
+        self.assertEqual("AUTHOR@EXAMPLE.COM", cards[0]["author_mail"])
+        self.assertEqual("C1", cards[0]["citation_label"])
+
+    def test_parses_only_manifest_source_metadata_fields(self):
+        fields = parse_manifest_asset_fields(
+            "# Manifest Title\n\n"
+            "Source ID: ASSET/100\n"
+            "Source revision: R1\n\n"
+            "## Facets\n{}\n\n"
+            "## Source metadata\n"
+            '{"asset_title":"Metadata Title",'
+            '"solution_briefing":"Metadata Briefing",'
+            '"author_mail":"author@example.com",'
+            '"create_time":"2026-08-17",'
+            '"secret":"must-not-leak"}\n'
+        )
+
+        self.assertEqual("ASSET/100", fields["asset_id"])
+        self.assertEqual("Metadata Title", fields["asset_title"])
+        self.assertEqual("Metadata Briefing", fields["solution_briefing"])
+        self.assertEqual("author@example.com", fields["author_mail"])
+        self.assertEqual("2026-08-17", fields["create_time"])
+        self.assertNotIn("secret", fields)
+
+
+class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
+    async def test_answer_values_win_and_manifest_fills_missing_fields(self):
+        collection_id = "01900000-0000-7000-8000-000000000101"
+        bundle_id = "01900000-0000-7000-8000-000000000102"
+        revision_id = "01900000-0000-7000-8000-000000000103"
+        document_version_id = "01900000-0000-7000-8000-000000000104"
+        manifest = (
+            "# Metadata Title\n\n"
+            "Source ID: ASSET/100\n\n"
+            "## Facets\n{}\n\n"
+            "## Source metadata\n"
+            '{"asset_title":"Metadata Title",'
+            '"solution_briefing":"Metadata Briefing",'
+            '"author_mail":"author@example.com",'
+            '"create_time":"2026-08-17"}\n'
+        ).encode("utf-8")
+
+        async def stream():
+            yield manifest
+
+        client = SimpleNamespace(
+            get_bundle_revision_preview=AsyncMock(
+                return_value={
+                    "files": [
+                        {
+                            "document_role": "MANIFEST",
+                            "declared_name": "manifest.md",
+                            "preview_available": True,
+                            "document_version_id": document_version_id,
+                            "byte_size": len(manifest),
+                            "declared_mime_type": "text/markdown",
+                        }
+                    ]
+                }
+            ),
+            stream_source_file=AsyncMock(
+                return_value=SimpleNamespace(status_code=200, body=stream())
+            ),
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "**资产名称**：Answer Title [C1]\n"
+                    "**解决方案简介**：Answer Briefing [C1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1"],
+                "references": [
+                    {
+                        "reference_type": "DOCUMENT",
+                        "citation_label": "C1",
+                        "collection_id": collection_id,
+                        "bundle_id": bundle_id,
+                        "bundle_revision_id": revision_id,
+                        "document_version_id": document_version_id,
+                    }
+                ],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=5,
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "asset_id": "ASSET/100",
+                    "asset_title": "Answer Title",
+                    "solution_briefing": "Answer Briefing",
+                    "author_mail": "author@example.com",
+                    "create_time": "2026-08-17",
+                }
+            ],
+            cards,
+        )
+
+
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
@@ -444,6 +573,75 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         for original_format in ("**资产名称**", "<a ", "</a>", "&lt;a"):
             self.assertNotIn(original_format, rendered)
 
+    def test_asset_blocks_replace_reference_blocks_after_original_answer(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": "原始 KBot 回答 [C1]。",
+                    "status": "READY",
+                    "used_citation_labels": ["C1"],
+                    "references": [
+                        {
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "C1",
+                            "title": "manifest.md",
+                            "locator": {},
+                        }
+                    ],
+                },
+            },
+            reply_config=SlackReplyConfig(
+                km_portal_base_url="https://km.example.com/assets/"
+            ),
+            asset_cards=[
+                {
+                    "asset_id": "ASSET/100",
+                    "asset_title": "Claim Prediction Architecture",
+                    "solution_briefing": "Real-time insights",
+                    "author_mail": "AUTHOR@example.com",
+                    "create_time": "2026-08-17",
+                }
+            ],
+        )
+
+        blocks = payload["blocks"]
+        self.assertEqual("原始 KBot 回答 [C1]。", blocks[1]["text"]["text"])
+        self.assertEqual(
+            "*Asset Title:* Claim Prediction Architecture",
+            blocks[2]["text"]["text"],
+        )
+        self.assertEqual({"type": "divider"}, blocks[3])
+        self.assertEqual(
+            "*Solution Briefing:* Real-time insights",
+            blocks[4]["text"]["text"],
+        )
+        self.assertEqual({"type": "divider"}, blocks[5])
+        self.assertEqual(
+            "*Contributor:*\n<mailto:author@example.com|author@example.com>",
+            blocks[6]["fields"][0]["text"],
+        )
+        self.assertEqual(
+            "*Publish\\_date:*\n2026-08-17",
+            blocks[6]["fields"][1]["text"],
+        )
+        self.assertEqual(
+            "[VPN required] please visit us:",
+            blocks[7]["text"]["text"],
+        )
+        self.assertEqual(
+            "https://km.example.com/assets/ASSET%2F100",
+            blocks[7]["accessory"]["url"],
+        )
+        self.assertEqual("KM Link", blocks[7]["accessory"]["text"]["text"])
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("参考资料", rendered)
+        self.assertNotIn("manifest.md", rendered)
+
     def test_callback_requires_url_only_when_enabled(self):
         SlackExternalCallbackConfig(enabled=False, url="")
         with self.assertRaises(ValueError):
@@ -517,6 +715,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                 uow_factory=None,
                 agent_client=None,
                 km_asset_client=None,
+                knowledge_core_client=None,
                 slack_config=config,
                 worker_id="test-worker",
                 http_session=None,
@@ -573,6 +772,7 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=None,
             agent_client=None,
             km_asset_client=None,
+            knowledge_core_client=None,
             slack_config=config,
             worker_id="test-worker",
             http_session=session,
@@ -677,6 +877,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=UnitOfWork,
             agent_client=agent_client,
             km_asset_client=km_asset_client,
+            knowledge_core_client=None,
             slack_config=config,
             worker_id="test-worker",
             http_session=None,
@@ -777,6 +978,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=lambda: next(units),
             agent_client=agent_client,
             km_asset_client=None,
+            knowledge_core_client=None,
             slack_config=SlackIntegrationConfig(
                 enabled=True,
                 workspaces=[

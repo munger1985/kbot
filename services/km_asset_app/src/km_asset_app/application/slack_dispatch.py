@@ -15,12 +15,16 @@ import aiohttp
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
-from km_asset_app.entities import SlackDeliveryEntity, SlackThreadEntity
+from km_asset_app.application.slack_assets import (
+    assemble_slack_asset_cards,
+    extract_answer_asset_cards,
+)
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
     waiting_message,
 )
+from km_asset_app.entities import SlackDeliveryEntity, SlackThreadEntity
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.identity import uuid7
 
@@ -39,6 +43,7 @@ class SlackDispatchService:
         uow_factory: Callable,
         agent_client,
         km_asset_client,
+        knowledge_core_client,
         slack_config,
         worker_id: str,
         http_session: aiohttp.ClientSession,
@@ -47,6 +52,7 @@ class SlackDispatchService:
         self._uow_factory = uow_factory
         self._agent_client = agent_client
         self._km_asset_client = km_asset_client
+        self._knowledge_core_client = knowledge_core_client
         self._config = slack_config
         self._worker_id = worker_id
         self._http_session = http_session
@@ -265,12 +271,28 @@ class SlackDispatchService:
             artifact = await self._agent_client.get_result(
                 run_id=run_id, auth_context=context
             )
+            answer_payload = artifact.get("payload")
+            answer_cards = extract_answer_asset_cards(
+                answer_payload.get("answer")
+                if isinstance(answer_payload, dict)
+                else None
+            )
+            asset_cards = answer_cards[: self._config.reply.max_references]
+            if self._knowledge_core_client is not None:
+                asset_cards = await assemble_slack_asset_cards(
+                    artifact=artifact,
+                    knowledge_core_client=self._knowledge_core_client,
+                    domain_id=workspace.domain_id,
+                    auth_context=context,
+                    limit=self._config.reply.max_references,
+                )
             payload = render_slack_reply(
                 channel_id=channel_id,
                 user_id=slack_user_id,
                 thread_ts=root_thread_ts,
                 artifact=artifact,
                 reply_config=self._config.reply,
+                asset_cards=asset_cards,
             )
         else:
             payload = {

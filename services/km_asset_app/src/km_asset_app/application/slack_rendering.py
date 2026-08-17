@@ -42,6 +42,11 @@ _MARKDOWN_LINK_PATTERN = re.compile(
     r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)",
     re.IGNORECASE,
 )
+_EMAIL_PATTERN = re.compile(
+    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+)
 
 
 def waiting_message(question: str) -> str:
@@ -278,6 +283,89 @@ def _reference_blocks(
     ]
 
 
+def _asset_blocks(
+    asset_cards: list[dict[str, str]],
+    config: SlackReplyConfig,
+) -> list[dict[str, Any]]:
+    """按审批通过的 Block Kit 格式替换 Asset 回答的参考资料区。"""
+    blocks: list[dict[str, Any]] = []
+    for card in asset_cards:
+        title = re.sub(
+            r"\s+", " ", _to_slack_mrkdwn(card.get("asset_title"))
+        ).strip()
+        briefing = _to_slack_mrkdwn(card.get("solution_briefing"))
+        author_mail = str(card.get("author_mail") or "").strip().lower()
+        create_time = re.sub(
+            r"\s+", " ", _escape_mrkdwn(card.get("create_time"))
+        ).strip()
+        asset_id = str(card.get("asset_id") or "").strip()
+        if title:
+            blocks.extend(
+                [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Asset Title:* {title}"[:3000],
+                        },
+                    },
+                    {"type": "divider"},
+                ]
+            )
+        if briefing:
+            blocks.extend(
+                [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Solution Briefing:* {briefing}"[:3000],
+                        },
+                    },
+                    {"type": "divider"},
+                ]
+            )
+        fields: list[dict[str, str]] = []
+        if author_mail and _EMAIL_PATTERN.fullmatch(author_mail):
+            safe_mail = _escape_mrkdwn(author_mail)
+            fields.append(
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"*Contributor:*\n"
+                        f"<mailto:{author_mail}|{safe_mail}>"
+                    ),
+                }
+            )
+        if create_time:
+            fields.append(
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Publish\\_date:*\n{create_time}"[:2000],
+                }
+            )
+        if fields:
+            blocks.append({"type": "section", "fields": fields})
+        if asset_id:
+            asset_url = config.km_portal_base_url + quote(asset_id, safe="")
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "[VPN required] please visit us:",
+                    },
+                    "accessory": {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "KM Link"},
+                        "url": asset_url[:3000],
+                        "action_id": "open_km_resource",
+                    },
+                }
+            )
+    return blocks
+
+
 def _status_blocks(status: str) -> list[dict[str, Any]]:
     normalized = status.strip().upper()
     if not normalized or normalized == "READY":
@@ -351,6 +439,7 @@ def render_slack_reply(
     thread_ts: str,
     artifact: dict[str, Any],
     reply_config: SlackReplyConfig,
+    asset_cards: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     valid_envelope = (
         artifact.get("artifact_type") == _ARTIFACT_TYPE
@@ -384,7 +473,12 @@ def render_slack_reply(
         blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
     blocks.extend(_text_sections(safe_answer))
     if valid_envelope:
-        blocks.extend(_reference_blocks(answer_payload, reply_config))
+        cards = asset_cards or []
+        blocks.extend(
+            _asset_blocks(cards, reply_config)
+            if cards
+            else _reference_blocks(answer_payload, reply_config)
+        )
         blocks.extend(_warning_blocks(answer_payload, reply_config))
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
     fallback = f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"

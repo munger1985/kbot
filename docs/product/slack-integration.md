@@ -54,8 +54,8 @@ Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 
 `[integrations.slack.reply]` 支持配置 `assistant_name`、`max_references`、
 `show_warnings`、`show_query_result_summary`、`show_visualization_notice` 和
 `km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
-`km_portal_base_url` 只保存非敏感 Portal 地址；完成 KC Bundle 到 Asset ID 的映射
-和链接鉴权核对前，Slack 回复不会使用该地址生成链接。
+`km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
+编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
 
 ## 查询 Workspace、Domain 与 Agent
 
@@ -122,9 +122,13 @@ SELECT T.WORKSPACE_ID,
 ## Asset问答助手回复
 
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
-来自 `payload.answer`；非 `READY` 状态显示中文状态提示；引用严格按
-`used_citation_labels` 过滤和排序，并受 `max_references` 限制。文档引用只显示
-引用标签、标题和页码，查询引用只显示 Provider 与行数。警告与可视化仅输出面向
-用户的摘要，不传送定位框、内部 UUID、查询明细、可视化原始数据和未经授权的
-资源 URL。收到不匹配的 Artifact 类型或版本时，返回固定格式错误提示，避免泄漏
-内部报文。
+来自 `payload.answer`，并先转换为安全的 Slack `mrkdwn`；非 `READY` 状态显示中文
+状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
+`asset_title`、`solution_briefing`、`author_mail`、`create_time` 仅从本次实际使用的
+DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。回答原文保留，原参考资料区替换
+为 Asset Title、Solution Briefing、Contributor、Publish_date 和 KM Link Block。
+
+无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤和排序，并受
+`max_references` 限制。警告与可视化仅输出面向用户的摘要，不传送定位框、内部
+UUID、查询明细、可视化原始数据和未经授权的资源 URL。收到不匹配的 Artifact
+类型或版本时，返回固定格式错误提示，避免泄漏内部报文。
