@@ -3,6 +3,7 @@
 import unittest
 
 from agent_runtime.language import (
+    answer_matches_language,
     conversation_fallback_texts,
     detect_unicode_language,
     localized_message,
@@ -46,6 +47,38 @@ class LanguageDetectionTest(unittest.TestCase):
         message = localized_message("insufficient_evidence", "ar")
 
         self.assertTrue(message.startswith("لم يتم"))
+
+    def test_rejects_chinese_explanation_for_english_question(self):
+        answer = (
+            "根据知识库中的证据，有一个资产与 ChatBI 相关："
+            "**Conversational Banking with Select AI Agents** [C1]"
+        )
+
+        self.assertFalse(answer_matches_language(answer, "en-US"))
+
+    def test_accepts_english_explanation_with_source_title(self):
+        answer = (
+            "One asset is related to ChatBI: "
+            "**Conversational Banking with Select AI Agents** [C1]"
+        )
+
+        self.assertTrue(answer_matches_language(answer, "en-US"))
+
+    def test_accepts_chinese_explanation_with_english_product_name(self):
+        answer = "知识库中有一个与 ChatBI 相关的 Asset。[C1]"
+
+        self.assertTrue(answer_matches_language(answer, "zh-CN"))
+
+    def test_ignores_unformatted_source_title(self):
+        answer = "One related source is 数据库智能运维与故障诊断实践。[C1]"
+
+        self.assertTrue(
+            answer_matches_language(
+                answer,
+                "en-US",
+                ignored_texts=("数据库智能运维与故障诊断实践",),
+            )
+        )
 
 
 if __name__ == "__main__":

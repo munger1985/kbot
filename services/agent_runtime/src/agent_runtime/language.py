@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections.abc import Iterable
 
@@ -129,9 +130,90 @@ def language_instruction(language: str) -> str:
     """构造不依赖 Prompt Catalog 版本的显式回复语言约束。"""
     return (
         f"language={language}\n"
-        "所有用户可见的回答、澄清问题和说明必须使用 language 指定的语言；"
-        "不得根据 Prompt 示例语言或证据语言改变回复语言。"
+        "OUTPUT LANGUAGE REQUIREMENT: Write every user-visible explanatory "
+        "sentence and clarification in the language identified by language. "
+        "Source titles, proper nouns, code, and citation labels may remain in "
+        "their original language. Never copy the language of prompt examples "
+        "or evidence when it differs from language."
     )
+
+
+_IGNORED_LANGUAGE_FRAGMENTS = (
+    re.compile(r"```.*?```", re.DOTALL),
+    re.compile(r"`[^`]*`"),
+    re.compile(r"!?(?:\[[^\]]*\])\([^)]*\)"),
+    re.compile(r"\*\*.*?\*\*", re.DOTALL),
+    re.compile(r"__.*?__", re.DOTALL),
+    re.compile(r"\[(?:[A-Z]\d+)\]", re.IGNORECASE),
+    re.compile(r"https?://\S+", re.IGNORECASE),
+)
+
+
+def _language_script_counts(
+    text: str, *, ignored_texts: Iterable[str] = ()
+) -> dict[str, int]:
+    """统计回答正文的 Unicode Script，排除引用、代码与来源标题。"""
+    visible = text
+    for pattern in _IGNORED_LANGUAGE_FRAGMENTS:
+        visible = pattern.sub(" ", visible)
+    for ignored in ignored_texts:
+        value = str(ignored).strip()
+        if value:
+            visible = re.sub(re.escape(value), " ", visible, flags=re.IGNORECASE)
+    counts = {script: 0 for script, _ in _SCRIPT_LANGUAGES}
+    counts.update({"HAN": 0, "KANA": 0, "HANGUL": 0})
+    for character in visible:
+        if not character.isalpha():
+            continue
+        codepoint = ord(character)
+        if _in_ranges(codepoint, _KANA_RANGES):
+            counts["KANA"] += 1
+            continue
+        if _in_ranges(codepoint, _HANGUL_RANGES):
+            counts["HANGUL"] += 1
+            continue
+        if _in_ranges(codepoint, _HAN_RANGES):
+            counts["HAN"] += 1
+            continue
+        name = unicodedata.name(character, "")
+        for script, _ in _SCRIPT_LANGUAGES:
+            if script in name:
+                counts[script] += 1
+                break
+    return counts
+
+
+def answer_matches_language(
+    answer: str,
+    language: str,
+    *,
+    ignored_texts: Iterable[str] = (),
+) -> bool:
+    """按主导 Unicode Script 校验用户可见回答是否符合冻结语言。"""
+    counts = _language_script_counts(answer, ignored_texts=ignored_texts)
+    total = sum(counts.values())
+    if total == 0:
+        return True
+    target = language.strip()
+    if target == "ja-JP":
+        target_count = counts["KANA"] + counts["HAN"]
+    elif target == "ko-KR":
+        target_count = counts["HANGUL"]
+    elif target == "zh-CN":
+        target_count = counts["HAN"]
+    else:
+        script = next(
+            (
+                script
+                for script, candidate in _SCRIPT_LANGUAGES
+                if candidate == target
+            ),
+            "LATIN",
+        )
+        target_count = counts[script]
+    competing = total - target_count
+    # 至少需要目标语言正文，且不能被其他 Script 主导；来源专名已在上方排除。
+    return target_count > 0 and target_count >= competing
 
 
 _MESSAGES = {
@@ -191,6 +273,7 @@ def localized_message(key: str, language: str) -> str:
 
 __all__ = [
     "DEFAULT_LANGUAGE",
+    "answer_matches_language",
     "conversation_fallback_texts",
     "detect_unicode_language",
     "language_instruction",

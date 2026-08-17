@@ -134,12 +134,41 @@ class _ModelClient:
 
 
 class _RecordingModelClient(_ModelClient):
-    def __init__(self):
+    def __init__(self, *, response=None):
         self.last_json_request = None
+        self.response = response
 
     async def get_llm_json(self, **kwargs):
         self.last_json_request = kwargs
+        if self.response is not None:
+            return self.response
         return await super().get_llm_json(**kwargs)
+
+
+class _LanguageRepairModelClient(_ModelClient):
+    def __init__(self):
+        self.calls = 0
+        self.prompts = []
+
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        self.calls += 1
+        self.prompts.append(kwargs["prompt"])
+        if self.calls == 1:
+            yield LLMChunk(
+                content=(
+                    "根据证据，有一个相关资产："
+                    "**Conversational Banking with Select AI Agents** [C1]"
+                )
+            )
+            return
+        yield LLMChunk(
+            content=(
+                "One related asset was found: "
+                "**Conversational Banking with Select AI Agents** [C1]"
+            )
+        )
 
 
 class _VariantCitationModelClient(_ModelClient):
@@ -709,7 +738,12 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_document_answer_prompt_uses_frozen_response_language(self):
         retrieval = await self._retrieval_artifact()
-        model = _RecordingModelClient()
+        model = _RecordingModelClient(
+            response={
+                "answer": "この文書は索引最適化の事例です。[C1]",
+                "used_citation_labels": ["C1"],
+            }
+        )
 
         await ResponseComposerSkill(
             model_client=model,
@@ -723,7 +757,36 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
 
         messages = model.last_json_request["prompt"]
-        self.assertIn("language=ja-JP", messages[1]["content"])
+        self.assertIn("language=ja-JP", messages[-1]["content"])
+
+    async def test_stream_retries_wrong_language_and_keeps_constraint_last(self):
+        retrieval = await self._retrieval_artifact()
+        model = _LanguageRepairModelClient()
+
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=model,
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(
+                _context(
+                    input_artifacts=(retrieval,),
+                    original_input="Any asset relates to ChatBI?",
+                    language="en-US",
+                )
+            )
+        ]
+
+        answer = "".join(
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        )
+        self.assertEqual(model.calls, 2)
+        self.assertTrue(answer.startswith("One related asset"))
+        self.assertNotIn("根据证据", answer)
+        for prompt in model.prompts:
+            self.assertIn("language=en-US", prompt[-1]["content"])
 
     async def test_insufficient_evidence_uses_frozen_response_language(self):
         result = await ResponseComposerSkill(
@@ -754,6 +817,25 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifact.payload["status"], "READY")
         self.assertEqual(
             result.artifact.payload["used_citation_labels"], ["C1"]
+        )
+
+    async def test_wrong_language_clarification_uses_localized_fallback(self):
+        rewrite = self._ambiguous_rewrite_artifact()
+
+        result = await ResponseComposerSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(
+            _context(
+                input_artifacts=(rewrite,),
+                original_input="Which asset do you mean?",
+                language="en-US",
+            )
+        )
+
+        self.assertEqual(
+            result.artifact.payload["answer"],
+            "Please specify the asset, topic, or statistical scope you mean.",
         )
 
     async def test_composer_streams_real_answer_deltas(self):
