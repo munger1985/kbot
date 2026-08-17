@@ -81,6 +81,14 @@ Agent UUID，并通过 `KBOT_SLACK_SIGNING_SECRET`、`KBOT_SLACK_BOT_TOKEN`
 该配置段仅由 KM Asset App 与其 Slack Worker 加载；Main API 只保留公开入口并
 保真转发原始正文和 Slack 验签 Header。
 
+Slack 配置分为两部分：`.env` 或生产 Secret 只保存 Signing Secret、Bot Token；
+`configuration/kbot.toml` 保存启用开关、Workspace 与 Domain/Agent 映射、Callback
+URL、调试开关和 `[integrations.slack.reply]` 展示策略。TOML 中的
+`signing_secret_env`、`bot_token_env` 仅填写环境变量名称，不能填写真实凭证。
+回复策略可设置助手名称、最多展示的引用数，以及是否显示警告、查询结果摘要和
+可视化提示。非 `READY` 状态始终展示；安全链接机制落地前不向 Slack 输出文档
+链接、定位框、内部 UUID、查询结果明细或可视化原始数据。
+
 `callback_payload_log_enabled` 会把 Callback 完整报文写入
 `<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 会把
 发往 Slack 的完整 JSON Body 写入 `/tmp/slackmess`。两项均默认关闭，且不会记录

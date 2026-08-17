@@ -99,3 +99,12 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # callback_payload_log_enabled = false
 # slack_reply_dump_enabled = false
 # slack_reply_dump_dir = "/tmp/slackmess"
+
+# Slack 中 Asset问答助手的最终回复展示策略。非 READY 状态始终显示，且在安全链接
+# 机制落地前不输出文档链接或内部资源标识。
+# [integrations.slack.reply]
+# assistant_name = "Asset问答助手"
+# max_references = 5
+# show_warnings = true
+# show_query_result_summary = true
+# show_visualization_notice = true

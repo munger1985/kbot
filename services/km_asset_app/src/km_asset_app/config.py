@@ -100,6 +100,18 @@ class SlackDebugConfig(BaseModel):
         return self
 
 
+class SlackReplyConfig(BaseModel):
+    assistant_name: str = Field(
+        default="Asset问答助手",
+        min_length=1,
+        max_length=80,
+    )
+    max_references: int = Field(default=5, ge=0, le=10)
+    show_warnings: bool = True
+    show_query_result_summary: bool = True
+    show_visualization_notice: bool = True
+
+
 class SlackIntegrationConfig(BaseModel):
     enabled: bool = False
     max_webhook_bytes: int = Field(
@@ -120,6 +132,7 @@ class SlackIntegrationConfig(BaseModel):
         default_factory=SlackExternalCallbackConfig
     )
     debug: SlackDebugConfig = Field(default_factory=SlackDebugConfig)
+    reply: SlackReplyConfig = Field(default_factory=SlackReplyConfig)
 
     @model_validator(mode="after")
     def validate_workspaces(self) -> "SlackIntegrationConfig":

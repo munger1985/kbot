@@ -128,6 +128,10 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                     "[integrations.slack.external_callback]\n"
                     "enabled=true\n"
                     "url='https://callback.example.com/events'\n"
+                    "[integrations.slack.reply]\n"
+                    "assistant_name='Asset问答助手'\n"
+                    "max_references=4\n"
+                    "show_warnings=false\n"
                 )
 
             settings = load_settings(
@@ -144,6 +148,9 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 "https://callback.example.com/events",
                 slack.external_callback.url,
             )
+            self.assertEqual("Asset问答助手", slack.reply.assistant_name)
+            self.assertEqual(4, slack.reply.max_references)
+            self.assertFalse(slack.reply.show_warnings)
             main_api = load_settings(
                 MainApiSettings,
                 service="main_api",

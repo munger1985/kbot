@@ -11,7 +11,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from km_asset_app.application.slack_dispatch import SlackDispatchService
 from km_asset_app.application.slack_intake import (
@@ -22,7 +22,12 @@ from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
 )
-from km_asset_app.config import SlackExternalCallbackConfig, SlackIntegrationConfig
+from km_asset_app.config import (
+    SlackExternalCallbackConfig,
+    SlackIntegrationConfig,
+    SlackReplyConfig,
+    SlackWorkspaceConfig,
+)
 
 
 class SlackSignatureTest(unittest.TestCase):
@@ -119,38 +124,167 @@ class SlackEventParsingTest(unittest.TestCase):
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
-    def test_renders_valid_section_blocks_and_three_references(self):
+    def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
             channel_id="C1",
             user_id="U1",
             thread_ts="1.001",
             artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
                 "payload": {
-                    "answer": "answer",
+                    "answer": "这是回答 [D1]。",
+                    "status": "PARTIAL",
+                    "used_citation_labels": ["Q1", "D1"],
                     "references": [
                         {
-                            "citation_label": f"D{index}",
-                            "title": f"doc-{index}",
-                            "locator": {"page": index + 1},
-                            "url": "https://example.com",
-                        }
-                        for index in range(4)
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "D1",
+                            "title": "安装手册",
+                            "document_id": "internal-document-id",
+                            "locator": {
+                                "pages": [
+                                    {
+                                        "page_no": 3,
+                                        "bbox": [0.1, 0.2, 0.3, 0.4],
+                                    },
+                                    {"page_no": 5},
+                                ]
+                            },
+                            "resource_url": "https://private.example.com",
+                        },
+                        {
+                            "reference_type": "QUERY_RESULT",
+                            "citation_label": "Q1",
+                            "query_result_id": "internal-query-id",
+                            "provider": "MCP",
+                            "row_count": 12,
+                        },
+                        {
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "D2",
+                            "title": "未使用文档",
+                            "locator": {"pages": [{"page_no": 9}]},
+                        },
                     ],
+                    "query_results": [{"password": "raw-query-secret"}],
+                    "visualizations": [{"options": "raw-chart-options"}],
+                    "warnings": ["数据截至昨日"],
                 }
             },
+            reply_config=SlackReplyConfig(),
         )
         self.assertEqual("C1", payload["channel"])
-        self.assertTrue(all(block["type"] != "markdown" for block in payload["blocks"]))
-        self.assertEqual(
-            3,
-            sum(
-                1
-                for block in payload["blocks"]
-                if block.get("accessory", {}).get("type") == "button"
+        self.assertEqual("1.001", payload["thread_ts"])
+        self.assertTrue(payload["text"].startswith("<@U1> Asset问答助手："))
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("回答状态：部分回答", rendered)
+        self.assertLess(rendered.index("[Q1]"), rendered.rindex("[D1]"))
+        self.assertIn("来源：MCP · 12 行", rendered)
+        self.assertIn("[D1] 安装手册", rendered)
+        self.assertIn("第 3、5 页", rendered)
+        self.assertIn("数据截至昨日", rendered)
+        self.assertIn("包含 1 个可视化结果", rendered)
+        for private_value in (
+            "internal-document-id",
+            "internal-query-id",
+            "bbox",
+            "raw-query-secret",
+            "raw-chart-options",
+            "private.example.com",
+            "未使用文档",
+        ):
+            self.assertNotIn(private_value, rendered)
+        self.assertNotIn('"accessory"', rendered)
+
+    def test_reply_options_limit_and_hide_optional_summaries(self):
+        references = [
+            {
+                "reference_type": "DOCUMENT",
+                "citation_label": f"D{index}",
+                "title": f"文档 {index}",
+                "locator": {"pages": [{"page_no": index + 1}]},
+            }
+            for index in range(4)
+        ]
+        references.append(
+            {
+                "reference_type": "QUERY_RESULT",
+                "citation_label": "Q1",
+                "provider": "SEMANTIC",
+                "row_count": 3,
+            }
+        )
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": "完整回答",
+                    "status": "READY",
+                    "used_citation_labels": ["Q1", "D3", "D2", "D1"],
+                    "references": references,
+                    "warnings": ["不显示的警告"],
+                    "visualizations": [{"type": "bar"}],
+                },
+            },
+            reply_config=SlackReplyConfig(
+                assistant_name="定制助手",
+                max_references=2,
+                show_warnings=False,
+                show_query_result_summary=False,
+                show_visualization_notice=False,
             ),
         )
-        self.assertIn("[D0] doc-0", payload["blocks"][2]["text"]["text"])
-        self.assertIn("page: 1", payload["blocks"][2]["text"]["text"])
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("定制助手", rendered)
+        self.assertIn("[D3] 文档 3", rendered)
+        self.assertIn("[D2] 文档 2", rendered)
+        self.assertNotIn("[D1]", rendered)
+        self.assertNotIn("[Q1]", rendered)
+        self.assertNotIn("不显示的警告", rendered)
+        self.assertNotIn("可视化结果", rendered)
+        self.assertNotIn("回答状态", rendered)
+
+    def test_invalid_artifact_returns_fixed_safe_message(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "INTERNAL_RESULT",
+                "schema_version": "Internal.v1",
+                "payload": {"answer": "sensitive internal answer"},
+            },
+            reply_config=SlackReplyConfig(),
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("回答格式暂不可用", rendered)
+        self.assertNotIn("sensitive internal answer", rendered)
+
+    def test_answer_does_not_create_unintended_slack_mentions(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": "请勿触发 <!channel>",
+                    "status": "READY",
+                    "used_citation_labels": [],
+                    "references": [],
+                },
+            },
+            reply_config=SlackReplyConfig(),
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("<!channel>", rendered)
+        self.assertIn("&lt;!channel&gt;", rendered)
 
     def test_callback_requires_url_only_when_enabled(self):
         SlackExternalCallbackConfig(enabled=False, url="")
@@ -181,6 +315,27 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertFalse(config.enabled)
         self.assertFalse(config.debug.callback_payload_log_enabled)
         self.assertFalse(config.debug.slack_reply_dump_enabled)
+        self.assertEqual("Asset问答助手", config.reply.assistant_name)
+        self.assertEqual(5, config.reply.max_references)
+
+    def test_workspace_reads_secrets_from_named_environment_variables(self):
+        config = SlackWorkspaceConfig(
+            workspace_id="T1",
+            domain_id=1001,
+            agent_id="019fcbe0-e46c-7d33-907b-9d1621a2998f",
+            signing_secret_env="KBOT_SLACK_TEST_SIGNING_SECRET",
+            bot_token_env="KBOT_SLACK_TEST_BOT_TOKEN",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "KBOT_SLACK_TEST_SIGNING_SECRET": "signing-secret",
+                "KBOT_SLACK_TEST_BOT_TOKEN": "bot-token",
+            },
+            clear=True,
+        ):
+            self.assertEqual("signing-secret", config.require_signing_secret())
+            self.assertEqual("bot-token", config.require_bot_token())
 
     def test_debug_files_use_restricted_permissions(self):
         with tempfile.TemporaryDirectory() as directory:

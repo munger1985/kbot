@@ -253,6 +253,7 @@ class SlackDispatchService:
                 user_id=inbox.slack_user_id,
                 thread_ts=inbox.root_thread_ts,
                 artifact=artifact,
+                reply_config=self._config.reply,
             )
         else:
             payload = {
