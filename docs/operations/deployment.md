@@ -156,7 +156,8 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 
 全新数据库执行标准 Schema 初始化时，会自动幂等创建首次登录基础数据：默认业务域
 `default`、完整 App 权限与角色模板、`ADMIN` 凭据及默认业务域中的各 App
-`system_admin` 授权。初始账号为 `ADMIN`，初始密码为 `Admin@2026!`，部署完成后应
+`system_admin` 授权。普通用户安全等级默认是 `1`，`ADMIN` 固定为最高等级 `3`。
+初始账号为 `ADMIN`，初始密码为 `Admin@2026!`，部署完成后应
 立即重置密码。模型、Collection、Agent、会话和 AIOps 业务数据不会初始化。
 
 既有数据库缺少基础数据时，优先执行：
@@ -165,6 +166,10 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 python3 scripts/db/apply_oracle_schema.py --foundation-only
 python3 scripts/db/apply_oracle_schema.py --check-foundation
 ```
+
+`--foundation-only` 会为既有 KBot 4.0 Schema 幂等补充
+`KBOT_PLATFORM_USER.MAX_SECURITY_LEVEL` 及其 `0–3` 约束，并把 `ADMIN`
+设置为等级 `3`；无需另外执行一次性升级脚本。
 
 仅需升级普通登录、用户管理和角色管理权限时，也可在 SQL Developer 中执行：
 

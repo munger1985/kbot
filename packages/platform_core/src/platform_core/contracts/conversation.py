@@ -52,7 +52,7 @@ class CreateConversationTurnRequest(_Contract):
     input: str = Field(min_length=1, max_length=32000)
     expected_conversation_version: int = Field(ge=1)
     collection_ids: tuple[UUID, ...] = ()
-    security_level: int = Field(default=0, ge=0, le=999)
+    security_level: int = Field(default=3, ge=0, le=3)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
     images: tuple["ConversationQueryImage", ...] = Field(
         default=(), max_length=8

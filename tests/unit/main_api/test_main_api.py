@@ -293,6 +293,7 @@ class _FakeAgentRuntimeClient:
     async def create_run(
         self, *, payload, idempotency_key, auth_context
     ):
+        self.last_run_payload = payload
         self.last_context = auth_context
         return {
             "run_id": str(self.run_id),
@@ -344,7 +345,8 @@ class _FakeAgentRuntimeClient:
         idempotency_key,
         auth_context,
     ):
-        del payload, idempotency_key
+        del idempotency_key
+        self.last_turn_payload = payload
         self.last_context = auth_context
         return {
             "conversation_id": str(conversation_id),
@@ -548,6 +550,7 @@ class _FakeAccessControlService:
     def __init__(self):
         self.last_permission_code: str | None = None
         self.permissions = self._PERMISSIONS
+        self.max_security_level = 1
 
     async def snapshot(self, *, app_id, domain_id, user_id):
         return SimpleNamespace(
@@ -563,6 +566,10 @@ class _FakeAccessControlService:
         return await self.snapshot(
             app_id=app_id, domain_id=domain_id, user_id=user_id
         )
+
+    async def user_max_security_level(self, *, user_id):
+        del user_id
+        return self.max_security_level
 
     async def list_policy_subjects(self, *, app_id, domain_id):
         return {
@@ -598,10 +605,12 @@ class _ScopedAccessControlService:
 class _FakeAccessManagementService:
     def __init__(self):
         self.created_user: str | None = None
+        self.created_values: dict[str, Any] | None = None
         self.membership: dict[str, Any] | None = None
 
     async def create_user(self, **values):
         self.created_user = values["user_id"]
+        self.created_values = values
         return {
             "user_id": values["user_id"],
             "display_name": values["display_name"],
@@ -620,6 +629,7 @@ class _FakeAccessManagementService:
 class _FakeKnowledgeRetrievalAppClient:
     def __init__(self, runtime):
         self.runtime = runtime
+        self.resource_context: dict[str, Any] = {}
 
     async def execution_spec(self, *, agent_id, domain_id, auth_context):
         agent = self.runtime._agent()
@@ -637,7 +647,7 @@ class _FakeKnowledgeRetrievalAppClient:
             "models": agent["models"],
             "do_rerank": False,
             "instruction": None,
-            "resource_context": {},
+            "resource_context": self.resource_context,
             "runtime_policy": {},
         }
 
@@ -1196,6 +1206,34 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(
             "knowledge_retrieval", management.membership["app_id"]
         )
+        self.assertEqual(1, management.created_values["max_security_level"])
+
+    def test_app_member_manager_cannot_raise_user_security_level(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:member_manage",
+            )
+        )
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.post(
+            "/api/v1/admin/users",
+            headers=self._headers(),
+            json={
+                "user_id": "NEW_USER",
+                "display_name": "新用户",
+                "password": "Example@Password2026!",
+                "max_security_level": 3,
+            },
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            "USER_SECURITY_LEVEL_DENIED", response.json()["code"]
+        )
 
     def test_user_without_member_manage_cannot_create_user(self) -> None:
         self.app.state.access_control_service = _ScopedAccessControlService()
@@ -1328,8 +1366,70 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(202, run.status_code)
         self.assertEqual("RUNNING", run.json()["status"])
         self.assertEqual(
+            1, self.agent_runtime.last_run_payload["security_level"]
+        )
+        self.assertEqual(
             "portal-user-1",
             self.agent_runtime.last_context.asserted_user_id,
+        )
+
+    def test_run_security_level_cannot_exceed_user_clearance(self) -> None:
+        self.app.state.access_control_service.max_security_level = 1
+
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/runs",
+            headers={**self._headers(), "Idempotency-Key": "run-level"},
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "input": "读取机密文档",
+                "security_level": 3,
+            },
+        )
+
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(
+            1, self.agent_runtime.last_run_payload["security_level"]
+        )
+
+    def test_conversation_security_level_can_be_narrowed_by_user(self) -> None:
+        self.app.state.access_control_service.max_security_level = 3
+        response = self.client.post(
+            (
+                "/api/v1/apps/knowledge-retrieval/conversations/"
+                f"{self.agent_runtime.conversation_id}/turns"
+            ),
+            headers={**self._headers(), "Idempotency-Key": "turn-level"},
+            json={
+                "input": "只读取内部文档",
+                "expected_conversation_version": 1,
+                "security_level": 1,
+            },
+        )
+
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(
+            1, self.agent_runtime.last_turn_payload["security_level"]
+        )
+
+    def test_run_security_level_respects_agent_limit(self) -> None:
+        self.app.state.access_control_service.max_security_level = 3
+        self.knowledge_retrieval_app.resource_context = {
+            "max_security_level": 2
+        }
+
+        response = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/runs",
+            headers={**self._headers(), "Idempotency-Key": "agent-level"},
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "input": "读取受限文档",
+                "security_level": 3,
+            },
+        )
+
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(
+            2, self.agent_runtime.last_run_payload["security_level"]
         )
 
     def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:

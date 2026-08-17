@@ -31,6 +31,13 @@ def _assert_status(value: str) -> None:
         raise AccessManagementError("INVALID_STATUS", "状态值无效")
 
 
+def _assert_security_level(value: int) -> None:
+    if value < 0 or value > 3:
+        raise AccessManagementError(
+            "INVALID_SECURITY_LEVEL", "用户安全等级必须在 0 到 3 之间"
+        )
+
+
 def _assert_mutable_user(user_id: str) -> None:
     if is_reserved_global_admin(user_id):
         raise AccessManagementError(
@@ -113,8 +120,10 @@ class AccessManagementService:
         password: str,
         status: str,
         must_change_password: bool,
+        max_security_level: int = 1,
     ) -> dict[str, object]:
         _assert_status(status)
+        _assert_security_level(max_security_level)
         _assert_mutable_user(user_id)
         password_hash = await asyncio.to_thread(
             bcrypt.hashpw,
@@ -129,6 +138,7 @@ class AccessManagementService:
             user = PlatformUserEntity(
                 user_id=user_id,
                 display_name=display_name,
+                max_security_level=max_security_level,
                 status=status,
             )
             await uow.access.add_user(user)
@@ -150,10 +160,13 @@ class AccessManagementService:
         display_name: str | None,
         display_name_provided: bool,
         status: str | None,
+        max_security_level: int | None = None,
     ) -> dict[str, object]:
         _assert_mutable_user(user_id)
         if status is not None:
             _assert_status(status)
+        if max_security_level is not None:
+            _assert_security_level(max_security_level)
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
             if user is None:
@@ -166,6 +179,11 @@ class AccessManagementService:
                     display_name if display_name_provided else user.display_name
                 ),
                 status=status or user.status,
+                max_security_level=(
+                    max_security_level
+                    if max_security_level is not None
+                    else int(user.max_security_level)
+                ),
             )
             result = self._user_item(user)
             await uow.commit()
@@ -408,6 +426,7 @@ class AccessManagementService:
         return {
             "user_id": user.user_id,
             "display_name": user.display_name,
+            "max_security_level": int(user.max_security_level),
             "status": user.status,
             "protected": is_reserved_global_admin(user.user_id),
             "created_at": user.created_at,

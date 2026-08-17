@@ -69,12 +69,16 @@ ON (target.USER_ID = source.user_id)
 WHEN MATCHED THEN
     UPDATE SET
         target.DISPLAY_NAME = source.display_name,
+        target.MAX_SECURITY_LEVEL = 3,
         target.STATUS = 'ACTIVE',
         target.UPDATED_AT = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
-    INSERT (USER_ID, DISPLAY_NAME, STATUS, CREATED_AT, UPDATED_AT)
+    INSERT (
+        USER_ID, DISPLAY_NAME, MAX_SECURITY_LEVEL,
+        STATUS, CREATED_AT, UPDATED_AT
+    )
     VALUES (
-        source.user_id, source.display_name, 'ACTIVE',
+        source.user_id, source.display_name, 3, 'ACTIVE',
         SYSTIMESTAMP, SYSTIMESTAMP
     );
 

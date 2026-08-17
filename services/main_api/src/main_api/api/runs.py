@@ -19,7 +19,7 @@ from platform_core.contracts import (
     AgentRunSummary,
     PUBLIC_API_V1,
 )
-from main_api.application import AccessDeniedError
+from main_api.application import AccessConfigurationError, AccessDeniedError
 from platform_clients import KnowledgeRetrievalAppClient
 from platform_core.security import get_auth_context
 
@@ -65,7 +65,7 @@ class KnowledgeRunCreateRequest(BaseModel):
     agent_id: UUID
     input: str = Field(min_length=1, max_length=32000)
     collection_ids: tuple[UUID, ...] = ()
-    security_level: int = Field(default=0, ge=0, le=999)
+    security_level: int = Field(default=3, ge=0, le=3)
     client_metadata: dict = Field(default_factory=dict)
 
 
@@ -121,6 +121,55 @@ async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
     )
 
 
+async def _effective_security_level(
+    request: Request,
+    *,
+    requested_level: int,
+    execution_spec: dict,
+) -> int:
+    """按用户、Agent 和请求三者的最小值生成受信检索等级。"""
+    context = get_auth_context(request)
+    actor_id = context.asserted_user_id or context.client_id
+    try:
+        user_level = (
+            await request.app.state.access_control_service.user_max_security_level(
+                user_id=actor_id
+            )
+        )
+    except AccessConfigurationError as exc:
+        raise HTTPException(
+            403,
+            {
+                "code": "USER_SECURITY_LEVEL_UNAVAILABLE",
+                "message": str(exc),
+            },
+        ) from exc
+    resource_context = execution_spec.get("resource_context") or {}
+    raw_agent_level = resource_context.get(
+        "max_security_level",
+        resource_context.get("security_level", 3),
+    )
+    try:
+        agent_level = int(raw_agent_level)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "AGENT_SECURITY_LEVEL_INVALID",
+                "message": "Agent 安全等级配置无效",
+            },
+        ) from exc
+    if agent_level < 0 or agent_level > 3:
+        raise HTTPException(
+            409,
+            {
+                "code": "AGENT_SECURITY_LEVEL_INVALID",
+                "message": "Agent 安全等级必须在 0 到 3 之间",
+            },
+        )
+    return min(user_level, agent_level, requested_level)
+
+
 @router.post("", status_code=202, response_model=AgentRunReceipt)
 async def create_run(
     payload: KnowledgeRunCreateRequest,
@@ -128,9 +177,15 @@ async def create_run(
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
     spec = await _authorized_spec(request, payload.agent_id)
+    effective_level = await _effective_security_level(
+        request,
+        requested_level=payload.security_level,
+        execution_spec=spec,
+    )
     result = await _client(request).create_run(
         payload={
             **payload.model_dump(mode="json"),
+            "security_level": effective_level,
             "execution_spec": spec,
         },
         idempotency_key=idempotency_key,

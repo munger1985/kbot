@@ -267,9 +267,11 @@ class AccessControlRepository:
         user: PlatformUserEntity,
         display_name: str | None,
         status: str,
+        max_security_level: int,
     ) -> None:
         user.display_name = display_name
         user.status = status
+        user.max_security_level = max_security_level
         user.updated_at = datetime.now(timezone.utc)
         await self._session.flush()
 

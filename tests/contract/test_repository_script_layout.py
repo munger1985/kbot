@@ -89,6 +89,28 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("MERGE INTO KBOT_PLATFORM_USER", foundation)
         self.assertIn("'ADMIN' USER_ID", foundation)
         self.assertIn("'system_admin' ROLE_CODE", foundation)
+        self.assertIn("target.MAX_SECURITY_LEVEL = 3", foundation)
+
+        schema_runner = (
+            SCRIPTS_ROOT / "db" / "apply_oracle_schema.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CK_PLATFORM_USER_SECURITY", schema_runner)
+        self.assertIn("MAX_SECURITY_LEVEL BETWEEN 0 AND 3", schema_runner)
+
+        access_schema = (
+            ROOT
+            / "database"
+            / "oracle"
+            / "main_api"
+            / "001_access_control.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "MAX_SECURITY_LEVEL NUMBER(3) DEFAULT 1 NOT NULL",
+            access_schema,
+        )
+        self.assertIn(
+            "MAX_SECURITY_LEVEL BETWEEN 0 AND 3", access_schema
+        )
 
     def test_operational_python_scripts_do_not_modify_import_path(self):
         scripts = (

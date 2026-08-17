@@ -1165,8 +1165,8 @@
             "type": "string"
           },
           "security_level": {
-            "default": 0,
-            "maximum": 999.0,
+            "default": 3,
+            "maximum": 3.0,
             "minimum": 0.0,
             "title": "Security Level",
             "type": "integer"
@@ -1784,8 +1784,8 @@
             "type": "string"
           },
           "security_level": {
-            "default": 0,
-            "maximum": 999.0,
+            "default": 3,
+            "maximum": 3.0,
             "minimum": 0.0,
             "title": "Security Level",
             "type": "integer"
@@ -3806,8 +3806,8 @@
             "type": "string"
           },
           "security_level": {
-            "default": 0,
-            "maximum": 999.0,
+            "default": 3,
+            "maximum": 3.0,
             "minimum": 0.0,
             "title": "Security Level",
             "type": "integer"
@@ -7649,6 +7649,13 @@
             ],
             "title": "Display Name"
           },
+          "max_security_level": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
           "must_change_password": {
             "default": true,
             "title": "Must Change Password",
@@ -7697,6 +7704,19 @@
               }
             ],
             "title": "Display Name"
+          },
+          "max_security_level": {
+            "anyOf": [
+              {
+                "maximum": 3.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Security Level"
           },
           "status": {
             "anyOf": [

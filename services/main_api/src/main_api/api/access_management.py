@@ -45,6 +45,7 @@ class UserCreatePayload(_Payload):
     password: str = Field(min_length=12, max_length=256)
     status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
     must_change_password: bool = True
+    max_security_level: int = Field(default=1, ge=0, le=3)
 
     @field_validator("password")
     @classmethod
@@ -55,6 +56,7 @@ class UserCreatePayload(_Payload):
 class UserUpdatePayload(_Payload):
     display_name: str | None = Field(default=None, max_length=256)
     status: Literal["ACTIVE", "DISABLED"] | None = None
+    max_security_level: int | None = Field(default=None, ge=0, le=3)
 
 
 class PasswordResetPayload(_Payload):
@@ -146,7 +148,7 @@ async def _require(request: Request, permission_code: str) -> tuple[int, str]:
     return domain_id, actor_id
 
 
-async def _require_user_creator(request: Request) -> tuple[int, str]:
+async def _require_user_creator(request: Request) -> tuple[int, str, bool]:
     """允许平台管理员或当前 Domain 的任一应用成员管理员建号。"""
     domain_id, actor_id = _domain_actor(request)
     if await _has_permission(
@@ -156,7 +158,7 @@ async def _require_user_creator(request: Request) -> tuple[int, str]:
         actor_id=actor_id,
         permission_code="platform:user_manage",
     ):
-        return domain_id, actor_id
+        return domain_id, actor_id, True
     for app_id, permission_code in APP_MEMBER_MANAGE_PERMISSIONS.items():
         if await _has_permission(
             request,
@@ -165,7 +167,7 @@ async def _require_user_creator(request: Request) -> tuple[int, str]:
             actor_id=actor_id,
             permission_code=permission_code,
         ):
-            return domain_id, actor_id
+            return domain_id, actor_id, False
     raise HTTPException(
         403,
         {
@@ -252,7 +254,15 @@ async def list_users(
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def create_user(payload: UserCreatePayload, request: Request):
-    await _require_user_creator(request)
+    _, _, is_platform_manager = await _require_user_creator(request)
+    if not is_platform_manager and payload.max_security_level != 1:
+        raise HTTPException(
+            403,
+            {
+                "code": "USER_SECURITY_LEVEL_DENIED",
+                "message": "应用成员管理员只能创建默认安全等级用户",
+            },
+        )
     try:
         return await _management(request).create_user(
             user_id=payload.user_id.strip(),
@@ -260,6 +270,7 @@ async def create_user(payload: UserCreatePayload, request: Request):
             password=payload.password,
             status=payload.status,
             must_change_password=payload.must_change_password,
+            max_security_level=payload.max_security_level,
         )
     except AccessManagementError as exc:
         raise HTTPException(
@@ -288,6 +299,7 @@ async def update_user(
             display_name=payload.display_name,
             display_name_provided="display_name" in payload.model_fields_set,
             status=payload.status,
+            max_security_level=payload.max_security_level,
         ),
     )
 

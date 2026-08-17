@@ -359,6 +359,36 @@ async def _validate_platform_foundation(
             "平台基础表不完整：" + ", ".join(sorted(missing_tables))
         )
 
+    security_column_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM user_tab_columns "
+                "WHERE table_name = 'KBOT_PLATFORM_USER' "
+                "AND column_name = 'MAX_SECURITY_LEVEL' "
+                "AND nullable = 'N'"
+            )
+        )
+    ).scalar_one()
+    if int(security_column_count) != 1:
+        raise RuntimeError(
+            "KBOT_PLATFORM_USER 缺少非空字段 MAX_SECURITY_LEVEL"
+        )
+
+    security_constraint_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM user_constraints "
+                "WHERE table_name = 'KBOT_PLATFORM_USER' "
+                "AND constraint_name = 'CK_PLATFORM_USER_SECURITY' "
+                "AND status = 'ENABLED'"
+            )
+        )
+    ).scalar_one()
+    if int(security_constraint_count) != 1:
+        raise RuntimeError(
+            "KBOT_PLATFORM_USER 缺少启用的安全等级范围约束"
+        )
+
     default_domain_count = (
         await connection.execute(
             text(
@@ -377,12 +407,15 @@ async def _validate_platform_foundation(
                 "JOIN KBOT_PLATFORM_USER_CREDENTIAL credential "
                 "ON credential.USER_ID = user_account.USER_ID "
                 "WHERE user_account.USER_ID = 'ADMIN' "
-                "AND user_account.STATUS = 'ACTIVE'"
+                "AND user_account.STATUS = 'ACTIVE' "
+                "AND user_account.MAX_SECURITY_LEVEL = 3"
             )
         )
     ).scalar_one()
     if int(admin_count) != 1:
-        raise RuntimeError("缺少启用的 ADMIN 用户或登录凭据")
+        raise RuntimeError(
+            "缺少启用且安全等级为 3 的 ADMIN 用户或登录凭据"
+        )
 
     permission_codes = set(
         (
@@ -533,6 +566,50 @@ async def _apply_platform_foundation(
     connection: AsyncConnection,
 ) -> None:
     """幂等写入首次登录所需的平台基础数据。"""
+    security_column_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM user_tab_columns "
+                "WHERE table_name = 'KBOT_PLATFORM_USER' "
+                "AND column_name = 'MAX_SECURITY_LEVEL'"
+            )
+        )
+    ).scalar_one()
+    if int(security_column_count) == 0:
+        await connection.exec_driver_sql(
+            "ALTER TABLE KBOT_PLATFORM_USER ADD ("
+            "MAX_SECURITY_LEVEL NUMBER(3) DEFAULT 1 NOT NULL)"
+        )
+    else:
+        await connection.exec_driver_sql(
+            "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
+            "WHERE MAX_SECURITY_LEVEL IS NULL"
+        )
+        await connection.exec_driver_sql(
+            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
+            "MAX_SECURITY_LEVEL DEFAULT 1 NOT NULL)"
+        )
+
+    security_constraint_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM user_constraints "
+                "WHERE table_name = 'KBOT_PLATFORM_USER' "
+                "AND constraint_name = 'CK_PLATFORM_USER_SECURITY'"
+            )
+        )
+    ).scalar_one()
+    if int(security_constraint_count) == 0:
+        await connection.exec_driver_sql(
+            "ALTER TABLE KBOT_PLATFORM_USER ADD CONSTRAINT "
+            "CK_PLATFORM_USER_SECURITY CHECK "
+            "(MAX_SECURITY_LEVEL BETWEEN 0 AND 3)"
+        )
+    else:
+        await connection.exec_driver_sql(
+            "ALTER TABLE KBOT_PLATFORM_USER ENABLE CONSTRAINT "
+            "CK_PLATFORM_USER_SECURITY"
+        )
     statements = split_oracle_statements(
         PLATFORM_FOUNDATION_SCRIPT.read_text(encoding="utf-8")
     )

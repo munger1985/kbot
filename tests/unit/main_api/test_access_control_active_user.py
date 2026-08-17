@@ -96,6 +96,54 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
                 user_id="admin", display_name="伪造管理员"
             )
 
+    async def test_user_security_level_comes_from_active_user_record(self):
+        class Access:
+            async def get_user(self, user_id):
+                del user_id
+                return SimpleNamespace(
+                    status="ACTIVE", max_security_level=2
+                )
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        service = AccessControlService(uow_factory=Uow)
+
+        self.assertEqual(
+            2,
+            await service.user_max_security_level(user_id="TEST_USER"),
+        )
+
+    async def test_invalid_user_security_level_is_rejected(self):
+        class Access:
+            async def get_user(self, user_id):
+                del user_id
+                return SimpleNamespace(
+                    status="ACTIVE", max_security_level=9
+                )
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        service = AccessControlService(uow_factory=Uow)
+
+        with self.assertRaisesRegex(
+            AccessConfigurationError, "安全等级配置无效"
+        ):
+            await service.user_max_security_level(user_id="TEST_USER")
+
     async def test_reserved_admin_role_cannot_be_changed(self):
         def forbidden_uow():
             raise AssertionError("保留账号校验必须在进入数据库事务前执行")

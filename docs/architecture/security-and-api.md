@@ -12,6 +12,12 @@ Main API 拥有平台用户、App Role、Permission、Role-Permission 和 Domain
 和状态维护。AIOps 私有 Agent 仍要求额外 Agent Grant。所有授权都不能跨越 Domain
 数据隔离边界。
 
+平台用户还具有 `MAX_SECURITY_LEVEL` 数据可见上限，取值为 `0–3`。普通用户默认
+等级为 `1`，保留账号 `ADMIN` 为最高等级 `3`。知识检索 Run、普通会话、多模态会话
+和 KM Asset 会话都由 Main API 从用户主数据读取该值，按“用户上限、Agent 上限、
+请求等级”三者最小值生成下游检索等级。浏览器参数只能缩小本次检索范围，不能提高
+账号权限；Agent Runtime 和 KC 只接收 Main API 计算后的受信等级。
+
 ## 公开认证
 
 Main API 支持两种公开用户入口：
@@ -42,6 +48,8 @@ Main API 支持两种公开用户入口：
 停用用户使用 `PATCH status=DISABLED`，保留用户、登录凭据和成员关系；删除用户会在
 同一事务中物理删除其全部成员关系、登录凭据和用户记录。逻辑删除角色会立即使该
 角色不再参与权限计算，但保留历史成员关系和权限定义，便于审计和恢复。
+应用成员管理员建号时只能使用默认安全等级 `1`；只有拥有
+`platform:user_manage` 的平台管理员可以设置或修改 `max_security_level`。
 
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 

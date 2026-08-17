@@ -75,6 +75,17 @@ class AccessControlService:
             raise AccessDeniedError(permission_code)
         return snapshot
 
+    async def user_max_security_level(self, *, user_id: str) -> int:
+        """从用户主数据读取受信的检索安全等级上限。"""
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user(user_id)
+        if user is None or user.status != "ACTIVE":
+            raise AccessConfigurationError("平台用户不存在或已停用")
+        level = int(user.max_security_level)
+        if level < 0 or level > 3:
+            raise AccessConfigurationError("平台用户安全等级配置无效")
+        return level
+
     async def ensure_user(
         self, *, user_id: str, display_name: str | None = None
     ) -> None:
@@ -115,6 +126,8 @@ class AccessControlService:
             "user_id": user_id,
             "display_name": users.get(user_id).display_name
             if user_id in users else None,
+            "max_security_level": int(users[user_id].max_security_level)
+            if user_id in users else 0,
             "status": users.get(user_id).status
             if user_id in users else "ACTIVE",
             "protected": is_reserved_global_admin(user_id),

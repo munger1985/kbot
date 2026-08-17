@@ -30,9 +30,10 @@ BEGIN
 
     UPDATE KBOT_PLATFORM_USER
        SET STATUS = 'ACTIVE',
+           MAX_SECURITY_LEVEL = 3,
            UPDATED_AT = SYSTIMESTAMP
      WHERE USER_ID = c_admin_user_id
-       AND STATUS <> 'ACTIVE';
+       AND (STATUS <> 'ACTIVE' OR MAX_SECURITY_LEVEL <> 3);
 
     -- 补齐创建用户和管理角色所需的平台权限目录。
     MERGE INTO KBOT_PERMISSION target

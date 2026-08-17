@@ -115,14 +115,16 @@ BEGIN
     WHEN MATCHED THEN
         UPDATE SET
             target.DISPLAY_NAME = source.DISPLAY_NAME,
+            target.MAX_SECURITY_LEVEL = 3,
             target.STATUS = 'ACTIVE',
             target.UPDATED_AT = SYSTIMESTAMP
     WHEN NOT MATCHED THEN
         INSERT (
-            USER_ID, DISPLAY_NAME, STATUS, CREATED_AT, UPDATED_AT
+            USER_ID, DISPLAY_NAME, MAX_SECURITY_LEVEL,
+            STATUS, CREATED_AT, UPDATED_AT
         )
         VALUES (
-            source.USER_ID, source.DISPLAY_NAME, 'ACTIVE',
+            source.USER_ID, source.DISPLAY_NAME, 3, 'ACTIVE',
             SYSTIMESTAMP, SYSTIMESTAMP
         );
 

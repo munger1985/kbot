@@ -20,6 +20,7 @@ from main_api.api.runs import (
     DocumentReferencePreview,
     _DocumentReference,
     _document_locator,
+    _effective_security_level,
     _event_stream,
     _parse_cursor,
     _preview_type,
@@ -549,12 +550,16 @@ async def create_conversation_turn(conversation_id: UUID, payload: CreateConvers
     resource_context = spec.get("resource_context", {})
     fixed_collections = tuple(resource_context.get("collection_ids") or ())
     fixed_security_level = int(resource_context.get("security_level") or 1)
+    effective_level = await _effective_security_level(
+        request,
+        requested_level=min(payload.security_level, fixed_security_level),
+        execution_spec=spec,
+    )
     body = payload.model_dump(mode="json")
     body["collection_ids"] = list(fixed_collections)
-    # KM Asset 统一按内部级别 1 入库。检索等级必须来自 Agent 的受信
-    # 执行契约，不能沿用浏览器请求的默认 0，否则所有 Asset 都会被 KC
-    # 的 security_level 条件过滤。
-    body["security_level"] = fixed_security_level
+    # KM Asset 统一按内部级别 1 入库。最终等级还必须受当前用户上限
+    # 约束，浏览器只能主动降低本次检索范围，不能扩大授权范围。
+    body["security_level"] = effective_level
     receipt = await runtime.create_conversation_turn(
         conversation_id=conversation_id,
         payload=body,

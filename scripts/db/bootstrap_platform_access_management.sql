@@ -23,6 +23,12 @@ BEGIN
         );
     END IF;
 
+    UPDATE KBOT_PLATFORM_USER
+       SET MAX_SECURITY_LEVEL = 3,
+           UPDATED_AT = SYSTIMESTAMP
+     WHERE USER_ID = c_admin_user_id
+       AND MAX_SECURITY_LEVEL <> 3;
+
     MERGE INTO KBOT_PERMISSION target
     USING (
         SELECT 'platform:user_manage' AS PERMISSION_CODE,

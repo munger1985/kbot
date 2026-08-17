@@ -31,7 +31,11 @@ from platform_core.contracts import (
     UpdateConversationRequest,
 )
 from pydantic import BaseModel, ConfigDict, Field
-from main_api.api.runs import _authorized_spec, _require_use
+from main_api.api.runs import (
+    _authorized_spec,
+    _effective_security_level,
+    _require_use,
+)
 
 
 router = APIRouter(
@@ -143,10 +147,20 @@ async def create_turn(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
     )
-    await _authorized_spec(request, UUID(str(conversation["agent_id"])))
+    spec = await _authorized_spec(
+        request, UUID(str(conversation["agent_id"]))
+    )
+    effective_level = await _effective_security_level(
+        request,
+        requested_level=payload.security_level,
+        execution_spec=spec,
+    )
     result = await _client(request).create_conversation_turn(
         conversation_id=conversation_id,
-        payload=payload.model_dump(mode="json"),
+        payload={
+            **payload.model_dump(mode="json"),
+            "security_level": effective_level,
+        },
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
@@ -164,7 +178,7 @@ async def create_turn_with_images(
     input: str = Form(min_length=1, max_length=32000),
     expected_conversation_version: int = Form(ge=1),
     collection_ids_json: str = Form(default="[]"),
-    security_level: int = Form(default=0, ge=0, le=999),
+    security_level: int = Form(default=3, ge=0, le=3),
     client_metadata_json: str = Form(default="{}"),
     images: list[UploadFile] = File(default_factory=list),
     idempotency_key: str = Header(alias="Idempotency-Key"),
@@ -173,7 +187,9 @@ async def create_turn_with_images(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
     )
-    await _authorized_spec(request, UUID(str(conversation["agent_id"])))
+    spec = await _authorized_spec(
+        request, UUID(str(conversation["agent_id"]))
+    )
     if not images or len(images) > 8:
         raise HTTPException(
             status_code=422,
@@ -204,11 +220,16 @@ async def create_turn_with_images(
                     content_base64=base64.b64encode(content).decode("ascii"),
                 )
             )
+        effective_level = await _effective_security_level(
+            request,
+            requested_level=security_level,
+            execution_spec=spec,
+        )
         payload = CreateConversationTurnRequest(
             input=input,
             expected_conversation_version=expected_conversation_version,
             collection_ids=collection_ids,
-            security_level=security_level,
+            security_level=effective_level,
             client_metadata=client_metadata,
             images=tuple(encoded_images),
         )
