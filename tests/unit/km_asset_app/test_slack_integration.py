@@ -317,6 +317,15 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertFalse(config.debug.slack_reply_dump_enabled)
         self.assertEqual("Asset问答助手", config.reply.assistant_name)
         self.assertEqual(5, config.reply.max_references)
+        self.assertEqual(
+            "https://apex.oraclecorp.com/pls/apex/"
+            "f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,",
+            config.reply.km_portal_base_url,
+        )
+
+    def test_reply_rejects_invalid_portal_url(self):
+        with self.assertRaises(ValueError):
+            SlackReplyConfig(km_portal_base_url="apex.invalid/path")
 
     def test_workspace_reads_secrets_from_named_environment_variables(self):
         config = SlackWorkspaceConfig(

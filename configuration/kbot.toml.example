@@ -108,3 +108,4 @@ key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 # show_warnings = true
 # show_query_result_summary = true
 # show_visualization_notice = true
+# km_portal_base_url = "https://apex.oraclecorp.com/pls/apex/f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,"

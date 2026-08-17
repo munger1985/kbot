@@ -48,9 +48,72 @@ Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 
 `signing_secret_env`、`bot_token_env` 只引用环境变量名称，禁止直接保存密钥。
 
 `[integrations.slack.reply]` 支持配置 `assistant_name`、`max_references`、
-`show_warnings`、`show_query_result_summary` 和 `show_visualization_notice`。非
-`READY` 状态为防止误用始终展示，不提供关闭开关；文档安全链接机制落地前也不
-提供链接开关。
+`show_warnings`、`show_query_result_summary`、`show_visualization_notice` 和
+`km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
+`km_portal_base_url` 只保存非敏感 Portal 地址；完成 KC Bundle 到 Asset ID 的映射
+和链接鉴权核对前，Slack 回复不会使用该地址生成链接。
+
+## 查询 Workspace、Domain 与 Agent
+
+`workspace_id` 是 Slack Events 报文的 `team_id`，不是 KBot 平台生成的 ID。系统
+收到过 Slack 事件后，可查询已经出现的 Workspace：
+
+```sql
+SELECT WORKSPACE_ID,
+       MIN(CREATED_AT) AS FIRST_EVENT_AT,
+       MAX(UPDATED_AT) AS LAST_EVENT_AT,
+       COUNT(*) AS EVENT_COUNT
+  FROM KBOT_KM_SLACK_INBOX
+ GROUP BY WORKSPACE_ID
+ ORDER BY WORKSPACE_ID;
+```
+
+可供 Slack 绑定的有效 Domain 与 KM Asset Agent 使用以下查询。Oracle 中 Agent
+UUID 使用 `RAW(16)` 保存，查询时必须转换成带连字符的 UUID 文本再填写 TOML：
+
+```sql
+SELECT D.DOMAIN_ID,
+       D.NAME AS DOMAIN_NAME,
+       LOWER(
+           SUBSTR(RAWTOHEX(A.AGENT_ID), 1, 8) || '-' ||
+           SUBSTR(RAWTOHEX(A.AGENT_ID), 9, 4) || '-' ||
+           SUBSTR(RAWTOHEX(A.AGENT_ID), 13, 4) || '-' ||
+           SUBSTR(RAWTOHEX(A.AGENT_ID), 17, 4) || '-' ||
+           SUBSTR(RAWTOHEX(A.AGENT_ID), 21, 12)
+       ) AS AGENT_ID,
+       A.DISPLAY_NAME AS AGENT_NAME,
+       A.STATUS AS AGENT_STATUS
+  FROM KBOT_PLATFORM_DOMAIN D
+  JOIN KBOT_KM_AGENT A ON A.DOMAIN_ID = D.DOMAIN_ID
+ WHERE D.STATUS = 'ACTIVE'
+   AND A.STATUS = 'ACTIVE'
+ ORDER BY D.DOMAIN_ID, A.DISPLAY_NAME;
+```
+
+系统已经建立 Slack Thread 映射后，可以直接核对实际使用过的三元组：
+
+```sql
+SELECT T.WORKSPACE_ID,
+       T.DOMAIN_ID,
+       D.NAME AS DOMAIN_NAME,
+       LOWER(
+           SUBSTR(RAWTOHEX(T.AGENT_ID), 1, 8) || '-' ||
+           SUBSTR(RAWTOHEX(T.AGENT_ID), 9, 4) || '-' ||
+           SUBSTR(RAWTOHEX(T.AGENT_ID), 13, 4) || '-' ||
+           SUBSTR(RAWTOHEX(T.AGENT_ID), 17, 4) || '-' ||
+           SUBSTR(RAWTOHEX(T.AGENT_ID), 21, 12)
+       ) AS AGENT_ID,
+       A.DISPLAY_NAME AS AGENT_NAME,
+       MAX(T.LAST_ACTIVE_AT) AS LAST_ACTIVE_AT
+  FROM KBOT_KM_SLACK_THREAD T
+  JOIN KBOT_PLATFORM_DOMAIN D ON D.DOMAIN_ID = T.DOMAIN_ID
+  LEFT JOIN KBOT_KM_AGENT A
+    ON A.AGENT_ID = T.AGENT_ID
+   AND A.DOMAIN_ID = T.DOMAIN_ID
+ GROUP BY T.WORKSPACE_ID, T.DOMAIN_ID, D.NAME,
+          T.AGENT_ID, A.DISPLAY_NAME
+ ORDER BY T.WORKSPACE_ID, T.DOMAIN_ID;
+```
 
 ## Asset问答助手回复
 

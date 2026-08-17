@@ -110,6 +110,20 @@ class SlackReplyConfig(BaseModel):
     show_warnings: bool = True
     show_query_result_summary: bool = True
     show_visualization_notice: bool = True
+    km_portal_base_url: str = Field(
+        default=(
+            "https://apex.oraclecorp.com/pls/apex/"
+            "f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,"
+        ),
+        min_length=1,
+        max_length=2048,
+    )
+
+    @model_validator(mode="after")
+    def validate_portal_url(self) -> "SlackReplyConfig":
+        if not self.km_portal_base_url.startswith(("https://", "http://")):
+            raise ValueError("KM Portal Base URL 必须使用 http 或 https")
+        return self
 
 
 class SlackIntegrationConfig(BaseModel):

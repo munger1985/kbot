@@ -132,6 +132,8 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                     "assistant_name='Asset问答助手'\n"
                     "max_references=4\n"
                     "show_warnings=false\n"
+                    "km_portal_base_url="
+                    "'https://apex.example.com/f?p=2018:130'\n"
                 )
 
             settings = load_settings(
@@ -151,6 +153,10 @@ class ServiceConfigLoadingTest(unittest.TestCase):
             self.assertEqual("Asset问答助手", slack.reply.assistant_name)
             self.assertEqual(4, slack.reply.max_references)
             self.assertFalse(slack.reply.show_warnings)
+            self.assertEqual(
+                "https://apex.example.com/f?p=2018:130",
+                slack.reply.km_portal_base_url,
+            )
             main_api = load_settings(
                 MainApiSettings,
                 service="main_api",
