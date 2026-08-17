@@ -8,6 +8,7 @@ from main_api.entities.access_control import PlatformUserEntity
 
 
 GLOBAL_ADMIN_USER_ID = "ADMIN"
+SYSTEM_ADMIN_ROLE_CODE = "system_admin"
 
 
 def is_reserved_global_admin(user_id: str) -> bool:
@@ -161,6 +162,10 @@ class AccessControlService:
             raise AccessConfigurationError(
                 "ADMIN 是平台保留账号，不能通过成员角色管理修改或删除"
             )
+        if role_code.casefold() == SYSTEM_ADMIN_ROLE_CODE:
+            raise AccessConfigurationError(
+                "system_admin 是平台保留角色，只能通过项目初始化脚本授权"
+            )
         async with self._uow_factory() as uow:
             role = await uow.access.get_role(
                 app_id=app_id, role_code=role_code
@@ -169,9 +174,9 @@ class AccessControlService:
                 raise AccessConfigurationError("应用角色不存在或已停用")
             user = await uow.access.get_user(user_id)
             if user is None:
-                await uow.access.add_user(PlatformUserEntity(
-                    user_id=user_id, display_name=display_name, status="ACTIVE"
-                ))
+                raise AccessConfigurationError(
+                    "平台用户不存在，请先创建带登录凭据的用户"
+                )
             row = await uow.access.upsert_member_role(
                 app_id=app_id, domain_id=domain_id, user_id=user_id,
                 role_code=role_code, status=status, actor_id=actor_id,
@@ -187,5 +192,5 @@ class AccessControlService:
 __all__ = [
     "AccessConfigurationError", "AccessControlService",
     "AccessDeniedError", "AccessSnapshot", "GLOBAL_ADMIN_USER_ID",
-    "is_reserved_global_admin",
+    "SYSTEM_ADMIN_ROLE_CODE", "is_reserved_global_admin",
 ]

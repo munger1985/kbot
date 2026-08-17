@@ -114,6 +114,57 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="another-admin",
             )
 
+    async def test_system_admin_role_cannot_be_assigned(self):
+        def forbidden_uow():
+            raise AssertionError("保留角色校验必须在进入数据库事务前执行")
+
+        service = AccessControlService(uow_factory=forbidden_uow)
+        with self.assertRaisesRegex(
+            AccessConfigurationError, "只能通过项目初始化脚本授权"
+        ):
+            await service.set_member_role(
+                app_id="knowledge_retrieval",
+                domain_id=1,
+                user_id="TEST_USER",
+                display_name="普通用户",
+                role_code="system_admin",
+                status="ACTIVE",
+                actor_id="application-manager",
+            )
+
+    async def test_member_role_rejects_user_without_login_credential(self):
+        class Access:
+            async def get_role(self, *, app_id, role_code):
+                del app_id, role_code
+                return SimpleNamespace(status="ACTIVE")
+
+            async def get_user(self, user_id):
+                del user_id
+                return None
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        service = AccessControlService(uow_factory=Uow)
+        with self.assertRaisesRegex(
+            AccessConfigurationError, "请先创建带登录凭据的用户"
+        ):
+            await service.set_member_role(
+                app_id="knowledge_retrieval",
+                domain_id=1,
+                user_id="MISSING_USER",
+                display_name="缺少凭据",
+                role_code="user",
+                status="ACTIVE",
+                actor_id="application-manager",
+            )
+
     async def test_role_query_requires_active_platform_user(self):
         session = _Session()
         repository = AccessControlRepository(session)

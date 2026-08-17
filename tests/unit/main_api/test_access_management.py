@@ -95,6 +95,20 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual("GLOBAL_ADMIN_PROTECTED", context.exception.code)
 
+    async def test_system_admin_membership_cannot_be_assigned(self):
+        with self.assertRaises(AccessManagementError) as context:
+            await self.service.set_membership(
+                app_id="knowledge_retrieval",
+                domain_id=1,
+                user_id="TEST_USER",
+                role_code="system_admin",
+                status="ACTIVE",
+                actor_id="application-manager",
+            )
+        self.assertEqual(
+            "SYSTEM_ADMIN_ROLE_PROTECTED", context.exception.code
+        )
+
     async def test_system_admin_role_cannot_be_changed(self):
         with self.assertRaises(AccessManagementError) as context:
             await self.service.update_role(

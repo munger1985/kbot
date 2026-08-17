@@ -29,10 +29,12 @@ Main API 支持两种公开用户入口：
 
 平台管理接口统一位于 `/api/v1/admin`：
 
-- `GET/POST /users`：分页查询或创建用户；
+- `GET /users`：平台管理员分页查询用户；
+- `POST /users`：平台管理员或当前 Domain 的应用成员管理员创建普通用户；
 - `GET/PATCH/DELETE /users/{user_id}`：查看、修改或物理删除普通用户；
 - `POST /users/{user_id}/password`：重置密码；
-- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：授予或停用 Domain 内角色；
+- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：平台管理员可以维护
+  Domain 成员关系；应用成员管理员只能维护当前 Domain 下本 App 的普通角色；
 - `GET /permissions`：查询按 App 分组的权限目录；
 - `GET/POST /roles`：查询或创建应用角色；
 - `PUT/DELETE /roles/{app_id}/{role_code}`：更新权限集合或逻辑删除角色。
@@ -67,10 +69,12 @@ Portal API Key，且不得通过公网或 APEX 代理暴露。
 - Agent Runtime 只执行调用方冻结的不可变 Execution Spec，不查询 App 权限表；
 - 内部 AuthContext 只携带本次调用所需身份和授权上下文，不替代资源服务的 Domain
   条件与对象所有权校验。
-- 用户与角色管理接口位于 `/api/v1/admin/*`，分别要求
-  `platform:user_manage` 和 `platform:role_manage`。平台 `admin` 用户及各 App 的
-  `system_admin` 角色只能由初始化脚本维护；管理接口只能重置 admin 密码，不能创建、
-  停用、改名或变更其角色。
+- 用户与角色管理接口位于 `/api/v1/admin/*`。用户查询、修改、停用、删除和密码重置
+  要求 `platform:user_manage`，角色目录维护要求 `platform:role_manage`。创建普通用户
+  还允许当前 Domain 中拥有任一 App `member_manage` 权限的应用管理员；成员授权允许
+  对应 App 的 `member_manage`，但应用管理员不得跨 App 或跨 Domain。平台 `ADMIN`
+  用户及各 App 的 `system_admin` 角色只能由初始化脚本维护；管理接口只能重置 ADMIN
+  密码，不能创建、停用、改名或变更其角色。
 
 ## 版本规则
 

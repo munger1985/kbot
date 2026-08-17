@@ -6,15 +6,15 @@ import asyncio
 
 import bcrypt
 
-from main_api.application.access_control import is_reserved_global_admin
+from main_api.application.access_control import (
+    SYSTEM_ADMIN_ROLE_CODE,
+    is_reserved_global_admin,
+)
 from main_api.entities.access_control import (
     AppRoleEntity,
     PlatformUserCredentialEntity,
     PlatformUserEntity,
 )
-
-
-SYSTEM_ADMIN_ROLE_CODE = "system_admin"
 
 
 class AccessManagementError(ValueError):
@@ -236,6 +236,7 @@ class AccessManagementService:
         actor_id: str,
     ) -> dict[str, object]:
         _assert_mutable_user(user_id)
+        _assert_mutable_role(role_code)
         _assert_status(status)
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from main_api.app import create_main_api_app
 from main_api.application import (
+    AccessDeniedError,
     DomainValidationService,
     UserAuthService,
     UserTokenCodec,
@@ -574,6 +575,48 @@ class _FakeAccessControlService:
         }
 
 
+class _ScopedAccessControlService:
+    def __init__(self, *permissions: tuple[str, str]):
+        self.permissions = frozenset(permissions)
+        self.calls: list[tuple[str, int, str]] = []
+
+    async def require(
+        self, *, app_id, domain_id, user_id, permission_code
+    ):
+        del user_id
+        self.calls.append((app_id, domain_id, permission_code))
+        if (app_id, permission_code) not in self.permissions:
+            raise AccessDeniedError(permission_code)
+        return SimpleNamespace(
+            app_id=app_id,
+            domain_id=domain_id,
+            permissions=frozenset({permission_code}),
+            roles=("manager",),
+        )
+
+
+class _FakeAccessManagementService:
+    def __init__(self):
+        self.created_user: str | None = None
+        self.membership: dict[str, Any] | None = None
+
+    async def create_user(self, **values):
+        self.created_user = values["user_id"]
+        return {
+            "user_id": values["user_id"],
+            "display_name": values["display_name"],
+            "status": values["status"],
+            "protected": False,
+        }
+
+    async def set_membership(self, **values):
+        self.membership = values
+        return values
+
+    async def delete_user(self, **values):
+        raise AssertionError(f"越权请求不应删除用户：{values}")
+
+
 class _FakeKnowledgeRetrievalAppClient:
     def __init__(self, runtime):
         self.runtime = runtime
@@ -1094,6 +1137,130 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(
             "platform:user_manage",
             self.app.state.access_control_service.last_permission_code,
+        )
+
+    def test_app_member_manager_can_create_and_authorize_user(self) -> None:
+        access = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:member_manage",
+            )
+        )
+        management = _FakeAccessManagementService()
+        self.app.state.access_control_service = access
+        self.app.state.access_management_service = management
+
+        created = self.client.post(
+            "/api/v1/admin/users",
+            headers=self._headers(),
+            json={
+                "user_id": "NEW_USER",
+                "display_name": "新用户",
+                "password": "Example@Password2026!",
+            },
+        )
+        membership = self.client.put(
+            (
+                "/api/v1/admin/users/NEW_USER/memberships/"
+                "knowledge_retrieval/user"
+            ),
+            headers=self._headers(),
+            json={"domain_id": 100, "status": "ACTIVE"},
+        )
+
+        self.assertEqual(201, created.status_code, created.text)
+        self.assertEqual(200, membership.status_code, membership.text)
+        self.assertEqual("NEW_USER", management.created_user)
+        self.assertEqual(100, management.membership["domain_id"])
+        self.assertEqual(
+            "knowledge_retrieval", management.membership["app_id"]
+        )
+
+    def test_user_without_member_manage_cannot_create_user(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService()
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.post(
+            "/api/v1/admin/users",
+            headers=self._headers(),
+            json={
+                "user_id": "NEW_USER",
+                "display_name": "新用户",
+                "password": "Example@Password2026!",
+            },
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            "USER_CREATION_PERMISSION_DENIED", response.json()["code"]
+        )
+
+    def test_app_member_manager_cannot_authorize_another_app(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:member_manage",
+            )
+        )
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.put(
+            "/api/v1/admin/users/NEW_USER/memberships/aiops/operator",
+            headers=self._headers(),
+            json={"domain_id": 100, "status": "ACTIVE"},
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("APP_PERMISSION_DENIED", response.json()["code"])
+
+    def test_app_member_manager_cannot_authorize_another_domain(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:member_manage",
+            )
+        )
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.put(
+            (
+                "/api/v1/admin/users/NEW_USER/memberships/"
+                "knowledge_retrieval/user"
+            ),
+            headers=self._headers(),
+            json={"domain_id": 200, "status": "ACTIVE"},
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            "APP_MEMBERSHIP_SCOPE_DENIED", response.json()["code"]
+        )
+
+    def test_app_member_manager_cannot_delete_platform_user(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:member_manage",
+            )
+        )
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.delete(
+            "/api/v1/admin/users/NEW_USER",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            "PLATFORM_PERMISSION_DENIED", response.json()["code"]
         )
 
     def test_agent_and_run_public_contracts(self) -> None:

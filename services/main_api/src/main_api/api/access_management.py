@@ -17,6 +17,12 @@ from platform_core.security import get_auth_context
 
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/admin", tags=["Access Management"])
 
+APP_MEMBER_MANAGE_PERMISSIONS = {
+    "knowledge_retrieval": "knowledge_retrieval:member_manage",
+    "km_asset": "km_asset:member_manage",
+    "aiops": "aiops:member_manage",
+}
+
 
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -85,7 +91,7 @@ def _management(request: Request) -> AccessManagementService:
     )
 
 
-async def _require(request: Request, permission_code: str) -> tuple[int, str]:
+def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     if not context.domain_id or not context.asserted_user_id:
         raise HTTPException(
@@ -95,26 +101,120 @@ async def _require(request: Request, permission_code: str) -> tuple[int, str]:
                 "message": "用户管理需要 Domain 和用户上下文",
             },
         )
-    domain_id = int(context.domain_id)
-    actor_id = context.asserted_user_id
+    return int(context.domain_id), context.asserted_user_id
+
+
+async def _has_permission(
+    request: Request,
+    *,
+    app_id: str,
+    domain_id: int,
+    actor_id: str,
+    permission_code: str,
+) -> bool:
     access = cast(
         AccessControlService, request.app.state.access_control_service
     )
     try:
         await access.require(
-            app_id="platform",
+            app_id=app_id,
             domain_id=domain_id,
             user_id=actor_id,
             permission_code=permission_code,
         )
-    except AccessDeniedError as exc:
+    except AccessDeniedError:
+        return False
+    return True
+
+
+async def _require(request: Request, permission_code: str) -> tuple[int, str]:
+    domain_id, actor_id = _domain_actor(request)
+    if not await _has_permission(
+        request,
+        app_id="platform",
+        domain_id=domain_id,
+        actor_id=actor_id,
+        permission_code=permission_code,
+    ):
         raise HTTPException(
             403,
             {
                 "code": "PLATFORM_PERMISSION_DENIED",
                 "permission": permission_code,
             },
-        ) from exc
+        )
+    return domain_id, actor_id
+
+
+async def _require_user_creator(request: Request) -> tuple[int, str]:
+    """允许平台管理员或当前 Domain 的任一应用成员管理员建号。"""
+    domain_id, actor_id = _domain_actor(request)
+    if await _has_permission(
+        request,
+        app_id="platform",
+        domain_id=domain_id,
+        actor_id=actor_id,
+        permission_code="platform:user_manage",
+    ):
+        return domain_id, actor_id
+    for app_id, permission_code in APP_MEMBER_MANAGE_PERMISSIONS.items():
+        if await _has_permission(
+            request,
+            app_id=app_id,
+            domain_id=domain_id,
+            actor_id=actor_id,
+            permission_code=permission_code,
+        ):
+            return domain_id, actor_id
+    raise HTTPException(
+        403,
+        {
+            "code": "USER_CREATION_PERMISSION_DENIED",
+            "message": "当前用户没有创建应用成员账号的权限",
+        },
+    )
+
+
+async def _require_membership_manager(
+    request: Request,
+    *,
+    app_id: str,
+    target_domain_id: int,
+) -> tuple[int, str]:
+    """允许平台管理员，或限定在本 App、本 Domain 的成员管理员。"""
+    domain_id, actor_id = _domain_actor(request)
+    if await _has_permission(
+        request,
+        app_id="platform",
+        domain_id=domain_id,
+        actor_id=actor_id,
+        permission_code="platform:user_manage",
+    ):
+        return domain_id, actor_id
+
+    permission_code = APP_MEMBER_MANAGE_PERMISSIONS.get(app_id)
+    if permission_code is None or target_domain_id != domain_id:
+        raise HTTPException(
+            403,
+            {
+                "code": "APP_MEMBERSHIP_SCOPE_DENIED",
+                "message": "应用管理员只能管理当前 Domain 下本应用的成员",
+            },
+        )
+    if not await _has_permission(
+        request,
+        app_id=app_id,
+        domain_id=domain_id,
+        actor_id=actor_id,
+        permission_code=permission_code,
+    ):
+        raise HTTPException(
+            403,
+            {
+                "code": "APP_PERMISSION_DENIED",
+                "permission": permission_code,
+            },
+        )
     return domain_id, actor_id
 
 
@@ -152,17 +252,19 @@ async def list_users(
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def create_user(payload: UserCreatePayload, request: Request):
-    return await _call(
-        request,
-        "platform:user_manage",
-        lambda: _management(request).create_user(
+    await _require_user_creator(request)
+    try:
+        return await _management(request).create_user(
             user_id=payload.user_id.strip(),
             display_name=payload.display_name,
             password=payload.password,
             status=payload.status,
             must_change_password=payload.must_change_password,
-        ),
-    )
+        )
+    except AccessManagementError as exc:
+        raise HTTPException(
+            exc.status_code, {"code": exc.code, "message": str(exc)}
+        ) from exc
 
 
 @router.get("/users/{user_id}")
@@ -224,7 +326,11 @@ async def set_membership(
     request: Request,
 ):
     async def operation():
-        _, actor_id = await _require(request, "platform:user_manage")
+        _, actor_id = await _require_membership_manager(
+            request,
+            app_id=app_id,
+            target_domain_id=payload.domain_id,
+        )
         return await _management(request).set_membership(
             app_id=app_id,
             domain_id=payload.domain_id,
