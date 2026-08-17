@@ -324,36 +324,6 @@
         "title": "AIOpsAgentUpdatePayload",
         "type": "object"
       },
-      "AIOpsMemberRolePayload": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "AIOpsMemberRolePayload",
-        "type": "object"
-      },
       "AgentActivatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -1008,6 +978,110 @@
           "display_name"
         ],
         "title": "AgentUpdatePayload",
+        "type": "object"
+      },
+      "AppLoginPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password",
+          "domain_id"
+        ],
+        "title": "AppLoginPayload",
+        "type": "object"
+      },
+      "AppUserCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "max_security_level": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "must_change_password": {
+            "default": true,
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "role_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/RoleBindingPayload"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Role Bindings",
+            "type": "array"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password",
+          "role_bindings"
+        ],
+        "title": "AppUserCreatePayload",
+        "type": "object"
+      },
+      "ApplicationStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ApplicationStatusPayload",
         "type": "object"
       },
       "ApprovalCommand": {
@@ -1796,6 +1870,29 @@
           "expected_conversation_version"
         ],
         "title": "CreateConversationTurnRequest",
+        "type": "object"
+      },
+      "CredentialPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password"
+        ],
+        "title": "CredentialPayload",
         "type": "object"
       },
       "DataQueryPlanV1": {
@@ -2664,6 +2761,53 @@
         ],
         "title": "HitlType",
         "type": "string"
+      },
+      "InitialAppAdminPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "max_security_level": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "must_change_password": {
+            "default": false,
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password"
+        ],
+        "title": "InitialAppAdminPayload",
+        "type": "object"
       },
       "InspectionFirePage": {
         "additionalProperties": false,
@@ -3747,36 +3891,6 @@
         "title": "KnowledgeConversationCreateRequest",
         "type": "object"
       },
-      "KnowledgeMemberRolePayload": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "KnowledgeMemberRolePayload",
-        "type": "object"
-      },
       "KnowledgeRunCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3818,58 +3932,6 @@
           "input"
         ],
         "title": "KnowledgeRunCreateRequest",
-        "type": "object"
-      },
-      "LoginDomainPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "password": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
-          },
-          "user_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "password"
-        ],
-        "title": "LoginDomainPayload",
-        "type": "object"
-      },
-      "LoginPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "domain_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Domain Id",
-            "type": "integer"
-          },
-          "password": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
-          },
-          "user_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "password",
-          "domain_id"
-        ],
-        "title": "LoginPayload",
         "type": "object"
       },
       "ManualResultCommand": {
@@ -3974,34 +4036,6 @@
           "ddl"
         ],
         "title": "ManualSchemaDefinitionRequest",
-        "type": "object"
-      },
-      "MembershipPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "domain_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "maxItems": 200,
-            "minItems": 1,
-            "title": "Domain Ids",
-            "type": "array"
-          },
-          "status": {
-            "default": "ACTIVE",
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "domain_ids"
-        ],
-        "title": "MembershipPayload",
         "type": "object"
       },
       "MemoryItemView": {
@@ -5467,6 +5501,107 @@
         "title": "PlanOrderBy",
         "type": "object"
       },
+      "PlatformAppGrantPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "role_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/RoleBindingPayload"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Role Bindings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role_bindings"
+        ],
+        "title": "PlatformAppGrantPayload",
+        "type": "object"
+      },
+      "PlatformUserCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "max_security_level": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "must_change_password": {
+            "default": true,
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "platform_role_codes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Platform Role Codes",
+            "type": "array"
+          },
+          "status": {
+            "default": "ACTIVE",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "password"
+        ],
+        "title": "PlatformUserCreatePayload",
+        "type": "object"
+      },
+      "PlatformUserRolesPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "role_codes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Role Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role_codes"
+        ],
+        "title": "PlatformUserRolesPayload",
+        "type": "object"
+      },
       "PolicyBindingCreateRequest": {
         "properties": {
           "actor_ids": {
@@ -6495,14 +6630,42 @@
         "title": "RevisionReprocessRequest",
         "type": "object"
       },
+      "RoleBindingPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 200,
+            "title": "Domain Ids",
+            "type": "array"
+          },
+          "role_code": {
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "title": "Role Code",
+            "type": "string"
+          },
+          "scope_mode": {
+            "default": "SELECTED_DOMAINS",
+            "enum": [
+              "ALL_APP_DOMAINS",
+              "SELECTED_DOMAINS"
+            ],
+            "title": "Scope Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_code"
+        ],
+        "title": "RoleBindingPayload",
+        "type": "object"
+      },
       "RoleCreatePayload": {
         "additionalProperties": false,
         "properties": {
-          "app_id": {
-            "pattern": "^[a-z][a-z0-9_]{1,63}$",
-            "title": "App Id",
-            "type": "string"
-          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -6525,7 +6688,6 @@
           }
         },
         "required": [
-          "app_id",
           "role_code",
           "display_name"
         ],
@@ -7638,62 +7800,6 @@
         "title": "UpdateConversationRequest",
         "type": "object"
       },
-      "UserCreatePayload": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "max_security_level": {
-            "default": 1,
-            "maximum": 3.0,
-            "minimum": 0.0,
-            "title": "Max Security Level",
-            "type": "integer"
-          },
-          "must_change_password": {
-            "default": true,
-            "title": "Must Change Password",
-            "type": "boolean"
-          },
-          "password": {
-            "maxLength": 256,
-            "minLength": 12,
-            "title": "Password",
-            "type": "string"
-          },
-          "status": {
-            "default": "ACTIVE",
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "user_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "password"
-        ],
-        "title": "UserCreatePayload",
-        "type": "object"
-      },
       "UserUpdatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7843,617 +7949,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/admin/permissions": {
-      "get": {
-        "operationId": "list_permissions_api_v1_admin_permissions_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "app_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "App Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Permissions",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/roles": {
-      "get": {
-        "operationId": "list_roles_api_v1_admin_roles_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "app_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "App Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Roles",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "post": {
-        "operationId": "create_role_api_v1_admin_roles_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoleCreatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Role",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/roles/{app_id}/{role_code}": {
-      "delete": {
-        "description": "逻辑删除自定义角色；平台保留角色不允许删除。",
-        "operationId": "delete_role_api_v1_admin_roles__app_id___role_code__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "role_code",
-            "required": true,
-            "schema": {
-              "title": "Role Code",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Role",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "put": {
-        "operationId": "update_role_api_v1_admin_roles__app_id___role_code__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "role_code",
-            "required": true,
-            "schema": {
-              "title": "Role Code",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoleUpdatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Role",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/users": {
-      "get": {
-        "operationId": "list_users_api_v1_admin_users_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 256,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Search"
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "ACTIVE",
-                    "DISABLED"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Users",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "post": {
-        "operationId": "create_user_api_v1_admin_users_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserCreatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create User",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/users/{user_id}": {
-      "delete": {
-        "description": "物理删除普通用户、登录凭据及全部成员授权。",
-        "operationId": "delete_user_api_v1_admin_users__user_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete User",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "get": {
-        "operationId": "get_user_api_v1_admin_users__user_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get User",
-        "tags": [
-          "Access Management"
-        ]
-      },
-      "patch": {
-        "operationId": "update_user_api_v1_admin_users__user_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserUpdatePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update User",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/users/{user_id}/memberships/{app_id}/{role_code}": {
-      "put": {
-        "operationId": "set_memberships_api_v1_admin_users__user_id__memberships__app_id___role_code__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "app_id",
-            "required": true,
-            "schema": {
-              "title": "App Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "role_code",
-            "required": true,
-            "schema": {
-              "title": "Role Code",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MembershipPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Memberships",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
-    "/api/v1/admin/users/{user_id}/password": {
-      "post": {
-        "operationId": "reset_password_api_v1_admin_users__user_id__password_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PasswordResetPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reset Password",
-        "tags": [
-          "Access Management"
-        ]
-      }
-    },
     "/api/v1/apps/aiops/access": {
       "get": {
         "operationId": "get_access_api_v1_apps_aiops_access_get",
@@ -10050,84 +9545,6 @@
         "summary": "Patch Inspection Target",
         "tags": [
           "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/members": {
-      "get": {
-        "operationId": "list_members_api_v1_apps_aiops_members_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Members",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/members/{user_id}/roles/{role_code}": {
-      "put": {
-        "operationId": "set_member_role_api_v1_apps_aiops_members__user_id__roles__role_code__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "role_code",
-            "required": true,
-            "schema": {
-              "title": "Role Code",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsMemberRolePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Member Role",
-        "tags": [
-          "AIOps App"
         ]
       }
     },
@@ -18327,84 +17744,6 @@
         ]
       }
     },
-    "/api/v1/apps/knowledge-retrieval/members": {
-      "get": {
-        "operationId": "list_members_api_v1_apps_knowledge_retrieval_members_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Members",
-        "tags": [
-          "Knowledge Retrieval App"
-        ]
-      }
-    },
-    "/api/v1/apps/knowledge-retrieval/members/{user_id}/roles/{role_code}": {
-      "put": {
-        "operationId": "set_member_role_api_v1_apps_knowledge_retrieval_members__user_id__roles__role_code__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "role_code",
-            "required": true,
-            "schema": {
-              "title": "Role Code",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeMemberRolePayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Member Role",
-        "tags": [
-          "Knowledge Retrieval App"
-        ]
-      }
-    },
     "/api/v1/apps/knowledge-retrieval/memories": {
       "get": {
         "operationId": "list_memories_api_v1_apps_knowledge_retrieval_memories_get",
@@ -18875,15 +18214,610 @@
         ]
       }
     },
-    "/api/v1/auth/domains": {
+    "/api/v1/apps/{app_id}/members": {
+      "get": {
+        "operationId": "list_app_members_api_v1_apps__app_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Members",
+        "tags": [
+          "Access Management"
+        ]
+      },
       "post": {
-        "description": "验证用户名和密码后返回可选择的有效 Domain。",
-        "operationId": "list_login_domains_api_v1_auth_domains_post",
+        "operationId": "create_app_member_api_v1_apps__app_id__members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginDomainPayload"
+                "$ref": "#/components/schemas/AppUserCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create App Member",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "delete_app_member_api_v1_apps__app_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete App Member",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "patch": {
+        "operationId": "update_app_member_api_v1_apps__app_id__members__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update App Member",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/members/{user_id}/password": {
+      "post": {
+        "operationId": "reset_app_member_password_api_v1_apps__app_id__members__user_id__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset App Member Password",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/members/{user_id}/role-bindings": {
+      "put": {
+        "operationId": "set_app_member_role_bindings_api_v1_apps__app_id__members__user_id__role_bindings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformAppGrantPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set App Member Role Bindings",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/permissions": {
+      "get": {
+        "operationId": "list_app_permissions_api_v1_apps__app_id__permissions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Permissions",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/roles": {
+      "get": {
+        "operationId": "list_app_roles_api_v1_apps__app_id__roles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Roles",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "post": {
+        "operationId": "create_app_role_api_v1_apps__app_id__roles_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create App Role",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/roles/{role_code}": {
+      "delete": {
+        "operationId": "delete_app_role_api_v1_apps__app_id__roles__role_code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role_code",
+            "required": true,
+            "schema": {
+              "title": "Role Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete App Role",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "put": {
+        "operationId": "update_app_role_api_v1_apps__app_id__roles__role_code__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role_code",
+            "required": true,
+            "schema": {
+              "title": "Role Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update App Role",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/auth/apps": {
+      "post": {
+        "operationId": "list_login_apps_api_v1_auth_apps_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Login Apps",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/apps/{app_id}/domains": {
+      "post": {
+        "operationId": "list_login_domains_api_v1_auth_apps__app_id__domains_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialPayload"
               }
             }
           },
@@ -18915,15 +18849,25 @@
         ]
       }
     },
-    "/api/v1/auth/login": {
+    "/api/v1/auth/apps/{app_id}/login": {
       "post": {
-        "description": "使用用户名、密码及目标 Domain 换取用户 Token。",
-        "operationId": "login_api_v1_auth_login_post",
+        "operationId": "app_login_api_v1_auth_apps__app_id__login_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LoginPayload"
+                "$ref": "#/components/schemas/AppLoginPayload"
               }
             }
           },
@@ -18949,7 +18893,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Login",
+        "summary": "App Login",
         "tags": [
           "Authentication"
         ]
@@ -18957,7 +18901,6 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "返回当前登录用户、可访问 Domain 和全部成员关系。",
         "operationId": "get_current_user_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -18977,7 +18920,6 @@
     },
     "/api/v1/auth/password": {
       "post": {
-        "description": "修改当前登录用户密码并签发替换 Token。",
         "operationId": "change_password_api_v1_auth_password_post",
         "requestBody": {
           "content": {
@@ -19015,9 +18957,47 @@
         ]
       }
     },
+    "/api/v1/auth/platform/login": {
+      "post": {
+        "operationId": "platform_login_api_v1_auth_platform_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Platform Login",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
     "/api/v1/auth/switch-domain": {
       "post": {
-        "description": "校验用户成员关系后签发目标 Domain 的新 Token。",
         "operationId": "switch_domain_api_v1_auth_switch_domain_post",
         "requestBody": {
           "content": {
@@ -20208,6 +20188,847 @@
         "summary": "Update Notification",
         "tags": [
           "Notifications"
+        ]
+      }
+    },
+    "/api/v1/platform/apps": {
+      "get": {
+        "operationId": "list_applications_api_v1_platform_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Applications",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/apps/{app_id}/domains/{domain_id}": {
+      "put": {
+        "operationId": "assign_app_domain_api_v1_platform_apps__app_id__domains__domain_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign App Domain",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/apps/{app_id}/initial-admin": {
+      "post": {
+        "operationId": "create_initial_app_admin_api_v1_platform_apps__app_id__initial_admin_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitialAppAdminPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Initial App Admin",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/apps/{app_id}/initial-admin/password": {
+      "post": {
+        "operationId": "reset_initial_app_admin_password_api_v1_platform_apps__app_id__initial_admin_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Initial App Admin Password",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/apps/{app_id}/status": {
+      "patch": {
+        "operationId": "set_application_status_api_v1_platform_apps__app_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Application Status",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/permissions": {
+      "get": {
+        "operationId": "list_platform_permissions_api_v1_platform_permissions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Platform Permissions",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/roles": {
+      "get": {
+        "operationId": "list_platform_roles_api_v1_platform_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Platform Roles",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "post": {
+        "operationId": "create_platform_role_api_v1_platform_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Platform Role",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/roles/{role_code}": {
+      "delete": {
+        "operationId": "delete_platform_role_api_v1_platform_roles__role_code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_code",
+            "required": true,
+            "schema": {
+              "title": "Role Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Platform Role",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "put": {
+        "operationId": "update_platform_role_api_v1_platform_roles__role_code__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_code",
+            "required": true,
+            "schema": {
+              "title": "Role Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Platform Role",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/users": {
+      "get": {
+        "operationId": "list_platform_users_api_v1_platform_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACTIVE",
+                    "DISABLED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Platform Users",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "post": {
+        "operationId": "create_platform_user_api_v1_platform_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformUserCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Platform User",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/users/{user_id}": {
+      "delete": {
+        "operationId": "delete_platform_user_api_v1_platform_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Platform User",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "get": {
+        "operationId": "get_platform_user_api_v1_platform_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Platform User",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "patch": {
+        "operationId": "update_platform_user_api_v1_platform_users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Platform User",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/users/{user_id}/app-grants/{app_id}": {
+      "delete": {
+        "operationId": "revoke_platform_app_grant_api_v1_platform_users__user_id__app_grants__app_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Platform App Grant",
+        "tags": [
+          "Access Management"
+        ]
+      },
+      "put": {
+        "operationId": "set_platform_app_grant_api_v1_platform_users__user_id__app_grants__app_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformAppGrantPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Platform App Grant",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/users/{user_id}/password": {
+      "post": {
+        "operationId": "reset_platform_user_password_api_v1_platform_users__user_id__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Platform User Password",
+        "tags": [
+          "Access Management"
+        ]
+      }
+    },
+    "/api/v1/platform/users/{user_id}/roles": {
+      "put": {
+        "operationId": "set_platform_user_roles_api_v1_platform_users__user_id__roles_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformUserRolesPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Platform User Roles",
+        "tags": [
+          "Access Management"
         ]
       }
     },

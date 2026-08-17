@@ -544,6 +544,11 @@ class _FakeAccessControlService:
             "aiops:plan_manage",
             "aiops:operations_manage",
             "aiops:proposal:approve",
+            "platform:user_manage",
+            "platform:role_manage",
+            "platform:domain_manage",
+            "platform:app_manage",
+            "platform:app_grant_manage",
         }
     )
 
@@ -566,6 +571,17 @@ class _FakeAccessControlService:
         return await self.snapshot(
             app_id=app_id, domain_id=domain_id, user_id=user_id
         )
+
+    async def require_platform(self, *, user_id, permission_code):
+        del user_id
+        self.last_permission_code = permission_code
+        if permission_code not in self.permissions:
+            raise AccessDeniedError(permission_code)
+        return SimpleNamespace(permissions=self.permissions)
+
+    async def platform_snapshot(self, *, user_id):
+        del user_id
+        return SimpleNamespace(permissions=self.permissions)
 
     async def user_max_security_level(self, *, user_id):
         del user_id
@@ -601,6 +617,25 @@ class _ScopedAccessControlService:
             roles=("manager",),
         )
 
+    async def require_platform(self, *, user_id, permission_code):
+        del user_id
+        self.calls.append(("platform", 0, permission_code))
+        if ("platform", permission_code) not in self.permissions:
+            raise AccessDeniedError(permission_code)
+        return SimpleNamespace(permissions=frozenset({permission_code}))
+
+    async def platform_snapshot(self, *, user_id):
+        del user_id
+        return SimpleNamespace(
+            permissions=frozenset(
+                code for app_id, code in self.permissions if app_id == "platform"
+            )
+        )
+
+    async def user_max_security_level(self, *, user_id):
+        del user_id
+        return 3
+
 
 class _FakeAccessManagementService:
     def __init__(self):
@@ -608,15 +643,18 @@ class _FakeAccessManagementService:
         self.created_values: dict[str, Any] | None = None
         self.membership: dict[str, Any] | None = None
 
-    async def create_user(self, **values):
+    async def create_app_user(self, **values):
         self.created_user = values["user_id"]
         self.created_values = values
         return {
             "user_id": values["user_id"],
             "display_name": values["display_name"],
-            "status": values["status"],
+            "status": values.get("status", "ACTIVE"),
             "protected": False,
         }
+
+    async def list_users(self, **values):
+        return {"items": [], "offset": values["offset"], "limit": values["limit"], "total": 0}
 
     async def set_memberships(self, **values):
         self.membership = values
@@ -859,6 +897,8 @@ class MainApiTest(unittest.TestCase):
         )
         token, _expires_at = codec.issue(
             user_id="portal-user-1",
+            entry_kind="BUSINESS",
+            app_id="km_asset",
             domain_id=100,
             must_change_password=False,
             password_version=1,
@@ -1097,57 +1137,60 @@ class MainApiTest(unittest.TestCase):
         self.assertNotIn(
             "/api/v1/apps/knowledge-retrieval/agent-grants", paths
         )
-        self.assertIn("/api/v1/auth/login", paths)
-        self.assertIn("/api/v1/auth/domains", paths)
+        self.assertIn("/api/v1/auth/platform/login", paths)
+        self.assertIn("/api/v1/auth/apps/{app_id}/login", paths)
+        self.assertIn("/api/v1/auth/apps/{app_id}/domains", paths)
         self.assertIn("/api/v1/auth/me", paths)
-        self.assertIn("/api/v1/admin/users", paths)
-        self.assertIn("/api/v1/admin/roles", paths)
-        self.assertIn("/api/v1/admin/permissions", paths)
+        self.assertIn("/api/v1/platform/users", paths)
+        self.assertIn("/api/v1/platform/apps/{app_id}/initial-admin", paths)
+        self.assertIn("/api/v1/apps/{app_id}/members", paths)
+        self.assertNotIn("/api/v1/admin/users", paths)
         self.assertIn("/api/v1/development/logs/events", paths)
         self.assertIn("/api/v1/development/agent-runs", paths)
         self.assertIn("/api/v1/development/agent-runs/{run_id}", paths)
         self.assertFalse(any(path.startswith("/internal/") for path in paths))
 
-    def test_platform_user_login_is_public_and_domain_bound(self) -> None:
+    def test_platform_user_login_is_public_and_domainless(self) -> None:
         class _UserAuthService:
-            async def login(self, *, user_id, password, domain_id):
+            async def platform_login(self, *, user_id, password):
                 return {
                     "access_token": "signed-user-token",
                     "token_type": "Bearer",
                     "user_id": user_id,
-                    "domain_id": domain_id,
+                    "entry_kind": "PLATFORM",
+                    "domain_id": None,
                     "must_change_password": False,
                 }
 
         self.app.state.user_auth_service = _UserAuthService()
         response = self.client.post(
-            "/api/v1/auth/login",
+            "/api/v1/auth/platform/login",
             json={
                 "user_id": "ordinary-user",
                 "password": "Example@Password2026!",
-                "domain_id": 100,
             },
         )
 
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("ordinary-user", response.json()["user_id"])
-        self.assertEqual(100, response.json()["domain_id"])
+        self.assertEqual("PLATFORM", response.json()["entry_kind"])
+        self.assertIsNone(response.json()["domain_id"])
 
     def test_uninitialized_authentication_returns_service_unavailable(self) -> None:
         from main_api.application import UserAuthenticationError
 
         class _UserAuthService:
-            async def list_login_domains(self, *, user_id, password):
+            async def platform_login(self, *, user_id, password):
                 del user_id, password
                 raise UserAuthenticationError(
                     "SYSTEM_NOT_INITIALIZED",
-                    "系统尚未初始化：ADMIN 尚未获得业务域授权",
+                    "系统尚未初始化：ADMIN 用户或凭据不存在",
                     status_code=503,
                 )
 
         self.app.state.user_auth_service = _UserAuthService()
         response = self.client.post(
-            "/api/v1/auth/domains",
+            "/api/v1/auth/platform/login",
             json={"user_id": "ADMIN", "password": "Admin@2026!"},
         )
 
@@ -1161,7 +1204,7 @@ class MainApiTest(unittest.TestCase):
 
         self.app.state.access_management_service = _AccessManagementService()
         response = self.client.get(
-            "/api/v1/admin/users", headers=self._headers()
+            "/api/v1/platform/users", headers=self._headers()
         )
 
         self.assertEqual(200, response.status_code, response.text)
@@ -1182,190 +1225,31 @@ class MainApiTest(unittest.TestCase):
         self.app.state.access_management_service = management
 
         created = self.client.post(
-            "/api/v1/admin/users",
+            "/api/v1/apps/knowledge-retrieval/members",
             headers=self._headers(),
             json={
                 "user_id": "NEW_USER",
                 "display_name": "新用户",
                 "password": "Example@Password2026!",
+                "role_bindings": [{
+                    "role_code": "user",
+                    "scope_mode": "SELECTED_DOMAINS",
+                    "domain_ids": [100]
+                }],
             },
-        )
-        membership = self.client.put(
-            (
-                "/api/v1/admin/users/NEW_USER/memberships/"
-                "knowledge_retrieval/user"
-            ),
-            headers=self._headers(),
-            json={"domain_ids": [100], "status": "ACTIVE"},
         )
 
         self.assertEqual(201, created.status_code, created.text)
-        self.assertEqual(200, membership.status_code, membership.text)
         self.assertEqual("NEW_USER", management.created_user)
-        self.assertEqual((100,), management.membership["domain_ids"])
         self.assertEqual(
-            "knowledge_retrieval", management.membership["app_id"]
+            "knowledge_retrieval", management.created_values["app_id"]
         )
         self.assertEqual(1, management.created_values["max_security_level"])
 
-    def test_app_member_manager_cannot_raise_user_security_level(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService(
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:member_manage",
-            )
-        )
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.post(
-            "/api/v1/admin/users",
-            headers=self._headers(),
-            json={
-                "user_id": "NEW_USER",
-                "display_name": "新用户",
-                "password": "Example@Password2026!",
-                "max_security_level": 3,
-            },
-        )
-
-        self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual(
-            "USER_SECURITY_LEVEL_DENIED", response.json()["code"]
-        )
-
-    def test_user_without_member_manage_cannot_create_user(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService()
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.post(
-            "/api/v1/admin/users",
-            headers=self._headers(),
-            json={
-                "user_id": "NEW_USER",
-                "display_name": "新用户",
-                "password": "Example@Password2026!",
-            },
-        )
-
-        self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual(
-            "USER_CREATION_PERMISSION_DENIED", response.json()["code"]
-        )
-
-    def test_app_member_manager_cannot_authorize_another_app(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService(
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:member_manage",
-            )
-        )
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.put(
-            "/api/v1/admin/users/NEW_USER/memberships/aiops/operator",
-            headers=self._headers(),
-            json={"domain_ids": [100], "status": "ACTIVE"},
-        )
-
-        self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual("APP_PERMISSION_DENIED", response.json()["code"])
-
-    def test_app_member_manager_cannot_authorize_another_domain(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService(
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:member_manage",
-            )
-        )
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.put(
-            (
-                "/api/v1/admin/users/NEW_USER/memberships/"
-                "knowledge_retrieval/user"
-            ),
-            headers=self._headers(),
-            json={"domain_ids": [100, 200], "status": "ACTIVE"},
-        )
-
-        self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual(
-            "APP_MEMBERSHIP_SCOPE_DENIED", response.json()["code"]
-        )
-
-    def test_platform_manager_can_authorize_multiple_domains(self) -> None:
-        access = _ScopedAccessControlService(
-            ("platform", "platform:user_manage")
-        )
-        management = _FakeAccessManagementService()
-        self.app.state.access_control_service = access
-        self.app.state.access_management_service = management
-
-        response = self.client.put(
-            (
-                "/api/v1/admin/users/NEW_USER/memberships/"
-                "knowledge_retrieval/user"
-            ),
-            headers=self._headers(),
-            json={
-                "domain_ids": [100, 200, 100, 300],
-                "status": "ACTIVE",
-            },
-        )
-
-        self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual(
-            (100, 200, 300), management.membership["domain_ids"]
-        )
-        checked_domains = [domain_id for _, domain_id, _ in access.calls]
-        self.assertEqual([100], checked_domains)
-
-    def test_membership_contract_rejects_single_domain_field(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService(
-            ("platform", "platform:user_manage")
-        )
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.put(
-            (
-                "/api/v1/admin/users/NEW_USER/memberships/"
-                "knowledge_retrieval/user"
-            ),
-            headers=self._headers(),
-            json={"domain_id": 100, "status": "ACTIVE"},
-        )
-
-        self.assertEqual(422, response.status_code, response.text)
-
-    def test_app_member_manager_cannot_delete_platform_user(self) -> None:
-        self.app.state.access_control_service = _ScopedAccessControlService(
-            (
-                "knowledge_retrieval",
-                "knowledge_retrieval:member_manage",
-            )
-        )
-        self.app.state.access_management_service = (
-            _FakeAccessManagementService()
-        )
-
-        response = self.client.delete(
-            "/api/v1/admin/users/NEW_USER",
-            headers=self._headers(),
-        )
-
-        self.assertEqual(403, response.status_code, response.text)
-        self.assertEqual(
-            "PLATFORM_PERMISSION_DENIED", response.json()["code"]
+    def test_legacy_admin_routes_are_not_exposed(self) -> None:
+        paths = self.app.openapi()["paths"]
+        self.assertFalse(
+            any(path.startswith("/api/v1/admin") for path in paths)
         )
 
     def test_agent_and_run_public_contracts(self) -> None:

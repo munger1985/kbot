@@ -30,8 +30,9 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 
 它会安装依赖、执行配置与静态契约检查、确认目标为空 Schema、创建全部已选服务
 对象，并初始化 Prompt Catalog 与首次登录基础数据：ACTIVE 默认 Domain `default`、
-完整 App 权限/角色模板、`ADMIN` 凭据，以及默认 Domain 中各 App 的 `system_admin`
-授权。它不会自动清库，也不会创建模型、Collection、Agent、会话或 AIOps 业务数据。
+App 目录、完整权限/角色模板、`ADMIN` 凭据及其平台 `platform_admin` 角色。ADMIN 不会
+自动获得业务 App 权限；每个 App 的受保护初始管理员须由平台管理接口显式创建。初始化
+不会自动清库，也不会创建模型、Collection、Agent、会话或 AIOps 业务数据。
 
 `aiops_agent` 已提供八段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
 初始化配置中选择。其脚本必须整体启用或禁用，不能跳过中间依赖段。

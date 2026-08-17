@@ -52,7 +52,7 @@ class ProcessTopologyTest(unittest.TestCase):
             root / "tools" / "dev_console" / "server.py"
         ).read_text(encoding="utf-8")
         self.assertIn('request_path.startswith("/ui/")', ui_server)
-        self.assertIn('"/ui/km/dashboard.html"', ui_server)
+        self.assertIn('"/ui/km/login.html"', ui_server)
         for group in (
             "Model Serving",
             "Knowledge Core",

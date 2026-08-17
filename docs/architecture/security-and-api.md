@@ -6,8 +6,10 @@ Domain 是 KBot 的强隔离边界。Portal 登录成功后，通过受信请求
 用户上下文传给 Main API。Main API 校验 Portal API Key 后构造 AuthContext；下游
 服务只信任该上下文，不信任普通业务参数中的 Domain、Actor 或授权声明。
 
-Main API 拥有平台用户、App Role、Permission、Role-Permission 和 Domain 内成员
-角色。知识检索用户拥有 `knowledge_retrieval:use` 后，可以读取和使用当前 Domain
+Main API 把身份和授权拆成平台层与 App 层。平台用户只拥有平台角色；App 用户只归属
+一个 App。平台用户需要显式 App Grant 才能进入业务 App，该 Grant 与 App 用户都通过
+App Member、Role Binding 和 Domain Scope 参与统一鉴权。知识检索用户拥有
+`knowledge_retrieval:use` 后，可以读取和使用当前 Domain
 内全部 ACTIVE Agent；`knowledge_retrieval:agent_manage` 仅控制 Agent 的创建、编辑
 和状态维护。AIOps 私有 Agent 仍要求额外 Agent Grant。所有授权都不能跨越 Domain
 数据隔离边界。
@@ -24,33 +26,34 @@ Main API 支持两种公开用户入口：
 
 - APEX/Portal 后端保存预配置的 `kbot_sk_...` API Key，并通过可信请求头传递用户与
   Domain；API Key 不能写入浏览器 JavaScript。
-- KBot 普通页面先调用 `POST /api/v1/auth/domains` 获取账号可访问的 Domain，再调用
-  `POST /api/v1/auth/login` 换取绑定用户、Domain 和密码版本的短期 JWT。用户停用、
-  成员关系失效或密码被重置后，既有 JWT 会在下一次请求时失效。
+- 平台入口调用 `POST /api/v1/auth/platform/login`，只为平台来源账号签发不含 App 和
+  Domain 的平台 Token。业务入口先调用 `POST /api/v1/auth/apps` 查询账号可进入的 App，
+  再调用 `POST /api/v1/auth/apps/{app_id}/domains` 查询可用 Domain，最后调用
+  `POST /api/v1/auth/apps/{app_id}/login` 换取绑定 App、Domain 和密码版本的短期业务
+  Token。用户停用、App 停用、成员关系失效或密码被重置后，既有 JWT 会在下一次请求
+  时失效。
 
-`GET /api/v1/auth/me` 返回当前用户、Domain 和成员关系，
+`GET /api/v1/auth/me` 返回当前入口、用户、App 和 Domain，
 `POST /api/v1/auth/switch-domain` 切换 Domain，`POST /api/v1/auth/password` 修改本人
-密码。KM 登录入口继续固定选择 `km_portal`，但签发相同的平台用户 Token，不再维护
+密码。KM 登录入口继续固定选择 `km_asset` App 和 `km_portal` Domain，但签发相同的
+业务 Token，不再维护
 第二套身份协议。业务服务不能信任外部直接提交的 actor、Domain 或内部身份头。
 
-平台管理接口统一位于 `/api/v1/admin`：
+平台管理接口位于 `/api/v1/platform/*`。平台管理员在这里维护平台来源用户、平台角色、
+App 状态与 App-Domain 关系；为每个 App 创建唯一的受保护初始管理员并重置其密码；还可
+通过 `/platform/users/{user_id}/app-grants/{app_id}` 显式授予平台用户一个 App 的访问或
+管理角色。平台用户不会因创建账号而自动获得任何业务权限。
 
-- `GET /users`：平台管理员分页查询用户；
-- `POST /users`：平台管理员或当前 Domain 的应用成员管理员创建普通用户；
-- `GET/PATCH/DELETE /users/{user_id}`：查看、修改或物理删除普通用户；
-- `POST /users/{user_id}/password`：重置密码；
-- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：请求体通过 `domain_ids`
-  一次维护一个或多个 Domain 成员关系；整批操作使用同一事务。平台管理员可以跨
-  Domain 授权，应用成员管理员只能维护当前 Domain 下本 App 的普通角色；
-- `GET /permissions`：查询按 App 分组的权限目录；
-- `GET/POST /roles`：查询或创建应用角色；
-- `PUT/DELETE /roles/{app_id}/{role_code}`：更新权限集合或逻辑删除角色。
+App 内管理接口位于 `/api/v1/apps/{app_id}/*`。持有该 App 业务 Token 且具有
+`{app_id}:member_manage` 的 App 管理员可创建 App 来源用户、分配角色与一个或多个
+Domain 范围、停用或删除普通 App 用户；`{app_id}:role_manage` 管理本 App 自定义角色。
+App 管理员不能创建平台用户、跨 App 授权或提升到其自身不拥有的权限。
 
 停用用户使用 `PATCH status=DISABLED`，保留用户、登录凭据和成员关系；删除用户会在
 同一事务中物理删除其全部成员关系、登录凭据和用户记录。逻辑删除角色会立即使该
 角色不再参与权限计算，但保留历史成员关系和权限定义，便于审计和恢复。
-应用成员管理员建号时只能使用默认安全等级 `1`；只有拥有
-`platform:user_manage` 的平台管理员可以设置或修改 `max_security_level`。
+App 管理员创建用户时不能设置超过自身的数据安全等级；平台管理员创建平台用户时同样
+受自身等级上限约束。
 
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 
@@ -78,12 +81,14 @@ Portal API Key，且不得通过公网或 APEX 代理暴露。
 - Agent Runtime 只执行调用方冻结的不可变 Execution Spec，不查询 App 权限表；
 - 内部 AuthContext 只携带本次调用所需身份和授权上下文，不替代资源服务的 Domain
   条件与对象所有权校验。
-- 用户与角色管理接口位于 `/api/v1/admin/*`。用户查询、修改、停用、删除和密码重置
-  要求 `platform:user_manage`，角色目录维护要求 `platform:role_manage`。创建普通用户
-  还允许当前 Domain 中拥有任一 App `member_manage` 权限的应用管理员；成员授权允许
-  对应 App 的 `member_manage`，但应用管理员不得跨 App 或跨 Domain。平台 `ADMIN`
-  用户及各 App 的 `system_admin` 角色只能由初始化脚本维护；管理接口只能重置 ADMIN
-  密码，不能创建、停用、改名或变更其角色。
+- 平台用户管理要求 `platform:user_manage`，平台角色要求 `platform:role_manage`，App
+  生命周期和初始管理员要求 `platform:app_manage`，平台用户显式 App Grant 要求
+  `platform:app_grant_manage`。
+- App 用户管理要求本 App 的 `member_manage`，App 角色目录要求本 App 的
+  `role_manage`。业务 Token 的 App 必须与路径 App 一致。
+- `ADMIN` 和每个 App 的初始管理员都是受保护账号。`ADMIN` 只能由初始化过程创建；初始
+  App 管理员只能由平台接口创建。两者均不可删除、停用、改名或变更角色，但允许通过各自
+  的受控接口重置密码。停用 App 会使其所有业务 Token、App 用户和显式 Grant 立即失效。
 
 ## 版本规则
 

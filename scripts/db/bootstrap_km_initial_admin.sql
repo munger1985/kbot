@@ -1,7 +1,7 @@
 -- KM Asset 首次使用的一步初始化脚本。
 -- 在 SQL Developer 中使用 Run Script（F5）执行；脚本不要求输入绑定变量。
 -- 本脚本会创建或启用固定 Domain km_portal、创建固定 Collection assets、
--- 补齐 KM 权限与角色，并创建或启用平台管理员。
+-- 补齐 KM 权限与角色，并创建或启用受保护的 KM 初始 App 管理员。
 -- USER_ID 区分大小写，必须与页面登录用户完全一致。
 -- 初始账号：kmadmin，初始密码：KmAdmin@2026!
 -- 登录后可直接使用；重新执行本脚本会将密码恢复为上述固定值。
@@ -49,6 +49,7 @@ BEGIN
       FROM USER_TABLES
      WHERE TABLE_NAME IN (
         'KBOT_PLATFORM_DOMAIN',
+        'KBOT_PLATFORM_APP',
         'KBOT_PLATFORM_USER',
         'KBOT_PLATFORM_USER_CREDENTIAL',
         'KBOT_AI_MODEL',
@@ -56,10 +57,13 @@ BEGIN
         'KBOT_PERMISSION',
         'KBOT_APP_ROLE',
         'KBOT_APP_ROLE_PERMISSION',
-        'KBOT_APP_MEMBER_ROLE'
+        'KBOT_APP_DOMAIN',
+        'KBOT_APP_MEMBER',
+        'KBOT_APP_MEMBER_ROLE',
+        'KBOT_APP_MEMBER_ROLE_SCOPE'
      );
 
-    IF l_table_count <> 9 THEN
+    IF l_table_count <> 13 THEN
         raise_application_error(
             -20001,
             'Domain、模型、KC Collection 或用户权限基础表不完整，不能初始化 KM。'
@@ -68,6 +72,21 @@ BEGIN
     dbms_output.put_line('KM 初始化依赖表检查通过。');
 END;
 /
+
+MERGE INTO KBOT_PLATFORM_APP target
+USING (SELECT 'km_asset' APP_ID, 'KM Asset' DISPLAY_NAME FROM DUAL) source
+ON (target.APP_ID = source.APP_ID)
+WHEN MATCHED THEN UPDATE SET
+    target.DISPLAY_NAME = source.DISPLAY_NAME,
+    target.STATUS = 'ACTIVE', target.MEMBER_ASSIGNABLE = 'Y',
+    target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (
+    APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE, ROW_VERSION,
+    CREATED_AT, UPDATED_AT
+) VALUES (
+    source.APP_ID, source.DISPLAY_NAME, 'ACTIVE', 'Y', 1,
+    SYSTIMESTAMP, SYSTIMESTAMP
+);
 
 MERGE INTO KBOT_PLATFORM_DOMAIN target
 USING (
@@ -227,6 +246,8 @@ USING (
     SELECT 'km_asset:operations_manage', 'km_asset', '管理 KM Asset 同步运行' FROM DUAL
     UNION ALL
     SELECT 'km_asset:member_manage', 'km_asset', '管理 KM Asset 成员' FROM DUAL
+    UNION ALL
+    SELECT 'km_asset:role_manage', 'km_asset', '管理 KM Asset 角色' FROM DUAL
 ) source
 ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN MATCHED THEN
@@ -242,10 +263,13 @@ USING (
     SELECT 'km_asset' AS APP_ID,
            'user' AS ROLE_CODE,
            '用户' AS DISPLAY_NAME,
+           'Y' AS IS_SYSTEM,
+           'SELECTABLE' AS SCOPE_POLICY,
            'ACTIVE' AS STATUS
       FROM DUAL
     UNION ALL
-    SELECT 'km_asset', 'manager', '管理员', 'ACTIVE' FROM DUAL
+    SELECT 'km_asset', 'app_admin', 'KM Asset 初始管理员',
+           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
 ) source
 ON (
     target.APP_ID = source.APP_ID
@@ -254,19 +278,25 @@ ON (
 WHEN MATCHED THEN
     UPDATE SET
         target.DISPLAY_NAME = source.DISPLAY_NAME,
+        target.IS_SYSTEM = source.IS_SYSTEM,
+        target.SCOPE_POLICY = source.SCOPE_POLICY,
         target.STATUS = source.STATUS
 WHEN NOT MATCHED THEN
-    INSERT (APP_ID, ROLE_CODE, DISPLAY_NAME, STATUS)
+    INSERT (
+        APP_ID, ROLE_CODE, DISPLAY_NAME, IS_SYSTEM,
+        SCOPE_POLICY, STATUS, ROW_VERSION
+    )
     VALUES (
         source.APP_ID, source.ROLE_CODE,
-        source.DISPLAY_NAME, source.STATUS
+        source.DISPLAY_NAME, source.IS_SYSTEM,
+        source.SCOPE_POLICY, source.STATUS, 1
     );
 
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
     SELECT
         'km_asset' AS APP_ID,
-        'manager' AS ROLE_CODE,
+        'app_admin' AS ROLE_CODE,
         permission.PERMISSION_CODE
     FROM KBOT_PERMISSION permission
     WHERE permission.APP_ID = 'km_asset'
@@ -297,12 +327,20 @@ ON (target.USER_ID = source.USER_ID)
 WHEN MATCHED THEN
     UPDATE SET
         target.DISPLAY_NAME = source.DISPLAY_NAME,
+        target.ACCOUNT_ORIGIN = 'APP',
+        target.OWNER_APP_ID = 'km_asset',
+        target.IS_PROTECTED = 'Y',
+        target.MAX_SECURITY_LEVEL = 3,
         target.STATUS = 'ACTIVE',
         target.UPDATED_AT = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
-    INSERT (USER_ID, DISPLAY_NAME, STATUS, CREATED_AT, UPDATED_AT)
+    INSERT (
+        USER_ID, DISPLAY_NAME, ACCOUNT_ORIGIN, OWNER_APP_ID,
+        IS_PROTECTED, MAX_SECURITY_LEVEL, STATUS, CREATED_AT, UPDATED_AT
+    )
     VALUES (
-        source.USER_ID, source.DISPLAY_NAME, 'ACTIVE',
+        source.USER_ID, source.DISPLAY_NAME, 'APP', 'km_asset',
+        'Y', 3, 'ACTIVE',
         SYSTIMESTAMP, SYSTIMESTAMP
     );
 
@@ -331,13 +369,11 @@ WHEN NOT MATCHED THEN
         SYSTIMESTAMP, SYSTIMESTAMP, SYSTIMESTAMP
     );
 
-MERGE INTO KBOT_APP_MEMBER_ROLE target
+MERGE INTO KBOT_APP_DOMAIN target
 USING (
     SELECT
         'km_asset' AS APP_ID,
-        domain.DOMAIN_ID,
-        'kmadmin' AS USER_ID,
-        'manager' AS ROLE_CODE
+        domain.DOMAIN_ID
     FROM KBOT_PLATFORM_DOMAIN domain
     WHERE domain.NAME = 'km_portal'
       AND domain.STATUS = 'ACTIVE'
@@ -345,20 +381,58 @@ USING (
 ON (
     target.APP_ID = source.APP_ID
     AND target.DOMAIN_ID = source.DOMAIN_ID
-    AND target.USER_ID = source.USER_ID
-    AND target.ROLE_CODE = source.ROLE_CODE
 )
 WHEN MATCHED THEN
     UPDATE SET target.STATUS = 'ACTIVE'
 WHEN NOT MATCHED THEN
     INSERT (
-        APP_ID, DOMAIN_ID, USER_ID, ROLE_CODE,
-        STATUS, CREATED_BY, CREATED_AT
+        APP_ID, DOMAIN_ID, STATUS, CREATED_BY, CREATED_AT
     )
     VALUES (
-        source.APP_ID, source.DOMAIN_ID, source.USER_ID, source.ROLE_CODE,
-        'ACTIVE', 'bootstrap:km_initial_admin', SYSTIMESTAMP
+        source.APP_ID, source.DOMAIN_ID, 'ACTIVE',
+        'bootstrap:km_initial_admin', SYSTIMESTAMP
     );
+
+MERGE INTO KBOT_APP_MEMBER target
+USING (
+    SELECT 'km_asset' APP_ID, 'kmadmin' USER_ID FROM DUAL
+) source
+ON (target.APP_ID = source.APP_ID AND target.USER_ID = source.USER_ID)
+WHEN MATCHED THEN UPDATE SET
+    target.MEMBER_SOURCE = 'APP_INITIAL_ADMIN',
+    target.IS_INITIAL_ADMIN = 'Y', target.STATUS = 'ACTIVE',
+    target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (
+    APP_ID, USER_ID, MEMBER_SOURCE, IS_INITIAL_ADMIN,
+    STATUS, GRANTED_BY, CREATED_AT, UPDATED_AT
+) VALUES (
+    source.APP_ID, source.USER_ID, 'APP_INITIAL_ADMIN', 'Y',
+    'ACTIVE', 'bootstrap:km_initial_admin', SYSTIMESTAMP, SYSTIMESTAMP
+);
+
+MERGE INTO KBOT_APP_MEMBER_ROLE target
+USING (
+    SELECT 'km_asset' APP_ID, 'kmadmin' USER_ID, 'app_admin' ROLE_CODE FROM DUAL
+) source
+ON (
+    target.APP_ID = source.APP_ID
+    AND target.USER_ID = source.USER_ID
+    AND target.ROLE_CODE = source.ROLE_CODE
+)
+WHEN MATCHED THEN UPDATE SET
+    target.SCOPE_MODE = 'ALL_APP_DOMAINS', target.STATUS = 'ACTIVE'
+WHEN NOT MATCHED THEN INSERT (
+    APP_ID, USER_ID, ROLE_CODE, SCOPE_MODE,
+    STATUS, CREATED_BY, CREATED_AT
+) VALUES (
+    source.APP_ID, source.USER_ID, source.ROLE_CODE, 'ALL_APP_DOMAINS',
+    'ACTIVE', 'bootstrap:km_initial_admin', SYSTIMESTAMP
+);
+
+DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE
+ WHERE APP_ID = 'km_asset'
+   AND USER_ID = 'kmadmin'
+   AND ROLE_CODE = 'app_admin';
 
 COMMIT;
 

@@ -1,4 +1,4 @@
-"""平台普通用户登录与会话管理公开接口。"""
+"""平台入口与 App 入口登录公开接口。"""
 
 from typing import cast
 
@@ -12,19 +12,21 @@ from platform_core.contracts import PUBLIC_API_V1
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/auth", tags=["Authentication"])
 
 
+def _canonical_app_id(value: str) -> str:
+    return {"knowledge-retrieval": "knowledge_retrieval", "km-asset": "km_asset"}.get(value, value)
+
+
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class LoginPayload(_Payload):
+class CredentialPayload(_Payload):
     user_id: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=256)
+
+
+class AppLoginPayload(CredentialPayload):
     domain_id: int = Field(gt=0)
-
-
-class LoginDomainPayload(_Payload):
-    user_id: str = Field(min_length=1, max_length=256)
-    password: str = Field(min_length=1, max_length=256)
 
 
 class SwitchDomainPayload(_Payload):
@@ -55,54 +57,51 @@ def _service(request: Request) -> UserAuthService:
 def _claims(request: Request) -> UserTokenClaims:
     claims = getattr(request.state, "user_token_claims", None)
     if claims is None:
-        raise HTTPException(
-            401,
-            {
-                "code": "USER_SESSION_REQUIRED",
-                "message": "该接口需要平台用户登录 Token",
-            },
-        )
+        raise HTTPException(401, {"code": "USER_SESSION_REQUIRED", "message": "该接口需要用户登录 Token"})
     return cast(UserTokenClaims, claims)
 
 
-@router.post("/login")
-async def login(payload: LoginPayload, request: Request):
-    """使用用户名、密码及目标 Domain 换取用户 Token。"""
-    return await _service(request).login(
-        user_id=payload.user_id.strip(),
-        password=payload.password,
-        domain_id=payload.domain_id,
+@router.post("/platform/login")
+async def platform_login(payload: CredentialPayload, request: Request):
+    return await _service(request).platform_login(user_id=payload.user_id.strip(), password=payload.password)
+
+
+@router.post("/apps")
+async def list_login_apps(payload: CredentialPayload, request: Request):
+    return await _service(request).list_login_apps(user_id=payload.user_id.strip(), password=payload.password)
+
+
+@router.post("/apps/{app_id}/domains")
+async def list_login_domains(app_id: str, payload: CredentialPayload, request: Request):
+    app_id = _canonical_app_id(app_id)
+    return await _service(request).list_login_domains(
+        user_id=payload.user_id.strip(), password=payload.password, app_id=app_id
     )
 
 
-@router.post("/domains")
-async def list_login_domains(payload: LoginDomainPayload, request: Request):
-    """验证用户名和密码后返回可选择的有效 Domain。"""
-    return await _service(request).list_login_domains(
-        user_id=payload.user_id.strip(), password=payload.password
+@router.post("/apps/{app_id}/login")
+async def app_login(app_id: str, payload: AppLoginPayload, request: Request):
+    app_id = _canonical_app_id(app_id)
+    return await _service(request).app_login(
+        user_id=payload.user_id.strip(), password=payload.password,
+        app_id=app_id, domain_id=payload.domain_id,
     )
 
 
 @router.get("/me")
 async def get_current_user(request: Request):
-    """返回当前登录用户、可访问 Domain 和全部成员关系。"""
     return await _service(request).profile(claims=_claims(request))
 
 
 @router.post("/switch-domain")
 async def switch_domain(payload: SwitchDomainPayload, request: Request):
-    """校验用户成员关系后签发目标 Domain 的新 Token。"""
-    return await _service(request).switch_domain(
-        claims=_claims(request), domain_id=payload.domain_id
-    )
+    return await _service(request).switch_domain(claims=_claims(request), domain_id=payload.domain_id)
 
 
 @router.post("/password")
 async def change_password(payload: PasswordChangePayload, request: Request):
-    """修改当前登录用户密码并签发替换 Token。"""
     return await _service(request).change_password(
-        claims=_claims(request),
-        current_password=payload.current_password,
+        claims=_claims(request), current_password=payload.current_password,
         new_password=payload.new_password,
     )
 

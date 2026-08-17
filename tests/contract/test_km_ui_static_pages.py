@@ -134,16 +134,6 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("collection-page-link", html)
         self.assertNotIn("collectionPageUrl", script)
 
-    def test_default_user_script_is_sql_developer_standalone(self):
-        source = (
-            ROOT / "scripts" / "db" / "bootstrap_km_default_user.sql"
-        ).read_text(encoding="utf-8")
-        self.assertIn("DEFINE KM_DEFAULT_USER_ID", source)
-        self.assertIn("KBOT_PLATFORM_USER", source)
-        self.assertIn("KBOT_APP_MEMBER_ROLE", source)
-        self.assertIn("'km_asset' AS APP_ID", source)
-        self.assertNotIn("@@", source)
-
     def test_existing_schema_permission_script_is_idempotent_and_standalone(self):
         source = (
             ROOT / "scripts" / "db" / "bootstrap_km_asset_permissions.sql"
@@ -174,10 +164,13 @@ class KmUiStaticPagesTest(unittest.TestCase):
             "MERGE INTO KBOT_APP_ROLE",
             "MERGE INTO KBOT_APP_ROLE_PERMISSION",
             "MERGE INTO KBOT_PLATFORM_USER",
+            "MERGE INTO KBOT_APP_MEMBER",
             "MERGE INTO KBOT_APP_MEMBER_ROLE",
         ):
             self.assertIn(statement, source)
-        self.assertIn("'manager' AS ROLE_CODE", source)
+        self.assertIn("'app_admin' AS ROLE_CODE", source)
+        self.assertIn("'ALL_APP_DOMAINS'", source)
+        self.assertIn("'APP_INITIAL_ADMIN'", source)
         self.assertIn("WHERE domain.NAME = 'km_portal'", source)
         self.assertIn("DISPLAY_NAME = 'assets'", source)
         self.assertIn("CATEGORY = 1", source)

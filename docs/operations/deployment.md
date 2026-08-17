@@ -155,8 +155,9 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 ## 初始化 Oracle
 
 全新数据库执行标准 Schema 初始化时，会自动幂等创建首次登录基础数据：默认业务域
-`default`、完整 App 权限与角色模板、`ADMIN` 凭据及默认业务域中的各 App
-`system_admin` 授权。普通用户安全等级默认是 `1`，`ADMIN` 固定为最高等级 `3`。
+`default`、App 目录、完整权限与角色模板、受保护的 `ADMIN` 凭据及其
+`platform_admin` 平台角色。`ADMIN` 不会自动成为任何 App 的成员。普通用户安全等级
+默认是 `1`，`ADMIN` 固定为最高等级 `3`。
 初始账号为 `ADMIN`，初始密码为 `Admin@2026!`，部署完成后应
 立即重置密码。模型、Collection、Agent、会话和 AIOps 业务数据不会初始化。
 
@@ -167,9 +168,13 @@ python3 scripts/db/apply_oracle_schema.py --foundation-only
 python3 scripts/db/apply_oracle_schema.py --check-foundation
 ```
 
-`--foundation-only` 会为既有 KBot 4.0 Schema 幂等补充
-`KBOT_PLATFORM_USER.MAX_SECURITY_LEVEL` 及其 `0–3` 约束，并把 `ADMIN`
-设置为等级 `3`；无需另外执行一次性升级脚本。
+旧授权结构升级到平台/App 分层结构时，先停掉 Main API 和相关 Worker，备份当前 Schema，
+若旧账号仍为小写 `admin`，先执行
+`scripts/db/migrate_global_admin_to_uppercase.sql`；随后在 SQL Developer 中执行
+`scripts/db/migrate_access_scope_model.sql`。Oracle DDL 会
+自动提交，失败后不能依赖事务整体回滚。升级完成后部署同一版本代码，再运行
+`--check-foundation`。迁移会保留现有用户、角色与 Domain 范围，但不会自行选择每个 App
+的初始管理员；平台管理员登录后必须通过平台接口逐 App 创建。
 
 仅需升级普通登录、用户管理和角色管理权限时，也可在 SQL Developer 中执行：
 
@@ -177,9 +182,9 @@ python3 scripts/db/apply_oracle_schema.py --check-foundation
 scripts/db/bootstrap_platform_access_management.sql
 ```
 
-脚本不要求输入参数，不修改 ADMIN 密码；它会幂等创建 `platform` 权限与角色，并在
-全部启用 Domain 中向 ADMIN 授予受保护的 `system_admin`。全新数据库无需再单独
-执行 `bootstrap_global_admin.sql`。
+脚本不要求输入参数，不修改 ADMIN 密码；它会幂等创建平台权限目录与
+`platform_admin` 角色，并只在平台层为 ADMIN 授权。全新数据库无需再单独执行
+`bootstrap_global_admin.sql`。
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
 始终创建。先预检：

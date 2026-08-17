@@ -6,11 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from main_api.application import (
-    AccessConfigurationError,
-    AccessControlService,
-    AccessDeniedError,
-)
+from main_api.application import AccessControlService, AccessDeniedError
 from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
@@ -24,11 +20,6 @@ router = APIRouter(
 
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class KnowledgeMemberRolePayload(_Payload):
-    display_name: str | None = Field(default=None, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"]
 
 
 class KnowledgeAgentCreatePayload(_Payload):
@@ -60,6 +51,8 @@ class KnowledgeAgentUpdatePayload(_Payload):
 
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
+    if context.app_id and context.app_id != "knowledge_retrieval":
+        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
     try:
         domain_id = int(context.domain_id or "")
     except ValueError as exc:
@@ -116,35 +109,6 @@ async def get_access(request: Request):
         "user_id": snapshot.user_id, "roles": snapshot.roles,
         "permissions": sorted(snapshot.permissions),
     }
-
-
-@router.get("/members")
-async def list_members(request: Request):
-    domain_id, _, _ = await _require(
-        request, "knowledge_retrieval:member_manage"
-    )
-    return await _access(request).list_members(
-        app_id="knowledge_retrieval", domain_id=domain_id
-    )
-
-
-@router.put("/members/{user_id}/roles/{role_code}")
-async def set_member_role(
-    user_id: str, role_code: str, payload: KnowledgeMemberRolePayload, request: Request
-):
-    domain_id, actor_id, _ = await _require(
-        request, "knowledge_retrieval:member_manage"
-    )
-    try:
-        return await _access(request).set_member_role(
-            app_id="knowledge_retrieval", domain_id=domain_id,
-            user_id=user_id, display_name=payload.display_name,
-            role_code=role_code, status=payload.status, actor_id=actor_id,
-        )
-    except AccessConfigurationError as exc:
-        raise HTTPException(
-            422, {"code": "APP_MEMBER_CONFIGURATION_INVALID", "message": str(exc)}
-        ) from exc
 
 
 @router.get("/agents")

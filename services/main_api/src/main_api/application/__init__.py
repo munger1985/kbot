@@ -21,7 +21,6 @@ from .access_control import (
 from .access_management import (
     AccessManagementError,
     AccessManagementService,
-    SYSTEM_ADMIN_ROLE_CODE,
 )
 from .user_auth import (
     KM_PORTAL_DOMAIN_NAME,
@@ -49,7 +48,6 @@ __all__ = [
     "NotificationCenterService",
     "NotificationDispatcher",
     "NotificationProjectionService",
-    "SYSTEM_ADMIN_ROLE_CODE",
     "UserAuthenticationError",
     "UserAuthService",
     "UserTokenClaims",

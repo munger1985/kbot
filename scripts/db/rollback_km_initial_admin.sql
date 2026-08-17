@@ -103,11 +103,22 @@ BEGIN
         dbms_output.put_line('已删除 km_portal/assets Collection。');
     END IF;
 
-    -- 同时覆盖旧版初始化脚本曾向其他 Domain 授予的 KM manager 角色。
+    DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE
+     WHERE APP_ID = 'km_asset'
+       AND USER_ID = 'kmadmin';
+
     DELETE FROM KBOT_APP_MEMBER_ROLE
      WHERE APP_ID = 'km_asset'
        AND USER_ID = 'kmadmin';
     dbms_output.put_line('已删除 kmadmin 的全部 KM App 授权：' || SQL%ROWCOUNT || ' 行。');
+
+    DELETE FROM KBOT_APP_MEMBER
+     WHERE APP_ID = 'km_asset'
+       AND USER_ID = 'kmadmin';
+
+    DELETE FROM KBOT_APP_DOMAIN
+     WHERE APP_ID = 'km_asset'
+       AND DOMAIN_ID = l_domain_id;
 
     DELETE FROM KBOT_PLATFORM_USER_CREDENTIAL
      WHERE USER_ID = 'kmadmin';

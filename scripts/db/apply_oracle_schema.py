@@ -21,20 +21,29 @@ PLATFORM_FOUNDATION_SCRIPT = (
 )
 PLATFORM_FOUNDATION_TABLES = {
     "KBOT_PLATFORM_DOMAIN",
+    "KBOT_PLATFORM_APP",
     "KBOT_PLATFORM_USER",
     "KBOT_PLATFORM_USER_CREDENTIAL",
     "KBOT_PERMISSION",
     "KBOT_APP_ROLE",
     "KBOT_APP_ROLE_PERMISSION",
+    "KBOT_PLATFORM_USER_ROLE",
+    "KBOT_APP_DOMAIN",
+    "KBOT_APP_MEMBER",
     "KBOT_APP_MEMBER_ROLE",
+    "KBOT_APP_MEMBER_ROLE_SCOPE",
 }
 PLATFORM_FOUNDATION_PERMISSIONS = {
     "platform:user_manage",
     "platform:role_manage",
+    "platform:domain_manage",
+    "platform:app_manage",
+    "platform:app_grant_manage",
     "knowledge_retrieval:use",
     "knowledge_retrieval:upload",
     "knowledge_retrieval:review",
     "knowledge_retrieval:member_manage",
+    "knowledge_retrieval:role_manage",
     "knowledge_retrieval:knowledge_manage",
     "knowledge_retrieval:data_manage",
     "knowledge_retrieval:agent_manage",
@@ -45,9 +54,11 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "km_asset:agent_manage",
     "km_asset:operations_manage",
     "km_asset:member_manage",
+    "km_asset:role_manage",
     "aiops:use",
     "aiops:domain_manage",
     "aiops:member_manage",
+    "aiops:role_manage",
     "aiops:operations_manage",
     "aiops:target_manage",
     "aiops:monitor_source_manage",
@@ -61,12 +72,12 @@ PLATFORM_FOUNDATION_ROLES = {
     ("knowledge_retrieval", "user"),
     ("knowledge_retrieval", "contributor"),
     ("knowledge_retrieval", "reviewer"),
-    ("knowledge_retrieval", "manager"),
+    ("knowledge_retrieval", "app_admin"),
     ("km_asset", "user"),
-    ("km_asset", "manager"),
+    ("km_asset", "app_admin"),
     ("aiops", "operator"),
     ("aiops", "approver"),
-    ("aiops", "manager"),
+    ("aiops", "app_admin"),
 }
 
 from platform_core.database.oracle import create_database_runtime
@@ -408,6 +419,9 @@ async def _validate_platform_foundation(
                 "ON credential.USER_ID = user_account.USER_ID "
                 "WHERE user_account.USER_ID = 'ADMIN' "
                 "AND user_account.STATUS = 'ACTIVE' "
+                "AND user_account.ACCOUNT_ORIGIN = 'PLATFORM' "
+                "AND user_account.OWNER_APP_ID IS NULL "
+                "AND user_account.IS_PROTECTED = 'Y' "
                 "AND user_account.MAX_SECURITY_LEVEL = 3"
             )
         )
@@ -472,11 +486,11 @@ async def _validate_platform_foundation(
             "knowledge_retrieval:upload",
             "knowledge_retrieval:review",
         },
-        ("knowledge_retrieval", "manager"): permissions_by_app[
+        ("knowledge_retrieval", "app_admin"): permissions_by_app[
             "knowledge_retrieval"
         ],
         ("km_asset", "user"): {"km_asset:use"},
-        ("km_asset", "manager"): permissions_by_app["km_asset"],
+        ("km_asset", "app_admin"): permissions_by_app["km_asset"],
         ("aiops", "operator"): {
             "aiops:use",
             "aiops:operations_manage",
@@ -490,7 +504,7 @@ async def _validate_platform_foundation(
             "aiops:operations_manage",
             "aiops:proposal:approve",
         },
-        ("aiops", "manager"): permissions_by_app["aiops"],
+        ("aiops", "app_admin"): permissions_by_app["aiops"],
     }
     actual_role_permissions: dict[tuple[str, str], set[str]] = {}
     for app_id, role_code, permission_code in (
@@ -516,50 +530,26 @@ async def _validate_platform_foundation(
             "角色权限映射不完整：" + ", ".join(incomplete_role_mappings)
         )
 
-    missing_role_permissions = (
+    admin_platform_role_count = (
         await connection.execute(
             text(
-                "SELECT COUNT(*) FROM KBOT_PERMISSION permission "
-                "WHERE NOT EXISTS ("
-                "SELECT 1 FROM KBOT_APP_ROLE role_definition "
-                "JOIN KBOT_APP_ROLE_PERMISSION role_permission "
-                "ON role_permission.APP_ID = role_definition.APP_ID "
-                "AND role_permission.ROLE_CODE = role_definition.ROLE_CODE "
-                "WHERE role_definition.APP_ID = permission.APP_ID "
-                "AND role_definition.ROLE_CODE = 'system_admin' "
-                "AND role_definition.STATUS = 'ACTIVE' "
-                "AND role_permission.PERMISSION_CODE = "
-                "permission.PERMISSION_CODE)"
+                "SELECT COUNT(*) FROM KBOT_PLATFORM_USER_ROLE "
+                "WHERE USER_ID = 'ADMIN' "
+                "AND ROLE_CODE = 'platform_admin' "
+                "AND STATUS = 'ACTIVE'"
             )
         )
     ).scalar_one()
-    if int(missing_role_permissions):
-        raise RuntimeError(
-            f"system_admin 缺少 {missing_role_permissions} 项权限映射"
-        )
+    if int(admin_platform_role_count) != 1:
+        raise RuntimeError("ADMIN 缺少启用的 platform_admin 平台角色")
 
-    missing_admin_memberships = (
+    admin_app_memberships = (
         await connection.execute(
-            text(
-                "SELECT COUNT(DISTINCT permission.APP_ID) "
-                "FROM KBOT_PERMISSION permission "
-                "WHERE NOT EXISTS ("
-                "SELECT 1 FROM KBOT_PLATFORM_DOMAIN domain_row "
-                "JOIN KBOT_APP_MEMBER_ROLE member_role "
-                "ON member_role.DOMAIN_ID = domain_row.DOMAIN_ID "
-                "WHERE domain_row.NAME = 'default' "
-                "AND domain_row.STATUS = 'ACTIVE' "
-                "AND member_role.APP_ID = permission.APP_ID "
-                "AND member_role.USER_ID = 'ADMIN' "
-                "AND member_role.ROLE_CODE = 'system_admin' "
-                "AND member_role.STATUS = 'ACTIVE')"
-            )
+            text("SELECT COUNT(*) FROM KBOT_APP_MEMBER WHERE USER_ID = 'ADMIN'")
         )
     ).scalar_one()
-    if int(missing_admin_memberships):
-        raise RuntimeError(
-            f"ADMIN 在默认业务域缺少 {missing_admin_memberships} 个 App 授权"
-        )
+    if int(admin_app_memberships):
+        raise RuntimeError("ADMIN 不得拥有隐式业务 App 成员资格")
 
 
 async def _apply_platform_foundation(
@@ -1138,7 +1128,7 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
             if "main_api" in selection.enabled:
                 await _apply_platform_foundation(connection)
                 await _validate_platform_foundation(connection)
-                foundation_label = "default/ADMIN/system_admin"
+                foundation_label = "default/ADMIN/platform_admin"
             print(
                 f"Schema 初始化完成：{len(expected_tables)} 张表，"
                 f"{len(expected_views)} 个视图，"

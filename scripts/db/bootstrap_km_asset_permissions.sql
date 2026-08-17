@@ -1,6 +1,6 @@
 -- 为现有 KBot Schema 幂等补充 KM Asset 权限、角色及角色权限关系。
 -- 本脚本用于 SQL Developer：粘贴后使用 Run Script（F5）执行。
--- 不创建用户和成员授权；执行完成后再运行 bootstrap_km_default_user.sql。
+-- 不创建用户和成员授权；初始管理员由平台接口或 bootstrap_km_initial_admin.sql 创建。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
@@ -41,6 +41,8 @@ USING (
     SELECT 'km_asset:operations_manage', 'km_asset', '管理 KM Asset 同步运行' FROM DUAL
     UNION ALL
     SELECT 'km_asset:member_manage', 'km_asset', '管理 KM Asset 成员' FROM DUAL
+    UNION ALL
+    SELECT 'km_asset:role_manage', 'km_asset', '管理 KM Asset 角色' FROM DUAL
 ) source
 ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN MATCHED THEN
@@ -56,10 +58,13 @@ USING (
     SELECT 'km_asset' AS APP_ID,
            'user' AS ROLE_CODE,
            '用户' AS DISPLAY_NAME,
+           'Y' AS IS_SYSTEM,
+           'SELECTABLE' AS SCOPE_POLICY,
            'ACTIVE' AS STATUS
       FROM DUAL
     UNION ALL
-    SELECT 'km_asset', 'manager', '管理员', 'ACTIVE' FROM DUAL
+    SELECT 'km_asset', 'app_admin', 'KM Asset 初始管理员',
+           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
 ) source
 ON (
     target.APP_ID = source.APP_ID
@@ -68,19 +73,25 @@ ON (
 WHEN MATCHED THEN
     UPDATE SET
         target.DISPLAY_NAME = source.DISPLAY_NAME,
+        target.IS_SYSTEM = source.IS_SYSTEM,
+        target.SCOPE_POLICY = source.SCOPE_POLICY,
         target.STATUS = source.STATUS
 WHEN NOT MATCHED THEN
-    INSERT (APP_ID, ROLE_CODE, DISPLAY_NAME, STATUS)
+    INSERT (
+        APP_ID, ROLE_CODE, DISPLAY_NAME, IS_SYSTEM,
+        SCOPE_POLICY, STATUS, ROW_VERSION
+    )
     VALUES (
         source.APP_ID, source.ROLE_CODE,
-        source.DISPLAY_NAME, source.STATUS
+        source.DISPLAY_NAME, source.IS_SYSTEM,
+        source.SCOPE_POLICY, source.STATUS, 1
     );
 
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
     SELECT
         'km_asset' AS APP_ID,
-        'manager' AS ROLE_CODE,
+        'app_admin' AS ROLE_CODE,
         permission.PERMISSION_CODE
     FROM KBOT_PERMISSION permission
     WHERE permission.APP_ID = 'km_asset'

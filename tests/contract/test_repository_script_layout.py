@@ -88,7 +88,9 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("MERGE INTO KBOT_PLATFORM_DOMAIN", foundation)
         self.assertIn("MERGE INTO KBOT_PLATFORM_USER", foundation)
         self.assertIn("'ADMIN' USER_ID", foundation)
-        self.assertIn("'system_admin' ROLE_CODE", foundation)
+        self.assertIn("'platform_admin' ROLE_CODE", foundation)
+        self.assertIn("KBOT_PLATFORM_USER_ROLE", foundation)
+        self.assertNotIn("KBOT_APP_MEMBER_ROLE target", foundation)
         self.assertIn("target.MAX_SECURITY_LEVEL = 3", foundation)
 
         schema_runner = (

@@ -136,6 +136,7 @@ def create_public_auth_middleware(
     public_paths: set[str] | None = None,
     public_prefixes: set[str] | None = None,
     domainless_paths: set[str] | None = None,
+    domainless_prefixes: set[str] | None = None,
     allow_test_bypass: bool = False,
     alternate_authenticator: AlternateAuthenticator | None = None,
 ):
@@ -155,7 +156,13 @@ def create_public_auth_middleware(
         ):
             return await call_next(request)
         try:
-            domainless_request = request.url.path in (domainless_paths or set())
+            domainless_request = (
+                request.url.path in (domainless_paths or set())
+                or any(
+                    request.url.path.startswith(prefix)
+                    for prefix in (domainless_prefixes or set())
+                )
+            )
             test_bypass = (
                 allow_test_bypass
                 and request.headers.get(TEST_AUTH_BYPASS_HEADER, "").lower()
@@ -167,28 +174,30 @@ def create_public_auth_middleware(
             if alternate_context is not None:
                 domain_id = alternate_context.domain_id
                 user_id = alternate_context.asserted_user_id
-                if not domain_id or not user_id:
+                platform_entry = str(alternate_context.entry_kind) == "PLATFORM"
+                if not user_id or (not platform_entry and not domain_id):
                     raise PortalApiKeyError(
                         "INVALID_IDENTITY_CONTEXT",
-                        "备用认证没有提供完整的 Domain 和用户上下文",
+                        "备用认证没有提供完整的平台或业务身份上下文",
                     )
-                try:
-                    domain_is_active = await domain_validator(domain_id)
-                except Exception as exc:
-                    logger.error(
-                        "Domain 校验依赖不可用：method={} path={} type={}",
-                        request.method,
-                        request.url.path,
-                        type(exc).__name__,
-                    )
-                    return _problem(
-                        request=request,
-                        status_code=503,
-                        code="IDENTITY_SERVICE_UNAVAILABLE",
-                        detail="身份上下文暂时无法校验",
-                    )
-                if not domain_is_active:
-                    raise PortalApiKeyError("INVALID_DOMAIN", "Domain 不存在或已停用")
+                if domain_id:
+                    try:
+                        domain_is_active = await domain_validator(domain_id)
+                    except Exception as exc:
+                        logger.error(
+                            "Domain 校验依赖不可用：method={} path={} type={}",
+                            request.method,
+                            request.url.path,
+                            type(exc).__name__,
+                        )
+                        return _problem(
+                            request=request,
+                            status_code=503,
+                            code="IDENTITY_SERVICE_UNAVAILABLE",
+                            detail="身份上下文暂时无法校验",
+                        )
+                    if not domain_is_active:
+                        raise PortalApiKeyError("INVALID_DOMAIN", "Domain 不存在或已停用")
                 request.state.auth_context = alternate_context
                 response = await call_next(request)
                 response.headers.setdefault(

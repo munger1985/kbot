@@ -52,12 +52,15 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             user=SimpleNamespace(user_id="TEST_USER")
         )
 
-        self.assertIn("KBOT_APP_MEMBER_ROLE", session.actions[0][1])
+        self.assertIn("KBOT_APP_MEMBER_ROLE_SCOPE", session.actions[0][1])
         self.assertIn(
-            "KBOT_PLATFORM_USER_CREDENTIAL", session.actions[1][1]
+            "KBOT_APP_MEMBER_ROLE", session.actions[1][1]
         )
-        self.assertEqual(("delete", "TEST_USER"), session.actions[2])
-        self.assertEqual(("flush", None), session.actions[3])
+        self.assertIn("KBOT_APP_MEMBER", session.actions[2][1])
+        self.assertIn("KBOT_PLATFORM_USER_ROLE", session.actions[3][1])
+        self.assertIn("KBOT_PLATFORM_USER_CREDENTIAL", session.actions[4][1])
+        self.assertEqual(("delete", "TEST_USER"), session.actions[5])
+        self.assertEqual(("flush", None), session.actions[6])
 
     async def test_permission_query_requires_active_platform_user(self):
         session = _Session()
@@ -90,7 +93,7 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
 
         service = AccessControlService(uow_factory=Uow)
         with self.assertRaisesRegex(
-            AccessConfigurationError, "只能通过项目初始化脚本创建"
+            AccessConfigurationError, "必须通过平台用户或 App 用户管理接口创建"
         ):
             await service.ensure_user(
                 user_id="admin", display_name="伪造管理员"
@@ -143,75 +146,6 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             AccessConfigurationError, "安全等级配置无效"
         ):
             await service.user_max_security_level(user_id="TEST_USER")
-
-    async def test_reserved_admin_role_cannot_be_changed(self):
-        def forbidden_uow():
-            raise AssertionError("保留账号校验必须在进入数据库事务前执行")
-
-        service = AccessControlService(uow_factory=forbidden_uow)
-        with self.assertRaisesRegex(
-            AccessConfigurationError, "不能通过成员角色管理修改或删除"
-        ):
-            await service.set_member_role(
-                app_id="km_asset",
-                domain_id=1,
-                user_id="admin",
-                display_name="全局管理员",
-                role_code="system_admin",
-                status="DISABLED",
-                actor_id="another-admin",
-            )
-
-    async def test_system_admin_role_cannot_be_assigned(self):
-        def forbidden_uow():
-            raise AssertionError("保留角色校验必须在进入数据库事务前执行")
-
-        service = AccessControlService(uow_factory=forbidden_uow)
-        with self.assertRaisesRegex(
-            AccessConfigurationError, "只能通过项目初始化脚本授权"
-        ):
-            await service.set_member_role(
-                app_id="knowledge_retrieval",
-                domain_id=1,
-                user_id="TEST_USER",
-                display_name="普通用户",
-                role_code="system_admin",
-                status="ACTIVE",
-                actor_id="application-manager",
-            )
-
-    async def test_member_role_rejects_user_without_login_credential(self):
-        class Access:
-            async def get_role(self, *, app_id, role_code):
-                del app_id, role_code
-                return SimpleNamespace(status="ACTIVE")
-
-            async def get_user(self, user_id):
-                del user_id
-                return None
-
-        class Uow:
-            access = Access()
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_):
-                return None
-
-        service = AccessControlService(uow_factory=Uow)
-        with self.assertRaisesRegex(
-            AccessConfigurationError, "请先创建带登录凭据的用户"
-        ):
-            await service.set_member_role(
-                app_id="knowledge_retrieval",
-                domain_id=1,
-                user_id="MISSING_USER",
-                display_name="缺少凭据",
-                role_code="user",
-                status="ACTIVE",
-                actor_id="application-manager",
-            )
 
     async def test_role_query_requires_active_platform_user(self):
         session = _Session()

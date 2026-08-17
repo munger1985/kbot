@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from main_api.application import DomainConflictError, DomainManagementService
 
@@ -45,7 +46,12 @@ class _Uow:
 
 class _AccessRepository:
     def __init__(self):
-        self.users = {}
+        self.users = {
+            "ui-tester": SimpleNamespace(
+                user_id="ui-tester", status="ACTIVE",
+                account_origin="PLATFORM",
+            )
+        }
         self.roles = []
 
     async def get_user(self, user_id):

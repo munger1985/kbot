@@ -24,12 +24,17 @@ SERVICE_TABLES = {
         "KBOT_MANAGED_CREDENTIAL",
     },
     "main_api": {
+        "KBOT_PLATFORM_APP",
         "KBOT_PLATFORM_USER",
         "KBOT_PLATFORM_USER_CREDENTIAL",
         "KBOT_PERMISSION",
         "KBOT_APP_ROLE",
         "KBOT_APP_ROLE_PERMISSION",
+        "KBOT_PLATFORM_USER_ROLE",
+        "KBOT_APP_DOMAIN",
+        "KBOT_APP_MEMBER",
         "KBOT_APP_MEMBER_ROLE",
+        "KBOT_APP_MEMBER_ROLE_SCOPE",
     },
     "model_serving": {"KBOT_AI_MODEL"},
     "knowledge_core": {

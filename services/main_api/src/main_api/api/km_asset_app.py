@@ -162,6 +162,8 @@ class ConversationCreatePayload(_Payload):
 
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
+    if context.app_id and context.app_id != "km_asset":
+        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
     try:
         domain_id = int(context.domain_id or "")
     except ValueError as exc:

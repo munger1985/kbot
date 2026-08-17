@@ -23,7 +23,7 @@ from .conversation import (
     PublicTraceEvent,
     UpdateConversationRequest,
 )
-from .identity import AuthContext, PrincipalKind, ServiceIdentity
+from .identity import AuthContext, IdentityEntryKind, PrincipalKind, ServiceIdentity
 from .slack import SlackWebhookEnvelope, SlackWebhookReceipt
 from .model import (
     EmbeddingDataItem,
@@ -70,6 +70,7 @@ __all__ = [
     "ModelStatusRequest",
     "ModelUpdateRequest",
     "PrincipalKind",
+    "IdentityEntryKind",
     "ServiceIdentity",
     "SlackWebhookEnvelope",
     "SlackWebhookReceipt",

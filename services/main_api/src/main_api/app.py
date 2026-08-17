@@ -182,8 +182,8 @@ def create_main_api_app(
         except UserAuthenticationError as exc:
             raise PortalApiKeyError(exc.code, str(exc)) from exc
         if claims.must_change_password and request.url.path not in {
-            "/api/v1/auth/me",
-            "/api/v1/auth/password",
+                "/api/v1/auth/me",
+                "/api/v1/auth/password",
             "/api/v1/apps/km-asset/auth/password",
         }:
             raise PortalApiKeyError(
@@ -221,12 +221,14 @@ def create_main_api_app(
                 "/docs",
                 "/redoc",
                 "/openapi.json",
-                "/api/v1/auth/login",
-                "/api/v1/auth/domains",
+                "/api/v1/auth/platform/login",
+                "/api/v1/auth/apps",
                 "/api/v1/apps/km-asset/auth/login",
             },
             domainless_paths=domainless_paths,
+            domainless_prefixes={"/api/v1/platform/"},
             public_prefixes={
+                "/api/v1/auth/apps/",
                 "/api/v1/integrations/monitoring/",
                 "/api/v1/integrations/slack/",
                 "/static-offline-docs/",

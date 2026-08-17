@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from main_api.entities.access_control import PlatformUserEntity
-
-
 GLOBAL_ADMIN_USER_ID = "ADMIN"
-SYSTEM_ADMIN_ROLE_CODE = "system_admin"
 
 
 def is_reserved_global_admin(user_id: str) -> bool:
@@ -35,6 +31,12 @@ class AccessSnapshot:
     domain_id: int
     user_id: str
     roles: tuple[str, ...]
+    permissions: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformAccessSnapshot:
+    user_id: str
     permissions: frozenset[str]
 
 
@@ -75,6 +77,23 @@ class AccessControlService:
             raise AccessDeniedError(permission_code)
         return snapshot
 
+    async def platform_snapshot(self, *, user_id: str) -> PlatformAccessSnapshot:
+        """读取不依赖 Domain 的平台权限。"""
+        async with self._uow_factory() as uow:
+            permissions = await uow.access.platform_permissions_for(user_id=user_id)
+        return PlatformAccessSnapshot(
+            user_id=user_id,
+            permissions=frozenset(permissions),
+        )
+
+    async def require_platform(
+        self, *, user_id: str, permission_code: str
+    ) -> PlatformAccessSnapshot:
+        snapshot = await self.platform_snapshot(user_id=user_id)
+        if permission_code not in snapshot.permissions:
+            raise AccessDeniedError(permission_code)
+        return snapshot
+
     async def user_max_security_level(self, *, user_id: str) -> int:
         """从用户主数据读取受信的检索安全等级上限。"""
         async with self._uow_factory() as uow:
@@ -89,35 +108,28 @@ class AccessControlService:
     async def ensure_user(
         self, *, user_id: str, display_name: str | None = None
     ) -> None:
+        del display_name
         async with self._uow_factory() as uow:
             row = await uow.access.get_user(user_id)
-            if is_reserved_global_admin(user_id) and row is None:
-                raise AccessConfigurationError(
-                    "ADMIN 是平台保留账号，只能通过项目初始化脚本创建"
-                )
             if row is None:
-                await uow.access.add_user(
-                    PlatformUserEntity(
-                        user_id=user_id,
-                        display_name=display_name,
-                        status="ACTIVE",
-                    )
+                raise AccessConfigurationError(
+                    "用户不存在，必须通过平台用户或 App 用户管理接口创建"
                 )
-                await uow.commit()
 
     async def list_members(
         self, *, app_id: str, domain_id: int
     ) -> list[dict[str, object]]:
         async with self._uow_factory() as uow:
-            rows = await uow.access.list_member_roles(
-                app_id=app_id, domain_id=domain_id
-            )
-            user_ids = tuple(dict.fromkeys(row.user_id for row in rows))
+            members = await uow.access.list_app_members(app_id=app_id)
+            rows = await uow.access.list_member_roles(app_id=app_id, domain_id=domain_id)
+            visible_user_ids = {row.user_id for row in rows}
+            members = [row for row in members if row.user_id in visible_user_ids]
+            user_ids = tuple(row.user_id for row in members)
             users = {
                 row.user_id: row
                 for row in await uow.access.list_users_by_ids(user_ids)
             }
-        grouped: dict[str, list[dict[str, str]]] = {}
+        grouped: dict[str, list[dict[str, str]]] = {row.user_id: [] for row in members}
         for row in rows:
             grouped.setdefault(row.user_id, []).append({
                 "role_code": row.role_code, "status": row.status
@@ -130,7 +142,10 @@ class AccessControlService:
             if user_id in users else 0,
             "status": users.get(user_id).status
             if user_id in users else "ACTIVE",
-            "protected": is_reserved_global_admin(user_id),
+            "protected": (
+                is_reserved_global_admin(user_id)
+                or any(row.user_id == user_id and row.is_initial_admin == "Y" for row in members)
+            ),
             "roles": roles,
         } for user_id, roles in grouped.items()]
 
@@ -164,46 +179,8 @@ class AccessControlService:
             ],
         }
 
-    async def set_member_role(
-        self, *, app_id: str, domain_id: int, user_id: str,
-        display_name: str | None, role_code: str, status: str,
-        actor_id: str,
-    ) -> dict[str, str]:
-        if status not in {"ACTIVE", "DISABLED"}:
-            raise AccessConfigurationError("成员角色状态无效")
-        if is_reserved_global_admin(user_id):
-            raise AccessConfigurationError(
-                "ADMIN 是平台保留账号，不能通过成员角色管理修改或删除"
-            )
-        if role_code.casefold() == SYSTEM_ADMIN_ROLE_CODE:
-            raise AccessConfigurationError(
-                "system_admin 是平台保留角色，只能通过项目初始化脚本授权"
-            )
-        async with self._uow_factory() as uow:
-            role = await uow.access.get_role(
-                app_id=app_id, role_code=role_code
-            )
-            if role is None or role.status != "ACTIVE":
-                raise AccessConfigurationError("应用角色不存在或已停用")
-            user = await uow.access.get_user(user_id)
-            if user is None:
-                raise AccessConfigurationError(
-                    "平台用户不存在，请先创建带登录凭据的用户"
-                )
-            row = await uow.access.upsert_member_role(
-                app_id=app_id, domain_id=domain_id, user_id=user_id,
-                role_code=role_code, status=status, actor_id=actor_id,
-            )
-            await uow.commit()
-        return {
-            "user_id": row.user_id,
-            "role_code": row.role_code,
-            "status": row.status,
-        }
-
-
 __all__ = [
     "AccessConfigurationError", "AccessControlService",
     "AccessDeniedError", "AccessSnapshot", "GLOBAL_ADMIN_USER_ID",
-    "SYSTEM_ADMIN_ROLE_CODE", "is_reserved_global_admin",
+    "is_reserved_global_admin", "PlatformAccessSnapshot",
 ]

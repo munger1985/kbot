@@ -7,8 +7,7 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
-from main_api.entities import PlatformDomainEntity, PlatformUserEntity
-from .access_control import is_reserved_global_admin
+from main_api.entities import PlatformDomainEntity
 
 
 class DomainConflictError(RuntimeError):
@@ -30,6 +29,15 @@ class DomainManagementService:
     ) -> dict[str, Any]:
         normalized_name = name.strip()
         async with self._uow_factory() as uow:
+            actor = await uow.access.get_user(actor_id)
+            if actor is None:
+                if actor_id.strip().casefold() == "admin":
+                    raise DomainConflictError(
+                        "ADMIN 是平台保留账号，只能通过项目初始化脚本创建"
+                    )
+                raise DomainConflictError("平台用户不存在或已停用")
+            if actor.status != "ACTIVE" or actor.account_origin != "PLATFORM":
+                raise DomainConflictError("只有启用的平台用户可以创建 Domain")
             existing = await uow.domains.get_by_name(
                 name=normalized_name,
             )
@@ -45,42 +53,6 @@ class DomainManagementService:
             )
             try:
                 await uow.domains.add(entity)
-                user = await uow.access.get_user(actor_id)
-                if is_reserved_global_admin(actor_id) and user is None:
-                    raise DomainConflictError(
-                        "ADMIN 是平台保留账号，只能通过项目初始化脚本创建"
-                    )
-                if user is None:
-                    await uow.access.add_user(
-                        PlatformUserEntity(
-                            user_id=actor_id,
-                            display_name=actor_id,
-                            status="ACTIVE",
-                        )
-                    )
-                if is_reserved_global_admin(actor_id):
-                    roles = await uow.access.list_all_roles()
-                    for role in roles:
-                        if role.role_code != "system_admin":
-                            continue
-                        await uow.access.upsert_member_role(
-                            app_id=role.app_id,
-                            domain_id=int(entity.domain_id),
-                            user_id=actor_id,
-                            role_code=role.role_code,
-                            status="ACTIVE",
-                            actor_id=actor_id,
-                        )
-                else:
-                    for app_id in ("knowledge_retrieval", "aiops"):
-                        await uow.access.upsert_member_role(
-                            app_id=app_id,
-                            domain_id=int(entity.domain_id),
-                            user_id=actor_id,
-                            role_code="manager",
-                            status="ACTIVE",
-                            actor_id=actor_id,
-                        )
                 await uow.commit()
             except IntegrityError as exc:
                 raise DomainConflictError(
