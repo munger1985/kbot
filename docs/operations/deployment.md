@@ -154,15 +154,27 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 
 ## 初始化 Oracle
 
-既有数据库升级普通登录、用户管理和角色管理功能时，在 SQL Developer 中执行：
+全新数据库执行标准 Schema 初始化时，会自动幂等创建首次登录基础数据：默认业务域
+`default`、完整 App 权限与角色模板、`ADMIN` 凭据及默认业务域中的各 App
+`system_admin` 授权。初始账号为 `ADMIN`，初始密码为 `Admin@2026!`，部署完成后应
+立即重置密码。模型、Collection、Agent、会话和 AIOps 业务数据不会初始化。
+
+既有数据库缺少基础数据时，优先执行：
+
+```bash
+python3 scripts/db/apply_oracle_schema.py --foundation-only
+python3 scripts/db/apply_oracle_schema.py --check-foundation
+```
+
+仅需升级普通登录、用户管理和角色管理权限时，也可在 SQL Developer 中执行：
 
 ```text
 scripts/db/bootstrap_platform_access_management.sql
 ```
 
-脚本不要求输入参数，不修改 admin 密码；它会幂等创建 `platform` 权限与角色，并在
-全部启用 Domain 中向 admin 授予受保护的 `system_admin`。全新数据库仍先执行标准
-Schema 初始化，再执行 `scripts/db/bootstrap_global_admin.sql`。
+脚本不要求输入参数，不修改 ADMIN 密码；它会幂等创建 `platform` 权限与角色，并在
+全部启用 Domain 中向 ADMIN 授予受保护的 `system_admin`。全新数据库无需再单独
+执行 `bootstrap_global_admin.sql`。
 
 在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
 始终创建。先预检：
@@ -194,8 +206,13 @@ python3 scripts/db/apply_oracle_schema.py \
 ```bash
 python3 tests/acceptance/check_configuration_contract.py
 python3 scripts/deployment/check_deployment.py
+python3 scripts/db/apply_oracle_schema.py --check-foundation
 python3 tests/acceptance/check_oracle_schema.py
 ```
+
+`check_deployment.py` 会校验 UI 使用的 `[ui].main_api_base_url`；生产环境仍使用
+`kbot.example.com` 等示例地址时会拒绝启动。基础数据校验失败会明确提示“系统尚未
+初始化”，不会继续启动服务。
 
 先启动 Oracle 和外部依赖，再按以下顺序启动：
 

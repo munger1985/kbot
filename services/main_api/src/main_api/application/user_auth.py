@@ -12,6 +12,7 @@ import bcrypt
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 
+from main_api.application.access_control import is_reserved_global_admin
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.security import PortalApiKeyError, extract_bearer_token
 
@@ -25,9 +26,12 @@ KM_PORTAL_DOMAIN_NAME = "km_portal"
 class UserAuthenticationError(ValueError):
     """平台用户认证、Domain 选择或密码更新失败。"""
 
-    def __init__(self, code: str, message: str):
+    def __init__(
+        self, code: str, message: str, *, status_code: int = 401
+    ):
         super().__init__(message)
         self.code = code
+        self.status_code = status_code
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +166,14 @@ class UserAuthService:
             )
         )
         if not valid:
+            if is_reserved_global_admin(user_id) and (
+                status is None or password_hash is None
+            ):
+                raise UserAuthenticationError(
+                    "SYSTEM_NOT_INITIALIZED",
+                    "系统尚未初始化：ADMIN 用户或登录凭据不存在",
+                    status_code=503,
+                )
             raise UserAuthenticationError(
                 "INVALID_CREDENTIALS", "用户名或密码错误"
             )
@@ -170,8 +182,13 @@ class UserAuthService:
     async def login(
         self, *, user_id: str, password: str, domain_id: int
     ) -> dict[str, object]:
-        display_name, must_change_password, password_version = await self._verify_credentials(
-            user_id=user_id, password=password
+        (
+            display_name,
+            must_change_password,
+            password_version,
+        ) = await self._verify_credentials(
+            user_id=user_id,
+            password=password,
         )
         async with self._uow_factory() as uow:
             domain_ids = await uow.access.list_active_domain_ids(user_id)
@@ -213,6 +230,12 @@ class UserAuthService:
                 for row in domains
                 if row.status == "ACTIVE"
             ]
+        if not items and is_reserved_global_admin(user_id):
+            raise UserAuthenticationError(
+                "SYSTEM_NOT_INITIALIZED",
+                "系统尚未初始化：ADMIN 尚未获得可登录的业务域授权",
+                status_code=503,
+            )
         return {
             "user_id": user_id,
             "display_name": display_name,

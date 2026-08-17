@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import tomli
 
@@ -30,6 +31,31 @@ def check_deployment(config_file: Path | None = None) -> list[str]:
         )
     except Exception as exc:
         return [f"配置加载失败：{exc}"]
+
+    try:
+        with path.open("rb") as stream:
+            raw = tomli.load(stream)
+    except (OSError, tomli.TOMLDecodeError) as exc:
+        return [f"部署配置无法读取：{exc}"]
+
+    main_api_base_url = str(
+        (raw.get("ui") or {}).get("main_api_base_url") or ""
+    ).strip().rstrip("/")
+    parsed_main_api = urlsplit(main_api_base_url)
+    if (
+        parsed_main_api.scheme not in {"http", "https"}
+        or not parsed_main_api.netloc
+        or parsed_main_api.username
+        or parsed_main_api.password
+        or parsed_main_api.path not in {"", "/"}
+        or parsed_main_api.query
+        or parsed_main_api.fragment
+    ):
+        errors.append("必须配置合法的[ui].main_api_base_url")
+    elif settings.is_production() and (
+        parsed_main_api.hostname or ""
+    ).endswith("example.com"):
+        errors.append("[ui].main_api_base_url仍使用示例地址")
 
     if settings.is_production():
         if not os.getenv("KBOT_ORACLE_PASSWORD"):

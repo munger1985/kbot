@@ -92,6 +92,11 @@ if ! python scripts/deployment/check_deployment.py; then
     echo "❌ 部署配置校验失败，未启动任何服务。"
     exit 1
 fi
+if ! python scripts/db/apply_oracle_schema.py --check-foundation; then
+    echo "❌ 系统尚未初始化：默认 Domain、ADMIN 或权限基础数据不完整。"
+    echo "   请执行：python scripts/db/apply_oracle_schema.py --foundation-only"
+    exit 1
+fi
 CONFIG_ENVIRONMENT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("environment", "development"))' "$KBOT_CONFIG_FILE")
 CONFIG_LOG_ROOT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("log_dir", "./logs"))' "$KBOT_CONFIG_FILE")
 

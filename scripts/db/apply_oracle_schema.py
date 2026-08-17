@@ -16,6 +16,58 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "init_services.ini"
+PLATFORM_FOUNDATION_SCRIPT = (
+    ROOT / "scripts" / "db" / "bootstrap_platform_foundation.sql"
+)
+PLATFORM_FOUNDATION_TABLES = {
+    "KBOT_PLATFORM_DOMAIN",
+    "KBOT_PLATFORM_USER",
+    "KBOT_PLATFORM_USER_CREDENTIAL",
+    "KBOT_PERMISSION",
+    "KBOT_APP_ROLE",
+    "KBOT_APP_ROLE_PERMISSION",
+    "KBOT_APP_MEMBER_ROLE",
+}
+PLATFORM_FOUNDATION_PERMISSIONS = {
+    "platform:user_manage",
+    "platform:role_manage",
+    "knowledge_retrieval:use",
+    "knowledge_retrieval:upload",
+    "knowledge_retrieval:review",
+    "knowledge_retrieval:member_manage",
+    "knowledge_retrieval:knowledge_manage",
+    "knowledge_retrieval:data_manage",
+    "knowledge_retrieval:agent_manage",
+    "knowledge_retrieval:operations_manage",
+    "km_asset:use",
+    "km_asset:source_manage",
+    "km_asset:data_manage",
+    "km_asset:agent_manage",
+    "km_asset:operations_manage",
+    "km_asset:member_manage",
+    "aiops:use",
+    "aiops:domain_manage",
+    "aiops:member_manage",
+    "aiops:operations_manage",
+    "aiops:target_manage",
+    "aiops:monitor_source_manage",
+    "aiops:policy_manage",
+    "aiops:plan_manage",
+    "aiops:agent_manage",
+    "aiops:proposal:approve",
+}
+PLATFORM_FOUNDATION_ROLES = {
+    ("platform", "platform_admin"),
+    ("knowledge_retrieval", "user"),
+    ("knowledge_retrieval", "contributor"),
+    ("knowledge_retrieval", "reviewer"),
+    ("knowledge_retrieval", "manager"),
+    ("km_asset", "user"),
+    ("km_asset", "manager"),
+    ("aiops", "operator"),
+    ("aiops", "approver"),
+    ("aiops", "manager"),
+}
 
 from platform_core.database.oracle import create_database_runtime
 from platform_core.identity import uuid7
@@ -281,6 +333,230 @@ async def _assert_empty_schema(connection: AsyncConnection) -> None:
             "目标 Schema 已存在 KBot 表或视图，初始化已拒绝："
             f"{rendered}"
         )
+
+
+async def _validate_platform_foundation(
+    connection: AsyncConnection,
+) -> None:
+    """校验首次登录所需的默认 Domain、ADMIN 与全权限授权。"""
+    existing_tables = set(
+        (
+            await connection.execute(
+                text(
+                    "SELECT table_name FROM user_tables "
+                    "WHERE table_name IN ("
+                    + ",".join(
+                        f"'{name}'" for name in sorted(PLATFORM_FOUNDATION_TABLES)
+                    )
+                    + ")"
+                )
+            )
+        ).scalars()
+    )
+    missing_tables = PLATFORM_FOUNDATION_TABLES - existing_tables
+    if missing_tables:
+        raise RuntimeError(
+            "平台基础表不完整：" + ", ".join(sorted(missing_tables))
+        )
+
+    default_domain_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM KBOT_PLATFORM_DOMAIN "
+                "WHERE NAME = 'default' AND STATUS = 'ACTIVE'"
+            )
+        )
+    ).scalar_one()
+    if int(default_domain_count) != 1:
+        raise RuntimeError("缺少唯一且启用的默认业务域 default")
+
+    admin_count = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM KBOT_PLATFORM_USER user_account "
+                "JOIN KBOT_PLATFORM_USER_CREDENTIAL credential "
+                "ON credential.USER_ID = user_account.USER_ID "
+                "WHERE user_account.USER_ID = 'ADMIN' "
+                "AND user_account.STATUS = 'ACTIVE'"
+            )
+        )
+    ).scalar_one()
+    if int(admin_count) != 1:
+        raise RuntimeError("缺少启用的 ADMIN 用户或登录凭据")
+
+    permission_codes = set(
+        (
+            await connection.execute(
+                text("SELECT PERMISSION_CODE FROM KBOT_PERMISSION")
+            )
+        ).scalars()
+    )
+    missing_permissions = (
+        PLATFORM_FOUNDATION_PERMISSIONS - permission_codes
+    )
+    if missing_permissions:
+        raise RuntimeError(
+            "平台权限目录不完整：" + ", ".join(sorted(missing_permissions))
+        )
+
+    active_roles = {
+        (str(app_id), str(role_code))
+        for app_id, role_code in (
+            await connection.execute(
+                text(
+                    "SELECT APP_ID, ROLE_CODE FROM KBOT_APP_ROLE "
+                    "WHERE STATUS = 'ACTIVE'"
+                )
+            )
+        ).all()
+    }
+    missing_roles = PLATFORM_FOUNDATION_ROLES - active_roles
+    if missing_roles:
+        raise RuntimeError(
+            "平台角色模板不完整："
+            + ", ".join(
+                f"{app_id}/{role_code}"
+                for app_id, role_code in sorted(missing_roles)
+            )
+        )
+
+    permissions_by_app: dict[str, set[str]] = {}
+    for permission_code in PLATFORM_FOUNDATION_PERMISSIONS:
+        permissions_by_app.setdefault(
+            permission_code.partition(":")[0], set()
+        ).add(permission_code)
+    expected_role_permissions = {
+        ("platform", "platform_admin"): permissions_by_app["platform"],
+        ("knowledge_retrieval", "user"): {
+            "knowledge_retrieval:use"
+        },
+        ("knowledge_retrieval", "contributor"): {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:upload",
+        },
+        ("knowledge_retrieval", "reviewer"): {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:upload",
+            "knowledge_retrieval:review",
+        },
+        ("knowledge_retrieval", "manager"): permissions_by_app[
+            "knowledge_retrieval"
+        ],
+        ("km_asset", "user"): {"km_asset:use"},
+        ("km_asset", "manager"): permissions_by_app["km_asset"],
+        ("aiops", "operator"): {
+            "aiops:use",
+            "aiops:operations_manage",
+            "aiops:target_manage",
+            "aiops:monitor_source_manage",
+            "aiops:policy_manage",
+            "aiops:plan_manage",
+        },
+        ("aiops", "approver"): {
+            "aiops:use",
+            "aiops:operations_manage",
+            "aiops:proposal:approve",
+        },
+        ("aiops", "manager"): permissions_by_app["aiops"],
+    }
+    actual_role_permissions: dict[tuple[str, str], set[str]] = {}
+    for app_id, role_code, permission_code in (
+        await connection.execute(
+            text(
+                "SELECT APP_ID, ROLE_CODE, PERMISSION_CODE "
+                "FROM KBOT_APP_ROLE_PERMISSION"
+            )
+        )
+    ).all():
+        actual_role_permissions.setdefault(
+            (str(app_id), str(role_code)), set()
+        ).add(str(permission_code))
+    incomplete_role_mappings = sorted(
+        f"{app_id}/{role_code}"
+        for (app_id, role_code), expected in expected_role_permissions.items()
+        if not expected.issubset(
+            actual_role_permissions.get((app_id, role_code), set())
+        )
+    )
+    if incomplete_role_mappings:
+        raise RuntimeError(
+            "角色权限映射不完整：" + ", ".join(incomplete_role_mappings)
+        )
+
+    missing_role_permissions = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(*) FROM KBOT_PERMISSION permission "
+                "WHERE NOT EXISTS ("
+                "SELECT 1 FROM KBOT_APP_ROLE role_definition "
+                "JOIN KBOT_APP_ROLE_PERMISSION role_permission "
+                "ON role_permission.APP_ID = role_definition.APP_ID "
+                "AND role_permission.ROLE_CODE = role_definition.ROLE_CODE "
+                "WHERE role_definition.APP_ID = permission.APP_ID "
+                "AND role_definition.ROLE_CODE = 'system_admin' "
+                "AND role_definition.STATUS = 'ACTIVE' "
+                "AND role_permission.PERMISSION_CODE = "
+                "permission.PERMISSION_CODE)"
+            )
+        )
+    ).scalar_one()
+    if int(missing_role_permissions):
+        raise RuntimeError(
+            f"system_admin 缺少 {missing_role_permissions} 项权限映射"
+        )
+
+    missing_admin_memberships = (
+        await connection.execute(
+            text(
+                "SELECT COUNT(DISTINCT permission.APP_ID) "
+                "FROM KBOT_PERMISSION permission "
+                "WHERE NOT EXISTS ("
+                "SELECT 1 FROM KBOT_PLATFORM_DOMAIN domain_row "
+                "JOIN KBOT_APP_MEMBER_ROLE member_role "
+                "ON member_role.DOMAIN_ID = domain_row.DOMAIN_ID "
+                "WHERE domain_row.NAME = 'default' "
+                "AND domain_row.STATUS = 'ACTIVE' "
+                "AND member_role.APP_ID = permission.APP_ID "
+                "AND member_role.USER_ID = 'ADMIN' "
+                "AND member_role.ROLE_CODE = 'system_admin' "
+                "AND member_role.STATUS = 'ACTIVE')"
+            )
+        )
+    ).scalar_one()
+    if int(missing_admin_memberships):
+        raise RuntimeError(
+            f"ADMIN 在默认业务域缺少 {missing_admin_memberships} 个 App 授权"
+        )
+
+
+async def _apply_platform_foundation(
+    connection: AsyncConnection,
+) -> None:
+    """幂等写入首次登录所需的平台基础数据。"""
+    statements = split_oracle_statements(
+        PLATFORM_FOUNDATION_SCRIPT.read_text(encoding="utf-8")
+    )
+    for statement in statements:
+        await connection.exec_driver_sql(statement)
+    await connection.commit()
+
+
+async def maintain_platform_foundation(*, repair: bool) -> None:
+    """检查或幂等修复既有 Schema 的平台首次登录基础数据。"""
+    runtime = create_database_runtime()
+    try:
+        async with runtime.engine.connect() as connection:
+            pdb_name, schema_name = await _read_target(connection)
+            if repair:
+                await _apply_platform_foundation(connection)
+            await _validate_platform_foundation(connection)
+            action = "修复并校验" if repair else "校验"
+            print(
+                f"平台基础数据{action}通过："
+                f"PDB={pdb_name}，Schema={schema_name}，Domain=default，用户=ADMIN"
+            )
+    finally:
+        await runtime.close()
 
 
 async def _assert_ddl_privileges(connection: AsyncConnection) -> None:
@@ -781,10 +1057,15 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
                 connection,
                 selected_services=set(selection.ordered),
             )
+            foundation_label = "未选择 Main API"
+            if "main_api" in selection.enabled:
+                await _apply_platform_foundation(connection)
+                await _validate_platform_foundation(connection)
+                foundation_label = "default/ADMIN/system_admin"
             print(
                 f"Schema 初始化完成：{len(expected_tables)} 张表，"
                 f"{len(expected_views)} 个视图，"
-                f"{prompt_count} 个 Prompt"
+                f"{prompt_count} 个 Prompt，平台基础数据={foundation_label}"
             )
     finally:
         await runtime.close()
@@ -805,14 +1086,34 @@ def main() -> int:
         action="store_true",
         help="只解析并统计 DDL，不连接或修改数据库",
     )
+    foundation_group = parser.add_mutually_exclusive_group()
+    foundation_group.add_argument(
+        "--foundation-only",
+        action="store_true",
+        help="不执行 DDL，仅幂等修复并校验平台首次登录基础数据",
+    )
+    foundation_group.add_argument(
+        "--check-foundation",
+        action="store_true",
+        help="只读校验平台首次登录基础数据",
+    )
     args = parser.parse_args()
     try:
-        asyncio.run(
-            apply_schema(
-                dry_run=args.dry_run,
-                config_path=args.config.expanduser().resolve(),
+        if args.foundation_only or args.check_foundation:
+            if args.dry_run:
+                raise RuntimeError(
+                    "--dry-run 不能与平台基础数据维护参数同时使用"
+                )
+            asyncio.run(
+                maintain_platform_foundation(repair=args.foundation_only)
             )
-        )
+        else:
+            asyncio.run(
+                apply_schema(
+                    dry_run=args.dry_run,
+                    config_path=args.config.expanduser().resolve(),
+                )
+            )
     except RuntimeError as exc:
         print(f"Schema 初始化拒绝：{exc}")
         return 1

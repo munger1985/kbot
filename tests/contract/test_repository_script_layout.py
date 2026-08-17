@@ -37,6 +37,13 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertTrue(
             (SCRIPTS_ROOT / "db" / "init_services.ini").is_file()
         )
+        self.assertTrue(
+            (
+                SCRIPTS_ROOT
+                / "db"
+                / "bootstrap_platform_foundation.sql"
+            ).is_file()
+        )
         self.assertFalse(
             (ROOT / "database" / "oracle" / "init_services.ini").exists()
         )
@@ -58,6 +65,8 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         startup = (ROOT / "start_kbot.sh").read_text(encoding="utf-8")
         self.assertIn("当前 Conda 环境缺少 KBot 内部包", startup)
         self.assertIn("scripts/deployment/install_workspace.sh", startup)
+        self.assertIn("--check-foundation", startup)
+        self.assertIn("--foundation-only", startup)
         self.assertIn('conda_env_exists "kbot4"', startup)
         self.assertNotIn('conda_env_exists "kbot3"', startup)
 
@@ -69,8 +78,17 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("tests/acceptance/check_oracle_schema.py", bootstrap)
         self.assertIn("scripts/deployment/check_deployment.py", bootstrap)
         self.assertIn("scripts/db/apply_oracle_schema.py", bootstrap)
+        self.assertIn("--check-foundation", bootstrap)
         self.assertIn("--schema-dry-run", bootstrap)
         self.assertNotIn("reset_kbot_schema.sql", bootstrap)
+
+        foundation = (
+            SCRIPTS_ROOT / "db" / "bootstrap_platform_foundation.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("MERGE INTO KBOT_PLATFORM_DOMAIN", foundation)
+        self.assertIn("MERGE INTO KBOT_PLATFORM_USER", foundation)
+        self.assertIn("'ADMIN' USER_ID", foundation)
+        self.assertIn("'system_admin' ROLE_CODE", foundation)
 
     def test_operational_python_scripts_do_not_modify_import_path(self):
         scripts = (

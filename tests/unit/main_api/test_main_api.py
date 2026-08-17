@@ -1123,6 +1123,27 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("ordinary-user", response.json()["user_id"])
         self.assertEqual(100, response.json()["domain_id"])
 
+    def test_uninitialized_authentication_returns_service_unavailable(self) -> None:
+        from main_api.application import UserAuthenticationError
+
+        class _UserAuthService:
+            async def list_login_domains(self, *, user_id, password):
+                del user_id, password
+                raise UserAuthenticationError(
+                    "SYSTEM_NOT_INITIALIZED",
+                    "系统尚未初始化：ADMIN 尚未获得业务域授权",
+                    status_code=503,
+                )
+
+        self.app.state.user_auth_service = _UserAuthService()
+        response = self.client.post(
+            "/api/v1/auth/domains",
+            json={"user_id": "ADMIN", "password": "Admin@2026!"},
+        )
+
+        self.assertEqual(503, response.status_code, response.text)
+        self.assertEqual("SYSTEM_NOT_INITIALIZED", response.json()["code"])
+
     def test_user_management_requires_platform_permission_contract(self) -> None:
         class _AccessManagementService:
             async def list_users(self, **values):

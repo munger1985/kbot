@@ -29,6 +29,8 @@ class DeploymentConfigTest(unittest.TestCase):
             "data_dir='/var/lib/kbot'\n"
             "log_dir='/var/log/kbot'\n"
             "embedding_dimension=2048\n"
+            "[ui]\n"
+            "main_api_base_url='https://kbot.internal:18099'\n"
             "[database]\n"
             "host='db.internal'\n"
             "username='kbot'\n"
@@ -69,6 +71,27 @@ class DeploymentConfigTest(unittest.TestCase):
                 errors = check_deployment(path)
 
         self.assertEqual([], errors)
+
+    def test_production_rejects_example_main_api_address(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_production_config(Path(directory))
+            source = path.read_text(encoding="utf-8").replace(
+                "https://kbot.internal:18099",
+                "http://kbot.example.com:18099",
+            )
+            path.write_text(source, encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {
+                    "KBOT_ORACLE_PASSWORD": "secret",
+                    "KBOT_MASTER_KEY": "m" * 32,
+                    "ENV_FILE": str(Path(directory) / "missing.env"),
+                },
+                clear=True,
+            ):
+                errors = check_deployment(path)
+
+        self.assertIn("[ui].main_api_base_url仍使用示例地址", errors)
 
 
 if __name__ == "__main__":

@@ -20,9 +20,9 @@
 bash scripts/deployment/bootstrap_kbot.sh --production
 ```
 
-该入口不会清理已有 Schema，不创建 Domain、用户、成员关系、业务 Agent、模型或
-知识库数据。规范 DDL 会初始化默认 App 角色、权限和映射；初始化器还会写入版本化
-Prompt Catalog。
+该入口不会清理已有 Schema。它会初始化默认业务域 `default`、完整 App 权限与角色
+模板、`ADMIN` 凭据和默认业务域中的 `system_admin` 授权，并写入版本化 Prompt
+Catalog；不会创建模型、Collection、Agent、会话或 AIOps 业务数据。
 
 KBot 4.0 不在 `scripts/` 保留一次性升级、修复或补种脚本。Schema 变化直接更新
 `database/oracle/` 的规范 DDL，并通过新的空白 Schema 重新初始化。

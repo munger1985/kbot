@@ -294,9 +294,13 @@ def create_main_api_app(
     ):
         return _problem_response(
             request=request,
-            status_code=401,
+            status_code=exc.status_code,
             code=exc.code,
-            title="用户认证失败",
+            title=(
+                "系统尚未初始化"
+                if exc.code == "SYSTEM_NOT_INITIALIZED"
+                else "用户认证失败"
+            ),
             detail=str(exc),
         )
 

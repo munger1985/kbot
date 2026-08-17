@@ -29,8 +29,9 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 ```
 
 它会安装依赖、执行配置与静态契约检查、确认目标为空 Schema、创建全部已选服务
-对象，并初始化默认 App 角色/权限/映射和 Prompt Catalog。它不会自动清库，也不会
-创建 Domain、用户、成员关系、业务 Agent、模型或知识库数据。
+对象，并初始化 Prompt Catalog 与首次登录基础数据：ACTIVE 默认 Domain `default`、
+完整 App 权限/角色模板、`ADMIN` 凭据，以及默认 Domain 中各 App 的 `system_admin`
+授权。它不会自动清库，也不会创建模型、Collection、Agent、会话或 AIOps 业务数据。
 
 `aiops_agent` 已提供八段规范 DDL 和受控 APEX 投影，可像其他业务服务一样在
 初始化配置中选择。其脚本必须整体启用或禁用，不能跳过中间依赖段。
@@ -74,5 +75,13 @@ python3 scripts/db/apply_oracle_schema.py \
 性部署，不能先初始化部分服务，再对同一 Schema 补跑其他服务；需要变更范围时应
 准备新的空白 Schema 后重新执行。
 
-数据库初始化完成后，由 Portal/APEX 创建新的 Domain 和业务数据，再通过 4.0
-API 入库；禁止从 3.x KBot Schema 复制数据。
+初始账号为 `ADMIN`，初始密码为 `Admin@2026!`；首次登录后应立即通过密码重置接口
+修改。既有 Schema 基础数据不完整时，可幂等修复并只读复查：
+
+```bash
+python3 scripts/db/apply_oracle_schema.py --foundation-only
+python3 scripts/db/apply_oracle_schema.py --check-foundation
+```
+
+数据库初始化完成后，由 Portal/APEX 创建新的 Domain 和业务数据，再通过 4.0 API
+入库；禁止从 3.x KBot Schema 复制数据。

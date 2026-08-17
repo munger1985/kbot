@@ -40,6 +40,30 @@ BEGIN
         );
     END IF;
 
+    -- 首次部署没有 Domain 时创建默认业务域，打破登录初始化闭环。
+    MERGE INTO KBOT_PLATFORM_DOMAIN target
+    USING (
+        SELECT 'default' AS NAME,
+               'KBot 默认业务域' AS DESCRIPTION
+          FROM DUAL
+    ) source
+    ON (target.NAME = source.NAME)
+    WHEN MATCHED THEN
+        UPDATE SET
+            target.STATUS = 'ACTIVE',
+            target.DESCRIPTION = source.DESCRIPTION,
+            target.UPDATED_BY = c_actor_id,
+            target.UPDATED_AT = SYSTIMESTAMP
+    WHEN NOT MATCHED THEN
+        INSERT (
+            NAME, STATUS, DESCRIPTION, ROW_VERSION,
+            CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
+        )
+        VALUES (
+            source.NAME, 'ACTIVE', source.DESCRIPTION, 1,
+            c_actor_id, c_actor_id, SYSTIMESTAMP, SYSTIMESTAMP
+        );
+
     -- 确保已部署环境具备通用用户和角色管理权限目录。
     MERGE INTO KBOT_PERMISSION target
     USING (

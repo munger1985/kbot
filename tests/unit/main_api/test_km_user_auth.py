@@ -200,6 +200,22 @@ class UserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
             result["domains"],
         )
 
+    async def test_admin_without_domain_reports_system_not_initialized(self):
+        class AccessWithoutDomain(_AccessRepository):
+            async def list_active_domain_ids(self, user_id):
+                del user_id
+                return ()
+
+        service = self._service(AccessWithoutDomain())
+
+        with self.assertRaises(UserAuthenticationError) as context:
+            await service.list_login_domains(
+                user_id="ADMIN", password="KmAdmin@2026!"
+            )
+
+        self.assertEqual("SYSTEM_NOT_INITIALIZED", context.exception.code)
+        self.assertEqual(503, context.exception.status_code)
+
     async def test_password_version_change_revokes_existing_session(self):
         access = _AccessRepository()
         service = self._service(access)
