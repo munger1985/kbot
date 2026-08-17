@@ -290,6 +290,7 @@ def _asset_blocks(
     """按审批通过的 Block Kit 格式替换 Asset 回答的参考资料区。"""
     blocks: list[dict[str, Any]] = []
     for card in asset_cards:
+        blocks.append({"type": "divider"})
         title = re.sub(
             r"\s+", " ", _to_slack_mrkdwn(card.get("asset_title"))
         ).strip()
@@ -300,69 +301,50 @@ def _asset_blocks(
         ).strip()
         asset_id = str(card.get("asset_id") or "").strip()
         if title:
-            blocks.extend(
-                [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Asset Title:* {title}"[:3000],
-                        },
-                    },
-                    {"type": "divider"},
-                ]
-            )
-        if briefing:
-            blocks.extend(
-                [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Solution Briefing:* {briefing}"[:3000],
-                        },
-                    },
-                    {"type": "divider"},
-                ]
-            )
-        fields: list[dict[str, str]] = []
-        if author_mail and _EMAIL_PATTERN.fullmatch(author_mail):
-            safe_mail = _escape_mrkdwn(author_mail)
-            fields.append(
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        f"*Contributor:*\n"
-                        f"<mailto:{author_mail}|{safe_mail}>"
-                    ),
-                }
-            )
-        if create_time:
-            fields.append(
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Publish\\_date:*\n{create_time}"[:2000],
-                }
-            )
-        if fields:
-            blocks.append({"type": "section", "fields": fields})
-        if asset_id:
-            asset_url = config.km_portal_base_url + quote(asset_id, safe="")
             blocks.append(
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "[VPN required] please visit us:",
-                    },
-                    "accessory": {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "KM Link"},
-                        "url": asset_url[:3000],
-                        "action_id": "open_km_resource",
+                        "text": f"*Asset Title:* {title}"[:3000],
                     },
                 }
             )
+        if briefing:
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Solution Briefing:* {briefing}"[:3000],
+                    },
+                }
+            )
+        metadata: list[str] = []
+        if author_mail and _EMAIL_PATTERN.fullmatch(author_mail):
+            safe_mail = _escape_mrkdwn(author_mail)
+            metadata.append(
+                f"<mailto:{author_mail}|{safe_mail}>"
+            )
+        if create_time:
+            metadata.append(create_time)
+        if metadata:
+            section: dict[str, Any] = {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": " | ".join(metadata)[:3000],
+                },
+            }
+            if asset_id:
+                asset_url = config.km_portal_base_url + quote(asset_id, safe="")
+                section["accessory"] = {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "KM Link"},
+                    "url": asset_url[:3000],
+                    "action_id": "open_km_resource",
+                }
+            blocks.append(section)
     return blocks
 
 

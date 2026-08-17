@@ -611,36 +611,31 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
 
         blocks = payload["blocks"]
         self.assertEqual("原始 KBot 回答 [C1]。", blocks[1]["text"]["text"])
+        self.assertEqual({"type": "divider"}, blocks[2])
         self.assertEqual(
             "*Asset Title:* Claim Prediction Architecture",
-            blocks[2]["text"]["text"],
+            blocks[3]["text"]["text"],
         )
-        self.assertEqual({"type": "divider"}, blocks[3])
         self.assertEqual(
             "*Solution Briefing:* Real-time insights",
             blocks[4]["text"]["text"],
         )
-        self.assertEqual({"type": "divider"}, blocks[5])
         self.assertEqual(
-            "*Contributor:*\n<mailto:author@example.com|author@example.com>",
-            blocks[6]["fields"][0]["text"],
-        )
-        self.assertEqual(
-            "*Publish\\_date:*\n2026-08-17",
-            blocks[6]["fields"][1]["text"],
-        )
-        self.assertEqual(
-            "[VPN required] please visit us:",
-            blocks[7]["text"]["text"],
+            "<mailto:author@example.com|author@example.com> | 2026-08-17",
+            blocks[5]["text"]["text"],
         )
         self.assertEqual(
             "https://km.example.com/assets/ASSET%2F100",
-            blocks[7]["accessory"]["url"],
+            blocks[5]["accessory"]["url"],
         )
-        self.assertEqual("KM Link", blocks[7]["accessory"]["text"]["text"])
+        self.assertEqual("KM Link", blocks[5]["accessory"]["text"]["text"])
+        self.assertEqual("open_km_resource", blocks[5]["accessory"]["action_id"])
         rendered = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("参考资料", rendered)
         self.assertNotIn("manifest.md", rendered)
+        self.assertNotIn("Contributor", rendered)
+        self.assertNotIn("Publish\\_date", rendered)
+        self.assertNotIn("VPN required", rendered)
 
     def test_callback_requires_url_only_when_enabled(self):
         SlackExternalCallbackConfig(enabled=False, url="")

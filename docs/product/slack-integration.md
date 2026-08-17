@@ -126,7 +126,8 @@ Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。�
 状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
 `asset_title`、`solution_briefing`、`author_mail`、`create_time` 仅从本次实际使用的
 DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。回答原文保留，原参考资料区替换
-为 Asset Title、Solution Briefing、Contributor、Publish_date 和 KM Link Block。
+为一个分隔线、Asset Title、Solution Briefing，以及“Contributor 邮箱 | 发布日期”
+与 KM Link 按钮组成的 Block Kit。
 
 无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤和排序，并受
 `max_references` 限制。警告与可视化仅输出面向用户的摘要，不传送定位框、内部
