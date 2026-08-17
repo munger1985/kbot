@@ -113,27 +113,51 @@ class SlackIntakeService:
             raise SlackWebhookError(
                 "SLACK_PAYLOAD_INVALID", "Slack 请求不是有效 JSON", 400
             ) from exc
+        payload_type = str(payload.get("type") or "")
         workspace_id = str(payload.get("team_id") or "")
-        workspace = self._config.workspace(workspace_id)
-        if workspace is None:
+        workspace = (
+            self._config.workspace(workspace_id) if workspace_id else None
+        )
+        if workspace is not None:
+            signing_secrets = (workspace.require_signing_secret(),)
+        elif payload_type == "url_verification" and not workspace_id:
+            # Slack 的 URL Verification 不保证携带 team_id。Signing Secret
+            # 属于 Slack App，因此允许使用任一已配置 Workspace 的
+            # App Secret 验签。
+            signing_secrets = tuple(
+                item.require_signing_secret()
+                for item in self._config.workspaces
+            )
+        else:
             raise SlackWebhookError(
                 "SLACK_WORKSPACE_UNKNOWN", "Slack Workspace 未注册", 404
             )
-        if not verify_slack_signature(
-            signing_secret=workspace.require_signing_secret(),
-            timestamp=headers.get("x-slack-request-timestamp", ""),
-            signature=headers.get("x-slack-signature", ""),
-            raw_body=raw_body,
-        ):
+        verified = any(
+            verify_slack_signature(
+                signing_secret=signing_secret,
+                timestamp=headers.get("x-slack-request-timestamp", ""),
+                signature=headers.get("x-slack-signature", ""),
+                raw_body=raw_body,
+            )
+            for signing_secret in signing_secrets
+        )
+        if not verified:
             raise SlackWebhookError(
                 "SLACK_SIGNATURE_INVALID", "Slack 请求签名无效", 401
             )
-        if payload.get("type") == "url_verification":
+        if payload_type == "url_verification":
+            challenge = payload.get("challenge")
+            if not isinstance(challenge, str) or not challenge:
+                raise SlackWebhookError(
+                    "SLACK_CHALLENGE_INVALID",
+                    "Slack URL Verification 缺少 challenge",
+                    400,
+                )
             return SlackIntakeResult(
                 receipt_id=None,
                 accepted=True,
                 duplicate=False,
-                challenge=str(payload.get("challenge") or ""),
+                challenge=challenge,
             )
         parsed = parse_message_event(payload)
         if parsed is None:

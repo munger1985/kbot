@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -15,6 +16,8 @@ from unittest.mock import AsyncMock, patch
 
 from km_asset_app.application.slack_dispatch import SlackDispatchService
 from km_asset_app.application.slack_intake import (
+    SlackIntakeService,
+    SlackWebhookError,
     parse_message_event,
     verify_slack_signature,
 )
@@ -121,6 +124,80 @@ class SlackEventParsingTest(unittest.TestCase):
             },
         }
         self.assertIsNone(parse_message_event(payload))
+
+
+class SlackUrlVerificationTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _signed_request(secret: str, payload: dict):
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        timestamp = str(int(time.time()))
+        signature = "v0=" + hmac.new(
+            secret.encode("utf-8"),
+            b"v0:" + timestamp.encode("utf-8") + b":" + body,
+            hashlib.sha256,
+        ).hexdigest()
+        return body, {
+            "x-slack-request-timestamp": timestamp,
+            "x-slack-signature": signature,
+        }
+
+    @staticmethod
+    def _config():
+        return SlackIntegrationConfig(
+            enabled=True,
+            workspaces=[
+                {
+                    "workspace_id": "T1",
+                    "domain_id": 1001,
+                    "agent_id": "019fcbe0-e46c-7d33-907b-9d1621a2998f",
+                    "signing_secret_env": "KBOT_SLACK_TEST_SIGNING_SECRET",
+                }
+            ],
+        )
+
+    async def test_accepts_signed_challenge_without_team_id(self):
+        body, headers = self._signed_request(
+            "test-secret",
+            {
+                "type": "url_verification",
+                "token": "deprecated-token",
+                "challenge": "challenge-value",
+            },
+        )
+        with patch.dict(
+            os.environ,
+            {"KBOT_SLACK_TEST_SIGNING_SECRET": "test-secret"},
+            clear=True,
+        ):
+            result = await SlackIntakeService(
+                uow_factory=None,
+                slack_config=self._config(),
+            ).receive(raw_body=body, headers=headers)
+
+        self.assertTrue(result.accepted)
+        self.assertEqual("challenge-value", result.challenge)
+
+    async def test_rejects_challenge_with_invalid_signature(self):
+        body, headers = self._signed_request(
+            "wrong-secret",
+            {
+                "type": "url_verification",
+                "challenge": "challenge-value",
+            },
+        )
+        with patch.dict(
+            os.environ,
+            {"KBOT_SLACK_TEST_SIGNING_SECRET": "test-secret"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                SlackWebhookError,
+                "签名无效",
+            ):
+                await SlackIntakeService(
+                    uow_factory=None,
+                    slack_config=self._config(),
+                ).receive(raw_body=body, headers=headers)
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):

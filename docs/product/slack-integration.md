@@ -7,6 +7,10 @@ Events API 的普通消息、`app_mention` 和 URL Verification；机器人消�
 及其他事件会被安全忽略。Slack 请求使用原始正文、请求时间戳和 Signing Secret
 执行 HMAC 校验，不使用 Portal API Key。
 
+URL Verification 报文不保证携带 `team_id`。此时 KM Asset 使用已配置 Workspace
+对应的 Slack App Signing Secret 验签，成功后由 Main API 以 `text/plain` 和
+HTTP 200 原样返回 `challenge`；普通事件仍必须携带并匹配 `team_id`。
+
 Main API 仅保真转发原始正文和 Slack 验签 Header；KM Asset 完成验签并将入站事件
 写入自有 Inbox，再由 KM Asset 的独立 Slack Worker 映射为 Agent Runtime
 Conversation 与 Turn。会话按 Workspace、频道、根线程和 Slack 用户隔离。Agent
