@@ -40,6 +40,49 @@ class _DeleteUow:
         self.committed = True
 
 
+class _MembershipAccess:
+    def __init__(self):
+        self.upserts = []
+
+    async def get_user(self, user_id):
+        return SimpleNamespace(user_id=user_id)
+
+    async def get_role(self, *, app_id, role_code):
+        return SimpleNamespace(app_id=app_id, role_code=role_code)
+
+    async def upsert_member_role(self, **values):
+        self.upserts.append(values)
+        return SimpleNamespace(**values)
+
+
+class _MembershipDomains:
+    def __init__(self, domain_ids):
+        self.domain_ids = frozenset(domain_ids)
+
+    async def list_by_ids(self, *, domain_ids):
+        return [
+            SimpleNamespace(domain_id=domain_id)
+            for domain_id in domain_ids
+            if domain_id in self.domain_ids
+        ]
+
+
+class _MembershipUow:
+    def __init__(self, domain_ids):
+        self.access = _MembershipAccess()
+        self.domains = _MembershipDomains(domain_ids)
+        self.committed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    async def commit(self):
+        self.committed = True
+
+
 class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.service = AccessManagementService(uow_factory=_ForbiddenUowFactory())
@@ -85,9 +128,9 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_reserved_admin_membership_cannot_be_changed(self):
         with self.assertRaises(AccessManagementError) as context:
-            await self.service.set_membership(
+            await self.service.set_memberships(
                 app_id="platform",
-                domain_id=1,
+                domain_ids=(1,),
                 user_id="admin",
                 role_code="system_admin",
                 status="DISABLED",
@@ -97,9 +140,9 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_system_admin_membership_cannot_be_assigned(self):
         with self.assertRaises(AccessManagementError) as context:
-            await self.service.set_membership(
+            await self.service.set_memberships(
                 app_id="knowledge_retrieval",
-                domain_id=1,
+                domain_ids=(1,),
                 user_id="TEST_USER",
                 role_code="system_admin",
                 status="ACTIVE",
@@ -108,6 +151,43 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "SYSTEM_ADMIN_ROLE_PROTECTED", context.exception.code
         )
+
+    async def test_memberships_are_written_in_one_transaction(self):
+        uow = _MembershipUow({1, 2})
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        result = await service.set_memberships(
+            app_id="knowledge_retrieval",
+            domain_ids=(1, 2, 1),
+            user_id="TEST_USER",
+            role_code="user",
+            status="ACTIVE",
+            actor_id="ADMIN",
+        )
+
+        self.assertTrue(uow.committed)
+        self.assertEqual(
+            [1, 2], [row["domain_id"] for row in uow.access.upserts]
+        )
+        self.assertEqual(2, result["total"])
+
+    async def test_missing_domain_rejects_entire_membership_batch(self):
+        uow = _MembershipUow({1})
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.set_memberships(
+                app_id="knowledge_retrieval",
+                domain_ids=(1, 2),
+                user_id="TEST_USER",
+                role_code="user",
+                status="ACTIVE",
+                actor_id="ADMIN",
+            )
+
+        self.assertEqual("DOMAIN_NOT_FOUND", context.exception.code)
+        self.assertEqual([], uow.access.upserts)
+        self.assertFalse(uow.committed)
 
     async def test_system_admin_role_cannot_be_changed(self):
         with self.assertRaises(AccessManagementError) as context:

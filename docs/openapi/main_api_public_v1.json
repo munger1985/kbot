@@ -3979,10 +3979,14 @@
       "MembershipPayload": {
         "additionalProperties": false,
         "properties": {
-          "domain_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Domain Id",
-            "type": "integer"
+          "domain_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Domain Ids",
+            "type": "array"
           },
           "status": {
             "default": "ACTIVE",
@@ -3995,7 +3999,7 @@
           }
         },
         "required": [
-          "domain_id"
+          "domain_ids"
         ],
         "title": "MembershipPayload",
         "type": "object"
@@ -8334,7 +8338,7 @@
     },
     "/api/v1/admin/users/{user_id}/memberships/{app_id}/{role_code}": {
       "put": {
-        "operationId": "set_membership_api_v1_admin_users__user_id__memberships__app_id___role_code__put",
+        "operationId": "set_memberships_api_v1_admin_users__user_id__memberships__app_id___role_code__put",
         "parameters": [
           {
             "in": "path",
@@ -8394,7 +8398,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Set Membership",
+        "summary": "Set Memberships",
         "tags": [
           "Access Management"
         ]

@@ -39,8 +39,9 @@ Main API 支持两种公开用户入口：
 - `POST /users`：平台管理员或当前 Domain 的应用成员管理员创建普通用户；
 - `GET/PATCH/DELETE /users/{user_id}`：查看、修改或物理删除普通用户；
 - `POST /users/{user_id}/password`：重置密码；
-- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：平台管理员可以维护
-  Domain 成员关系；应用成员管理员只能维护当前 Domain 下本 App 的普通角色；
+- `PUT /users/{user_id}/memberships/{app_id}/{role_code}`：请求体通过 `domain_ids`
+  一次维护一个或多个 Domain 成员关系；整批操作使用同一事务。平台管理员可以跨
+  Domain 授权，应用成员管理员只能维护当前 Domain 下本 App 的普通角色；
 - `GET /permissions`：查询按 App 分组的权限目录；
 - `GET/POST /roles`：查询或创建应用角色；
 - `PUT/DELETE /roles/{app_id}/{role_code}`：更新权限集合或逻辑删除角色。

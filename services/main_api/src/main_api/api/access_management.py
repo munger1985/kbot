@@ -70,8 +70,15 @@ class PasswordResetPayload(_Payload):
 
 
 class MembershipPayload(_Payload):
-    domain_id: int = Field(gt=0)
+    domain_ids: tuple[int, ...] = Field(min_length=1, max_length=200)
     status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
+
+    @field_validator("domain_ids")
+    @classmethod
+    def normalize_domain_ids(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if any(domain_id <= 0 for domain_id in value):
+            raise ValueError("业务域 ID 必须为正整数")
+        return tuple(dict.fromkeys(value))
 
 
 class RoleCreatePayload(_Payload):
@@ -181,9 +188,9 @@ async def _require_membership_manager(
     request: Request,
     *,
     app_id: str,
-    target_domain_id: int,
+    target_domain_ids: tuple[int, ...],
 ) -> tuple[int, str]:
-    """允许平台管理员，或限定在本 App、本 Domain 的成员管理员。"""
+    """批量授权允许平台管理员，或限定在本 App、本 Domain 的成员管理员。"""
     domain_id, actor_id = _domain_actor(request)
     if await _has_permission(
         request,
@@ -195,7 +202,10 @@ async def _require_membership_manager(
         return domain_id, actor_id
 
     permission_code = APP_MEMBER_MANAGE_PERMISSIONS.get(app_id)
-    if permission_code is None or target_domain_id != domain_id:
+    if permission_code is None or any(
+        target_domain_id != domain_id
+        for target_domain_id in target_domain_ids
+    ):
         raise HTTPException(
             403,
             {
@@ -330,7 +340,7 @@ async def delete_user(user_id: str, request: Request):
 
 
 @router.put("/users/{user_id}/memberships/{app_id}/{role_code}")
-async def set_membership(
+async def set_memberships(
     user_id: str,
     app_id: str,
     role_code: str,
@@ -341,11 +351,11 @@ async def set_membership(
         _, actor_id = await _require_membership_manager(
             request,
             app_id=app_id,
-            target_domain_id=payload.domain_id,
+            target_domain_ids=payload.domain_ids,
         )
-        return await _management(request).set_membership(
+        return await _management(request).set_memberships(
             app_id=app_id,
-            domain_id=payload.domain_id,
+            domain_ids=payload.domain_ids,
             user_id=user_id,
             role_code=role_code,
             status=payload.status,

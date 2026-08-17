@@ -243,11 +243,11 @@ class AccessManagementService:
             await uow.commit()
         return {"user_id": user_id, "deleted": True}
 
-    async def set_membership(
+    async def set_memberships(
         self,
         *,
         app_id: str,
-        domain_id: int,
+        domain_ids: tuple[int, ...],
         user_id: str,
         role_code: str,
         status: str,
@@ -256,10 +256,16 @@ class AccessManagementService:
         _assert_mutable_user(user_id)
         _assert_mutable_role(role_code)
         _assert_status(status)
+        normalized_domain_ids = tuple(dict.fromkeys(domain_ids))
+        if not normalized_domain_ids or any(
+            domain_id <= 0 for domain_id in normalized_domain_ids
+        ):
+            raise AccessManagementError(
+                "INVALID_DOMAIN_IDS", "业务域列表不能为空且 ID 必须为正整数"
+            )
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
             role = await uow.access.get_role(app_id=app_id, role_code=role_code)
-            domain = await uow.domains.get(domain_id=domain_id)
             if user is None:
                 raise AccessManagementError(
                     "USER_NOT_FOUND", "用户不存在", status_code=404
@@ -268,27 +274,43 @@ class AccessManagementService:
                 raise AccessManagementError(
                     "ROLE_NOT_FOUND", "应用角色不存在", status_code=404
                 )
-            if domain is None:
-                raise AccessManagementError(
-                    "DOMAIN_NOT_FOUND", "Domain 不存在", status_code=404
-                )
-            row = await uow.access.upsert_member_role(
-                app_id=app_id,
-                domain_id=domain_id,
-                user_id=user_id,
-                role_code=role_code,
-                status=status,
-                actor_id=actor_id,
+            domains = await uow.domains.list_by_ids(
+                domain_ids=normalized_domain_ids
             )
-            result = {
-                "app_id": row.app_id,
-                "domain_id": int(row.domain_id),
-                "user_id": row.user_id,
-                "role_code": row.role_code,
-                "status": row.status,
-            }
+            existing_domain_ids = {int(domain.domain_id) for domain in domains}
+            missing_domain_ids = [
+                domain_id
+                for domain_id in normalized_domain_ids
+                if domain_id not in existing_domain_ids
+            ]
+            if missing_domain_ids:
+                raise AccessManagementError(
+                    "DOMAIN_NOT_FOUND",
+                    "Domain 不存在："
+                    + ", ".join(str(value) for value in missing_domain_ids),
+                    status_code=404,
+                )
+            items = []
+            for domain_id in normalized_domain_ids:
+                row = await uow.access.upsert_member_role(
+                    app_id=app_id,
+                    domain_id=domain_id,
+                    user_id=user_id,
+                    role_code=role_code,
+                    status=status,
+                    actor_id=actor_id,
+                )
+                items.append(
+                    {
+                        "app_id": row.app_id,
+                        "domain_id": int(row.domain_id),
+                        "user_id": row.user_id,
+                        "role_code": row.role_code,
+                        "status": row.status,
+                    }
+                )
             await uow.commit()
-        return result
+        return {"items": items, "total": len(items)}
 
     async def list_permissions(
         self, *, app_id: str | None

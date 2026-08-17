@@ -618,9 +618,9 @@ class _FakeAccessManagementService:
             "protected": False,
         }
 
-    async def set_membership(self, **values):
+    async def set_memberships(self, **values):
         self.membership = values
-        return values
+        return {"items": [], "total": len(values["domain_ids"])}
 
     async def delete_user(self, **values):
         raise AssertionError(f"越权请求不应删除用户：{values}")
@@ -1196,13 +1196,13 @@ class MainApiTest(unittest.TestCase):
                 "knowledge_retrieval/user"
             ),
             headers=self._headers(),
-            json={"domain_id": 100, "status": "ACTIVE"},
+            json={"domain_ids": [100], "status": "ACTIVE"},
         )
 
         self.assertEqual(201, created.status_code, created.text)
         self.assertEqual(200, membership.status_code, membership.text)
         self.assertEqual("NEW_USER", management.created_user)
-        self.assertEqual(100, management.membership["domain_id"])
+        self.assertEqual((100,), management.membership["domain_ids"])
         self.assertEqual(
             "knowledge_retrieval", management.membership["app_id"]
         )
@@ -1270,7 +1270,7 @@ class MainApiTest(unittest.TestCase):
         response = self.client.put(
             "/api/v1/admin/users/NEW_USER/memberships/aiops/operator",
             headers=self._headers(),
-            json={"domain_id": 100, "status": "ACTIVE"},
+            json={"domain_ids": [100], "status": "ACTIVE"},
         )
 
         self.assertEqual(403, response.status_code, response.text)
@@ -1293,13 +1293,59 @@ class MainApiTest(unittest.TestCase):
                 "knowledge_retrieval/user"
             ),
             headers=self._headers(),
-            json={"domain_id": 200, "status": "ACTIVE"},
+            json={"domain_ids": [100, 200], "status": "ACTIVE"},
         )
 
         self.assertEqual(403, response.status_code, response.text)
         self.assertEqual(
             "APP_MEMBERSHIP_SCOPE_DENIED", response.json()["code"]
         )
+
+    def test_platform_manager_can_authorize_multiple_domains(self) -> None:
+        access = _ScopedAccessControlService(
+            ("platform", "platform:user_manage")
+        )
+        management = _FakeAccessManagementService()
+        self.app.state.access_control_service = access
+        self.app.state.access_management_service = management
+
+        response = self.client.put(
+            (
+                "/api/v1/admin/users/NEW_USER/memberships/"
+                "knowledge_retrieval/user"
+            ),
+            headers=self._headers(),
+            json={
+                "domain_ids": [100, 200, 100, 300],
+                "status": "ACTIVE",
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            (100, 200, 300), management.membership["domain_ids"]
+        )
+        checked_domains = [domain_id for _, domain_id, _ in access.calls]
+        self.assertEqual([100], checked_domains)
+
+    def test_membership_contract_rejects_single_domain_field(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("platform", "platform:user_manage")
+        )
+        self.app.state.access_management_service = (
+            _FakeAccessManagementService()
+        )
+
+        response = self.client.put(
+            (
+                "/api/v1/admin/users/NEW_USER/memberships/"
+                "knowledge_retrieval/user"
+            ),
+            headers=self._headers(),
+            json={"domain_id": 100, "status": "ACTIVE"},
+        )
+
+        self.assertEqual(422, response.status_code, response.text)
 
     def test_app_member_manager_cannot_delete_platform_user(self) -> None:
         self.app.state.access_control_service = _ScopedAccessControlService(
