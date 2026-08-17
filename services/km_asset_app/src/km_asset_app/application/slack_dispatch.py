@@ -239,9 +239,17 @@ class SlackDispatchService:
             workspace = self._config.workspace(inbox.workspace_id)
             if workspace is None or inbox.run_id is None:
                 raise RuntimeError("Slack Inbox 缺少 Workspace 或 Run")
-        context = self._context(inbox, workspace)
+            # 只读 UoW 退出时会 rollback；SQLAlchemy 会过期并分离实体。
+            # 在 Session 内构造认证上下文并复制后续所需字段，避免在
+            # 网络调用阶段继续访问 DetachedInstance。
+            context = self._context(inbox, workspace)
+            run_id = inbox.run_id
+            workspace_id = inbox.workspace_id
+            channel_id = inbox.channel_id
+            slack_user_id = inbox.slack_user_id
+            root_thread_ts = inbox.root_thread_ts
         summary = await self._agent_client.get_run(
-            run_id=inbox.run_id, auth_context=context
+            run_id=run_id, auth_context=context
         )
         status = str(summary.get("status") or "")
         if status not in _TERMINAL_RUN_STATUSES:
@@ -255,20 +263,20 @@ class SlackDispatchService:
             return
         if status == "COMPLETED":
             artifact = await self._agent_client.get_result(
-                run_id=inbox.run_id, auth_context=context
+                run_id=run_id, auth_context=context
             )
             payload = render_slack_reply(
-                channel_id=inbox.channel_id,
-                user_id=inbox.slack_user_id,
-                thread_ts=inbox.root_thread_ts,
+                channel_id=channel_id,
+                user_id=slack_user_id,
+                thread_ts=root_thread_ts,
                 artifact=artifact,
                 reply_config=self._config.reply,
             )
         else:
             payload = {
-                "channel": inbox.channel_id,
-                "thread_ts": inbox.root_thread_ts,
-                "text": f"<@{inbox.slack_user_id}> KBot 本次处理失败，请稍后重试。",
+                "channel": channel_id,
+                "thread_ts": root_thread_ts,
+                "text": f"<@{slack_user_id}> KBot 本次处理失败，请稍后重试。",
             }
         async with self._uow_factory() as uow:
             current = await uow.slack.get_inbox(inbox_id)
@@ -280,10 +288,10 @@ class SlackDispatchService:
                     SlackDeliveryEntity(
                         delivery_id=uuid7(),
                         inbox_id=inbox_id,
-                        workspace_id=inbox.workspace_id,
-                        channel_id=inbox.channel_id,
-                        slack_user_id=inbox.slack_user_id,
-                        thread_ts=inbox.root_thread_ts,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                        slack_user_id=slack_user_id,
+                        thread_ts=root_thread_ts,
                         delivery_type="FINAL",
                         payload_json=payload,
                         status="PENDING",

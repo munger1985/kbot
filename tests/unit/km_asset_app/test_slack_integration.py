@@ -646,6 +646,109 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIs(execution_spec, create_payload["execution_spec"])
 
+    async def test_run_check_does_not_read_inbox_after_uow_exit(self):
+        agent_id = UUID("019ff999-6789-799b-97c3-500879812f7b")
+        inbox_id = UUID("01a00e5c-6d3e-7def-88a4-b9dfc1391ecc")
+        run_id = UUID("01a00e5c-6d3e-7def-88a4-b9dfc1391ecd")
+
+        class ExpiringInbox(SimpleNamespace):
+            _protected = {
+                "workspace_id",
+                "slack_user_id",
+                "channel_id",
+                "root_thread_ts",
+                "run_id",
+            }
+
+            def __getattribute__(self, name):
+                if name in object.__getattribute__(self, "_protected"):
+                    if not object.__getattribute__(self, "_active"):
+                        raise AssertionError(
+                            f"UoW 退出后访问了 Inbox 属性：{name}"
+                        )
+                return object.__getattribute__(self, name)
+
+        inbox = ExpiringInbox(
+            _active=True,
+            workspace_id="T1",
+            slack_user_id="U1",
+            channel_id="C1",
+            root_thread_ts="1723880000.123456",
+            run_id=run_id,
+        )
+        current = SimpleNamespace(
+            status="RUNNING",
+            lease_owner="test-worker",
+            lease_until=None,
+            updated_at=None,
+        )
+        first_repository = SimpleNamespace(
+            get_inbox=AsyncMock(return_value=inbox)
+        )
+        second_repository = SimpleNamespace(
+            get_inbox=AsyncMock(return_value=current),
+            get_delivery=AsyncMock(return_value=None),
+            add_delivery=AsyncMock(),
+        )
+
+        class FirstUnitOfWork:
+            slack = first_repository
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                inbox._active = False
+
+        class SecondUnitOfWork:
+            slack = second_repository
+            commit = AsyncMock()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+        units = iter((FirstUnitOfWork(), SecondUnitOfWork()))
+        agent_client = SimpleNamespace(
+            get_run=AsyncMock(return_value={"status": "COMPLETED"}),
+            get_result=AsyncMock(
+                return_value={
+                    "artifact_type": "GROUNDED_ANSWER",
+                    "schema_version": "GroundedAnswer.v1",
+                    "payload": {
+                        "answer": "完成",
+                        "status": "READY",
+                        "used_citation_labels": [],
+                        "references": [],
+                    },
+                }
+            ),
+        )
+        service = SlackDispatchService(
+            uow_factory=lambda: next(units),
+            agent_client=agent_client,
+            km_asset_client=None,
+            slack_config=SlackIntegrationConfig(
+                enabled=True,
+                workspaces=[
+                    {
+                        "workspace_id": "T1",
+                        "domain_id": 1001,
+                        "agent_id": str(agent_id),
+                    }
+                ],
+            ),
+            worker_id="test-worker",
+            http_session=None,
+        )
+
+        await service._check_run(inbox_id)
+
+        self.assertEqual("COMPLETED", current.status)
+        second_repository.add_delivery.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
