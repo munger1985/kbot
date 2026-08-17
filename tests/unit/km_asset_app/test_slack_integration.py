@@ -397,6 +397,53 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("<!channel>", rendered)
         self.assertIn("&lt;!channel&gt;", rendered)
 
+    def test_answer_is_normalized_to_slack_mrkdwn(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": (
+                        "## ChatBI 资产\n\n"
+                        "**资产名称**：Conversational Banking [C1]\n\n"
+                        "**关键信息**：\n"
+                        "- 使用 Select AI Agents\n"
+                        "- 支持 RAG 工作流\n\n"
+                        "**文档链接**："
+                        '<a target="_blank" '
+                        'href="https://oracle.example.com/document.docx?web=1&amp;e=x">'
+                        "documentation-select-ai-agent</a> [C1]"
+                    ),
+                    "status": "READY",
+                    "used_citation_labels": ["C1"],
+                    "references": [
+                        {
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "C1",
+                            "title": "manifest.md",
+                            "locator": {},
+                        }
+                    ],
+                },
+            },
+            reply_config=SlackReplyConfig(),
+        )
+
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("*ChatBI 资产*", rendered)
+        self.assertIn("*资产名称*：Conversational Banking [C1]", rendered)
+        self.assertIn("• 使用 Select AI Agents", rendered)
+        self.assertIn(
+            "<https://oracle.example.com/document.docx?web=1&e=x|"
+            "documentation-select-ai-agent>",
+            rendered,
+        )
+        for original_format in ("**资产名称**", "<a ", "</a>", "&lt;a"):
+            self.assertNotIn(original_format, rendered)
+
     def test_callback_requires_url_only_when_enabled(self):
         SlackExternalCallbackConfig(enabled=False, url="")
         with self.assertRaises(ValueError):

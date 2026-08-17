@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import html
+import re
 from datetime import date
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 from km_asset_app.config import SlackReplyConfig
 
@@ -22,6 +25,23 @@ _STATUS_LABELS = {
     "INSUFFICIENT_EVIDENCE": "现有资料不足",
     "PARTIAL": "部分回答",
 }
+
+_HTML_ANCHOR_PATTERN = re.compile(
+    r"<a\b[^>]*?\bhref\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</a\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_SLACK_LINK_PATTERN = re.compile(
+    r"<(https?://[^<>|\s]+)(?:\|([^<>]*))?>",
+    re.IGNORECASE,
+)
+_MARKDOWN_IMAGE_PATTERN = re.compile(
+    r"!\[([^\]\n]*)\]\((https?://[^\s)]+)\)",
+    re.IGNORECASE,
+)
+_MARKDOWN_LINK_PATTERN = re.compile(
+    r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)",
+    re.IGNORECASE,
+)
 
 
 def waiting_message(question: str) -> str:
@@ -42,6 +62,81 @@ def _escape_mrkdwn(value: object) -> str:
         .replace(">", "&gt;")
     )
     return escaped.strip()
+
+
+def _slack_link(url: str, label: str) -> str:
+    normalized_url = html.unescape(url).strip()
+    parsed = urlsplit(normalized_url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return _escape_mrkdwn(label)
+    encoded_url = quote(
+        normalized_url,
+        safe=":/?#[]@!$&'()*+,;=%",
+    )
+    safe_label = _escape_mrkdwn(
+        re.sub(r"</?[A-Za-z][^>]*>", "", html.unescape(label))
+    ).replace("|", "｜")
+    return f"<{encoded_url}|{safe_label or encoded_url}>"
+
+
+def _to_slack_mrkdwn(value: object) -> str:
+    """将模型可能返回的 CommonMark/HTML 收敛为安全 Slack mrkdwn。"""
+    if not isinstance(value, str):
+        return ""
+    text = html.unescape(value).replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = _HTML_ANCHOR_PATTERN.sub(
+        lambda match: _slack_link(match.group(2), match.group(3)),
+        text,
+    )
+    text = _MARKDOWN_IMAGE_PATTERN.sub(
+        lambda match: _slack_link(match.group(2), match.group(1)),
+        text,
+    )
+    text = _MARKDOWN_LINK_PATTERN.sub(
+        lambda match: _slack_link(match.group(2), match.group(1)),
+        text,
+    )
+
+    # 先暂存合法链接；其余尖括号稍后统一转义，防止模型制造 mention。
+    slack_links: list[str] = []
+
+    def stash_link(match: re.Match[str]) -> str:
+        slack_links.append(_slack_link(match.group(1), match.group(2) or ""))
+        return f"\x00SLACK_LINK_{len(slack_links) - 1}\x00"
+
+    text = _SLACK_LINK_PATTERN.sub(stash_link, text)
+    for tag, marker in (
+        ("strong", "*"),
+        ("b", "*"),
+        ("em", "_"),
+        ("i", "_"),
+        ("del", "~"),
+        ("s", "~"),
+        ("code", "`"),
+    ):
+        text = re.sub(
+            rf"</?{tag}\b[^>]*>",
+            marker,
+            text,
+            flags=re.IGNORECASE,
+        )
+    text = re.sub(r"</?[A-Za-z][^>]*>", "", text)
+    text = re.sub(
+        r"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*$",
+        r"*\1*",
+        text,
+    )
+    text = re.sub(r"(?m)^\s*[-+]\s+", "• ", text)
+    text = _escape_mrkdwn(text)
+    text = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"*\1*", text)
+    text = re.sub(r"__(?=\S)(.+?)(?<=\S)__", r"*\1*", text)
+    text = re.sub(r"~~(?=\S)(.+?)(?<=\S)~~", r"~\1~", text)
+    # 不允许无法配对的源格式标记继续原样展示。
+    text = text.replace("**", "*").replace("__", "_").replace("~~", "~")
+    for index, link in enumerate(slack_links):
+        text = text.replace(f"\x00SLACK_LINK_{index}\x00", link)
+    return text.strip()
 
 
 def _text_sections(text: str) -> list[dict[str, Any]]:
@@ -271,7 +366,7 @@ def render_slack_reply(
     )
     if not answer:
         answer = _EMPTY_ANSWER
-    safe_answer = _escape_mrkdwn(answer)
+    safe_answer = _to_slack_mrkdwn(answer)
     blocks: list[dict[str, Any]] = [
         {
             "type": "context",
