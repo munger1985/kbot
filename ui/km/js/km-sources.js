@@ -6,8 +6,36 @@
   let modelSource = null;
 
   async function load() {
-    try { rows = KBotKmApi.items(await KBotKmApi.request(`${base}/sources`)); render(); }
-    catch (error) { KBotKmShell.showError(error, "数据来源加载失败"); }
+    try {
+      rows = KBotKmApi.items(await KBotKmApi.request(`${base}/sources`));
+      render();
+      return rows;
+    } catch (error) {
+      KBotKmShell.showError(error, "数据来源加载失败");
+      return null;
+    }
+  }
+
+  function isVersionConflict(error) {
+    return error?.status === 409 && error?.code === "ROW_VERSION_CONFLICT";
+  }
+
+  async function refreshConflict(sourceId, form) {
+    const refreshed = await load();
+    if (!refreshed) return false;
+    const current = refreshed.find((row) => String(row.source_id) === String(sourceId));
+    if (!current) {
+      KBotKmShell.toast("数据来源已不存在，请关闭编辑窗口后重新选择", "error");
+      return true;
+    }
+    if (form) form.elements.expected_row_version.value = current.row_version;
+    KBotKmShell.toast(
+      form
+        ? `来源配置已变化，版本已刷新为 ${current.row_version}；已保留当前输入，请核对后再次保存`
+        : `来源配置已变化，列表已刷新到版本 ${current.row_version}，请重试操作`,
+      "warning"
+    );
+    return true;
   }
   function render() {
     const body = $("source-rows");
@@ -24,7 +52,11 @@
       const message = kind === "activate" ? "数据来源已激活" : kind === "sync" ? "同步任务已提交" : row.auto_sync_enabled ? "后台自动同步已关闭" : "后台自动同步已开启";
       KBotKmShell.toast(message, "success");
       await load();
-    } catch (error) { KBotKmShell.showError(error); }
+    } catch (error) {
+      if (!(isVersionConflict(error) && await refreshConflict(row.source_id))) {
+        KBotKmShell.showError(error);
+      }
+    }
     finally { KBotKmShell.setBusy(button, false); }
   }
   async function showModel(index) {
@@ -70,7 +102,11 @@
     if (sharepointGroup.every(Boolean)) payload.sharepoint_credentials = { tenant_id: values.tenant_id, client_id: values.client_id, client_secret: values.client_secret };
     KBotKmShell.setBusy($("update-source"), true, "保存中…");
     try { await KBotKmApi.json(`${base}/sources/${encodeURIComponent(values.source_id)}`, "PATCH", payload); KBotKmShell.closeDialog("source-edit-dialog"); KBotKmShell.toast("数据来源已更新", "success"); await load(); }
-    catch (error) { KBotKmShell.showError(error, "数据来源更新失败"); }
+    catch (error) {
+      if (!(isVersionConflict(error) && await refreshConflict(values.source_id, form))) {
+        KBotKmShell.showError(error, "数据来源更新失败");
+      }
+    }
     finally { KBotKmShell.setBusy($("update-source"), false); }
   }
   window.addEventListener("DOMContentLoaded", () => {

@@ -258,6 +258,10 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("auto_sync_enabled", source_js)
         self.assertIn("开启后台同步", source_js)
         self.assertIn("关闭后台同步", source_js)
+        self.assertIn('error?.code === "ROW_VERSION_CONFLICT"', source_js)
+        self.assertIn("refreshConflict(values.source_id, form)", source_js)
+        self.assertIn("已保留当前输入", source_js)
+        self.assertIn("km-sources.js?v=20260818_1", source_html)
         openapi = json.loads(
             (ROOT / "docs" / "openapi" / "main_api_public_v1.json").read_text(
                 encoding="utf-8"
