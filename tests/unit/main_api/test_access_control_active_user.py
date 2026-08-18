@@ -11,6 +11,14 @@ from main_api.application import (
     GLOBAL_ADMIN_USER_ID,
     is_reserved_global_admin,
 )
+from main_api.entities.access_control import (
+    AppDomainEntity,
+    AppMemberEntity,
+    AppMemberRoleEntity,
+    PlatformApplicationEntity,
+    PlatformUserCredentialEntity,
+    PlatformUserRoleEntity,
+)
 from main_api.repositories.access_control import AccessControlRepository
 
 
@@ -39,6 +47,27 @@ class _DeleteSession:
 
 
 class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
+    def test_oracle_thin_does_not_eagerly_load_access_audit_timestamps(self):
+        """命名时区时间戳不能进入 Oracle Thin 的常规授权查询。"""
+        entity_types = (
+            PlatformApplicationEntity,
+            PlatformUserCredentialEntity,
+            PlatformUserRoleEntity,
+            AppDomainEntity,
+            AppMemberEntity,
+            AppMemberRoleEntity,
+        )
+        for entity_type in entity_types:
+            timestamp_attributes = (
+                attribute
+                for attribute in entity_type.__mapper__.column_attrs
+                if attribute.key in {"created_at", "updated_at"}
+            )
+            self.assertTrue(
+                all(attribute.deferred for attribute in timestamp_attributes),
+                entity_type.__name__,
+            )
+
     def test_global_admin_uses_uppercase_canonical_identifier(self):
         self.assertEqual("ADMIN", GLOBAL_ADMIN_USER_ID)
         self.assertTrue(is_reserved_global_admin("ADMIN"))

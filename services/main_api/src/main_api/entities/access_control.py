@@ -16,8 +16,14 @@ class PlatformApplicationEntity(BaseEntity):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     member_assignable: Mapped[str] = mapped_column(String(1), nullable=False, default="Y")
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False, deferred=True,
+    )
 
 
 class PlatformUserEntity(BaseEntity):
@@ -41,8 +47,14 @@ class PlatformUserCredentialEntity(BaseEntity):
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     must_change_password: Mapped[str] = mapped_column(String(1), nullable=False, default="Y")
     password_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False, deferred=True,
+    )
 
 
 class PermissionEntity(BaseEntity):
@@ -95,7 +107,10 @@ class PlatformUserRoleEntity(BaseEntity):
     app_id: Mapped[str] = mapped_column(String(64), nullable=False, default="platform")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
 
 
 class AppDomainEntity(BaseEntity):
@@ -105,7 +120,10 @@ class AppDomainEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), ForeignKey("KBOT_PLATFORM_DOMAIN.domain_id"), primary_key=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
 
 
 class AppMemberEntity(BaseEntity):
@@ -117,8 +135,14 @@ class AppMemberEntity(BaseEntity):
     is_initial_admin: Mapped[str] = mapped_column(String(1), nullable=False, default="N")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     granted_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False, deferred=True,
+    )
 
 
 class AppMemberRoleEntity(BaseEntity):
@@ -134,7 +158,10 @@ class AppMemberRoleEntity(BaseEntity):
     scope_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="SELECTED_DOMAINS")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        deferred=True,
+    )
 
 
 class AppMemberRoleScopeEntity(BaseEntity):
