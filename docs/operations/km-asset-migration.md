@@ -65,7 +65,7 @@ Agent 和智能问答。没有 APEX 用户管理页面时，
 既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
 `scripts/db/bootstrap_km_initial_admin.sql`，它会幂等创建用户凭据表、初始化
 固定 Domain `km_portal` 和 Collection `assets`、初始化 KM 权限和角色、创建
-`kmadmin` 用户，并仅在 `km_portal` 中授予 `km_asset/manager`。首次创建
+`kmadmin` 用户，并仅在 `km_portal` 中授予 `km_asset/app_admin`。首次创建
 Collection 时会选择最近更新的启用 LLM 和文本 Embedding 模型作为初始模型绑定。
 
 来源创建请求示例：

@@ -176,7 +176,14 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("MERGE INTO KBOT_PERMISSION", source)
         self.assertIn("MERGE INTO KBOT_APP_ROLE", source)
         self.assertIn("MERGE INTO KBOT_APP_ROLE_PERMISSION", source)
+        self.assertIn("MERGE INTO KBOT_APP_MEMBER_ROLE", source)
         self.assertIn("km_asset:operations_manage", source)
+        self.assertIn("km_asset:api_key_manage", source)
+        self.assertIn("member.IS_INITIAL_ADMIN = 'Y'", source)
+        self.assertIn("legacy_role.ROLE_CODE = 'manager'", source)
+        self.assertIn("target.SCOPE_MODE = 'ALL_APP_DOMAINS'", source)
+        self.assertIn("KM Asset App 管理员最终授权", source)
+        self.assertIn("member_role.ROLE_CODE = 'app_admin'", source)
         self.assertNotIn("@@", source)
 
     def test_existing_schema_auto_sync_upgrade_defaults_to_off(self):
@@ -187,6 +194,17 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("CK_KM_SOURCE_AUTO_SYNC", source)
         self.assertNotIn("&&", source)
         self.assertNotIn("@@", source)
+
+    def test_api_client_key_copy_supports_insecure_http_context(self):
+        html = (KM_ROOT / "api-clients.html").read_text(encoding="utf-8")
+        script = (KM_ROOT / "js" / "km-api-clients.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("km-api-clients.js?v=20260818_2", html)
+        self.assertIn("navigator.clipboard?.writeText", script)
+        self.assertIn("window.isSecureContext", script)
+        self.assertIn('document.execCommand("copy")', script)
+        self.assertIn("自动复制失败，请手动选择并复制密钥", script)
 
     def test_initial_admin_script_bootstraps_full_km_access(self):
         source = (
@@ -204,6 +222,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(statement, source)
         self.assertIn("'app_admin' AS ROLE_CODE", source)
+        self.assertIn("km_asset:api_key_manage", source)
         self.assertIn("'ALL_APP_DOMAINS'", source)
         self.assertIn("'APP_INITIAL_ADMIN'", source)
         self.assertIn("WHERE domain.NAME = 'km_portal'", source)
@@ -244,12 +263,13 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
         self.assertIn('/api/v1/auth/refresh', adapter)
         self.assertIn("refreshFlight", adapter)
+        self.assertIn('cache: "no-store"', adapter)
         self.assertNotIn("X-KBot-Test-Auth", adapter)
         self.assertNotIn("X-KBot-User-ID", adapter)
         for page_name in (*self.pages, "login.html"):
             source = (KM_ROOT / page_name).read_text(encoding="utf-8")
             self.assertIn(
-                "kbot-km-auth-v2.js?v=20260818_1", source, page_name
+                "kbot-km-auth-v2.js?v=20260818_2", source, page_name
             )
 
     def test_km_source_creation_uses_server_fixed_collection(self):

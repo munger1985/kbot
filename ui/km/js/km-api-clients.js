@@ -60,6 +60,24 @@
     KBotKmShell.openDialog("api-key-dialog");
   }
 
+  async function copyText(value) {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.readOnly = true;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("浏览器不允许自动复制");
+  }
+
   async function create(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -109,7 +127,14 @@
     $("refresh-api-clients").addEventListener("click", load);
     $("api-client-form").addEventListener("submit", create);
     $("rotate-api-key-form").addEventListener("submit", rotate);
-    $("copy-api-key").addEventListener("click", async () => { await navigator.clipboard.writeText($("api-key-value").textContent); KBotKmShell.toast("API Key 已复制", "success"); });
+    $("copy-api-key").addEventListener("click", async () => {
+      try {
+        await copyText($("api-key-value").textContent);
+        KBotKmShell.toast("API Key 已复制", "success");
+      } catch (_error) {
+        KBotKmShell.toast("自动复制失败，请手动选择并复制密钥", "error");
+      }
+    });
     $("api-client-rows").addEventListener("click", (event) => { const rotateButton = event.target.closest("[data-rotate]"); if (rotateButton) return openRotate(Number(rotateButton.dataset.rotate)); const disableButton = event.target.closest("[data-disable]"); if (disableButton) disable(Number(disableButton.dataset.disable), disableButton); });
   });
   KBotKmShell.ready.then(initialize).catch(() => {});

@@ -101,7 +101,11 @@
     if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
-    const response = await fetch(`${mainApiBaseUrl()}${path}`, { ...options, headers });
+    const response = await fetch(`${mainApiBaseUrl()}${path}`, {
+      ...options,
+      cache: "no-store",
+      headers,
+    });
     const payload = await decode(response);
     if (!response.ok) throw failure(response, payload, path);
     return payload;

@@ -248,6 +248,8 @@ USING (
     SELECT 'km_asset:member_manage', 'km_asset', '管理 KM Asset 成员' FROM DUAL
     UNION ALL
     SELECT 'km_asset:role_manage', 'km_asset', '管理 KM Asset 角色' FROM DUAL
+    UNION ALL
+    SELECT 'km_asset:api_key_manage', 'km_asset', '管理 KM Asset API Client' FROM DUAL
 ) source
 ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN MATCHED THEN
