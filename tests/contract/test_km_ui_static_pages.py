@@ -131,6 +131,9 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/jobs/processing", source)
         self.assertIn("data-asset", source)
         self.assertIn("data-chain", source)
+        self.assertIn("data-source-jobs", source)
+        self.assertIn("data-source-more", source)
+        self.assertIn("SOURCE_JOB_PAGE_SIZE = 10", source)
         self.assertNotIn("job-rows", source)
 
     def test_km_chat_does_not_supply_user_security_level(self):

@@ -36,6 +36,15 @@ class CreateSourceCommand:
     actor_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class _ProcessingSourceSnapshot:
+    """处理状态查询离开事务后所需的来源字段。"""
+
+    source_id: UUID
+    collection_id: UUID
+    display_name: str
+
+
 class KmAssetService:
     def __init__(self, *, uow_factory: Callable, credential_service: KmCredentialService, data_query_client=None, knowledge_core_client=None):
         self._uow_factory = uow_factory
@@ -413,7 +422,16 @@ class KmAssetService:
                 message="Knowledge Core 服务未配置",
             )
         async with self._uow_factory() as uow:
-            sources = await uow.assets.list_sources(domain_id=domain_id)
+            sources = [
+                _ProcessingSourceSnapshot(
+                    source_id=row.source_id,
+                    collection_id=row.collection_id,
+                    display_name=str(row.display_name),
+                )
+                for row in await uow.assets.list_sources(
+                    domain_id=domain_id
+                )
+            ]
         if source_id is not None:
             sources = [
                 item for item in sources if item.source_id == source_id

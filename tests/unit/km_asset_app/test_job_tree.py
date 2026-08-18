@@ -10,11 +10,24 @@ from platform_core.identity import uuid7
 
 class KmAssetJobTreeTest(unittest.IsolatedAsyncioTestCase):
     async def test_processing_jobs_keep_source_and_kc_steps(self):
-        source = SimpleNamespace(
-            source_id=uuid7(),
-            collection_id=uuid7(),
-            display_name="Asset MetaDB",
-        )
+        class Source:
+            def __init__(self):
+                self.attached = True
+                self.source_id = uuid7()
+                self.collection_id = uuid7()
+                self.display_name = "Asset MetaDB"
+
+            def __getattribute__(self, name):
+                if (
+                    name not in {"attached", "__class__"}
+                    and not object.__getattribute__(self, "attached")
+                ):
+                    raise RuntimeError("来源实体已脱离 Session")
+                return object.__getattribute__(self, name)
+
+        source = Source()
+        source_id = source.source_id
+        collection_id = source.collection_id
 
         class _Uow:
             assets = SimpleNamespace(
@@ -26,6 +39,7 @@ class KmAssetJobTreeTest(unittest.IsolatedAsyncioTestCase):
 
             async def __aexit__(self, exc_type, exc, traceback):
                 del exc_type, exc, traceback
+                source.attached = False
 
         revision_id = uuid7()
         knowledge_core = SimpleNamespace(
@@ -56,12 +70,12 @@ class KmAssetJobTreeTest(unittest.IsolatedAsyncioTestCase):
 
         result = await service.list_processing_jobs(
             domain_id=43,
-            source_id=source.source_id,
+            source_id=source_id,
             limit=500,
         )
 
         self.assertEqual(1, len(result))
-        self.assertEqual(source.source_id, result[0]["source_id"])
+        self.assertEqual(source_id, result[0]["source_id"])
         self.assertEqual("Asset MetaDB", result[0]["source_name"])
         self.assertEqual(
             ["PARSE", "INDEX"],
@@ -69,7 +83,7 @@ class KmAssetJobTreeTest(unittest.IsolatedAsyncioTestCase):
         )
         call = knowledge_core.list_processing.await_args.kwargs
         self.assertEqual(43, call["domain_id"])
-        self.assertEqual(source.collection_id, call["collection_id"])
+        self.assertEqual(collection_id, call["collection_id"])
 
     def test_job_contract_exposes_asset_revision(self):
         revision_id = uuid7()

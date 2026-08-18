@@ -92,20 +92,60 @@ if ! python scripts/deployment/check_deployment.py; then
     echo "❌ 部署配置校验失败，未启动任何服务。"
     exit 1
 fi
-if ! python scripts/db/apply_oracle_schema.py --check-foundation; then
-    echo "❌ 系统尚未初始化：默认 Domain、ADMIN 或权限基础数据不完整。"
-    echo "   请执行：python scripts/db/apply_oracle_schema.py --foundation-only"
-    exit 1
-fi
 CONFIG_ENVIRONMENT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("environment", "development"))' "$KBOT_CONFIG_FILE")
 CONFIG_LOG_ROOT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("log_dir", "./logs"))' "$KBOT_CONFIG_FILE")
+
+LOG_ROOT="$CONFIG_LOG_ROOT"
+STARTUP_LOG_FILE="${LOG_ROOT}/main_api/runtime.log"
+mkdir -p "$(dirname "$STARTUP_LOG_FILE")"
+
+append_startup_log() {
+    local level="$1"
+    local message="$2"
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S.%3N')"
+    printf '%s | %-8s | [startup:preflight] startup - %s\n' \
+        "$timestamp" "$level" "$message" >>"$STARTUP_LOG_FILE"
+}
+
+FOUNDATION_CHECK_OUTPUT=$(python scripts/db/apply_oracle_schema.py --check-foundation 2>&1)
+FOUNDATION_CHECK_STATUS=$?
+if [ -n "$FOUNDATION_CHECK_OUTPUT" ]; then
+    printf '%s\n' "$FOUNDATION_CHECK_OUTPUT"
+    while IFS= read -r output_line; do
+        if [ "$FOUNDATION_CHECK_STATUS" -eq 0 ]; then
+            append_startup_log "INFO" "平台基础数据预检：${output_line}"
+        else
+            append_startup_log "ERROR" "平台基础数据预检：${output_line}"
+        fi
+    done <<< "$FOUNDATION_CHECK_OUTPUT"
+fi
+
+case "$FOUNDATION_CHECK_STATUS" in
+    0)
+        ;;
+    3)
+        echo "❌ 平台基础数据校验未通过，未启动任何服务。"
+        echo "   请根据上方 PDB、Schema 和具体缺失项确认目标后执行："
+        echo "   python scripts/db/apply_oracle_schema.py --foundation-only"
+        append_startup_log "ERROR" "平台基础数据不完整，启动已终止"
+        exit 1
+        ;;
+    *)
+        echo "❌ 平台基础数据预检执行异常，未启动任何服务。"
+        echo "   这不代表系统未初始化；请检查数据库连通性、部署配置和 Conda 环境。"
+        echo "   完整输出已记录：${STARTUP_LOG_FILE}"
+        append_startup_log "ERROR" \
+            "预检执行异常，退出码=${FOUNDATION_CHECK_STATUS}，启动已终止"
+        exit 1
+        ;;
+esac
 
 # UI 测试服务器开关：开发环境默认开启，其他环境强制关闭。
 ENVIRONMENT="${ENVIRONMENT:-$CONFIG_ENVIRONMENT}"
 ENVIRONMENT="${ENVIRONMENT,,}"
 KBOT_UI_ENABLED="${KBOT_UI_ENABLED:-true}"
 
-LOG_ROOT="$CONFIG_LOG_ROOT"
 mkdir -p "$LOG_ROOT"
 
 # 统一服务列表：格式 "服务分组:进程名:日志服务:模块入口"

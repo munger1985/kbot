@@ -131,7 +131,21 @@ button.small { min-height: 29px; padding: 4px 9px; font-size: 12px; }
 .km-step-action { margin-top: 8px; }
 .km-tree-empty { margin: 0; padding: 24px 18px; color: var(--km-muted); text-align: center; }
 .km-source-jobs { margin-top: 18px; }
-.km-source-steps { padding-top: 12px; padding-bottom: 18px; }
+.km-source-node + .km-source-node { border-top: 1px solid var(--km-line); }
+.km-source-toggle {
+  width: 100%; min-height: 64px; padding: 11px 18px; display: grid; grid-template-columns: 18px minmax(260px, 1fr) 120px 190px auto; gap: 12px; align-items: center; color: inherit; background: transparent; border: 0; border-radius: 0; text-align: left;
+}
+.km-source-toggle:hover { background: #faf7f0; }
+.km-source-toggle[aria-expanded="true"] { background: #f7f2e9; }
+.km-source-identity strong, .km-source-identity small { display: block; }
+.km-source-identity strong { font-size: 14px; }
+.km-source-identity small { margin-top: 3px; color: var(--km-muted); font-size: 11px; }
+.km-source-summary, .km-source-time { color: var(--km-muted); font-size: 12px; }
+.km-source-children { padding: 0 18px 16px 48px; background: #f7f2e9; }
+.km-source-steps { padding-top: 12px; padding-bottom: 8px; }
+.km-source-more { width: 100%; min-height: 38px; display: flex; justify-content: center; gap: 8px; color: var(--km-accent); background: transparent; border: 1px dashed var(--km-line-strong); }
+.km-source-more:hover { background: var(--km-paper); }
+.km-source-more span { color: var(--km-muted); font-size: 11px; }
 
 .km-badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font: 600 10px/1.2 ui-monospace, monospace; letter-spacing: .04em; }
 .km-badge.good { color: var(--km-good); background: #e3f0e9; }
@@ -194,6 +208,8 @@ body[data-access="denied"] .km-main { opacity: .55; pointer-events: none; }
   .km-asset-summary, .km-asset-time { display: none; }
   .km-chain-toggle { grid-template-columns: 18px minmax(220px, 1fr) auto; }
   .km-chain-summary { display: none; }
+  .km-source-toggle { grid-template-columns: 18px minmax(220px, 1fr) auto; }
+  .km-source-summary, .km-source-time { display: none; }
 }
 @media (max-width: 640px) {
   .km-page-head { align-items: flex-start; flex-direction: column; }
@@ -201,6 +217,7 @@ body[data-access="denied"] .km-main { opacity: .55; pointer-events: none; }
   .km-session { font-size: 10px; }
   .km-message { max-width: 92%; }
   .km-asset-children { padding-left: 25px; padding-right: 8px; }
+  .km-source-children { padding-left: 25px; padding-right: 8px; }
   .km-job-steps { padding-left: 42px; }
   .km-step-head { align-items: flex-start; }
 }

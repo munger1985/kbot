@@ -19,6 +19,13 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "init_services.ini"
 PLATFORM_FOUNDATION_SCRIPT = (
     ROOT / "scripts" / "db" / "bootstrap_platform_foundation.sql"
 )
+FOUNDATION_VALIDATION_EXIT_CODE = 3
+
+
+class FoundationValidationError(RuntimeError):
+    """平台基础数据未满足启动约束。"""
+
+
 PLATFORM_FOUNDATION_TABLES = {
     "KBOT_PLATFORM_DOMAIN",
     "KBOT_PLATFORM_APP",
@@ -366,7 +373,7 @@ async def _validate_platform_foundation(
     )
     missing_tables = PLATFORM_FOUNDATION_TABLES - existing_tables
     if missing_tables:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "平台基础表不完整：" + ", ".join(sorted(missing_tables))
         )
 
@@ -381,7 +388,7 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(security_column_count) != 1:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "KBOT_PLATFORM_USER 缺少非空字段 MAX_SECURITY_LEVEL"
         )
 
@@ -396,7 +403,7 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(security_constraint_count) != 1:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "KBOT_PLATFORM_USER 缺少启用的安全等级范围约束"
         )
 
@@ -409,7 +416,7 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(default_domain_count) != 1:
-        raise RuntimeError("缺少唯一且启用的默认业务域 default")
+        raise FoundationValidationError("缺少唯一且启用的默认业务域 default")
 
     admin_count = (
         await connection.execute(
@@ -427,7 +434,7 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(admin_count) != 1:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "缺少启用且安全等级为 3 的 ADMIN 用户或登录凭据"
         )
 
@@ -442,7 +449,7 @@ async def _validate_platform_foundation(
         PLATFORM_FOUNDATION_PERMISSIONS - permission_codes
     )
     if missing_permissions:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "平台权限目录不完整：" + ", ".join(sorted(missing_permissions))
         )
 
@@ -459,7 +466,7 @@ async def _validate_platform_foundation(
     }
     missing_roles = PLATFORM_FOUNDATION_ROLES - active_roles
     if missing_roles:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "平台角色模板不完整："
             + ", ".join(
                 f"{app_id}/{role_code}"
@@ -526,7 +533,7 @@ async def _validate_platform_foundation(
         )
     )
     if incomplete_role_mappings:
-        raise RuntimeError(
+        raise FoundationValidationError(
             "角色权限映射不完整：" + ", ".join(incomplete_role_mappings)
         )
 
@@ -541,7 +548,9 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(admin_platform_role_count) != 1:
-        raise RuntimeError("ADMIN 缺少启用的 platform_admin 平台角色")
+        raise FoundationValidationError(
+            "ADMIN 缺少启用的 platform_admin 平台角色"
+        )
 
     admin_app_memberships = (
         await connection.execute(
@@ -549,7 +558,9 @@ async def _validate_platform_foundation(
         )
     ).scalar_one()
     if int(admin_app_memberships):
-        raise RuntimeError("ADMIN 不得拥有隐式业务 App 成员资格")
+        raise FoundationValidationError(
+            "ADMIN 不得拥有隐式业务 App 成员资格"
+        )
 
 
 async def _apply_platform_foundation(
@@ -626,7 +637,12 @@ async def maintain_platform_foundation(*, repair: bool) -> None:
             pdb_name, schema_name = await _read_target(connection)
             if repair:
                 await _apply_platform_foundation(connection)
-            await _validate_platform_foundation(connection)
+            try:
+                await _validate_platform_foundation(connection)
+            except FoundationValidationError as exc:
+                raise FoundationValidationError(
+                    f"PDB={pdb_name}，Schema={schema_name}：{exc}"
+                ) from exc
             action = "修复并校验" if repair else "校验"
             print(
                 f"平台基础数据{action}通过："
@@ -1191,6 +1207,11 @@ def main() -> int:
                     config_path=args.config.expanduser().resolve(),
                 )
             )
+    except FoundationValidationError as exc:
+        print(f"Schema 初始化拒绝：{exc}")
+        if args.check_foundation:
+            return FOUNDATION_VALIDATION_EXIT_CODE
+        return 1
     except RuntimeError as exc:
         print(f"Schema 初始化拒绝：{exc}")
         return 1

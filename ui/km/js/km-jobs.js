@@ -4,7 +4,10 @@
   const $ = (id) => document.getElementById(id);
   const expandedAssets = new Set();
   const expandedChains = new Set();
+  const expandedSourceJobs = new Set();
+  const sourceJobVisibleCounts = new Map();
   const detailRows = [];
+  const SOURCE_JOB_PAGE_SIZE = 10;
   let rows = [];
   let assets = [];
   let processing = [];
@@ -135,7 +138,33 @@
     const sourceRows = rows.filter((row) => !row.km_asset_id);
     const container = $("source-job-tree");
     if (!sourceRows.length) { container.innerHTML = '<p class="km-tree-empty">暂无来源级任务</p>'; return; }
-    container.innerHTML = `<ol class="km-job-steps km-source-steps">${localSteps(sourceRows.sort((a, b) => timeValue(a.created_at) - timeValue(b.created_at))).map(renderStep).join("")}</ol>`;
+    const groups = new Map();
+    for (const row of sourceRows) {
+      const key = String(row.source_id || "unknown");
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    const ordered = [...groups.entries()].sort((left, right) => {
+      return latestTime(right[1]) - latestTime(left[1]);
+    });
+    container.innerHTML = ordered.map(([key, items]) => {
+      const expanded = expandedSourceJobs.has(key);
+      const sorted = [...items].sort((left, right) => {
+        return timeValue(right.created_at) - timeValue(left.created_at);
+      });
+      const visibleCount = Math.min(
+        sourceJobVisibleCounts.get(key) || SOURCE_JOB_PAGE_SIZE,
+        sorted.length,
+      );
+      const visible = sorted.slice(0, visibleCount);
+      const remaining = sorted.length - visible.length;
+      const status = chainStatus(localSteps(sorted));
+      const latest = latestTime(sorted);
+      const more = remaining > 0
+        ? `<button class="km-source-more" data-source-more="${KBotKmShell.escapeHtml(key)}">再显示 ${Math.min(SOURCE_JOB_PAGE_SIZE, remaining)} 条<span>剩余 ${remaining} 条</span></button>`
+        : "";
+      return `<article class="km-source-node"><button class="km-source-toggle" data-source-jobs="${KBotKmShell.escapeHtml(key)}" aria-expanded="${expanded}"><span class="km-tree-caret" aria-hidden="true"></span><span class="km-source-identity"><strong>${KBotKmShell.escapeHtml(sourceName(key))}</strong><small>MetaDB 扫描与来源调度</small></span><span class="km-source-summary">${sorted.length} 条任务</span><span class="km-source-time">最近 ${KBotKmShell.escapeHtml(KBotKmShell.formatDate(latest))}</span>${KBotKmShell.badge(status)}</button><div class="km-source-children" ${expanded ? "" : "hidden"}><ol class="km-job-steps km-source-steps">${localSteps(visible).map(renderStep).join("")}</ol>${more}</div></article>`;
+    }).join("");
   }
 
   function render() {
@@ -153,6 +182,8 @@
   function toggle(event) {
     const assetButton = event.target.closest("[data-asset]");
     const chainButton = event.target.closest("[data-chain]");
+    const sourceButton = event.target.closest("[data-source-jobs]");
+    const sourceMoreButton = event.target.closest("[data-source-more]");
     const detailButton = event.target.closest("[data-detail]");
     if (assetButton) {
       const key = assetButton.dataset.asset;
@@ -161,6 +192,16 @@
     } else if (chainButton) {
       const key = chainButton.dataset.chain;
       expandedChains.has(key) ? expandedChains.delete(key) : expandedChains.add(key);
+      render();
+    } else if (sourceButton) {
+      const key = sourceButton.dataset.sourceJobs;
+      expandedSourceJobs.has(key) ? expandedSourceJobs.delete(key) : expandedSourceJobs.add(key);
+      render();
+    } else if (sourceMoreButton) {
+      const key = sourceMoreButton.dataset.sourceMore;
+      const current = sourceJobVisibleCounts.get(key) || SOURCE_JOB_PAGE_SIZE;
+      sourceJobVisibleCounts.set(key, current + SOURCE_JOB_PAGE_SIZE);
+      expandedSourceJobs.add(key);
       render();
     } else if (detailButton) {
       $("job-detail-json").textContent = JSON.stringify(detailRows[Number(detailButton.dataset.detail)], null, 2);

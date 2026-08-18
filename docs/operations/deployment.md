@@ -221,8 +221,10 @@ python3 tests/acceptance/check_oracle_schema.py
 ```
 
 `check_deployment.py` 会校验 UI 使用的 `[ui].main_api_base_url`；生产环境仍使用
-`kbot.example.com` 等示例地址时会拒绝启动。基础数据校验失败会明确提示“系统尚未
-初始化”，不会继续启动服务。
+`kbot.example.com` 等示例地址时会拒绝启动。基础数据不完整时，检查命令返回专用退出码
+`3`，并输出实际 PDB、Schema 和缺失项；数据库连接、配置或脚本运行异常仍返回通用失败，
+不得误报为“系统尚未初始化”。`start_kbot.sh` 会将基础数据预检输出写入
+`main_api/runtime.log`，任何预检失败都不会继续启动服务。
 
 先启动 Oracle 和外部依赖，再按以下顺序启动：
 

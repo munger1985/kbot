@@ -3,11 +3,15 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from scripts.db.apply_oracle_schema import (
+    FOUNDATION_VALIDATION_EXIT_CODE,
+    FoundationValidationError,
     _apply_platform_foundation,
     load_schema_statements,
     load_service_selection,
+    main,
     split_oracle_statements,
 )
 
@@ -36,7 +40,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
             statements[0].sql,
         )
         self.assertIn(
-            "COMMENT ON COLUMN KBOT_OPS_TASK.OUTPUT_ARTIFACT_ID",
+            "CREATE INDEX IX_OPS_IMG_EVID_CONV",
             statements[-1].sql,
         )
 
@@ -44,7 +48,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
         sql = "\n".join(
             statement.sql for statement in load_schema_statements()
         )
-        self.assertEqual(95, sql.count(" JSON"))
+        self.assertEqual(109, sql.count(" JSON"))
         self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
         self.assertNotIn(" IS JSON", sql)
 
@@ -200,6 +204,40 @@ class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
             "CK_PLATFORM_USER_SECURITY",
             connection.statements,
         )
+
+
+class PlatformFoundationCliTest(unittest.TestCase):
+    @patch(
+        "sys.argv",
+        ["apply_oracle_schema.py", "--check-foundation"],
+    )
+    def test_check_returns_dedicated_validation_exit_code(self):
+        def reject(awaitable):
+            awaitable.close()
+            raise FoundationValidationError("缺少默认 Domain")
+
+        with patch(
+            "scripts.db.apply_oracle_schema.asyncio.run",
+            side_effect=reject,
+        ) as mocked_run:
+            self.assertEqual(FOUNDATION_VALIDATION_EXIT_CODE, main())
+            mocked_run.assert_called_once()
+
+    @patch(
+        "sys.argv",
+        ["apply_oracle_schema.py", "--check-foundation"],
+    )
+    def test_check_keeps_runtime_failure_as_general_error(self):
+        def reject(awaitable):
+            awaitable.close()
+            raise RuntimeError("数据库配置无效")
+
+        with patch(
+            "scripts.db.apply_oracle_schema.asyncio.run",
+            side_effect=reject,
+        ) as mocked_run:
+            self.assertEqual(1, main())
+            mocked_run.assert_called_once()
 
 
 if __name__ == "__main__":

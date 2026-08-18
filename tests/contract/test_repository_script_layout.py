@@ -67,6 +67,9 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("scripts/deployment/install_workspace.sh", startup)
         self.assertIn("--check-foundation", startup)
         self.assertIn("--foundation-only", startup)
+        self.assertIn('FOUNDATION_CHECK_STATUS" -eq 0', startup)
+        self.assertIn("这不代表系统未初始化", startup)
+        self.assertIn("main_api/runtime.log", startup)
         self.assertIn('conda_env_exists "kbot4"', startup)
         self.assertNotIn('conda_env_exists "kbot3"', startup)
 
@@ -110,6 +113,8 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("CK_PLATFORM_USER_SECURITY", schema_runner)
         self.assertIn("MAX_SECURITY_LEVEL BETWEEN 0 AND 3", schema_runner)
+        self.assertIn("FOUNDATION_VALIDATION_EXIT_CODE = 3", schema_runner)
+        self.assertIn("PDB={pdb_name}，Schema={schema_name}", schema_runner)
 
         access_schema = (
             ROOT
