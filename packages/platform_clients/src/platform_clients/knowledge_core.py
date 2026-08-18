@@ -300,6 +300,25 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def list_processing(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        page: int,
+        page_size: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/catalog/processing?collection_id={collection_id}"
+                f"&page={page}&page_size={page_size}"
+            ),
+            auth_context=auth_context,
+        )
+
     async def get_bundle_revision_preview(
         self,
         *,

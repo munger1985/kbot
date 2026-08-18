@@ -97,6 +97,42 @@ button.small { min-height: 29px; padding: 4px 9px; font-size: 12px; }
 .km-cell-main { font-weight: 600; }
 .km-cell-sub { margin-top: 3px; color: var(--km-muted); font-size: 11px; }
 
+.km-data-note { padding: 10px 18px; color: var(--km-warn); background: #fbf3e3; border-top: 1px solid #ead6ad; border-bottom: 1px solid #ead6ad; font-size: 12px; }
+.km-job-tree { min-height: 68px; }
+.km-asset-node + .km-asset-node { border-top: 1px solid var(--km-line); }
+.km-asset-toggle, .km-chain-toggle {
+  width: 100%; border: 0; border-radius: 0; display: grid; align-items: center; text-align: left; background: transparent;
+}
+.km-asset-toggle { min-height: 72px; grid-template-columns: 18px minmax(280px, 1fr) 170px 150px auto; gap: 12px; padding: 13px 18px; }
+.km-asset-toggle:hover, .km-chain-toggle:hover { background: #faf7f0; }
+.km-asset-toggle[aria-expanded="true"] { background: #f7f2e9; }
+.km-tree-caret { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; }
+[aria-expanded="true"] > .km-tree-caret { transform: rotate(45deg); }
+.km-asset-identity strong, .km-asset-identity small, .km-chain-toggle strong, .km-chain-toggle small { display: block; }
+.km-asset-identity strong { font-size: 14px; }
+.km-asset-identity small, .km-chain-toggle small { margin-top: 3px; color: var(--km-muted); font-size: 11px; }
+.km-asset-summary, .km-chain-summary, .km-asset-time { color: var(--km-muted); font-size: 12px; }
+.km-asset-children { padding: 0 18px 14px 48px; background: #f7f2e9; }
+.km-job-chain { border-left: 1px solid var(--km-line-strong); }
+.km-job-chain + .km-job-chain { border-top: 1px solid #e5ded2; }
+.km-chain-toggle { min-height: 58px; grid-template-columns: 18px minmax(240px, 1fr) 220px auto; gap: 10px; padding: 10px 12px; }
+.km-job-steps { position: relative; margin: 0; padding: 4px 12px 14px 55px; list-style: none; }
+.km-job-step { position: relative; min-height: 94px; padding: 9px 0 14px 22px; }
+.km-job-step:last-child { min-height: auto; }
+.km-step-index { position: absolute; z-index: 1; left: -20px; top: 12px; width: 24px; height: 24px; display: grid; place-items: center; color: var(--km-muted); background: var(--km-paper); border: 1px solid var(--km-line-strong); border-radius: 50%; font: 600 10px/1 ui-monospace, monospace; }
+.km-step-line { position: absolute; left: -9px; top: 35px; bottom: -12px; width: 1px; background: var(--km-line-strong); }
+.km-job-step:last-child .km-step-line { display: none; }
+.km-step-body { padding-bottom: 2px; }
+.km-step-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.km-step-origin, .km-step-document { margin-left: 8px; color: var(--km-muted); font-size: 10px; }
+.km-step-origin { padding: 2px 5px; background: #ebe5da; }
+.km-step-meta { margin-top: 7px; display: flex; gap: 18px; flex-wrap: wrap; color: var(--km-muted); font-size: 11px; }
+.km-step-error { max-width: 900px; margin: 7px 0 0; color: var(--km-bad); font-size: 11px; }
+.km-step-action { margin-top: 8px; }
+.km-tree-empty { margin: 0; padding: 24px 18px; color: var(--km-muted); text-align: center; }
+.km-source-jobs { margin-top: 18px; }
+.km-source-steps { padding-top: 12px; padding-bottom: 18px; }
+
 .km-badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font: 600 10px/1.2 ui-monospace, monospace; letter-spacing: .04em; }
 .km-badge.good { color: var(--km-good); background: #e3f0e9; }
 .km-badge.warn { color: var(--km-warn); background: #f5ead4; }
@@ -154,12 +190,19 @@ body[data-access="denied"] .km-main { opacity: .55; pointer-events: none; }
   .km-main { margin-left: 0; padding: 28px 18px; }
   .km-split { grid-template-columns: 1fr; }
   .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
+  .km-asset-toggle { grid-template-columns: 18px minmax(220px, 1fr) auto; }
+  .km-asset-summary, .km-asset-time { display: none; }
+  .km-chain-toggle { grid-template-columns: 18px minmax(220px, 1fr) auto; }
+  .km-chain-summary { display: none; }
 }
 @media (max-width: 640px) {
   .km-page-head { align-items: flex-start; flex-direction: column; }
   .km-field, .km-field.span-3, .km-field.span-6, .km-field.span-8 { grid-column: span 12; }
   .km-session { font-size: 10px; }
   .km-message { max-width: 92%; }
+  .km-asset-children { padding-left: 25px; padding-right: 8px; }
+  .km-job-steps { padding-left: 42px; }
+  .km-step-head { align-items: flex-start; }
 }
 /* KM 独立登录 */
 .km-login-page{min-height:100vh;display:grid;place-items:center;background:#f3f6f8;padding:24px}.km-login-card{width:min(440px,100%);background:#fff;border:1px solid #dfe5e8;border-radius:18px;padding:32px;box-shadow:0 18px 48px rgba(25,45,55,.12)}.km-login-card .km-brand{position:static;margin-bottom:30px;color:#17333c}.km-login-card h1{margin:0 0 8px}.km-login-card>section>p{color:#63747b;margin:0 0 24px}.km-form-error{color:#b42318;background:#fef3f2;border-radius:8px;padding:10px 12px;margin:0}.km-login-card button.span-12{width:100%;padding:12px}

@@ -471,7 +471,7 @@ content = """
 [[prompts]]
 prompt_key = "knowledge_core.candidate_rerank"
 owner_service = "knowledge_core"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "判断 Bundle 或 Document 候选是否真正满足用户问题"
 input_variables = []
@@ -487,9 +487,9 @@ DIRECT 表示对象直接回答问题；STRONG 表示有充分内容支撑问题
 POSSIBLE 表示可能有用但画像不足以确认；SEMANTIC_ONLY 表示仅语义或主题相似；
 IRRELEVANT 表示内容不相关。不得输出数值分数。
 
-coverage_mode=BREADTH 表示用户要求清单或广覆盖结果。此时必须逐个候选独立判断并优先保证
-召回率，不能只选择一个最佳候选；标题或画像直接包含查询主题、词形变化、产品名或主题标签的
-候选不得判为 IRRELEVANT。coverage_mode=BALANCED 时兼顾准确率与召回率。
+coverage_mode=BREADTH 表示用户要求清单或广覆盖结果。此时必须逐个候选独立判断，不能只选择
+一个最佳候选；系统会保留上游已经召回的全部候选，你的判断只用于分类和排序。
+coverage_mode=BALANCED 时兼顾准确率与召回率，并允许系统过滤 IRRELEVANT 候选。
 
 只输出 JSON：{"decisions":[{"candidate_label":"B1","relevance":"DIRECT",
 "matched_requirements":[],"reason_refs":[]}]}。reason_refs 只能引用输入中的字段名或
@@ -499,7 +499,7 @@ matched_members，不得输出隐藏思维过程或 Label 之外的候选。
 [[prompts]]
 prompt_key = "knowledge_core.evidence_group_rerank"
 owner_service = "knowledge_core"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "验证 Evidence Group 对用户问题的实际支持关系"
 input_variables = []
@@ -515,9 +515,9 @@ Group 的 PRIMARY Item 中选择至少一个 primary_item_labels；结构上下�
 Group 的 STRUCTURAL_CONTEXT Item 中选择。CONTEXT_ONLY 和 NO_SUPPORT 不得选择
 PRIMARY。不要因为主题或词语相似就判定有支持，不得输出数值分数。
 
-coverage_mode=BREADTH 表示要为多个相关对象保留可引用证据。必须逐组独立判断，不能只选择
-一组最佳证据；PRIMARY 内容直接包含查询主题、词形变化、产品名或主题标签时，至少判为
-PARTIAL_SUPPORT 并选择对应 PRIMARY Item。coverage_mode=BALANCED 时按通常证据标准判断。
+coverage_mode=BREADTH 表示要为多个上游召回对象保留可引用证据。必须逐组独立判断，不能只
+选择一组最佳证据；系统会保留全部 Evidence Group，你的判断只用于分类、组内证据选择和排序。
+coverage_mode=BALANCED 时按通常证据标准判断，并允许系统过滤不提供支持的 Group。
 
 只输出 JSON：{"decisions":[{"group_label":"C1","support":"DIRECT_SUPPORT",
 "primary_item_labels":["E1"],"structural_context_labels":[],

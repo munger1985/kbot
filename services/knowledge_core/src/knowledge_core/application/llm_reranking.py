@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import asdict
 import json
-import re
 from typing import Any, Literal, Sequence
 from uuid import UUID
 
@@ -107,39 +106,6 @@ class KnowledgeCoreLlmReranker:
         "CONTEXT_ONLY": 3,
         "NO_SUPPORT": 4,
     }
-    _QUERY_CONTROL_TERMS = frozenset(
-        {
-            "about",
-            "all",
-            "and",
-            "are",
-            "asset",
-            "assets",
-            "find",
-            "for",
-            "from",
-            "how",
-            "is",
-            "list",
-            "related",
-            "search",
-            "show",
-            "the",
-            "to",
-            "what",
-            "which",
-            "with",
-            "哪些",
-            "关于",
-            "列出",
-            "所有",
-            "查找",
-            "查询",
-            "相关",
-            "资产",
-        }
-    )
-
     def __init__(
         self,
         *,
@@ -209,7 +175,7 @@ class KnowledgeCoreLlmReranker:
                         for item in batch.decisions
                     },
                 )
-                recall_guard_count = 0
+                breadth_preserved_count = 0
                 selected = []
                 for label, decision in sorted(
                     decisions.items(),
@@ -220,19 +186,17 @@ class KnowledgeCoreLlmReranker:
                     ),
                 ):
                     candidate = labels[label]
-                    keep_by_guard = (
+                    preserve_for_breadth = (
                         coverage_mode == "BREADTH"
                         and decision.relevance == "IRRELEVANT"
-                        and self._matches_topic(
-                            query,
-                            candidate.display_title,
-                            candidate.profile_text,
-                        )
                     )
-                    if decision.relevance != "IRRELEVANT" or keep_by_guard:
+                    if (
+                        decision.relevance != "IRRELEVANT"
+                        or preserve_for_breadth
+                    ):
                         selected.append(candidate)
-                    if keep_by_guard:
-                        recall_guard_count += 1
+                    if preserve_for_breadth:
+                        breadth_preserved_count += 1
                 ranked[collection_id] = selected
                 successful += 1
                 details.append(
@@ -243,7 +207,9 @@ class KnowledgeCoreLlmReranker:
                         "prompt": prompt.ref(),
                         "input_count": len(items),
                         "output_count": len(selected),
-                        "recall_guard_count": recall_guard_count,
+                        "breadth_preserved_count": (
+                            breadth_preserved_count
+                        ),
                         "status": "SUCCEEDED",
                     }
                 )
@@ -359,23 +325,22 @@ class KnowledgeCoreLlmReranker:
                     }
                 )
         selected: list[tuple[int, int, CitationGroup]] = []
-        recall_guard_count = 0
+        breadth_preserved_count = 0
         for index, citation in enumerate(citations):
             if citation.citation_label in fallback_groups:
                 selected.append((1, index, citation))
                 continue
             decision = decisions_by_group[citation.citation_label]
             if decision.support in {"NO_SUPPORT", "CONTEXT_ONLY"}:
-                if coverage_mode == "BREADTH" and self._matches_topic(
-                    query,
-                    *(
-                        item.evidence.content_text
-                        for item in citation.items
-                        if item.final_role == "PRIMARY"
-                    ),
-                ):
-                    selected.append((1, index, citation))
-                    recall_guard_count += 1
+                if coverage_mode == "BREADTH":
+                    selected.append(
+                        (
+                            self._EVIDENCE_ORDER[decision.support],
+                            index,
+                            citation,
+                        )
+                    )
+                    breadth_preserved_count += 1
                 continue
             filtered = self._filter_citation(citation, decision)
             if filtered is not None:
@@ -414,54 +379,8 @@ class KnowledgeCoreLlmReranker:
             "collections": details,
             "input_count": len(citations),
             "output_count": len(relabeled),
-            "recall_guard_count": recall_guard_count,
+            "breadth_preserved_count": breadth_preserved_count,
         }, warnings
-
-    @classmethod
-    def _matches_topic(cls, query: str, *texts: str) -> bool:
-        """判断候选是否直接包含查询主题，用于广覆盖模式的召回保护。"""
-        terms = cls._topic_terms(query)
-        if not terms:
-            return False
-        tokens = cls._search_tokens(" ".join(texts))
-        return any(
-            cls._term_matches(term, token)
-            for term in terms
-            for token in tokens
-        )
-
-    @classmethod
-    def _topic_terms(cls, value: str) -> set[str]:
-        terms = cls._search_tokens(value)
-        return {
-            term
-            for term in terms
-            if term not in cls._QUERY_CONTROL_TERMS
-        }
-
-    @staticmethod
-    def _search_tokens(value: str) -> set[str]:
-        normalized = value.casefold()
-        tokens = set(re.findall(r"[a-z0-9]+", normalized))
-        for sequence in re.findall(r"[\u3400-\u9fff]+", normalized):
-            if len(sequence) == 1:
-                tokens.add(sequence)
-                continue
-            tokens.update(
-                sequence[index : index + 2]
-                for index in range(len(sequence) - 1)
-            )
-        return {token for token in tokens if len(token) >= 2}
-
-    @staticmethod
-    def _term_matches(term: str, token: str) -> bool:
-        if term == token:
-            return True
-        if term.isascii() and token.isascii() and min(
-            len(term), len(token)
-        ) >= 4:
-            return term.startswith(token) or token.startswith(term)
-        return False
 
     @staticmethod
     def _candidate_payload(

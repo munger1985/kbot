@@ -81,6 +81,12 @@ class KmAssetClient:
             values["source_id"] = source_id
         return await self._json("GET", f"{self._BASE}/jobs?{urlencode(values)}", auth_context=auth_context)
 
+    async def list_processing_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int, auth_context: AuthContext):
+        values: dict[str, Any] = {"domain_id": domain_id, "limit": limit}
+        if source_id is not None:
+            values["source_id"] = source_id
+        return await self._json("GET", f"{self._BASE}/jobs/processing?{urlencode(values)}", auth_context=auth_context)
+
     async def list_agents(self, *, domain_id: int, auth_context: AuthContext):
         return await self._json("GET", f"{self._BASE}/agents?{urlencode({'domain_id': domain_id})}", auth_context=auth_context)
 

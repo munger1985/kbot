@@ -167,7 +167,7 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(report["status"], "DEGRADED")
         self.assertEqual(len(warnings), 1)
 
-    async def test_breadth_candidate_rerank_preserves_topic_matches(self):
+    async def test_breadth_preserves_all_upstream_candidates(self):
         collection_id = uuid7()
         candidates = [
             _candidate(
@@ -197,7 +197,7 @@ class KnowledgeCoreLlmRerankingTest(
         )
 
         output, report, warnings = await reranker.rerank_candidates(
-            query="list all assets related to agent",
+            query="エージェント関連資料をすべて見せてください",
             candidates=candidates,
             coverage_mode="BREADTH",
         )
@@ -207,10 +207,12 @@ class KnowledgeCoreLlmRerankingTest(
             [
                 "Deep Data Security in an Agentic Application",
                 "Conversational Banking with Select AI Agents",
+                "OKE Workbench Utility",
             ],
         )
         self.assertEqual(
-            2, report["collections"][0]["recall_guard_count"]
+            3,
+            report["collections"][0]["breadth_preserved_count"],
         )
         self.assertEqual(warnings, [])
 
@@ -245,7 +247,7 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(report["status"], "SUCCEEDED")
         self.assertEqual(warnings, [])
 
-    async def test_breadth_evidence_rerank_preserves_topic_groups(self):
+    async def test_breadth_preserves_all_upstream_evidence_groups(self):
         collection_id = uuid7()
         citations = [
             _citation(
@@ -279,14 +281,51 @@ class KnowledgeCoreLlmRerankingTest(
         )
 
         output, report, warnings = await reranker.rerank_evidence(
-            query="list all assets related to agent",
+            query="에이전트 관련 자료를 모두 보여주세요",
             citations=citations,
             coverage_mode="BREADTH",
         )
 
-        self.assertEqual(2, len(output))
-        self.assertEqual(["C1", "C2"], [item.citation_label for item in output])
-        self.assertEqual(2, report["recall_guard_count"])
+        self.assertEqual(3, len(output))
+        self.assertEqual(
+            ["C1", "C2", "C3"],
+            [item.citation_label for item in output],
+        )
+        self.assertEqual(3, report["breadth_preserved_count"])
+        self.assertEqual(warnings, [])
+
+    async def test_balanced_filters_unsupported_evidence_groups(self):
+        collection_id = uuid7()
+        citations = [
+            _citation(collection_id, label="C1"),
+            _citation(collection_id, label="C2"),
+        ]
+        reranker = KnowledgeCoreLlmReranker(
+            model_resolver=_ModelResolver(),
+            model_client=_ModelClient([{
+                "decisions": [
+                    {
+                        "group_label": "C1",
+                        "support": "DIRECT_SUPPORT",
+                        "primary_item_labels": ["E1"],
+                    },
+                    {
+                        "group_label": "C2",
+                        "support": "NO_SUPPORT",
+                    },
+                ]
+            }]),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        output, report, warnings = await reranker.rerank_evidence(
+            query="如何降低数据库查询耗时？",
+            citations=citations,
+            coverage_mode="BALANCED",
+        )
+
+        self.assertEqual(1, len(output))
+        self.assertEqual(0, report["breadth_preserved_count"])
         self.assertEqual(warnings, [])
 
 

@@ -263,3 +263,16 @@ async def reindex_asset(km_asset_id: UUID, payload: VersionRequest, request: Req
 async def list_jobs(domain_id: int, request: Request, source_id: UUID | None = None, limit: int = Query(default=100, ge=1, le=500)):
     _context(request, domain_id)
     return await _service(request).list_jobs(domain_id=domain_id, source_id=source_id, limit=limit)
+
+
+@router.get("/jobs/processing")
+async def list_processing_jobs(domain_id: int, request: Request, source_id: UUID | None = None, limit: int = Query(default=500, ge=1, le=2000)):
+    _context(request, domain_id)
+    try:
+        return await _service(request).list_processing_jobs(
+            domain_id=domain_id,
+            source_id=source_id,
+            limit=limit,
+        )
+    except KmAssetApplicationError as exc:
+        _raise(exc)

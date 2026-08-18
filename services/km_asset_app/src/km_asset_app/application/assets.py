@@ -398,6 +398,59 @@ class KmAssetService:
         async with self._uow_factory() as uow:
             return [self._job(row) for row in await uow.assets.list_jobs(domain_id=domain_id, source_id=source_id, limit=limit)]
 
+    async def list_processing_jobs(
+        self,
+        *,
+        domain_id: int,
+        source_id: UUID | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """按 KM 来源汇总 KC 当前 Revision 的真实处理步骤。"""
+        if self._knowledge_core is None:
+            raise KmAssetApplicationError(
+                status_code=503,
+                code="KNOWLEDGE_CORE_UNAVAILABLE",
+                message="Knowledge Core 服务未配置",
+            )
+        async with self._uow_factory() as uow:
+            sources = await uow.assets.list_sources(domain_id=domain_id)
+        if source_id is not None:
+            sources = [
+                item for item in sources if item.source_id == source_id
+            ]
+        output: list[dict[str, Any]] = []
+        context = self._auth_context(
+            domain_id=domain_id,
+            actor_id="km-asset:processing-status",
+        )
+        for source in sources:
+            page = 1
+            while len(output) < limit:
+                page_size = min(100, limit - len(output))
+                result = await self._knowledge_core.list_processing(
+                    domain_id=domain_id,
+                    collection_id=source.collection_id,
+                    page=page,
+                    page_size=page_size,
+                    auth_context=context,
+                )
+                items = list(result.get("items") or [])
+                for item in items:
+                    output.append(
+                        {
+                            **item,
+                            "source_id": source.source_id,
+                            "source_name": source.display_name,
+                        }
+                    )
+                total = int(result.get("total") or len(items))
+                if not items or page * page_size >= total:
+                    break
+                page += 1
+            if len(output) >= limit:
+                break
+        return output
+
     def _require_data_query(self) -> None:
         if self._data_query is None:
             raise KmAssetApplicationError(
@@ -421,7 +474,7 @@ class KmAssetService:
 
     @staticmethod
     def _asset(row):
-        return {"km_asset_id": row.km_asset_id, "source_id": row.source_id, "external_asset_id": row.external_asset_id, "source_revision": row.source_revision, "source_status": row.source_status, "ingestion_status": row.ingestion_status, "asset_title": row.asset_title, "author_mail": row.author_mail, "asset_product": row.asset_product, "asset_solution": row.asset_solution, "industry_id": row.industry_id, "content_category": row.content_category, "asset_status": row.asset_status, "publish_date": row.publish_date, "last_update_time": row.last_update_time, "kc_bundle_id": row.kc_bundle_id, "kc_bundle_revision_id": row.kc_bundle_revision_id, "failure_stage": row.failure_stage, "error_code": row.error_code, "error_message": row.error_message, "attempt_count": row.attempt_count, "synced_at": row.synced_at, "completed_at": row.completed_at, "row_version": row.row_version}
+        return {"km_asset_id": row.km_asset_id, "source_id": row.source_id, "current_revision_id": row.current_revision_id, "external_asset_id": row.external_asset_id, "source_revision": row.source_revision, "source_status": row.source_status, "ingestion_status": row.ingestion_status, "asset_title": row.asset_title, "author_mail": row.author_mail, "asset_product": row.asset_product, "asset_solution": row.asset_solution, "industry_id": row.industry_id, "content_category": row.content_category, "asset_status": row.asset_status, "publish_date": row.publish_date, "last_update_time": row.last_update_time, "kc_bundle_id": row.kc_bundle_id, "kc_bundle_revision_id": row.kc_bundle_revision_id, "failure_stage": row.failure_stage, "error_code": row.error_code, "error_message": row.error_message, "attempt_count": row.attempt_count, "synced_at": row.synced_at, "completed_at": row.completed_at, "row_version": row.row_version}
 
     @staticmethod
     def _attachment(row):
@@ -429,7 +482,7 @@ class KmAssetService:
 
     @staticmethod
     def _job(row):
-        return {"job_id": row.job_id, "job_type": row.job_type, "source_id": row.source_id, "km_asset_id": row.km_asset_id, "status": row.status, "attempt_count": row.attempt_count, "max_attempts": row.max_attempts, "available_at": row.available_at, "error_code": row.error_code, "error_message": row.error_message, "created_at": row.created_at, "completed_at": row.completed_at}
+        return {"job_id": row.job_id, "job_type": row.job_type, "source_id": row.source_id, "km_asset_id": row.km_asset_id, "asset_revision_id": row.asset_revision_id, "status": row.status, "attempt_count": row.attempt_count, "max_attempts": row.max_attempts, "available_at": row.available_at, "error_code": row.error_code, "error_message": row.error_message, "created_at": row.created_at, "completed_at": row.completed_at}
 
     @staticmethod
     def _not_found(code: str, message: str):

@@ -408,6 +408,12 @@ async def list_jobs(request: Request, source_id: UUID | None = None, limit: int 
     return await _client(request).list_jobs(domain_id=domain_id, source_id=source_id, limit=limit, auth_context=request.state.auth_context)
 
 
+@router.get("/jobs/processing")
+async def list_processing_jobs(request: Request, source_id: UUID | None = None, limit: int = Query(default=500, ge=1, le=2000)):
+    domain_id = await _require(request, "km_asset:operations_manage")
+    return await _client(request).list_processing_jobs(domain_id=domain_id, source_id=source_id, limit=limit, auth_context=request.state.auth_context)
+
+
 @router.get("/agents")
 async def list_agents(request: Request):
     domain_id = await _require(request, "km_asset:use")

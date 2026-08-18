@@ -34,7 +34,13 @@ class KmUiStaticPagesTest(unittest.TestCase):
         "metadb.html": {"metadb-form", "metadb-source", "metadb-rows", "metadb-detail-dialog"},
         "sources.html": {"source-form", "source-edit-form", "source-rows", "data-model-dialog"},
         "assets.html": {"asset-form", "asset-rows", "asset-detail-dialog"},
-        "jobs.html": {"job-form", "job-rows", "job-detail-dialog"},
+        "jobs.html": {
+            "job-form",
+            "job-tree",
+            "source-job-tree",
+            "job-status-text",
+            "job-detail-dialog",
+        },
         "agents.html": {"agent-form", "agent-rows", "agent-source"},
         "chat.html": {"chat-agent", "conversation-list", "chat-stream", "chat-form", "reference-dialog"},
     }
@@ -113,6 +119,19 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("正在确认已提交的 Turn", source)
         self.assertIn('run.status !== "COMPLETED"', source)
         self.assertIn("run.error_message", source)
+
+    def test_jobs_page_uses_asset_revision_step_tree(self):
+        source = (KM_ROOT / "js" / "km-jobs.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("loadAllAssets", source)
+        self.assertIn("asset_revision_id", source)
+        self.assertIn("bundle_revision_id", source)
+        self.assertIn("/jobs/processing", source)
+        self.assertIn("data-asset", source)
+        self.assertIn("data-chain", source)
+        self.assertNotIn("job-rows", source)
 
     def test_km_chat_does_not_supply_user_security_level(self):
         source = (

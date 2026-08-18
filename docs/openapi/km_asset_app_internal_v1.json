@@ -1284,6 +1284,75 @@
         ]
       }
     },
+    "/internal/v1/km-asset/jobs/processing": {
+      "get": {
+        "operationId": "list_processing_jobs_internal_v1_km_asset_jobs_processing_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Processing Jobs",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
     "/internal/v1/km-asset/sources": {
       "get": {
         "operationId": "list_sources_internal_v1_km_asset_sources_get",

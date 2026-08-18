@@ -512,6 +512,9 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
         asset = SimpleNamespace(
             km_asset_id=asset_id,
             source_id=source_id,
+            current_revision_id=UUID(
+                "01900000-0000-7000-8000-000000000038"
+            ),
             external_asset_id="ASSET-1",
             source_revision="1",
             source_status="Y",

@@ -13500,6 +13500,66 @@
         ]
       }
     },
+    "/api/v1/apps/km-asset/jobs/processing": {
+      "get": {
+        "operationId": "list_processing_jobs_api_v1_apps_km_asset_jobs_processing_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Processing Jobs",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
     "/api/v1/apps/km-asset/model-catalog": {
       "get": {
         "description": "在 KM Token 的访问边界内返回创建 KM Agent 所需模型。",
