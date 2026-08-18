@@ -2546,6 +2546,28 @@
         "title": "EvidenceUploadPayload",
         "type": "object"
       },
+      "ExchangeAppPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "App Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Domain Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app_id",
+          "domain_id"
+        ],
+        "title": "ExchangeAppPayload",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -18983,6 +19005,66 @@
         ]
       }
     },
+    "/api/v1/auth/entries": {
+      "get": {
+        "description": "使用平台根会话列出可进入的 App 与 Domain。",
+        "operationId": "list_session_entries_api_v1_auth_entries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Session Entries",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/exchange": {
+      "post": {
+        "description": "使用平台根会话免密换取显式授权范围内的业务会话。",
+        "operationId": "exchange_app_session_api_v1_auth_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExchangeAppPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange App Session",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "operationId": "get_current_user_api_v1_auth_me_get",
@@ -19075,6 +19157,26 @@
           }
         },
         "summary": "Platform Login",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "在当前 Token 仍有效时续签相同入口上下文。",
+        "operationId": "refresh_session_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Session",
         "tags": [
           "Authentication"
         ]

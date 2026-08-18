@@ -235,8 +235,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", adapter)
         self.assertIn("sessionStorage", adapter)
         self.assertIn("Authorization: `Bearer ${session.access_token}`", adapter)
+        self.assertIn('/api/v1/auth/refresh', adapter)
+        self.assertIn("refreshFlight", adapter)
         self.assertNotIn("X-KBot-Test-Auth", adapter)
         self.assertNotIn("X-KBot-User-ID", adapter)
+        for page_name in (*self.pages, "login.html"):
+            source = (KM_ROOT / page_name).read_text(encoding="utf-8")
+            self.assertIn(
+                "kbot-km-auth-v2.js?v=20260818_1", source, page_name
+            )
 
     def test_km_source_creation_uses_server_fixed_collection(self):
         source_html = (ROOT / "ui" / "km" / "sources.html").read_text(

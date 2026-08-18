@@ -188,6 +188,141 @@ class UserAuthServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PLATFORM", result["entry_kind"])
         self.assertIsNone(result["domain_id"])
 
+    async def test_platform_session_exchanges_explicit_app_grant(self):
+        access = _AccessRepository(origin="PLATFORM", owner_app_id=None)
+        service = self._service(access)
+        password_version = service._timestamp_version(
+            access.credential.password_updated_at
+        )
+
+        result = await service.exchange_app_session(
+            claims=UserTokenClaims(
+                user_id="ADMIN",
+                entry_kind="PLATFORM",
+                app_id=None,
+                domain_id=None,
+                must_change_password=False,
+                password_version=password_version,
+                expires_at=None,
+            ),
+            app_id="km_asset",
+            domain_id=41,
+        )
+
+        self.assertEqual("BUSINESS", result["entry_kind"])
+        self.assertEqual("km_asset", result["app_id"])
+        self.assertEqual(41, result["domain_id"])
+
+    async def test_platform_session_lists_sso_entries_without_password(self):
+        access = _AccessRepository(origin="PLATFORM", owner_app_id=None)
+        service = self._service(access)
+        password_version = service._timestamp_version(
+            access.credential.password_updated_at
+        )
+
+        result = await service.list_session_entries(
+            claims=UserTokenClaims(
+                user_id="ADMIN",
+                entry_kind="PLATFORM",
+                app_id=None,
+                domain_id=None,
+                must_change_password=False,
+                password_version=password_version,
+                expires_at=None,
+            )
+        )
+
+        self.assertEqual("PLATFORM", result["account_origin"])
+        self.assertEqual("km_asset", result["apps"][0]["app_id"])
+        self.assertEqual(41, result["apps"][0]["domains"][0]["domain_id"])
+
+    async def test_platform_session_exchange_does_not_bypass_app_grant(self):
+        access = _AccessRepository(origin="PLATFORM", owner_app_id=None)
+        access.domain_ids = ()
+        service = self._service(access)
+        password_version = service._timestamp_version(
+            access.credential.password_updated_at
+        )
+
+        with self.assertRaises(UserAuthenticationError) as context:
+            await service.exchange_app_session(
+                claims=UserTokenClaims(
+                    user_id="ADMIN",
+                    entry_kind="PLATFORM",
+                    app_id=None,
+                    domain_id=None,
+                    must_change_password=False,
+                    password_version=password_version,
+                    expires_at=None,
+                ),
+                app_id="km_asset",
+                domain_id=41,
+            )
+
+        self.assertEqual("DOMAIN_ACCESS_DENIED", context.exception.code)
+
+    async def test_business_session_cannot_list_sso_entries(self):
+        service = self._service(_AccessRepository())
+
+        with self.assertRaises(UserAuthenticationError) as context:
+            await service.list_session_entries(
+                claims=UserTokenClaims(
+                    user_id="kmadmin",
+                    entry_kind="BUSINESS",
+                    app_id="km_asset",
+                    domain_id=41,
+                    must_change_password=False,
+                    password_version=1,
+                    expires_at=None,
+                )
+            )
+
+        self.assertEqual("PLATFORM_SESSION_REQUIRED", context.exception.code)
+
+    async def test_business_session_cannot_exchange_to_another_app(self):
+        access = _AccessRepository()
+        service = self._service(access)
+
+        with self.assertRaises(UserAuthenticationError) as context:
+            await service.exchange_app_session(
+                claims=UserTokenClaims(
+                    user_id="kmadmin",
+                    entry_kind="BUSINESS",
+                    app_id="km_asset",
+                    domain_id=41,
+                    must_change_password=False,
+                    password_version=1,
+                    expires_at=None,
+                ),
+                app_id="aiops",
+                domain_id=41,
+            )
+
+        self.assertEqual("PLATFORM_SESSION_REQUIRED", context.exception.code)
+
+    async def test_refresh_reissues_same_business_context(self):
+        access = _AccessRepository()
+        service = self._service(access)
+        password_version = service._timestamp_version(
+            access.credential.password_updated_at
+        )
+
+        result = await service.refresh_session(
+            claims=UserTokenClaims(
+                user_id="kmadmin",
+                entry_kind="BUSINESS",
+                app_id="km_asset",
+                domain_id=41,
+                must_change_password=False,
+                password_version=password_version,
+                expires_at=None,
+            )
+        )
+
+        self.assertEqual("BUSINESS", result["entry_kind"])
+        self.assertEqual("km_asset", result["app_id"])
+        self.assertEqual(41, result["domain_id"])
+
     async def test_login_domains_are_scoped_to_app(self):
         service = self._service(_AccessRepository())
         result = await service.list_login_domains(

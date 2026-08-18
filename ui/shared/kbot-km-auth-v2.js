@@ -4,6 +4,8 @@
 
   const sessionKey = "kbot.km.session.v1";
   const authFailureKey = "kbot.km.last-auth-failure.v1";
+  const refreshSkewMs = 5 * 60 * 1000;
+  let refreshFlight = null;
 
   function mainApiBaseUrl() {
     const value = String(globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "")
@@ -81,8 +83,11 @@
 
   function sessionIsInvalid(error) {
     return error?.status === 401 && [
-      "INVALID_KM_TOKEN",
-      "KM_TOKEN_EXPIRED",
+      "INVALID_USER_TOKEN",
+      "USER_TOKEN_EXPIRED",
+      "USER_SESSION_REVOKED",
+      "USER_DISABLED",
+      "DOMAIN_ACCESS_DENIED",
     ].includes(String(error?.code || ""));
   }
 
@@ -110,6 +115,37 @@
     return saveSession(result);
   }
 
+  function shouldRefresh(session) {
+    const expiresAt = Date.parse(String(session?.expires_at || ""));
+    return Number.isFinite(expiresAt) && Date.now() + refreshSkewMs >= expiresAt;
+  }
+
+  async function refreshSession(force = false) {
+    const session = requireSession();
+    if (!force && !shouldRefresh(session)) return session;
+    if (refreshFlight) return refreshFlight;
+    refreshFlight = raw("/api/v1/auth/refresh", {
+      method: "POST",
+    }, session.access_token).then((result) => saveSession({
+      ...session,
+      ...result,
+    })).catch((error) => {
+      recordAuthFailure({
+        path: "/api/v1/auth/refresh",
+        status: error.status,
+        code: error.code,
+        message: error.message,
+        request_id: error.requestId,
+        session_invalid: sessionIsInvalid(error),
+      });
+      if (sessionIsInvalid(error)) clearSession();
+      throw error;
+    }).finally(() => {
+      refreshFlight = null;
+    });
+    return refreshFlight;
+  }
+
   async function changePassword(payload) {
     const session = requireSession();
     const result = await raw("/api/v1/apps/km-asset/auth/password", {
@@ -120,7 +156,7 @@
   }
 
   async function request(path, options = {}) {
-    const session = requireSession();
+    const session = await refreshSession();
     try {
       return await raw(path, options, session.access_token);
     } catch (error) {
@@ -141,7 +177,7 @@
   }
 
   async function blob(path, options = {}) {
-    const session = requireSession();
+    const session = await refreshSession();
     const headers = {
       Authorization: `Bearer ${session.access_token}`,
       "X-Request-ID": KBotKmApi.uuid(),
@@ -153,7 +189,7 @@
   }
 
   async function stream(path, handlers = {}, signal) {
-    const session = requireSession();
+    const session = await refreshSession();
     const response = await fetch(`${mainApiBaseUrl()}${path}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -182,6 +218,7 @@
   KBotKmApi.configure({ request, blob, stream });
   window.KBotKmAuth = {
     changePassword, clearAuthFailure, clearSession, loadAuthFailure,
-    loadSession, login, recordAuthFailure, requireSession, sessionIsInvalid,
+    loadSession, login, recordAuthFailure, refreshSession, requireSession,
+    sessionIsInvalid,
   };
 })();

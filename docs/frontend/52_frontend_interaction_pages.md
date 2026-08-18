@@ -1,5 +1,8 @@
 # KBot 4.0 正式 APEX 应用页面与交互蓝图
 
+> Web、独立 App 和 Portal/BFF 接入现有登录、Token、刷新、App 权限与 Agent 可见性时，
+> 统一遵循 [KBot 前端 SSO、Token 与权限接入手册](sso-permission-integration-handbook.md)。
+
 ## 1. 定位与边界
 
 本应用是 KBot 4.0 的正式业务门户，采用 **Oracle APEX 全量开发**。它不是

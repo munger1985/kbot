@@ -33,6 +33,11 @@ class SwitchDomainPayload(_Payload):
     domain_id: int = Field(gt=0)
 
 
+class ExchangeAppPayload(_Payload):
+    app_id: str = Field(min_length=1, max_length=128)
+    domain_id: int = Field(gt=0)
+
+
 class PasswordChangePayload(_Payload):
     current_password: str = Field(min_length=1, max_length=256)
     new_password: str = Field(min_length=12, max_length=256)
@@ -91,6 +96,30 @@ async def app_login(app_id: str, payload: AppLoginPayload, request: Request):
 @router.get("/me")
 async def get_current_user(request: Request):
     return await _service(request).profile(claims=_claims(request))
+
+
+@router.get("/entries")
+async def list_session_entries(request: Request):
+    """使用平台根会话列出可进入的 App 与 Domain。"""
+    return await _service(request).list_session_entries(
+        claims=_claims(request)
+    )
+
+
+@router.post("/exchange")
+async def exchange_app_session(payload: ExchangeAppPayload, request: Request):
+    """使用平台根会话免密换取显式授权范围内的业务会话。"""
+    return await _service(request).exchange_app_session(
+        claims=_claims(request),
+        app_id=_canonical_app_id(payload.app_id.strip()),
+        domain_id=payload.domain_id,
+    )
+
+
+@router.post("/refresh")
+async def refresh_session(request: Request):
+    """在当前 Token 仍有效时续签相同入口上下文。"""
+    return await _service(request).refresh_session(claims=_claims(request))
 
 
 @router.post("/switch-domain")

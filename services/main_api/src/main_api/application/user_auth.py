@@ -208,6 +208,26 @@ class UserAuthService:
         display_name, origin, owner_app_id, must_change, password_version = await self._verify_credentials(user_id=user_id, password=password)
         if origin == "APP" and owner_app_id != app_id:
             raise UserAuthenticationError("APP_ACCESS_DENIED", "App 用户不能进入其他 App", status_code=403)
+        return await self._issue_business_session(
+            user_id=user_id,
+            display_name=display_name,
+            app_id=app_id,
+            domain_id=domain_id,
+            must_change_password=must_change,
+            password_version=password_version,
+        )
+
+    async def _issue_business_session(
+        self,
+        *,
+        user_id: str,
+        display_name: str | None,
+        app_id: str,
+        domain_id: int,
+        must_change_password: bool,
+        password_version: int,
+    ) -> dict[str, object]:
+        """在已认证用户的显式 App 与 Domain 授权范围内签发业务会话。"""
         async with self._uow_factory() as uow:
             app = await uow.access.get_application(app_id)
             domain_ids = await uow.access.list_active_domain_ids(user_id, app_id=app_id)
@@ -221,7 +241,72 @@ class UserAuthService:
         return self._token_response(
             user_id=user_id, display_name=display_name, entry_kind="BUSINESS",
             app_id=app_id, domain_id=domain_id, domain_name=domain_snapshot[0],
-            must_change_password=must_change, password_version=password_version,
+            must_change_password=must_change_password,
+            password_version=password_version,
+        )
+
+    async def exchange_app_session(
+        self, *, claims: UserTokenClaims, app_id: str, domain_id: int
+    ) -> dict[str, object]:
+        """以平台根会话换取业务会话，不接受隐式平台管理员权限。"""
+        if claims.entry_kind != "PLATFORM":
+            raise UserAuthenticationError(
+                "PLATFORM_SESSION_REQUIRED",
+                "只有平台会话可以换取其他 App 的业务会话",
+                status_code=409,
+            )
+        await self.validate_session(claims=claims)
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user(claims.user_id)
+            user_snapshot = (
+                user.display_name,
+                user.account_origin,
+            ) if user is not None else None
+        if user_snapshot is None or user_snapshot[1] != "PLATFORM":
+            raise UserAuthenticationError(
+                "PLATFORM_ACCOUNT_REQUIRED",
+                "该账号不是平台来源账号",
+                status_code=403,
+            )
+        return await self._issue_business_session(
+            user_id=claims.user_id,
+            display_name=user_snapshot[0],
+            app_id=app_id,
+            domain_id=domain_id,
+            must_change_password=claims.must_change_password,
+            password_version=claims.password_version,
+        )
+
+    async def refresh_session(
+        self, *, claims: UserTokenClaims
+    ) -> dict[str, object]:
+        """续签仍有效的当前入口会话，并再次校验账号和授权状态。"""
+        await self.validate_session(claims=claims)
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user(claims.user_id)
+            domain = (
+                await uow.domains.get(domain_id=claims.domain_id)
+                if claims.domain_id is not None
+                else None
+            )
+            user_snapshot = (
+                user.display_name,
+                user.status,
+            ) if user is not None else None
+            domain_name = domain.name if domain is not None else None
+        if user_snapshot is None or user_snapshot[1] != "ACTIVE":
+            raise UserAuthenticationError(
+                "USER_DISABLED", "用户不存在或已停用"
+            )
+        return self._token_response(
+            user_id=claims.user_id,
+            display_name=user_snapshot[0],
+            entry_kind=claims.entry_kind,
+            app_id=claims.app_id,
+            domain_id=claims.domain_id,
+            domain_name=domain_name,
+            must_change_password=claims.must_change_password,
+            password_version=claims.password_version,
         )
 
     async def login_for_domain_name(self, *, user_id: str, password: str, domain_name: str, app_id: str = "km_asset") -> dict[str, object]:
@@ -269,6 +354,63 @@ class UserAuthService:
             "app_id": claims.app_id, "domain_id": claims.domain_id,
             "must_change_password": claims.must_change_password,
             "app_memberships": membership_items,
+        }
+
+    async def list_session_entries(
+        self, *, claims: UserTokenClaims
+    ) -> dict[str, object]:
+        """使用有效会话列出用户当前可进入的 App 与 Domain。"""
+        if claims.entry_kind != "PLATFORM":
+            raise UserAuthenticationError(
+                "PLATFORM_SESSION_REQUIRED",
+                "只有平台会话可以读取 SSO 业务入口",
+                status_code=409,
+            )
+        await self.validate_session(claims=claims)
+        async with self._uow_factory() as uow:
+            user = await uow.access.get_user(claims.user_id)
+            app_ids = await uow.access.list_active_app_ids(claims.user_id)
+            applications = {
+                row.app_id: (row.display_name, row.status)
+                for row in await uow.access.list_applications()
+            }
+            entries: list[dict[str, object]] = []
+            for app_id in app_ids:
+                application = applications.get(app_id)
+                if application is None or application[1] != "ACTIVE":
+                    continue
+                domain_ids = await uow.access.list_active_domain_ids(
+                    claims.user_id, app_id=app_id
+                )
+                domains = await uow.domains.list_by_ids(
+                    domain_ids=domain_ids
+                )
+                entries.append({
+                    "app_id": app_id,
+                    "display_name": application[0],
+                    "domains": [
+                        {
+                            "domain_id": int(domain.domain_id),
+                            "name": domain.name,
+                            "status": domain.status,
+                        }
+                        for domain in domains
+                        if domain.status == "ACTIVE"
+                    ],
+                })
+            user_snapshot = (
+                user.display_name,
+                user.account_origin,
+            ) if user is not None else None
+        if user_snapshot is None:
+            raise UserAuthenticationError(
+                "USER_DISABLED", "用户不存在或已停用"
+            )
+        return {
+            "user_id": claims.user_id,
+            "display_name": user_snapshot[0],
+            "account_origin": user_snapshot[1],
+            "apps": entries,
         }
 
     async def switch_domain(self, *, claims: UserTokenClaims, domain_id: int) -> dict[str, object]:

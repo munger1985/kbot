@@ -33,6 +33,11 @@ Main API 支持两种公开用户入口：
   Token。用户停用、App 停用、成员关系失效或密码被重置后，既有 JWT 会在下一次请求
   时失效。
 
+平台来源用户完成平台登录后，使用 PLATFORM Token 调用 `GET /api/v1/auth/entries` 查询
+当前显式授权的 App 与 Domain，再调用 `POST /api/v1/auth/exchange` 免密换取目标 BUSINESS
+Token。Exchange 不提供隐式管理员权限。`POST /api/v1/auth/refresh` 只允许仍有效的 Token
+续签相同上下文，并再次校验用户、密码版本和业务授权；已过期 Token 必须重新登录。
+
 `GET /api/v1/auth/me` 返回当前入口、用户、App 和 Domain，
 `POST /api/v1/auth/switch-domain` 切换 Domain，`POST /api/v1/auth/password` 修改本人
 密码。KM 登录入口继续固定选择 `km_asset` App 和 `km_portal` Domain，但签发相同的

@@ -54,6 +54,12 @@ App 接口统一位于 `/api/v1/apps/{app_id}`：
 `/api/v1/auth/apps/{app_id}/login`。业务 Token 固定一个 App 和一个 Domain，切换 Domain
 只能在当前 App 的有效授权范围内进行。
 
+平台来源用户完成平台登录后，可使用 PLATFORM Token 调用 `GET /api/v1/auth/entries`
+免密读取其显式授权的 App 与 Domain，再调用 `POST /api/v1/auth/exchange` 换取目标业务
+Token。Exchange 必须重新校验 App Grant 和 Domain Scope，不因全局管理员身份绕过业务
+授权。有效 Token 可通过 `POST /api/v1/auth/refresh` 续签相同上下文；已过期或已撤销
+Token 不能续签。
+
 用户停用、密码重置、成员或角色失效、Domain 移出 App、App 停用都会在下一次请求校验
 时使既有 Token 失效。调用者提交的 App、Domain、Actor 或角色声明不能替代服务端授权。
 
