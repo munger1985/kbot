@@ -31,7 +31,7 @@ requires_chart。不要输出隐藏思维过程。
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_intent_route"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "根据 KM Asset 的文档检索和托管元数据能力选择唯一执行路由"
 input_variables = []
@@ -62,8 +62,12 @@ context_required=true。该规则对所有输入语言等价适用。
 
 只有用户明确要求图表时 requires_chart 才为 true，并且此时必须选择 DATA_QUERY。
 
+DOCUMENT 路由还必须设置 coverage_mode：用户要求列出、查找全部或多个相关 Asset 时使用
+BREADTH；只需要回答、解释或总结最相关内容时使用 BALANCED。该判断必须依据多语言语义，
+不得只匹配某一种语言的固定关键词。非 DOCUMENT 路由固定使用 BALANCED。
+
 只输出 JSON 对象，字段必须为 route_type、confidence、reason、clarification_question、
-requires_chart、context_required。route_type 只能是 DOCUMENT、DATA_QUERY 或 CLARIFY；
+requires_chart、context_required、coverage_mode。route_type 只能是 DOCUMENT、DATA_QUERY 或 CLARIFY；
 CLARIFY 必须提供一个简洁 clarification_question，其他路由必须为 null；context_required 必须
 是 JSON 布尔值。能够形成可执行问题时不得选择 CLARIFY。
 reason 使用与 current_input 相同的主要语言给出一句可审计说明。不要输出隐藏思维过程。
@@ -72,7 +76,7 @@ reason 使用与 current_input 相同的主要语言给出一句可审计说明�
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_context_route"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "结合会话上下文消解 KM Asset 追问并选择执行路由"
 input_variables = []
@@ -92,8 +96,12 @@ recent_items 恢复当前用户真正要执行的完整意图。
 不得重复相同澄清。没有范围限定的 Asset 数量表示当前授权范围内全部 Asset。“与某主题相关”
 需要全文与向量语义检索，即使同时要求数量也选择 DOCUMENT。
 
+DOCUMENT 路由还必须设置 coverage_mode：用户要求列出、查找全部或多个相关 Asset 时使用
+BREADTH；只需要回答、解释或总结最相关内容时使用 BALANCED。非 DOCUMENT 路由固定使用
+BALANCED。此判断同样必须依据多语言语义。
+
 只输出 JSON 对象，字段必须为 route_type、confidence、reason、clarification_question、
-requires_chart、context_required。CLARIFY 必须提供简洁且可回答的 clarification_question；其他
+requires_chart、context_required、coverage_mode。CLARIFY 必须提供简洁且可回答的 clarification_question；其他
 路由必须为 null。完成上下文消解后 context_required=false；仍需用户补充时为 true。
 requires_chart 只能在 DATA_QUERY 且用户明确要求图表时为 true。不要输出隐藏思维过程。
 """
@@ -463,7 +471,7 @@ content = """
 [[prompts]]
 prompt_key = "knowledge_core.candidate_rerank"
 owner_service = "knowledge_core"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "判断 Bundle 或 Document 候选是否真正满足用户问题"
 input_variables = []
@@ -479,6 +487,10 @@ DIRECT 表示对象直接回答问题；STRONG 表示有充分内容支撑问题
 POSSIBLE 表示可能有用但画像不足以确认；SEMANTIC_ONLY 表示仅语义或主题相似；
 IRRELEVANT 表示内容不相关。不得输出数值分数。
 
+coverage_mode=BREADTH 表示用户要求清单或广覆盖结果。此时必须逐个候选独立判断并优先保证
+召回率，不能只选择一个最佳候选；标题或画像直接包含查询主题、词形变化、产品名或主题标签的
+候选不得判为 IRRELEVANT。coverage_mode=BALANCED 时兼顾准确率与召回率。
+
 只输出 JSON：{"decisions":[{"candidate_label":"B1","relevance":"DIRECT",
 "matched_requirements":[],"reason_refs":[]}]}。reason_refs 只能引用输入中的字段名或
 matched_members，不得输出隐藏思维过程或 Label 之外的候选。
@@ -487,7 +499,7 @@ matched_members，不得输出隐藏思维过程或 Label 之外的候选。
 [[prompts]]
 prompt_key = "knowledge_core.evidence_group_rerank"
 owner_service = "knowledge_core"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "验证 Evidence Group 对用户问题的实际支持关系"
 input_variables = []
@@ -502,6 +514,10 @@ NO_SUPPORT。凡判断为 DIRECT_SUPPORT、PARTIAL_SUPPORT 或 CONTRADICTS，必
 Group 的 PRIMARY Item 中选择至少一个 primary_item_labels；结构上下文只能从该
 Group 的 STRUCTURAL_CONTEXT Item 中选择。CONTEXT_ONLY 和 NO_SUPPORT 不得选择
 PRIMARY。不要因为主题或词语相似就判定有支持，不得输出数值分数。
+
+coverage_mode=BREADTH 表示要为多个相关对象保留可引用证据。必须逐组独立判断，不能只选择
+一组最佳证据；PRIMARY 内容直接包含查询主题、词形变化、产品名或主题标签时，至少判为
+PARTIAL_SUPPORT 并选择对应 PRIMARY Item。coverage_mode=BALANCED 时按通常证据标准判断。
 
 只输出 JSON：{"decisions":[{"group_label":"C1","support":"DIRECT_SUPPORT",
 "primary_item_labels":["E1"],"structural_context_labels":[],

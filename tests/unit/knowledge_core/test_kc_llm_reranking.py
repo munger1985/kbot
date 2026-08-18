@@ -55,7 +55,12 @@ def _candidate(collection_id, rank, title):
     )
 
 
-def _citation(collection_id):
+def _citation(
+    collection_id,
+    *,
+    label="C1",
+    content="通过建立联合索引将查询耗时从 8 秒降低到 1 秒。",
+):
     evidence = EvidenceHit(
         evidence_id=uuid7(),
         collection_id=collection_id,
@@ -67,7 +72,7 @@ def _citation(collection_id):
         parse_view_id=uuid7(),
         evidence_key="evidence-1",
         evidence_type="TEXT",
-        content_text="通过建立联合索引将查询耗时从 8 秒降低到 1 秒。",
+        content_text=content,
         retrieval_text="联合索引 查询耗时",
         heading_path=("优化结果",),
         locator={"page": 3},
@@ -88,7 +93,7 @@ def _citation(collection_id):
         final_role="PRIMARY",
     )
     return CitationGroup(
-        citation_label="C1",
+        citation_label=label,
         collection_id=collection_id,
         bundle_id=evidence.bundle_id,
         bundle_revision_id=evidence.bundle_revision_id,
@@ -162,6 +167,53 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(report["status"], "DEGRADED")
         self.assertEqual(len(warnings), 1)
 
+    async def test_breadth_candidate_rerank_preserves_topic_matches(self):
+        collection_id = uuid7()
+        candidates = [
+            _candidate(
+                collection_id,
+                1,
+                "Deep Data Security in an Agentic Application",
+            ),
+            _candidate(
+                collection_id,
+                2,
+                "Conversational Banking with Select AI Agents",
+            ),
+            _candidate(collection_id, 3, "OKE Workbench Utility"),
+        ]
+        reranker = KnowledgeCoreLlmReranker(
+            model_resolver=_ModelResolver(),
+            model_client=_ModelClient([{
+                "decisions": [
+                    {
+                        "candidate_label": f"B{index}",
+                        "relevance": "IRRELEVANT",
+                    }
+                    for index in range(1, 4)
+                ]
+            }]),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        output, report, warnings = await reranker.rerank_candidates(
+            query="list all assets related to agent",
+            candidates=candidates,
+            coverage_mode="BREADTH",
+        )
+
+        self.assertEqual(
+            [item.display_title for item in output],
+            [
+                "Deep Data Security in an Agentic Application",
+                "Conversational Banking with Select AI Agents",
+            ],
+        )
+        self.assertEqual(
+            2, report["collections"][0]["recall_guard_count"]
+        )
+        self.assertEqual(warnings, [])
+
     async def test_evidence_rerank_keeps_selected_primary(self):
         collection_id = uuid7()
         citation = _citation(collection_id)
@@ -191,6 +243,50 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(output[0].primary_evidence_ids,
                          citation.primary_evidence_ids)
         self.assertEqual(report["status"], "SUCCEEDED")
+        self.assertEqual(warnings, [])
+
+    async def test_breadth_evidence_rerank_preserves_topic_groups(self):
+        collection_id = uuid7()
+        citations = [
+            _citation(
+                collection_id,
+                label="C1",
+                content="Agentic Application security asset metadata.",
+            ),
+            _citation(
+                collection_id,
+                label="C2",
+                content="Select AI Agents for conversational banking.",
+            ),
+            _citation(
+                collection_id,
+                label="C3",
+                content="OKE autoscaling workbench utility.",
+            ),
+        ]
+        reranker = KnowledgeCoreLlmReranker(
+            model_resolver=_ModelResolver(),
+            model_client=_ModelClient([{
+                "decisions": [
+                    {
+                        "group_label": f"C{index}",
+                        "support": "NO_SUPPORT",
+                    }
+                    for index in range(1, 4)
+                ]
+            }]),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        output, report, warnings = await reranker.rerank_evidence(
+            query="list all assets related to agent",
+            citations=citations,
+            coverage_mode="BREADTH",
+        )
+
+        self.assertEqual(2, len(output))
+        self.assertEqual(["C1", "C2"], [item.citation_label for item in output])
+        self.assertEqual(2, report["recall_guard_count"])
         self.assertEqual(warnings, [])
 
 

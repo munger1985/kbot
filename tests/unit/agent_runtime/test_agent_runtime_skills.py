@@ -590,6 +590,10 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             **snapshot["agent"],
             "do_rerank": True,
         }
+        snapshot["route"] = {
+            "route_type": "DOCUMENT",
+            "coverage_mode": "BREADTH",
+        }
 
         result = await KnowledgeRetrievalSkill(
             knowledge_core_client=client,
@@ -600,6 +604,12 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(client.last_discovery_request["do_rerank"])
         self.assertTrue(client.last_evidence_request["do_rerank"])
+        self.assertEqual(
+            "BREADTH", client.last_discovery_request["coverage_mode"]
+        )
+        self.assertEqual(
+            "BREADTH", client.last_evidence_request["coverage_mode"]
+        )
         self.assertEqual(
             result.artifact.payload["retrieval_report"]["selector"],
             "llm-object-and-evidence-group-v1",
@@ -924,6 +934,17 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(answer, "第一条事实[C1]，第二条事实[C1]。")
         self.assertEqual(labels, ("C1",))
+
+    def test_breadth_composer_requires_every_verified_citation(self):
+        with self.assertRaisesRegex(ValueError, "遗漏引用标签.*C2"):
+            ResponseComposerSkill._validate_model_answer(
+                {
+                    "answer": "只回答了第一项。[C1]",
+                    "used_citation_labels": ["C1"],
+                },
+                {"C1": object(), "C2": object()},
+                require_all_citations=True,
+            )
 
     async def test_composer_does_not_stream_answer_before_validation(self):
         artifact = await self._retrieval_artifact()

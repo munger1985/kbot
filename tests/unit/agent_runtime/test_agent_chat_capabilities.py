@@ -264,6 +264,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "clarification_question": None,
                 "requires_chart": False,
                 "context_required": False,
+                "coverage_mode": "BREADTH",
             }
         )
         planner = RootAgentPlanner(
@@ -283,6 +284,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertEqual("BREADTH", decision.coverage_mode)
         self.assertEqual(
             "llm-km-asset-v1:1.0.0", decision.classifier_version
         )
@@ -297,6 +299,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "clarification_question": None,
                 "requires_chart": False,
                 "context_required": False,
+                "coverage_mode": "BALANCED",
             }),
             prompt_resolver=_PromptResolver(),
         )
@@ -322,6 +325,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "clarification_question": None,
             "requires_chart": False,
             "context_required": False,
+            "coverage_mode": "BALANCED",
         })
         planner = RootAgentPlanner(
             model_client=model,
@@ -353,27 +357,37 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "How many assets are available?",
                 RouteType.DATA_QUERY,
                 "en-US",
+                "BALANCED",
             ),
-            ("현재 자산은 몇 개입니까?", RouteType.DATA_QUERY, "ko-KR"),
+            (
+                "현재 자산은 몇 개입니까?",
+                RouteType.DATA_QUERY,
+                "ko-KR",
+                "BALANCED",
+            ),
             (
                 "現在のアセット数はいくつですか？",
                 RouteType.DATA_QUERY,
                 "ja-JP",
+                "BALANCED",
             ),
             (
                 "Find assets related to ChatBI",
                 RouteType.DOCUMENT,
                 "en-US",
+                "BREADTH",
             ),
             (
                 "ChatBI 관련 자료를 찾아주세요",
                 RouteType.DOCUMENT,
                 "ko-KR",
+                "BREADTH",
             ),
             (
                 "ChatBIに関連する資料を探してください",
                 RouteType.DOCUMENT,
                 "ja-JP",
+                "BREADTH",
             ),
         )
         agent = {
@@ -383,7 +397,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "router_llm": {"served_model_name": "router-model"}
             },
         }
-        for objective, expected, expected_language in cases:
+        for objective, expected, expected_language, coverage_mode in cases:
             with self.subTest(objective=objective):
                 model = _ModelClient(response={
                     "route_type": expected.value,
@@ -392,6 +406,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                     "clarification_question": None,
                     "requires_chart": False,
                     "context_required": False,
+                    "coverage_mode": coverage_mode,
                 })
                 planner = RootAgentPlanner(
                     model_client=model,
@@ -402,6 +417,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                     objective=objective,
                 )
                 self.assertEqual(expected, decision.route_type)
+                self.assertEqual(coverage_mode, decision.coverage_mode)
                 messages = model.last_json_request["prompt"]
                 request = json.loads(messages[2]["content"])
                 self.assertEqual(expected_language, request["language"])
@@ -419,6 +435,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "clarification_question": "请说明要查找还是统计相关 Asset。",
                 "requires_chart": False,
                 "context_required": True,
+                "coverage_mode": "BALANCED",
             },
             {
                 "route_type": "DOCUMENT",
@@ -427,6 +444,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "clarification_question": None,
                 "requires_chart": False,
                 "context_required": False,
+                "coverage_mode": "BREADTH",
             },
         ))
         planner = RootAgentPlanner(
@@ -481,6 +499,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "clarification_question": "请说明您要查询哪个 Asset，以及需要内容还是统计数据。",
             "requires_chart": False,
             "context_required": True,
+            "coverage_mode": "BALANCED",
         })
         planner = RootAgentPlanner(
             model_client=model,

@@ -1,6 +1,7 @@
 """Discovery 阶段的内部查询端点。"""
 from dataclasses import asdict
 from time import monotonic
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -27,6 +28,7 @@ class DiscoverySearchRequest(BaseModel):
     per_collection_limit: int = Field(default=20, ge=1, le=100)
     max_security_level: int = Field(default=3, ge=0, le=3)
     do_rerank: bool = False
+    coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
     run_id: UUID | None = None
     task_id: UUID | None = None
 
@@ -63,6 +65,7 @@ async def search_discovery(payload: DiscoverySearchRequest, request: Request):
                 await request.app.state.kc_llm_reranker.rerank_candidates(
                     query=payload.query,
                     candidates=candidates,
+                    coverage_mode=payload.coverage_mode,
                 )
             )
             warnings.extend(rerank_warnings)

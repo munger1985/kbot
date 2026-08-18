@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 import json
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,7 @@ class RouteDecision(BaseModel):
     clarification_question: str | None = None
     requires_chart: bool = False
     context_required: bool | None = None
+    coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
     classifier_version: str = "deterministic-document-v1"
 
 
@@ -419,6 +420,15 @@ class RootAgentPlanner:
                     raise ValueError("requires_chart 必须为布尔值")
                 if route != RouteType.DATA_QUERY:
                     requires_chart = False
+                coverage_mode = str(
+                    response.get("coverage_mode") or ""
+                ).upper()
+                if coverage_mode not in {"BREADTH", "BALANCED"}:
+                    raise ValueError(
+                        "coverage_mode 只能是 BREADTH 或 BALANCED"
+                    )
+                if route != RouteType.DOCUMENT:
+                    coverage_mode = "BALANCED"
                 return RouteDecision(
                     route_type=route,
                     confidence=confidence,
@@ -426,6 +436,7 @@ class RootAgentPlanner:
                     clarification_question=clarification or None,
                     requires_chart=requires_chart,
                     context_required=context_required,
+                    coverage_mode=coverage_mode,
                     classifier_version=(
                         f"llm-km-asset-v1:{prompt.version}"
                     ),

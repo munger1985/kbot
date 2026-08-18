@@ -48,6 +48,11 @@ class KnowledgeRetrievalSkill:
             )
 
         retrieval_config = self._retrieval_config(context)
+        coverage_mode = str(
+            (context.config_snapshot.get("route") or {}).get(
+                "coverage_mode", "BALANCED"
+            )
+        ).upper()
         image_payloads = await self._load_query_images(context)
         image_processing: dict[str, Any] = {
             "image_count": len(image_payloads),
@@ -83,6 +88,7 @@ class KnowledgeRetrievalSkill:
             max_security_level=self._security_level(context),
             per_collection_limit=retrieval_config["max_bundles"],
             do_rerank=retrieval_config["do_rerank"],
+            coverage_mode=coverage_mode,
             run_id=context.run_id,
             task_id=context.task_id,
         )
@@ -135,6 +141,7 @@ class KnowledgeRetrievalSkill:
             max_evidence=retrieval_config["max_citations"],
             context_limit=retrieval_config["context_limit"],
             do_rerank=retrieval_config["do_rerank"],
+            coverage_mode=coverage_mode,
             run_id=context.run_id,
             task_id=context.task_id,
         )
@@ -168,6 +175,7 @@ class KnowledgeRetrievalSkill:
                     "max_bundles": retrieval_config["max_bundles"],
                     "max_citations": retrieval_config["max_citations"],
                     "do_rerank": retrieval_config["do_rerank"],
+                    "coverage_mode": coverage_mode,
                     "rerank": {
                         "discovery": discovery_rerank,
                         "evidence": evidence_rerank,

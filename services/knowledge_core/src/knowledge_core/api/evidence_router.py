@@ -1,6 +1,7 @@
 """Evidence 查询与 Citation Pack 内部端点。"""
 from dataclasses import asdict
 from time import monotonic
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -34,6 +35,7 @@ class EvidenceSearchRequest(BaseModel):
     context_limit: int = Field(default=4, ge=0, le=20)
     max_security_level: int = Field(default=3, ge=0, le=3)
     do_rerank: bool = False
+    coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
     run_id: UUID | None = None
     task_id: UUID | None = None
 
@@ -83,6 +85,7 @@ async def search_evidence(payload: EvidenceSearchRequest, request: Request):
                 await request.app.state.kc_llm_reranker.rerank_evidence(
                     query=payload.query,
                     citations=citations,
+                    coverage_mode=payload.coverage_mode,
                 )
             )
             warnings.extend(rerank_warnings)

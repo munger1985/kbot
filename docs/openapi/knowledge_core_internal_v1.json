@@ -244,6 +244,15 @@
             "title": "Collection Ids",
             "type": "array"
           },
+          "coverage_mode": {
+            "default": "BALANCED",
+            "enum": [
+              "BREADTH",
+              "BALANCED"
+            ],
+            "title": "Coverage Mode",
+            "type": "string"
+          },
           "do_rerank": {
             "default": false,
             "title": "Do Rerank",
@@ -618,6 +627,15 @@
             "minimum": 0.0,
             "title": "Context Limit",
             "type": "integer"
+          },
+          "coverage_mode": {
+            "default": "BALANCED",
+            "enum": [
+              "BREADTH",
+              "BALANCED"
+            ],
+            "title": "Coverage Mode",
+            "type": "string"
           },
           "do_rerank": {
             "default": false,
