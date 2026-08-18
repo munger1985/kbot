@@ -22,6 +22,7 @@ from km_asset_app.application.slack_assets import (
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
+    slack_visible_payload,
     waiting_message,
 )
 from km_asset_app.entities import SlackDeliveryEntity, SlackThreadEntity
@@ -387,13 +388,14 @@ class SlackDispatchService:
                 "Slack 原始回复调试报文写入失败：event_id={}",
                 event_key,
             )
+        visible_payload = slack_visible_payload(payload)
         async with self._http_session.post(
             "https://slack.com/api/chat.postMessage",
             headers={
                 "Authorization": f"Bearer {bot_token}",
                 "Content-Type": "application/json; charset=utf-8",
             },
-            json=payload,
+            json=visible_payload,
         ) as response:
             body = await response.json()
         if not body.get("ok"):

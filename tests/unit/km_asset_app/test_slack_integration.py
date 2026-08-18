@@ -30,6 +30,7 @@ from km_asset_app.application.slack_intake import (
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
     render_slack_reply,
+    slack_visible_payload,
 )
 from km_asset_app.config import (
     SlackExternalCallbackConfig,
@@ -733,6 +734,107 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             )
             self.assertEqual(0o600, os.stat(reply_file).st_mode & 0o777)
             self.assertEqual(0o600, os.stat(callback_log).st_mode & 0o777)
+
+    def test_visible_payload_hides_citations_without_mutating_raw_payload(self):
+        raw_payload = {
+            "channel": "C1",
+            "text": "Answer [C1]. More [C2][C10]! Keep [Apex].",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "[D1] Document details [Q1]",
+                    },
+                }
+            ],
+            "metadata": "internal [C1]",
+            "url": "https://example.com/files/[C1]",
+        }
+
+        visible = slack_visible_payload(raw_payload)
+
+        self.assertEqual(
+            "Answer. More! Keep [Apex].",
+            visible["text"],
+        )
+        self.assertEqual(
+            "Document details",
+            visible["blocks"][0]["text"]["text"],
+        )
+        self.assertEqual("internal [C1]", visible["metadata"])
+        self.assertEqual("https://example.com/files/[C1]", visible["url"])
+        self.assertEqual(
+            "Answer [C1]. More [C2][C10]! Keep [Apex].",
+            raw_payload["text"],
+        )
+
+
+class SlackVisibleDeliveryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_dump_keeps_citations_while_slack_receives_hidden_copy(self):
+        class Response:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+            async def json(self):
+                return {"ok": True, "ts": "1.001"}
+
+        class Session:
+            def __init__(self):
+                self.kwargs = None
+
+            def post(self, url, **kwargs):
+                self.kwargs = kwargs
+                return Response()
+
+        with tempfile.TemporaryDirectory() as directory:
+            session = Session()
+            service = SlackDispatchService(
+                uow_factory=None,
+                agent_client=None,
+                km_asset_client=None,
+                knowledge_core_client=None,
+                slack_config=SlackIntegrationConfig(
+                    debug={
+                        "slack_reply_dump_enabled": True,
+                        "slack_reply_dump_dir": directory,
+                    }
+                ),
+                worker_id="test-worker",
+                http_session=session,
+            )
+            raw_payload = {
+                "channel": "C1",
+                "text": "Answer [C1].",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": "Details [C2]"},
+                    }
+                ],
+            }
+
+            await service._post_slack(
+                bot_token="token",
+                payload=raw_payload,
+                workspace_id="T1",
+                event_key="E1",
+                delivery_type="final",
+            )
+
+            dump_file = next(Path(directory).glob("*.json"))
+            dumped = json.loads(dump_file.read_text(encoding="utf-8"))
+            self.assertEqual("Answer [C1].", dumped["text"])
+            self.assertEqual("Details [C2]", dumped["blocks"][0]["text"]["text"])
+            self.assertEqual("Answer.", session.kwargs["json"]["text"])
+            self.assertEqual(
+                "Details",
+                session.kwargs["json"]["blocks"][0]["text"]["text"],
+            )
+            self.assertEqual("Answer [C1].", raw_payload["text"])
 
 
 class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):

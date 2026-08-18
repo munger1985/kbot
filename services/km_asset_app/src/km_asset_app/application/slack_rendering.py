@@ -47,6 +47,10 @@ _EMAIL_PATTERN = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
 )
+_VISIBLE_CITATION_PATTERN = re.compile(r"\[[A-Za-z]\d+\]")
+_PUNCTUATION_PATTERN = re.compile(r"[ \t]+(?=[,.;:!?，。；：！？])")
+_INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
+_TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
 
 
 def waiting_message(question: str) -> str:
@@ -142,6 +146,36 @@ def _to_slack_mrkdwn(value: object) -> str:
     for index, link in enumerate(slack_links):
         text = text.replace(f"\x00SLACK_LINK_{index}\x00", link)
     return text.strip()
+
+
+def _hide_visible_citation_labels(value: str) -> str:
+    """仅清理 Slack 可见文本，不改变 KBot 原始 Artifact。"""
+    text = _VISIBLE_CITATION_PATTERN.sub("", value)
+    text = _PUNCTUATION_PATTERN.sub("", text)
+    text = _INLINE_SPACE_PATTERN.sub(" ", text)
+    text = _TRAILING_SPACE_PATTERN.sub("", text)
+    return text.strip()
+
+
+def slack_visible_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """复制 Slack 报文并从全部可见 text 字段隐藏引用标签。"""
+
+    def sanitize(value: Any, *, key: str | None = None) -> Any:
+        if isinstance(value, dict):
+            return {
+                item_key: sanitize(item, key=item_key)
+                for item_key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        if isinstance(value, tuple):
+            return [sanitize(item) for item in value]
+        if key == "text" and isinstance(value, str):
+            return _hide_visible_citation_labels(value)
+        return value
+
+    visible = sanitize(payload)
+    return visible if isinstance(visible, dict) else {}
 
 
 def _text_sections(text: str) -> list[dict[str, Any]]:

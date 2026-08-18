@@ -40,7 +40,9 @@ Slack App 至少需要接收消息与 `app_mention` 的 Event Subscription，以
 
 `callback_payload_log_enabled` 将实际发送给 Callback 的完整五字段报文写入
 `<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 将
-`chat.postMessage` 的完整 JSON Body 写入配置目录，默认是 `/tmp/slackmess`。
+组装完成、发送前的原始 Slack JSON Body 写入配置目录，默认是 `/tmp/slackmess`。
+原始调试报文保留 `[C1]`、`[C2]` 等内部引用标签；Worker 仅在实际调用
+`chat.postMessage` 前，从发送副本的可见文本中删除这些标签。
 两项均默认关闭，不写入 Bot Token、Signing Secret、内部 JWT 或 Authorization
 Header。调试文件包含个人资料和业务问题，只能临时开启并限制文件访问权限。
 
@@ -128,6 +130,10 @@ Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。�
 DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。回答原文保留，原参考资料区替换
 为一个分隔线、Asset Title、Solution Briefing，以及“Contributor 邮箱 | 发布日期”
 与 KM Link 按钮组成的 Block Kit。
+
+KBot Artifact、Outbox 和 `/tmp/slackmess` 原始调试报文保留引用标签，以支持证据
+审计和问题排查；实际发送给 Slack 的报文副本会从所有可见 `text` 字段中删除
+`[C1]`、`[D1]`、`[Q1]` 等标签，且不修改 URL、按钮或原始持久化报文。
 
 无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤和排序，并受
 `max_references` 限制。警告与可视化仅输出面向用户的摘要，不传送定位框、内部
