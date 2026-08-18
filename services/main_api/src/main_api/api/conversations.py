@@ -166,6 +166,7 @@ async def create_turn(
         conversation_id=conversation_id,
         payload={
             **payload.model_dump(mode="json"),
+            "execution_spec": spec,
             "security_level": effective_level,
         },
         idempotency_key=idempotency_key,
@@ -230,6 +231,7 @@ async def create_turn_with_images(
         payload = CreateConversationTurnRequest(
             input=input,
             expected_conversation_version=expected_conversation_version,
+            execution_spec=spec,
             collection_ids=collection_ids,
             security_level=effective_level,
             client_metadata=client_metadata,

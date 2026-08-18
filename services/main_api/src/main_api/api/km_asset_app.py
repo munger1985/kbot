@@ -563,6 +563,7 @@ async def create_conversation_turn(conversation_id: UUID, payload: ConversationT
     fixed_collections = tuple(resource_context.get("collection_ids") or ())
     effective_level = await _effective_security_level(request)
     body = payload.model_dump(mode="json")
+    body["execution_spec"] = spec
     body["collection_ids"] = list(fixed_collections)
     # KM Asset 统一按内部级别 1 入库。最终等级还必须受当前用户上限
     # 约束，浏览器只能主动降低本次检索范围，不能扩大授权范围。

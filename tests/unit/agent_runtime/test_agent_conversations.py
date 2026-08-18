@@ -19,6 +19,7 @@ from agent_runtime.application.memory import (
 from agent_runtime.application import ConversationService
 from agent_runtime.application.conversations import MemoryRecallQuery
 from platform_core.contracts import (
+    AgentExecutionSpec,
     AuthContext,
     ConversationTurnReceipt,
     ConversationView,
@@ -117,6 +118,7 @@ class AgentConversationApiTest(unittest.TestCase):
             json={
                 "input": "它有什么优势？",
                 "expected_conversation_version": 1,
+                "execution_spec": self._execution_spec(),
             },
         )
 
@@ -125,6 +127,10 @@ class AgentConversationApiTest(unittest.TestCase):
         self.assertEqual(kwargs["idempotency_key"], "turn-1")
         self.assertEqual(kwargs["actor_id"], "user-1")
         self.assertEqual(kwargs["domain_id"], 20)
+        self.assertEqual(
+            kwargs["execution_spec"].consumer_agent_id,
+            self.agent_id,
+        )
 
 
 class MemorySafetyTest(unittest.TestCase):
@@ -225,6 +231,107 @@ class MemorySafetyTest(unittest.TestCase):
         )
 
         self.assertIs(selected[0], semantic)
+
+
+class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
+    async def test_new_turn_atomically_refreshes_execution_spec(self):
+        agent_id = uuid7()
+        old_version_id = uuid7()
+        current_version_id = uuid7()
+        conversation = SimpleNamespace(
+            conversation_id=uuid7(),
+            domain_id=20,
+            actor_id="user-1",
+            agent_id=agent_id,
+            execution_spec_json={
+                "consumer_agent_version_id": str(old_version_id)
+            },
+            title="已有会话",
+            status="ACTIVE",
+            row_version=1,
+            last_turn_sequence=0,
+            last_item_sequence=0,
+        )
+
+        class _Conversations:
+            async def get_scoped(self, **kwargs):
+                del kwargs
+                return conversation
+
+        class _Turns:
+            async def get_by_idempotency(self, **kwargs):
+                del kwargs
+                return None
+
+            async def find_active(self, **kwargs):
+                del kwargs
+                return None
+
+            async def add(self, row):
+                return row
+
+        class _Items:
+            async def list_recent(self, **kwargs):
+                del kwargs
+                return []
+
+            async def add(self, row):
+                return row
+
+        class _Uow:
+            conversations = _Conversations()
+            turns = _Turns()
+            conversation_items = _Items()
+            memory_snapshots = SimpleNamespace(
+                get_active=AsyncMock(return_value=None)
+            )
+            memory_items = SimpleNamespace(
+                list_active=AsyncMock(return_value=[])
+            )
+            commit = AsyncMock()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                del exc_type, exc, traceback
+
+        execution_spec = AgentExecutionSpec(
+            schema_version="1.0",
+            owner_app_id="km_asset",
+            domain_id=20,
+            consumer_agent_id=agent_id,
+            consumer_agent_version_id=current_version_id,
+            agent_kind="KNOWLEDGE_RETRIEVAL",
+            display_name="KM Agent",
+            enabled_capabilities=("document", "data_query"),
+            models={"composer_llm": uuid7()},
+        )
+        service = ConversationService(
+            uow_factory=_Uow,
+            runtime_service=None,
+        )
+
+        await service._accept_turn(
+            conversation_id=conversation.conversation_id,
+            domain_id=20,
+            actor_id="user-1",
+            idempotency_key="turn-current-spec",
+            raw_input="现在全部有多少个 asset",
+            raw_hash="a" * 64,
+            expected_conversation_version=1,
+            execution_spec=execution_spec,
+        )
+
+        self.assertEqual(
+            str(current_version_id),
+            str(
+                conversation.execution_spec_json[
+                    "consumer_agent_version_id"
+                ]
+            ),
+        )
+        _Uow.commit.assert_awaited_once()
 
 
 class _ConflictModel:

@@ -139,13 +139,13 @@ class SlackDispatchService:
             await uow.commit()
 
         context = self._context(inbox, workspace)
+        execution_spec = await self._km_asset_client.execution_spec(
+            agent_id=workspace.agent_id,
+            domain_id=workspace.domain_id,
+            auth_context=context,
+            scopes=("km_asset.slack.dispatch",),
+        )
         if thread is None:
-            execution_spec = await self._km_asset_client.execution_spec(
-                agent_id=workspace.agent_id,
-                domain_id=workspace.domain_id,
-                auth_context=context,
-                scopes=("km_asset.slack.dispatch",),
-            )
             conversation = await self._agent_client.create_conversation(
                 payload={
                     "agent_id": str(workspace.agent_id),
@@ -199,6 +199,7 @@ class SlackDispatchService:
             payload={
                 "input": inbox.message_text,
                 "expected_conversation_version": conversation["row_version"],
+                "execution_spec": execution_spec,
                 "collection_ids": [],
                 "security_level": workspace.security_level,
                 "client_metadata": {

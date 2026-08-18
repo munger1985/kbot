@@ -211,6 +211,7 @@ async def create_turn(
             expected_conversation_version=(
                 payload.expected_conversation_version
             ),
+            execution_spec=payload.execution_spec,
             collection_ids=payload.collection_ids,
             security_level=payload.security_level,
             client_metadata=payload.client_metadata,

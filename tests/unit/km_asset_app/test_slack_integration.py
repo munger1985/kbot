@@ -888,6 +888,10 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             "payload"
         ]
         self.assertIs(execution_spec, create_payload["execution_spec"])
+        turn_payload = agent_client.create_conversation_turn.await_args.kwargs[
+            "payload"
+        ]
+        self.assertIs(execution_spec, turn_payload["execution_spec"])
 
     async def test_run_check_does_not_read_inbox_after_uow_exit(self):
         agent_id = UUID("019ff999-6789-799b-97c3-500879812f7b")

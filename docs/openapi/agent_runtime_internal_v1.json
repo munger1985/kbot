@@ -1041,6 +1041,9 @@
             "title": "Collection Ids",
             "type": "array"
           },
+          "execution_spec": {
+            "$ref": "#/components/schemas/AgentExecutionSpec"
+          },
           "expected_conversation_version": {
             "minimum": 1.0,
             "title": "Expected Conversation Version",
@@ -1071,7 +1074,8 @@
         },
         "required": [
           "input",
-          "expected_conversation_version"
+          "expected_conversation_version",
+          "execution_spec"
         ],
         "title": "CreateConversationTurnRequest",
         "type": "object"

@@ -395,6 +395,7 @@ class ConversationService:
         idempotency_key: str,
         raw_input: str,
         expected_conversation_version: int,
+        execution_spec: AgentExecutionSpec,
         collection_ids: tuple[UUID, ...],
         security_level: int,
         client_metadata: dict[str, Any],
@@ -435,6 +436,7 @@ class ConversationService:
             raw_input=raw_input,
             raw_hash=raw_hash,
             expected_conversation_version=expected_conversation_version,
+            execution_spec=execution_spec,
             recall_query=recall_query,
             image_descriptors=image_descriptors,
         )
@@ -456,9 +458,7 @@ class ConversationService:
                 CreateRunCommand(
                     domain_id=domain_id,
                     agent_id=conversation.agent_id,
-                    execution_spec=AgentExecutionSpec.model_validate(
-                        conversation.execution_spec_json
-                    ),
+                    execution_spec=execution_spec,
                     actor_id=actor_id,
                     request_id=request_id,
                     trace_id=trace_id,
@@ -527,6 +527,7 @@ class ConversationService:
         raw_input: str,
         raw_hash: str,
         expected_conversation_version: int,
+        execution_spec: AgentExecutionSpec,
         recall_query: MemoryRecallQuery | None = None,
         image_descriptors: tuple[dict[str, Any], ...] = (),
     ) -> tuple[AgentConversationTurnEntity, AgentConversationEntity]:
@@ -545,6 +546,16 @@ class ConversationService:
             )
             if existing is not None:
                 return existing, conversation
+            if execution_spec.consumer_agent_id != conversation.agent_id:
+                raise AgentRuntimeConflict(
+                    "EXECUTION_SPEC_AGENT_MISMATCH",
+                    "Execution Spec 与 Conversation Agent 不一致",
+                )
+            if execution_spec.domain_id != domain_id:
+                raise AgentRuntimeConflict(
+                    "EXECUTION_SPEC_DOMAIN_MISMATCH",
+                    "Execution Spec 与 Domain 不一致",
+                )
             if int(conversation.row_version) != expected_conversation_version:
                 raise AgentRuntimeConflict(
                     "CONVERSATION_VERSION_CHANGED",
@@ -656,6 +667,9 @@ class ConversationService:
             turn.user_item_id = user_item.item_id
             conversation.last_turn_sequence = turn_sequence
             conversation.last_item_sequence = item_sequence
+            conversation.execution_spec_json = execution_spec.model_dump(
+                mode="json"
+            )
             conversation.last_active_at = _now()
             conversation.row_version = int(conversation.row_version) + 1
             if not conversation.title:

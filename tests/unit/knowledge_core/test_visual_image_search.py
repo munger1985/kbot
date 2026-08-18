@@ -12,6 +12,7 @@ from PIL import Image
 from agent_runtime.application.attachments import ConversationAttachmentStore
 from knowledge_core.workers.parser.worker import KcParserWorker
 from platform_core.contracts import (
+    AgentExecutionSpec,
     ConversationQueryImage,
     CreateConversationTurnRequest,
 )
@@ -81,6 +82,25 @@ class VisualImageSearchTest(unittest.IsolatedAsyncioTestCase):
         request = CreateConversationTurnRequest(
             input="查找相似图片",
             expected_conversation_version=1,
+            execution_spec=AgentExecutionSpec(
+                schema_version="1.0",
+                owner_app_id="knowledge_retrieval",
+                domain_id=20,
+                consumer_agent_id=UUID(
+                    "01900000-0000-7000-8000-000000000001"
+                ),
+                consumer_agent_version_id=UUID(
+                    "01900000-0000-7000-8000-000000000002"
+                ),
+                agent_kind="KNOWLEDGE_RETRIEVAL",
+                display_name="文档助手",
+                enabled_capabilities=("document",),
+                models={
+                    "composer_llm": UUID(
+                        "01900000-0000-7000-8000-000000000003"
+                    )
+                },
+            ),
             images=(
                 ConversationQueryImage(
                     file_name="a.png",
