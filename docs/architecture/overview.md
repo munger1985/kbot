@@ -30,7 +30,7 @@ Entity、Repository 或用例。
 
 ```text
 Portal / APEX
-      │ /api/v1 + Portal API Key
+      │ /api/v1 + 用户 Token / App API Key
       ▼
    Main API / App BFF
       │ /internal/v1 + Service Credential + AuthContext JWT

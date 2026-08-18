@@ -165,6 +165,8 @@ button.small { min-height: 29px; padding: 4px 9px; font-size: 12px; }
 .km-field input:focus, .km-field select:focus, .km-field textarea:focus { border-color: var(--km-accent); box-shadow: 0 0 0 2px rgba(163, 61, 36, .12); }
 .km-field input[type="checkbox"] { width: auto; min-height: auto; accent-color: var(--km-accent); }
 .km-help { margin: 0; color: var(--km-muted); font-size: 11px; }
+.km-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.km-check-grid label { padding: 8px 10px; color: var(--km-ink); background: #f7f3ec; border: 1px solid var(--km-line); }
 .km-filter-actions { grid-column: span 12; display: flex; justify-content: flex-end; gap: 8px; }
 
 dialog { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--km-ink); background: var(--km-paper); border: 1px solid var(--km-line-strong); border-radius: 7px; box-shadow: 0 24px 80px rgba(31, 27, 22, .25); }

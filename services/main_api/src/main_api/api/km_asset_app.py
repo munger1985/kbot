@@ -12,6 +12,9 @@ from main_api.application import (
     AccessDeniedError,
     KM_PORTAL_DOMAIN_NAME,
     UserAuthService,
+    require_app_api_agent,
+    require_app_api_permission,
+    require_app_api_scope,
 )
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
 from platform_core.contracts import ConversationQueryImage, PUBLIC_API_V1, UpdateConversationRequest
@@ -184,6 +187,7 @@ def _domain_actor(request: Request) -> tuple[int, str]:
 
 
 async def _require(request: Request, permission: str) -> int:
+    require_app_api_permission(request, permission)
     domain_id, actor_id = _domain_actor(request)
     service = cast(AccessControlService, request.app.state.access_control_service)
     try:
@@ -239,8 +243,10 @@ async def _km_conversation(request: Request, conversation_id: UUID, domain_id: i
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
     )
+    agent_id = UUID(str(conversation["agent_id"]))
+    require_app_api_agent(request, agent_id)
     await _client(request).get_agent(
-        agent_id=UUID(str(conversation["agent_id"])),
+        agent_id=agent_id,
         domain_id=domain_id,
         auth_context=request.state.auth_context,
     )
@@ -250,8 +256,10 @@ async def _km_conversation(request: Request, conversation_id: UUID, domain_id: i
 async def _km_run(request: Request, run_id: UUID, domain_id: int):
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     run = await runtime.get_run(run_id=run_id, auth_context=request.state.auth_context)
+    agent_id = UUID(str(run["agent_id"]))
+    require_app_api_agent(request, agent_id)
     await _client(request).get_agent(
-        agent_id=UUID(str(run["agent_id"])),
+        agent_id=agent_id,
         domain_id=domain_id,
         auth_context=request.state.auth_context,
     )
@@ -417,7 +425,16 @@ async def list_processing_jobs(request: Request, source_id: UUID | None = None, 
 @router.get("/agents")
 async def list_agents(request: Request):
     domain_id = await _require(request, "km_asset:use")
-    return await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
+    require_app_api_scope(request, "km:agent:read")
+    rows = await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
+    allowed = {str(value) for value in request.state.auth_context.authorized_agent_ids}
+    if request.state.auth_context.principal_kind.value == "APP_API_CLIENT":
+        return [
+            item for item in rows
+            if item.get("status") == "ACTIVE"
+            and str(item.get("agent_id")) in allowed
+        ]
+    return rows
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
@@ -429,7 +446,15 @@ async def create_agent(payload: AgentCreatePayload, request: Request):
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    return await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
+    require_app_api_scope(request, "km:agent:read")
+    require_app_api_agent(request, agent_id)
+    agent = await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
+    if (
+        request.state.auth_context.principal_kind.value == "APP_API_CLIENT"
+        and agent.get("status") != "ACTIVE"
+    ):
+        raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
+    return agent
 
 
 @router.patch("/agents/{agent_id}")
@@ -457,6 +482,8 @@ async def activate_agent(agent_id: UUID, payload: AgentActivatePayload, request:
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
 async def create_conversation(payload: ConversationCreatePayload, request: Request):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:chat:write")
+    require_app_api_agent(request, payload.agent_id)
     spec = await _client(request).execution_spec(agent_id=payload.agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     return await runtime.create_conversation(payload={**payload.model_dump(mode="json"), "execution_spec": spec}, auth_context=request.state.auth_context)
@@ -465,8 +492,14 @@ async def create_conversation(payload: ConversationCreatePayload, request: Reque
 @router.get("/conversations")
 async def list_conversations(request: Request, limit: int = Query(default=50, ge=1, le=200)):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:conversation:read")
     agents = await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
     agent_ids = {str(item["agent_id"]) for item in agents}
+    if request.state.auth_context.principal_kind.value == "APP_API_CLIENT":
+        agent_ids &= {
+            str(value)
+            for value in request.state.auth_context.authorized_agent_ids
+        }
     rows = await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).list_conversations(limit=200, auth_context=request.state.auth_context)
     return [item for item in rows if str(item.get("agent_id")) in agent_ids][:limit]
 
@@ -474,12 +507,14 @@ async def list_conversations(request: Request, limit: int = Query(default=50, ge
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:conversation:read")
     return await _km_conversation(request, conversation_id, domain_id)
 
 
 @router.patch("/conversations/{conversation_id}")
 async def update_conversation(conversation_id: UUID, payload: UpdateConversationRequest, request: Request):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:conversation:update")
     await _km_conversation(request, conversation_id, domain_id)
     return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).update_conversation(conversation_id=conversation_id, payload=payload.model_dump(mode="json"), auth_context=request.state.auth_context)
 
@@ -487,6 +522,7 @@ async def update_conversation(conversation_id: UUID, payload: UpdateConversation
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(conversation_id: UUID, request: Request, expected_row_version: int = Query(ge=1)):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:conversation:delete")
     await _km_conversation(request, conversation_id, domain_id)
     await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).delete_conversation(conversation_id=conversation_id, expected_row_version=expected_row_version, auth_context=request.state.auth_context)
     return Response(status_code=204)
@@ -495,12 +531,14 @@ async def delete_conversation(conversation_id: UUID, request: Request, expected_
 @router.get("/runs/{run_id}")
 async def get_run(run_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:run:read")
     return await _km_run(request, run_id, domain_id)
 
 
 @router.get("/runs/{run_id}/result")
 async def get_run_result(run_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:run:read")
     await _km_run(request, run_id, domain_id)
     return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).get_result(run_id=run_id, auth_context=request.state.auth_context)
 
@@ -512,6 +550,7 @@ async def stream_run_events(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:run:read")
     cursor = _parse_cursor(last_event_id)
     summary = await _km_run(request, run_id, domain_id)
     if cursor > int(summary["event_cursor"]):
@@ -540,6 +579,7 @@ async def _document_reference(request: Request, run_id: UUID, citation_label: st
 @router.get("/runs/{run_id}/references/{citation_label}/preview", response_model=DocumentReferencePreview)
 async def get_reference_preview(run_id: UUID, citation_label: str, request: Request):
     await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:reference:read")
     reference = await _document_reference(request, run_id, citation_label)
     preview = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).get_bundle_revision_preview(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, auth_context=request.state.auth_context)
     source_file = next((item for item in preview.get("files", []) if str(item.get("document_version_id")) == str(reference.document_version_id) and bool(item.get("preview_available"))), None)
@@ -553,6 +593,7 @@ async def get_reference_preview(run_id: UUID, citation_label: str, request: Requ
 @router.get("/runs/{run_id}/references/{citation_label}/content")
 async def stream_reference_content(run_id: UUID, citation_label: str, request: Request, range_header: str | None = Header(default=None, alias="Range")):
     await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:reference:read")
     reference = await _document_reference(request, run_id, citation_label)
     upstream = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).stream_source_file(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, document_version_id=reference.document_version_id, range_header=range_header, auth_context=request.state.auth_context)
     forwarded = {name: upstream.headers[name] for name in ("accept-ranges", "cache-control", "content-disposition", "content-length", "content-range", "content-security-policy", "x-content-type-options") if name in upstream.headers}
@@ -562,6 +603,7 @@ async def stream_reference_content(run_id: UUID, citation_label: str, request: R
 @router.post("/conversations/{conversation_id}/turns", status_code=status.HTTP_202_ACCEPTED)
 async def create_conversation_turn(conversation_id: UUID, payload: ConversationTurnPayload, request: Request, idempotency_key: str = Header(alias="Idempotency-Key")):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:chat:write")
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await _km_conversation(request, conversation_id, domain_id)
     spec = await _client(request).execution_spec(agent_id=UUID(str(conversation["agent_id"])), domain_id=domain_id, auth_context=request.state.auth_context)
@@ -586,5 +628,6 @@ async def create_conversation_turn(conversation_id: UUID, payload: ConversationT
 @router.get("/conversations/{conversation_id}/turns")
 async def list_conversation_turns(conversation_id: UUID, request: Request, after: int = Query(default=0, ge=0), limit: int = Query(default=200, ge=1, le=500)):
     domain_id = await _require(request, "km_asset:use")
+    require_app_api_scope(request, "km:conversation:read")
     await _km_conversation(request, conversation_id, domain_id)
     return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).list_conversation_turns(conversation_id=conversation_id, after=after, limit=limit, auth_context=request.state.auth_context)

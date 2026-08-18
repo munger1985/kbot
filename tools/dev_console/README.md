@@ -16,7 +16,7 @@ python3 tools/dev_console/server.py --port 8080
 
 访问 `http://127.0.0.1:8080`。开发配置必须设置
 `development_auth_bypass = true`；开发环境会自动允许本机 UI Origin。页面发送
-`X-KBot-Test-Auth: true`，因此不需要 Portal API Key；仍需填写数据库中有效的
+`X-KBot-Test-Auth: true`，因此不需要用户 Token或 App API Key；仍需填写数据库中有效的
 Domain ID 和测试 User ID。
 
 - `knowledge-core.html`：按资源准备、文件入库、Agent 配置和诊断输出四个阶段组织。
@@ -40,4 +40,4 @@ Domain ID 和测试 User ID。
 上面的 HTTP Server。
 
 测试绕过只允许在 `development` 环境启用，生产配置必须保持关闭。它只绕过公开
-Main API 的 Portal API Key 校验；Domain 校验和所有 `/internal/v1` 认证仍然生效。
+Main API 的公开身份校验；Domain 校验和所有 `/internal/v1` 认证仍然生效。

@@ -43,9 +43,8 @@ flowchart LR
   App ID。当前 `kbot.toml` 的 `app_id = 1` 仅是 APEX 尚未开发时的临时占位值；
   创建正式 APEX 应用并确定 Application ID 后，必须将 KBot 配置及初始化/迁移数据
   一并替换为该实际编号。
-- 调用 Main API 时，APEX 服务器端通过 Web Credential 保存 Portal API Key，并附加
-  `X-KBot-Domain-ID` 和值为 `:APP_USER` 的 `X-KBot-User-ID`。正式环境不得使用
-  `development_public_api_auth_disabled`。
+- APEX 用户必须通过 Main API 登录/换票取得绑定 App、Domain 和用户的 BUSINESS Token。
+  不得保存配置型 Portal Key，也不得提交 `X-KBot-Domain-ID` 或 `X-KBot-User-ID`。
 - 4.0 当前后端已强制 Domain 隔离，但尚未实现通用 Role/Scope/资源 ACL。因此 APEX
   的授权方案用于控制页面与按钮可见性（普通用户、知识运营、AIOps 操作、审批人、
   平台管理员），不能替代后端的 Domain 校验；后续后端加入 Scope 后再做双端校验。
@@ -111,7 +110,7 @@ APEX Parsing Schema 只授予被批准的表/列权限，并通过页面条件�
 
 | 类别 | 当前契约 | APEX 统一行为 |
 | --- | --- | --- |
-| 身份与调用 | Main API 受保护接口由 APEX 服务器端附加 Portal Key、`X-KBot-Domain-ID`、`X-KBot-User-ID` | 浏览器、JavaScript、页面项和 APEX Debug 不得持有或记录 Portal Key；浏览器不直连 Main API。 |
+| 身份与调用 | 用户登录/Exchange 获得绑定 App、Domain 和用户的 BUSINESS Token | APEX 会话服务端保存并刷新 Token；不得提交可信身份 Header，也不得用 App API Key 模拟用户。 |
 | 幂等命令 | 创建 Turn/Run、上传、AIOps 创建与状态命令要求 `Idempotency-Key` | 首次点击生成 UUID；网络重试、刷新后的恢复提交沿用同一键，成功或明确失败后才生成新键。 |
 | 请求体版本 | Conversation 删除/更新、Agent 更新、Agent Run 取消、HITL 回复、Proposal 审批/拒绝/人工结果使用 `expected_row_version` | 读取详情后保存版本；冲突时保留用户输入、重读权威详情并由用户决定是否重新提交。 |
 | ETag 版本 | Target、监控源、各类 Binding、巡检计划及其命令、AIOps Run 取消、HITL 跳过使用 `If-Match: "rv-<row_version>"` | 详情 GET/命令响应中的 ETag 是唯一并发值来源；未获得 ETag 时禁用修改命令，不自行构造版本。 |
@@ -317,8 +316,7 @@ Process 或 JavaScript 文件中。建议直接 CRUD 一张 APEX 自有配置表
 | `HOST` | KBot Main API 的 DNS 名称或 IP，不包含协议、端口、路径或 URL 参数。 |
 | `PORT` | Main API 监听端口，例如本地开发的 `18099`；限制为 1–65535。 |
 | `STATUS` | `ACTIVE` / `DISABLED`；只有 Active 配置可被 APEX REST 调用读取。 |
-| `PORTAL_API_KEY` | 页面 Password Item。管理员在此配置 KBot 生成的明文 `kbot_sk_...` Portal Key；列表和再次编辑时只显示“已配置”。 |
-| `WEB_CREDENTIAL_STATIC_ID` | APEX Web Credential 的静态标识，由保存 Process 自动维护；配置表只保存引用，不保存 `PORTAL_API_KEY` 明文。 |
+| `AUTH_MODE` | 固定为 Main API 用户登录/换票，不允许配置静态 Portal Key。 |
 | 审计字段 | `CREATED_BY`、`UPDATED_BY` 使用 `:APP_USER`，并保留时间戳。 |
 
 页面提供“测试连接”按钮：由 APEX **服务器端**根据当前表单值调用
@@ -327,12 +325,9 @@ Process 或 JavaScript 文件中。建议直接 CRUD 一张 APEX 自有配置表
 URL，所有 REST Data Source 和 APEX Process 统一读取它；业务代码固定拼接 `/api/v1`，
 健康检查固定使用 `/readyz`，不作为页面配置项。
 
-保存 `PORTAL_API_KEY` 时，APEX Process 将其写入/更新对应的 Web Credential，并在
-后续请求中组装 `Authorization: Bearer <Portal Key>`。空值表示“保留已有 Key”；只有
-显式执行“清除/轮换 Key”才更新 Credential。页面不回显明文、不将其写入
-`KBOT_APEX_PLATFORM_CONFIG`、APEX Debug、审计日志或导出文件。连接测试只验证网络
-可达；认证测试另以带 Web Credential 的受保护 `/api/v1` 请求区分 `401/403` 与上游
-服务故障。
+APEX 会话在服务端保存用户 BUSINESS Token，并在过期前调用 `/api/v1/auth/refresh`。
+第三方机器集成应在目标 App 的“API 客户端”页单独创建，不与 APEX 用户会话混用。
+连接测试只验证网络可达；认证测试使用当前用户 Token 区分 `401/403` 与上游服务故障。
 
 安全限制：仅平台管理员能维护；生产环境拒绝 `localhost`、`127.0.0.1`、私网以外的
 任意未登记 Host、非 HTTPS 和携带路径/查询串的 Host；页面不提供任何内部微服务

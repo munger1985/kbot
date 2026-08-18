@@ -75,7 +75,11 @@ from platform_core.contracts.aiops import (
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
 from platform_core.identity import uuid7
 from platform_core.security import get_auth_context
-from main_api.application import AccessControlService, AccessDeniedError
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    require_app_api_permission,
+)
 
 
 async def _require_route_access(request: Request) -> None:
@@ -94,6 +98,7 @@ async def _require_route_access(request: Request) -> None:
         permission = "aiops:plan_manage"
     elif relative.endswith("/approve"):
         permission = "aiops:proposal:approve"
+    require_app_api_permission(request, permission)
     service = cast(
         AccessControlService, request.app.state.access_control_service
     )

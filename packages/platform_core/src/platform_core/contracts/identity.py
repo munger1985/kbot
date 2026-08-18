@@ -13,6 +13,7 @@ class PrincipalKind(StrEnum):
     """内部身份来源。"""
 
     PORTAL = "PORTAL"
+    APP_API_CLIENT = "APP_API_CLIENT"
     API_CLIENT = "API_CLIENT"
     SERVICE = "SERVICE"
 
@@ -60,6 +61,13 @@ class AuthContext(BaseModel):
                 raise ValueError("业务入口必须包含 domain_id")
         if self.principal_kind == PrincipalKind.API_CLIENT and not self.api_key_id:
             raise ValueError("API Client 身份必须包含 api_key_id")
+        if self.principal_kind == PrincipalKind.APP_API_CLIENT:
+            if not self.api_key_id:
+                raise ValueError("App API Client 身份必须包含 api_key_id")
+            if not self.app_id or not self.domain_id or not self.asserted_user_id:
+                raise ValueError("App API Client 身份上下文不完整")
+            if self.entry_kind != IdentityEntryKind.BUSINESS:
+                raise ValueError("App API Client 只能使用业务入口")
         return self
 
 

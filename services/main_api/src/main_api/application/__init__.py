@@ -30,9 +30,22 @@ from .user_auth import (
     UserTokenCodec,
     create_user_token_codec,
 )
+from .app_api_key import (
+    APP_API_KEY_PREFIX,
+    APP_API_SCOPE_PERMISSIONS,
+    AppApiKeyError,
+    AppApiKeyService,
+    require_app_api_agent,
+    require_app_api_permission,
+    require_app_api_scope,
+)
 
 __all__ = [
     "AccessControlService",
+    "APP_API_KEY_PREFIX",
+    "APP_API_SCOPE_PERMISSIONS",
+    "AppApiKeyError",
+    "AppApiKeyService",
     "AccessConfigurationError",
     "AccessDeniedError",
     "AccessSnapshot",
@@ -53,4 +66,7 @@ __all__ = [
     "UserTokenClaims",
     "UserTokenCodec",
     "create_user_token_codec",
+    "require_app_api_agent",
+    "require_app_api_permission",
+    "require_app_api_scope",
 ]

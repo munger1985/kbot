@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from main_api.repositories import (
     AccessControlRepository,
+    AppApiKeyRepository,
     NotificationRepository,
     PlatformDomainRepository,
 )
@@ -18,12 +19,14 @@ class MainApiUnitOfWork:
         self.domains: PlatformDomainRepository | None = None
         self.notifications: NotificationRepository | None = None
         self.access: AccessControlRepository | None = None
+        self.app_api_keys: AppApiKeyRepository | None = None
 
     async def __aenter__(self) -> "MainApiUnitOfWork":
         self.session = self._session_factory()
         self.domains = PlatformDomainRepository(self.session)
         self.notifications = NotificationRepository(self.session)
         self.access = AccessControlRepository(self.session)
+        self.app_api_keys = AppApiKeyRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
@@ -36,6 +39,7 @@ class MainApiUnitOfWork:
         self.domains = None
         self.notifications = None
         self.access = None
+        self.app_api_keys = None
 
     async def commit(self) -> None:
         if self.session is None:

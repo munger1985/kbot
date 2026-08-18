@@ -1,6 +1,12 @@
 """Main API 拥有的持久化实体。"""
 
 from .domain import PlatformDomainEntity
+from .app_api_key import (
+    AppApiClientAgentEntity,
+    AppApiClientEntity,
+    AppApiClientScopeEntity,
+    AppApiCredentialEntity,
+)
 from .access_control import (
     AppDomainEntity,
     AppMemberEntity,
@@ -24,6 +30,10 @@ from .notification import (
 
 __all__ = [
     "AppDomainEntity",
+    "AppApiClientAgentEntity",
+    "AppApiClientEntity",
+    "AppApiClientScopeEntity",
+    "AppApiCredentialEntity",
     "AppMemberEntity",
     "AppMemberRoleEntity",
     "AppMemberRoleScopeEntity",

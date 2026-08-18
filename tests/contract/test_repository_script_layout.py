@@ -24,7 +24,6 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "deployment/models/download_easyocr_model.py",
                 "deployment/models/download_qwen_model.py",
                 "release/verify_release.py",
-                "security/generate_portal_api_key.py",
             },
             entries,
         )
@@ -131,7 +130,6 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         scripts = (
             "db/apply_oracle_schema.py",
             "deployment/check_deployment.py",
-            "security/generate_portal_api_key.py",
         )
 
         for relative_path in scripts:

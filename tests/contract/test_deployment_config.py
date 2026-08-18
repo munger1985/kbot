@@ -35,10 +35,7 @@ class DeploymentConfigTest(unittest.TestCase):
             "host='db.internal'\n"
             "username='kbot'\n"
             "service_name='kbot4'\n"
-            "[[portal_api_keys]]\n"
-            "key_id='portal-prod'\n"
-            "client_id='portal'\n"
-            f"key_digest='{'1' * 64}'\n",
+            "api_allowed_origins=['https://portal.example.com']\n",
             encoding="utf-8",
         )
         return path

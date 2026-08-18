@@ -93,12 +93,24 @@ class PlatformSecurityTest(unittest.TestCase):
             expired.verify_authorization(f"Bearer {self.raw_api_key}")
         self.assertEqual("API_KEY_EXPIRED", caught.exception.code)
 
-    def test_public_middleware_builds_portal_auth_context(self) -> None:
+    def test_public_middleware_accepts_alternate_user_context(self) -> None:
         app = FastAPI()
+
+        async def authenticate(request: Request):
+            return AuthContext(
+                principal_kind=PrincipalKind.PORTAL,
+                client_id="user-session",
+                api_key_id="user-jwt",
+                request_id="request-1",
+                trace_id="trace-1",
+                domain_id="100",
+                asserted_user_id="portal-user-1",
+            )
+
         app.middleware("http")(
             create_public_auth_middleware(
-                verifier=self.verifier,
                 domain_validator=self._valid_domain,
+                alternate_authenticator=authenticate,
             )
         )
 
@@ -114,9 +126,6 @@ class PlatformSecurityTest(unittest.TestCase):
         response = client.get(
             "/api/v1/context",
             headers={
-                "Authorization": f"Bearer {self.raw_api_key}",
-                DOMAIN_ID_HEADER: "100",
-                USER_ID_HEADER: "portal-user-1",
                 "X-Request-ID": "request-1",
             },
         )
@@ -132,7 +141,6 @@ class PlatformSecurityTest(unittest.TestCase):
         app = FastAPI()
         app.middleware("http")(
             create_public_auth_middleware(
-                verifier=self.verifier,
                 domain_validator=self._valid_domain,
             )
         )
@@ -146,11 +154,8 @@ class PlatformSecurityTest(unittest.TestCase):
             "/api/v1/protected",
             headers={"Authorization": f"Bearer {self.raw_api_key}"},
         )
-        self.assertEqual(400, response.status_code)
-        self.assertEqual(
-            "IDENTITY_CONTEXT_REQUIRED",
-            response.json()["code"],
-        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("AUTH_REQUIRED", response.json()["code"])
 
     def test_development_bypass_skips_key_but_keeps_domain_validation(
         self,
@@ -200,7 +205,6 @@ class PlatformSecurityTest(unittest.TestCase):
         app = FastAPI()
         app.middleware("http")(
             create_public_auth_middleware(
-                verifier=self.verifier,
                 domain_validator=self._valid_domain,
                 allow_test_bypass=False,
             )

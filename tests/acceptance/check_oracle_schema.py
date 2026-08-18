@@ -35,6 +35,10 @@ SERVICE_TABLES = {
         "KBOT_APP_MEMBER",
         "KBOT_APP_MEMBER_ROLE",
         "KBOT_APP_MEMBER_ROLE_SCOPE",
+        "KBOT_APP_API_CLIENT",
+        "KBOT_APP_API_CREDENTIAL",
+        "KBOT_APP_API_CLIENT_SCOPE",
+        "KBOT_APP_API_CLIENT_AGENT",
     },
     "model_serving": {"KBOT_AI_MODEL"},
     "knowledge_core": {

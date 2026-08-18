@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import os
 from contextlib import asynccontextmanager
 
 import aiohttp
@@ -14,6 +15,7 @@ from main_api.app import create_main_api_app
 from main_api.application import (
     AccessManagementService,
     AccessControlService,
+    AppApiKeyService,
     DomainManagementService,
     DomainValidationService,
     NotificationCenterService,
@@ -39,6 +41,7 @@ from platform_core.security import (
     create_auth_context_codec,
     create_service_identity_codec,
 )
+from platform_core.security.runtime import DEFAULT_DEV_API_KEY_PEPPER
 
 
 settings = get_main_api_settings()
@@ -95,6 +98,18 @@ async def lifespan(app: FastAPI):
     app.state.user_auth_service = UserAuthService(
         uow_factory=uow_factory,
         codec=create_user_token_codec(settings=settings),
+    )
+    api_key_pepper = os.getenv(settings.security.api_key_pepper_env)
+    if not api_key_pepper:
+        if settings.is_production():
+            raise RuntimeError(
+                f"生产环境必须设置 {settings.security.api_key_pepper_env}"
+            )
+        logger.warning("当前使用开发 App API Key Pepper")
+        api_key_pepper = DEFAULT_DEV_API_KEY_PEPPER
+    app.state.app_api_key_service = AppApiKeyService(
+        uow_factory=uow_factory,
+        pepper=api_key_pepper,
     )
     app.state.notification_center_service = NotificationCenterService(
         uow_factory=uow_factory,

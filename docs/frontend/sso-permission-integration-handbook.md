@@ -493,18 +493,14 @@ const message = typeof payload?.detail === "string"
 上下文复用权限快照。如果页面对每个 Agent 再查一次 Grant，说明前端绕过了服务端列表
 过滤契约。这两种行为都应删除。
 
-## 9. Portal/BFF 模式
+## 9. 第三方服务模式
 
-Main API 也支持 Portal 后端持有 `kbot_sk_...` API Key，并由可信服务器端传递用户和
-Domain 上下文。该模式下：
+配置型 Portal Key 和由调用方注入身份 Header 的模式已经移除。第三方服务必须使用目标
+App 管理员签发的 `kbot_ak_...` App API Key。Key 固定绑定 App、Domain、服务账号、
+Scope 和 Agent，且只能保存在第三方服务端；浏览器仍使用用户 Token。任何调用方都不得
+构造受信身份 Header，`/internal/v1/*` 也不能通过公开代理访问。
 
-- API Key 只能保存在 Portal/BFF 服务端；
-- 浏览器只持有 Portal 自己的同源会话，不能接触 KBot API Key；
-- BFF 为 Main API 请求注入受信 Header；
-- 浏览器提交的 Actor、Domain、角色或权限不得原样转成受信 Header；
-- `/internal/v1/*` 永远不能从浏览器或 BFF 公开代理。
-
-浏览器 JWT 模式和 Portal/BFF 模式只能在边界层选择，不应在单个页面中混用两套凭据。
+完整约束见 [App API Key 安全设计](../architecture/app-api-key-security.md)。
 
 ## 10. 当前契约边界与建议演进
 

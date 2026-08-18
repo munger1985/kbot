@@ -60,7 +60,7 @@ Agent 和智能问答。没有 APEX 用户管理页面时，
 首次部署在 SQL Developer 中执行 `scripts/db/bootstrap_km_initial_admin.sql`
 创建可登录用户及 KM 管理员权限。用户先在 `ui/km/login.html`
 使用用户名和密码换取短期 Token，再访问其余 KM 页面。页面只
-调用 Main API 公开 BFF，不能把 Portal API Key 或内部身份 Header 写入静态 JavaScript。
+调用 Main API 公开 BFF，不能把 App API Key 或内部身份 Header 写入静态 JavaScript。
 
 既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
 `scripts/db/bootstrap_km_initial_admin.sql`，它会幂等创建用户凭据表、初始化

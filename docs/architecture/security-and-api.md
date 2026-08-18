@@ -2,9 +2,10 @@
 
 ## Domain 与 APEX
 
-Domain 是 KBot 的强隔离边界。Portal 登录成功后，通过受信请求头把 Domain 和
-用户上下文传给 Main API。Main API 校验 Portal API Key 后构造 AuthContext；下游
-服务只信任该上下文，不信任普通业务参数中的 Domain、Actor 或授权声明。
+Domain 是 KBot 的强隔离边界。用户登录后由 Main API 签发绑定入口、App、Domain 和
+用户的短期 Token；第三方服务使用数据库中的 App API Key。Main API 据此构造
+AuthContext；下游服务只信任该上下文，不信任普通业务参数或请求头中的 Domain、Actor
+和授权声明。
 
 Main API 把身份和授权拆成平台层与 App 层。平台用户只拥有平台角色；App 用户只归属
 一个 App。平台用户需要显式 App Grant 才能进入业务 App，该 Grant 与 App 用户都通过
@@ -22,16 +23,17 @@ App Member、Role Binding 和 Domain Scope 参与统一鉴权。知识检索用�
 
 ## 公开认证
 
-Main API 支持两种公开用户入口：
+Main API 支持两种公开主体：
 
-- APEX/Portal 后端保存预配置的 `kbot_sk_...` API Key，并通过可信请求头传递用户与
-  Domain；API Key 不能写入浏览器 JavaScript。
 - 平台入口调用 `POST /api/v1/auth/platform/login`，只为平台来源账号签发不含 App 和
   Domain 的平台 Token。业务入口先调用 `POST /api/v1/auth/apps` 查询账号可进入的 App，
   再调用 `POST /api/v1/auth/apps/{app_id}/domains` 查询可用 Domain，最后调用
   `POST /api/v1/auth/apps/{app_id}/login` 换取绑定 App、Domain 和密码版本的短期业务
   Token。用户停用、App 停用、成员关系失效或密码被重置后，既有 JWT 会在下一次请求
   时失效。
+- 各 App 管理员通过 `/api/v1/apps/{app_id}/api-clients` 为第三方服务创建
+  `kbot_ak_...` Key。Key 固定绑定 App、Domain、服务账号、机器 Scope 和 Agent 白名单，
+  不能跨 App、访问平台管理接口、管理其他 Key 或调用内部 API。调用者不得提交身份 Header。
 
 平台来源用户完成平台登录后，使用 PLATFORM Token 调用 `GET /api/v1/auth/entries` 查询
 当前显式授权的 App 与 Domain，再调用 `POST /api/v1/auth/exchange` 免密换取目标 BUSINESS
@@ -74,9 +76,10 @@ App 管理员创建用户时不能设置超过自身的数据安全等级；平�
 
 该规则是 KBot 全局安全不变量。任何新增 App、Agent、检索通道、缓存、重排或聚合查询都必须在返回结果前保持相同的 `<=` 过滤语义；重排和生成阶段不得重新引入已被安全过滤的数据。
 
-模型公开接口使用独立 Model API Key，不能复用 Portal Key。
+详细规则见 [App API Key 安全设计](app-api-key-security.md)。模型公开接口使用独立
+Model API Key，不能复用 App Key。
 
-Slack Events API 是 Provider 自身验签的公开集成入口，不使用 Portal API Key。
+Slack Events API 是 Provider 自身验签的公开集成入口，不使用 App API Key。
 Main API 保真转发完整原始正文和验签 Header，由 KM Asset 校验 Slack 时间戳与
 HMAC，再按部署配置把 Workspace 绑定到可信 Domain、Agent 和安全等级。Slack
 报文中的 Domain 或 Agent 字段不作为
@@ -91,7 +94,7 @@ Main API 调用下游时同时携带：
 
 内部 JWT 每次调用签发，不缓存到长生命周期 HTTP Session。Knowledge Retrieval
 App、KC、Agent Runtime、Data Query、AIOps 和模型管理的 `/internal/v1/*` 不接受
-Portal API Key，且不得通过公网或 APEX 代理暴露。
+App API Key，且不得通过公网代理暴露。
 
 ## 权限执行边界
 

@@ -10,6 +10,7 @@
     ["jobs", "同步任务", "../km/jobs.html"],
     ["agents", "KM Agent", "../km/agents.html"],
     ["chat", "智能问答", "../km/chat.html"],
+    ["api-clients", "API 客户端", "../km/api-clients.html", "km_asset:api_key_manage"],
   ];
   let access = null;
 
@@ -82,7 +83,7 @@
           <span class="km-brand-mark">KM</span><span><strong>Asset Desk</strong><small>KBot 4.0</small></span>
         </a>
         <nav class="km-nav" aria-label="KM 工作域">
-          ${pages.map(([id, label, href]) => `<a href="${href}" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
+          ${pages.map(([id, label, href, permission]) => `<a href="${href}" ${permission ? `data-permission="${permission}"` : ""} ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
         </nav>
         <div class="km-sidebar-note">Collection 创建与文件上传继续使用现有 APEX 页面。</div>
       </aside>
@@ -106,6 +107,10 @@
     });
     try {
       access = await KBotKmApi.request("/api/v1/apps/km-asset/access");
+      const permissions = new Set(access.permissions || []);
+      document.querySelectorAll("[data-permission]").forEach((element) => {
+        if (!permissions.has(element.dataset.permission)) element.remove();
+      });
       document.getElementById("km-domain").textContent = `Domain ${access.domain_id}`;
       document.getElementById("km-user").textContent = access.user_id;
       document.body.dataset.access = "ready";

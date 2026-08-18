@@ -91,33 +91,6 @@ def create_service_identity_codec() -> ServiceIdentityJWTCodec:
 
 
 @lru_cache(maxsize=1)
-def create_portal_api_key_verifier() -> PortalApiKeyVerifier:
-    """从配置中的摘要注册表创建 Portal API Key 校验器。"""
-    config = get_security_config()
-    pepper = os.getenv(config.api_key_pepper_env)
-    if not pepper:
-        if get_settings().is_production():
-            raise RuntimeError(
-                f"生产环境必须设置 {config.api_key_pepper_env}"
-            )
-        logger.warning(
-            "当前使用默认开发 API Key Pepper，生产环境必须通过环境变量注入"
-        )
-        pepper = DEFAULT_DEV_API_KEY_PEPPER
-    records = [
-        PortalApiKeyRecord(
-            key_id=item.key_id,
-            client_id=item.client_id,
-            key_digest=item.key_digest,
-            enabled=item.enabled,
-            expires_at=item.expires_at,
-        )
-        for item in config.portal_api_keys
-    ]
-    return PortalApiKeyVerifier(records=records, pepper=pepper)
-
-
-@lru_cache(maxsize=1)
 def create_model_api_key_verifier() -> PortalApiKeyVerifier:
     """从独立摘要注册表创建 Model Serving API Key 校验器。"""
     config = get_security_config()

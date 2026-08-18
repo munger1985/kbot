@@ -21,13 +21,6 @@ port = 1521
 service_name = "kbot4"
 username = "kbot"
 
-# KBot 只保存 API Key 摘要。先设置 KBOT_MASTER_KEY，再执行：
-# python scripts/security/generate_portal_api_key.py --key-id portal-prod
-[[portal_api_keys]]
-key_id = "portal-prod"
-client_id = "portal"
-key_digest = "0000000000000000000000000000000000000000000000000000000000000000"
-
 # 只有向 KBot 以外的系统开放模型 API 时才增加。
 # [[model_api_keys]]
 # key_id = "model-client"

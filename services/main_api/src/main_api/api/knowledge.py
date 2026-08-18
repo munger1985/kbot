@@ -12,7 +12,11 @@ from pydantic import BaseModel, Field
 from platform_clients import KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
-from main_api.application import AccessControlService, AccessDeniedError
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    require_app_api_permission,
+)
 
 
 async def _require_knowledge_access(request: Request) -> None:
@@ -32,6 +36,7 @@ async def _require_knowledge_access(request: Request) -> None:
         permission = (
             "knowledge_retrieval:knowledge_manage"
         )
+    require_app_api_permission(request, permission)
     try:
         await request.app.state.access_control_service.require(
             app_id="knowledge_retrieval",

@@ -7,7 +7,14 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from main_api.application import AccessControlService, AccessDeniedError
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    require_app_api_agent,
+    require_app_api_permission,
+    require_app_api_scope,
+)
+from platform_core.contracts import PrincipalKind
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
@@ -119,6 +126,7 @@ def _client(request: Request) -> AIOpsManagementClient:
 
 
 async def _require(request: Request, permission: str):
+    require_app_api_permission(request, permission)
     domain_id, actor_id = _domain_actor(request)
     try:
         snapshot = await _access(request).require(
@@ -135,6 +143,7 @@ async def _require(request: Request, permission: str):
 
 
 async def _authorize_agent(request: Request, agent_id: UUID, snapshot, actor_id: str):
+    require_app_api_agent(request, agent_id)
     if "aiops:agent_manage" in snapshot.permissions:
         return
     await _client(request).authorize_private_agent(
@@ -168,6 +177,17 @@ async def list_agents(request: Request):
     agents = await _client(request).list_private_agents(
         auth_context=request.state.auth_context
     )
+    require_app_api_scope(request, "aiops:agent:read")
+    if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
+        allowed = {
+            str(value)
+            for value in request.state.auth_context.authorized_agent_ids
+        }
+        return [
+            item for item in agents
+            if item.get("status") == "ACTIVE"
+            and str(item.get("agent_id")) in allowed
+        ]
     if "aiops:agent_manage" in snapshot.permissions:
         return agents
     grants = await _client(request).list_private_agent_grants(
@@ -202,11 +222,19 @@ async def create_agent(payload: AIOpsAgentCreatePayload, request: Request):
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
     _, actor_id, snapshot = await _require(request, "aiops:use")
+    require_app_api_scope(request, "aiops:agent:read")
+    require_app_api_agent(request, agent_id)
     if "aiops:agent_manage" not in snapshot.permissions:
         await _authorize_agent(request, agent_id, snapshot, actor_id)
-    return await _client(request).get_private_agent(
+    agent = await _client(request).get_private_agent(
         agent_id, auth_context=request.state.auth_context
     )
+    if (
+        request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT
+        and agent.get("status") != "ACTIVE"
+    ):
+        raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
+    return agent
 
 
 @router.patch("/agents/{agent_id}")
@@ -253,6 +281,7 @@ async def create_or_append_conversation(
     payload: ConversationMessagePayload, request: Request
 ):
     _, actor_id, snapshot = await _require(request, "aiops:use")
+    require_app_api_scope(request, "aiops:chat:write")
     await _authorize_agent(request, payload.agent_id, snapshot, actor_id)
     return await _client(request).conversation_request(
         "POST", "", payload=payload.model_dump(mode="json"),
@@ -267,20 +296,32 @@ async def list_conversations(
     limit: int = Query(50, ge=1, le=50),
 ):
     _, actor_id, snapshot = await _require(request, "aiops:use")
+    require_app_api_scope(request, "aiops:conversation:read")
     if agent_id is not None:
         await _authorize_agent(request, agent_id, snapshot, actor_id)
     query = {"limit": str(limit)}
     if agent_id is not None:
         query["agent_id"] = str(agent_id)
-    return await _client(request).conversation_request(
+    rows = await _client(request).conversation_request(
         "GET", f"?{urlencode(query)}", auth_context=request.state.auth_context
     )
+    if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
+        allowed = {
+            str(value)
+            for value in request.state.auth_context.authorized_agent_ids
+        }
+        return [
+            item for item in rows
+            if str(item.get("agent_id")) in allowed
+        ]
+    return rows
 
 
 async def _conversation_with_access(
     request: Request, conversation_id: UUID
 ) -> tuple[dict[str, Any], Any, str]:
     _, actor_id, snapshot = await _require(request, "aiops:use")
+    require_app_api_scope(request, "aiops:conversation:read")
     conversation = await _client(request).conversation_request(
         "GET", f"/{conversation_id}", auth_context=request.state.auth_context
     )
@@ -300,6 +341,7 @@ async def get_conversation(conversation_id: UUID, request: Request):
 async def request_evidence(
     conversation_id: UUID, payload: EvidenceRequestPayload, request: Request
 ):
+    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).conversation_request(
         "POST", f"/{conversation_id}/evidence-requests",
@@ -313,6 +355,7 @@ async def submit_evidence_text(
     conversation_id: UUID, request_id: UUID,
     payload: EvidenceTextPayload, request: Request,
 ):
+    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).conversation_request(
         "POST", f"/{conversation_id}/evidence-requests/{request_id}/text",
@@ -326,6 +369,7 @@ async def skip_evidence(
     conversation_id: UUID, request_id: UUID,
     payload: EvidenceTextPayload, request: Request,
 ):
+    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).conversation_request(
         "POST", f"/{conversation_id}/evidence-requests/{request_id}/skip",
@@ -339,6 +383,7 @@ async def upload_evidence(
     conversation_id: UUID, request_id: UUID,
     payload: EvidenceUploadPayload, request: Request,
 ):
+    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).conversation_request(
         "POST", f"/{conversation_id}/evidence-requests/{request_id}/uploads",

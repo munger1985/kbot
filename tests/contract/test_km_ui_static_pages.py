@@ -43,6 +43,13 @@ class KmUiStaticPagesTest(unittest.TestCase):
         },
         "agents.html": {"agent-form", "agent-rows", "agent-source"},
         "chat.html": {"chat-agent", "conversation-list", "chat-stream", "chat-form", "reference-dialog"},
+        "api-clients.html": {
+            "api-client-form",
+            "api-client-rows",
+            "api-client-subject",
+            "api-client-agents",
+            "api-key-dialog",
+        },
     }
 
     def test_pages_reference_existing_assets_and_controls(self):

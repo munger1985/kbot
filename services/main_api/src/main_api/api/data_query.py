@@ -13,12 +13,13 @@ from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.security import get_auth_context
-from main_api.application import AccessDeniedError
+from main_api.application import AccessDeniedError, require_app_api_permission
 
 
 async def _require_data_query_access(request: Request) -> None:
     context = get_auth_context(request)
     permission = "knowledge_retrieval:data_manage"
+    require_app_api_permission(request, permission)
     try:
         await request.app.state.access_control_service.require(
             app_id="knowledge_retrieval",

@@ -24,18 +24,14 @@ from platform_clients import (
     KnowledgeCoreResponse,
     KnowledgeCoreStreamResponse,
 )
-from platform_core.contracts import AuthContext
+from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.security import (
     DOMAIN_ID_HEADER,
     TEST_AUTH_BYPASS_HEADER,
     USER_ID_HEADER,
-    PortalApiKeyRecord,
-    PortalApiKeyVerifier,
-    generate_portal_api_key,
 )
 
 
-TEST_PEPPER = "main-api-test-pepper"
 TEST_COLLECTION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
 TEST_BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a021")
 TEST_BUNDLE_REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a022")
@@ -746,29 +742,31 @@ class _FakeUow:
 
 class MainApiTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.raw_key, digest = generate_portal_api_key(
-            key_id="main-api-test",
-            pepper=TEST_PEPPER,
-        )
-        verifier = PortalApiKeyVerifier(
-            records=[
-                PortalApiKeyRecord(
-                    key_id="main-api-test",
-                    client_id="km_portal",
-                    key_digest=digest,
-                )
-            ],
-            pepper=TEST_PEPPER,
-        )
+        self.raw_key = "test-user-token"
+
+        async def authenticate(request):
+            if not request.headers.get("Authorization"):
+                return None
+            return AuthContext(
+                principal_kind=PrincipalKind.PORTAL,
+                client_id="user-session",
+                api_key_id="user-jwt",
+                request_id=request.headers.get("X-Request-ID", "request-test"),
+                trace_id="trace-test",
+                domain_id=request.headers.get(DOMAIN_ID_HEADER, "100"),
+                asserted_user_id=request.headers.get(
+                    USER_ID_HEADER, "portal-user-1"
+                ),
+            )
         self.domain_service = DomainValidationService(
             uow_factory=_FakeUow,
         )
         self.kc = _FakeKnowledgeCoreClient()
         self.agent_runtime = _FakeAgentRuntimeClient()
         self.app = create_main_api_app(
-            verifier=verifier,
             domain_validator=self.domain_service.is_active,
             enable_access_log=False,
+            test_authenticator=authenticate,
         )
         self.app.state.knowledge_core_client = self.kc
         self.app.state.agent_runtime_client = self.agent_runtime
@@ -985,7 +983,7 @@ class MainApiTest(unittest.TestCase):
             response.json()["collections"][0]["collection_id"],
         )
         self.assertEqual(100, self.kc.last_domain_id)
-        self.assertEqual("km_portal", self.kc.last_context.client_id)
+        self.assertEqual("user-session", self.kc.last_context.client_id)
         self.assertEqual("portal-user-1", self.kc.last_context.asserted_user_id)
 
     def test_cors_headers_are_present_on_authentication_failure(self) -> None:
@@ -1699,29 +1697,26 @@ class MainApiTest(unittest.TestCase):
         async def unavailable_domain_validator(domain_id: str) -> bool:
             raise RuntimeError("database details must not leak")
 
-        # 单独生成匹配当前 Verifier 的 Key，避免依赖应用内部实现。
-        raw_key, digest = generate_portal_api_key(
-            key_id="dependency-test",
-            pepper=TEST_PEPPER,
-        )
+        async def authenticate(request):
+            return AuthContext(
+                principal_kind=PrincipalKind.PORTAL,
+                client_id="user-session",
+                api_key_id="user-jwt",
+                request_id="request-dependency",
+                trace_id="trace-dependency",
+                domain_id="100",
+                asserted_user_id="portal-user-1",
+            )
+
         app = create_main_api_app(
-            verifier=PortalApiKeyVerifier(
-                records=[
-                    PortalApiKeyRecord(
-                        key_id="dependency-test",
-                        client_id="km_portal",
-                        key_digest=digest,
-                    )
-                ],
-                pepper=TEST_PEPPER,
-            ),
             domain_validator=unavailable_domain_validator,
             enable_access_log=False,
+            test_authenticator=authenticate,
         )
         response = TestClient(app).get(
             "/api/v1/apps/knowledge-retrieval/knowledge/collections",
             headers={
-                "Authorization": f"Bearer {raw_key}",
+                "Authorization": "Bearer test-user-token",
                 DOMAIN_ID_HEADER: "100",
                 USER_ID_HEADER: "portal-user-1",
             },

@@ -63,11 +63,6 @@ def check_deployment(config_file: Path | None = None) -> list[str]:
         master_key = os.getenv("KBOT_MASTER_KEY", "")
         if len(master_key.encode("utf-8")) < 32:
             errors.append("KBOT_MASTER_KEY必须至少32字节")
-        if any(
-            item.key_digest == "0" * 64
-            for item in settings.security.portal_api_keys
-        ):
-            errors.append("Portal API Key 仍使用模板摘要，请生成后替换")
     return errors
 
 

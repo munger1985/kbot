@@ -9,7 +9,6 @@
 - `scripts/deployment/install_workspace.sh`：开发环境安装第三方依赖和内部 editable package；生产环境构建并安装 Wheel。
 - `scripts/deployment/bootstrap_kbot.sh`：空白环境一键安装、配置检查、建表和系统种子初始化；发现已有 KBot 对象时停止。
 - `scripts/deployment/models/`：按需下载本地 OCR、Tokenizer、VLM 或视觉模型。
-- `scripts/security/generate_portal_api_key.py`：生成 Portal API Key 及配置摘要。
 - `scripts/release/verify_release.py`：编排发布前检查、实库验收并生成发布证据。
 
 静态契约检查、实库 Smoke 和质量评测属于测试资产，统一放在 `tests/`。

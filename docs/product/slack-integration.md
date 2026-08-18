@@ -5,7 +5,7 @@
 Slack 通过 Main API 的 `POST /api/v1/integrations/slack/events` 接入。当前支持
 Events API 的普通消息、`app_mention` 和 URL Verification；机器人消息、编辑消息
 及其他事件会被安全忽略。Slack 请求使用原始正文、请求时间戳和 Signing Secret
-执行 HMAC 校验，不使用 Portal API Key。
+执行 HMAC 校验，不使用用户 Token 或 App API Key。
 
 URL Verification 报文不保证携带 `team_id`。此时 KM Asset 使用已配置 Workspace
 对应的 Slack App Signing Secret 验签，成功后由 Main API 以 `text/plain` 和

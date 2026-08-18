@@ -1,4 +1,4 @@
-"""不使用 Portal API Key、由 Provider 自身验签的外部集成入口。"""
+"""不使用用户 Token 或 App API Key、由 Provider 自身验签的外部集成入口。"""
 
 from __future__ import annotations
 

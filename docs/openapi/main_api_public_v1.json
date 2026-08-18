@@ -980,6 +980,449 @@
         "title": "AgentUpdatePayload",
         "type": "object"
       },
+      "AppApiClientCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Agent Ids",
+            "type": "array"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "rate_limit_per_minute": {
+            "default": 60,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Rate Limit Per Minute",
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          },
+          "subject_user_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Subject User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "subject_user_id",
+          "scopes",
+          "agent_ids",
+          "expires_at"
+        ],
+        "title": "AppApiClientCreatePayload",
+        "type": "object"
+      },
+      "AppApiClientCreatedView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Agent Ids",
+            "type": "array"
+          },
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "credential_id": {
+            "format": "uuid",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/AppApiCredentialView"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "rate_limit_per_minute": {
+            "title": "Rate Limit Per Minute",
+            "type": "integer"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user_id": {
+            "title": "Subject User Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "app_id",
+          "domain_id",
+          "subject_user_id",
+          "display_name",
+          "status",
+          "rate_limit_per_minute",
+          "row_version",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "scopes",
+          "agent_ids",
+          "credentials",
+          "credential_id",
+          "api_key",
+          "warning"
+        ],
+        "title": "AppApiClientCreatedView",
+        "type": "object"
+      },
+      "AppApiClientListView": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppApiClientView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AppApiClientListView",
+        "type": "object"
+      },
+      "AppApiClientStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "DISABLED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "AppApiClientStatusPayload",
+        "type": "object"
+      },
+      "AppApiClientView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Agent Ids",
+            "type": "array"
+          },
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/AppApiCredentialView"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "domain_id": {
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "rate_limit_per_minute": {
+            "title": "Rate Limit Per Minute",
+            "type": "integer"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user_id": {
+            "title": "Subject User Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "app_id",
+          "domain_id",
+          "subject_user_id",
+          "display_name",
+          "status",
+          "rate_limit_per_minute",
+          "row_version",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "scopes",
+          "agent_ids",
+          "credentials"
+        ],
+        "title": "AppApiClientView",
+        "type": "object"
+      },
+      "AppApiCredentialCreatedView": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "credential_id": {
+            "format": "uuid",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "credential_id",
+          "api_key",
+          "expires_at",
+          "warning"
+        ],
+        "title": "AppApiCredentialCreatedView",
+        "type": "object"
+      },
+      "AppApiCredentialRotatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at"
+        ],
+        "title": "AppApiCredentialRotatePayload",
+        "type": "object"
+      },
+      "AppApiCredentialView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credential_id": {
+            "format": "uuid",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "public_key_id": {
+            "title": "Public Key Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_id",
+          "public_key_id",
+          "status",
+          "expires_at",
+          "created_at"
+        ],
+        "title": "AppApiCredentialView",
+        "type": "object"
+      },
+      "AppApiScopeListView": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppApiScopeView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "app_id",
+          "items"
+        ],
+        "title": "AppApiScopeListView",
+        "type": "object"
+      },
+      "AppApiScopeView": {
+        "additionalProperties": false,
+        "properties": {
+          "required_permission": {
+            "title": "Required Permission",
+            "type": "string"
+          },
+          "scope_code": {
+            "title": "Scope Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_code",
+          "required_permission"
+        ],
+        "title": "AppApiScopeView",
+        "type": "object"
+      },
       "AppLoginPayload": {
         "additionalProperties": false,
         "properties": {
@@ -18320,6 +18763,367 @@
         ]
       }
     },
+    "/api/v1/apps/{app_id}/api-clients": {
+      "get": {
+        "operationId": "list_app_api_clients_api_v1_apps__app_id__api_clients_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiClientListView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Api Clients",
+        "tags": [
+          "App API Clients"
+        ]
+      },
+      "post": {
+        "operationId": "create_app_api_client_api_v1_apps__app_id__api_clients_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApiClientCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiClientCreatedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create App Api Client",
+        "tags": [
+          "App API Clients"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/api-clients/scopes": {
+      "get": {
+        "operationId": "list_app_api_scopes_api_v1_apps__app_id__api_clients_scopes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiScopeListView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Api Scopes",
+        "tags": [
+          "App API Clients"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/api-clients/{client_id}": {
+      "get": {
+        "operationId": "get_app_api_client_api_v1_apps__app_id__api_clients__client_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiClientView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App Api Client",
+        "tags": [
+          "App API Clients"
+        ]
+      },
+      "patch": {
+        "operationId": "update_app_api_client_status_api_v1_apps__app_id__api_clients__client_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApiClientStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiClientView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update App Api Client Status",
+        "tags": [
+          "App API Clients"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/api-clients/{client_id}/revoke": {
+      "post": {
+        "description": "立即停用 API Client，并撤销其全部有效 Credential。",
+        "operationId": "revoke_app_api_client_api_v1_apps__app_id__api_clients__client_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiClientView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke App Api Client",
+        "tags": [
+          "App API Clients"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/api-clients/{client_id}/rotate": {
+      "post": {
+        "operationId": "rotate_app_api_credential_api_v1_apps__app_id__api_clients__client_id__rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApiCredentialRotatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApiCredentialCreatedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate App Api Credential",
+        "tags": [
+          "App API Clients"
+        ]
+      }
+    },
     "/api/v1/apps/{app_id}/members": {
       "get": {
         "operationId": "list_app_members_api_v1_apps__app_id__members_get",
@@ -19939,7 +20743,7 @@
     },
     "/api/v1/model-catalog": {
       "get": {
-        "description": "返回全局模型目录，供使用 Portal API Key 的管理页面配置业务对象。",
+        "description": "返回全局模型目录，供已认证管理页面配置业务对象。",
         "operationId": "list_model_catalog_api_v1_model_catalog_get",
         "responses": {
           "200": {

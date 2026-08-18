@@ -6,7 +6,14 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from main_api.application import AccessControlService, AccessDeniedError
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    require_app_api_agent,
+    require_app_api_permission,
+    require_app_api_scope,
+)
+from platform_core.contracts import PrincipalKind
 from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
@@ -85,6 +92,7 @@ def _uses_semantic_data_query(*, capabilities, config) -> bool:
 
 
 async def _require(request: Request, permission: str):
+    require_app_api_permission(request, permission)
     domain_id, actor_id = _domain_actor(request)
     try:
         snapshot = await _access(request).require(
@@ -119,6 +127,17 @@ async def list_agents(request: Request):
     agents = await _client(request).list_agents(
         domain_id=domain_id, auth_context=request.state.auth_context
     )
+    require_app_api_scope(request, "knowledge:agent:read")
+    if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
+        allowed = {
+            str(value)
+            for value in request.state.auth_context.authorized_agent_ids
+        }
+        return [
+            item for item in agents
+            if item.get("status") == "ACTIVE"
+            and str(item.get("agent_id")) in allowed
+        ]
     if "knowledge_retrieval:agent_manage" in snapshot.permissions:
         return agents
     return [
@@ -152,12 +171,20 @@ async def get_agent(agent_id: UUID, request: Request):
     domain_id, _, snapshot = await _require(
         request, "knowledge_retrieval:use"
     )
+    require_app_api_scope(request, "knowledge:agent:read")
+    require_app_api_agent(request, agent_id)
     agent = await _client(request).get_agent(
         agent_id=agent_id, domain_id=domain_id,
         auth_context=request.state.auth_context,
     )
     if (
-        "knowledge_retrieval:agent_manage" not in snapshot.permissions
+        request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT
+        and agent.get("status") != "ACTIVE"
+    ):
+        raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
+    if (
+        request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
+        and "knowledge_retrieval:agent_manage" not in snapshot.permissions
         and agent.get("status") != "ACTIVE"
     ):
         raise HTTPException(

@@ -401,11 +401,9 @@ class SecretAndOutboxTest(unittest.IsolatedAsyncioTestCase):
 class IntegrationAuthBoundaryTest(unittest.TestCase):
     def test_monitoring_integration_bypasses_only_portal_auth(self) -> None:
         app = FastAPI()
-        verifier = Mock()
         validator = AsyncMock(return_value=True)
         app.middleware("http")(
             create_public_auth_middleware(
-                verifier=verifier,
                 domain_validator=validator,
                 public_prefixes={
                     "/api/v1/integrations/monitoring/"
@@ -421,7 +419,7 @@ class IntegrationAuthBoundaryTest(unittest.TestCase):
             "/api/v1/integrations/monitoring/secret/events"
         )
         self.assertEqual(200, response.status_code)
-        verifier.verify_authorization.assert_not_called()
+        validator.assert_not_awaited()
 
 
 if __name__ == "__main__":

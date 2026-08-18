@@ -17,7 +17,7 @@ KM 页面的 Main API 地址只从 `configuration/kbot.toml` 的 `[ui].main_api_
 
 ## APEX 接入
 
-这些页面只调用公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 Portal API Key 或伪造可信用户 Header。KM 登录 Token 保存在 `sessionStorage`，关闭标签页会话后需要重新登录。Token 中的 Domain 和用户由 Main API 签名保护。
+这些页面只调用公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 App API Key 或伪造可信用户 Header。KM 登录 Token 保存在 `sessionStorage`，关闭标签页会话后需要重新登录。Token 中的 Domain 和用户由 Main API 签名保护。第三方 Key 只能由管理员在“API 客户端”页生成，明文仅显示一次。
 
 首次启用 KM Asset 时直接运行 `scripts/db/bootstrap_km_initial_admin.sql`，在 SQL Developer 中使用 Run Script（F5）执行。脚本创建固定 Domain `km_portal`、固定 Collection `assets` 和用户 `kmadmin`，固定密码为 `KmAdmin@2026!`，并仅在该 Domain 中授予 `km_asset/manager`。脚本从已有的启用模型中选择 LLM 与文本 Embedding 作为 Collection 初始模型绑定，因此执行前至少需要各配置一个启用模型。登录后可直接使用；重新执行初始化脚本会把密码恢复为该固定值。脚本不使用输入弹窗或 `@@` 文件引用。
 

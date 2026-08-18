@@ -488,7 +488,7 @@ class UserAuthService:
         if not authorization:
             return None
         token = authorization.partition(" ")[2].strip()
-        if token.startswith("kbot_sk_"):
+        if token.startswith(("kbot_sk_", "kbot_ak_")):
             return None
         try:
             claims = self._codec.verify_authorization(authorization)

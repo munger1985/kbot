@@ -12,8 +12,7 @@ cp configuration/kbot.toml.example configuration/kbot.toml
 cp .env.example .env
 ```
 
-然后填写数据库地址、`KBOT_ORACLE_PASSWORD`、`KBOT_MASTER_KEY`，并生成
-Portal API Key 摘要。
+然后填写数据库地址、`KBOT_ORACLE_PASSWORD` 和 `KBOT_MASTER_KEY`。
 
 配置完成后，可用一个入口安装依赖、检查配置并初始化空白 Schema：
 
@@ -43,10 +42,6 @@ port = 1521
 service_name = "kbot4"
 username = "kbot"
 
-[[portal_api_keys]]
-key_id = "portal-prod"
-client_id = "portal"
-key_digest = "生成的64位摘要"
 ```
 
 `data_dir` 自动派生 Knowledge Core、Agent附件、AIOps正文和模型缓存目录。Docling
@@ -59,8 +54,8 @@ ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
 浏览器直连 Main API 时，使用 `api_allowed_origins` 列出允许的门户来源。每项必须
 精确包含协议、主机和端口，例如 `https://portal.example.com` 或
 `http://146.56.158.44:8080`，不带末尾斜杠。若需要允许任意来源，可设为
-`api_allowed_origins = ["*"]`。Portal API Key 不应下发到浏览器，生产环境应优先由
-门户服务端代理调用 KBot。
+`api_allowed_origins = ["*"]`。用户页面使用短期用户 Token；第三方服务使用 App 管理员
+在页面中签发的 App API Key。App API Key 不应下发到浏览器。
 
 只有跨主机部署才增加对应端点：
 
@@ -113,16 +108,9 @@ KBot从主密钥按用途派生内部JWT、API Pepper、统一托管凭据加密
 问数服务启用时再增加 `KBOT_MCP_DATA_API_KEY`。模型厂商凭证仍由数据库加密
 保存。
 
-Portal API Key 的明文只显示一次；设置主密钥后执行：
-
-```bash
-python scripts/security/generate_portal_api_key.py --key-id portal-prod
-```
-
-脚本会原子更新部署文件中同名 `key_id` 的 `[[portal_api_keys]]` 摘要记录，再只
-显示一次明文 Key；将明文仅保存到 Portal Secret。外部系统需要直接调用模型 API
-时，使用独立的
-`[[model_api_keys]]`。
+公开 Main API 不再读取配置型 Key。App 管理员登录对应 App 后，在“API 客户端”页面
+绑定服务账号、Domain、Scope 和 Agent，并生成只显示一次的 `kbot_ak_...` Key。
+数据库只保存摘要。外部系统直接调用模型 API 时仍使用独立的 `[[model_api_keys]]`。
 
 ## 启动前检查
 

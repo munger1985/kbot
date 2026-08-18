@@ -27,5 +27,5 @@ KBotDocumentPreview.bind("#chat-references");
 模块先调用引用预览描述接口，再读取受保护的 `content_url`。如果当前 APEX 的
 `KBotApi` 认证只由 JavaScript 注入 `Authorization`，应通过
 `KBotDocumentPreview.configure({ loadContent })` 提供与 `KBotApi` 相同认证上下文的
-Blob 加载函数；不得把 Portal API Key 写入静态文件、URL 或 DOM。PDF 打开后使用
+Blob 加载函数；不得把 App API Key 写入静态文件、URL 或 DOM。PDF 打开后使用
 服务端返回的 `page_no` 设置 `#page=<页码>`，不再展示 Chunk 文本。

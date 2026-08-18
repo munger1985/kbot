@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KM API 客户端</title><link rel="stylesheet" href="./css/km.css"></head>
+<body data-page="api-clients"><main class="km-main"><header class="km-page-head"><div><h1>API 客户端</h1><p>为第三方系统生成绑定当前 KM App、Domain、服务账号、Scope 与 Agent 的密钥。明文只显示一次。</p></div><div class="km-actions"><button id="refresh-api-clients">刷新</button><button id="new-api-client" class="primary">创建客户端</button></div></header>
+<p id="api-client-error" class="km-form-error" hidden></p>
+<section class="km-panel"><div class="km-table-wrap"><table class="km-table"><thead><tr><th>客户端</th><th>服务账号</th><th>Scope</th><th>Agent</th><th>状态</th><th>有效期 / 最近使用</th><th>操作</th></tr></thead><tbody id="api-client-rows"></tbody></table></div></section>
+</main>
+<dialog id="api-client-dialog"><form id="api-client-form"><div class="km-dialog-head"><h2>创建 API 客户端</h2><button type="button" class="km-close" data-close aria-label="关闭">×</button></div><div class="km-dialog-body"><div class="km-form-grid">
+<div class="km-field span-6"><label>客户端名称</label><input name="display_name" maxlength="256" required></div>
+<div class="km-field span-6"><label>绑定服务账号</label><select id="api-client-subject" name="subject_user_id" required></select></div>
+<div class="km-field span-12"><label>机器 Scope</label><div id="api-client-scopes" class="km-check-grid"></div></div>
+<div class="km-field span-12"><label>允许访问的 Agent</label><select id="api-client-agents" name="agent_ids" multiple size="6" required></select><p class="km-help">至少选择一个 Agent；第三方无法访问未绑定 Agent。</p></div>
+<div class="km-field span-6"><label>有效期</label><input name="expires_at" type="datetime-local" required></div>
+<div class="km-field span-6"><label>每分钟请求上限</label><input name="rate_limit_per_minute" type="number" min="1" max="10000" value="60" required></div>
+</div></div><div class="km-dialog-foot"><button type="button" data-close>取消</button><button id="save-api-client" type="submit" class="primary">生成密钥</button></div></form></dialog>
+<dialog id="api-key-dialog"><div class="km-dialog-head"><h2>立即保存 API Key</h2><button type="button" class="km-close" data-close aria-label="关闭">×</button></div><div class="km-dialog-body"><p class="km-data-note">明文关闭后无法恢复。不要把 Key 写入浏览器代码、URL 或日志。</p><pre id="api-key-value" class="km-json"></pre></div><div class="km-dialog-foot"><button id="copy-api-key" class="primary">复制密钥</button><button data-close>我已安全保存</button></div></dialog>
+<dialog id="rotate-api-key-dialog"><form id="rotate-api-key-form"><input type="hidden" name="client_id"><div class="km-dialog-head"><h2>轮换 API Key</h2><button type="button" class="km-close" data-close aria-label="关闭">×</button></div><div class="km-dialog-body"><div class="km-field span-12"><label>新密钥有效期</label><input name="expires_at" type="datetime-local" required></div><p class="km-data-note">轮换成功后旧密钥立即撤销。</p></div><div class="km-dialog-foot"><button type="button" data-close>取消</button><button id="rotate-api-key" type="submit" class="primary">确认轮换</button></div></form></dialog>
+<script src="../runtime-config.js"></script><script src="../shared/kbot-api-client.js?v=20260813_5"></script><script src="../shared/kbot-km-auth-v2.js?v=20260818_1"></script><script src="../shared/kbot-shell.js?v=20260818_2"></script><script src="./js/km-api-clients.js?v=20260818_1"></script></body></html>

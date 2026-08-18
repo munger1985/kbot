@@ -23,7 +23,6 @@ from .runtime import (
     INTERNAL_TOKEN_HEADER,
     create_auth_context_codec,
     create_model_api_key_verifier,
-    create_portal_api_key_verifier,
     get_internal_service_token,
 )
 from .service_identity import (
@@ -131,7 +130,6 @@ def _validated_header(
 def create_public_auth_middleware(
     *,
     domain_validator: DomainValidator,
-    verifier: PortalApiKeyVerifier | None = None,
     tenant_validator: TenantValidator | None = None,
     public_paths: set[str] | None = None,
     public_prefixes: set[str] | None = None,
@@ -140,12 +138,10 @@ def create_public_auth_middleware(
     allow_test_bypass: bool = False,
     alternate_authenticator: AlternateAuthenticator | None = None,
 ):
-    """创建 Main API 使用的 Portal API Key 认证中间件。"""
-    resolved_verifier = verifier
+    """创建 Main API 的用户 Token、App Key 与开发绕过认证中间件。"""
     skip_paths = PUBLIC_PATHS if public_paths is None else public_paths
 
     async def middleware(request: Request, call_next):
-        nonlocal resolved_verifier
         if (
             request.url.path in skip_paths
             or any(
@@ -208,13 +204,10 @@ def create_public_auth_middleware(
                 principal_client_id = "kbot-development-test"
                 principal_key_id = "development-test-bypass"
             else:
-                if resolved_verifier is None:
-                    resolved_verifier = create_portal_api_key_verifier()
-                principal = resolved_verifier.verify_authorization(
-                    request.headers.get("Authorization")
+                raise PortalApiKeyError(
+                    "AUTH_REQUIRED",
+                    "需要用户 Token 或绑定当前 App 的 API Key",
                 )
-                principal_client_id = principal.client_id
-                principal_key_id = principal.key_id
             domain_id = None
             if not domainless_request:
                 domain_id = _validated_header(
@@ -304,21 +297,33 @@ def create_public_auth_middleware(
                 request.method,
                 request.url.path,
             )
-            return _problem(
-                request=request,
-                status_code=401 if exc.code in {
+            if exc.code == "APP_API_KEY_RATE_LIMITED":
+                status_code = 429
+            elif exc.code == "APP_API_KEY_IDENTITY_HEADER_FORBIDDEN":
+                status_code = 400
+            elif exc.code == "APP_API_KEY_EXPIRED":
+                status_code = 401
+            elif exc.code.startswith("APP_API_KEY_"):
+                status_code = 403
+            else:
+                status_code = 401 if exc.code in {
                     "AUTH_REQUIRED",
                     "INVALID_AUTH_SCHEME",
                     "INVALID_API_KEY",
                     "API_KEY_DISABLED",
                     "API_KEY_EXPIRED",
                     "INVALID_USER_TOKEN",
+                    "INVALID_APP_API_KEY",
+                    "APP_API_CLIENT_DISABLED",
                     "USER_TOKEN_EXPIRED",
                     "USER_DISABLED",
                     "USER_SESSION_REVOKED",
                     "DOMAIN_ACCESS_DENIED",
                     "PASSWORD_CHANGE_REQUIRED",
-                } else 400,
+                } else 400
+            return _problem(
+                request=request,
+                status_code=status_code,
                 code=exc.code,
                 detail=str(exc),
             )

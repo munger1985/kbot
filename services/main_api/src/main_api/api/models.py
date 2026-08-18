@@ -79,5 +79,5 @@ async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
 
 @router.get("", response_model=list[ModelCatalogItem])
 async def list_model_catalog(request: Request) -> list[dict[str, Any]]:
-    """返回全局模型目录，供使用 Portal API Key 的管理页面配置业务对象。"""
+    """返回全局模型目录，供已认证管理页面配置业务对象。"""
     return await load_model_catalog(request)

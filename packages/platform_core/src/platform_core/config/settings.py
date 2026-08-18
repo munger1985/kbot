@@ -59,8 +59,8 @@ class LogConfig(BaseModel):
     api_log_enabled: bool = True
 
 
-class PortalApiKeyConfig(BaseModel):
-    """API Key 的非敏感注册信息；明文 Key 不得进入配置文件。"""
+class ModelApiKeyConfig(BaseModel):
+    """模型 API Key 的非敏感注册信息；明文不得进入配置文件。"""
 
     key_id: str = Field(min_length=3, max_length=64)
     client_id: str = Field(min_length=1, max_length=128)
@@ -87,8 +87,7 @@ class SecurityConfig(BaseModel):
         default=60, ge=15, le=300
     )
     internal_jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=30)
-    portal_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
-    model_api_keys: list[PortalApiKeyConfig] = Field(default_factory=list)
+    model_api_keys: list[ModelApiKeyConfig] = Field(default_factory=list)
 
 
 class OracleConfig(BaseModel):
@@ -310,7 +309,6 @@ def load_settings(
         "development_auth_bypass",
         "api_docs_enabled",
         "api_allowed_origins",
-        "portal_api_keys",
         "model_api_keys",
         "database",
         "endpoints",
@@ -335,7 +333,6 @@ def load_settings(
             "log_dir",
             "embedding_dimension",
             "database",
-            "portal_api_keys",
         }
         missing = sorted(required_fields - set(deployment))
         if missing:
@@ -352,8 +349,6 @@ def load_settings(
             )
         if deployment.get("development_auth_bypass"):
             raise ValueError("生产环境禁止开启开发认证绕过")
-        if not deployment.get("portal_api_keys"):
-            raise ValueError("生产环境至少需要一个 Portal API Key 摘要")
     data_dir = Path(str(deployment.get("data_dir") or "./var/data"))
     log_dir = str(deployment.get("log_dir") or "./var/log")
     api_allowed_origins = deployment.get("api_allowed_origins")
@@ -409,7 +404,6 @@ def load_settings(
             "dir": log_dir,
         },
         "security": {
-            "portal_api_keys": deployment.get("portal_api_keys") or [],
             "model_api_keys": deployment.get("model_api_keys") or [],
         },
         "database": {"oracle": database},

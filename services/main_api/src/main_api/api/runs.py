@@ -19,12 +19,19 @@ from platform_core.contracts import (
     AgentRunSummary,
     PUBLIC_API_V1,
 )
-from main_api.application import AccessConfigurationError, AccessDeniedError
+from main_api.application import (
+    AccessConfigurationError,
+    AccessDeniedError,
+    require_app_api_agent,
+    require_app_api_permission,
+    require_app_api_scope,
+)
 from platform_clients import KnowledgeRetrievalAppClient
 from platform_core.security import get_auth_context
 
 
 async def _require_use(request: Request) -> None:
+    require_app_api_permission(request, "knowledge_retrieval:use")
     context = get_auth_context(request)
     try:
         await request.app.state.access_control_service.require(
@@ -110,6 +117,7 @@ def _knowledge_client(request: Request) -> KnowledgeCoreClient:
 
 
 async def _authorized_spec(request: Request, agent_id: UUID) -> dict:
+    require_app_api_agent(request, agent_id)
     context = get_auth_context(request)
     domain_id = int(context.domain_id or "0")
     client: KnowledgeRetrievalAppClient = (
@@ -149,6 +157,7 @@ async def create_run(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
+    require_app_api_scope(request, "knowledge:chat:write")
     spec = await _authorized_spec(request, payload.agent_id)
     effective_level = await _effective_security_level(request)
     result = await _client(request).create_run(
@@ -167,17 +176,25 @@ async def create_run(
 async def get_run(
     run_id: UUID, request: Request
 ) -> AgentRunSummary:
+    require_app_api_scope(request, "knowledge:run:read")
     result = await _client(request).get_run(
         run_id=run_id,
         auth_context=request.state.auth_context,
     )
-    return AgentRunSummary.model_validate(result)
+    summary = AgentRunSummary.model_validate(result)
+    require_app_api_agent(request, summary.agent_id)
+    return summary
 
 
 @router.get("/{run_id}/result", response_model=AgentArtifact)
 async def get_run_result(
     run_id: UUID, request: Request
 ) -> AgentArtifact:
+    require_app_api_scope(request, "knowledge:run:read")
+    summary = await _client(request).get_run(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+    require_app_api_agent(request, UUID(str(summary["agent_id"])))
     result = await _client(request).get_result(
         run_id=run_id,
         auth_context=request.state.auth_context,
@@ -194,6 +211,7 @@ async def get_document_reference_preview(
     citation_label: str,
     request: Request,
 ) -> DocumentReferencePreview:
+    require_app_api_scope(request, "knowledge:run:read")
     reference = await _authorized_document_reference(
         request=request,
         run_id=run_id,
@@ -246,6 +264,7 @@ async def stream_document_reference_content(
     request: Request,
     range_header: str | None = Header(default=None, alias="Range"),
 ) -> StreamingResponse:
+    require_app_api_scope(request, "knowledge:run:read")
     reference = await _authorized_document_reference(
         request=request,
         run_id=run_id,
@@ -286,6 +305,10 @@ async def stream_document_reference_content(
 async def _authorized_document_reference(
     *, request: Request, run_id: UUID, citation_label: str
 ) -> _DocumentReference:
+    summary = await _client(request).get_run(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+    require_app_api_agent(request, UUID(str(summary["agent_id"])))
     artifact = await _client(request).get_result(
         run_id=run_id,
         auth_context=request.state.auth_context,
@@ -384,6 +407,11 @@ async def cancel_run(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
+    require_app_api_scope(request, "knowledge:chat:write")
+    summary = await _client(request).get_run(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+    require_app_api_agent(request, UUID(str(summary["agent_id"])))
     result = await _client(request).cancel_run(
         run_id=run_id,
         expected_row_version=payload.expected_row_version,
@@ -401,11 +429,13 @@ async def stream_run_events(
         default=None, alias="Last-Event-ID"
     ),
 ) -> StreamingResponse:
+    require_app_api_scope(request, "knowledge:run:read")
     cursor = _parse_cursor(last_event_id)
     summary = await _client(request).get_run(
         run_id=run_id,
         auth_context=request.state.auth_context,
     )
+    require_app_api_agent(request, UUID(str(summary["agent_id"])))
     latest = int(summary["event_cursor"])
     if cursor > latest:
         raise HTTPException(

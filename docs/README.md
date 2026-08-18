@@ -10,7 +10,8 @@ Git 历史保存，不再作为有效文档。
 - [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
 - [Model Serving](architecture/model-serving.md)：模型注册、托管进程和功能模型绑定。
-- [身份与 API](architecture/security-and-api.md)：Domain、Portal API Key 和内部 AuthContext。
+- [身份与 API](architecture/security-and-api.md)：Domain、用户 Token、App API Key 和内部 AuthContext。
+- [App API Key 安全设计](architecture/app-api-key-security.md)：App 绑定、Scope、Agent 白名单、轮换与撤销。
 - [仓库结构](architecture/repository-layout.md)：代码、DDL、配置、测试和工具的归属。
 
 ## 产品说明

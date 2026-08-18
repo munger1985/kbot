@@ -108,7 +108,8 @@ cp .env.example .env
 ```
 
 `configuration/kbot.toml` 只保存环境、数据/日志目录、Oracle 地址、全局 Embedding
-维度、Portal/模型 Key 摘要和可选外部端点。服务端口、超时、Lease 和安全上限由
+维度、模型 Key 摘要和可选外部端点。公开 Main API 的 App Key 保存在数据库中，不进入
+部署配置。服务端口、超时、Lease 和安全上限由
 代码契约管理。生产可通过 `KBOT_CONFIG_FILE=/etc/kbot/kbot.toml` 指向外部文件。
 
 至少注入：
@@ -122,13 +123,12 @@ KBOT_MASTER_KEY="至少32字节的随机主密钥"
 Token 的签名密钥，可显式注入同名环境变量，长度不得少于 32 字节。
 
 推荐使用 systemd `EnvironmentFile`、Kubernetes Secret 或企业 Secret Manager，
-不要把生产 `.env` 写入仓库。Portal API Key 使用以下命令生成摘要：
+不要把生产 `.env` 写入仓库。第三方 Main API 凭据由各 App 管理员在“API 客户端”页面
+创建，固定绑定 App、Domain、服务账号、Scope 和 Agent；明文只显示一次。
 
-```bash
-python3 scripts/security/generate_portal_api_key.py --key-id portal-prod
-```
-
-脚本自动将摘要写入 `kbot.toml`；明文 Key 只交付 Portal Secret。
+已经使用 `001_access_control.sql` 的既有 Schema，在确认四张 `KBOT_APP_API_%` 表均不
+存在后，由 DBA 仅执行一次 `database/oracle/main_api/002_app_api_clients.sql`，再重启
+Main API。空白 Schema 由标准初始化按顺序执行 `001` 和 `002`，无需额外操作。
 
 Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
 `api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
@@ -142,7 +142,7 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 
 修改后重启 Main API。该值必须与浏览器地址的协议、主机和端口完全一致，不能使用
 末尾斜杠。若要临时允许任意网页来源，设置 `api_allowed_origins = ["*"]`。生产环境不要
-将 Portal API Key 暴露给浏览器；应由门户服务端代理请求。
+将 App API Key 暴露给浏览器；用户页面应使用短期用户 Token。
 
 通知中心由 Main API 的 Notification Worker 投影共享 Oracle Outbox。默认配置适合单机，
 需要调整批量、租约、重试或 SSE 心跳时，在 `kbot.toml` 增加 `[notifications]`，字段见

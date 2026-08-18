@@ -20,6 +20,7 @@ from sqlalchemy import text
 from main_api.api import (
     access_management_router,
     aiops_app_router,
+    app_api_clients_router,
     auth_router,
     conversation_router,
     data_query_router,
@@ -39,7 +40,7 @@ from main_api.api import (
     slack_router,
 )
 from main_api.config import get_main_api_settings
-from main_api.application import UserAuthenticationError
+from main_api.application import AppApiKeyError, UserAuthenticationError
 from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
@@ -52,7 +53,6 @@ from platform_clients import (
 from platform_core.middleware.log_middleware import log_requests
 from platform_core.security import (
     PortalApiKeyError,
-    PortalApiKeyVerifier,
     create_public_auth_middleware,
 )
 
@@ -132,13 +132,15 @@ def _problem_response(
 def create_main_api_app(
     *,
     lifespan: LifespanFactory | None = None,
-    verifier: PortalApiKeyVerifier | None = None,
     domain_validator=None,
     enable_access_log: bool = True,
+    test_authenticator=None,
 ) -> FastAPI:
     """构造只发布公开契约的 Main API 应用。"""
     settings = get_main_api_settings()
     config = settings.api
+    if test_authenticator is not None and not settings.is_development():
+        raise RuntimeError("测试认证器只允许在 development 环境注入")
     if config.test_auth_bypass_enabled and not settings.is_development():
         raise RuntimeError("测试认证绕过只允许在 development 环境启用")
     if config.test_auth_bypass_enabled:
@@ -168,6 +170,23 @@ def create_main_api_app(
 
     async def authenticate_user(request: Request):
         """接受由 Main API 签发、绑定用户与 Domain 的公开用户 Token。"""
+        if test_authenticator is not None:
+            context = await test_authenticator(request)
+            if context is not None:
+                return context
+        app_key_service = getattr(app.state, "app_api_key_service", None)
+        if app_key_service is not None:
+            try:
+                context = await app_key_service.authenticate_request(
+                    authorization=request.headers.get("Authorization"),
+                    path=request.url.path,
+                    headers={**request.headers, ":method": request.method},
+                )
+            except AppApiKeyError as exc:
+                raise PortalApiKeyError(exc.code, str(exc)) from exc
+            if context is not None:
+                request.state.app_api_key_authenticated = True
+                return context
         service = getattr(app.state, "user_auth_service", None)
         if service is None:
             return None
@@ -207,7 +226,6 @@ def create_main_api_app(
         )
     app.middleware("http")(
         create_public_auth_middleware(
-            verifier=verifier,
             domain_validator=validate_domain,
             allow_test_bypass=config.test_auth_bypass_enabled,
             alternate_authenticator=authenticate_user,
@@ -248,15 +266,22 @@ def create_main_api_app(
                 "Idempotency-Key",
                 "If-Match",
                 "Last-Event-ID",
-                "X-KBot-Domain-ID",
-                "X-KBot-Test-Auth",
-                "X-KBot-User-ID",
                 "X-Request-ID",
                 "traceparent",
+                *(
+                    [
+                        "X-KBot-Domain-ID",
+                        "X-KBot-Test-Auth",
+                        "X-KBot-User-ID",
+                    ]
+                    if settings.platform.debug
+                    else []
+                ),
             ],
         )
     app.include_router(knowledge_router)
     app.include_router(auth_router)
+    app.include_router(app_api_clients_router)
     app.include_router(access_management_router)
     app.include_router(knowledge_retrieval_app_router)
     app.include_router(km_asset_app_router)
@@ -303,6 +328,18 @@ def create_main_api_app(
                 if exc.code == "SYSTEM_NOT_INITIALIZED"
                 else "用户认证失败"
             ),
+            detail=str(exc),
+        )
+
+    @app.exception_handler(AppApiKeyError)
+    async def app_api_key_error_handler(
+        request: Request, exc: AppApiKeyError,
+    ):
+        return _problem_response(
+            request=request,
+            status_code=exc.status_code,
+            code=exc.code,
+            title="App API Key 请求被拒绝",
             detail=str(exc),
         )
 
