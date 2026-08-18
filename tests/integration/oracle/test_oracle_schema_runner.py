@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scripts.db.apply_oracle_schema import (
+    _apply_platform_foundation,
     load_schema_statements,
     load_service_selection,
     split_oracle_statements,
@@ -118,6 +119,87 @@ class OracleSchemaRunnerTest(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "未知服务"):
                 load_service_selection(config_path)
+
+
+class _DictionaryResult:
+    def __init__(self, *, row=None, scalar=None):
+        self._row = row
+        self._scalar = scalar
+
+    def first(self):
+        return self._row
+
+    def scalar_one_or_none(self):
+        return self._scalar
+
+
+class _FoundationConnection:
+    def __init__(self, *, column, constraint_status):
+        self._results = iter(
+            (
+                _DictionaryResult(row=column),
+                _DictionaryResult(scalar=constraint_status),
+            )
+        )
+        self.statements: list[str] = []
+        self.committed = False
+
+    async def execute(self, statement):
+        del statement
+        return next(self._results)
+
+    async def exec_driver_sql(self, statement):
+        self.statements.append(statement)
+
+    async def commit(self):
+        self.committed = True
+
+
+class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
+    async def test_existing_not_null_security_column_is_not_modified(self):
+        connection = _FoundationConnection(
+            column=("N", "1 "),
+            constraint_status="ENABLED",
+        )
+
+        await _apply_platform_foundation(connection)
+
+        security_alters = [
+            statement
+            for statement in connection.statements
+            if statement.startswith("ALTER TABLE KBOT_PLATFORM_USER")
+        ]
+        self.assertEqual([], security_alters)
+        self.assertTrue(connection.committed)
+
+    async def test_nullable_security_column_is_repaired_incrementally(self):
+        connection = _FoundationConnection(
+            column=("Y", None),
+            constraint_status="DISABLED",
+        )
+
+        await _apply_platform_foundation(connection)
+
+        self.assertIn(
+            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
+            "MAX_SECURITY_LEVEL DEFAULT 1)",
+            connection.statements,
+        )
+        self.assertIn(
+            "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
+            "WHERE MAX_SECURITY_LEVEL IS NULL",
+            connection.statements,
+        )
+        self.assertIn(
+            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
+            "MAX_SECURITY_LEVEL NOT NULL)",
+            connection.statements,
+        )
+        self.assertIn(
+            "ALTER TABLE KBOT_PLATFORM_USER ENABLE CONSTRAINT "
+            "CK_PLATFORM_USER_SECURITY",
+            connection.statements,
+        )
 
 
 if __name__ == "__main__":

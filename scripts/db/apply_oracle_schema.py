@@ -556,46 +556,56 @@ async def _apply_platform_foundation(
     connection: AsyncConnection,
 ) -> None:
     """幂等写入首次登录所需的平台基础数据。"""
-    security_column_count = (
+    security_column = (
         await connection.execute(
             text(
-                "SELECT COUNT(*) FROM user_tab_columns "
+                "SELECT nullable, data_default FROM user_tab_columns "
                 "WHERE table_name = 'KBOT_PLATFORM_USER' "
                 "AND column_name = 'MAX_SECURITY_LEVEL'"
             )
         )
-    ).scalar_one()
-    if int(security_column_count) == 0:
+    ).first()
+    if security_column is None:
         await connection.exec_driver_sql(
             "ALTER TABLE KBOT_PLATFORM_USER ADD ("
             "MAX_SECURITY_LEVEL NUMBER(3) DEFAULT 1 NOT NULL)"
         )
     else:
-        await connection.exec_driver_sql(
-            "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
-            "WHERE MAX_SECURITY_LEVEL IS NULL"
-        )
-        await connection.exec_driver_sql(
-            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
-            "MAX_SECURITY_LEVEL DEFAULT 1 NOT NULL)"
-        )
+        nullable, data_default = security_column
+        normalized_default = re.sub(
+            r"\s+", "", str(data_default or "")
+        ).strip("()")
+        if normalized_default != "1":
+            await connection.exec_driver_sql(
+                "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
+                "MAX_SECURITY_LEVEL DEFAULT 1)"
+            )
+        if str(nullable).upper() != "N":
+            await connection.exec_driver_sql(
+                "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
+                "WHERE MAX_SECURITY_LEVEL IS NULL"
+            )
+            await connection.exec_driver_sql(
+                "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
+                "MAX_SECURITY_LEVEL NOT NULL)"
+            )
 
-    security_constraint_count = (
+    security_constraint_status = (
         await connection.execute(
             text(
-                "SELECT COUNT(*) FROM user_constraints "
+                "SELECT status FROM user_constraints "
                 "WHERE table_name = 'KBOT_PLATFORM_USER' "
                 "AND constraint_name = 'CK_PLATFORM_USER_SECURITY'"
             )
         )
-    ).scalar_one()
-    if int(security_constraint_count) == 0:
+    ).scalar_one_or_none()
+    if security_constraint_status is None:
         await connection.exec_driver_sql(
             "ALTER TABLE KBOT_PLATFORM_USER ADD CONSTRAINT "
             "CK_PLATFORM_USER_SECURITY CHECK "
             "(MAX_SECURITY_LEVEL BETWEEN 0 AND 3)"
         )
-    else:
+    elif str(security_constraint_status).upper() != "ENABLED":
         await connection.exec_driver_sql(
             "ALTER TABLE KBOT_PLATFORM_USER ENABLE CONSTRAINT "
             "CK_PLATFORM_USER_SECURITY"

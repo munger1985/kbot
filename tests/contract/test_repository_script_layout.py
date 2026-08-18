@@ -92,6 +92,18 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("KBOT_PLATFORM_USER_ROLE", foundation)
         self.assertNotIn("KBOT_APP_MEMBER_ROLE target", foundation)
         self.assertIn("target.MAX_SECURITY_LEVEL = 3", foundation)
+        self.assertIn(
+            "DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE WHERE USER_ID = 'ADMIN'",
+            foundation,
+        )
+        self.assertIn(
+            "DELETE FROM KBOT_APP_MEMBER_ROLE WHERE USER_ID = 'ADMIN'",
+            foundation,
+        )
+        self.assertIn(
+            "DELETE FROM KBOT_APP_MEMBER WHERE USER_ID = 'ADMIN'",
+            foundation,
+        )
 
         schema_runner = (
             SCRIPTS_ROOT / "db" / "apply_oracle_schema.py"
