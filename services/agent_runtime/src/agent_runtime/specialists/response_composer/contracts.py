@@ -1,9 +1,13 @@
 """Response Composer 的公开结果 Schema。"""
 
+import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+_CITATION_PATTERN = re.compile(r"\[([A-Z]\d+)\]")
 
 
 class _Contract(BaseModel):
@@ -53,3 +57,21 @@ class GroundedAnswer(_Contract):
     query_results: tuple[dict[str, Any], ...] = ()
     visualizations: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_reference_projection(self):
+        """引用卡片只能投影回答正文实际使用的标签。"""
+        mentioned = tuple(dict.fromkeys(_CITATION_PATTERN.findall(self.answer)))
+        used = tuple(dict.fromkeys(self.used_citation_labels))
+        reference_labels = tuple(
+            dict.fromkeys(item.citation_label for item in self.references)
+        )
+        if len(used) != len(self.used_citation_labels):
+            raise ValueError("used_citation_labels 不得包含重复标签")
+        if len(reference_labels) != len(self.references):
+            raise ValueError("references 不得包含重复引用标签")
+        if set(used) != set(mentioned):
+            raise ValueError("回答正文引用与 used_citation_labels 不一致")
+        if set(reference_labels) != set(used):
+            raise ValueError("引用列表包含正文未使用的证据")
+        return self

@@ -359,7 +359,7 @@ ${existing_memory}
 [[prompts]]
 prompt_key = "agent_runtime.response_compose"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "根据类型化证据生成最终回答"
 input_variables = ["agent_instruction", "raw_input", "standalone_query", "evidence"]
@@ -369,6 +369,8 @@ ${agent_instruction}
 你只能使用给定证据陈述文档事实，每个事实后必须使用输入中存在的引用标签。
 引用必须严格写成 ASCII 方括号格式，例如 [C1]；禁止写成【C1】、<sup>C1</sup> 或其他格式。
 不得创建不存在的标签，不得把会话记忆冒充文档证据。
+只回答与用户问题相关且得到证据支持的内容。不要列出、讨论或对比不匹配的候选；
+只引用正文实际使用的证据，未使用的证据不得进入 used_citation_labels。
 输出必须严格满足 GroundedAnswerDraft.v1，不要输出隐藏思维过程。
 
 用户原始问题：
@@ -471,7 +473,7 @@ content = """
 [[prompts]]
 prompt_key = "knowledge_core.candidate_rerank"
 owner_service = "knowledge_core"
-version = "1.0.2"
+version = "1.0.3"
 active = true
 purpose = "判断 Bundle 或 Document 候选是否真正满足用户问题"
 input_variables = []
@@ -488,7 +490,8 @@ POSSIBLE 表示可能有用但画像不足以确认；SEMANTIC_ONLY 表示仅语
 IRRELEVANT 表示内容不相关。不得输出数值分数。
 
 coverage_mode=BREADTH 表示用户要求清单或广覆盖结果。此时必须逐个候选独立判断，不能只选择
-一个最佳候选；系统会保留上游已经召回的全部候选，你的判断只用于分类和排序。
+一个最佳候选；系统会保留所有 DIRECT、STRONG、POSSIBLE 和 SEMANTIC_ONLY 候选，但仍会
+过滤 IRRELEVANT。广覆盖是覆盖全部相关候选，不是保留无关召回噪声。
 coverage_mode=BALANCED 时兼顾准确率与召回率，并允许系统过滤 IRRELEVANT 候选。
 
 只输出 JSON：{"decisions":[{"candidate_label":"B1","relevance":"DIRECT",
@@ -499,7 +502,7 @@ matched_members，不得输出隐藏思维过程或 Label 之外的候选。
 [[prompts]]
 prompt_key = "knowledge_core.evidence_group_rerank"
 owner_service = "knowledge_core"
-version = "1.0.2"
+version = "1.0.3"
 active = true
 purpose = "验证 Evidence Group 对用户问题的实际支持关系"
 input_variables = []
@@ -515,8 +518,9 @@ Group 的 PRIMARY Item 中选择至少一个 primary_item_labels；结构上下�
 Group 的 STRUCTURAL_CONTEXT Item 中选择。CONTEXT_ONLY 和 NO_SUPPORT 不得选择
 PRIMARY。不要因为主题或词语相似就判定有支持，不得输出数值分数。
 
-coverage_mode=BREADTH 表示要为多个上游召回对象保留可引用证据。必须逐组独立判断，不能只
-选择一组最佳证据；系统会保留全部 Evidence Group，你的判断只用于分类、组内证据选择和排序。
+coverage_mode=BREADTH 表示要为多个相关上游对象保留可引用证据。必须逐组独立判断，不能只
+选择一组最佳证据；系统会保留所有提供直接、部分或反向支持的 Evidence Group，但仍会过滤
+CONTEXT_ONLY 和 NO_SUPPORT。广覆盖不得把不支持用户问题的内容送入回答与引用列表。
 coverage_mode=BALANCED 时按通常证据标准判断，并允许系统过滤不提供支持的 Group。
 
 只输出 JSON：{"decisions":[{"group_label":"C1","support":"DIRECT_SUPPORT",

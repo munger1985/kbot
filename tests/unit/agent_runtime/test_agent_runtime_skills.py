@@ -13,6 +13,10 @@ from agent_runtime.runtime import ExecutionContext
 from agent_runtime.specialists.conversation import ContextRewriteSkill
 from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
+from agent_runtime.specialists.response_composer.contracts import (
+    GroundedAnswer,
+    QueryResultReferenceCard,
+)
 from agent_runtime.specialists.root import RouteType, RootAgentPlanner
 from platform_core.identity import uuid7
 from platform_core.prompts import ResolvedPrompt
@@ -767,6 +771,13 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
 
         messages = model.last_json_request["prompt"]
+        self.assertTrue(
+            any(
+                "不得在回答中列出、讨论或对比不匹配"
+                in message["content"]
+                for message in messages
+            )
+        )
         self.assertIn("language=ja-JP", messages[-1]["content"])
 
     async def test_stream_retries_wrong_language_and_keeps_constraint_last(self):
@@ -935,15 +946,40 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "第一条事实[C1]，第二条事实[C1]。")
         self.assertEqual(labels, ("C1",))
 
-    def test_breadth_composer_requires_every_verified_citation(self):
-        with self.assertRaisesRegex(ValueError, "遗漏引用标签.*C2"):
-            ResponseComposerSkill._validate_model_answer(
-                {
-                    "answer": "只回答了第一项。[C1]",
-                    "used_citation_labels": ["C1"],
-                },
-                {"C1": object(), "C2": object()},
-                require_all_citations=True,
+    def test_breadth_composer_allows_unused_retrieval_candidates(self):
+        answer, labels = ResponseComposerSkill._validate_model_answer(
+            {
+                "answer": "只有第一项与问题相关。[C1]",
+                "used_citation_labels": ["C1"],
+            },
+            {"C1": object(), "C2": object()},
+        )
+
+        self.assertEqual("只有第一项与问题相关。[C1]", answer)
+        self.assertEqual(("C1",), labels)
+
+    def test_grounded_answer_rejects_unmentioned_reference(self):
+        with self.assertRaisesRegex(
+            ValidationError, "引用列表包含正文未使用的证据"
+        ):
+            GroundedAnswer(
+                answer="只有第一项与问题相关。[Q1]",
+                status="READY",
+                used_citation_labels=("Q1",),
+                references=(
+                    QueryResultReferenceCard(
+                        citation_label="Q1",
+                        query_result_id=uuid7(),
+                        provider="MCP",
+                        row_count=1,
+                    ),
+                    QueryResultReferenceCard(
+                        citation_label="Q2",
+                        query_result_id=uuid7(),
+                        provider="MCP",
+                        row_count=1,
+                    ),
+                ),
             )
 
     async def test_composer_does_not_stream_answer_before_validation(self):

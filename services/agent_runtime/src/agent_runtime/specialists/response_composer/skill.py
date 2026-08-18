@@ -118,7 +118,6 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        require_all_citations = self._requires_all_citations(context)
         validated: tuple[str, tuple[str, ...]] | None = None
         last_error: ValueError | None = None
         for attempt in range(1, 3):
@@ -135,7 +134,6 @@ class ResponseComposerSkill:
                     response,
                     allowed,
                     language=language,
-                    require_all_citations=require_all_citations,
                 )
                 break
             except ValueError as exc:
@@ -276,7 +274,6 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        require_all_citations = self._requires_all_citations(context)
         yield SkillProgress(
             event_type="thinking.delta",
             payload={
@@ -308,7 +305,6 @@ class ResponseComposerSkill:
                     answer_text,
                     allowed,
                     language=language,
-                    require_all_citations=require_all_citations,
                 )
             except ValueError as exc:
                 logger.warning(
@@ -384,7 +380,6 @@ class ResponseComposerSkill:
         allowed: dict[str, Any],
         *,
         language: str = "zh-CN",
-        require_all_citations: bool = False,
     ) -> tuple[str, ...]:
         if not answer:
             raise ValueError("模型返回的 answer 为空")
@@ -394,9 +389,6 @@ class ResponseComposerSkill:
             raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
         if not labels:
             raise ValueError("有文档事实的回答必须实际包含引用标签")
-        if require_all_citations and set(labels) != set(allowed):
-            missing = sorted(set(allowed) - set(labels))
-            raise ValueError(f"广覆盖回答遗漏引用标签：{missing}")
         if not answer_matches_language(
             answer,
             language,
@@ -407,11 +399,6 @@ class ResponseComposerSkill:
         ):
             raise ValueError(f"回答语言与 language={language} 不一致")
         return labels
-
-    @staticmethod
-    def _requires_all_citations(context: ExecutionContext) -> bool:
-        route = context.config_snapshot.get("route") or {}
-        return str(route.get("coverage_mode") or "").upper() == "BREADTH"
 
     @staticmethod
     def _verified_source_fallback(
@@ -795,20 +782,14 @@ class ResponseComposerSkill:
             {"role": "system", "content": rendered},
             {
                 "role": "system",
-                "content": language_instruction(language),
+                "content": (
+                    "只回答与用户问题相关且得到证据支持的内容。不得在回答中"
+                    "列出、讨论或对比不匹配的候选；只使用正文实际需要的引用，"
+                    "未使用的证据不得出现在 used_citation_labels 或引用列表中。"
+                ),
             },
+            {"role": "system", "content": language_instruction(language)},
         ]
-        if ResponseComposerSkill._requires_all_citations(context):
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "当前是广覆盖清单请求。必须逐项覆盖输入中的每个"
-                        " citation_label，并在对应条目中使用该引用；不得只"
-                        "选择一个最佳来源。"
-                    ),
-                }
-            )
         return messages
 
     @staticmethod
@@ -817,7 +798,6 @@ class ResponseComposerSkill:
         allowed: dict[str, Any],
         *,
         language: str = "zh-CN",
-        require_all_citations: bool = False,
     ) -> tuple[str, tuple[str, ...]]:
         answer = _normalize_citations(
             str(response.get("answer") or "").strip()
@@ -836,9 +816,6 @@ class ResponseComposerSkill:
             raise ValueError("回答中的引用标签与声明的使用列表不一致")
         if not mentioned:
             raise ValueError("有文档事实的回答必须实际包含引用标签")
-        if require_all_citations and set(mentioned) != set(allowed):
-            missing = sorted(set(allowed) - set(mentioned))
-            raise ValueError(f"广覆盖回答遗漏引用标签：{missing}")
         if not answer_matches_language(
             answer,
             language,

@@ -37,11 +37,6 @@ USING (
     FROM DUAL
 ) source
 ON (target.USER_ID = source.USER_ID)
-WHEN MATCHED THEN UPDATE SET
-    target.PASSWORD_HASH = source.PASSWORD_HASH,
-    target.MUST_CHANGE_PASSWORD = 'N',
-    target.PASSWORD_UPDATED_AT = SYSTIMESTAMP,
-    target.UPDATED_AT = SYSTIMESTAMP
 WHEN NOT MATCHED THEN INSERT (
     USER_ID, PASSWORD_HASH, MUST_CHANGE_PASSWORD,
     PASSWORD_UPDATED_AT, CREATED_AT, UPDATED_AT
@@ -60,7 +55,36 @@ WHEN NOT MATCHED THEN INSERT (
     source.USER_ID, source.ROLE_CODE, 'ACTIVE', 'bootstrap:platform', SYSTIMESTAMP
 );
 
--- 全局 ADMIN 只通过平台角色获得平台权限，不属于任何业务 App。
-DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE WHERE USER_ID = 'ADMIN';
-DELETE FROM KBOT_APP_MEMBER_ROLE WHERE USER_ID = 'ADMIN';
-DELETE FROM KBOT_APP_MEMBER WHERE USER_ID = 'ADMIN';
+-- ADMIN 可以通过平台接口获得显式 App Grant，但不能成为 App 创建用户或初始管理员。
+DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE scope_row
+ WHERE scope_row.USER_ID = 'ADMIN'
+   AND EXISTS (
+       SELECT 1
+         FROM KBOT_APP_MEMBER member_row
+        WHERE member_row.APP_ID = scope_row.APP_ID
+          AND member_row.USER_ID = scope_row.USER_ID
+          AND (
+              member_row.MEMBER_SOURCE <> 'PLATFORM_GRANT'
+              OR member_row.IS_INITIAL_ADMIN <> 'N'
+          )
+   );
+
+DELETE FROM KBOT_APP_MEMBER_ROLE role_row
+ WHERE role_row.USER_ID = 'ADMIN'
+   AND EXISTS (
+       SELECT 1
+         FROM KBOT_APP_MEMBER member_row
+        WHERE member_row.APP_ID = role_row.APP_ID
+          AND member_row.USER_ID = role_row.USER_ID
+          AND (
+              member_row.MEMBER_SOURCE <> 'PLATFORM_GRANT'
+              OR member_row.IS_INITIAL_ADMIN <> 'N'
+          )
+   );
+
+DELETE FROM KBOT_APP_MEMBER member_row
+ WHERE member_row.USER_ID = 'ADMIN'
+   AND (
+       member_row.MEMBER_SOURCE <> 'PLATFORM_GRANT'
+       OR member_row.IS_INITIAL_ADMIN <> 'N'
+   );

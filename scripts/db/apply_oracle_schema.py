@@ -554,12 +554,17 @@ async def _validate_platform_foundation(
 
     admin_app_memberships = (
         await connection.execute(
-            text("SELECT COUNT(*) FROM KBOT_APP_MEMBER WHERE USER_ID = 'ADMIN'")
+            text(
+                "SELECT COUNT(*) FROM KBOT_APP_MEMBER "
+                "WHERE USER_ID = 'ADMIN' "
+                "AND (MEMBER_SOURCE <> 'PLATFORM_GRANT' "
+                "OR IS_INITIAL_ADMIN <> 'N')"
+            )
         )
     ).scalar_one()
     if int(admin_app_memberships):
         raise FoundationValidationError(
-            "ADMIN 不得拥有隐式业务 App 成员资格"
+            "ADMIN 不得拥有非显式业务 App 成员资格"
         )
 
 

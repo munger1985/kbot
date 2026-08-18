@@ -95,18 +95,13 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("KBOT_PLATFORM_USER_ROLE", foundation)
         self.assertNotIn("KBOT_APP_MEMBER_ROLE target", foundation)
         self.assertIn("target.MAX_SECURITY_LEVEL = 3", foundation)
-        self.assertIn(
-            "DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE WHERE USER_ID = 'ADMIN'",
-            foundation,
-        )
-        self.assertIn(
-            "DELETE FROM KBOT_APP_MEMBER_ROLE WHERE USER_ID = 'ADMIN'",
-            foundation,
-        )
-        self.assertIn(
-            "DELETE FROM KBOT_APP_MEMBER WHERE USER_ID = 'ADMIN'",
-            foundation,
-        )
+        self.assertIn("MEMBER_SOURCE <> 'PLATFORM_GRANT'", foundation)
+        self.assertIn("IS_INITIAL_ADMIN <> 'N'", foundation)
+        credential_merge = foundation.split(
+            "MERGE INTO KBOT_PLATFORM_USER_CREDENTIAL", 1
+        )[1].split("MERGE INTO KBOT_PLATFORM_USER_ROLE", 1)[0]
+        self.assertNotIn("WHEN MATCHED", credential_merge)
+        self.assertIn("WHEN NOT MATCHED", credential_merge)
 
         schema_runner = (
             SCRIPTS_ROOT / "db" / "apply_oracle_schema.py"
@@ -115,6 +110,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertIn("MAX_SECURITY_LEVEL BETWEEN 0 AND 3", schema_runner)
         self.assertIn("FOUNDATION_VALIDATION_EXIT_CODE = 3", schema_runner)
         self.assertIn("PDB={pdb_name}，Schema={schema_name}", schema_runner)
+        self.assertIn("MEMBER_SOURCE <> 'PLATFORM_GRANT'", schema_runner)
 
         access_schema = (
             ROOT

@@ -167,7 +167,7 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(report["status"], "DEGRADED")
         self.assertEqual(len(warnings), 1)
 
-    async def test_breadth_preserves_all_upstream_candidates(self):
+    async def test_breadth_filters_irrelevant_upstream_candidates(self):
         collection_id = uuid7()
         candidates = [
             _candidate(
@@ -188,7 +188,9 @@ class KnowledgeCoreLlmRerankingTest(
                 "decisions": [
                     {
                         "candidate_label": f"B{index}",
-                        "relevance": "IRRELEVANT",
+                        "relevance": (
+                            "DIRECT" if index == 1 else "IRRELEVANT"
+                        ),
                     }
                     for index in range(1, 4)
                 ]
@@ -203,16 +205,12 @@ class KnowledgeCoreLlmRerankingTest(
         )
 
         self.assertEqual(
+            ["Deep Data Security in an Agentic Application"],
             [item.display_title for item in output],
-            [
-                "Deep Data Security in an Agentic Application",
-                "Conversational Banking with Select AI Agents",
-                "OKE Workbench Utility",
-            ],
         )
         self.assertEqual(
-            3,
-            report["collections"][0]["breadth_preserved_count"],
+            2,
+            report["collections"][0]["irrelevant_filtered_count"],
         )
         self.assertEqual(warnings, [])
 
@@ -247,7 +245,7 @@ class KnowledgeCoreLlmRerankingTest(
         self.assertEqual(report["status"], "SUCCEEDED")
         self.assertEqual(warnings, [])
 
-    async def test_breadth_preserves_all_upstream_evidence_groups(self):
+    async def test_breadth_filters_unsupported_evidence_groups(self):
         collection_id = uuid7()
         citations = [
             _citation(
@@ -272,7 +270,14 @@ class KnowledgeCoreLlmRerankingTest(
                 "decisions": [
                     {
                         "group_label": f"C{index}",
-                        "support": "NO_SUPPORT",
+                        "support": (
+                            "DIRECT_SUPPORT"
+                            if index == 1
+                            else "NO_SUPPORT"
+                        ),
+                        "primary_item_labels": (
+                            ["E1"] if index == 1 else []
+                        ),
                     }
                     for index in range(1, 4)
                 ]
@@ -286,12 +291,9 @@ class KnowledgeCoreLlmRerankingTest(
             coverage_mode="BREADTH",
         )
 
-        self.assertEqual(3, len(output))
-        self.assertEqual(
-            ["C1", "C2", "C3"],
-            [item.citation_label for item in output],
-        )
-        self.assertEqual(3, report["breadth_preserved_count"])
+        self.assertEqual(1, len(output))
+        self.assertEqual(["C1"], [item.citation_label for item in output])
+        self.assertEqual(2, report["unsupported_filtered_count"])
         self.assertEqual(warnings, [])
 
     async def test_balanced_filters_unsupported_evidence_groups(self):
@@ -325,7 +327,7 @@ class KnowledgeCoreLlmRerankingTest(
         )
 
         self.assertEqual(1, len(output))
-        self.assertEqual(0, report["breadth_preserved_count"])
+        self.assertEqual(1, report["unsupported_filtered_count"])
         self.assertEqual(warnings, [])
 
 

@@ -175,7 +175,6 @@ class KnowledgeCoreLlmReranker:
                         for item in batch.decisions
                     },
                 )
-                breadth_preserved_count = 0
                 selected = []
                 for label, decision in sorted(
                     decisions.items(),
@@ -186,17 +185,8 @@ class KnowledgeCoreLlmReranker:
                     ),
                 ):
                     candidate = labels[label]
-                    preserve_for_breadth = (
-                        coverage_mode == "BREADTH"
-                        and decision.relevance == "IRRELEVANT"
-                    )
-                    if (
-                        decision.relevance != "IRRELEVANT"
-                        or preserve_for_breadth
-                    ):
+                    if decision.relevance != "IRRELEVANT":
                         selected.append(candidate)
-                    if preserve_for_breadth:
-                        breadth_preserved_count += 1
                 ranked[collection_id] = selected
                 successful += 1
                 details.append(
@@ -207,8 +197,8 @@ class KnowledgeCoreLlmReranker:
                         "prompt": prompt.ref(),
                         "input_count": len(items),
                         "output_count": len(selected),
-                        "breadth_preserved_count": (
-                            breadth_preserved_count
+                        "irrelevant_filtered_count": (
+                            len(items) - len(selected)
                         ),
                         "status": "SUCCEEDED",
                     }
@@ -325,22 +315,14 @@ class KnowledgeCoreLlmReranker:
                     }
                 )
         selected: list[tuple[int, int, CitationGroup]] = []
-        breadth_preserved_count = 0
+        unsupported_filtered_count = 0
         for index, citation in enumerate(citations):
             if citation.citation_label in fallback_groups:
                 selected.append((1, index, citation))
                 continue
             decision = decisions_by_group[citation.citation_label]
             if decision.support in {"NO_SUPPORT", "CONTEXT_ONLY"}:
-                if coverage_mode == "BREADTH":
-                    selected.append(
-                        (
-                            self._EVIDENCE_ORDER[decision.support],
-                            index,
-                            citation,
-                        )
-                    )
-                    breadth_preserved_count += 1
+                unsupported_filtered_count += 1
                 continue
             filtered = self._filter_citation(citation, decision)
             if filtered is not None:
@@ -379,7 +361,7 @@ class KnowledgeCoreLlmReranker:
             "collections": details,
             "input_count": len(citations),
             "output_count": len(relabeled),
-            "breadth_preserved_count": breadth_preserved_count,
+            "unsupported_filtered_count": unsupported_filtered_count,
         }, warnings
 
     @staticmethod
