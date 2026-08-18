@@ -212,6 +212,13 @@ def answer_matches_language(
         )
         target_count = counts[script]
     competing = total - target_count
+    if target == "zh-CN":
+        # 中文资产清单常包含较长的英文标题、作者邮箱、产品名与主题标签。
+        # 这些来源字段无法始终从生成正文中精确剥离；存在完整中文说明
+        # （至少四个汉字）时，不应因拉丁字符数量更多而误判为英文回答。
+        return target_count > 0 and (
+            target_count >= competing or target_count >= 4
+        )
     # 至少需要目标语言正文，且不能被其他 Script 主导；来源专名已在上方排除。
     return target_count > 0 and target_count >= competing
 

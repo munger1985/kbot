@@ -945,7 +945,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deltas, ["证据支持的回答。[C1]"])
         self.assertNotIn("1+1=2", "".join(deltas))
 
-    async def test_composer_returns_visible_insufficient_evidence(self):
+    async def test_composer_falls_back_to_verified_source_titles(self):
         artifact = await self._retrieval_artifact()
         model = _MissingCitationModelClient(repair_succeeds=False)
         outputs = [
@@ -963,12 +963,30 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         ]
         payload = outputs[-1].artifact.payload
         self.assertEqual(model.calls, 2)
-        self.assertEqual(
-            deltas,
-            ["当前授权知识范围内没有找到足够的可引用证据。"],
+        self.assertEqual(deltas, ["- 数据库优化案例 [C1]"])
+        self.assertEqual(payload["status"], "READY")
+        self.assertEqual(payload["used_citation_labels"], ["C1"])
+        self.assertEqual(len(payload["references"]), 1)
+
+    async def test_non_stream_composer_falls_back_to_verified_titles(self):
+        artifact = await self._retrieval_artifact()
+        model = _RecordingModelClient(
+            response={
+                "answer": "没有引用的回答。",
+                "used_citation_labels": [],
+            }
         )
-        self.assertEqual(payload["status"], "INSUFFICIENT_EVIDENCE")
-        self.assertEqual(payload["used_citation_labels"], [])
+
+        result = await ResponseComposerSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(_context(input_artifacts=(artifact,)))
+
+        payload = result.artifact.payload
+        self.assertEqual(payload["answer"], "- 数据库优化案例 [C1]")
+        self.assertEqual(payload["status"], "READY")
+        self.assertEqual(payload["used_citation_labels"], ["C1"])
+        self.assertEqual(len(payload["references"]), 1)
 
     async def test_composer_projects_safe_aiops_result(self):
         delegation_id = uuid7()

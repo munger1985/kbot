@@ -145,7 +145,17 @@ class ResponseComposerSkill:
                     str(exc),
                 )
         if validated is None:
-            raise last_error or ValueError("文档回答未通过最终校验")
+            warning = str(
+                last_error or ValueError("文档回答未通过最终校验")
+            )
+            return self._result(
+                context,
+                self._verified_source_fallback(
+                    retrieval,
+                    allowed,
+                    validation_warning=warning,
+                ),
+            )
         answer_text, used_labels = validated
         references = tuple(
             ReferenceCard(
@@ -315,18 +325,11 @@ class ResponseComposerSkill:
             validated = (answer_text, used_labels)
             break
         if validated is None:
-            grounded = GroundedAnswer(
-                answer=localized_message(
-                    "insufficient_evidence",
-                    response_language(
-                        context.config_snapshot, context.original_input
-                    ),
-                ),
-                status="INSUFFICIENT_EVIDENCE",
-                warnings=(
-                    *retrieval.warnings,
-                    "回答模型连续两次未生成可验证的文档引用，"
-                    "已拒绝展示无来源内容",
+            grounded = self._verified_source_fallback(
+                retrieval,
+                allowed,
+                validation_warning=(
+                    "回答模型连续两次未生成通过校验的文档回答"
                 ),
             )
             yield SkillProgress(
@@ -392,6 +395,49 @@ class ResponseComposerSkill:
         ):
             raise ValueError(f"回答语言与 language={language} 不一致")
         return labels
+
+    @staticmethod
+    def _verified_source_fallback(
+        retrieval: DocumentRetrievalResult,
+        allowed: dict[str, Any],
+        *,
+        validation_warning: str,
+    ) -> GroundedAnswer:
+        """生成失败时展示已验证来源，避免把生成错误伪装成证据不足。"""
+        labels = tuple(allowed)
+        answer = "\n".join(
+            f"- {str(allowed[label].title).strip()} [{label}]"
+            for label in labels
+        )
+        references = tuple(
+            ResponseComposerSkill._reference_card(allowed[label])
+            for label in labels
+        )
+        return GroundedAnswer(
+            answer=answer,
+            status="READY",
+            used_citation_labels=labels,
+            references=references,
+            warnings=(
+                *retrieval.warnings,
+                f"{validation_warning}；已改为展示已验证来源标题",
+            ),
+        )
+
+    @staticmethod
+    def _reference_card(item: Any) -> ReferenceCard:
+        """把已验证 Citation 投影为公开引用卡片。"""
+        return ReferenceCard(
+            citation_label=item.citation_label,
+            collection_id=item.collection_id,
+            bundle_id=item.bundle_id,
+            bundle_revision_id=item.bundle_revision_id,
+            document_id=item.document_id,
+            document_version_id=item.document_version_id,
+            title=item.title,
+            locator=item.locator,
+            locator_schema_version=item.locator_schema_version,
+        )
 
     @staticmethod
     def _answer_attempt_prompt(

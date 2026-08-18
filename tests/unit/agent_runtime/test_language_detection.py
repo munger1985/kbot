@@ -69,6 +69,22 @@ class LanguageDetectionTest(unittest.TestCase):
 
         self.assertTrue(answer_matches_language(answer, "zh-CN"))
 
+    def test_accepts_chinese_asset_list_with_english_metadata(self):
+        answer = (
+            "找到以下与 ChatBI 相关的 Asset：\n"
+            "- Deep Data Security with IAM in Agentic Application Demo\n"
+            "  作者：HYSUN.HE@ORACLE.COM\n"
+            "  主题：ChatBI, AI / Machine Learning, RAG, Security Solution "
+            "[C1]"
+        )
+
+        self.assertTrue(answer_matches_language(answer, "zh-CN"))
+
+    def test_rejects_english_answer_with_isolated_chinese_term(self):
+        answer = "One asset relates to 数据库 and ChatBI. [C1]"
+
+        self.assertFalse(answer_matches_language(answer, "zh-CN"))
+
     def test_ignores_unformatted_source_title(self):
         answer = "One related source is 数据库智能运维与故障诊断实践。[C1]"
 
