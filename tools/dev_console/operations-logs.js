@@ -37,7 +37,7 @@
   function queryPath() {
     const params = new URLSearchParams();
     params.set("service_name", serviceFilter.value);
-    params.set("log_type", logTypeFilter.value);
+    params.set("stream", logTypeFilter.value);
     const keyword = filterForm.elements.keyword.value.trim();
     if (keyword) params.set("keyword", keyword);
     params.set("limit", filterForm.elements.limit.value);

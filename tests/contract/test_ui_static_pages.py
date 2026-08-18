@@ -211,6 +211,8 @@ class UiStaticPagesTest(unittest.TestCase):
             self.assertIn(f'value="{value}"', html)
         self.assertIn("/api/v1/development/logs/events", script)
         self.assertIn("/api/v1/development/logs/services", script)
+        self.assertIn('params.set("stream", logTypeFilter.value)', script)
+        self.assertNotIn('params.set("log_type", logTypeFilter.value)', script)
 
     def test_agent_debug_page_uses_run_aggregation_api(self):
         script = (UI_ROOT / "agent-debug.js").read_text(

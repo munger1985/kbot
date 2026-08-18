@@ -152,6 +152,45 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             await service.user_max_security_level(user_id="TEST_USER"),
         )
 
+    async def test_user_security_level_is_snapshotted_before_uow_exit(self):
+        class User:
+            attached = True
+
+            @property
+            def status(self):
+                if not self.attached:
+                    raise RuntimeError("实体已经脱离 Session")
+                return "ACTIVE"
+
+            @property
+            def max_security_level(self):
+                if not self.attached:
+                    raise RuntimeError("实体已经脱离 Session")
+                return 2
+
+        user = User()
+
+        class Access:
+            async def get_user(self, user_id):
+                del user_id
+                return user
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                user.attached = False
+
+        service = AccessControlService(uow_factory=Uow)
+
+        self.assertEqual(
+            2,
+            await service.user_max_security_level(user_id="TEST_USER"),
+        )
+
     async def test_invalid_user_security_level_is_rejected(self):
         class Access:
             async def get_user(self, user_id):

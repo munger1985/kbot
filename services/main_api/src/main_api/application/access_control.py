@@ -98,9 +98,14 @@ class AccessControlService:
         """从用户主数据读取受信的检索安全等级上限。"""
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
-        if user is None or user.status != "ACTIVE":
+            user_snapshot = (
+                (user.status, user.max_security_level)
+                if user is not None
+                else None
+            )
+        if user_snapshot is None or user_snapshot[0] != "ACTIVE":
             raise AccessConfigurationError("平台用户不存在或已停用")
-        level = int(user.max_security_level)
+        level = int(user_snapshot[1])
         if level < 0 or level > 3:
             raise AccessConfigurationError("平台用户安全等级配置无效")
         return level
