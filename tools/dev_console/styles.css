@@ -145,6 +145,10 @@ main {
   gap: 6px;
 }
 
+.input-with-action .compact-actions {
+  margin: 0;
+}
+
 label {
   font-size: 12px;
   font-weight: 600;
@@ -1258,6 +1262,69 @@ tbody tr.selected {
 .ops-message-body ul {
   margin: 7px 0 0;
   padding-left: 20px;
+}
+
+.ops-message.streaming .ops-message-body {
+  border-left: 3px solid var(--accent);
+}
+
+.ops-stream-progress {
+  display: grid;
+  gap: 9px;
+}
+
+.ops-stream-progress p {
+  margin: 0;
+}
+
+.ops-stream-progress ol {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ops-stream-cursor::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 5px;
+  background: var(--accent);
+  vertical-align: -2px;
+  animation: ops-stream-blink 0.9s steps(1) infinite;
+}
+
+@keyframes ops-stream-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ops-confirm-dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 20px 60px rgb(20 31 27 / 28%);
+}
+
+.ops-confirm-dialog::backdrop {
+  background: rgb(20 31 27 / 48%);
+}
+
+.ops-confirm-dialog form {
+  padding: 22px;
+}
+
+.ops-confirm-dialog h2 {
+  margin: 5px 0 10px;
+}
+
+.ops-confirm-dialog p {
+  line-height: 1.6;
 }
 
 .ops-answer-state {

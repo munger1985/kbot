@@ -57,8 +57,12 @@
             <label>Session ID</label>
             <div class="input-with-action">
               <input id="session-id" placeholder="自动生成" />
-              <button id="new-session" type="button">新建</button>
+              <div class="compact-actions">
+                <button id="new-session" type="button">新建</button>
+                <button id="delete-session" class="danger" type="button">删除</button>
+              </div>
             </div>
+            <p class="hint">删除只清理本页会话与本地引用，历史 Run 审计记录仍会保留。</p>
           </div>
           <div class="field">
             <label>恢复 Run ID</label>
@@ -215,6 +219,24 @@
         </details>
       </aside>
     </main>
+
+    <dialog id="delete-session-dialog" class="ops-confirm-dialog">
+      <form method="dialog">
+        <span class="ops-kicker">DELETE LOCAL SESSION</span>
+        <h2>删除当前诊断会话？</h2>
+        <p>
+          当前页面中的消息、Session ID 和 Run 引用将被清理。已经创建的 Run
+          属于审计记录，不会被删除；运行中的 Run 请先取消或等待结束。
+        </p>
+        <p id="delete-session-status" class="status"></p>
+        <div class="actions">
+          <button value="cancel" type="submit">取消</button>
+          <button id="confirm-delete-session" class="danger" value="confirm" type="button">
+            确认删除
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="./shared.js"></script>
     <script src="./aiops-chat.js"></script>

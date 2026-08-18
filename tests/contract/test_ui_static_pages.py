@@ -92,6 +92,9 @@ class UiStaticPagesTest(unittest.TestCase):
                 "agent-select",
                 "target-select",
                 "session-id",
+                "delete-session",
+                "delete-session-dialog",
+                "confirm-delete-session",
                 "resume-run-id",
                 "conversation-stream",
                 "question-form",
@@ -259,6 +262,8 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertIn("proposal.pending_approval", chat_script)
         self.assertIn("manual-result", chat_script)
         self.assertIn("expected_proposal_hash", chat_script)
+        self.assertIn("ops-stream-progress", chat_script)
+        self.assertIn("localStorage.removeItem(STORAGE_KEY)", chat_script)
 
 
 if __name__ == "__main__":

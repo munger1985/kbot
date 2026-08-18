@@ -14,7 +14,19 @@
     cursor: 0,
     streamController: null,
     seenEvents: new Set(),
+    streamingMessage: null,
+    streamingPhases: new Set(),
+    streamedAnswer: "",
+    renderedResultRunId: "",
   };
+
+  const TERMINAL_RUN_STATUSES = new Set([
+    "COMPLETED",
+    "DEGRADED",
+    "FAILED",
+    "CANCELLED",
+    "EXPIRED",
+  ]);
 
   function optionalValue(value) {
     const normalized = String(value || "").trim();
@@ -86,6 +98,65 @@
       }</div>`;
     stream.appendChild(article);
     stream.scrollTop = stream.scrollHeight;
+    return article;
+  }
+
+  function startStreamingAssistant(runId, status) {
+    state.streamingPhases.clear();
+    state.streamedAnswer = "";
+    const article = appendMessage(
+      "assistant",
+      '<div class="ops-stream-progress"><p class="ops-stream-cursor"></p><ol></ol></div>',
+      runId,
+      true
+    );
+    article.classList.add("streaming");
+    state.streamingMessage = article;
+    updateStreamingAssistant(status || "诊断 Run 已创建，正在等待执行事件。", null);
+    return article;
+  }
+
+  function updateStreamingAssistant(status, completedPhase) {
+    const article = state.streamingMessage;
+    if (!article?.isConnected) return;
+    if (completedPhase) state.streamingPhases.add(completedPhase);
+    const phases = [...state.streamingPhases]
+      .slice(-8)
+      .map((item) => `<li>${KBotUI.escapeHtml(item)}</li>`)
+      .join("");
+    article.querySelector(".ops-message-body").innerHTML = `
+      <div class="ops-stream-progress">
+        <p class="ops-stream-cursor">${KBotUI.escapeHtml(status)}</p>
+        ${phases ? `<ol>${phases}</ol>` : ""}
+      </div>`;
+    const stream = $("#conversation-stream");
+    stream.scrollTop = stream.scrollHeight;
+  }
+
+  function updateStreamedAnswer(delta) {
+    const article = state.streamingMessage;
+    if (!article?.isConnected || !delta) return;
+    state.streamedAnswer += String(delta);
+    article.querySelector(".ops-message-body").innerHTML = `
+      <div class="ops-stream-progress">
+        <p class="ops-stream-cursor">${KBotUI.escapeHtml(
+          state.streamedAnswer
+        )}</p>
+      </div>`;
+  }
+
+  function replaceStreamingAssistant(body, meta, allowHtml) {
+    const article = state.streamingMessage?.isConnected
+      ? state.streamingMessage
+      : appendMessage("assistant", "", meta);
+    article.classList.remove("streaming");
+    article.querySelector(".ops-message-author").innerHTML = `AIOps Agent${
+      meta ? `<span>${KBotUI.escapeHtml(meta)}</span>` : ""
+    }`;
+    article.querySelector(".ops-message-body").innerHTML = allowHtml
+      ? body
+      : KBotUI.escapeHtml(body);
+    state.streamingMessage = null;
     return article;
   }
 
@@ -391,18 +462,33 @@
     const { record, payload } = eventPayload(event);
     if (event.type === "task.status") {
       const status = payload.status || "UNKNOWN";
+      const description = taskDescription(payload);
       appendTrace(
-        taskDescription(payload),
+        description,
         status === "RUNNING"
           ? "Worker 已领取，正在执行"
           : `任务状态：${status}`,
         status === "FAILED" ? "failed" : status === "SUCCEEDED" ? "done" : "",
         payload.task_key
       );
+      updateStreamingAssistant(
+        status === "RUNNING"
+          ? description
+          : status === "FAILED"
+            ? `诊断阶段失败：${description}`
+            : `正在推进下一诊断阶段…`,
+        status === "SUCCEEDED" ? `已完成：${description}` : null
+      );
     } else if (event.type === "run.status") {
       $("#active-run-status").textContent = payload.status;
+      if (state.activeRun) state.activeRun.status = payload.status;
       setConversationState(payload.status);
       appendTrace("Run 阶段变化", payload.status, "phase", record.occurred_at);
+      updateStreamingAssistant(`Run 状态：${payload.status}`, null);
+    } else if (event.type === "thinking.delta") {
+      updateStreamingAssistant(payload.text || payload.delta || "正在分析…", null);
+    } else if (event.type === "answer.delta") {
+      updateStreamedAnswer(payload.text || payload.delta || "");
     } else if (event.type === "diagnostic.input_required") {
       appendTrace(
         "需要人工补证",
@@ -410,6 +496,7 @@
         "attention",
         payload.hitl_id
       );
+      updateStreamingAssistant("等待你补充只读诊断数据。", "已完成自动取证阶段");
       showHitl(payload.hitl_id);
     } else if (
       event.type === "diagnostic.input_received" ||
@@ -465,6 +552,7 @@
         "done",
         payload.report_id
       );
+      updateStreamingAssistant("诊断报告已生成，正在读取最终结果…", "已生成诊断报告");
     } else if (event.type.startsWith("run.")) {
       const terminal = [
         "run.completed",
@@ -473,15 +561,17 @@
         "run.expired",
       ].includes(event.type);
       $("#active-run-status").textContent = payload.status || event.type;
+      if (state.activeRun) state.activeRun.status = payload.status || event.type;
       if (terminal) {
         if (event.type === "run.completed") {
+          updateStreamingAssistant("诊断完成，正在装载结构化结论…", null);
           loadRunResult();
         } else {
           setConversationState(payload.status || event.type, "warning");
-          appendMessage(
-            "system",
+          replaceStreamingAssistant(
             `Run 已结束：${payload.status || event.type}`,
-            state.activeRunId
+            state.activeRunId,
+            false
           );
         }
         refreshRunSummary();
@@ -504,6 +594,7 @@
   }
 
   function renderFinalAnswer(result) {
+    if (state.renderedResultRunId === state.activeRunId) return;
     const payload = result.payload || {};
     const direct = payload.direct_answer;
     const root = payload.root_cause || {};
@@ -538,7 +629,8 @@
         </div>
         ${resultSection("监控依据", directFacts)}
         ${resultSection("口径限制", direct.limitations || [])}`;
-      appendMessage("assistant", body, "直接回答", true);
+      replaceStreamingAssistant(body, "直接回答", true);
+      state.renderedResultRunId = state.activeRunId;
       $("#active-root-grade").textContent = "不适用";
       setConversationState(
         direct.status === "ANSWERED" ? "已回答" : "已部分回答",
@@ -577,12 +669,12 @@
         ...(solution.limitations || []),
         ...(payload.gaps || []),
       ])}`;
-    appendMessage(
-      "assistant",
+    replaceStreamingAssistant(
       body,
       formalReport ? "正式诊断报告" : "诊断结论",
       true
     );
+    state.renderedResultRunId = state.activeRunId;
     $("#active-root-grade").textContent = grade;
     setConversationState(
       grade === "INCONCLUSIVE"
@@ -650,6 +742,7 @@
     state.activeRunId = runId;
     state.cursor = 0;
     state.seenEvents.clear();
+    state.renderedResultRunId = "";
     $("#active-run-label").textContent = runId;
     $("#active-cursor").textContent = "0";
     persistLocalState();
@@ -661,9 +754,12 @@
         );
         await showHitl(pending.hitl_id);
       }
-      listenRun(0);
       if (["COMPLETED", "DEGRADED"].includes(summary.status)) {
+        startStreamingAssistant(runId, "正在读取已完成 Run 的诊断结论…");
         await loadRunResult();
+      } else {
+        startStreamingAssistant(runId, "正在恢复诊断事件流…");
+        listenRun(0);
       }
     } catch (error) {
       appendMessage("system", `恢复 Run 失败：${error.message}`, runId);
@@ -706,14 +802,14 @@
       state.activeRun = receipt;
       state.cursor = Number(receipt.event_cursor || 0);
       state.seenEvents.clear();
+      state.renderedResultRunId = "";
       $("#active-run-label").textContent = receipt.ops_run_id;
       $("#active-run-status").textContent = receipt.status;
       $("#active-cursor").textContent = String(state.cursor);
       $("#run-output").textContent = KBotUI.json(receipt);
-      appendMessage(
-        "assistant",
+      startStreamingAssistant(
+        receipt.ops_run_id,
         "诊断 Run 已创建。我会先采集监控和可用数据库证据，再决定是否需要你补充数据。",
-        receipt.ops_run_id
       );
       persistLocalState();
       listenRun(receipt.event_cursor);
@@ -730,6 +826,49 @@
     $("#manual-result-form").hidden = true;
     state.activeHitl = null;
     state.activeProposal = null;
+  }
+
+  function resetSessionView(sessionId, announcement, shouldPersist) {
+    state.streamController?.abort();
+    state.streamController = null;
+    state.activeRunId = "";
+    state.activeRun = null;
+    state.cursor = 0;
+    state.seenEvents.clear();
+    state.streamingMessage = null;
+    state.streamingPhases.clear();
+    state.streamedAnswer = "";
+    state.renderedResultRunId = "";
+    $("#session-id").value = sessionId;
+    $("#resume-run-id").value = "";
+    $("#active-run-label").textContent = "未开始";
+    $("#active-run-status").textContent = "IDLE";
+    $("#active-root-grade").textContent = "—";
+    $("#active-cursor").textContent = "0";
+    $("#conversation-stream").innerHTML = "";
+    appendMessage("system", announcement);
+    $("#trace-stream").innerHTML =
+      '<p class="muted">Run 开始后显示监控查询、数据库取证、知识检索和诊断阶段。</p>';
+    $("#raw-events").innerHTML = "";
+    $("#run-output").textContent = "{}";
+    $("#result-output").textContent = "{}";
+    hideInteractionCards();
+    setConversationState("等待提问");
+    if (shouldPersist) persistLocalState();
+  }
+
+  async function deleteCurrentSession() {
+    KBotUI.setStatus($("#delete-session-status"), "正在校验当前 Run…");
+    if (state.activeRunId) {
+      const summary = await refreshRunSummary();
+      if (!TERMINAL_RUN_STATUSES.has(summary.status)) {
+        throw new Error(
+          `当前 Run 状态为 ${summary.status}，请先取消 Run 或等待其结束。`
+        );
+      }
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    resetSessionView("", "当前本地诊断会话已删除；历史 Run 审计记录未受影响。", false);
   }
 
   $("#submit-hitl").addEventListener("click", async () => {
@@ -940,20 +1079,19 @@
     persistLocalState();
   });
   $("#new-session").addEventListener("click", () => {
-    $("#session-id").value = createSessionId();
-    state.activeRunId = "";
-    state.activeRun = null;
-    state.cursor = 0;
-    state.seenEvents.clear();
-    state.streamController?.abort();
-    $("#active-run-label").textContent = "未开始";
-    $("#active-run-status").textContent = "IDLE";
-    $("#active-root-grade").textContent = "—";
-    $("#active-cursor").textContent = "0";
-    hideInteractionCards();
-    appendMessage("system", "已开始新的诊断会话。");
-    setConversationState("等待提问");
-    persistLocalState();
+    resetSessionView(createSessionId(), "已开始新的诊断会话。", true);
+  });
+  $("#delete-session").addEventListener("click", () => {
+    KBotUI.setStatus($("#delete-session-status"), "");
+    $("#delete-session-dialog").showModal();
+  });
+  $("#confirm-delete-session").addEventListener("click", async () => {
+    try {
+      await deleteCurrentSession();
+      $("#delete-session-dialog").close();
+    } catch (error) {
+      KBotUI.setStatus($("#delete-session-status"), error.message, "error");
+    }
   });
   $("#resume-run").addEventListener("click", () => {
     const runId = $("#resume-run-id").value.trim();
