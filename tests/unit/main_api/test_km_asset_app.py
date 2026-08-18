@@ -5,7 +5,11 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from main_api.api.km_asset_app import AgentCreatePayload, _km_turn_receipt
+from main_api.api.km_asset_app import (
+    AgentCreatePayload,
+    ConversationTurnPayload,
+    _km_turn_receipt,
+)
 
 
 class KmAssetAppContractTest(unittest.TestCase):
@@ -19,6 +23,17 @@ class KmAssetAppContractTest(unittest.TestCase):
 
         self.assertEqual("extra_forbidden", raised.exception.errors()[0]["type"])
         self.assertEqual(("enabled_capabilities",), raised.exception.errors()[0]["loc"])
+
+    def test_turn_rejects_caller_supplied_security_level(self) -> None:
+        with self.assertRaises(ValidationError) as raised:
+            ConversationTurnPayload(
+                input="查询 Asset",
+                expected_conversation_version=1,
+                security_level=0,
+            )
+
+        self.assertEqual("extra_forbidden", raised.exception.errors()[0]["type"])
+        self.assertEqual(("security_level",), raised.exception.errors()[0]["loc"])
 
     def test_turn_receipt_uses_km_owned_event_stream(self) -> None:
         run_id = UUID("019ff999-fb22-7d92-8e87-49a20b1d18fa")

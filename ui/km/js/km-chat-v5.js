@@ -98,7 +98,7 @@
   async function createTurn(input, idempotencyKey) {
     const path = `${base}/conversations/${active.conversation_id}/turns`;
     const options = { headers: { "Idempotency-Key": idempotencyKey } };
-    const payload = { input, expected_conversation_version: active.row_version, collection_ids: [], security_level: 0, client_metadata: { source: "km-asset-ui" }, images: [] };
+    const payload = { input, expected_conversation_version: active.row_version, collection_ids: [], client_metadata: { source: "km-asset-ui" }, images: [] };
     try {
       return await KBotKmApi.json(path, "POST", payload, options);
     } catch (error) {

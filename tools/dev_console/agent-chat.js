@@ -436,7 +436,6 @@
       input: form.elements.input.value.trim(),
       expected_conversation_version: conversation.row_version,
       collection_ids: collectionIds,
-      security_level: Number(form.elements.securityLevel.value || 3),
       client_metadata: { source: "agent-chat-test-ui" },
     };
     const headers = {
@@ -456,7 +455,6 @@
       String(common.expected_conversation_version)
     );
     data.append("collection_ids_json", JSON.stringify(collectionIds));
-    data.append("security_level", String(common.security_level));
     data.append(
       "client_metadata_json",
       JSON.stringify(common.client_metadata)

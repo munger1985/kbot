@@ -87,6 +87,42 @@ class OracleTextRepositoryTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsInstance(distance.type, Float)
 
+    async def test_all_retrieval_channels_apply_user_security_level(self) -> None:
+        discovery_session = _Session()
+        discovery = DiscoveryRepository(discovery_session)
+        await discovery.search_text(
+            collection_id=uuid7(), query="员工套餐", max_security_level=2
+        )
+        await discovery.search_vector(
+            collection_id=uuid7(), vector=[0.1, 0.2], max_security_level=2
+        )
+        evidence_session = _Session()
+        evidence = EvidenceRepository(evidence_session)
+        scope = EvidenceScope(
+            collection_id=uuid7(),
+            bundle_id=uuid7(),
+            bundle_revision_id=uuid7(),
+        )
+        await evidence.search_text(
+            scope=scope, query="员工套餐", max_security_level=2
+        )
+        await evidence.search_vector(
+            scope=scope, vector=[0.1, 0.2], max_security_level=2
+        )
+
+        statements = (
+            discovery_session.statements[0],
+            discovery_session.statements[-1],
+            evidence_session.statements[0],
+            evidence_session.statements[-1],
+        )
+        for statement in statements:
+            compiled = statement.compile(dialect=oracle.dialect())
+            sql = str(compiled).upper()
+            with self.subTest(sql=sql):
+                self.assertIn("SECURITY_LEVEL <=", sql)
+                self.assertIn(2, compiled.params.values())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,7 +14,7 @@ from main_api.application import (
     UserAuthService,
 )
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
-from platform_core.contracts import CreateConversationTurnRequest, PUBLIC_API_V1, UpdateConversationRequest
+from platform_core.contracts import ConversationQueryImage, PUBLIC_API_V1, UpdateConversationRequest
 from fastapi import Response
 from main_api.api.runs import (
     DocumentReferencePreview,
@@ -158,6 +158,16 @@ class ConversationCreatePayload(_Payload):
     agent_id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=512)
     retention_policy: str = Field(default="DEFAULT", pattern=r"^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$")
+
+
+class ConversationTurnPayload(_Payload):
+    input: str = Field(min_length=1, max_length=32000)
+    expected_conversation_version: int = Field(ge=1)
+    collection_ids: tuple[UUID, ...] = ()
+    client_metadata: dict[str, object] = Field(default_factory=dict)
+    images: tuple[ConversationQueryImage, ...] = Field(
+        default=(), max_length=8
+    )
 
 
 def _domain_actor(request: Request) -> tuple[int, str]:
@@ -544,19 +554,14 @@ async def stream_reference_content(run_id: UUID, citation_label: str, request: R
 
 
 @router.post("/conversations/{conversation_id}/turns", status_code=status.HTTP_202_ACCEPTED)
-async def create_conversation_turn(conversation_id: UUID, payload: CreateConversationTurnRequest, request: Request, idempotency_key: str = Header(alias="Idempotency-Key")):
+async def create_conversation_turn(conversation_id: UUID, payload: ConversationTurnPayload, request: Request, idempotency_key: str = Header(alias="Idempotency-Key")):
     domain_id = await _require(request, "km_asset:use")
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await _km_conversation(request, conversation_id, domain_id)
     spec = await _client(request).execution_spec(agent_id=UUID(str(conversation["agent_id"])), domain_id=domain_id, auth_context=request.state.auth_context)
     resource_context = spec.get("resource_context", {})
     fixed_collections = tuple(resource_context.get("collection_ids") or ())
-    fixed_security_level = int(resource_context.get("security_level") or 1)
-    effective_level = await _effective_security_level(
-        request,
-        requested_level=min(payload.security_level, fixed_security_level),
-        execution_spec=spec,
-    )
+    effective_level = await _effective_security_level(request)
     body = payload.model_dump(mode="json")
     body["collection_ids"] = list(fixed_collections)
     # KM Asset 统一按内部级别 1 入库。最终等级还必须受当前用户上限

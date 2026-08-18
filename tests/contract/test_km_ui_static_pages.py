@@ -114,6 +114,12 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('run.status !== "COMPLETED"', source)
         self.assertIn("run.error_message", source)
 
+    def test_km_chat_does_not_supply_user_security_level(self):
+        source = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("security_level:", source)
+
     def test_km_chat_uses_local_safe_markdown_renderer(self):
         renderer = ROOT / "ui" / "shared" / "kbot-markdown.js"
         source = renderer.read_text(encoding="utf-8")

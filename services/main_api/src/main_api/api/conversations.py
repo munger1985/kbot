@@ -60,6 +60,17 @@ class KnowledgeConversationCreateRequest(BaseModel):
     )
 
 
+class KnowledgeConversationTurnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    input: str = Field(min_length=1, max_length=32000)
+    expected_conversation_version: int = Field(ge=1)
+    collection_ids: tuple[UUID, ...] = ()
+    client_metadata: dict = Field(default_factory=dict)
+    images: tuple[ConversationQueryImage, ...] = Field(
+        default=(), max_length=8
+    )
+
+
 def _client(request: Request) -> AgentRuntimeClient:
     return cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
 
@@ -139,7 +150,7 @@ async def delete_conversation(
 )
 async def create_turn(
     conversation_id: UUID,
-    payload: CreateConversationTurnRequest,
+    payload: KnowledgeConversationTurnRequest,
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
@@ -150,11 +161,7 @@ async def create_turn(
     spec = await _authorized_spec(
         request, UUID(str(conversation["agent_id"]))
     )
-    effective_level = await _effective_security_level(
-        request,
-        requested_level=payload.security_level,
-        execution_spec=spec,
-    )
+    effective_level = await _effective_security_level(request)
     result = await _client(request).create_conversation_turn(
         conversation_id=conversation_id,
         payload={
@@ -178,7 +185,6 @@ async def create_turn_with_images(
     input: str = Form(min_length=1, max_length=32000),
     expected_conversation_version: int = Form(ge=1),
     collection_ids_json: str = Form(default="[]"),
-    security_level: int = Form(default=3, ge=0, le=3),
     client_metadata_json: str = Form(default="{}"),
     images: list[UploadFile] = File(default_factory=list),
     idempotency_key: str = Header(alias="Idempotency-Key"),
@@ -220,11 +226,7 @@ async def create_turn_with_images(
                     content_base64=base64.b64encode(content).decode("ascii"),
                 )
             )
-        effective_level = await _effective_security_level(
-            request,
-            requested_level=security_level,
-            execution_spec=spec,
-        )
+        effective_level = await _effective_security_level(request)
         payload = CreateConversationTurnRequest(
             input=input,
             expected_conversation_version=expected_conversation_version,

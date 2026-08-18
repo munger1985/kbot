@@ -1303,7 +1303,7 @@ class MainApiTest(unittest.TestCase):
             self.agent_runtime.last_context.asserted_user_id,
         )
 
-    def test_run_security_level_cannot_exceed_user_clearance(self) -> None:
+    def test_run_rejects_caller_supplied_security_level(self) -> None:
         self.app.state.access_control_service.max_security_level = 1
 
         response = self.client.post(
@@ -1316,12 +1316,9 @@ class MainApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(202, response.status_code, response.text)
-        self.assertEqual(
-            1, self.agent_runtime.last_run_payload["security_level"]
-        )
+        self.assertEqual(422, response.status_code, response.text)
 
-    def test_conversation_security_level_can_be_narrowed_by_user(self) -> None:
+    def test_conversation_rejects_caller_supplied_security_level(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
         response = self.client.post(
             (
@@ -1336,12 +1333,28 @@ class MainApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(202, response.status_code, response.text)
-        self.assertEqual(
-            1, self.agent_runtime.last_turn_payload["security_level"]
+        self.assertEqual(422, response.status_code, response.text)
+
+    def test_conversation_uses_authenticated_user_security_level(self) -> None:
+        self.app.state.access_control_service.max_security_level = 3
+        response = self.client.post(
+            (
+                "/api/v1/apps/knowledge-retrieval/conversations/"
+                f"{self.agent_runtime.conversation_id}/turns"
+            ),
+            headers={**self._headers(), "Idempotency-Key": "user-level"},
+            json={
+                "input": "读取有权查看的文档",
+                "expected_conversation_version": 1,
+            },
         )
 
-    def test_run_security_level_respects_agent_limit(self) -> None:
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(
+            3, self.agent_runtime.last_turn_payload["security_level"]
+        )
+
+    def test_run_security_level_ignores_agent_resource_configuration(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
         self.knowledge_retrieval_app.resource_context = {
             "max_security_level": 2
@@ -1353,13 +1366,12 @@ class MainApiTest(unittest.TestCase):
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
                 "input": "读取受限文档",
-                "security_level": 3,
             },
         )
 
         self.assertEqual(202, response.status_code, response.text)
         self.assertEqual(
-            2, self.agent_runtime.last_run_payload["security_level"]
+            3, self.agent_runtime.last_run_payload["security_level"]
         )
 
     def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:

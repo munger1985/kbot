@@ -161,14 +161,15 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("Authorization:", source)
         self.assertNotIn("apiKey", source)
 
-    def test_agent_chat_defaults_to_full_test_security_visibility(self):
+    def test_agent_chat_does_not_supply_user_security_level(self):
         html = (UI_ROOT / "agent-chat.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'name="securityLevel" type="number" min="0" max="3" value="3"',
-            html,
+        script = (UI_ROOT / "agent-chat.js").read_text(
+            encoding="utf-8"
         )
+        self.assertNotIn('name="securityLevel"', html)
+        self.assertNotIn("security_level", script)
 
     def test_knowledge_page_supports_direct_file_grouping(self):
         html = (UI_ROOT / "knowledge-core.html").read_text(

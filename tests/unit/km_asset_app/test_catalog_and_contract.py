@@ -351,7 +351,7 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
             actor_id="kmadmin",
         )
 
-        self.assertEqual(1, result["resource_context"]["security_level"])
+        self.assertNotIn("security_level", result["resource_context"])
 
     async def test_km_agent_ensures_kc_collection_binding(self):
         knowledge_core = SimpleNamespace(bind_collection=AsyncMock())

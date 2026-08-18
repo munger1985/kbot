@@ -55,6 +55,20 @@ App 管理员不能创建平台用户、跨 App 授权或提升到其自身不�
 App 管理员创建用户时不能设置超过自身的数据安全等级；平台管理员创建平台用户时同样
 受自身等级上限约束。
 
+### 全局数据安全等级规则
+
+用户发起的数据查询、全文检索、向量检索和 Agent Run/Turn 必须统一遵守以下规则：
+
+- 用户主数据中的 `security_level`（当前持久化字段为 `max_security_level`）是该用户唯一可信的数据访问等级；
+- 数据记录、文档、Chunk、Evidence 和其他可检索对象各自保存 `security_level`；
+- 检索层只能返回满足 `data.security_level <= user.security_level` 的数据，高于用户等级的数据必须在数据库或检索查询阶段排除；
+- 浏览器、Portal 请求正文、查询参数和上传表单不得提交或覆盖 `security_level`；
+- Agent、Collection、模型和普通业务配置不得作为用户安全等级上限，也不得与用户等级取最小值；
+- Main API 完成用户认证后，从用户主数据读取等级，并作为可信上下文传给下游 Runtime、Knowledge Core 和 Data Query；下游不得信任调用者自行声明的等级；
+- Slack 等非用户入口必须从已验签且受控的主体绑定读取可信安全等级，不能接受消息正文中的等级字段。
+
+该规则是 KBot 全局安全不变量。任何新增 App、Agent、检索通道、缓存、重排或聚合查询都必须在返回结果前保持相同的 `<=` 过滤语义；重排和生成阶段不得重新引入已被安全过滤的数据。
+
 模型公开接口使用独立 Model API Key，不能复用 Portal Key。
 
 Slack Events API 是 Provider 自身验签的公开集成入口，不使用 Portal API Key。
