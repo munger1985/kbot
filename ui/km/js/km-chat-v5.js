@@ -203,7 +203,12 @@
   window.addEventListener("DOMContentLoaded", () => {
     $("chat-agent").addEventListener("change", () => loadConversations()); $("new-conversation").addEventListener("click", createConversation); $("refresh-conversations").addEventListener("click", () => loadConversations(active?.conversation_id)); $("chat-form").addEventListener("submit", send);
     $("conversation-list").addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); const row = conversations.find((item) => String(item.conversation_id) === button?.dataset.id); if (row) selectConversation(row).catch((error) => KBotKmShell.showError(error)); });
-    $("chat-stream").addEventListener("click", (event) => { const button = event.target.closest("[data-reference]"); if (button) prepareReference(button); }); $("open-reference").addEventListener("click", openReference);
+    $("chat-stream").addEventListener("click", (event) => {
+      const copyButton = event.target.closest("[data-copy-code]");
+      if (copyButton) { KBotMarkdown.copyCode(copyButton); return; }
+      const button = event.target.closest("[data-reference]");
+      if (button) prepareReference(button);
+    }); $("open-reference").addEventListener("click", openReference);
   });
   KBotKmShell.ready.then(initialize).catch(() => {});
 })();

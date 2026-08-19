@@ -1,6 +1,9 @@
-/* KBot 页面共用的安全 Markdown 子集渲染器，不执行原始 HTML。 */
+/* 与 Ammolite AgentMarkdownContent 同源：Marked GFM + DOMPurify 安全清洗。 */
 (function () {
   "use strict";
+
+  const markedApi = globalThis.marked;
+  const purifier = globalThis.DOMPurify;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -8,80 +11,63 @@
     })[character]);
   }
 
-  function inline(value) {
-    const fragments = [];
-    const hold = (html) => `\u0000${fragments.push(html) - 1}\u0000`;
-    let source = String(value ?? "");
-    source = source.replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${escapeHtml(code)}</code>`));
-    source = source.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_, label, url) => hold(
-      `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
-    ));
-    source = escapeHtml(source)
-      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
-      .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
-      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[Q(\d+)\]/g, '<span class="km-query-citation">[Q$1]</span>');
-    return source.replace(/\u0000(\d+)\u0000/g, (_, index) => fragments[Number(index)] || "");
+  function requireRuntime() {
+    if (!markedApi?.Marked || !markedApi?.Renderer || !purifier?.sanitize) {
+      throw new Error("完整 Markdown 渲染依赖未加载");
+    }
   }
+
+  requireRuntime();
+
+  const renderer = new markedApi.Renderer();
+  renderer.code = ({ text, lang }) => {
+    const language = String(lang || "plaintext")
+      .trim().split(/\s+/, 1)[0].toLowerCase()
+      .replace(/[^a-z0-9_+-]/g, "") || "plaintext";
+    return `<div class="agent-code-block"><div class="agent-code-toolbar"><span>${escapeHtml(language.toUpperCase())}</span><button type="button" class="row-action agent-code-copy" data-copy-code>复制</button></div><pre><code class="language-${escapeHtml(language)}">${escapeHtml(text)}</code></pre></div>`;
+  };
+  renderer.link = function ({ href, title, tokens }) {
+    const label = this.parser.parseInline(tokens);
+    const safeHref = /^(https?:|mailto:|\/)/i.test(href) ? href : "#";
+    const safeTitle = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${escapeHtml(safeHref)}"${safeTitle} target="_blank" rel="noopener noreferrer">${label}</a>`;
+  };
+
+  const markdown = new markedApi.Marked({
+    gfm: true,
+    breaks: true,
+    async: false,
+    renderer,
+  });
 
   function render(value) {
-    const lines = String(value ?? "").replace(/\r\n?/g, "\n").split("\n");
-    const output = [];
-    let paragraph = [];
-    let listType = "";
-    let codeFence = false;
-    let codeLanguage = "";
-    let codeLines = [];
-    const closeParagraph = () => {
-      if (paragraph.length) output.push(`<p>${paragraph.map(inline).join("<br>")}</p>`);
-      paragraph = [];
-    };
-    const closeList = () => {
-      if (listType) output.push(`</${listType}>`);
-      listType = "";
-    };
-    const closeFlow = () => { closeParagraph(); closeList(); };
-
-    for (const line of lines) {
-      const fence = line.match(/^\s*```\s*([\w.+-]*)\s*$/);
-      if (fence) {
-        if (codeFence) {
-          output.push(`<pre><code${codeLanguage ? ` data-language="${escapeHtml(codeLanguage)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-          codeFence = false; codeLanguage = ""; codeLines = [];
-        } else {
-          closeFlow(); codeFence = true; codeLanguage = fence[1] || "";
-        }
-        continue;
-      }
-      if (codeFence) { codeLines.push(line); continue; }
-      if (!line.trim()) { closeFlow(); continue; }
-      const heading = line.match(/^(#{1,4})\s+(.+)$/);
-      if (heading) {
-        closeFlow(); const level = heading[1].length;
-        output.push(`<h${level}>${inline(heading[2])}</h${level}>`); continue;
-      }
-      const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
-      const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)$/);
-      if (unordered || ordered) {
-        closeParagraph(); const nextType = unordered ? "ul" : "ol";
-        if (listType && listType !== nextType) closeList();
-        if (!listType) {
-          listType = nextType;
-          const start = ordered ? ` start="${escapeHtml(ordered[1])}"` : "";
-          output.push(`<${listType}${start}>`);
-        }
-        output.push(`<li>${inline(unordered ? unordered[1] : ordered[2])}</li>`); continue;
-      }
-      const quote = line.match(/^\s*>\s?(.*)$/);
-      if (quote) { closeFlow(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); continue; }
-      if (/^\s*(?:---+|___+|\*\*\*+)\s*$/.test(line)) { closeFlow(); output.push("<hr>"); continue; }
-      closeList(); paragraph.push(line.trim());
+    const source = String(value ?? "");
+    try {
+      const raw = String(markdown.parse(source));
+      return purifier.sanitize(raw, {
+        USE_PROFILES: { html: true },
+        ADD_ATTR: ["class", "target", "rel", "data-copy-code", "start"],
+        FORBID_TAGS: ["style", "script", "iframe", "object", "embed", "form", "input"],
+        FORBID_ATTR: ["style", "srcset"],
+        ALLOW_DATA_ATTR: false,
+      });
+    } catch (_) {
+      return purifier.sanitize(escapeHtml(source).replaceAll("\n", "<br>"));
     }
-    if (codeFence) output.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-    closeFlow();
-    return output.join("");
   }
 
-  globalThis.KBotMarkdown = Object.freeze({ render });
+  async function copyCode(button) {
+    const code = button?.closest?.(".agent-code-block")?.querySelector("code")?.textContent || "";
+    if (!code) return;
+    const original = button.textContent;
+    try {
+      await navigator.clipboard.writeText(code);
+      button.textContent = "已复制";
+    } catch (_) {
+      button.textContent = "复制失败";
+    }
+    window.setTimeout(() => { button.textContent = original || "复制"; }, 1600);
+  }
+
+  globalThis.KBotMarkdown = Object.freeze({ copyCode, render });
 })();

@@ -2,6 +2,8 @@
 
 `ui/km/` 提供 KM Asset 的正式无框架 JavaScript 页面：工作台、MetaDB、数据来源、Asset、同步任务、Agent 和智能问答。KM 文档固定使用初始化脚本创建的 `km_portal/assets` Collection。
 
+智能问答使用本地锁定的 Marked GFM 和 DOMPurify 渲染流式 Markdown。第三方浏览器构建产物位于 `ui/vendor/`，页面不从 CDN 下载运行时代码。
+
 数据来源的后台自动同步开关按来源持久化，默认关闭。项目启动只会启动 Worker 进程，
 不会自动轮询 MetaDB；管理员在数据来源页面开启后才会按配置间隔创建自动任务。
 “立即同步”属于人工任务，始终可用。

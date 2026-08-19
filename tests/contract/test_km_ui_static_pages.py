@@ -154,7 +154,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         )
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260819_1", html)
+        self.assertIn("km-chat-v5.js?v=20260819_2", html)
 
     def test_jobs_page_uses_asset_revision_step_tree(self):
         source = (KM_ROOT / "js" / "km-jobs.js").read_text(
@@ -189,27 +189,47 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('target="_blank" rel="noopener noreferrer"', source)
         self.assertNotIn("innerHTML = value", source)
 
-    def test_km_markdown_preserves_explicit_ordered_list_numbers(self):
+    def test_km_markdown_uses_ammolite_gfm_runtime(self):
         source = (
             ROOT / "ui" / "shared" / "kbot-markdown.js"
         ).read_text(encoding="utf-8")
         chat = (ROOT / "ui" / "km" / "chat.html").read_text(
             encoding="utf-8"
         )
+        marked = (ROOT / "ui" / "vendor" / "marked.umd.js").read_text(
+            encoding="utf-8"
+        )
+        purifier = (
+            ROOT / "ui" / "vendor" / "purify.min.js"
+        ).read_text(encoding="utf-8")
 
-        self.assertIn(
-            r"const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)$/);",
-            source,
+        self.assertIn("new markedApi.Marked", source)
+        self.assertIn("gfm: true", source)
+        self.assertIn("breaks: true", source)
+        self.assertIn("purifier.sanitize", source)
+        self.assertIn("FORBID_TAGS", source)
+        self.assertIn("marked v18.0.9", marked)
+        self.assertIn("DOMPurify 3.4.13", purifier)
+        self.assertIn("marked.umd.js?v=18.0.9", chat)
+        self.assertIn("purify.min.js?v=3.4.13", chat)
+        self.assertIn("kbot-markdown.js?v=20260819_3", chat)
+
+    def test_km_markdown_renders_safe_responsive_tables(self):
+        renderer = (
+            ROOT / "ui" / "shared" / "kbot-markdown.js"
+        ).read_text(encoding="utf-8")
+        styles = (
+            ROOT / "ui" / "km" / "css" / "km-chat-markdown.css"
+        ).read_text(encoding="utf-8")
+        chat = (ROOT / "ui" / "km" / "chat.html").read_text(
+            encoding="utf-8"
         )
-        self.assertIn(
-            'const start = ordered ? ` start="${escapeHtml(ordered[1])}"`',
-            source,
-        )
-        self.assertIn(
-            "inline(unordered ? unordered[1] : ordered[2])",
-            source,
-        )
-        self.assertIn("kbot-markdown.js?v=20260819_1", chat)
+
+        self.assertIn("gfm: true", renderer)
+        self.assertIn("purifier.sanitize", renderer)
+        self.assertIn("overflow-x: auto", styles)
+        self.assertIn("border-collapse: separate", styles)
+        self.assertIn("km-chat-markdown.css?v=20260819_2", chat)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")
