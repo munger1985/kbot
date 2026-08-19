@@ -49,6 +49,10 @@ bash scripts/deployment/install_workspace.sh
 bash scripts/deployment/install_workspace.sh --production
 ```
 
+生产安装每次都会在 `var/release/wheels/` 下创建独立构建目录，
+并仅从该目录强制重装当次构建的 Wheel。因此，即使内部包版本仍为
+`4.0.0`，也不会误用之前部署留下的同名 Wheel。
+
 可通过 `KBOT_PYTHON=/path/to/python` 指定解释器。未指定时，安装脚本与
 `start_kbot.sh` 使用同一选择规则：优先安装到 `KBOT_CONDA_ENV`，否则自动选择
 `kbot4`，仅当 `kbot4` 不存在时回退到 `cube`。安装开始时会打印目标解释器，安装后会

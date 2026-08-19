@@ -135,11 +135,14 @@ if [[ "$mode" == "development" ]]; then
 else
     wheel_dir="${KBOT_WHEEL_DIR:-$KBOT_SOURCE_ROOT/var/release/wheels}"
     mkdir -p "$wheel_dir"
+    wheel_build_dir="$wheel_dir/build-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    mkdir -p "$wheel_build_dir"
     for member in "${members[@]}"; do
-        "$python_bin" -m pip wheel --no-deps --wheel-dir "$wheel_dir" "$member"
+        "$python_bin" -m pip wheel --no-deps \
+            --wheel-dir "$wheel_build_dir" "$member"
     done
     "$python_bin" -m pip install --force-reinstall --no-deps \
-        --no-index --find-links "$wheel_dir" \
+        --no-index --find-links "$wheel_build_dir" \
         "${distributions[@]}"
 fi
 
@@ -155,5 +158,5 @@ fi
 if [[ "$mode" == "development" ]]; then
     echo "KBot 开发工作区已安装：第三方依赖 + 全部内部 editable package。"
 else
-    echo "KBot 生产 wheel 已构建并安装：$wheel_dir"
+    echo "KBot 生产 wheel 已构建并安装：$wheel_build_dir"
 fi
