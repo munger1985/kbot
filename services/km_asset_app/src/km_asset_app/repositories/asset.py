@@ -44,6 +44,28 @@ class KmAssetRepository:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_asset_by_kc_bundle_revision(
+        self,
+        *,
+        domain_id: int,
+        bundle_revision_id: UUID,
+    ):
+        """按 KC Bundle Revision 恢复原始 Asset，包含历史版本。"""
+        statement = (
+            select(KmAssetEntity)
+            .join(
+                KmAssetRevisionEntity,
+                KmAssetRevisionEntity.km_asset_id == KmAssetEntity.km_asset_id,
+            )
+            .where(
+                KmAssetEntity.domain_id == domain_id,
+                KmAssetRevisionEntity.domain_id == domain_id,
+                KmAssetRevisionEntity.kc_bundle_revision_id
+                == bundle_revision_id,
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def find_asset(self, *, source_id: UUID, external_asset_id: str, lock: bool = False):
         statement = select(KmAssetEntity).where(KmAssetEntity.source_id == source_id, KmAssetEntity.external_asset_id == external_asset_id)
         if lock:

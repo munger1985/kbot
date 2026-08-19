@@ -58,6 +58,8 @@ Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 
 `km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
 `km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
 编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
+`max_references` 与 `show_query_result_summary` 仅为旧参考资料展示配置保留，当前
+Slack Asset Template 不受其截断，也不会回退展示参考资料。
 
 ## 查询 Workspace、Domain 与 Agent
 
@@ -126,18 +128,23 @@ SELECT T.WORKSPACE_ID,
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
 来自 `payload.answer`，并先转换为安全的 Slack `mrkdwn`；非 `READY` 状态显示中文
 状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
-`asset_title`、`solution_briefing`、`author_mail`、`create_time` 仅从本次实际使用的
-DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。组装 Template 时，先按原回答中的
+`asset_title`、`solution_briefing`、`author_mail`、`create_time` 从本次实际使用的
+DOCUMENT 引用所对应的 `manifest.md` 白名单补齐；Manifest 暂时不可读时，按同一
+Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同白名单字段。组装
+Template 时，先按原回答中的
 独立加粗标题、加粗项目符号或编号条目提取 Asset 顺序，再使用该条目范围内的引用
 标签和规范化 `asset_title` 匹配对应 Manifest；标题存在轻微标点或后缀差异时允许
 唯一相似匹配。无加粗标题的顶层项目也会作为独立条目分析，但仅在该条目
 自身可定位到唯一的已使用 DOCUMENT Asset 引用时，才从对应 Manifest 补齐标题
 和字段；其他标题无法可靠匹配的项目，也仅允许回退到该条目唯一引用的 Asset。只展示成功
 映射到正文条目的 Asset，歧义、未匹配以及正文未展示的候选均不追加，并记录诊断
-日志。完成映射和 Asset 去重后再应用 `max_references`，整个过程不修改
-`payload.answer`。回答原文保留，
-原参考资料区替换为一个分隔线、Asset Title、Solution Briefing，以及
-“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成的 Block Kit。
+日志。完成映射和 Asset 去重后，必须保证正文每个唯一 Asset 都有且仅有一个
+Template，且顺序与正文一致；不再应用 `max_references` 截断。完整性只校验
+`asset_id`、`asset_title`、`solution_briefing` 三个字段，任一缺失时本次组装失败并
+进入 Worker 重试，不发送部分 Template。`author_mail`、`create_time` 为可选字段，
+缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 KM Link。整个过程不修改
+`payload.answer`。回答原文保留，每个 Template 由分隔线、Asset Title、Solution
+Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。
 
 Knowledge Core 的检索实现、模型或候选顺序调整不作为 Slack Template 的
 展示顺序。Slack 按 `payload.answer` 中引用首次出现的顺序恢复文档，
@@ -147,7 +154,9 @@ KBot Artifact、Outbox 和 `/tmp/slackmess` 原始调试报文保留引用标签
 审计和问题排查；实际发送给 Slack 的报文副本会从所有可见 `text` 字段中删除
 `[C1]`、`[D1]`、`[Q1]` 等标签，且不修改 URL、按钮或原始持久化报文。
 
-无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤和排序，并受
-`max_references` 限制。警告与可视化仅输出面向用户的摘要，不传送定位框、内部
-UUID、查询明细、可视化原始数据和未经授权的资源 URL。收到不匹配的 Artifact
-类型或版本时，返回固定格式错误提示，避免泄漏内部报文。
+正文未识别到 Asset 时不生成 Template，也不显示“参考资料”；引用文档只能用于
+补齐正文 Asset 的字段，不得独立转成 Template。若完整回复超过 Slack 单条消息的
+50 个 Block 上限，Worker 按 Template 边界拆分为 `FINAL`、`FINAL_0001` 等连续
+Outbox 消息，保持 Template 完整和原有顺序。警告与可视化仅输出面向用户的摘要，
+不传送定位框、内部 UUID、查询明细、可视化原始数据和未经授权的资源 URL。收到不
+匹配的 Artifact 类型或版本时，返回固定格式错误提示，避免泄漏内部报文。

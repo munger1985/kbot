@@ -52,6 +52,7 @@ _PUNCTUATION_PATTERN = re.compile(r"[ \t]+(?=[,.;:!?，。；：！？])")
 _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
+_SLACK_MAX_BLOCKS = 50
 
 
 def waiting_message(question: str) -> str:
@@ -343,132 +344,6 @@ def _text_sections(text: str) -> list[dict[str, Any]]:
     ]
 
 
-def _document_pages(reference: dict[str, Any]) -> list[int]:
-    locator = reference.get("locator")
-    if not isinstance(locator, dict):
-        return []
-    values: list[object] = []
-    pages = locator.get("pages")
-    if isinstance(pages, (list, tuple)):
-        values.extend(
-            page.get("page_no")
-            for page in pages
-            if isinstance(page, dict)
-        )
-    values.extend(locator.get(key) for key in ("page_no", "page"))
-    result: list[int] = []
-    for value in values:
-        if isinstance(value, bool):
-            continue
-        try:
-            page_no = int(value)
-        except (TypeError, ValueError):
-            continue
-        if page_no > 0 and page_no not in result:
-            result.append(page_no)
-    return result
-
-
-def _ordered_used_references(
-    answer_payload: dict[str, Any],
-) -> list[dict[str, Any]]:
-    references = answer_payload.get("references")
-    labels = answer_payload.get("used_citation_labels")
-    if not isinstance(references, (list, tuple)) or not isinstance(
-        labels, (list, tuple)
-    ):
-        return []
-    by_label: dict[str, dict[str, Any]] = {}
-    for reference in references:
-        if not isinstance(reference, dict):
-            continue
-        label_value = reference.get("citation_label")
-        label = label_value.strip() if isinstance(label_value, str) else ""
-        if label and label not in by_label:
-            by_label[label] = reference
-    ordered: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for value in labels:
-        label = value.strip() if isinstance(value, str) else ""
-        reference = by_label.get(label)
-        if reference is not None and label not in seen:
-            ordered.append(reference)
-            seen.add(label)
-    return ordered
-
-
-def _reference_text(
-    reference: dict[str, Any],
-    *,
-    show_query_result_summary: bool,
-) -> str | None:
-    reference_type_value = reference.get("reference_type")
-    reference_type = (
-        reference_type_value.upper()
-        if isinstance(reference_type_value, str)
-        else ""
-    )
-    label = _escape_mrkdwn(reference.get("citation_label"))
-    prefix = f"[{label}] " if label else ""
-    if reference_type == "DOCUMENT":
-        title = _escape_mrkdwn(reference.get("title")) or "参考文档"
-        text = f"*{prefix}{title}*"
-        pages = _document_pages(reference)
-        if pages:
-            page_labels = "、".join(str(page) for page in pages)
-            text += f"\n第 {page_labels} 页"
-        return text
-    if reference_type == "QUERY_RESULT":
-        if not show_query_result_summary:
-            return None
-        provider = _escape_mrkdwn(reference.get("provider")) or "UNKNOWN"
-        row_count = reference.get("row_count")
-        row_label = (
-            str(row_count)
-            if isinstance(row_count, int) and not isinstance(row_count, bool)
-            else "未知"
-        )
-        return f"*{prefix}查询结果*\n来源：{provider} · {row_label} 行"
-    if reference_type == "AIOPS":
-        status = _escape_mrkdwn(reference.get("status")) or "UNKNOWN"
-        return f"*{prefix}运维分析*\n状态：{status}"
-    return None
-
-
-def _reference_blocks(
-    answer_payload: dict[str, Any],
-    config: SlackReplyConfig,
-) -> list[dict[str, Any]]:
-    if config.max_references == 0:
-        return []
-    rendered: list[dict[str, Any]] = []
-    for reference in _ordered_used_references(answer_payload):
-        text = _reference_text(
-            reference,
-            show_query_result_summary=config.show_query_result_summary,
-        )
-        if text is None:
-            continue
-        rendered.append(
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": text[:3000]},
-            }
-        )
-        if len(rendered) >= config.max_references:
-            break
-    if not rendered:
-        return []
-    return [
-        {"type": "divider"},
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": "参考资料"},
-        },
-        *rendered,
-    ]
-
-
 def _asset_blocks(
     asset_cards: list[dict[str, str]],
     config: SlackReplyConfig,
@@ -514,23 +389,24 @@ def _asset_blocks(
             )
         if create_time:
             metadata.append(create_time)
-        if metadata:
-            section: dict[str, Any] = {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": " | ".join(metadata)[:3000],
-                },
+        # Slack 不接受空 text；零宽空格在可见层等价于空值，同时允许
+        # author_mail/create_time 缺失时仍按统一模板展示 KM Link。
+        section: dict[str, Any] = {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": " | ".join(metadata)[:3000] or "\u200b",
+            },
+        }
+        if asset_id:
+            asset_url = config.km_portal_base_url + quote(asset_id, safe="")
+            section["accessory"] = {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "KM Link"},
+                "url": asset_url[:3000],
+                "action_id": "open_km_resource",
             }
-            if asset_id:
-                asset_url = config.km_portal_base_url + quote(asset_id, safe="")
-                section["accessory"] = {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "KM Link"},
-                    "url": asset_url[:3000],
-                    "action_id": "open_km_resource",
-                }
-            blocks.append(section)
+        blocks.append(section)
     return blocks
 
 
@@ -651,12 +527,9 @@ def render_slack_reply(
         blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
     blocks.extend(_text_sections(safe_answer))
     if valid_envelope:
-        cards = asset_cards or []
-        blocks.extend(
-            _asset_blocks(cards, reply_config)
-            if cards
-            else _reference_blocks(answer_payload, reply_config)
-        )
+        # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
+        # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
+        blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(_warning_blocks(answer_payload, reply_config))
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
     fallback = f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"
@@ -666,6 +539,82 @@ def render_slack_reply(
         "text": fallback[:4000],
         "blocks": blocks,
     }
+
+
+def split_slack_reply_payload(
+    payload: dict[str, Any],
+    *,
+    max_blocks: int = _SLACK_MAX_BLOCKS,
+) -> list[dict[str, Any]]:
+    """按 Slack Block Kit 上限分包，并保持每个 Asset Template 原子完整。"""
+    if max_blocks <= 0:
+        raise ValueError("max_blocks 必须大于 0")
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list) or len(blocks) <= max_blocks:
+        return [payload]
+
+    groups: list[list[Any]] = []
+    current: list[Any] = []
+    for block in blocks:
+        is_divider = isinstance(block, dict) and block.get("type") == "divider"
+        if is_divider and current:
+            groups.append(current)
+            current = []
+        current.append(block)
+    if current:
+        groups.append(current)
+
+    normalized_groups: list[list[Any]] = []
+    for group in groups:
+        normalized_groups.extend(
+            group[offset : offset + max_blocks]
+            for offset in range(0, len(group), max_blocks)
+        )
+
+    parts: list[list[Any]] = []
+    current = []
+    for group in normalized_groups:
+        if current and len(current) + len(group) > max_blocks:
+            parts.append(current)
+            current = []
+        current.extend(group)
+    if current:
+        parts.append(current)
+
+    return [
+        {
+            **payload,
+            "blocks": part,
+            "text": (
+                payload.get("text", "")
+                if index == 0
+                else "Asset Templates（续）"
+            ),
+        }
+        for index, part in enumerate(parts)
+    ]
+
+
+def render_slack_replies(
+    *,
+    channel_id: str,
+    user_id: str,
+    thread_ts: str,
+    artifact: dict[str, Any],
+    reply_config: SlackReplyConfig,
+    asset_cards: list[dict[str, str]] | None = None,
+) -> list[dict[str, Any]]:
+    """生成一个或多个 Slack 消息，确保所有 Asset Template 均可投递。"""
+    return split_slack_reply_payload(
+        render_slack_reply(
+            channel_id=channel_id,
+            user_id=user_id,
+            thread_ts=thread_ts,
+            artifact=artifact,
+            reply_config=reply_config,
+            asset_cards=asset_cards,
+        )
+    )
 
 
 def build_callback_payload(

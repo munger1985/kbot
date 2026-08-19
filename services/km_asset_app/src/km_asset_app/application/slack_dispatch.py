@@ -17,11 +17,10 @@ from sqlalchemy.exc import IntegrityError
 
 from km_asset_app.application.slack_assets import (
     assemble_slack_asset_cards,
-    extract_answer_asset_cards,
 )
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
-    render_slack_reply,
+    render_slack_replies,
     slack_visible_payload,
     waiting_message,
 )
@@ -273,22 +272,15 @@ class SlackDispatchService:
             artifact = await self._agent_client.get_result(
                 run_id=run_id, auth_context=context
             )
-            answer_payload = artifact.get("payload")
-            answer_cards = extract_answer_asset_cards(
-                answer_payload.get("answer")
-                if isinstance(answer_payload, dict)
-                else None
+            asset_cards = await assemble_slack_asset_cards(
+                artifact=artifact,
+                knowledge_core_client=self._knowledge_core_client,
+                domain_id=workspace.domain_id,
+                auth_context=context,
+                limit=self._config.reply.max_references,
+                uow_factory=self._uow_factory,
             )
-            asset_cards = answer_cards[: self._config.reply.max_references]
-            if self._knowledge_core_client is not None:
-                asset_cards = await assemble_slack_asset_cards(
-                    artifact=artifact,
-                    knowledge_core_client=self._knowledge_core_client,
-                    domain_id=workspace.domain_id,
-                    auth_context=context,
-                    limit=self._config.reply.max_references,
-                )
-            payload = render_slack_reply(
+            payloads = render_slack_replies(
                 channel_id=channel_id,
                 user_id=slack_user_id,
                 thread_ts=root_thread_ts,
@@ -297,31 +289,41 @@ class SlackDispatchService:
                 asset_cards=asset_cards,
             )
         else:
-            payload = {
-                "channel": channel_id,
-                "thread_ts": root_thread_ts,
-                "text": f"<@{slack_user_id}> KBot 本次处理失败，请稍后重试。",
-            }
+            payloads = [
+                {
+                    "channel": channel_id,
+                    "thread_ts": root_thread_ts,
+                    "text": (
+                        f"<@{slack_user_id}> "
+                        "KBot 本次处理失败，请稍后重试。"
+                    ),
+                }
+            ]
         async with self._uow_factory() as uow:
             current = await uow.slack.get_inbox(inbox_id)
-            existing = await uow.slack.get_delivery(
-                inbox_id=inbox_id, delivery_type="FINAL"
-            )
-            if existing is None:
-                await uow.slack.add_delivery(
-                    SlackDeliveryEntity(
-                        delivery_id=uuid7(),
-                        inbox_id=inbox_id,
-                        workspace_id=workspace_id,
-                        channel_id=channel_id,
-                        slack_user_id=slack_user_id,
-                        thread_ts=root_thread_ts,
-                        delivery_type="FINAL",
-                        payload_json=payload,
-                        status="PENDING",
-                        attempt_count=0,
-                    )
+            for index, payload in enumerate(payloads):
+                delivery_type = (
+                    "FINAL" if index == 0 else f"FINAL_{index:04d}"
                 )
+                existing = await uow.slack.get_delivery(
+                    inbox_id=inbox_id,
+                    delivery_type=delivery_type,
+                )
+                if existing is None:
+                    await uow.slack.add_delivery(
+                        SlackDeliveryEntity(
+                            delivery_id=uuid7(),
+                            inbox_id=inbox_id,
+                            workspace_id=workspace_id,
+                            channel_id=channel_id,
+                            slack_user_id=slack_user_id,
+                            thread_ts=root_thread_ts,
+                            delivery_type=delivery_type,
+                            payload_json=payload,
+                            status="PENDING",
+                            attempt_count=0,
+                        )
+                    )
             current.status = "COMPLETED" if status == "COMPLETED" else "FAILED"
             current.lease_owner = None
             current.lease_until = None

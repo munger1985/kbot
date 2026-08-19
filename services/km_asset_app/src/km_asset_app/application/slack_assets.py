@@ -55,7 +55,30 @@ _ASSET_FIELDS = (
     "author_mail",
     "create_time",
 )
+_REQUIRED_ASSET_FIELDS = (
+    "asset_id",
+    "asset_title",
+    "solution_briefing",
+)
 _MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
+
+
+class SlackAssetTemplateIncompleteError(RuntimeError):
+    """正文 Asset 无法完整组装为 Slack Template。"""
+
+    def __init__(
+        self,
+        *,
+        expected_count: int,
+        resolved_count: int,
+        missing_fields: tuple[str, ...] = (),
+    ):
+        details = ",".join(missing_fields) or "-"
+        super().__init__(
+            "Slack Asset Template 不完整："
+            f"expected={expected_count} resolved={resolved_count} "
+            f"missing_fields={details}"
+        )
 
 
 def _normalized_label(value: str) -> str:
@@ -142,6 +165,26 @@ def parse_manifest_asset_fields(content: str) -> dict[str, str]:
         values["asset_id"] = _clean_value(source_match.group(1))
     if "asset_title" not in values and title_match is not None:
         values["asset_title"] = _clean_value(title_match.group(1))
+    return values
+
+
+def _local_asset_fields(row: object) -> dict[str, str]:
+    """将 KM Asset 持久化元数据投影为 Slack Template 字段。"""
+    metadata_value = getattr(row, "normalized_metadata_json", {})
+    metadata = metadata_value if isinstance(metadata_value, dict) else {}
+    values = _asset_values(metadata)
+    columns = {
+        "asset_id": getattr(row, "external_asset_id", None),
+        "asset_title": getattr(row, "asset_title", None),
+        "solution_briefing": metadata.get("solution_briefing"),
+        "author_mail": getattr(row, "author_mail", None),
+        "create_time": (
+            metadata.get("create_time")
+            or metadata.get("publish_date")
+            or getattr(row, "publish_date", None)
+        ),
+    }
+    values.update(_asset_values(columns))
     return values
 
 
@@ -444,6 +487,67 @@ def _match_manifest_cards_to_answer(
     return matched
 
 
+def _expected_asset_keys(
+    sections: list[dict[str, Any]],
+    cards: list[dict[str, str]],
+) -> list[str]:
+    """按正文顺序计算唯一 Asset；无标题条目必须能唯一落到 Asset。"""
+    by_label = {
+        str(card.get("citation_label") or "").strip().upper(): card
+        for card in cards
+        if str(card.get("citation_label") or "").strip()
+    }
+    result: list[str] = []
+    seen: set[str] = set()
+    for section in sections:
+        title = str(section.get("asset_title") or "")
+        labels = tuple(section.get("citation_labels") or ())
+        scoped = [by_label[label] for label in labels if label in by_label]
+        card, ambiguous = _best_title_card(title, scoped)
+        if card is None and not ambiguous and title:
+            card, ambiguous = _best_title_card(title, cards)
+        unique_scoped = _unique_asset_cards(scoped)
+        if (
+            card is None
+            and not ambiguous
+            and section.get("allow_citation_fallback")
+            and len(unique_scoped) == 1
+        ):
+            card = unique_scoped[0]
+        key = _asset_key(card) if card is not None else ""
+        if not key and title:
+            key = _canonical_title(title)
+        # 无标题且无法唯一落到 Asset 的普通项目不是 Asset 条目。
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(key)
+    return result
+
+
+def _validate_complete_templates(
+    *,
+    cards: list[dict[str, str]],
+    expected_count: int,
+) -> None:
+    missing = tuple(
+        sorted(
+            {
+                field
+                for card in cards
+                for field in _REQUIRED_ASSET_FIELDS
+                if not _clean_value(card.get(field))
+            }
+        )
+    )
+    if len(cards) != expected_count or missing:
+        raise SlackAssetTemplateIncompleteError(
+            expected_count=expected_count,
+            resolved_count=len(cards),
+            missing_fields=missing,
+        )
+
+
 async def _read_manifest(
     *,
     client,
@@ -579,41 +683,84 @@ async def assemble_slack_asset_cards(
     domain_id: int,
     auth_context: AuthContext,
     limit: int,
+    uow_factory=None,
 ) -> list[dict[str, str]]:
-    """回答字段优先；仅用已使用引用的 Manifest 补齐字段。"""
-    if limit <= 0:
-        return []
+    """回答字段优先；仅用已使用引用对应的 Asset 元数据补齐。"""
     payload = artifact.get("payload")
     if not isinstance(payload, dict):
         return []
-    answer_cards = extract_answer_asset_cards(payload.get("answer"))
+    answer = payload.get("answer")
+    answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
+    sections = _answer_asset_sections(answer)
+    if not answer_cards and not sections:
+        return []
     if answer_cards and all(
-        all(_clean_value(card.get(field)) for field in _ASSET_FIELDS)
+        all(
+            _clean_value(card.get(field))
+            for field in _REQUIRED_ASSET_FIELDS
+        )
         for card in answer_cards
     ):
-        return _merge_cards(answer_cards, [], limit=limit)
+        result = _merge_cards(
+            answer_cards,
+            [],
+            limit=len(answer_cards),
+        )
+        _validate_complete_templates(
+            cards=result,
+            expected_count=len(answer_cards),
+        )
+        return result
+    references = _used_document_references(payload)
+    local_by_revision: dict[str, dict[str, str]] = {}
+    if uow_factory is not None:
+        try:
+            async with uow_factory() as uow:
+                for reference in references:
+                    revision_id = str(
+                        reference.get("bundle_revision_id") or ""
+                    )
+                    if not revision_id or revision_id in local_by_revision:
+                        continue
+                    row = await uow.assets.get_asset_by_kc_bundle_revision(
+                        domain_id=domain_id,
+                        bundle_revision_id=UUID(revision_id),
+                    )
+                    if row is not None:
+                        local_by_revision[revision_id] = _local_asset_fields(row)
+        except Exception as exc:
+            logger.warning(
+                "Slack Asset 本地元数据读取失败：cause={}",
+                str(exc),
+            )
+
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
-    for reference in _used_document_references(payload):
+    for reference in references:
         revision_id = str(reference.get("bundle_revision_id") or "")
         if not revision_id or revision_id in seen_revisions:
             continue
         seen_revisions.add(revision_id)
-        try:
-            content = await _read_manifest(
-                client=knowledge_core_client,
-                reference=reference,
-                domain_id=domain_id,
-                auth_context=auth_context,
-            )
-            fields = parse_manifest_asset_fields(content)
-        except Exception as exc:
-            logger.warning(
-                "Slack Asset Manifest 补齐失败：citation_label={} cause={}",
-                reference.get("citation_label") or "-",
-                str(exc),
-            )
-            continue
+        local_fields = local_by_revision.get(revision_id, {})
+        manifest_fields: dict[str, str] = {}
+        if knowledge_core_client is not None:
+            try:
+                content = await _read_manifest(
+                    client=knowledge_core_client,
+                    reference=reference,
+                    domain_id=domain_id,
+                    auth_context=auth_context,
+                )
+                manifest_fields = parse_manifest_asset_fields(content)
+            except Exception as exc:
+                log = logger.debug if local_fields else logger.warning
+                log(
+                    "Slack Asset Manifest 补齐失败："
+                    "citation_label={} cause={}",
+                    reference.get("citation_label") or "-",
+                    str(exc),
+                )
+        fields = {**manifest_fields, **local_fields}
         if fields:
             manifest_cards.append(
                 {
@@ -624,13 +771,33 @@ async def assemble_slack_asset_cards(
                     "bundle_revision_id": revision_id,
                 }
             )
-    manifest_cards = _match_manifest_cards_to_answer(
-        payload.get("answer"), manifest_cards
+    if answer_cards:
+        expected_count = len(answer_cards)
+        result = _merge_cards(
+            answer_cards,
+            manifest_cards,
+            limit=expected_count,
+        )
+    else:
+        expected_keys = _expected_asset_keys(sections, manifest_cards)
+        if not expected_keys:
+            return []
+        expected_count = len(expected_keys)
+        matched_cards = _match_manifest_cards_to_answer(answer, manifest_cards)
+        result = _merge_cards(
+            [],
+            matched_cards,
+            limit=expected_count,
+        )
+    _validate_complete_templates(
+        cards=result,
+        expected_count=expected_count,
     )
-    return _merge_cards(answer_cards, manifest_cards, limit=limit)
+    return result
 
 
 __all__ = [
+    "SlackAssetTemplateIncompleteError",
     "assemble_slack_asset_cards",
     "extract_answer_asset_cards",
     "parse_manifest_asset_fields",
