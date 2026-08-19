@@ -506,7 +506,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             cards[0],
         )
 
-    async def test_table_answer_builds_templates_in_query_row_order(self):
+    async def test_table_answer_does_not_build_asset_templates(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
@@ -553,10 +553,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             limit=10,
         )
 
-        self.assertEqual(
-            ["Asset B", "Asset A"],
-            [card["asset_title"] for card in cards],
-        )
+        self.assertEqual([], cards)
 
     async def test_missing_required_asset_field_fails_closed(self):
         reference = self._reference("C1", 98)
@@ -1190,14 +1187,9 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*Ingestion Status:* FAILED", rendered)
         self.assertNotIn("| # | Title |", rendered)
         self.assertNotIn("| 1 | Asset B", rendered)
-        self.assertLess(
-            rendered.index("*1. Asset B*"),
-            rendered.index("*Asset Title:* Asset B"),
-        )
-        self.assertLess(
-            rendered.index("*Asset Title:* Asset B"),
-            rendered.index("*Asset Title:* Asset A"),
-        )
+        self.assertNotIn("*Asset Title:*", rendered)
+        self.assertNotIn("*Solution Briefing:*", rendered)
+        self.assertNotIn("KM Link", rendered)
 
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(

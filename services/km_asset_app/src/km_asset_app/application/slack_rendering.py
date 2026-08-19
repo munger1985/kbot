@@ -724,7 +724,9 @@ def render_slack_reply(
     if valid_envelope:
         # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
-        blocks.extend(_asset_blocks(asset_cards or [], reply_config))
+        # 表格型问数结果暂时只展示格式化正文，不追加 Asset Template。
+        if not query_asset_blocks:
+            blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(_warning_blocks(answer_payload, reply_config))
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
     query_fallback = "\n\n".join(

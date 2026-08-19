@@ -124,6 +124,39 @@ def _mapping_asset_fields(value: object) -> dict[str, str]:
     return result
 
 
+def _is_asset_table_answer(answer: object) -> bool:
+    """识别无需组装 Slack Template 的 Asset 表格回答。"""
+    if not isinstance(answer, str):
+        return False
+    asset_columns = {
+        "author",
+        "authormail",
+        "product",
+        "solution",
+        "industry",
+        "assetstatus",
+        "ingestionstatus",
+        "assetdate",
+    }
+    for line in answer.replace("\r\n", "\n").replace("\r", "\n").splitlines():
+        if "|" not in line:
+            continue
+        columns = {
+            _normalized_label(value)
+            for value in line.strip().strip("|").split("|")
+            if value.strip()
+        }
+        has_title = bool({"title", "assettitle"} & columns)
+        has_asset_shape = (
+            "assetid" in columns
+            or "#" in columns
+            or len(asset_columns & columns) >= 2
+        )
+        if has_title and has_asset_shape:
+            return True
+    return False
+
+
 def _query_result_asset_cards(payload: dict[str, Any]) -> list[dict[str, str]]:
     """读取 GroundedAnswer 内嵌 QUERY_RESULT.v1 行，不把 Q1 当文档。"""
     query_results = payload.get("query_results")
@@ -805,6 +838,9 @@ async def assemble_slack_asset_cards(
     if not isinstance(payload, dict):
         return []
     answer = payload.get("answer")
+    # 表格型问数回答只展示格式化正文，不生成 Asset Template。
+    if _is_asset_table_answer(answer):
+        return []
     answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
     sections = _answer_asset_sections(answer)
     query_cards = _query_result_asset_cards(payload)
