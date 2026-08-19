@@ -53,5 +53,6 @@ Prompt 先从数据库的版本化 Registry 读取；缺少数据库记录时回
 
 `thinking.delta` 只包含可公开的工作过程，例如将调用哪个 Skill、检索到多少候选或
 正在组织几组证据，不暴露模型隐藏推理。事件先持久化再由 Main API 转为 SSE，因此
-断线重连不会重新执行 Skill。开发环境可用 `tools/dev_console/agent-chat.html` 和
-Run 调试台查看事件、Artifact、任务及跨服务日志。
+断线重连不会重新执行 Skill。开发环境只保留
+`tools/dev_console/operations-logs.html` 查看各服务运行日志和 API 访问日志；
+Run、Task、Artifact 与事件应通过正式 API 或 KM 页面提供的业务入口观察。

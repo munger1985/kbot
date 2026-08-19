@@ -243,8 +243,8 @@ bash start_kbot.sh
 bash stop_kbot.sh
 ```
 
-开发模式还会启动 `tools/dev_console/` 静态服务器；生产不得启用测试认证绕过或
-开发日志接口。
+开发模式还会启动 `tools/dev_console/` 静态服务器，只发布开发日志页和
+`ui/km/` 正式页面；生产不得启用测试认证绕过或开发日志接口。
 
 ## 数据与日志
 

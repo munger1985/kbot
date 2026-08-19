@@ -2,7 +2,6 @@
 (function () {
   "use strict";
 
-  const authForm = document.querySelector("#auth-form");
   const filterForm = document.querySelector("#log-filter-form");
   const serviceFilter = document.querySelector("#service-filter");
   const logTypeFilter = document.querySelector("#log-type-filter");
@@ -98,13 +97,13 @@
     const timer = window.setTimeout(() => controller.abort(), 15000);
     let payload;
     try {
-      payload = await KBotUI.api(
+      payload = await KBotUI.developmentLogApi(
         "/api/v1/development/logs/services",
-        { domainOptional: true, signal: controller.signal }
+        { signal: controller.signal }
       );
     } catch (error) {
       if (error.name === "AbortError") {
-        throw new Error("读取服务日志超时（15 秒），请检查 Main API 地址和网络连通性");
+        throw new Error("读取服务日志超时（15 秒），请检查 Main API 服务和网络连通性");
       }
       throw error;
     } finally {
@@ -140,9 +139,7 @@
       KBotUI.setStatus(statusElement, "正在读取日志…");
     }
     try {
-      const payload = await KBotUI.api(queryPath(), {
-        domainOptional: true,
-      });
+      const payload = await KBotUI.developmentLogApi(queryPath());
       renderEvents(payload.events || []);
       KBotUI.setStatus(
         statusElement,
@@ -167,15 +164,6 @@
       );
     }
   }
-
-  KBotUI.bindAuthForm(authForm, async () => {
-    try {
-      await loadServices();
-      await refreshLogs();
-    } catch (error) {
-      setServiceLoadFailure(error.message);
-    }
-  });
 
   filterForm.addEventListener("submit", (event) => {
     event.preventDefault();

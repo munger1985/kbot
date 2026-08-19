@@ -1,4 +1,4 @@
-"""同时发布既有开发测试台与仓库 ui/ 正式页面。"""
+"""同时发布开发日志页面与仓库 ui/ KM 正式页面。"""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _load_main_api_base_url() -> str:
 
 
 class KBotUiHandler(SimpleHTTPRequestHandler):
-    """保持测试台根路径不变，并把 /ui/ 映射到正式 UI 目录。"""
+    """发布日志页，并把 /ui/ 映射到正式 KM UI 目录。"""
 
     main_api_base_url = ""
 
@@ -78,8 +78,19 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
             return True
         return False
 
+    def _redirect_log_root(self) -> bool:
+        """开发工具根路径只进入唯一保留的日志页面。"""
+        if urlsplit(self.path).path not in {"", "/"}:
+            return False
+        self.send_response(302)
+        self.send_header("Location", "/operations-logs.html")
+        self.end_headers()
+        return True
+
     def do_GET(self):
         if self._empty_favicon():
+            return
+        if self._redirect_log_root():
             return
         if urlsplit(self.path).path == "/ui/runtime-config.js":
             payload = (
@@ -104,6 +115,8 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         if self._empty_favicon():
+            return
+        if self._redirect_log_root():
             return
         if self._redirect_ui_root():
             return

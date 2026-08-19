@@ -30,7 +30,7 @@ Git 历史保存，不再作为有效文档。
 - [配置指南](../configuration/README.md)
 - [Oracle 初始化](../database/oracle/README.md)
 - [脚本说明](../scripts/README.md)
-- [开发者测试页面](../tools/dev_console/README.md)
+- [开发日志页面](../tools/dev_console/README.md)
 
 ## 契约
 

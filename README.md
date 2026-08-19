@@ -12,7 +12,7 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `configuration/`：唯一部署配置样例。
 - `resources/`：部署进程拓扑等不可变运行资源。
 - `tests/`：单元、集成、契约、验收、Smoke 和质量评估。
-- `tools/dev_console/`：仅开发环境启用的功能测试页面。
+- `tools/dev_console/`：仅开发环境启用的运行日志查看页面。
 - `var/`：本地日志、上传文件和生成物；不进入 Git。
 
 知识检索与 AIOps App 分别拥有私有 Agent、不可变版本和 Grant。Agent Runtime

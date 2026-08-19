@@ -53,6 +53,7 @@ class ProcessTopologyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('request_path.startswith("/ui/")', ui_server)
         self.assertIn('"/ui/km/login.html"', ui_server)
+        self.assertIn('"/operations-logs.html"', ui_server)
         for group in (
             "Model Serving",
             "Knowledge Core",

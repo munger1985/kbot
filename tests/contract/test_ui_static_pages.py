@@ -1,4 +1,4 @@
-"""KBot 4.0 Vanilla JavaScript 测试页面的静态契约检查。"""
+"""KBot 4.0 开发日志页面的静态契约检查。"""
 
 from html.parser import HTMLParser
 from pathlib import Path
@@ -28,128 +28,47 @@ class _PageParser(HTMLParser):
 
 
 class UiStaticPagesTest(unittest.TestCase):
-    def test_pages_reference_existing_local_assets(self):
-        for page_name in (
-            "index.html",
-            "knowledge-core.html",
-            "agent-chat.html",
-            "aiops.html",
-            "aiops-chat.html",
-            "agent-debug.html",
-            "operations-logs.html",
-        ):
-            page = UI_ROOT / page_name
-            parser = _PageParser()
-            parser.feed(page.read_text(encoding="utf-8"))
-            for reference in [*parser.scripts, *parser.links]:
-                if reference.startswith("./"):
-                    self.assertTrue(
-                        (UI_ROOT / reference[2:]).is_file(),
-                        f"{page_name} 缺少资源 {reference}",
-                    )
+    def test_only_log_viewer_page_remains(self):
+        self.assertEqual(
+            ["operations-logs.html"],
+            sorted(path.name for path in UI_ROOT.glob("*.html")),
+        )
+        self.assertEqual(
+            ["operations-logs.js", "shared.js"],
+            sorted(path.name for path in UI_ROOT.glob("*.js")),
+        )
 
-    def test_feature_pages_expose_required_controls(self):
-        requirements = {
-            "knowledge-core.html": {
-                "auth-form",
-                "domain-form",
-                "collection-form",
-                "upload-form",
-                "tracking-rows",
-                "status-form",
-                "agent-form",
-                "agent-rows",
-                "binding-form",
-                "resource-setup",
-                "ingestion-flow",
-                "agent-setup",
-                "diagnostics",
-            },
-            "agent-chat.html": {
-                "auth-form",
-                "agent-select",
-                "conversation-select",
-                "turn-form",
-                "live-stream",
-                "timeline",
-                "result-output",
-            },
-            "aiops.html": {
-                "auth-form",
-                "agent-form",
-                "agent-rows",
-                "target-form",
-                "monitor-form",
-                "collection-choices",
-                "bind-resources",
-                "diagnosis-flow",
-                "inspection-form",
-                "report-rows",
-                "report-output",
-            },
-            "aiops-chat.html": {
-                "auth-form",
-                "agent-select",
-                "target-select",
-                "session-id",
-                "delete-session",
-                "delete-session-dialog",
-                "confirm-delete-session",
-                "resume-run-id",
-                "conversation-stream",
-                "question-form",
-                "trace-stream",
-                "raw-events",
-                "hitl-card",
-                "hitl-queries",
-                "submit-hitl",
-                "proposal-card",
-                "approve-proposal",
-                "manual-result-form",
-                "result-output",
-            },
-            "operations-logs.html": {
-                "auth-form",
+    def test_log_page_references_existing_local_assets(self):
+        page = UI_ROOT / "operations-logs.html"
+        parser = _PageParser()
+        parser.feed(page.read_text(encoding="utf-8"))
+        for reference in [*parser.scripts, *parser.links]:
+            if reference.startswith("./"):
+                self.assertTrue(
+                    (UI_ROOT / reference[2:]).is_file(),
+                    f"日志页面缺少资源 {reference}",
+                )
+
+    def test_log_page_exposes_required_controls(self):
+        parser = _PageParser()
+        parser.feed(
+            (UI_ROOT / "operations-logs.html").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertTrue(
+            {
                 "log-filter-form",
                 "service-filter",
                 "log-type-filter",
                 "refresh-interval",
                 "log-rows",
                 "event-detail",
-            },
-            "agent-debug.html": {
-                "auth-form",
-                "run-filter-form",
-                "run-list",
-                "run-overview",
-                "run-timeline",
-                "tab-retrieval",
-                "tab-models",
-                "tab-tasks",
-                "tab-events",
-                "tab-artifacts",
-                "tab-logs",
-                "tab-errors",
-                "debug-detail",
-            },
-        }
-        for page_name, expected in requirements.items():
-            parser = _PageParser()
-            parser.feed(
-                (UI_ROOT / page_name).read_text(encoding="utf-8")
-            )
-            self.assertTrue(expected.issubset(parser.ids))
+            }.issubset(parser.ids)
+        )
 
     def test_javascript_syntax(self):
-        for script in (
-            "shared.js",
-            "knowledge-core.js",
-            "agent-chat.js",
-            "aiops.js",
-            "aiops-chat.js",
-            "agent-debug.js",
-            "operations-logs.js",
-        ):
+        for script in ("shared.js", "operations-logs.js"):
             result = subprocess.run(
                 ["node", "--check", str(UI_ROOT / script)],
                 check=False,
@@ -158,43 +77,27 @@ class UiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_ui_uses_explicit_development_auth_bypass(self):
-        source = (UI_ROOT / "shared.js").read_text(encoding="utf-8")
-        self.assertIn('"X-KBot-Test-Auth": "true"', source)
-        self.assertNotIn("Authorization:", source)
-        self.assertNotIn("apiKey", source)
-
-    def test_agent_chat_does_not_supply_user_security_level(self):
-        html = (UI_ROOT / "agent-chat.html").read_text(
+    def test_log_page_has_no_connection_or_identity_form(self):
+        html = (UI_ROOT / "operations-logs.html").read_text(
             encoding="utf-8"
         )
-        script = (UI_ROOT / "agent-chat.js").read_text(
+        script = (UI_ROOT / "operations-logs.js").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn('name="securityLevel"', html)
-        self.assertNotIn("security_level", script)
-
-    def test_knowledge_page_supports_direct_file_grouping(self):
-        html = (UI_ROOT / "knowledge-core.html").read_text(
-            encoding="utf-8"
-        )
-        script = (UI_ROOT / "knowledge-core.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('value="EACH_FILE"', html)
-        self.assertIn('value="SINGLE_BUNDLE"', html)
-        self.assertIn(
-            "/ingestions/user-files",
-            script,
-        )
-        self.assertIn('KBotUI.api("/api/v1/domains"', script)
-        self.assertIn("item.collection_id", script)
-        self.assertIn('KBotUI.api("/api/v1/agents"', script)
-        self.assertIn("enabled_capabilities", script)
-        self.assertIn("memory_embedding", script)
-        self.assertIn("error_id=", script)
-        self.assertIn("item.error_code", script)
-        self.assertNotIn("km-assets", script)
+        shared = (UI_ROOT / "shared.js").read_text(encoding="utf-8")
+        for value in (
+            'id="auth-form"',
+            "Main API URL",
+            "Domain ID",
+            "User ID",
+        ):
+            self.assertNotIn(value, html)
+        self.assertNotIn("bindAuthForm", script)
+        self.assertNotIn("localStorage", shared)
+        self.assertNotIn("X-KBot-Domain-ID", shared)
+        self.assertIn('"X-KBot-Test-Auth": "true"', shared)
+        self.assertNotIn("Authorization:", shared)
+        self.assertNotIn("apiKey", shared)
 
     def test_development_log_page_includes_two_logs_and_all_levels(self):
         html = (UI_ROOT / "operations-logs.html").read_text(
@@ -215,55 +118,16 @@ class UiStaticPagesTest(unittest.TestCase):
             self.assertIn(f'value="{value}"', html)
         self.assertIn("/api/v1/development/logs/events", script)
         self.assertIn("/api/v1/development/logs/services", script)
+        self.assertIn("KBotUI.developmentLogApi", script)
         self.assertIn('params.set("stream", logTypeFilter.value)', script)
-        self.assertNotIn('params.set("log_type", logTypeFilter.value)', script)
+        self.assertNotIn(
+            'params.set("log_type", logTypeFilter.value)', script
+        )
 
-    def test_agent_debug_page_uses_run_aggregation_api(self):
-        script = (UI_ROOT / "agent-debug.js").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("/api/v1/development/agent-runs", script)
-        self.assertIn("retrieval_report", script)
-        self.assertIn("diagnostics.discovery", script)
-        self.assertIn("diagnostics.evidence", script)
-
-    def test_aiops_pages_separate_configuration_and_chat_diagnosis(self):
-        config_html = (UI_ROOT / "aiops.html").read_text(encoding="utf-8")
-        chat_html = (UI_ROOT / "aiops-chat.html").read_text(
-            encoding="utf-8"
-        )
-        config_script = (UI_ROOT / "aiops.js").read_text(
-            encoding="utf-8"
-        )
-        chat_script = (UI_ROOT / "aiops-chat.js").read_text(
-            encoding="utf-8"
-        )
-        for path in (
-            "/api/v1/ops/targets",
-            "/api/v1/ops/monitor-sources",
-            "/api/v1/ops/policies",
-            "/api/v1/ops/inspection-plans",
-            "/api/v1/ops/reports",
-        ):
-            self.assertIn(path, config_script)
-        for path in (
-            "/api/v1/ops/runs",
-            "/api/v1/ops/hitl/",
-            "/api/v1/ops/proposals/",
-        ):
-            self.assertIn(path, chat_script)
-        self.assertIn("aiops-chat.html", config_html)
-        self.assertNotIn('id="hitl-panel"', config_html)
-        self.assertIn('id="hitl-card"', chat_html)
-        self.assertIn("diagnostic.input_required", chat_script)
-        self.assertIn("重新加载补证内容", chat_script)
-        self.assertNotIn('id="hitl-format"', chat_html)
-        self.assertIn("raw_output", chat_script)
-        self.assertIn("proposal.pending_approval", chat_script)
-        self.assertIn("manual-result", chat_script)
-        self.assertIn("expected_proposal_hash", chat_script)
-        self.assertIn("ops-stream-progress", chat_script)
-        self.assertIn("localStorage.removeItem(STORAGE_KEY)", chat_script)
+    def test_server_redirects_root_to_log_page(self):
+        source = (UI_ROOT / "server.py").read_text(encoding="utf-8")
+        self.assertIn('"/operations-logs.html"', source)
+        self.assertIn("_redirect_log_root", source)
 
 
 if __name__ == "__main__":
