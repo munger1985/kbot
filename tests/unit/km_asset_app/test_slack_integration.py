@@ -423,7 +423,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             cards,
         )
 
-    async def test_manifest_cards_follow_answer_asset_title_order(self):
+    async def test_manifest_cards_only_include_answer_asset_sections(self):
         references = [
             self._reference("C1", 1),
             self._reference("C2", 2),
@@ -465,7 +465,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            ["正文资产 A", "正文资产 B", "只作为补充证据的资产 X"],
+            ["正文资产 A", "正文资产 B"],
             [card["asset_title"] for card in cards],
         )
 
@@ -518,6 +518,152 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(answer, artifact["payload"]["answer"])
 
+    async def test_untitled_asset_item_uses_its_unique_manifest_reference(self):
+        references = [
+            self._reference("C1", 15),
+            self._reference("C2", 16),
+        ]
+        client = _ManifestClient(
+            {
+                references[0]["bundle_revision_id"]: self._manifest(
+                    "ASSET/CHATBI-1",
+                    "Conversational Banking with Select AI Agents",
+                ),
+                references[1]["bundle_revision_id"]: self._manifest(
+                    "ASSET/CHATBI-2",
+                    "ChatBI Video Walking-Tour",
+                ),
+            }
+        )
+        answer = (
+            "根据提供的证据，共有 **2 个** 与 ChatBI 相关的 assets。[C1][C2]\n"
+            "- **Conversational Banking with Select AI Agents**："
+            "这是一个 T_DEMO 类型的 Cloud 资产。[C1]\n"
+            "- 另一个资产同样为 T_DEMO 类型（Cloud），"
+            "解决方案标签包含 ChatBI 和 Video Walking-Tour。[C2]"
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": answer,
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2"],
+                "references": references,
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(
+            [
+                "Conversational Banking with Select AI Agents",
+                "ChatBI Video Walking-Tour",
+            ],
+            [card["asset_title"] for card in cards],
+        )
+        self.assertEqual(answer, artifact["payload"]["answer"])
+
+    async def test_candidate_order_does_not_override_answer_order(self):
+        references = [
+            self._reference(label, index)
+            for index, label in enumerate(
+                ("C1", "C2", "C3", "C4", "C5", "C6", "C7"),
+                start=21,
+            )
+        ]
+        titles = {
+            "C1": "Conversational Banking with Select AI Agents",
+            "C2": "DemoWalker: Turning AI Ideas into Reusable Business Value",
+            "C3": (
+                "From Text to Trends: Dynamic Visual AI Agent with Oracle "
+                "Agent Factory and APEX Integration"
+            ),
+            "C4": "Selecting Insurance Plans with an Apex AI Agent",
+            "C5": (
+                "SE-HUB The Future is Agentic, Meet the Agents: "
+                "AI Lakehouse, Data Science Agent & Private Agent Factory"
+            ),
+            "C6": "SE-HUB OCI GenAI Agentic Credit Card Recommendation",
+            "C7": (
+                "From Requirement to Reality: Generate a Complete Oracle "
+                "Solution Pack in Minutes"
+            ),
+        }
+        client = _ManifestClient(
+            {
+                reference["bundle_revision_id"]: self._manifest(
+                    f"ASSET/{reference['citation_label']}",
+                    titles[reference["citation_label"]],
+                )
+                for reference in references
+            }
+        )
+        answer = (
+            "Here are the assets related to AI，背景资料见 [C7]：\n\n"
+            "**From Text to Trends: Dynamic Visual AI Agent with Oracle "
+            "Agent Factory and APEX Integration**\n"
+            "动态可视化方案。[C3]\n\n"
+            "**Conversational Banking with Select AI Agents**\n"
+            "银行对话式方案。[C1]\n\n"
+            "**SE-HUB OCI GenAI Agentic Credit Card Recommendation**\n"
+            "信用卡推荐方案。[C6]\n\n"
+            "**DemoWalker: Turning AI Ideas into Reusable Business Value**\n"
+            "资产复用方案。[C2]\n\n"
+            "**SE-HUB The Future is Agentic, Meet the Agents: AI Lakehouse, "
+            "Data Science Agent & Private Agent Factory**\n"
+            "Agent Factory 演示方案。[C5]\n\n"
+            "**Selecting Insurance Plans with an Apex AI Agent**\n"
+            "保险方案。[C4]"
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": answer,
+                "status": "READY",
+                # 候选引用顺序与回答 Asset 顺序不一致，
+                # C7 仅作为背景证据，不应生成独立 Asset Template。
+                "used_citation_labels": [
+                    "C1",
+                    "C2",
+                    "C3",
+                    "C4",
+                    "C5",
+                    "C6",
+                    "C7",
+                ],
+                "references": references,
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(
+            [
+                titles["C3"],
+                titles["C1"],
+                titles["C6"],
+                titles["C2"],
+                titles["C5"],
+                titles["C4"],
+            ],
+            [card["asset_title"] for card in cards],
+        )
+        self.assertNotIn(titles["C7"], [card["asset_title"] for card in cards])
+        self.assertEqual(answer, artifact["payload"]["answer"])
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
     def test_renders_latest_grounded_answer_without_internal_details(self):
@@ -922,6 +1068,72 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertEqual(
             "Answer [C1]. More [C2][C10]! Keep [Apex].",
             raw_payload["text"],
+        )
+
+    def test_visible_reply_splits_bulleted_assets_into_sections(self):
+        answer = (
+            "Assets found:\n"
+            "• *Asset One*：First details [C1]\n"
+            "• *Asset Two*：Second details [C2]"
+        )
+        split_at = answer.index("Asset Two") + len("Asset Tw")
+        raw_payload = {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": answer[:split_at],
+                    },
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": answer[split_at:],
+                    },
+                },
+                {"type": "divider"},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Asset Title:* Asset One",
+                    },
+                },
+                {"type": "divider"},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Asset Title:* Asset Two",
+                    },
+                },
+            ]
+        }
+
+        visible = slack_visible_payload(raw_payload)
+
+        self.assertEqual(
+            "Assets found:",
+            visible["blocks"][0]["text"]["text"],
+        )
+        self.assertEqual(
+            "• *Asset One*：First details",
+            visible["blocks"][1]["text"]["text"],
+        )
+        self.assertEqual(
+            "• *Asset Two*：Second details",
+            visible["blocks"][2]["text"]["text"],
+        )
+        self.assertEqual(
+            answer,
+            raw_payload["blocks"][0]["text"]["text"]
+            + raw_payload["blocks"][1]["text"]["text"],
+        )
+        self.assertEqual(
+            "*Asset Title:* Asset Two",
+            visible["blocks"][6]["text"]["text"],
         )
 
 

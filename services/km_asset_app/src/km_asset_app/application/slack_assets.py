@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from difflib import SequenceMatcher
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,14 @@ _CITATION_PATTERN = re.compile(r"\[([A-Za-z]\d+)\]")
 _FIELD_LINE_PATTERN = re.compile(
     r"^\s*(?:[-+•]\s*)?(?:\*{1,2}|_{1,2})?"
     r"([^:：\n]{1,80}?)(?:\*{1,2}|_{1,2})?\s*[:：]\s*(.*?)\s*$"
+)
+_ASSET_SECTION_PATTERN = re.compile(
+    r"(?m)^[ \t]*(?P<prefix>[-+*•][ \t]+|\d+[.)][ \t]+)?"
+    r"(?P<marker>\*\*|__)(?P<title>.+?)(?P=marker)"
+)
+_UNTITLED_ASSET_SECTION_PATTERN = re.compile(
+    r"(?m)^(?P<prefix>[-+*•][ \t]+|\d+[.)][ \t]+)"
+    r"(?!\*\*|__)(?P<summary>[^\r\n]+)"
 )
 _FIELD_ALIASES = {
     "assettitle": "asset_title",
@@ -138,6 +147,7 @@ def parse_manifest_asset_fields(content: str) -> dict[str, str]:
 def _used_document_references(
     payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """按回答首次引用顺序恢复文档，不继承候选排序。"""
     references = payload.get("references")
     labels = payload.get("used_citation_labels")
     if not isinstance(references, (list, tuple)) or not isinstance(
@@ -150,10 +160,23 @@ def _used_document_references(
         if isinstance(item, dict)
         and str(item.get("reference_type") or "").upper() == "DOCUMENT"
     }
+    used_labels = tuple(
+        dict.fromkeys(str(value).strip() for value in labels if str(value).strip())
+    )
+    used_set = set(used_labels)
+    answer = payload.get("answer")
+    answer_labels = (
+        tuple(dict.fromkeys(_CITATION_PATTERN.findall(answer)))
+        if isinstance(answer, str)
+        else ()
+    )
+    ordered_labels = tuple(
+        label for label in answer_labels if label in used_set
+    ) + tuple(label for label in used_labels if label not in answer_labels)
     return [
         by_label[label]
-        for value in labels
-        if (label := str(value).strip()) in by_label
+        for label in ordered_labels
+        if label in by_label
     ]
 
 
@@ -177,6 +200,118 @@ def _searchable_text(value: object) -> str:
         )
     )
     return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def _canonical_title(value: object) -> str:
+    """生成忽略标点、空白和大小写的标题匹配键。"""
+    return re.sub(r"[\W_]+", "", _searchable_text(value))
+
+
+def _answer_asset_sections(answer: object) -> list[dict[str, Any]]:
+    """提取正文中的 Asset 条目，包括无标题的顶层项目。"""
+    if not isinstance(answer, str) or not answer.strip():
+        return []
+    matches = [
+        (match.start(), "titled", match)
+        for match in _ASSET_SECTION_PATTERN.finditer(answer)
+    ]
+    matches.extend(
+        (match.start(), "untitled", match)
+        for match in _UNTITLED_ASSET_SECTION_PATTERN.finditer(answer)
+    )
+    matches.sort(key=lambda item: item[0])
+    sections: list[dict[str, Any]] = []
+    for index, (start, kind, match) in enumerate(matches):
+        end = matches[index + 1][0] if index + 1 < len(matches) else len(answer)
+        source = answer[start:end]
+        title = _clean_value(match.group("title")) if kind == "titled" else ""
+        summary = (
+            _clean_value(match.group("summary"))
+            if kind == "untitled"
+            else title
+        )
+        if kind == "titled" and _normalized_label(title) in _FIELD_ALIASES:
+            continue
+        if not title and not summary:
+            continue
+        labels = tuple(
+            dict.fromkeys(
+                value.upper()
+                for value in _CITATION_PATTERN.findall(source)
+            )
+        )
+        sections.append(
+            {
+                "asset_title": title,
+                "display_hint": summary,
+                "citation_labels": labels,
+                "allow_citation_fallback": (
+                    kind == "untitled" or bool(match.group("prefix"))
+                ),
+            }
+        )
+    return sections
+
+
+def _asset_key(card: dict[str, str]) -> str:
+    return (
+        _clean_value(card.get("asset_id")).casefold()
+        or _canonical_title(card.get("asset_title"))
+        or str(card.get("bundle_revision_id") or "")
+    )
+
+
+def _unique_asset_cards(
+    cards: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for card in cards:
+        key = _asset_key(card)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(card)
+    return result
+
+
+def _title_similarity(left: object, right: object) -> float:
+    left_key = _canonical_title(left)
+    right_key = _canonical_title(right)
+    if not left_key or not right_key:
+        return 0.0
+    if left_key == right_key:
+        return 1.0
+    shorter, longer = sorted((left_key, right_key), key=len)
+    if len(shorter) >= 12 and shorter in longer:
+        return 0.95
+    return SequenceMatcher(None, left_key, right_key).ratio()
+
+
+def _best_title_card(
+    title: str,
+    cards: list[dict[str, str]],
+) -> tuple[dict[str, str] | None, bool]:
+    """返回唯一可靠标题匹配；第二个返回值表示存在歧义。"""
+    candidates = _unique_asset_cards(cards)
+    ranked = sorted(
+        (
+            (_title_similarity(title, card.get("asset_title")), index, card)
+            for index, card in enumerate(candidates)
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    if not ranked or ranked[0][0] < 0.82:
+        return None, False
+    top_score, _, top_card = ranked[0]
+    if len(ranked) > 1 and ranked[1][0] >= 0.82:
+        second_score, _, second_card = ranked[1]
+        if (
+            top_score - second_score < 0.05
+            and _asset_key(top_card) != _asset_key(second_card)
+        ):
+            return None, True
+    return top_card, False
 
 
 def _order_manifest_cards_by_answer(
@@ -208,6 +343,58 @@ def _order_manifest_cards_by_answer(
         card
         for _, card in sorted(enumerate(cards), key=position)
     ]
+
+
+def _match_manifest_cards_to_answer(
+    answer: object,
+    cards: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """逐项匹配正文 Asset，只返回正文明确展示的 Manifest。"""
+    sections = _answer_asset_sections(answer)
+    if not sections:
+        return _order_manifest_cards_by_answer(answer, cards)
+    by_label = {
+        str(card.get("citation_label") or "").strip().upper(): card
+        for card in cards
+        if str(card.get("citation_label") or "").strip()
+    }
+    matched: list[dict[str, str]] = []
+    seen_assets: set[str] = set()
+    for section in sections:
+        title = str(section["asset_title"])
+        display_hint = str(section.get("display_hint") or title)
+        labels = tuple(section["citation_labels"])
+        scoped = [by_label[label] for label in labels if label in by_label]
+        card, ambiguous = _best_title_card(title, scoped)
+        if card is None and not ambiguous:
+            card, ambiguous = _best_title_card(title, cards)
+        unique_scoped = _unique_asset_cards(scoped)
+        if (
+            card is None
+            and not ambiguous
+            and section["allow_citation_fallback"]
+            and len(unique_scoped) == 1
+        ):
+            card = unique_scoped[0]
+        if card is None:
+            code = (
+                "SLACK_ASSET_SECTION_AMBIGUOUS"
+                if ambiguous
+                else "SLACK_ASSET_SECTION_UNMATCHED"
+            )
+            logger.warning(
+                "{} title={} citations={}",
+                code,
+                display_hint,
+                ",".join(labels) or "-",
+            )
+            continue
+        key = _asset_key(card)
+        if not key or key in seen_assets:
+            continue
+        seen_assets.add(key)
+        matched.append(card)
+    return matched
 
 
 async def _read_manifest(
@@ -390,7 +577,7 @@ async def assemble_slack_asset_cards(
                     "bundle_revision_id": revision_id,
                 }
             )
-    manifest_cards = _order_manifest_cards_by_answer(
+    manifest_cards = _match_manifest_cards_to_answer(
         payload.get("answer"), manifest_cards
     )
     return _merge_cards(answer_cards, manifest_cards, limit=limit)

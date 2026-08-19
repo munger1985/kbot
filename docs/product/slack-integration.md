@@ -127,12 +127,21 @@ Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。�
 来自 `payload.answer`，并先转换为安全的 Slack `mrkdwn`；非 `READY` 状态显示中文
 状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
 `asset_title`、`solution_briefing`、`author_mail`、`create_time` 仅从本次实际使用的
-DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。Manifest Asset 在组装 Template
-前，优先按照 `asset_title` 在原回答正文中的出现位置排序；标题未匹配时回退到引用
-标签在正文中的位置，并保持原引用顺序稳定。排序和 Asset 去重完成后再应用
-`max_references`，整个过程不修改 `payload.answer`。回答原文保留，原参考资料区替换
-为一个分隔线、Asset Title、Solution Briefing，以及“Contributor 邮箱 | 发布日期”
-与 KM Link 按钮组成的 Block Kit。
+DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。组装 Template 时，先按原回答中的
+独立加粗标题、加粗项目符号或编号条目提取 Asset 顺序，再使用该条目范围内的引用
+标签和规范化 `asset_title` 匹配对应 Manifest；标题存在轻微标点或后缀差异时允许
+唯一相似匹配。无加粗标题的顶层项目也会作为独立条目分析，但仅在该条目
+自身可定位到唯一的已使用 DOCUMENT Asset 引用时，才从对应 Manifest 补齐标题
+和字段；其他标题无法可靠匹配的项目，也仅允许回退到该条目唯一引用的 Asset。只展示成功
+映射到正文条目的 Asset，歧义、未匹配以及正文未展示的候选均不追加，并记录诊断
+日志。完成映射和 Asset 去重后再应用 `max_references`，整个过程不修改
+`payload.answer`。回答原文保留，
+原参考资料区替换为一个分隔线、Asset Title、Solution Briefing，以及
+“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成的 Block Kit。
+
+Knowledge Core 的检索实现、模型或候选顺序调整不作为 Slack Template 的
+展示顺序。Slack 按 `payload.answer` 中引用首次出现的顺序恢复文档，
+再按正文 Asset 条目组装 Template。
 
 KBot Artifact、Outbox 和 `/tmp/slackmess` 原始调试报文保留引用标签，以支持证据
 审计和问题排查；实际发送给 Slack 的报文副本会从所有可见 `text` 字段中删除

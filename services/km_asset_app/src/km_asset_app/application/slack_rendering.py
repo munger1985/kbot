@@ -51,6 +51,7 @@ _VISIBLE_CITATION_PATTERN = re.compile(r"\[[A-Za-z]\d+\]")
 _PUNCTUATION_PATTERN = re.compile(r"[ \t]+(?=[,.;:!?，。；：！？])")
 _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
+_ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 
 
 def waiting_message(question: str) -> str:
@@ -157,8 +158,156 @@ def _hide_visible_citation_labels(value: str) -> str:
     return text.strip()
 
 
+def _visible_asset_titles(payload: dict[str, Any]) -> list[str]:
+    """从已组装的 Slack Template 中读取实际展示的 Asset 标题。"""
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        return []
+    titles: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "section":
+            continue
+        text_object = block.get("text")
+        if not isinstance(text_object, dict):
+            continue
+        value = text_object.get("text")
+        if not isinstance(value, str) or not value.startswith(
+            _ASSET_TITLE_BLOCK_PREFIX
+        ):
+            continue
+        title = value[len(_ASSET_TITLE_BLOCK_PREFIX) :].strip()
+        if title and title not in titles:
+            titles.append(title)
+    return titles
+
+
+def _asset_heading_matches(
+    value: str,
+    asset_titles: list[str],
+) -> list[re.Match[str]]:
+    """定位项目符号 Asset，以及可由 Template 标题确认的无符号 Asset。"""
+    matches: list[re.Match[str]] = []
+    matches.extend(
+        re.finditer(
+            r"(?m)^•[ \t]+\*[^*\r\n]+\*(?=[ \t]*(?:[:：]|$))",
+            value,
+        )
+    )
+    for title in asset_titles:
+        matches.extend(
+            re.finditer(
+                rf"(?m)^\*{re.escape(title)}\*"
+                rf"(?=[ \t]*(?:[:：]|$))",
+                value,
+            )
+        )
+    return sorted(
+        {match.start(): match for match in matches}.values(),
+        key=lambda match: match.start(),
+    )
+
+
+def _visible_text_blocks(parts: list[str]) -> list[dict[str, Any]]:
+    """将正文段落组装为独立 Slack Section，并遵守单块长度限制。"""
+    blocks: list[dict[str, Any]] = []
+    for part in parts:
+        text = part.strip()
+        if not text:
+            continue
+        blocks.extend(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": text[offset : offset + 3000],
+                },
+            }
+            for offset in range(0, len(text), 3000)
+        )
+    return blocks
+
+
+def _answer_text(payload: dict[str, Any]) -> str:
+    """无损拼回 render_slack_reply 按长度切分的正文 Section。"""
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        return ""
+    first_divider = next(
+        (
+            index
+            for index, block in enumerate(blocks)
+            if isinstance(block, dict) and block.get("type") == "divider"
+        ),
+        len(blocks),
+    )
+    parts: list[str] = []
+    for block in blocks[:first_divider]:
+        if not isinstance(block, dict) or block.get("type") != "section":
+            continue
+        text_object = block.get("text")
+        if not isinstance(text_object, dict):
+            continue
+        value = text_object.get("text")
+        if not isinstance(value, str) or value.startswith(
+            "*:information_source:"
+        ):
+            continue
+        parts.append(value)
+    return "".join(parts)
+
+
+def _space_visible_asset_sections(
+    payload: dict[str, Any],
+    asset_titles: list[str],
+    answer: str,
+) -> None:
+    """只修改最终发给 Slack 的正文 Block，不修改 Template Block。"""
+    if not asset_titles:
+        return
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        return
+    first_divider = next(
+        (
+            index
+            for index, block in enumerate(blocks)
+            if isinstance(block, dict) and block.get("type") == "divider"
+        ),
+        len(blocks),
+    )
+    answer_indexes: list[int] = []
+    for index, block in enumerate(blocks[:first_divider]):
+        if not isinstance(block, dict) or block.get("type") != "section":
+            continue
+        text_object = block.get("text")
+        if not isinstance(text_object, dict):
+            continue
+        value = text_object.get("text")
+        if not isinstance(value, str) or value.startswith(
+            "*:information_source:"
+        ):
+            continue
+        answer_indexes.append(index)
+    if not answer_indexes or not answer:
+        return
+    matches = _asset_heading_matches(answer, asset_titles)
+    if not matches:
+        return
+    starts = [match.start() for match in matches]
+    parts = [answer[: starts[0]]]
+    parts.extend(
+        answer[start : starts[index + 1] if index + 1 < len(starts) else None]
+        for index, start in enumerate(starts)
+    )
+    replacement = _visible_text_blocks(parts)
+    blocks[answer_indexes[0] : answer_indexes[-1] + 1] = replacement
+
+
 def slack_visible_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """复制 Slack 报文并从全部可见 text 字段隐藏引用标签。"""
+    """复制并整理最终 Slack 可见报文，不改变原始调试报文。"""
+
+    asset_titles = _visible_asset_titles(payload)
+    answer = _hide_visible_citation_labels(_answer_text(payload))
 
     def sanitize(value: Any, *, key: str | None = None) -> Any:
         if isinstance(value, dict):
@@ -175,7 +324,10 @@ def slack_visible_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return value
 
     visible = sanitize(payload)
-    return visible if isinstance(visible, dict) else {}
+    if not isinstance(visible, dict):
+        return {}
+    _space_visible_asset_sections(visible, asset_titles, answer)
+    return visible
 
 
 def _text_sections(text: str) -> list[dict[str, Any]]:
@@ -398,13 +550,23 @@ def _status_blocks(status: str) -> list[dict[str, Any]]:
     ]
 
 
+def _is_internal_retrieval_warning(value: object) -> bool:
+    """识别不应暴露给 Slack 用户的检索降级诊断。"""
+    text = str(value)
+    return "专用重排失败" in text and "已保留 RRF 顺序" in text
+
+
 def _warning_blocks(
     answer_payload: dict[str, Any], config: SlackReplyConfig
 ) -> list[dict[str, Any]]:
     warnings = answer_payload.get("warnings")
     if not config.show_warnings or not isinstance(warnings, (list, tuple)):
         return []
-    values = [_escape_mrkdwn(value) for value in warnings]
+    values = [
+        _escape_mrkdwn(value)
+        for value in warnings
+        if not _is_internal_retrieval_warning(value)
+    ]
     values = [value for value in values if value][:5]
     if not values:
         return []
