@@ -139,6 +139,23 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('run.status !== "COMPLETED"', source)
         self.assertIn("run.error_message", source)
 
+    def test_km_chat_streams_answer_deltas_as_accumulated_markdown(self):
+        source = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+        ).read_text(encoding="utf-8")
+        html = (ROOT / "ui" / "km" / "chat.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('eventType === "answer.delta"', source)
+        self.assertIn('pending.markdown += String(payload.delta || "")', source)
+        self.assertIn(
+            "KBotMarkdown.render(pending.markdown)", source
+        )
+        self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
+        self.assertIn('content.setAttribute("aria-live", "polite")', source)
+        self.assertIn("km-chat-v5.js?v=20260819_1", html)
+
     def test_jobs_page_uses_asset_revision_step_tree(self):
         source = (KM_ROOT / "js" / "km-jobs.js").read_text(
             encoding="utf-8"
@@ -171,6 +188,28 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("escapeHtml(source)", source)
         self.assertIn('target="_blank" rel="noopener noreferrer"', source)
         self.assertNotIn("innerHTML = value", source)
+
+    def test_km_markdown_preserves_explicit_ordered_list_numbers(self):
+        source = (
+            ROOT / "ui" / "shared" / "kbot-markdown.js"
+        ).read_text(encoding="utf-8")
+        chat = (ROOT / "ui" / "km" / "chat.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            r"const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)$/);",
+            source,
+        )
+        self.assertIn(
+            'const start = ordered ? ` start="${escapeHtml(ordered[1])}"`',
+            source,
+        )
+        self.assertIn(
+            "inline(unordered ? unordered[1] : ordered[2])",
+            source,
+        )
+        self.assertIn("kbot-markdown.js?v=20260819_1", chat)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")

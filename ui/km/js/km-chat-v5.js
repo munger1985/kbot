@@ -1,4 +1,4 @@
-/* KM 聊天独立入口；v5 增加安全 Markdown 渲染并绕过旧静态缓存。 */
+/* KM 聊天独立入口；SSE 正文增量累计后使用安全 Markdown 渲染。 */
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
@@ -89,8 +89,40 @@
   function appendPending(input) {
     const stream = $("chat-stream");
     if (stream.querySelector(".km-empty")) stream.innerHTML = "";
-    stream.insertAdjacentHTML("beforeend", `${messageMarkup("user", "你", input)}${messageMarkup("assistant", "KM Agent", "正在分析问题并选择文档检索或元数据问数路径…")}`);
+    stream.insertAdjacentHTML("beforeend", messageMarkup("user", "你", input));
+    const message = document.createElement("div");
+    message.className = "km-message assistant";
+    message.setAttribute("aria-busy", "true");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = "KM Agent";
+    const content = document.createElement("div");
+    content.className = "content";
+    content.setAttribute("aria-live", "polite");
+    content.textContent = "正在分析问题并选择文档检索或元数据问数路径…";
+    const references = document.createElement("div");
+    message.append(meta, content, references);
+    stream.append(message);
     stream.scrollTop = stream.scrollHeight;
+    return { message, content, references, markdown: "" };
+  }
+  function applyRunEvent(pending, item) {
+    const data = item.json && typeof item.json === "object" ? item.json : {};
+    const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
+    const eventType = item.type || data.event_type || "message";
+    if (eventType === "answer.delta") {
+      pending.markdown += String(payload.delta || "");
+      pending.content.innerHTML = KBotMarkdown.render(pending.markdown);
+      pending.message.setAttribute("aria-busy", "false");
+      $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
+      return;
+    }
+    $("chat-progress").textContent = payload.public_summary
+      || payload.summary
+      || data.title
+      || data.summary
+      || eventType
+      || "Agent 正在执行";
   }
   function isRetryableTurnTransportError(error) {
     return error instanceof TypeError || [502, 503, 504].includes(Number(error?.status));
@@ -112,14 +144,19 @@
     event.preventDefault();
     if (!active) return KBotKmShell.toast("请先创建或选择会话", "error");
     const input = $("chat-input").value.trim(); if (!input) return;
-    appendPending(input); $("chat-input").value = ""; KBotKmShell.setBusy($("send-message"), true, "处理中…");
+    const pending = appendPending(input); $("chat-input").value = ""; KBotKmShell.setBusy($("send-message"), true, "处理中…");
     $("chat-progress").hidden = false; $("chat-progress").textContent = "正在创建 Turn";
     try {
       const receipt = await createTurn(input, KBotKmApi.uuid());
       if (receipt.run_id) {
+        pending.message.dataset.runId = String(receipt.run_id);
+        pending.references.dataset.referencesFor = String(receipt.run_id);
         $("chat-progress").textContent = "Agent 正在执行";
         const eventsUrl = `${base}/runs/${encodeURIComponent(receipt.run_id)}/events`;
-        await KBotKmApi.stream(eventsUrl, { lastEventId: receipt.event_cursor, onEvent: (item) => { const data = item.json || {}; $("chat-progress").textContent = data.title || data.summary || item.type || "Agent 正在执行"; } });
+        await KBotKmApi.stream(eventsUrl, {
+          lastEventId: receipt.event_cursor,
+          onEvent: (item) => applyRunEvent(pending, item),
+        });
         const run = await KBotKmApi.request(`${base}/runs/${receipt.run_id}`);
         if (run.status !== "COMPLETED") {
           const error = new Error(run.error_message || `Run 执行结束但状态为 ${run.status}`);
@@ -128,12 +165,17 @@
           throw error;
         }
         const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
+        if (!pending.markdown) {
+          pending.markdown = String(result?.payload?.answer || "");
+          pending.content.innerHTML = KBotMarkdown.render(pending.markdown);
+        }
+        pending.message.setAttribute("aria-busy", "false");
         await refreshActive();
         await loadConversations(active.conversation_id);
         renderReferences(receipt.run_id, result);
       } else { await refreshActive(); await loadTurns(); }
       if (!receipt.run_id) await loadConversations(active.conversation_id);
-    } catch (error) { KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
+    } catch (error) { pending.message.setAttribute("aria-busy", "false"); KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
     finally { $("chat-progress").hidden = true; KBotKmShell.setBusy($("send-message"), false); }
   }
   async function refreshActive() { if (active) active = await KBotKmApi.request(`${base}/conversations/${active.conversation_id}`); }

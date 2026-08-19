@@ -1133,8 +1133,9 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             if getattr(item, "event_type", None) == "answer.delta"
         ]
         payload = outputs[-1].artifact.payload
-        self.assertEqual(deltas, ["- Asset A\n\n- Asset B [Q1]"])
-        self.assertEqual(payload["answer"], deltas[0])
+        self.assertGreater(len(deltas), 1)
+        self.assertEqual("".join(deltas), "- Asset A\n\n- Asset B [Q1]")
+        self.assertEqual(payload["answer"], "".join(deltas))
         self.assertEqual(payload["used_citation_labels"], ["Q1"])
         self.assertEqual(
             [item["citation_label"] for item in payload["references"]],

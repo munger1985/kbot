@@ -62,12 +62,16 @@
         output.push(`<h${level}>${inline(heading[2])}</h${level}>`); continue;
       }
       const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
-      const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+      const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)$/);
       if (unordered || ordered) {
         closeParagraph(); const nextType = unordered ? "ul" : "ol";
         if (listType && listType !== nextType) closeList();
-        if (!listType) { listType = nextType; output.push(`<${listType}>`); }
-        output.push(`<li>${inline((unordered || ordered)[1])}</li>`); continue;
+        if (!listType) {
+          listType = nextType;
+          const start = ordered ? ` start="${escapeHtml(ordered[1])}"` : "";
+          output.push(`<${listType}${start}>`);
+        }
+        output.push(`<li>${inline(unordered ? unordered[1] : ordered[2])}</li>`); continue;
       }
       const quote = line.match(/^\s*>\s?(.*)$/);
       if (quote) { closeFlow(); output.push(`<blockquote>${inline(quote[1])}</blockquote>`); continue; }

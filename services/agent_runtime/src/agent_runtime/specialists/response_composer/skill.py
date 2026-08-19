@@ -61,6 +61,12 @@ def _strip_model_citations(value: str) -> str:
     ).strip()
 
 
+def _markdown_answer_deltas(value: str) -> tuple[str, ...]:
+    """按 Markdown 原始行切分已校验回答，保持拼接后正文完全不变。"""
+    lines = tuple(value.splitlines(keepends=True))
+    return lines or (value,)
+
+
 class ResponseComposerSkill:
     def __init__(self, *, model_client, prompt_resolver):
         self._model_client = model_client
@@ -352,10 +358,13 @@ class ResponseComposerSkill:
             yield self._result(context, grounded)
             return
         answer_text, used_labels = validated
-        yield SkillProgress(
-            event_type="answer.delta",
-            payload={"chunk_index": 1, "delta": answer_text},
-        )
+        for index, delta in enumerate(
+            _markdown_answer_deltas(answer_text), start=1
+        ):
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": index, "delta": delta},
+            )
         references = tuple(
             ReferenceCard(
                 citation_label=label,
@@ -586,10 +595,13 @@ class ResponseComposerSkill:
             raise ValueError(f"问数回答语言与 language={language} 不一致")
         result = self._query_result_artifact(context, query, answer)
         grounded_answer = str(result.artifact.payload.get("answer") or "")
-        yield SkillProgress(
-            event_type="answer.delta",
-            payload={"chunk_index": 1, "delta": grounded_answer},
-        )
+        for index, delta in enumerate(
+            _markdown_answer_deltas(grounded_answer), start=1
+        ):
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": index, "delta": delta},
+            )
         yield result
 
     async def _query_response(
