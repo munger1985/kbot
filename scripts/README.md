@@ -3,6 +3,7 @@
 本目录只保留部署、初始化、安全配置和发布流程会直接使用的脚本，并按用途分组：
 
 - `scripts/db/apply_oracle_schema.py`：按同目录 `init_services.ini` 初始化所选服务的 Oracle 表；`--foundation-only` 可幂等补齐平台基础数据和用户安全等级字段。
+- `scripts/db/sync_prompt_catalog.py`：在现有 Oracle Schema 中幂等插入并激活仓库最新 Prompt，不执行 DDL 或修改其他基础数据。
 - `scripts/db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。
 - `scripts/db/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%` 表和视图，仅用于确认不保留数据的开发 Schema。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
@@ -12,6 +13,13 @@
 - `scripts/release/verify_release.py`：编排发布前检查、实库验收并生成发布证据。
 
 静态契约检查、实库 Smoke 和质量评测属于测试资产，统一放在 `tests/`。
+
+现有 Schema 部署新 Prompt 后执行：
+
+```bash
+KBOT_CONFIG_FILE=configuration/kbot.toml \
+python3 scripts/db/sync_prompt_catalog.py
+```
 
 空白环境部署前先准备 `configuration/kbot.toml` 和 Secret，然后执行：
 

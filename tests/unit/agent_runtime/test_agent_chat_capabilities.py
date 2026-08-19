@@ -219,6 +219,46 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CONTAINS", plan.filters[0].operator)
         self.assertEqual(("chatbi",), plan.filters[0].values)
 
+    def test_km_semantic_plan_uses_catalog_author_operator(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["title", "author"],
+                "filters": [{
+                    "field": "author",
+                    "operator": "CONTAINS",
+                    "values": ["lavkesh.singh"],
+                }],
+                "limit": 100,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": [
+                    {"name": "title"},
+                    {
+                        "name": "author",
+                        "allowed_filter_operators": ["EQ", "IN"],
+                    },
+                ],
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="list all assets of lavkesh.singh",
+            consumer_app_id="km_asset",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        self.assertEqual("EQ", plan.filters[0].operator)
+
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(
             response={

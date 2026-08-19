@@ -8,6 +8,8 @@ from typing import Any, Literal
 from data_query.contracts import DataQueryPlanV1, SemanticModelDefinition
 from data_query.domain import validate_query_plan
 
+from .filter_values import normalize_filter_values
+
 
 @dataclass(frozen=True)
 class CompiledDialectQuery:
@@ -41,16 +43,24 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
         )
         select.append(f"{expression} AS {quote(item.name)}")
     for item in plan.filters:
-        column = quote(dimensions[item.field].physical_column); operator = item.operator
-        if operator == "IS_NULL": where.append(f"{column} IS NULL"); continue
-        if operator == "IS_NOT_NULL": where.append(f"{column} IS NOT NULL"); continue
-        if operator in {"IN", "NOT_IN"}:
-            values = item.values; params.extend(values); token = "IN" if operator == "IN" else "NOT IN"
-            where.append(f"{column} {token} ({', '.join(placeholder(len(params)-len(values)+offset+1) for offset in range(len(values)))})"); continue
-        params.extend(item.values)
-        if operator == "BETWEEN": where.append(f"{column} BETWEEN {placeholder(len(params)-1)} AND {placeholder(len(params))}"); continue
-        token = placeholder(len(params)); mapping = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
-        where.append(f"{column} LIKE ('%' || {token} || '%')" if operator == "CONTAINS" and dialect == "ORACLE" else f"{column} LIKE CONCAT('%', {token}, '%')" if operator == "CONTAINS" else f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
+        dimension = dimensions[item.field]
+        columns = (dimension.physical_column, *dimension.filter_alias_columns)
+        values = normalize_filter_values(dimension=dimension, values=item.values)
+        predicates: list[str] = []
+        for physical_column in columns:
+            column = quote(physical_column); operator = item.operator
+            if operator == "IS_NULL": predicates.append(f"{column} IS NULL"); continue
+            if operator == "IS_NOT_NULL": predicates.append(f"{column} IS NOT NULL"); continue
+            if operator in {"IN", "NOT_IN"}:
+                start = len(params); params.extend(values)
+                token = "IN" if operator == "IN" else "NOT IN"
+                predicates.append(f"{column} {token} ({', '.join(placeholder(start+offset+1) for offset in range(len(values)))})"); continue
+            start = len(params); params.extend(values)
+            if operator == "BETWEEN": predicates.append(f"{column} BETWEEN {placeholder(start+1)} AND {placeholder(start+2)}"); continue
+            token = placeholder(start+1); mapping = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
+            predicates.append(f"{column} LIKE ('%' || {token} || '%')" if operator == "CONTAINS" and dialect == "ORACLE" else f"{column} LIKE CONCAT('%', {token}, '%')" if operator == "CONTAINS" else f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
+        conjunction = " AND " if item.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
+        where.append(predicates[0] if len(predicates) == 1 else f"({conjunction.join(predicates)})")
     clauses = [f"SELECT {', '.join(select)}", f"FROM {quote(dataset.physical_schema)}.{quote(dataset.physical_object)}"]
     if where: clauses.append("WHERE " + " AND ".join(where))
     if group: clauses.append("GROUP BY " + ", ".join(group))

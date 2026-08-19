@@ -229,7 +229,7 @@ class SemanticDataQueryExecutor:
                 }]
         normalized["measures"] = measures
         catalog_dimensions = {
-            str(item.get("name"))
+            str(item.get("name")): item
             for item in selected.get("dimensions") or ()
             if isinstance(item, dict) and item.get("name")
         }
@@ -252,6 +252,17 @@ class SemanticDataQueryExecutor:
                 values = [raw.get("value")]
             else:
                 values = []
+            catalog = catalog_dimensions.get(field)
+            allowed = (
+                tuple(catalog.get("allowed_filter_operators") or ())
+                if isinstance(catalog, dict)
+                else ()
+            )
+            if allowed and operator not in allowed:
+                if len(values) > 1 and "IN" in allowed:
+                    operator = "IN"
+                elif "EQ" in allowed:
+                    operator = "EQ"
             filters.append({
                 "field": field,
                 "operator": operator,

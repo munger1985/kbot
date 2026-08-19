@@ -11,6 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _KEY_PATTERN = r"^[a-z][a-z0-9._-]{0,127}$"
 
+FilterOperator = Literal[
+    "EQ", "NE", "IN", "NOT_IN", "BETWEEN", "GT", "GTE", "LT", "LTE",
+    "CONTAINS", "STARTS_WITH", "IS_NULL", "IS_NOT_NULL",
+]
+
 
 class _PlanContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -23,10 +28,7 @@ class PlanMeasure(_PlanContract):
 
 class PlanFilter(_PlanContract):
     field: str = Field(pattern=_KEY_PATTERN)
-    operator: Literal[
-        "EQ", "NE", "IN", "NOT_IN", "BETWEEN", "GT", "GTE", "LT", "LTE",
-        "CONTAINS", "STARTS_WITH", "IS_NULL", "IS_NOT_NULL",
-    ]
+    operator: FilterOperator
     values: tuple[str | int | float | bool | None, ...] = Field(default=(), max_length=100)
 
     @model_validator(mode="after")

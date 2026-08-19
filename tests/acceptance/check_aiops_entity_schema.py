@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sys
 
-from sqlalchemy import DateTime, Integer, LargeBinary, Numeric, String, Text, text
+from sqlalchemy import Date, DateTime, Integer, LargeBinary, Numeric, String, Text, text
 from sqlalchemy.dialects.oracle import RAW as OracleRAW
 
 # 支持从仓库根目录直接执行本脚本。
@@ -146,6 +146,8 @@ def entity_column_contract(column) -> ColumnContract:
         )
     if isinstance(column_type, Text):
         return ColumnContract("CLOB", None, None, None, None, column.nullable)
+    if isinstance(column_type, Date):
+        return ColumnContract("DATE", None, None, None, None, column.nullable)
     if isinstance(column_type, DateTime):
         return ColumnContract(
             "TIMESTAMP",
@@ -205,6 +207,10 @@ def catalog_column_contract(row) -> ColumnContract:
         family = "TIMESTAMP"
         length = None
         timezone = "WITH TIME ZONE" in data_type
+    elif data_type == "DATE":
+        family = "DATE"
+        length = None
+        timezone = None
     elif data_type == "NUMBER":
         family = "NUMBER"
         length = None

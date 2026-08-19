@@ -135,7 +135,7 @@ query 仅用于后续文档检索；禁止 SQL、物理字段、原始数据行�
 [[prompts]]
 prompt_key = "agent_runtime.data_query_plan"
 owner_service = "agent_runtime"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "从受控逻辑语义模型生成 DataQueryPlan.v1"
 input_variables = []
@@ -150,6 +150,8 @@ dimensions 每项必须是 models 中的逻辑维度 name。
 filters 每项只能包含 field、operator、values：field 必须是 models 中的逻辑维度 name，
 operator 必须是 EQ、NE、IN、NOT_IN、BETWEEN、GT、GTE、LT、LTE、CONTAINS、
 STARTS_WITH、IS_NULL、IS_NOT_NULL 之一，values 必须是 JSON 数组；禁止使用 dimension 或 value 字段。
+如果维度提供 allowed_filter_operators，只能从该列表选择操作符。DATE 维度的值必须使用
+YYYY-MM-DD；“since/自/从某日以来”使用 GTE，“before/早于”使用 LT。
 order_by 每项只能包含 field 和 direction，direction 只能是 ASC 或 DESC。
 limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符串或 null。
 """

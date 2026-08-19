@@ -18,6 +18,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "db/apply_oracle_schema.py",
+                "db/sync_prompt_catalog.py",
                 "deployment/check_deployment.py",
                 "deployment/init_local_env.py",
                 "deployment/models/download_colqwen_model.py",
@@ -129,6 +130,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
     def test_operational_python_scripts_do_not_modify_import_path(self):
         scripts = (
             "db/apply_oracle_schema.py",
+            "db/sync_prompt_catalog.py",
             "deployment/check_deployment.py",
         )
 

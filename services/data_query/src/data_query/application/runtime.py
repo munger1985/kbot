@@ -89,7 +89,14 @@ class DataQueryRuntimeService:
                     semantic_model_id=model.semantic_model_id, semantic_model_version=active.version_no,
                     display_name=model.display_name,
                     datasets=tuple({"name": item.name, "display_name": item.display_name} for item in definition.datasets),
-                    dimensions=tuple({"name": item.name, "dataset": item.dataset, "value_type": item.value_type, "synonyms": item.synonyms} for item in definition.dimensions),
+                    dimensions=tuple({
+                        "name": item.name,
+                        "display_name": item.display_name,
+                        "dataset": item.dataset,
+                        "value_type": item.value_type,
+                        "synonyms": item.synonyms,
+                        "allowed_filter_operators": item.allowed_filter_operators,
+                    } for item in definition.dimensions),
                     measures=tuple({"name": item.name, "dataset": item.dataset, "aggregation": item.aggregation, "value_type": item.value_type} for item in definition.measures),
                     max_rows=budget["max_rows"],
                 ))

@@ -2,6 +2,8 @@
 
 import json
 import unittest
+from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
@@ -73,6 +75,76 @@ class KmAssetCatalogTest(unittest.TestCase):
         )
         self.assertIn('WHERE "DOMAIN_ID" = :p1', compiled.sql)
         self.assertEqual((41, 100), compiled.parameters)
+
+    def test_author_filter_matches_normalized_email_and_local_part(self):
+        model = SemanticModelDefinition.model_validate(
+            km_asset_definition(schema_name="KBOTUI_DEV")
+        )
+        plan = DataQueryPlanV1.model_validate({
+            "semantic_model_id": "01900000-0000-7000-8000-000000000003",
+            "semantic_model_version": 1,
+            "dataset": "assets",
+            "dimensions": ["asset_id", "title", "author"],
+            "measures": [{"name": "asset_count", "aggregation": "COUNT"}],
+            "filters": [{
+                "field": "author",
+                "operator": "EQ",
+                "values": ["  Lavkesh.Singh@Oracle.COM  "],
+            }],
+            "limit": 100,
+        })
+
+        compiled = compile_dialect_query(
+            dialect="ORACLE", plan=plan, model=model,
+            policy_max_limit=1000, scope_value=41,
+        )
+
+        self.assertIn(
+            '("AUTHOR_MAIL_NORM" = :p2 OR "AUTHOR_LOCAL_PART" = :p3)',
+            compiled.sql,
+        )
+        self.assertEqual(
+            (41, "lavkesh.singh@oracle.com", "lavkesh.singh@oracle.com", 100),
+            compiled.parameters,
+        )
+
+    def test_asset_date_filter_uses_typed_date_parameter(self):
+        model = SemanticModelDefinition.model_validate(
+            km_asset_definition(schema_name="KBOTUI_DEV")
+        )
+        plan = DataQueryPlanV1.model_validate({
+            "semantic_model_id": "01900000-0000-7000-8000-000000000003",
+            "semantic_model_version": 1,
+            "dataset": "assets",
+            "dimensions": ["asset_id", "title", "asset_date"],
+            "measures": [{"name": "asset_count", "aggregation": "COUNT"}],
+            "filters": [{
+                "field": "asset_date",
+                "operator": "GTE",
+                "values": ["2026-01-01"],
+            }],
+            "limit": 100,
+        })
+
+        compiled = compile_dialect_query(
+            dialect="ORACLE", plan=plan, model=model,
+            policy_max_limit=1000, scope_value=41,
+        )
+
+        self.assertIn('"ASSET_DATE_VALUE" >= :p2', compiled.sql)
+        self.assertEqual((41, date(2026, 1, 1), 100), compiled.parameters)
+
+    def test_oracle_schema_defines_indexed_author_and_effective_date_columns(self):
+        schema = (
+            Path(__file__).resolve().parents[3]
+            / "database/oracle/km_asset_app/001_km_asset.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("AUTHOR_MAIL_NORM GENERATED ALWAYS AS", schema)
+        self.assertIn("AUTHOR_LOCAL_PART GENERATED ALWAYS AS", schema)
+        self.assertIn("ASSET_DATE_VALUE GENERATED ALWAYS AS", schema)
+        self.assertIn("TRUNC(CAST(SYS_EXTRACT_UTC(CREATED_AT) AS DATE))", schema)
+        self.assertIn("IX_KM_ASSET_AUTHOR_LOCAL", schema)
+        self.assertIn("IX_KM_ASSET_DATE", schema)
 
     def test_raw_metadata_normalization_preserves_business_columns(self):
         normalized = KmAssetService._normalize({"ASSET_TITLE": "AI Asset", "Author_Mail": "u@example.com"})

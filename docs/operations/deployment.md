@@ -53,6 +53,23 @@ bash scripts/deployment/install_workspace.sh --production
 并仅从该目录强制重装当次构建的 Wheel。因此，即使内部包版本仍为
 `4.0.0`，也不会误用之前部署留下的同名 Wheel。
 
+### 同步现有数据库的 Prompt Catalog
+
+部署包含 Prompt 版本变更的新代码后，必须使用同一运行环境把仓库 Catalog 同步到
+现有 Oracle Schema。该脚本只写入 `KBOT_PLATFORM_PROMPT` 和
+`KBOT_PLATFORM_PROMPT_VERSION`，不会执行 DDL，也不会修改 Domain、用户或授权：
+
+```bash
+cd /home/ubuntu/kbot4.0
+KBOT_CONFIG_FILE=configuration/kbot.toml \
+  /home/ubuntu/anaconda3/envs/kbot4/bin/python \
+  scripts/db/sync_prompt_catalog.py
+```
+
+默认同步 Catalog 中全部服务；只更新 Agent Runtime 时可使用
+`--service agent_runtime`。脚本可重复执行；如果数据库已有相同版本但正文 Hash 不同，
+会拒绝覆盖并返回失败。同步成功后，数据库 Active 指针立即指向文件声明的版本。
+
 可通过 `KBOT_PYTHON=/path/to/python` 指定解释器。未指定时，安装脚本与
 `start_kbot.sh` 使用同一选择规则：优先安装到 `KBOT_CONDA_ENV`，否则自动选择
 `kbot4`，仅当 `kbot4` 不存在时回退到 `cube`。安装开始时会打印目标解释器，安装后会

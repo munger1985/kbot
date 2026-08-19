@@ -24,24 +24,47 @@ def _hash(value: object) -> str:
 
 def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
     dataset = "assets"
-    dimensions = (
-        ("asset_id", "Asset ID", "ASSET_ID"),
-        ("title", "Asset 标题", "ASSET_TITLE"),
-        ("author", "作者邮箱", "AUTHOR_MAIL"),
-        ("product", "产品", "ASSET_PRODUCT"),
-        ("solution", "解决方案或主题", "ASSET_SOLUTION"),
-        ("industry", "行业", "INDUSTRY_ID"),
-        ("category", "内容分类", "CONTENT_CATEGORY"),
-        ("asset_status", "Asset 状态", "ASSET_STATUS"),
-        ("ingestion_status", "入库状态", "INGESTION_STATUS"),
-        ("publish_date", "发布日期", "PUBLISH_DATE"),
-    )
+    dimensions = [
+        {"name": "asset_id", "display_name": "Asset ID", "physical_column": "ASSET_ID"},
+        {"name": "title", "display_name": "Asset 标题", "physical_column": "ASSET_TITLE", "synonyms": ["asset name", "标题"]},
+        {
+            "name": "author",
+            "display_name": "作者邮箱或邮箱用户名",
+            "physical_column": "AUTHOR_MAIL_NORM",
+            "filter_alias_columns": ["AUTHOR_LOCAL_PART"],
+            "value_normalization": "LOWER_TRIM",
+            "allowed_filter_operators": ["EQ", "IN"],
+            "synonyms": ["author email", "email address", "creator", "contributor", "作者", "作者邮箱", "创建者"],
+        },
+        {"name": "product", "display_name": "产品", "physical_column": "ASSET_PRODUCT"},
+        {"name": "solution", "display_name": "解决方案或主题", "physical_column": "ASSET_SOLUTION"},
+        {"name": "industry", "display_name": "行业", "physical_column": "INDUSTRY_ID"},
+        {"name": "category", "display_name": "内容分类", "physical_column": "CONTENT_CATEGORY"},
+        {"name": "asset_status", "display_name": "Asset 状态", "physical_column": "ASSET_STATUS"},
+        {"name": "ingestion_status", "display_name": "入库状态", "physical_column": "INGESTION_STATUS"},
+        {
+            "name": "asset_date",
+            "display_name": "Asset 日期（优先发布日期，缺失时使用创建日期）",
+            "physical_column": "ASSET_DATE_VALUE",
+            "value_type": "DATE",
+            "allowed_filter_operators": ["EQ", "BETWEEN", "GT", "GTE", "LT", "LTE"],
+            "synonyms": ["created date", "creation date", "publish date", "published date", "创建日期", "发布日期"],
+        },
+    ]
     return {
         "datasets": [{"name": dataset, "display_name": "KM Asset", "physical_schema": schema_name, "physical_object": "KBOT_V_KM_ASSET_CURRENT", "primary_time_dimension": None, "scope_column": "DOMAIN_ID"}],
-        "dimensions": [{"name": name, "display_name": display, "dataset": dataset, "physical_column": column, "value_type": "STRING", "groupable": True, "filterable": True, "sensitivity": "INTERNAL", "synonyms": []} for name, display, column in dimensions],
+        "dimensions": [{
+            "dataset": dataset,
+            "value_type": "STRING",
+            "groupable": True,
+            "filterable": True,
+            "sensitivity": "INTERNAL",
+            "synonyms": [],
+            **item,
+        } for item in dimensions],
         "measures": [
             {"name": "asset_count", "display_name": "Asset 数量", "dataset": dataset, "physical_column": None, "aggregation": "COUNT", "value_type": "INTEGER", "sensitivity": "INTERNAL"},
-            {"name": "author_count", "display_name": "作者数量", "dataset": dataset, "physical_column": "AUTHOR_MAIL", "aggregation": "COUNT_DISTINCT", "value_type": "INTEGER", "sensitivity": "INTERNAL"},
+            {"name": "author_count", "display_name": "作者数量", "dataset": dataset, "physical_column": "AUTHOR_MAIL_NORM", "aggregation": "COUNT_DISTINCT", "value_type": "INTEGER", "sensitivity": "INTERNAL"},
         ],
     }
 
@@ -65,7 +88,7 @@ class ManagedDatasetService:
             km_asset_definition(schema_name=schema_name)
         ).model_dump(mode="json")
         catalog_hash = _hash(definition)
-        columns = ["DOMAIN_ID", "SOURCE_ID", "KM_ASSET_ID", "ASSET_ID", "SOURCE_REVISION", "SOURCE_STATUS", "INGESTION_STATUS", "ASSET_TITLE", "AUTHOR_MAIL", "ASSET_PRODUCT", "ASSET_SOLUTION", "INDUSTRY_ID", "CONTENT_CATEGORY", "ASSET_STATUS", "PUBLISH_DATE", "LAST_UPDATE_TIME", "KC_BUNDLE_ID", "KC_BUNDLE_REVISION_ID", "FAILURE_STAGE", "ERROR_CODE", "RAW_METADATA_JSON", "NORMALIZED_METADATA_JSON", "SYNCED_AT", "COMPLETED_AT"]
+        columns = ["DOMAIN_ID", "SOURCE_ID", "KM_ASSET_ID", "ASSET_ID", "SOURCE_REVISION", "SOURCE_STATUS", "INGESTION_STATUS", "ASSET_TITLE", "AUTHOR_MAIL", "AUTHOR_MAIL_NORM", "AUTHOR_LOCAL_PART", "ASSET_PRODUCT", "ASSET_SOLUTION", "INDUSTRY_ID", "CONTENT_CATEGORY", "ASSET_STATUS", "PUBLISH_DATE", "ASSET_DATE_VALUE", "LAST_UPDATE_TIME", "KC_BUNDLE_ID", "KC_BUNDLE_REVISION_ID", "FAILURE_STAGE", "ERROR_CODE", "RAW_METADATA_JSON", "NORMALIZED_METADATA_JSON", "SYNCED_AT", "COMPLETED_AT"]
         async with self._uow_factory() as uow:
             source = await uow.data_sources.find_by_name(domain_id=domain_id, display_name=self.SOURCE_NAME, lock=True)
             if source is None:

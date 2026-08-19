@@ -8,6 +8,8 @@ from typing import Any
 from data_query.contracts import DataQueryPlanV1, SemanticModelDefinition
 from data_query.domain import QueryPlanValidationError, validate_query_plan
 
+from data_query.connectors.filter_values import normalize_filter_values
+
 
 @dataclass(frozen=True)
 class CompiledPostgreSQLQuery:
@@ -58,36 +60,41 @@ def compile_postgresql_query(
         parameters.append(scope_value)
         where_parts.append(f"{_quote(dataset.scope_column)} = ${len(parameters)}")
     for filter_ in plan.filters:
-        column = _quote(dimensions[filter_.field].physical_column)
-        operator = filter_.operator
-        if operator == "IS_NULL":
-            where_parts.append(f"{column} IS NULL")
-            continue
-        if operator == "IS_NOT_NULL":
-            where_parts.append(f"{column} IS NOT NULL")
-            continue
-        if operator in {"IN", "NOT_IN"}:
-            placeholders = []
-            for value in filter_.values:
-                parameters.append(value)
-                placeholders.append(f"${len(parameters)}")
-            sql_operator = "IN" if operator == "IN" else "NOT IN"
-            where_parts.append(f"{column} {sql_operator} ({', '.join(placeholders)})")
-            continue
-        if operator == "BETWEEN":
-            parameters.extend(filter_.values)
-            where_parts.append(f"{column} BETWEEN ${len(parameters) - 1} AND ${len(parameters)}")
-            continue
-        value = filter_.values[0]
-        parameters.append(value)
-        placeholder = f"${len(parameters)}"
-        if operator == "CONTAINS":
-            where_parts.append(f"{column} LIKE ('%' || {placeholder} || '%')")
-        elif operator == "STARTS_WITH":
-            where_parts.append(f"{column} LIKE ({placeholder} || '%')")
-        else:
-            sql_operator = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}[operator]
-            where_parts.append(f"{column} {sql_operator} {placeholder}")
+        dimension = dimensions[filter_.field]
+        values = normalize_filter_values(dimension=dimension, values=filter_.values)
+        predicates: list[str] = []
+        for physical_column in (dimension.physical_column, *dimension.filter_alias_columns):
+            column = _quote(physical_column)
+            operator = filter_.operator
+            if operator == "IS_NULL":
+                predicates.append(f"{column} IS NULL")
+                continue
+            if operator == "IS_NOT_NULL":
+                predicates.append(f"{column} IS NOT NULL")
+                continue
+            if operator in {"IN", "NOT_IN"}:
+                placeholders = []
+                for value in values:
+                    parameters.append(value)
+                    placeholders.append(f"${len(parameters)}")
+                sql_operator = "IN" if operator == "IN" else "NOT IN"
+                predicates.append(f"{column} {sql_operator} ({', '.join(placeholders)})")
+                continue
+            if operator == "BETWEEN":
+                parameters.extend(values)
+                predicates.append(f"{column} BETWEEN ${len(parameters) - 1} AND ${len(parameters)}")
+                continue
+            parameters.append(values[0])
+            placeholder = f"${len(parameters)}"
+            if operator == "CONTAINS":
+                predicates.append(f"{column} LIKE ('%' || {placeholder} || '%')")
+            elif operator == "STARTS_WITH":
+                predicates.append(f"{column} LIKE ({placeholder} || '%')")
+            else:
+                sql_operator = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}[operator]
+                predicates.append(f"{column} {sql_operator} {placeholder}")
+        conjunction = " AND " if filter_.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
+        where_parts.append(predicates[0] if len(predicates) == 1 else f"({conjunction.join(predicates)})")
 
     source = f"{_quote(dataset.physical_schema)}.{_quote(dataset.physical_object)}"
     clauses = [f"SELECT {', '.join(select_parts)}", f"FROM {source}"]

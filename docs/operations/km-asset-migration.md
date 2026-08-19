@@ -134,6 +134,12 @@ Agent 版本的固定资源定位，不能通过该接口修改。
 Query 编译器会使用可信 AuthContext 中的 Domain ID 强制注入参数化条件，LLM 和前端
 都不能移除或覆盖该条件。
 
+作者筛选使用标准化完整邮箱和邮箱 `@` 前用户名两个受控索引键。例如
+`lavkesh.singh@oracle.com` 与 `lavkesh.singh` 都会匹配同一作者，大小写及首尾空格不
+影响结果。日期筛选使用 `asset_date`：优先解析 ISO 格式的 `publish_date`，为空或
+格式无效时回退到 Asset 的 UTC 创建日期。`created since 2026-01-01` 会生成类型化
+`DATE >= :bind` 条件，不使用字符串比较或全文检索。
+
 ## 下线旧 Portal Worker
 
 新 App 完成一次真实 Asset 的端到端验收前，旧进程保持停止但保留代码。验收内容包括：

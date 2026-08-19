@@ -11,9 +11,9 @@ from tests.acceptance.check_oracle_entity_schema import _entity_classes
 class OracleEntitySchemaCheckerTest(unittest.TestCase):
     def test_all_service_entities_are_in_scope(self) -> None:
         entities = _entity_classes()
-        self.assertEqual(79, len(entities))
+        self.assertEqual(108, len(entities))
         self.assertEqual(
-            1359,
+            1662,
             sum(len(entity.__table__.columns) for entity in entities),
         )
 
@@ -24,7 +24,7 @@ class OracleEntitySchemaCheckerTest(unittest.TestCase):
             for column in entity.__table__.columns
         ]
         self.assertIn("VECTOR", contracts)
-        self.assertEqual(95, contracts.count("JSON"))
+        self.assertEqual(109, contracts.count("JSON"))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .query_plan import FilterOperator
+
 
 _KEY_PATTERN = r"^[a-z][a-z0-9._-]{0,127}$"
 _OBJECT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$"
@@ -88,6 +90,22 @@ class DimensionDefinition(_Contract):
     filterable: bool = True
     sensitivity: Literal["PUBLIC", "INTERNAL", "SENSITIVE"] = "INTERNAL"
     synonyms: tuple[str, ...] = Field(default=(), max_length=32)
+    value_normalization: Literal["NONE", "LOWER_TRIM"] = "NONE"
+    allowed_filter_operators: tuple[FilterOperator, ...] = (
+        "EQ", "NE", "IN", "NOT_IN", "BETWEEN", "GT", "GTE", "LT", "LTE",
+        "CONTAINS", "STARTS_WITH", "IS_NULL", "IS_NOT_NULL",
+    )
+    filter_alias_columns: tuple[str, ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def validate_filter_contract(self) -> "DimensionDefinition":
+        if not self.allowed_filter_operators:
+            raise ValueError("维度必须允许至少一种筛选操作符")
+        if len(self.allowed_filter_operators) != len(set(self.allowed_filter_operators)):
+            raise ValueError("维度筛选操作符不能重复")
+        if len(self.filter_alias_columns) != len(set(self.filter_alias_columns)):
+            raise ValueError("维度备用筛选列不能重复")
+        return self
 
 
 class MeasureDefinition(_Contract):

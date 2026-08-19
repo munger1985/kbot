@@ -52,6 +52,7 @@ def planning_catalog(definition: SemanticModelDefinition) -> dict[str, object]:
                 "value_type": item.value_type,
                 "groupable": item.groupable,
                 "filterable": item.filterable,
+                "allowed_filter_operators": item.allowed_filter_operators,
             }
             for item in definition.dimensions
         ],

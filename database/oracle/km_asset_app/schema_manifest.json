@@ -1,10 +1,10 @@
 {
   "component": "km_asset_app",
-  "schema_version": 2,
-  "contract_version": "km-asset-app-oracle-v1",
+  "schema_version": 3,
+  "contract_version": "km-asset-app-oracle-v2",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_km_asset.sql", "statements": 24, "sha256": "acc9915d10f33d66d093dde514b8f93ba8e8974e678ae40804340ec91798a384"},
+    {"name": "001_km_asset.sql", "statements": 29, "sha256": "d2e07492ef0804e8c4ac3212d8d2525a651bfe4b6e18157965cbb54be344fd8c"},
     {"name": "002_slack_integration.sql", "statements": 7, "sha256": "83b29fea29d2d959e67867f99d91aced58094175ae22b0cb3b62dbe389a850fd"}
   ],
   "tables": [

@@ -36,6 +36,8 @@ def validate_query_plan(*, plan: DataQueryPlanV1, model: SemanticModelDefinition
             raise QueryPlanValidationError("FILTER_FIELD_NOT_FOUND")
         if not dimension.filterable:
             raise QueryPlanValidationError("FILTER_NOT_ALLOWED")
+        if filter_.operator not in dimension.allowed_filter_operators:
+            raise QueryPlanValidationError("FILTER_OPERATOR_NOT_ALLOWED")
     allowed_orders = set(dimensions) | set(measures)
     if any(item.field not in allowed_orders for item in plan.order_by):
         raise QueryPlanValidationError("ORDER_FIELD_NOT_FOUND")

@@ -62,7 +62,7 @@ from .management import (
     PromoteVerifiedQueryCommand,
     VerifiedQueryView,
 )
-from .query_plan import DataQueryPlanV1, PlanFilter, PlanMeasure, PlanOrderBy
+from .query_plan import DataQueryPlanV1, FilterOperator, PlanFilter, PlanMeasure, PlanOrderBy
 from .runtime import (
     CreateDataQueryRun,
     DataQueryResultView,
@@ -94,6 +94,7 @@ __all__ = [
     "AgentBindingView",
     "DatasetDefinition",
     "DimensionDefinition",
+    "FilterOperator",
     "MeasureDefinition",
     "PublishSemanticModelCommand",
     "ReturnSemanticModelForRevisionCommand",

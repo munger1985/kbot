@@ -1,10 +1,10 @@
 """KM Asset 来源、快照、附件和持久任务实体。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Computed, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -49,7 +49,9 @@ class KmAssetEntity(BaseEntity):
     __table_args__ = (
         UniqueConstraint("source_id", "external_asset_id", name="UK_KM_ASSET_SOURCE"),
         Index("IX_KM_ASSET_SCOPE_STATUS", "domain_id", "ingestion_status", "synced_at"),
-        Index("IX_KM_ASSET_AUTHOR", "domain_id", "author_mail"),
+        Index("IX_KM_ASSET_AUTHOR_MAIL", "domain_id", "author_mail_norm"),
+        Index("IX_KM_ASSET_AUTHOR_LOCAL", "domain_id", "author_local_part"),
+        Index("IX_KM_ASSET_DATE", "domain_id", "asset_date_value"),
     )
 
     km_asset_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
@@ -86,6 +88,27 @@ class KmAssetEntity(BaseEntity):
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    author_mail_norm: Mapped[str | None] = mapped_column(
+        String(512), Computed("LOWER(TRIM(AUTHOR_MAIL))"), nullable=True
+    )
+    author_local_part: Mapped[str | None] = mapped_column(
+        String(512),
+        Computed(
+            "CASE WHEN INSTR(TRIM(AUTHOR_MAIL), '@') > 1 "
+            "THEN LOWER(SUBSTR(TRIM(AUTHOR_MAIL), 1, INSTR(TRIM(AUTHOR_MAIL), '@') - 1)) "
+            "ELSE LOWER(TRIM(AUTHOR_MAIL)) END"
+        ),
+        nullable=True,
+    )
+    asset_date_value: Mapped[date | None] = mapped_column(
+        Date,
+        Computed(
+            "COALESCE(TO_DATE(SUBSTR(TRIM(PUBLISH_DATE), 1, 10) DEFAULT NULL "
+            "ON CONVERSION ERROR, 'FXYYYY-MM-DD'), "
+            "TRUNC(CAST(SYS_EXTRACT_UTC(CREATED_AT) AS DATE)))"
+        ),
+        nullable=True,
+    )
 
 
 class KmAssetRevisionEntity(BaseEntity):

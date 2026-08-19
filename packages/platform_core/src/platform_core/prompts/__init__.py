@@ -15,6 +15,7 @@ from .resolver import (
     ResolvedPrompt,
     StrictPromptRenderer,
 )
+from .sync import sync_prompt_catalog
 
 __all__ = [
     "PlatformPromptEntity",
@@ -29,4 +30,5 @@ __all__ = [
     "ResolvedPrompt",
     "StrictPromptRenderer",
     "load_prompt_catalog",
+    "sync_prompt_catalog",
 ]
