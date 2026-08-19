@@ -372,6 +372,140 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], cards)
 
+    async def test_query_result_assets_ignore_group_headings_and_keep_answer_order(
+        self,
+    ):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "**Assets created on 2026-08-18 (2 assets)**\n"
+                    "- **Asset B**: B details.\n"
+                    "- **Asset A**: A details. [Q1]\n"
+                    "**Note**: dates use the original publish date. [Q1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                        "query_result_id": (
+                            "01900000-0000-7000-8000-000000000501"
+                        ),
+                        "provider": "SEMANTIC",
+                        "row_count": 2,
+                    }
+                ],
+                "query_results": [
+                    {
+                        "schema": "QUERY_RESULT.v1",
+                        "query_result_id": (
+                            "01900000-0000-7000-8000-000000000501"
+                        ),
+                        "provider": "SEMANTIC",
+                        "columns": [],
+                        "rows": [
+                            {
+                                "ASSET_ID": "ASSET/A",
+                                "ASSET_TITLE": "Asset A",
+                                "AUTHOR_MAIL": "a@example.com",
+                                "PUBLISH_DATE": "2026-08-18",
+                                "NORMALIZED_METADATA_JSON": json.dumps(
+                                    {"solution_briefing": "Asset A Briefing"}
+                                ),
+                            },
+                            {
+                                "ASSET_ID": "ASSET/B",
+                                "ASSET_TITLE": "Asset B",
+                                "NORMALIZED_METADATA_JSON": {
+                                    "solution_briefing": "Asset B Briefing"
+                                },
+                            },
+                        ],
+                        "row_count": 2,
+                    }
+                ],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=None,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(
+            ["Asset B", "Asset A"],
+            [card["asset_title"] for card in cards],
+        )
+        self.assertEqual("ASSET/B", cards[0]["asset_id"])
+        self.assertEqual("Asset B Briefing", cards[0]["solution_briefing"])
+
+    async def test_query_result_title_is_enriched_from_local_asset(self):
+        row = SimpleNamespace(
+            km_asset_id=UUID("01900000-0000-7000-8000-000000000601"),
+            external_asset_id="ASSET/LOCAL",
+            asset_title="Local Asset",
+            author_mail=None,
+            publish_date=None,
+            normalized_metadata_json={
+                "solution_briefing": "Local Asset Briefing"
+            },
+        )
+
+        class Assets:
+            async def list_assets_for_slack_templates(self, **kwargs):
+                return [row]
+
+        class Uow:
+            def __init__(self):
+                self.assets = Assets()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "- **Local Asset**: details. [Q1]",
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [],
+                "query_results": [
+                    {
+                        "schema": "QUERY_RESULT.v1",
+                        "rows": [{"ASSET_TITLE": "Local Asset"}],
+                    }
+                ],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=None,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+            uow_factory=Uow,
+        )
+
+        self.assertEqual(
+            {
+                "asset_id": "ASSET/LOCAL",
+                "asset_title": "Local Asset",
+                "solution_briefing": "Local Asset Briefing",
+            },
+            cards[0],
+        )
+
     async def test_missing_required_asset_field_fails_closed(self):
         reference = self._reference("C1", 98)
         manifest = (

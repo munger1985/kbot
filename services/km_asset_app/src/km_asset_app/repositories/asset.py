@@ -66,6 +66,32 @@ class KmAssetRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_assets_for_slack_templates(
+        self,
+        *,
+        domain_id: int,
+        km_asset_ids: tuple[UUID, ...] = (),
+        external_asset_ids: tuple[str, ...] = (),
+        asset_titles: tuple[str, ...] = (),
+    ):
+        """按回答/QueryResult 中可用的稳定键批量恢复 Slack Asset。"""
+        match_conditions = []
+        if km_asset_ids:
+            match_conditions.append(KmAssetEntity.km_asset_id.in_(km_asset_ids))
+        if external_asset_ids:
+            match_conditions.append(
+                KmAssetEntity.external_asset_id.in_(external_asset_ids)
+            )
+        if asset_titles:
+            match_conditions.append(KmAssetEntity.asset_title.in_(asset_titles))
+        if not match_conditions:
+            return []
+        statement = select(KmAssetEntity).where(
+            KmAssetEntity.domain_id == domain_id,
+            or_(*match_conditions),
+        )
+        return list(await self._session.scalars(statement))
+
     async def find_asset(self, *, source_id: UUID, external_asset_id: str, lock: bool = False):
         statement = select(KmAssetEntity).where(KmAssetEntity.source_id == source_id, KmAssetEntity.external_asset_id == external_asset_id)
         if lock:

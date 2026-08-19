@@ -30,6 +30,8 @@ _UNTITLED_ASSET_SECTION_PATTERN = re.compile(
 )
 _FIELD_ALIASES = {
     "assettitle": "asset_title",
+    "title": "asset_title",
+    "assetname": "asset_title",
     "资产名称": "asset_title",
     "资产标题": "asset_title",
     "solutionbriefing": "solution_briefing",
@@ -41,10 +43,13 @@ _FIELD_ALIASES = {
     "贡献者": "author_mail",
     "publishdate": "create_time",
     "createtime": "create_time",
+    "assetdate": "create_time",
+    "assetdatevalue": "create_time",
     "发布时间": "create_time",
     "创建时间": "create_time",
     "发布日期": "create_time",
     "assetid": "asset_id",
+    "externalassetid": "asset_id",
     "资产id": "asset_id",
     "资产编号": "asset_id",
 }
@@ -100,6 +105,74 @@ def _asset_values(value: dict[str, Any]) -> dict[str, str]:
         for field in _ASSET_FIELDS
         if (cleaned := _clean_value(value.get(field)))
     }
+
+
+def _mapping_asset_fields(value: object) -> dict[str, str]:
+    """从大小写/命名风格不固定的 QueryResult 映射 Asset 字段。"""
+    if not isinstance(value, dict):
+        return {}
+    canonical = {
+        _normalized_label(field): field for field in _ASSET_FIELDS
+    }
+    result: dict[str, str] = {}
+    for key, raw_value in value.items():
+        label = _normalized_label(str(key))
+        field = _FIELD_ALIASES.get(label) or canonical.get(label)
+        cleaned = _clean_value(raw_value)
+        if field and cleaned:
+            result[field] = cleaned
+    return result
+
+
+def _query_result_asset_cards(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """读取 GroundedAnswer 内嵌 QUERY_RESULT.v1 行，不把 Q1 当文档。"""
+    query_results = payload.get("query_results")
+    if not isinstance(query_results, (list, tuple)):
+        return []
+    cards: list[dict[str, str]] = []
+    for query_result in query_results:
+        if not isinstance(query_result, dict):
+            continue
+        schema = str(query_result.get("schema") or "").strip()
+        if schema and schema != "QUERY_RESULT.v1":
+            continue
+        rows = query_result.get("rows")
+        if not isinstance(rows, (list, tuple)):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            metadata_value = next(
+                (
+                    item
+                    for key, item in row.items()
+                    if _normalized_label(str(key))
+                    == "normalizedmetadatajson"
+                ),
+                {},
+            )
+            if isinstance(metadata_value, str):
+                try:
+                    metadata_value = json.loads(metadata_value)
+                except (TypeError, ValueError):
+                    metadata_value = {}
+            fields = {
+                **_mapping_asset_fields(metadata_value),
+                **_mapping_asset_fields(row),
+            }
+            km_asset_id = next(
+                (
+                    _clean_value(item)
+                    for key, item in row.items()
+                    if _normalized_label(str(key)) == "kmassetid"
+                ),
+                "",
+            )
+            if km_asset_id:
+                fields["_km_asset_id"] = km_asset_id
+            if fields:
+                cards.append(fields)
+    return _unique_asset_cards(cards)
 
 
 def extract_answer_asset_cards(answer: object) -> list[dict[str, str]]:
@@ -172,7 +245,7 @@ def _local_asset_fields(row: object) -> dict[str, str]:
     """将 KM Asset 持久化元数据投影为 Slack Template 字段。"""
     metadata_value = getattr(row, "normalized_metadata_json", {})
     metadata = metadata_value if isinstance(metadata_value, dict) else {}
-    values = _asset_values(metadata)
+    values = _mapping_asset_fields(metadata)
     columns = {
         "asset_id": getattr(row, "external_asset_id", None),
         "asset_title": getattr(row, "asset_title", None),
@@ -186,6 +259,15 @@ def _local_asset_fields(row: object) -> dict[str, str]:
     }
     values.update(_asset_values(columns))
     return values
+
+
+def _local_asset_card(row: object) -> dict[str, str]:
+    """在数据库 Session 内复制 Slack 所需字段，禁止泄漏 ORM 实例。"""
+    fields = _local_asset_fields(row)
+    km_asset_id = _clean_value(getattr(row, "km_asset_id", None))
+    if km_asset_id:
+        fields["_km_asset_id"] = km_asset_id
+    return fields
 
 
 def _used_document_references(
@@ -308,6 +390,7 @@ def _answer_asset_sections(answer: object) -> list[dict[str, Any]]:
 def _asset_key(card: dict[str, str]) -> str:
     return (
         _clean_value(card.get("asset_id")).casefold()
+        or _clean_value(card.get("_km_asset_id")).casefold()
         or _canonical_title(card.get("asset_title"))
         or str(card.get("bundle_revision_id") or "")
     )
@@ -435,7 +518,9 @@ def _match_manifest_cards_to_answer(
                 if ambiguous
                 else "SLACK_ASSET_SECTION_UNMATCHED"
             )
-            logger.warning(
+            # 回答可包含日期分组标题、Note 等加粗段落；未匹配本身
+            # 不能证明它是缺失的 Asset，只在诊断日志中记录。
+            logger.debug(
                 "{} title={} citations={}",
                 code,
                 display_hint,
@@ -485,44 +570,6 @@ def _match_manifest_cards_to_answer(
                 assignments[index] = card
             return [card for card in assignments if card is not None]
     return matched
-
-
-def _expected_asset_keys(
-    sections: list[dict[str, Any]],
-    cards: list[dict[str, str]],
-) -> list[str]:
-    """按正文顺序计算唯一 Asset；无标题条目必须能唯一落到 Asset。"""
-    by_label = {
-        str(card.get("citation_label") or "").strip().upper(): card
-        for card in cards
-        if str(card.get("citation_label") or "").strip()
-    }
-    result: list[str] = []
-    seen: set[str] = set()
-    for section in sections:
-        title = str(section.get("asset_title") or "")
-        labels = tuple(section.get("citation_labels") or ())
-        scoped = [by_label[label] for label in labels if label in by_label]
-        card, ambiguous = _best_title_card(title, scoped)
-        if card is None and not ambiguous and title:
-            card, ambiguous = _best_title_card(title, cards)
-        unique_scoped = _unique_asset_cards(scoped)
-        if (
-            card is None
-            and not ambiguous
-            and section.get("allow_citation_fallback")
-            and len(unique_scoped) == 1
-        ):
-            card = unique_scoped[0]
-        key = _asset_key(card) if card is not None else ""
-        if not key and title:
-            key = _canonical_title(title)
-        # 无标题且无法唯一落到 Asset 的普通项目不是 Asset 条目。
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        result.append(key)
-    return result
 
 
 def _validate_complete_templates(
@@ -612,12 +659,80 @@ async def _read_manifest(
 
 
 def _same_asset(answer: dict[str, str], manifest: dict[str, str]) -> bool:
-    for field in ("asset_id", "asset_title"):
-        left = _clean_value(answer.get(field)).casefold()
-        right = _clean_value(manifest.get(field)).casefold()
-        if left and right and left == right:
-            return True
-    return False
+    left_km_id = _clean_value(answer.get("_km_asset_id")).casefold()
+    right_km_id = _clean_value(manifest.get("_km_asset_id")).casefold()
+    if left_km_id and right_km_id:
+        return left_km_id == right_km_id
+    left_id = _clean_value(answer.get("asset_id")).casefold()
+    right_id = _clean_value(manifest.get("asset_id")).casefold()
+    if left_id and right_id:
+        return left_id == right_id
+    left_title = _canonical_title(answer.get("asset_title"))
+    right_title = _canonical_title(manifest.get("asset_title"))
+    return bool(left_title and right_title and left_title == right_title)
+
+
+def _merge_candidate_sources(
+    *sources: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """合并 QueryResult、Manifest 和本地 Asset，保留首个来源顺序。"""
+    result: list[dict[str, str]] = []
+    for source in sources:
+        for candidate in source:
+            if not candidate:
+                continue
+            existing = next(
+                (card for card in result if _same_asset(card, candidate)),
+                None,
+            )
+            if existing is None:
+                result.append(dict(candidate))
+                continue
+            for key, value in candidate.items():
+                if value and not existing.get(key):
+                    existing[key] = value
+    return _unique_asset_cards(result)
+
+
+def _valid_uuid_values(values: list[str]) -> tuple[UUID, ...]:
+    result: list[UUID] = []
+    for value in values:
+        try:
+            parsed = UUID(value)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if parsed not in result:
+            result.append(parsed)
+    return tuple(result)
+
+
+def _enrich_query_cards_from_local_cards(
+    query_cards: list[dict[str, str]],
+    local_cards: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for query_card in query_cards:
+        km_asset_id = _clean_value(query_card.get("_km_asset_id"))
+        local = next(
+            (
+                card
+                for card in local_cards
+                if km_asset_id
+                and _clean_value(card.get("_km_asset_id")) == km_asset_id
+            ),
+            None,
+        )
+        if local is None:
+            local = next(
+                (
+                    card
+                    for card in local_cards
+                    if _same_asset(query_card, card)
+                ),
+                None,
+            )
+        result.append({**(local or {}), **query_card})
+    return result
 
 
 def _merge_cards(
@@ -712,7 +827,9 @@ async def assemble_slack_asset_cards(
         )
         return result
     references = _used_document_references(payload)
+    query_cards = _query_result_asset_cards(payload)
     local_by_revision: dict[str, dict[str, str]] = {}
+    local_cards: list[dict[str, str]] = []
     if uow_factory is not None:
         try:
             async with uow_factory() as uow:
@@ -728,11 +845,60 @@ async def assemble_slack_asset_cards(
                     )
                     if row is not None:
                         local_by_revision[revision_id] = _local_asset_fields(row)
+                list_for_templates = getattr(
+                    uow.assets,
+                    "list_assets_for_slack_templates",
+                    None,
+                )
+                if list_for_templates is not None:
+                    km_asset_ids = _valid_uuid_values(
+                        [
+                            str(card.get("_km_asset_id") or "")
+                            for card in query_cards
+                        ]
+                    )
+                    external_asset_ids = tuple(
+                        dict.fromkeys(
+                            value
+                            for card in query_cards
+                            if (value := _clean_value(card.get("asset_id")))
+                        )
+                    )
+                    asset_titles = tuple(
+                        dict.fromkeys(
+                            value
+                            for value in (
+                                *(
+                                    _clean_value(card.get("asset_title"))
+                                    for card in query_cards
+                                ),
+                                *(
+                                    _clean_value(section.get("asset_title"))
+                                    for section in sections
+                                ),
+                            )
+                            if value
+                        )
+                    )
+                    local_rows = await list_for_templates(
+                        domain_id=domain_id,
+                        km_asset_ids=km_asset_ids,
+                        external_asset_ids=external_asset_ids,
+                        asset_titles=asset_titles,
+                    )
+                    local_cards = [
+                        _local_asset_card(row) for row in local_rows
+                    ]
         except Exception as exc:
             logger.warning(
                 "Slack Asset 本地元数据读取失败：cause={}",
                 str(exc),
             )
+
+    query_cards = _enrich_query_cards_from_local_cards(
+        query_cards,
+        local_cards,
+    )
 
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
@@ -771,19 +937,26 @@ async def assemble_slack_asset_cards(
                     "bundle_revision_id": revision_id,
                 }
             )
+    candidate_cards = _merge_candidate_sources(
+        query_cards,
+        manifest_cards,
+        local_cards,
+    )
     if answer_cards:
         expected_count = len(answer_cards)
         result = _merge_cards(
             answer_cards,
-            manifest_cards,
+            candidate_cards,
             limit=expected_count,
         )
     else:
-        expected_keys = _expected_asset_keys(sections, manifest_cards)
-        if not expected_keys:
+        matched_cards = _match_manifest_cards_to_answer(
+            answer,
+            candidate_cards,
+        )
+        if not matched_cards:
             return []
-        expected_count = len(expected_keys)
-        matched_cards = _match_manifest_cards_to_answer(answer, manifest_cards)
+        expected_count = len(_unique_asset_cards(matched_cards))
         result = _merge_cards(
             [],
             matched_cards,
