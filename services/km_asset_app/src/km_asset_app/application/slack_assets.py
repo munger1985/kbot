@@ -157,6 +157,53 @@ def _used_document_references(
     ]
 
 
+def _presented_document_references(
+    payload: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    """按正文 Asset 顺序返回主要引用；字段缺失表示旧报文。"""
+    if "presented_assets" not in payload:
+        return None
+    raw_assets = payload.get("presented_assets")
+    if not isinstance(raw_assets, (list, tuple)):
+        logger.warning("Slack Asset 顺序无效：presented_assets 不是数组")
+        return []
+    references = payload.get("references")
+    used_labels = payload.get("used_citation_labels")
+    if not isinstance(references, (list, tuple)) or not isinstance(
+        used_labels, (list, tuple)
+    ):
+        logger.warning("Slack Asset 顺序无效：回答缺少引用投影")
+        return []
+    used = {str(value).strip() for value in used_labels}
+    by_label = {
+        str(item.get("citation_label") or "").strip(): item
+        for item in references
+        if isinstance(item, dict)
+        and str(item.get("reference_type") or "").upper() == "DOCUMENT"
+    }
+    ordered: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    for item in raw_assets:
+        if not isinstance(item, dict):
+            logger.warning("Slack Asset 顺序无效：数组项不是对象")
+            return []
+        label = str(item.get("primary_citation_label") or "").strip()
+        if not label or label not in used or label not in by_label:
+            logger.warning(
+                "Slack Asset 主要引用无效：citation_label={}",
+                label or "-",
+            )
+            return []
+        if label in seen_labels:
+            logger.warning(
+                "Slack Asset 主要引用重复：citation_label={}", label
+            )
+            return []
+        seen_labels.add(label)
+        ordered.append(by_label[label])
+    return ordered
+
+
 async def _read_manifest(
     *,
     client,
@@ -299,6 +346,42 @@ async def assemble_slack_asset_cards(
     payload = artifact.get("payload")
     if not isinstance(payload, dict):
         return []
+    presented_references = _presented_document_references(payload)
+    if presented_references is not None:
+        manifest_cards: list[dict[str, str]] = []
+        seen_revisions: set[str] = set()
+        for reference in presented_references:
+            revision_id = str(reference.get("bundle_revision_id") or "")
+            if not revision_id or revision_id in seen_revisions:
+                continue
+            seen_revisions.add(revision_id)
+            try:
+                content = await _read_manifest(
+                    client=knowledge_core_client,
+                    reference=reference,
+                    domain_id=domain_id,
+                    auth_context=auth_context,
+                )
+                fields = parse_manifest_asset_fields(content)
+            except Exception as exc:
+                logger.warning(
+                    "Slack Asset Manifest 读取失败：citation_label={} cause={}",
+                    reference.get("citation_label") or "-",
+                    str(exc),
+                )
+                continue
+            if fields:
+                manifest_cards.append(
+                    {
+                        **fields,
+                        "citation_label": str(
+                            reference.get("citation_label") or ""
+                        ),
+                        "bundle_revision_id": revision_id,
+                    }
+                )
+        return _merge_cards([], manifest_cards, limit=limit)
+
     answer_cards = extract_answer_asset_cards(payload.get("answer"))
     if answer_cards and all(
         all(_clean_value(card.get(field)) for field in _ASSET_FIELDS)
@@ -307,7 +390,12 @@ async def assemble_slack_asset_cards(
         return _merge_cards(answer_cards, [], limit=limit)
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
-    for reference in _used_document_references(payload):
+    legacy_references = _used_document_references(payload)
+    if legacy_references:
+        logger.warning(
+            "Slack 回答缺少 presented_assets，按旧引用顺序降级组装"
+        )
+    for reference in legacy_references:
         revision_id = str(reference.get("bundle_revision_id") or "")
         if not revision_id or revision_id in seen_revisions:
             continue
@@ -337,8 +425,6 @@ async def assemble_slack_asset_cards(
                     "bundle_revision_id": revision_id,
                 }
             )
-        if len(manifest_cards) >= limit:
-            break
     return _merge_cards(answer_cards, manifest_cards, limit=limit)
 
 

@@ -125,6 +125,7 @@ class _ModelClient:
         return {
             "answer": "该案例通过调整索引降低了查询延迟。[C1]",
             "used_citation_labels": ["C1"],
+            "presented_assets": [],
         }
 
     async def stream_llm_chunks(self, **kwargs):
@@ -154,33 +155,48 @@ class _LanguageRepairModelClient(_ModelClient):
         self.calls = 0
         self.prompts = []
 
-    async def stream_llm_chunks(self, **kwargs):
-        from platform_clients.model import LLMChunk
-
+    async def get_llm_json(self, **kwargs):
         self.calls += 1
         self.prompts.append(kwargs["prompt"])
         if self.calls == 1:
-            yield LLMChunk(
-                content=(
+            return {
+                "answer": (
                     "根据证据，有一个相关资产："
                     "**Conversational Banking with Select AI Agents** [C1]"
-                )
-            )
-            return
-        yield LLMChunk(
-            content=(
+                ),
+                "used_citation_labels": ["C1"],
+                "presented_assets": [
+                    {
+                        "primary_citation_label": "C1",
+                        "supporting_citation_labels": [],
+                    }
+                ],
+            }
+        return {
+            "answer": (
                 "One related asset was found: "
                 "**Conversational Banking with Select AI Agents** [C1]"
-            )
-        )
+            ),
+            "used_citation_labels": ["C1"],
+            "presented_assets": [
+                {
+                    "primary_citation_label": "C1",
+                    "supporting_citation_labels": [],
+                }
+            ],
+        }
 
 
 class _VariantCitationModelClient(_ModelClient):
-    async def stream_llm_chunks(self, **kwargs):
-        from platform_clients.model import LLMChunk
-
-        yield LLMChunk(content="第一条事实使用全角引用【C1】。")
-        yield LLMChunk(content="第二条事实使用上标引用<sup>C1</sup>。")
+    async def get_llm_json(self, **kwargs):
+        return {
+            "answer": (
+                "第一条事实使用全角引用【C1】。"
+                "第二条事实使用上标引用<sup>C1</sup>。"
+            ),
+            "used_citation_labels": ["C1"],
+            "presented_assets": [],
+        }
 
 
 class _MissingCitationModelClient(_ModelClient):
@@ -188,14 +204,19 @@ class _MissingCitationModelClient(_ModelClient):
         self.calls = 0
         self.repair_succeeds = repair_succeeds
 
-    async def stream_llm_chunks(self, **kwargs):
-        from platform_clients.model import LLMChunk
-
+    async def get_llm_json(self, **kwargs):
         self.calls += 1
         if self.calls == 2 and self.repair_succeeds:
-            yield LLMChunk(content="证据支持的回答。[C1]")
-            return
-        yield LLMChunk(content="1+1=2。")
+            return {
+                "answer": "证据支持的回答。[C1]",
+                "used_citation_labels": ["C1"],
+                "presented_assets": [],
+            }
+        return {
+            "answer": "1+1=2。",
+            "used_citation_labels": [],
+            "presented_assets": [],
+        }
 
 
 class _RewriteModelClient:
@@ -756,6 +777,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             response={
                 "answer": "この文書は索引最適化の事例です。[C1]",
                 "used_citation_labels": ["C1"],
+                "presented_assets": [],
             }
         )
 
@@ -935,28 +957,95 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_composer_normalizes_non_streamed_citation_variants(self):
-        answer, labels = ResponseComposerSkill._validate_model_answer(
+        answer, labels, assets = ResponseComposerSkill._validate_model_answer(
             {
                 "answer": "第一条事实【C1】，第二条事实<sup>C1</sup>。",
                 "used_citation_labels": ["C1"],
+                "presented_assets": [],
             },
             {"C1": object()},
         )
 
         self.assertEqual(answer, "第一条事实[C1]，第二条事实[C1]。")
         self.assertEqual(labels, ("C1",))
+        self.assertEqual(assets, ())
 
     def test_breadth_composer_allows_unused_retrieval_candidates(self):
-        answer, labels = ResponseComposerSkill._validate_model_answer(
+        answer, labels, assets = ResponseComposerSkill._validate_model_answer(
             {
                 "answer": "只有第一项与问题相关。[C1]",
                 "used_citation_labels": ["C1"],
+                "presented_assets": [],
             },
             {"C1": object(), "C2": object()},
         )
 
         self.assertEqual("只有第一项与问题相关。[C1]", answer)
         self.assertEqual(("C1",), labels)
+        self.assertEqual(assets, ())
+
+    def test_composer_preserves_presented_asset_order_and_groups_support(self):
+        answer, labels, assets = ResponseComposerSkill._validate_model_answer(
+            {
+                "answer": (
+                    "1. 第一个资产的完整说明。[C1][C2]\n"
+                    "2. 第二个资产的完整说明。[C3]"
+                ),
+                "used_citation_labels": ["C1", "C2", "C3"],
+                "presented_assets": [
+                    {
+                        "primary_citation_label": "C1",
+                        "supporting_citation_labels": ["C2"],
+                    },
+                    {
+                        "primary_citation_label": "C3",
+                        "supporting_citation_labels": [],
+                    },
+                ],
+            },
+            {"C1": object(), "C2": object(), "C3": object()},
+        )
+
+        self.assertEqual(("C1", "C2", "C3"), labels)
+        self.assertEqual(
+            ["C1", "C3"],
+            [item.primary_citation_label for item in assets],
+        )
+        self.assertIn("第二个资产", answer)
+
+    def test_composer_rejects_reference_mapped_to_two_assets(self):
+        with self.assertRaisesRegex(
+            ValueError, "同一引用不得映射到多个 presented_assets"
+        ):
+            ResponseComposerSkill._validate_model_answer(
+                {
+                    "answer": "第一个资产。[C1] 第二个资产。[C2]",
+                    "used_citation_labels": ["C1", "C2"],
+                    "presented_assets": [
+                        {
+                            "primary_citation_label": "C1",
+                            "supporting_citation_labels": ["C2"],
+                        },
+                        {
+                            "primary_citation_label": "C2",
+                            "supporting_citation_labels": [],
+                        },
+                    ],
+                },
+                {"C1": object(), "C2": object()},
+            )
+
+    def test_composer_requires_presented_assets_array(self):
+        with self.assertRaisesRegex(
+            ValueError, "模型未返回 presented_assets 数组"
+        ):
+            ResponseComposerSkill._validate_model_answer(
+                {
+                    "answer": "证据支持的回答。[C1]",
+                    "used_citation_labels": ["C1"],
+                },
+                {"C1": object()},
+            )
 
     def test_grounded_answer_rejects_unmentioned_reference(self):
         with self.assertRaisesRegex(
@@ -1031,6 +1120,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             response={
                 "answer": "没有引用的回答。",
                 "used_citation_labels": [],
+                "presented_assets": [],
             }
         )
 

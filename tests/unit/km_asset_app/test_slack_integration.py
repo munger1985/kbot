@@ -280,7 +280,67 @@ class SlackAssetExtractionTest(unittest.TestCase):
         self.assertNotIn("secret", fields)
 
 
+class _ManifestClient:
+    def __init__(self, manifests: dict[str, bytes]):
+        self._manifests = manifests
+        self.previewed_revisions: list[str] = []
+
+    async def get_bundle_revision_preview(self, **kwargs):
+        revision_id = str(kwargs["bundle_revision_id"])
+        self.previewed_revisions.append(revision_id)
+        content = self._manifests[revision_id]
+        return {
+            "files": [
+                {
+                    "document_role": "MANIFEST",
+                    "declared_name": "manifest.md",
+                    "preview_available": True,
+                    "document_version_id": revision_id,
+                    "byte_size": len(content),
+                    "declared_mime_type": "text/markdown",
+                }
+            ]
+        }
+
+    async def stream_source_file(self, **kwargs):
+        content = self._manifests[str(kwargs["bundle_revision_id"])]
+
+        async def stream():
+            yield content
+
+        return SimpleNamespace(status_code=200, body=stream())
+
+
 class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _manifest(asset_id: str, title: str) -> bytes:
+        return (
+            f"# {title}\n\n"
+            f"Source ID: {asset_id}\n\n"
+            "## Source metadata\n"
+            + json.dumps(
+                {
+                    "asset_title": title,
+                    "solution_briefing": f"{title} Briefing",
+                    "author_mail": "author@example.com",
+                    "create_time": "2026-08-17",
+                }
+            )
+            + "\n"
+        ).encode("utf-8")
+
+    @staticmethod
+    def _reference(label: str, index: int) -> dict[str, str]:
+        suffix = f"{index:012d}"
+        return {
+            "reference_type": "DOCUMENT",
+            "citation_label": label,
+            "collection_id": f"01900000-0000-7000-8000-{suffix}",
+            "bundle_id": f"01910000-0000-7000-8000-{suffix}",
+            "bundle_revision_id": f"01920000-0000-7000-8000-{suffix}",
+            "document_version_id": f"01930000-0000-7000-8000-{suffix}",
+        }
+
     async def test_answer_values_win_and_manifest_fills_missing_fields(self):
         collection_id = "01900000-0000-7000-8000-000000000101"
         bundle_id = "01900000-0000-7000-8000-000000000102"
@@ -361,6 +421,122 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
                 }
             ],
             cards,
+        )
+
+    async def test_presented_assets_control_template_count_and_order(self):
+        references = [
+            self._reference("C1", 1),
+            self._reference("C2", 2),
+            self._reference("C3", 3),
+        ]
+        manifests = {
+            references[0]["bundle_revision_id"]: self._manifest(
+                "ASSET/A", "正文资产 A"
+            ),
+            references[1]["bundle_revision_id"]: self._manifest(
+                "ASSET/X", "只作为补充证据的资产 X"
+            ),
+            references[2]["bundle_revision_id"]: self._manifest(
+                "ASSET/B", "正文资产 B"
+            ),
+        }
+        client = _ManifestClient(manifests)
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "1. 正文资产 A 的完整说明。[C1][C2]\n"
+                    "2. 正文资产 B 的完整说明。[C3]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2", "C3"],
+                "presented_assets": [
+                    {
+                        "primary_citation_label": "C1",
+                        "supporting_citation_labels": ["C2"],
+                    },
+                    {
+                        "primary_citation_label": "C3",
+                        "supporting_citation_labels": [],
+                    },
+                ],
+                "references": references,
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=5,
+        )
+
+        self.assertEqual(
+            ["正文资产 A", "正文资产 B"],
+            [card["asset_title"] for card in cards],
+        )
+        self.assertNotIn(
+            references[1]["bundle_revision_id"],
+            client.previewed_revisions,
+        )
+
+    async def test_same_asset_documents_merge_before_limit(self):
+        references = [
+            self._reference("C1", 11),
+            self._reference("C2", 12),
+            self._reference("C3", 13),
+        ]
+        client = _ManifestClient(
+            {
+                references[0]["bundle_revision_id"]: self._manifest(
+                    "ASSET/A", "正文资产 A"
+                ),
+                references[1]["bundle_revision_id"]: self._manifest(
+                    "ASSET/A", "正文资产 A"
+                ),
+                references[2]["bundle_revision_id"]: self._manifest(
+                    "ASSET/B", "正文资产 B"
+                ),
+            }
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "资产 A。[C1][C2] 资产 B。[C3]",
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2", "C3"],
+                "presented_assets": [
+                    {
+                        "primary_citation_label": "C1",
+                        "supporting_citation_labels": [],
+                    },
+                    {
+                        "primary_citation_label": "C2",
+                        "supporting_citation_labels": [],
+                    },
+                    {
+                        "primary_citation_label": "C3",
+                        "supporting_citation_labels": [],
+                    },
+                ],
+                "references": references,
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=2,
+        )
+
+        self.assertEqual(
+            ["正文资产 A", "正文资产 B"],
+            [card["asset_title"] for card in cards],
         )
 
 

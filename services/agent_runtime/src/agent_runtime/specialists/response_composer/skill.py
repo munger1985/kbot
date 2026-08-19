@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from loguru import logger
+from pydantic import ValidationError
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
@@ -28,6 +29,7 @@ from platform_core.prompts import StrictPromptRenderer
 from .contracts import (
     AIOpsReferenceCard,
     GroundedAnswer,
+    PresentedAssetReference,
     QueryResultReferenceCard,
     ReferenceCard,
 )
@@ -118,7 +120,11 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        validated: tuple[str, tuple[str, ...]] | None = None
+        validated: tuple[
+            str,
+            tuple[str, ...],
+            tuple[PresentedAssetReference, ...],
+        ] | None = None
         last_error: ValueError | None = None
         for attempt in range(1, 3):
             attempt_prompt = self._answer_attempt_prompt(
@@ -158,7 +164,7 @@ class ResponseComposerSkill:
                     validation_warning=warning,
                 ),
             )
-        answer_text, used_labels = validated
+        answer_text, used_labels, presented_assets = validated
         references = tuple(
             ReferenceCard(
                 citation_label=label,
@@ -180,12 +186,13 @@ class ResponseComposerSkill:
             status="READY",
             used_citation_labels=used_labels,
             references=references,
+            presented_assets=presented_assets,
             warnings=retrieval.warnings,
         )
         return self._result(context, grounded)
 
     async def execute_stream(self, context: ExecutionContext):
-        """流式生成回答；最终 Artifact 仍执行完整引用校验。"""
+        """流式执行接口；文档回答完成结构化校验后再发布。"""
         clarification = self._blocking_clarification(context)
         if clarification is not None:
             grounded = GroundedAnswer(
@@ -261,16 +268,6 @@ class ResponseComposerSkill:
             retrieval,
             prompt_definition=prompt_definition,
         )
-        prompt.append(
-            {
-                "role": "system",
-                "content": (
-                    "当前为流式回答模式。只输出最终 Markdown 回答正文，"
-                    "不要输出 JSON、字段名或隐藏思维过程；"
-                    "引用必须严格使用 ASCII 方括号格式，例如 [C1]。"
-                ),
-            }
-        )
         language = response_language(
             context.config_snapshot, context.original_input
         )
@@ -283,26 +280,23 @@ class ResponseComposerSkill:
                 "public_summary": "正在组织带引用的最终回答",
             },
         )
-        validated: tuple[str, tuple[str, ...]] | None = None
+        validated: tuple[
+            str,
+            tuple[str, ...],
+            tuple[PresentedAssetReference, ...],
+        ] | None = None
         for attempt in range(1, 3):
             attempt_prompt = self._answer_attempt_prompt(
                 prompt, language=language, repair=attempt == 2
             )
-            answer_parts: list[str] = []
-            async for chunk in self._model_client.stream_llm_chunks(
+            response = await self._model_client.get_llm_json(
                 served_model_name=model_name,
                 prompt=attempt_prompt,
                 max_tokens=4096,
-                temperature=0,
-            ):
-                if chunk.content:
-                    answer_parts.append(chunk.content)
-            answer_text = _normalize_citations(
-                "".join(answer_parts).strip()
             )
             try:
-                used_labels = self._validate_streamed_answer(
-                    answer_text,
+                current = self._validate_model_answer(
+                    response,
                     allowed,
                     language=language,
                 )
@@ -326,7 +320,7 @@ class ResponseComposerSkill:
                         },
                     )
                 continue
-            validated = (answer_text, used_labels)
+            validated = current
             break
         if validated is None:
             grounded = self._verified_source_fallback(
@@ -342,7 +336,7 @@ class ResponseComposerSkill:
             )
             yield self._result(context, grounded)
             return
-        answer_text, used_labels = validated
+        answer_text, used_labels, presented_assets = validated
         yield SkillProgress(
             event_type="answer.delta",
             payload={"chunk_index": 1, "delta": answer_text},
@@ -370,35 +364,10 @@ class ResponseComposerSkill:
                 status="READY",
                 used_citation_labels=used_labels,
                 references=references,
+                presented_assets=presented_assets,
                 warnings=retrieval.warnings,
             ),
         )
-
-    @staticmethod
-    def _validate_streamed_answer(
-        answer: str,
-        allowed: dict[str, Any],
-        *,
-        language: str = "zh-CN",
-    ) -> tuple[str, ...]:
-        if not answer:
-            raise ValueError("模型返回的 answer 为空")
-        labels = tuple(dict.fromkeys(_CITATION_PATTERN.findall(answer)))
-        unknown = set(labels) - allowed.keys()
-        if unknown:
-            raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
-        if not labels:
-            raise ValueError("有文档事实的回答必须实际包含引用标签")
-        if not answer_matches_language(
-            answer,
-            language,
-            ignored_texts=(
-                str(getattr(item, "title", "") or "")
-                for item in allowed.values()
-            ),
-        ):
-            raise ValueError(f"回答语言与 language={language} 不一致")
-        return labels
 
     @staticmethod
     def _verified_source_fallback(
@@ -798,7 +767,11 @@ class ResponseComposerSkill:
         allowed: dict[str, Any],
         *,
         language: str = "zh-CN",
-    ) -> tuple[str, tuple[str, ...]]:
+    ) -> tuple[
+        str,
+        tuple[str, ...],
+        tuple[PresentedAssetReference, ...],
+    ]:
         answer = _normalize_citations(
             str(response.get("answer") or "").strip()
         )
@@ -825,7 +798,31 @@ class ResponseComposerSkill:
             ),
         ):
             raise ValueError(f"回答语言与 language={language} 不一致")
-        return answer, mentioned
+        raw_assets = response.get("presented_assets")
+        if not isinstance(raw_assets, list):
+            raise ValueError("模型未返回 presented_assets 数组")
+        try:
+            presented_assets = tuple(
+                PresentedAssetReference.model_validate(item)
+                for item in raw_assets
+            )
+        except ValidationError as exc:
+            raise ValueError("presented_assets 格式无效") from exc
+        grouped_labels = [
+            label
+            for asset in presented_assets
+            for label in (
+                asset.primary_citation_label,
+                *asset.supporting_citation_labels,
+            )
+        ]
+        if any(label not in mentioned for label in grouped_labels):
+            raise ValueError("presented_assets 包含正文未使用的引用")
+        if any(label not in allowed for label in grouped_labels):
+            raise ValueError("presented_assets 包含未知引用标签")
+        if len(set(grouped_labels)) != len(grouped_labels):
+            raise ValueError("同一引用不得映射到多个 presented_assets")
+        return answer, mentioned, presented_assets
 
     @staticmethod
     def _result(

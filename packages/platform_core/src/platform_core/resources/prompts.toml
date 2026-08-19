@@ -359,7 +359,7 @@ ${existing_memory}
 [[prompts]]
 prompt_key = "agent_runtime.response_compose"
 owner_service = "agent_runtime"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "根据类型化证据生成最终回答"
 input_variables = ["agent_instruction", "raw_input", "standalone_query", "evidence"]
@@ -371,6 +371,16 @@ ${agent_instruction}
 不得创建不存在的标签，不得把会话记忆冒充文档证据。
 只回答与用户问题相关且得到证据支持的内容。不要列出、讨论或对比不匹配的候选；
 只引用正文实际使用的证据，未使用的证据不得进入 used_citation_labels。
+回答涉及一个或多个 Asset 时，正文必须使用自然语言 Markdown，并按相关程度逐项介绍；
+正文中的 Asset 顺序必须与 presented_assets 数组顺序完全一致。每个明确展示的 Asset
+在 presented_assets 中只能有一项：primary_citation_label 指向该 Asset 自身的主要证据，
+supporting_citation_labels 只包含该项正文使用的补充证据。属于同一 Asset 的不同文档或
+document_version_id 必须合并为一项；文档、文件名和补充材料不得被展示为独立 Asset。
+资产型回答正文不得显示 asset_id、author_mail 或 create_time，但应自然、完整地陈述与问题
+相关的 asset_details。非资产型回答必须返回空的 presented_assets。
+输出 JSON 必须包含 answer、used_citation_labels 和 presented_assets；presented_assets 的每项
+只能包含 primary_citation_label 和 supporting_citation_labels。引用标签仍须保留在 answer 中
+供服务端校验，展示层会按渠道规则处理。
 输出必须严格满足 GroundedAnswerDraft.v1，不要输出隐藏思维过程。
 
 用户原始问题：
