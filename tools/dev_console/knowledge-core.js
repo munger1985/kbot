@@ -305,12 +305,6 @@
         true
       );
       fillModelSelect(
-        form.elements.retrievalLlm,
-        llmModels,
-        "请选择检索 LLM",
-        true
-      );
-      fillModelSelect(
         form.elements.embedding,
         byCategory(MODEL_CATEGORY.TXT_EMBEDDING),
         "请选择文本 Embedding",
@@ -423,7 +417,6 @@
           display_name: form.elements.displayName.value.trim(),
           models: {
             parser_llm: form.elements.parserLlm.value.trim(),
-            retrieval_llm: form.elements.retrievalLlm.value.trim(),
             embedding: form.elements.embedding.value.trim(),
             ...(optional("parserVlm")
               ? { parser_vlm: optional("parserVlm") }
@@ -579,7 +572,6 @@
           description: null,
           enabled_capabilities: capabilities,
           models,
-          do_rerank: form.elements.doRerank.checked,
           data_profile_name: dataProfileName || null,
           instruction: form.elements.instruction.value.trim() || null,
           config: {},

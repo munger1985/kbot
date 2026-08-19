@@ -82,6 +82,18 @@ class KmUiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_agent_page_has_no_rerank_product_control(self):
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                KM_ROOT / "agents.html",
+                KM_ROOT / "js" / "km-agents-v3.js",
+            )
+        ).lower()
+        self.assertNotIn("do_rerank", source)
+        self.assertNotIn("reranker", source)
+        self.assertNotIn("重排", source)
+
     def test_public_client_does_not_store_trusted_identity(self):
         source = (UI_ROOT / "shared" / "kbot-api-client.js").read_text(
             encoding="utf-8"

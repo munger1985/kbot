@@ -206,7 +206,6 @@ class AgentRuntimeService:
                     execution_spec.enabled_capabilities
                 ),
                 "models": {},
-                "do_rerank": execution_spec.do_rerank,
                 "instruction": execution_spec.instruction,
                 "config": dict(execution_spec.resource_context),
                 "runtime_policy": dict(
@@ -998,7 +997,6 @@ class AgentRuntimeService:
                             report.get("citation_count", 0)
                         ),
                         "image_processing": image_processing,
-                        "rerank": dict(report.get("rerank") or {}),
                         "diagnostics": dict(
                             report.get("diagnostics")
                             or query_plan.get("diagnostics")

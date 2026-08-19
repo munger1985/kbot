@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from platform_core.contracts import INTERNAL_API_V1
 from platform_core.security import require_domain_match
-from knowledge_core.application.llm_reranking import public_candidate
 
 router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/knowledge/discovery",
@@ -27,7 +26,6 @@ class DiscoverySearchRequest(BaseModel):
     per_channel_limit: int = Field(default=20, ge=1, le=100)
     per_collection_limit: int = Field(default=20, ge=1, le=100)
     max_security_level: int = Field(default=3, ge=0, le=3)
-    do_rerank: bool = False
     coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
     run_id: UUID | None = None
     task_id: UUID | None = None
@@ -53,45 +51,31 @@ async def search_discovery(payload: DiscoverySearchRequest, request: Request):
                 max_security_level=payload.max_security_level,
             )
         )
-        rerank_report = {
-            "enabled": False,
-            "stage": "DISCOVERY_OBJECT",
-            "status": "DISABLED",
-        }
         warnings: list[str] = list(diagnostics.get("warnings") or [])
-        if payload.do_rerank and candidates:
-            input_count = len(candidates)
-            candidates, rerank_report, rerank_warnings = (
-                await request.app.state.kc_llm_reranker.rerank_candidates(
-                    query=payload.query,
-                    candidates=candidates,
-                    coverage_mode=payload.coverage_mode,
-                )
-            )
-            warnings.extend(rerank_warnings)
-            rerank_report["input_count"] = input_count
-            rerank_report["output_count"] = len(candidates)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_DISCOVERY_QUERY", "message": str(exc)}) from exc
     logger.info(
         "KC 对象发现完成 | event=kc.discovery.completed | run_id={} "
         "| task_id={} | trace_id={} | text_hits={} | vector_hits={} "
-        "| raw_hits={} | bundle_candidates={} | rerank_enabled={} "
-        "| rerank_output={} | duration_ms={:.2f}",
+        "| raw_hits={} | bundle_candidates={} | duration_ms={:.2f}",
         payload.run_id or "-",
         payload.task_id or "-",
         getattr(request.state.auth_context, "trace_id", "-"),
         diagnostics["text_hits"],
         diagnostics["vector_hits"],
         diagnostics["raw_hits"],
-        diagnostics["bundle_candidates"],
-        payload.do_rerank,
         len(candidates),
         (monotonic() - started_at) * 1000,
     )
     return {
-        "candidates": [public_candidate(candidate) for candidate in candidates],
+        "candidates": [
+            {
+                key: value
+                for key, value in asdict(candidate).items()
+                if key != "profile_text"
+            }
+            for candidate in candidates
+        ],
         "diagnostics": diagnostics,
-        "rerank": rerank_report,
         "warnings": warnings,
     }

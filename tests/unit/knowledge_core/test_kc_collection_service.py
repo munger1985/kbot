@@ -108,7 +108,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 models={
                     "parser_llm": uuid7(),
                     "parser_vlm": uuid7(),
-                    "retrieval_llm": uuid7(),
                     "embedding": embedding_model_id,
                 },
                 metadata={"source": "km"},
@@ -133,7 +132,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
             description=None,
             models_json={
                 "parser_llm": str(uuid7()),
-                "retrieval_llm": str(uuid7()),
                 "embedding": str(uuid7()),
             },
             parse_policy_json={},
@@ -165,7 +163,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 display_name="Asset Knowledge",
                 models={
                     "parser_llm": uuid7(),
-                    "retrieval_llm": uuid7(),
                     "embedding": "not-a-uuid",
                 },
             ))
@@ -178,7 +175,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         collection = SimpleNamespace(
             models_json={
                 "parser_llm": str(uuid7()),
-                "retrieval_llm": str(uuid7()),
                 "embedding": str(original_embedding),
             },
             updated_by=None,
@@ -189,7 +185,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         parser_llm = uuid7()
         parser_vlm = uuid7()
-        retrieval_llm = uuid7()
 
         updated = await service.update_models(
             UpdateCollectionModelsCommand(
@@ -198,7 +193,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 models={
                     "parser_llm": parser_llm,
                     "parser_vlm": parser_vlm,
-                    "retrieval_llm": retrieval_llm,
                     "embedding": original_embedding,
                     "future_role": uuid7(),
                 },
@@ -208,9 +202,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(str(parser_llm), updated.models_json["parser_llm"])
         self.assertEqual(str(parser_vlm), updated.models_json["parser_vlm"])
-        self.assertEqual(
-            str(retrieval_llm), updated.models_json["retrieval_llm"]
-        )
         self.assertEqual(
             str(original_embedding), updated.models_json["embedding"]
         )

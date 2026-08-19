@@ -218,12 +218,11 @@ Primary Collection。
 请求分配 `C1/C2...`，并保留 Bundle、Document、Version、Evidence、章节、页码
 和 bbox。
 
-Agent 可通过 `do_rerank` 开启 LLM 重排。开启后，KC 使用每个 Collection 自身
-绑定的 Retrieval LLM：先把 RRF 候选按 Bundle/Document 的实际内容相关性分类，
-排除仅语义相似但内容无关的对象；再判断 Evidence Group 是否直接或部分支持问题，
-只保留模型真实选中的 PRIMARY 引用。关闭时保持对象级 RRF 和确定性 Evidence
-分组。模型失败或输出非法 Label 时按 Collection 降级，不阻断回答，并通过
-`retrieval.completed` SSE 和 Retrieval Report 告知前端。
+KC 不设置独立重排阶段。混合检索与 RRF 负责产生候选 Bundle，Evidence 阶段为
+每个候选保留可引用的正文证据；同一 Bundle 的 Evidence Group 在进入 Composer 前
+合并为一个引用候选。Composer 在生成答案时忽略不相关 Bundle，并返回正文实际使用
+的引用标签。后端严格保证正文标签、`used_citation_labels` 与附件列表完全一致，且
+同一个 Bundle 只生成一个附件。
 
 ### 图片查询
 

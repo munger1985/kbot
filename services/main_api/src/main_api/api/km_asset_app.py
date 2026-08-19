@@ -138,7 +138,6 @@ class AgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     models: dict[str, UUID] = Field(default_factory=dict)
-    do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
     status: Literal["DRAFT", "ACTIVE"] = "DRAFT"
 
@@ -153,7 +152,6 @@ class AgentUpdatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     models: dict[str, UUID] = Field(default_factory=dict)
-    do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
 
 

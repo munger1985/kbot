@@ -749,11 +749,6 @@
             "title": "Display Name",
             "type": "string"
           },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
-          },
           "instruction": {
             "anyOf": [
               {
@@ -935,11 +930,6 @@
             "minLength": 1,
             "title": "Display Name",
             "type": "string"
-          },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
           },
           "expected_row_version": {
             "minimum": 1.0,
@@ -4124,11 +4114,6 @@
             "title": "Display Name",
             "type": "string"
           },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
-          },
           "enabled_capabilities": {
             "items": {
               "enum": [
@@ -4219,17 +4204,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "do_rerank": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Do Rerank"
           },
           "enabled_capabilities": {
             "anyOf": [

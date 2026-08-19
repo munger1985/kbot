@@ -23,7 +23,6 @@ class AgentExecutionSpec(BaseModel):
         Literal["conversation", "document", "data_query", "aiops"], ...
     ] = Field(min_length=1)
     models: dict[str, UUID]
-    do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
     resource_context: dict[str, Any] = Field(default_factory=dict)
     runtime_policy: dict[str, Any] = Field(default_factory=dict)

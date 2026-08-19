@@ -19,7 +19,7 @@ class KmAgentService:
         self._data_query = data_query_client
         self._knowledge_core = knowledge_core_client
 
-    async def create(self, *, domain_id: int, source_id: UUID, display_name: str, description: str | None, models: dict[str, UUID], do_rerank: bool, instruction: str | None, actor_id: str, status: str):
+    async def create(self, *, domain_id: int, source_id: UUID, display_name: str, description: str | None, models: dict[str, UUID], instruction: str | None, actor_id: str, status: str):
         async with self._uow_factory() as uow:
             source = await uow.assets.get_source(domain_id=domain_id, source_id=source_id)
             if source is None:
@@ -31,7 +31,7 @@ class KmAgentService:
             agent_id, version_id = uuid7(), uuid7()
             agent = KmAgentEntity(agent_id=agent_id, domain_id=domain_id, display_name=display_name.strip(), description=description, status="DRAFT", current_version_id=None, created_by=actor_id, updated_by=actor_id)
             await uow.agents.add(agent)
-            version = KmAgentVersionEntity(agent_version_id=version_id, agent_id=agent_id, version_no=1, source_id=source_id, collection_id=source.collection_id, semantic_model_id=source.semantic_model_id, policy_binding_id=source.policy_binding_id, models_json={role: str(value) for role, value in models.items()}, do_rerank=do_rerank, instruction=instruction, config_json={"resource_mode": "managed_resources", "data_query_mode": "SEMANTIC", "managed_model": True}, created_by=actor_id)
+            version = KmAgentVersionEntity(agent_version_id=version_id, agent_id=agent_id, version_no=1, source_id=source_id, collection_id=source.collection_id, semantic_model_id=source.semantic_model_id, policy_binding_id=source.policy_binding_id, models_json={role: str(value) for role, value in models.items()}, instruction=instruction, config_json={"resource_mode": "managed_resources", "data_query_mode": "SEMANTIC", "managed_model": True}, created_by=actor_id)
             await uow.agents.add(version)
             agent.current_version_id = version_id
             await uow.commit()
@@ -119,7 +119,6 @@ class KmAgentService:
         display_name: str,
         description: str | None,
         models: dict[str, UUID],
-        do_rerank: bool,
         instruction: str | None,
         actor_id: str,
     ) -> dict[str, Any]:
@@ -203,7 +202,6 @@ class KmAgentService:
                 models_json={
                     role: str(value) for role, value in models.items()
                 },
-                do_rerank=do_rerank,
                 instruction=instruction,
                 config_json={
                     "resource_mode": "managed_resources",
@@ -314,7 +312,7 @@ class KmAgentService:
             collection_id=UUID(row["collection_id"]),
             actor_id=actor_id,
         )
-        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "do_rerank": row["do_rerank"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
+        return {"schema_version": "1.0", "owner_app_id": "km_asset", "domain_id": domain_id, "consumer_agent_id": row["agent_id"], "consumer_agent_version_id": row["agent_version_id"], "agent_kind": "KNOWLEDGE_RETRIEVAL", "display_name": row["display_name"], "enabled_capabilities": list(KM_AGENT_CAPABILITIES), "models": row["models"], "instruction": row["instruction"], "resource_context": {**row["config"], "collection_ids": [row["collection_id"]], "semantic_model_id": row["semantic_model_id"], "policy_binding_id": row["policy_binding_id"], "source_id": row["source_id"]}, "runtime_policy": {"routing": "document_and_managed_data", "allow_general_conversation": False}}
 
     async def _ensure_collection_binding(
         self,
@@ -345,7 +343,7 @@ class KmAgentService:
 
     @staticmethod
     def _view(agent, version) -> dict[str, Any]:
-        return {"agent_id": str(agent.agent_id), "agent_version_id": str(version.agent_version_id), "domain_id": str(agent.domain_id), "display_name": agent.display_name, "description": agent.description, "status": agent.status, "source_id": str(version.source_id), "collection_id": str(version.collection_id), "semantic_model_id": str(version.semantic_model_id), "policy_binding_id": str(version.policy_binding_id), "models": dict(version.models_json), "do_rerank": bool(version.do_rerank), "instruction": version.instruction, "config": dict(version.config_json), "row_version": int(agent.row_version)}
+        return {"agent_id": str(agent.agent_id), "agent_version_id": str(version.agent_version_id), "domain_id": str(agent.domain_id), "display_name": agent.display_name, "description": agent.description, "status": agent.status, "source_id": str(version.source_id), "collection_id": str(version.collection_id), "semantic_model_id": str(version.semantic_model_id), "policy_binding_id": str(version.policy_binding_id), "models": dict(version.models_json), "instruction": version.instruction, "config": dict(version.config_json), "row_version": int(agent.row_version)}
 
     @staticmethod
     def _validate_models(models: dict[str, Any]) -> None:

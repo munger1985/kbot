@@ -37,7 +37,6 @@ class ModelReferenceRepositoryTest(unittest.IsolatedAsyncioTestCase):
             status="ACTIVE",
             models_json={
                 "embedding": str(model_id),
-                "retrieval_llm": str(uuid7()),
             },
         )
         repository = ModelReferenceRepository(

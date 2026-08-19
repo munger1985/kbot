@@ -224,6 +224,10 @@ def answer_matches_language(
 
 
 _MESSAGES = {
+    "citation_validation_failed": {
+        "zh-CN": "回答未能通过引用一致性校验，请重试。",
+        "en-US": "The answer did not pass citation consistency validation. Please try again.",
+    },
     "insufficient_evidence": {
         "zh-CN": "当前授权知识范围内没有找到足够的可引用证据。",
         "en-US": "No sufficient citable evidence was found within the authorized knowledge scope.",

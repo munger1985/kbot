@@ -64,7 +64,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     def _collection(*, parser_vlm_model_id=None):
         models = {
             "parser_llm": str(uuid7()),
-            "retrieval_llm": str(uuid7()),
             "embedding": str(uuid7()),
         }
         if parser_vlm_model_id:

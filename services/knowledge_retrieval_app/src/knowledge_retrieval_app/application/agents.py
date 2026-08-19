@@ -30,7 +30,6 @@ class CreateAgentCommand(_Model):
         min_length=1, max_length=3
     )
     models: dict[str, UUID] = Field(default_factory=dict)
-    do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] = Field(default_factory=dict)
     status: Literal["DRAFT", "ACTIVE"] = "DRAFT"
@@ -47,7 +46,6 @@ class UpdateAgentCommand(_Model):
         default=None, min_length=1, max_length=3
     )
     models: dict[str, UUID] | None = None
-    do_rerank: bool | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
@@ -100,7 +98,6 @@ class KnowledgeRetrievalAgentService:
                         version_no=1,
                         enabled_capabilities_json=list(capabilities),
                         models_json=models,
-                        do_rerank=command.do_rerank,
                         instruction=command.instruction,
                         config_json=config,
                         created_by=command.actor_id,
@@ -148,7 +145,6 @@ class KnowledgeRetrievalAgentService:
                 {
                     "enabled_capabilities",
                     "models",
-                    "do_rerank",
                     "instruction",
                     "config",
                 }.intersection(changes)
@@ -188,7 +184,6 @@ class KnowledgeRetrievalAgentService:
                         ),
                         enabled_capabilities_json=list(capabilities),
                         models_json=models,
-                        do_rerank=bool(changes.get("do_rerank", current.do_rerank)),
                         instruction=changes.get("instruction", current.instruction),
                         config_json=config,
                         created_by=command.actor_id,
@@ -226,7 +221,6 @@ class KnowledgeRetrievalAgentService:
             "display_name": row["display_name"],
             "enabled_capabilities": row["enabled_capabilities"],
             "models": row["models"],
-            "do_rerank": row["do_rerank"],
             "instruction": row["instruction"],
             "resource_context": row["config"],
             "runtime_policy": {},
@@ -360,7 +354,6 @@ class KnowledgeRetrievalAgentService:
             "version_no": int(version.version_no),
             "enabled_capabilities": list(version.enabled_capabilities_json or []),
             "models": dict(version.models_json or {}),
-            "do_rerank": bool(version.do_rerank),
             "instruction": version.instruction,
             "config": dict(version.config_json or {}),
             "row_version": int(agent.row_version),

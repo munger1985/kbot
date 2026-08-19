@@ -38,7 +38,6 @@ class KmAgentVersionEntity(BaseEntity):
     semantic_model_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     policy_binding_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     models_json: Mapped[dict[str, str]] = mapped_column(OracleNativeJSON(), nullable=False)
-    do_rerank: Mapped[bool] = mapped_column(nullable=False, default=False)
     instruction: Mapped[str | None] = mapped_column(Text)
     config_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON(), nullable=False)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)

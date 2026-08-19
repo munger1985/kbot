@@ -53,10 +53,6 @@ from knowledge_core.application.indexing import KnowledgeCoreEvidenceIndexServic
 from knowledge_core.application.discovery import KnowledgeCoreProfileService
 from knowledge_core.application.retrieval import KnowledgeCoreDiscoveryService
 from knowledge_core.application.evidence_retrieval import KnowledgeCoreEvidenceRetrievalService
-from knowledge_core.application.llm_reranking import (
-    CollectionRetrievalModelResolver,
-    KnowledgeCoreLlmReranker,
-)
 from knowledge_core.application.query_embeddings import CollectionQueryEmbeddingProvider
 from knowledge_core.application.status import KnowledgeCoreStatusService
 from knowledge_core.application.preview import KnowledgeCorePreviewService
@@ -78,7 +74,6 @@ from knowledge_core.application.visual_search import KnowledgeCoreVisualService
 from platform_clients import AIModelClient, AIModelConfigClient
 from knowledge_core.persistence import create_kc_uow
 from platform_core.platform.port_check import check_port_available
-from platform_core.prompts import PromptResolver, load_prompt_catalog
 from platform_core.security import create_internal_auth_middleware
 
 
@@ -171,30 +166,11 @@ async def lifespan(app: FastAPI):
         caller_service=SERVICE_NAME,
         audience=settings.visual.audience,
     )
-    retrieval_model_config_client = AIModelConfigClient(
-        base_url=settings.llm.base_url,
-        timeout=settings.llm.timeout_seconds,
-        caller_service=SERVICE_NAME,
-        audience=settings.llm.audience,
-    )
     model_client = AIModelClient(
         caller_service=SERVICE_NAME,
         embedding_config=settings.embedding,
-        llm_config=settings.llm,
         visual_config=settings.visual,
     )
-    app.state.kc_llm_reranker = KnowledgeCoreLlmReranker(
-        model_resolver=CollectionRetrievalModelResolver(
-            uow_factory=kc_uow_factory,
-            model_config_client=retrieval_model_config_client,
-        ),
-        model_client=model_client,
-        prompt_resolver=PromptResolver(
-            session_factory=db_runtime.session_factory,
-            catalog=load_prompt_catalog(),
-        ),
-    )
-
     async def model_resolver(collection_model_id: UUID):
         return await resolve_embedding_model(
             model_config_client,

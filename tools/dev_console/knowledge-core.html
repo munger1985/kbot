@@ -88,10 +88,6 @@
                   <select name="parserLlm" required><option value="">正在加载模型…</option></select>
                 </div>
                 <div class="field">
-                  <label>models.retrieval_llm</label>
-                  <select name="retrievalLlm" required><option value="">正在加载模型…</option></select>
-                </div>
-                <div class="field">
                   <label>models.embedding</label>
                   <select name="embedding" required><option value="">正在加载模型…</option></select>
                 </div>
@@ -272,7 +268,6 @@
                   </div>
                 </div>
                 <div class="field"><label>instruction（可选）</label><textarea name="instruction"></textarea></div>
-                <label class="check-line"><input name="doRerank" type="checkbox" /> 启用 LLM 重排</label>
               </details>
               <button class="primary" type="submit">创建 Agent</button>
             </form>

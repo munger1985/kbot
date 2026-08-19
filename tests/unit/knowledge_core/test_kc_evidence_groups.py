@@ -10,9 +10,11 @@ from knowledge_core.application.evidence_retrieval import (
 )
 
 
-def hit(evidence_id, version=1, view=1, rank=1, content="fact"):
+def hit(
+    evidence_id, version=1, view=1, rank=1, content="fact", bundle=10
+):
     return EvidenceHit(
-        evidence_id=evidence_id, collection_id=1, bundle_id=10,
+        evidence_id=evidence_id, collection_id=1, bundle_id=bundle,
         bundle_revision_id=100, bundle_revision_document_id=20,
         document_id=30, document_version_id=version, parse_view_id=view,
         evidence_key=f"e-{evidence_id}", evidence_type="PARAGRAPH",
@@ -32,6 +34,23 @@ class EvidenceGroupTest(unittest.TestCase):
         self.assertIn("STRUCTURAL_CONTEXT", {item.final_role for item in groups[0].items})
         citations = build_citation_pack(groups)
         self.assertEqual([citation.citation_label for citation in citations], ["C1", "C2"])
+
+    def test_balanced_selection_reserves_one_anchor_per_bundle(self):
+        anchors = [
+            hit(1, rank=1, bundle=10),
+            hit(2, rank=2, bundle=10),
+            hit(3, rank=8, bundle=20),
+        ]
+        selected = KnowledgeCoreEvidenceRetrievalService._select_anchors(
+            anchors,
+            scopes=[
+                EvidenceScope(1, 10, 100),
+                EvidenceScope(1, 20, 200),
+            ],
+            limit=2,
+            coverage_mode="BALANCED",
+        )
+        self.assertEqual([item.bundle_id for item in selected], [10, 20])
 
 
 class _EvidencePort:

@@ -365,7 +365,6 @@
             memory_llm: form.elements.memoryLlm.value,
             memory_embedding: form.elements.memoryEmbedding.value,
           },
-          do_rerank: false,
           data_profile_name: null,
           instruction: optionalValue(form.elements.instruction.value),
           config: {},

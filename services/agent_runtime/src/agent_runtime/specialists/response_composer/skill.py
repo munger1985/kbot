@@ -154,7 +154,7 @@ class ResponseComposerSkill:
                 context,
                 self._verified_source_fallback(
                     retrieval,
-                    allowed,
+                    language=language,
                     validation_warning=warning,
                 ),
             )
@@ -331,7 +331,7 @@ class ResponseComposerSkill:
         if validated is None:
             grounded = self._verified_source_fallback(
                 retrieval,
-                allowed,
+                language=language,
                 validation_warning=(
                     "回答模型连续两次未生成通过校验的文档回答"
                 ),
@@ -403,28 +403,17 @@ class ResponseComposerSkill:
     @staticmethod
     def _verified_source_fallback(
         retrieval: DocumentRetrievalResult,
-        allowed: dict[str, Any],
         *,
+        language: str,
         validation_warning: str,
     ) -> GroundedAnswer:
-        """生成失败时展示已验证来源，避免把生成错误伪装成证据不足。"""
-        labels = tuple(allowed)
-        answer = "\n".join(
-            f"- {str(allowed[label].title).strip()} [{label}]"
-            for label in labels
-        )
-        references = tuple(
-            ResponseComposerSkill._reference_card(allowed[label])
-            for label in labels
-        )
+        """生成失败时不投影未经模型确认相关的 Bundle。"""
         return GroundedAnswer(
-            answer=answer,
-            status="READY",
-            used_citation_labels=labels,
-            references=references,
+            answer=localized_message("citation_validation_failed", language),
+            status="ANSWER_VALIDATION_FAILED",
             warnings=(
                 *retrieval.warnings,
-                f"{validation_warning}；已改为展示已验证来源标题",
+                validation_warning,
             ),
         )
 
@@ -748,6 +737,8 @@ class ResponseComposerSkill:
         evidence = [
             {
                 "citation_label": item.citation_label,
+                "bundle_id": str(item.bundle_id),
+                "bundle_title": item.bundle_title or item.title,
                 "title": item.title,
                 "excerpt": item.excerpt,
                 "locator": item.locator,

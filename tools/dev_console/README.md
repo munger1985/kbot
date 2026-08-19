@@ -24,7 +24,7 @@ Domain ID 和测试 User ID。
   文件可分别入库或共同组成 Bundle。上传记录会自动跟踪审批、解析、索引和最终
   可检索状态；创建或点选 Agent、Collection 后可直接完成绑定。页面不读取 MetaDB，
   也不构造 Asset。
-- `agent-chat.html`：选择 Agent、切换 `do_rerank`、创建 Conversation、提交文字
+- `agent-chat.html`：选择 Agent、创建 Conversation、提交文字
   或图片问题、读取带认证 Header 的 SSE、查看 Trace、历史和最终 Artifact。
 - `aiops.html`：AIOps 配置页。创建独立 AIOps Agent、数据库/监控资源及诊断策略，
   完成 KC、Target-Agent 与 Monitor-Target 绑定，并管理巡检计划和报告。
@@ -32,8 +32,8 @@ Domain ID 和测试 User ID。
   展示监控采集、数据库取证、知识检索和 LLM 推理；数据库不可直连时展示受控只读
   SQL，允许逐项粘贴结果后继续同一个 Run。变更命令必须逐条审批，也支持
   自动变更能力不可用时回填人工执行结果，随后继续验证、对比和报告生成。
-- `agent-debug.html`：按 Run 聚合 Task、Event、Artifact、KC 两阶段检索诊断、
-  LLM 重排报告和跨服务运行日志，用于重放一次聊天的完整执行过程。
+- `agent-debug.html`：按 Run 聚合 Task、Event、Artifact、KC 两阶段检索诊断和
+  跨服务运行日志，用于重放一次聊天的完整执行过程。
 - `operations-logs.html`：不关联具体 Run 的通用日志文件浏览器。
 
 若页面通过 `file://` 直接打开，浏览器可能因 Origin/CORS 策略拒绝请求，因此应使用

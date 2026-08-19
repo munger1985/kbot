@@ -346,7 +346,6 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                 "query_vlm": str(uuid7()),
                 "memory_embedding": str(uuid7()),
             },
-            do_rerank=False,
             data_profile_name=None,
             instruction="仅基于可验证证据回答。",
             config_json={"answer_language": "zh-CN"},

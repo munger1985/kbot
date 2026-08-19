@@ -87,13 +87,11 @@ class KnowledgeRetrievalSkill:
             auth_context=self._auth_context(context),
             max_security_level=self._security_level(context),
             per_collection_limit=retrieval_config["max_bundles"],
-            do_rerank=retrieval_config["do_rerank"],
             coverage_mode=coverage_mode,
             run_id=context.run_id,
             task_id=context.task_id,
         )
         warnings.extend(discovery.get("warnings") or [])
-        discovery_rerank = dict(discovery.get("rerank") or {})
         discovery_diagnostics = dict(
             discovery.get("diagnostics") or {}
         )
@@ -111,8 +109,6 @@ class KnowledgeRetrievalSkill:
                 warnings=tuple(warnings),
                 query_plan={
                     "image_processing": image_processing,
-                    "do_rerank": retrieval_config["do_rerank"],
-                    "rerank": {"discovery": discovery_rerank},
                     "diagnostics": {
                         "discovery": discovery_diagnostics,
                     },
@@ -140,13 +136,11 @@ class KnowledgeRetrievalSkill:
             max_security_level=self._security_level(context),
             max_evidence=retrieval_config["max_citations"],
             context_limit=retrieval_config["context_limit"],
-            do_rerank=retrieval_config["do_rerank"],
             coverage_mode=coverage_mode,
             run_id=context.run_id,
             task_id=context.task_id,
         )
         warnings.extend(evidence.get("warnings") or [])
-        evidence_rerank = dict(evidence.get("rerank") or {})
         evidence_diagnostics = dict(
             evidence.get("diagnostics") or {}
         )
@@ -174,12 +168,7 @@ class KnowledgeRetrievalSkill:
                     ],
                     "max_bundles": retrieval_config["max_bundles"],
                     "max_citations": retrieval_config["max_citations"],
-                    "do_rerank": retrieval_config["do_rerank"],
                     "coverage_mode": coverage_mode,
-                    "rerank": {
-                        "discovery": discovery_rerank,
-                        "evidence": evidence_rerank,
-                    },
                     "diagnostics": {
                         "discovery": discovery_diagnostics,
                         "evidence": evidence_diagnostics,
@@ -202,16 +191,7 @@ class KnowledgeRetrievalSkill:
                 "strategy_version": "kc-two-stage-v1",
                 "discovery_candidate_count": len(candidates),
                 "citation_count": len(citations),
-                "selector": (
-                    "llm-object-and-evidence-group-v1"
-                    if retrieval_config["do_rerank"]
-                    else "deterministic-group-selection-v1"
-                ),
-                "rerank": {
-                    "enabled": retrieval_config["do_rerank"],
-                    "discovery": discovery_rerank,
-                    "evidence": evidence_rerank,
-                },
+                "selector": "bundle-evidence-aggregation-v1",
                 "diagnostics": {
                     "discovery": discovery_diagnostics,
                     "evidence": evidence_diagnostics,
@@ -486,7 +466,7 @@ class KnowledgeRetrievalSkill:
     @staticmethod
     def _retrieval_config(
         context: ExecutionContext,
-    ) -> dict[str, int | bool]:
+    ) -> dict[str, int]:
         agent_snapshot = context.config_snapshot.get("agent", {})
         agent_config = agent_snapshot.get("config", {})
         retrieval = agent_config.get("retrieval", {})
@@ -500,7 +480,6 @@ class KnowledgeRetrievalSkill:
             "context_limit": max(
                 0, min(int(retrieval.get("context_limit", 4)), 20)
             ),
-            "do_rerank": bool(agent_snapshot.get("do_rerank", False)),
         }
 
     @staticmethod
@@ -513,63 +492,76 @@ class KnowledgeRetrievalSkill:
             str(item["bundle_id"]): str(item.get("display_title") or "")
             for item in candidates
         }
-        result: list[Citation] = []
+        groups_by_bundle: dict[str, list[dict[str, Any]]] = {}
         for group in raw_citations:
-            items = list(group.get("items") or [])
-            primary = [
-                item
-                for item in items
-                if item.get("final_role") == "PRIMARY"
-            ]
-            selected = primary or items
+            groups_by_bundle.setdefault(str(group["bundle_id"]), []).append(
+                group
+            )
+        candidate_order = [str(item["bundle_id"]) for item in candidates]
+        ordered_bundle_ids = list(
+            dict.fromkeys((*candidate_order, *groups_by_bundle.keys()))
+        )
+        result: list[Citation] = []
+        for bundle_key in ordered_bundle_ids:
+            groups = groups_by_bundle.get(bundle_key, [])
+            if not groups:
+                continue
+            selected: list[dict[str, Any]] = []
+            for group in groups:
+                items = list(group.get("items") or [])
+                primary = [
+                    item
+                    for item in items
+                    if item.get("final_role") == "PRIMARY"
+                ]
+                selected.extend(primary or items)
             if not selected:
                 continue
+            first_group = groups[0]
             first = selected[0].get("evidence") or {}
             if not first.get("document_id"):
                 continue
-            excerpts = [
-                str((item.get("evidence") or {}).get("content_text") or "")
-                for item in selected
-            ]
-            excerpt = "\n".join(
-                value.strip() for value in excerpts if value.strip()
-            )[:4000]
-            evidence_ids = tuple(
-                UUID(str(value))
-                for value in group.get("primary_evidence_ids", [])
-            )
-            if not evidence_ids:
-                evidence_ids = tuple(
-                    UUID(str((item.get("evidence") or {})["evidence_id"]))
-                    for item in selected
-                    if (item.get("evidence") or {}).get("evidence_id")
-                )
+            excerpt_parts: list[str] = []
+            evidence_ids: list[UUID] = []
+            for item in selected:
+                evidence = item.get("evidence") or {}
+                content = str(evidence.get("content_text") or "").strip()
+                if content:
+                    document_name = str(
+                        evidence.get("document_name")
+                        or evidence.get("external_document_id")
+                        or "Bundle 正文"
+                    )
+                    heading = " > ".join(evidence.get("heading_path") or [])
+                    location = f" · {heading}" if heading else ""
+                    excerpt_parts.append(
+                        f"文档：{document_name}{location}\n{content}"
+                    )
+                evidence_id = evidence.get("evidence_id")
+                if evidence_id:
+                    evidence_ids.append(UUID(str(evidence_id)))
+            excerpt = "\n\n".join(dict.fromkeys(excerpt_parts))[:4000]
             provenance = first.get("provenance") or {}
-            bundle_id = UUID(str(group["bundle_id"]))
+            bundle_id = UUID(bundle_key)
             bundle_title = (
                 str(first.get("bundle_title") or "").strip()
                 or titles.get(str(bundle_id))
                 or "未命名 Bundle"
             )
-            document_name = str(
-                first.get("document_name")
-                or first.get("external_document_id")
-                or bundle_title
-            )
             result.append(
                 Citation(
-                    citation_label=str(group["citation_label"]),
-                    collection_id=UUID(str(group["collection_id"])),
+                    citation_label=f"C{len(result) + 1}",
+                    collection_id=UUID(str(first_group["collection_id"])),
                     bundle_id=bundle_id,
                     bundle_revision_id=UUID(
-                        str(group["bundle_revision_id"])
+                        str(first_group["bundle_revision_id"])
                     ),
                     document_id=UUID(str(first["document_id"])),
                     document_version_id=UUID(
-                        str(group["document_version_id"])
+                        str(first_group["document_version_id"])
                     ),
-                    evidence_ids=evidence_ids,
-                    title=document_name,
+                    evidence_ids=tuple(dict.fromkeys(evidence_ids)),
+                    title=bundle_title,
                     bundle_title=bundle_title,
                     external_document_id=first.get(
                         "external_document_id"
@@ -581,7 +573,7 @@ class KnowledgeRetrievalSkill:
                         first["locator_schema_version"]
                     ),
                     heading_path=tuple(first.get("heading_path") or ()),
-                    relevance_reason="由 KC 两阶段检索选中的正文证据组",
+                    relevance_reason="混合检索候选 Bundle 的正文证据",
                     source_hash=(
                         first.get("content_hash")
                         or provenance.get("source_hash")

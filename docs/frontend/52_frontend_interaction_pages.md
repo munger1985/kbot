@@ -269,7 +269,7 @@ Policy 没有 `PATCH` 编辑接口，是不可变的版本资源：修改规则�
 ### 3.5 平台与开发支持（P60、P61、P62、P90）
 
 **P60 模型配置**是平台管理员维护模型资源池的 APEX 页面，直接 CRUD
-`KBOT_AI_MODEL`，重点支持 LLM 配置，同时覆盖文本向量、图片向量、重排和 VLM。
+`KBOT_AI_MODEL`，重点支持 LLM 配置，同时覆盖文本向量、图片向量和 VLM。
 它也是 P30 Agent 与 P41 Collection 表单的模型 LOV 来源。
 
 - **列表区**：Interactive Report 展示类别、状态、显示名、`served_model_name`、

@@ -253,11 +253,6 @@
             "title": "Coverage Mode",
             "type": "string"
           },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
-          },
           "domain_id": {
             "exclusiveMinimum": 0.0,
             "title": "Domain Id",
@@ -636,11 +631,6 @@
             ],
             "title": "Coverage Mode",
             "type": "string"
-          },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
           },
           "domain_id": {
             "exclusiveMinimum": 0.0,

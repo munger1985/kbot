@@ -193,7 +193,6 @@ BEGIN
         l_llm_uuid := raw_uuid(l_llm_model_id);
         l_embedding_uuid := raw_uuid(l_embedding_model_id);
         l_models_json := '{"parser_llm":"' || l_llm_uuid
-            || '","retrieval_llm":"' || l_llm_uuid
             || '","embedding":"' || l_embedding_uuid || '"}';
 
         INSERT INTO KBOT_KC_COLLECTION (

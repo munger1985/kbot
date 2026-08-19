@@ -115,7 +115,6 @@ class ModelCategory(IntEnum):
     LLM = 1
     TXT_EMBEDDING = 2
     IMG_EMBEDDING = 3
-    RERANKER = 4
     VLM = 5
     OCR = 6
 

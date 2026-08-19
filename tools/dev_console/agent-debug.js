@@ -235,7 +235,6 @@
       {};
     const discovery = diagnostics.discovery || {};
     const evidence = diagnostics.evidence || {};
-    const rerank = report.rerank || {};
     $("#tab-retrieval").innerHTML = `
       <div class="debug-summary-grid retrieval-summary">
         ${summary("Discovery 全文", String(discovery.text_hits ?? "-"))}
@@ -250,8 +249,6 @@
       <div class="debug-columns">
         ${jsonCard("Discovery 诊断", discovery)}
         ${jsonCard("Evidence 诊断", evidence)}
-        ${jsonCard("对象级重排", rerank.discovery || { enabled: false })}
-        ${jsonCard("证据组重排", rerank.evidence || { enabled: false })}
       </div>
       <div class="actions">
         <button data-kind="artifact" data-id="${KBotUI.escapeHtml(
@@ -272,7 +269,6 @@
     const config = run.config_snapshot || {};
     const agentModels =
       config.agent?.models || config.agent?.config?.models || {};
-    const report = citationArtifact()?.payload?.retrieval_report || {};
     const allLogs = state.projection?.logs || [];
     const modelLogs = allLogs.filter((log) => {
       const source = `${log.location || ""} ${log.message || ""}`.toLowerCase();
@@ -283,7 +279,6 @@
     $("#tab-models").innerHTML = `
       <div class="debug-columns">
         ${jsonCard("Agent 模型快照", agentModels)}
-        ${jsonCard("KC 重排模型报告", report.rerank || {})}
       </div>
       <h3>关联模型日志</h3>
       ${recordTable(

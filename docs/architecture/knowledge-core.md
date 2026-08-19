@@ -77,13 +77,13 @@ Discovery Object 保存 Bundle/Document 检索画像。Oracle Text 为
   所属 Document/Bundle；
 - 使用 Collection 唯一 Embedding 模型检索 Discovery 向量；
 - 按 Bundle 聚合、RRF 融合并保证 Collection 平权；
-- 可选使用 LLM 对 Bundle/Document 对象重排。
+- 使用 RRF 对 Bundle/Document 候选进行确定性融合排序。
 
 第二阶段只在候选 Bundle 内检索 Evidence：
 
 - 全文与向量并行召回；
 - 去重、锚点选择和相邻上下文扩展；
-- 可选 LLM 对 Evidence Group 重排；
+- 将同一 Bundle 的 Evidence Group 聚合为一个引用候选；
 - 生成 Citation Pack，保留页码、定位器、Document 和 Bundle 身份。
 
 全文或向量任一通道异常时保留另一通道结果；只有全部通道失败才终止请求。最终

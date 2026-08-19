@@ -36,7 +36,6 @@ class KnowledgeAgentCreatePayload(_Payload):
         Literal["conversation", "document", "data_query"], ...
     ] = Field(min_length=1, max_length=3)
     models: dict[str, UUID] = Field(default_factory=dict)
-    do_rerank: bool = False
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] = Field(default_factory=dict)
     status: Literal["DRAFT", "ACTIVE"] = "DRAFT"
@@ -50,7 +49,6 @@ class KnowledgeAgentUpdatePayload(_Payload):
         Literal["conversation", "document", "data_query"], ...
     ] | None = Field(default=None, min_length=1, max_length=3)
     models: dict[str, UUID] | None = None
-    do_rerank: bool | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
@@ -216,7 +214,7 @@ async def update_agent(
         capabilities=capabilities, config=config,
     ):
         version_fields = {
-            "enabled_capabilities", "models", "do_rerank", "instruction", "config"
+            "enabled_capabilities", "models", "instruction", "config"
         }
         if version_fields.intersection(values):
             raise HTTPException(

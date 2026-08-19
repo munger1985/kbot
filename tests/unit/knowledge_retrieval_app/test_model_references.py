@@ -38,14 +38,14 @@ class PrivateAgentModelReferenceTest(unittest.IsolatedAsyncioTestCase):
             status="ACTIVE",
         )
         service = KnowledgeRetrievalAgentService(
-            uow_factory=lambda: _UnitOfWork([(agent, "retrieval_llm")])
+            uow_factory=lambda: _UnitOfWork([(agent, "composer_llm")])
         )
 
         references = await service.model_references(model_id=uuid7())
 
         self.assertEqual("knowledge-retrieval-app", references[0]["service"])
         self.assertEqual("101", references[0]["domain_id"])
-        self.assertEqual("retrieval_llm", references[0]["binding_role"])
+        self.assertEqual("composer_llm", references[0]["binding_role"])
         self.assertEqual(str(agent_id), references[0]["resource_id"])
 
     async def test_aiops_reference_includes_domain_and_image_role(self):

@@ -70,6 +70,13 @@ class GroundedAnswer(_Contract):
             raise ValueError("used_citation_labels 不得包含重复标签")
         if len(reference_labels) != len(self.references):
             raise ValueError("references 不得包含重复引用标签")
+        document_bundle_ids = [
+            item.bundle_id
+            for item in self.references
+            if isinstance(item, ReferenceCard)
+        ]
+        if len(document_bundle_ids) != len(set(document_bundle_ids)):
+            raise ValueError("同一个 Bundle 只能生成一个附件引用")
         if set(used) != set(mentioned):
             raise ValueError("回答正文引用与 used_citation_labels 不一致")
         if set(reference_labels) != set(used):

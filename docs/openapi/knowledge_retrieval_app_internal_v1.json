@@ -27,11 +27,6 @@
             "title": "Display Name",
             "type": "string"
           },
-          "do_rerank": {
-            "default": false,
-            "title": "Do Rerank",
-            "type": "boolean"
-          },
           "domain_id": {
             "minimum": 1.0,
             "title": "Domain Id",
@@ -128,17 +123,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "do_rerank": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Do Rerank"
           },
           "domain_id": {
             "minimum": 1.0,

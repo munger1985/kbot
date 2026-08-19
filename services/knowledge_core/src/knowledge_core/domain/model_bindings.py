@@ -6,7 +6,7 @@ from uuid import UUID
 
 
 KC_REQUIRED_MODEL_ROLES = frozenset(
-    {"parser_llm", "retrieval_llm", "embedding"}
+    {"parser_llm", "embedding"}
 )
 KC_IMMUTABLE_MODEL_ROLES = frozenset(
     {"embedding", "visual_embedding"}

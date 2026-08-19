@@ -213,7 +213,6 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
             display_name="新名称",
             description="新的描述",
             models={"router_llm": router_model_id},
-            do_rerank=True,
             instruction="只回答 KM Asset 问题",
             actor_id="kmadmin",
         )
@@ -224,7 +223,6 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACTIVE", agent.status)
         self.assertEqual(4, agent.row_version)
         self.assertEqual("新名称", result["display_name"])
-        self.assertTrue(result["do_rerank"])
         binding = data_query.management_create.await_args.kwargs["payload"]
         self.assertEqual("km_asset", binding["consumer_app_id"])
         self.assertEqual(
@@ -312,7 +310,6 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
                         "01900000-0000-7000-8000-000000000077"
                     )
                 },
-                do_rerank=False,
                 instruction=None,
                 actor_id="kmadmin",
             )
@@ -339,7 +336,6 @@ class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
             "source_id": "01900000-0000-7000-8000-000000000006",
             "display_name": "KM Agent",
             "models": {"router_llm": {}},
-            "do_rerank": False,
             "instruction": None,
             "config": {},
         })

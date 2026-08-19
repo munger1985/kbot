@@ -2,7 +2,7 @@
 from uuid import UUID
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Literal, Protocol, Sequence
 
 from loguru import logger
 
@@ -175,6 +175,7 @@ class KnowledgeCoreEvidenceRetrievalService:
         self, *, scopes: Sequence[EvidenceScope], query: str,
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_evidence: int = 12, context_limit: int = 4, max_security_level: int = 3,
+        coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED",
     ) -> list[CitationGroup]:
         citations, _ = await self.retrieve_with_diagnostics(
             scopes=scopes,
@@ -183,6 +184,7 @@ class KnowledgeCoreEvidenceRetrievalService:
             max_evidence=max_evidence,
             context_limit=context_limit,
             max_security_level=max_security_level,
+            coverage_mode=coverage_mode,
         )
         return citations
 
@@ -191,6 +193,7 @@ class KnowledgeCoreEvidenceRetrievalService:
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         max_evidence: int = 12, context_limit: int = 4,
         max_security_level: int = 3,
+        coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED",
     ) -> tuple[list[CitationGroup], dict[str, Any]]:
         if not query.strip() or not scopes:
             raise ValueError("query and scopes are required")
@@ -286,7 +289,12 @@ class KnowledgeCoreEvidenceRetrievalService:
         if successful_channels == 0 and first_failure is not None:
             raise first_failure
         raw_anchor_count = len(anchors)
-        anchors = _dedupe(anchors)[:max_evidence]
+        anchors = self._select_anchors(
+            anchors,
+            scopes=scopes,
+            limit=max_evidence,
+            coverage_mode=coverage_mode,
+        )
         contexts = await self._search_port.expand_context(anchors=anchors, limit=context_limit)
         groups = assemble_groups(
             anchors,
@@ -309,5 +317,54 @@ class KnowledgeCoreEvidenceRetrievalService:
             "citation_groups": len(citations),
             "max_evidence": max_evidence,
             "context_limit": context_limit,
+            "coverage_mode": coverage_mode,
+            "covered_bundle_count": len(
+                {item.bundle_id for item in anchors}
+            ),
+            "uncovered_bundle_ids": [
+                str(scope.bundle_id)
+                for scope in scopes
+                if scope.bundle_id
+                not in {item.bundle_id for item in anchors}
+            ],
             "warnings": warnings,
         }
+
+    @staticmethod
+    def _select_anchors(
+        anchors: Sequence[EvidenceHit],
+        *,
+        scopes: Sequence[EvidenceScope],
+        limit: int,
+        coverage_mode: Literal["BREADTH", "BALANCED"],
+    ) -> list[EvidenceHit]:
+        """先覆盖候选 Bundle，再使用剩余预算补充高排名正文。"""
+        ranked = _dedupe(anchors)
+        by_bundle: dict[UUID, list[EvidenceHit]] = defaultdict(list)
+        for item in ranked:
+            by_bundle[item.bundle_id].append(item)
+        selected: list[EvidenceHit] = []
+        selected_ids: set[UUID] = set()
+        depth = 0
+        while len(selected) < limit:
+            added = False
+            for scope in scopes:
+                items = by_bundle.get(scope.bundle_id, [])
+                if depth >= len(items):
+                    continue
+                item = items[depth]
+                selected.append(item)
+                selected_ids.add(item.evidence_id)
+                added = True
+                if len(selected) >= limit:
+                    return selected
+            if coverage_mode != "BREADTH" or not added:
+                break
+            depth += 1
+        for item in ranked:
+            if item.evidence_id in selected_ids:
+                continue
+            selected.append(item)
+            if len(selected) >= limit:
+                break
+        return selected

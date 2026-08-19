@@ -112,13 +112,6 @@ class KnowledgeCoreSettings(Settings):
             timeout_seconds=300,
         )
     )
-    llm: ServiceDependencyConfig = Field(
-        default_factory=lambda: ServiceDependencyConfig(
-            base_url="http://127.0.0.1:18092",
-            audience="kbot-model-llm",
-            timeout_seconds=300,
-        )
-    )
     vlm: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18094",

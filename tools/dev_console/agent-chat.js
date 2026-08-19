@@ -42,8 +42,6 @@
           )}</option>`
       )
       .join("");
-    const agent = selectedAgent();
-    $("#rerank-select").value = String(Boolean(agent?.do_rerank));
   }
 
   function renderConversations() {
@@ -97,34 +95,11 @@
   );
   $("#agent-select").addEventListener("change", () => {
     const agent = selectedAgent();
-    $("#rerank-select").value = String(Boolean(agent?.do_rerank));
     renderSession(agent);
   });
   $("#conversation-select").addEventListener("change", () => {
     state.activeConversation = selectedConversation();
     renderSession(state.activeConversation);
-  });
-
-  $("#save-rerank").addEventListener("click", async () => {
-    const agent = selectedAgent();
-    if (!agent) return;
-    try {
-      const updated = await KBotUI.api(`/api/v1/agents/${agent.agent_id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          expected_row_version: agent.row_version,
-          do_rerank: $("#rerank-select").value === "true",
-        }),
-      });
-      state.agents = state.agents.map((item) =>
-        item.agent_id === updated.agent_id ? updated : item
-      );
-      renderAgents();
-      renderSession(updated);
-      KBotUI.setStatus($("#session-status"), "重排开关已保存", "ok");
-    } catch (error) {
-      KBotUI.setStatus($("#session-status"), error.message, "error");
-    }
   });
 
   $("#conversation-form").addEventListener("submit", async (event) => {
@@ -309,7 +284,6 @@
       event.type === "retrieval.completed"
         ? {
             diagnostics: payload.diagnostics || {},
-            rerank: payload.rerank || {},
             warnings: payload.warnings || [],
           }
         : null;

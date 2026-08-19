@@ -1,6 +1,7 @@
 """Agent Runtime 内置 Skill 的契约测试。"""
 
 from datetime import datetime, timezone
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -16,6 +17,7 @@ from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.response_composer.contracts import (
     GroundedAnswer,
     QueryResultReferenceCard,
+    ReferenceCard,
 )
 from agent_runtime.specialists.root import RouteType, RootAgentPlanner
 from platform_core.identity import uuid7
@@ -586,14 +588,40 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
-    async def test_document_skill_propagates_agent_rerank_switch(self):
+    async def test_document_skill_aggregates_citations_by_bundle(self):
+        client = _KnowledgeCoreClient()
+        candidates = (await client.discover(query="AI"))["candidates"]
+        raw = (await client.retrieve_evidence(query="AI"))["citations"]
+        second = deepcopy(raw[0])
+        second_evidence_id = uuid7()
+        second_document_id = uuid7()
+        second_document_version_id = uuid7()
+        second["citation_label"] = "C2"
+        second["document_version_id"] = str(second_document_version_id)
+        second["primary_evidence_ids"] = [str(second_evidence_id)]
+        second["items"][0]["evidence"].update(
+            {
+                "evidence_id": str(second_evidence_id),
+                "document_id": str(second_document_id),
+                "content_text": "该 Bundle 还包含 AI 运维实践。",
+                "document_name": "AI 运维实践.pdf",
+            }
+        )
+
+        citations = KnowledgeRetrievalSkill._map_citations(
+            [raw[0], second], candidates=candidates
+        )
+
+        self.assertEqual(len(citations), 1)
+        self.assertEqual(citations[0].citation_label, "C1")
+        self.assertEqual(citations[0].title, "数据库优化案例")
+        self.assertEqual(len(citations[0].evidence_ids), 2)
+        self.assertIn("AI 运维实践.pdf", citations[0].excerpt)
+
+    async def test_document_skill_propagates_coverage_mode(self):
         client = _KnowledgeCoreClient()
         context = _context()
         snapshot = dict(context.config_snapshot)
-        snapshot["agent"] = {
-            **snapshot["agent"],
-            "do_rerank": True,
-        }
         snapshot["route"] = {
             "route_type": "DOCUMENT",
             "coverage_mode": "BREADTH",
@@ -606,8 +634,6 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             context.model_copy(update={"config_snapshot": snapshot})
         )
 
-        self.assertTrue(client.last_discovery_request["do_rerank"])
-        self.assertTrue(client.last_evidence_request["do_rerank"])
         self.assertEqual(
             "BREADTH", client.last_discovery_request["coverage_mode"]
         )
@@ -616,7 +642,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             result.artifact.payload["retrieval_report"]["selector"],
-            "llm-object-and-evidence-group-v1",
+            "bundle-evidence-aggregation-v1",
         )
 
     async def test_document_skill_runs_visual_and_vlm_paths(self):
@@ -982,6 +1008,30 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
+    def test_grounded_answer_rejects_duplicate_bundle_attachments(self):
+        bundle_id = uuid7()
+        common = {
+            "collection_id": uuid7(),
+            "bundle_id": bundle_id,
+            "bundle_revision_id": uuid7(),
+            "document_id": uuid7(),
+            "document_version_id": uuid7(),
+            "title": "AI Asset",
+            "locator_schema_version": "document/v1",
+        }
+        with self.assertRaisesRegex(
+            ValidationError, "同一个 Bundle 只能生成一个附件引用"
+        ):
+            GroundedAnswer(
+                answer="两个标签指向同一 Asset。[C1][C2]",
+                status="READY",
+                used_citation_labels=("C1", "C2"),
+                references=(
+                    ReferenceCard(citation_label="C1", **common),
+                    ReferenceCard(citation_label="C2", **common),
+                ),
+            )
+
     async def test_composer_does_not_stream_answer_before_validation(self):
         artifact = await self._retrieval_artifact()
         model = _MissingCitationModelClient(repair_succeeds=True)
@@ -1002,7 +1052,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deltas, ["证据支持的回答。[C1]"])
         self.assertNotIn("1+1=2", "".join(deltas))
 
-    async def test_composer_falls_back_to_verified_source_titles(self):
+    async def test_composer_does_not_attach_unconfirmed_bundles(self):
         artifact = await self._retrieval_artifact()
         model = _MissingCitationModelClient(repair_succeeds=False)
         outputs = [
@@ -1020,12 +1070,12 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         ]
         payload = outputs[-1].artifact.payload
         self.assertEqual(model.calls, 2)
-        self.assertEqual(deltas, ["- 数据库优化案例 [C1]"])
-        self.assertEqual(payload["status"], "READY")
-        self.assertEqual(payload["used_citation_labels"], ["C1"])
-        self.assertEqual(len(payload["references"]), 1)
+        self.assertEqual(deltas, ["回答未能通过引用一致性校验，请重试。"])
+        self.assertEqual(payload["status"], "ANSWER_VALIDATION_FAILED")
+        self.assertEqual(payload["used_citation_labels"], [])
+        self.assertEqual(payload["references"], [])
 
-    async def test_non_stream_composer_falls_back_to_verified_titles(self):
+    async def test_non_stream_composer_does_not_attach_unconfirmed_bundles(self):
         artifact = await self._retrieval_artifact()
         model = _RecordingModelClient(
             response={
@@ -1040,10 +1090,10 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         ).execute(_context(input_artifacts=(artifact,)))
 
         payload = result.artifact.payload
-        self.assertEqual(payload["answer"], "- 数据库优化案例 [C1]")
-        self.assertEqual(payload["status"], "READY")
-        self.assertEqual(payload["used_citation_labels"], ["C1"])
-        self.assertEqual(len(payload["references"]), 1)
+        self.assertEqual(payload["answer"], "回答未能通过引用一致性校验，请重试。")
+        self.assertEqual(payload["status"], "ANSWER_VALIDATION_FAILED")
+        self.assertEqual(payload["used_citation_labels"], [])
+        self.assertEqual(payload["references"], [])
 
     async def test_composer_projects_safe_aiops_result(self):
         delegation_id = uuid7()
