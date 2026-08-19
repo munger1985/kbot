@@ -423,7 +423,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             cards,
         )
 
-    async def test_presented_assets_control_template_count_and_order(self):
+    async def test_manifest_cards_follow_answer_asset_title_order(self):
         references = [
             self._reference("C1", 1),
             self._reference("C2", 2),
@@ -431,13 +431,13 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         ]
         manifests = {
             references[0]["bundle_revision_id"]: self._manifest(
-                "ASSET/A", "正文资产 A"
-            ),
-            references[1]["bundle_revision_id"]: self._manifest(
                 "ASSET/X", "只作为补充证据的资产 X"
             ),
-            references[2]["bundle_revision_id"]: self._manifest(
+            references[1]["bundle_revision_id"]: self._manifest(
                 "ASSET/B", "正文资产 B"
+            ),
+            references[2]["bundle_revision_id"]: self._manifest(
+                "ASSET/A", "正文资产 A"
             ),
         }
         client = _ManifestClient(manifests)
@@ -446,21 +446,12 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             "schema_version": "GroundedAnswer.v1",
             "payload": {
                 "answer": (
-                    "1. 正文资产 A 的完整说明。[C1][C2]\n"
-                    "2. 正文资产 B 的完整说明。[C3]"
+                    "1. **正文资产 A** 的完整说明。[C3]\n"
+                    "2. **正文资产 B** 的完整说明。[C2]\n"
+                    "补充证据不作为正文资产展示。[C1]"
                 ),
                 "status": "READY",
                 "used_citation_labels": ["C1", "C2", "C3"],
-                "presented_assets": [
-                    {
-                        "primary_citation_label": "C1",
-                        "supporting_citation_labels": ["C2"],
-                    },
-                    {
-                        "primary_citation_label": "C3",
-                        "supporting_citation_labels": [],
-                    },
-                ],
                 "references": references,
             },
         }
@@ -470,58 +461,45 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core_client=client,
             domain_id=1001,
             auth_context=None,
-            limit=5,
+            limit=3,
         )
 
         self.assertEqual(
-            ["正文资产 A", "正文资产 B"],
+            ["正文资产 A", "正文资产 B", "只作为补充证据的资产 X"],
             [card["asset_title"] for card in cards],
         )
-        self.assertNotIn(
-            references[1]["bundle_revision_id"],
-            client.previewed_revisions,
-        )
 
-    async def test_same_asset_documents_merge_before_limit(self):
+    async def test_answer_order_applies_before_limit_and_asset_dedup(self):
         references = [
             self._reference("C1", 11),
             self._reference("C2", 12),
             self._reference("C3", 13),
+            self._reference("C4", 14),
         ]
         client = _ManifestClient(
             {
                 references[0]["bundle_revision_id"]: self._manifest(
-                    "ASSET/A", "正文资产 A"
+                    "ASSET/X", "补充资产 X"
                 ),
                 references[1]["bundle_revision_id"]: self._manifest(
                     "ASSET/A", "正文资产 A"
                 ),
                 references[2]["bundle_revision_id"]: self._manifest(
+                    "ASSET/A", "正文资产 A"
+                ),
+                references[3]["bundle_revision_id"]: self._manifest(
                     "ASSET/B", "正文资产 B"
                 ),
             }
         )
+        answer = "1. 正文资产 B。[C4]\n2. 正文资产 A。[C2][C3]"
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
             "payload": {
-                "answer": "资产 A。[C1][C2] 资产 B。[C3]",
+                "answer": answer,
                 "status": "READY",
-                "used_citation_labels": ["C1", "C2", "C3"],
-                "presented_assets": [
-                    {
-                        "primary_citation_label": "C1",
-                        "supporting_citation_labels": [],
-                    },
-                    {
-                        "primary_citation_label": "C2",
-                        "supporting_citation_labels": [],
-                    },
-                    {
-                        "primary_citation_label": "C3",
-                        "supporting_citation_labels": [],
-                    },
-                ],
+                "used_citation_labels": ["C1", "C2", "C3", "C4"],
                 "references": references,
             },
         }
@@ -535,9 +513,10 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            ["正文资产 A", "正文资产 B"],
+            ["正文资产 B", "正文资产 A"],
             [card["asset_title"] for card in cards],
         )
+        self.assertEqual(answer, artifact["payload"]["answer"])
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):

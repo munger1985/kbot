@@ -125,25 +125,20 @@ SELECT T.WORKSPACE_ID,
 
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
 来自 `payload.answer`，并先转换为安全的 Slack `mrkdwn`；非 `READY` 状态显示中文
-状态提示。资产型回答同时携带内部 `presented_assets` 数组；每项以
-`primary_citation_label` 指定正文明确展示的 Asset，并可通过
-`supporting_citation_labels` 关联只用于支撑正文的补充文档。Slack Template 严格按
-该数组顺序读取主要引用所对应的 `manifest.md`，补充引用不会单独生成 Template；
-不同 `document_version_id` 解析到相同 `asset_id` 时合并为一个 Template，且在完成
-Asset 分组后才应用 `max_references`。`asset_id`、`asset_title`、
-`solution_briefing`、`author_mail`、`create_time` 只从 Manifest Source metadata
-白名单获取，不将文档标题或文件名替代为 Asset。回答原文保留，原参考资料区替换为
-一个分隔线、Asset Title、Solution Briefing，以及“Contributor 邮箱 | 发布日期”
+状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
+`asset_title`、`solution_briefing`、`author_mail`、`create_time` 仅从本次实际使用的
+DOCUMENT 引用所对应的 `manifest.md` 白名单补齐。Manifest Asset 在组装 Template
+前，优先按照 `asset_title` 在原回答正文中的出现位置排序；标题未匹配时回退到引用
+标签在正文中的位置，并保持原引用顺序稳定。排序和 Asset 去重完成后再应用
+`max_references`，整个过程不修改 `payload.answer`。回答原文保留，原参考资料区替换
+为一个分隔线、Asset Title、Solution Briefing，以及“Contributor 邮箱 | 发布日期”
 与 KM Link 按钮组成的 Block Kit。
-
-历史 Artifact 不含 `presented_assets` 时，Worker 会记录降级警告，并继续按既有的
-回答标签与 `used_citation_labels` 组装，保证升级期间可读取已完成的旧回答。
 
 KBot Artifact、Outbox 和 `/tmp/slackmess` 原始调试报文保留引用标签，以支持证据
 审计和问题排查；实际发送给 Slack 的报文副本会从所有可见 `text` 字段中删除
 `[C1]`、`[D1]`、`[Q1]` 等标签，且不修改 URL、按钮或原始持久化报文。
 
-无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤。警告与可视化
-仅输出面向用户的摘要，不传送定位框、内部
+无法组装 Asset Block 时，引用仍严格按 `used_citation_labels` 过滤和排序，并受
+`max_references` 限制。警告与可视化仅输出面向用户的摘要，不传送定位框、内部
 UUID、查询明细、可视化原始数据和未经授权的资源 URL。收到不匹配的 Artifact
 类型或版本时，返回固定格式错误提示，避免泄漏内部报文。
