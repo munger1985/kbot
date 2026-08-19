@@ -405,9 +405,35 @@ def _query_asset_rows(payload: dict[str, Any]) -> list[dict[str, str]]:
             )
             km_asset_id = _query_row_value(row, "km_asset_id")
             title = _query_row_value(row, "asset_title", "title")
-            if not title or not (asset_id or km_asset_id):
+            asset_signals = (
+                _query_row_value(
+                    row,
+                    "author_mail",
+                    "author",
+                    "author_mail_norm",
+                ),
+                _query_row_value(row, "asset_product", "product"),
+                _query_row_value(row, "asset_solution", "solution"),
+                _query_row_value(row, "industry_id", "industry"),
+                _query_row_value(row, "asset_status"),
+                _query_row_value(row, "ingestion_status"),
+                _query_row_value(
+                    row,
+                    "asset_date_value",
+                    "asset_date",
+                    "publish_date",
+                    "create_time",
+                ),
+            )
+            if not title or not (
+                asset_id or km_asset_id or any(asset_signals)
+            ):
                 continue
-            identity = (asset_id or km_asset_id).casefold()
+            identity = (
+                asset_id
+                or km_asset_id
+                or _normalized_query_key(title)
+            ).casefold()
             if identity in seen:
                 continue
             seen.add(identity)
@@ -438,8 +464,28 @@ def _table_answer_intro(answer: str) -> str | None:
     for index, line in enumerate(lines):
         if "|" not in line:
             continue
-        header = _normalized_query_key(line)
-        if "assetid" in header and "title" in header:
+        columns = {
+            _normalized_query_key(value)
+            for value in line.strip().strip("|").split("|")
+            if value.strip()
+        }
+        has_title = bool({"title", "assettitle"} & columns)
+        asset_columns = {
+            "author",
+            "authormail",
+            "product",
+            "solution",
+            "industry",
+            "assetstatus",
+            "ingestionstatus",
+            "assetdate",
+        }
+        has_asset_shape = (
+            "assetid" in columns
+            or "#" in columns
+            or len(asset_columns & columns) >= 2
+        )
+        if has_title and has_asset_shape:
             return "\n".join(lines[:index]).strip()
     return None
 

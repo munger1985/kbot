@@ -1121,12 +1121,12 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             "payload": {
                 "answer": (
                     "Here are all assets created since 01/01/2026.\n\n"
-                    "| Asset ID | Title | Author | Product | Solution | "
+                    "| # | Title | Author | Product | Solution | "
                     "Industry | Asset Status | Ingestion Status | Asset Date |\n"
                     "|---|---|---|---|---|---|---|---|---|\n"
-                    "| ASSET/B | Asset B | b@example.com | ADW | RAG | "
+                    "| 1 | Asset B | b@example.com | ADW | RAG | "
                     "Financial Services | Published | READY | 2026-08-18 |\n"
-                    "| ASSET/A | Asset A | a@example.com | APEX | AI | "
+                    "| 2 | Asset A | a@example.com | APEX | AI | "
                     "Public Sector | Published | FAILED | 2026-08-17 | [Q1]"
                 ),
                 "status": "READY",
@@ -1137,7 +1137,6 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                         "schema": "QUERY_RESULT.v1",
                         "rows": [
                             {
-                                "ASSET_ID": "ASSET/B",
                                 "ASSET_TITLE": "Asset B",
                                 "AUTHOR_MAIL": "b@example.com",
                                 "ASSET_PRODUCT": "ADW",
@@ -1148,7 +1147,6 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                                 "ASSET_DATE_VALUE": "2026-08-18",
                             },
                             {
-                                "ASSET_ID": "ASSET/A",
                                 "ASSET_TITLE": "Asset A",
                                 "AUTHOR_MAIL": "a@example.com",
                                 "ASSET_PRODUCT": "APEX",
@@ -1190,8 +1188,8 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*Solution:* RAG", rendered)
         self.assertIn("*Industry:* —", rendered)
         self.assertIn("*Ingestion Status:* FAILED", rendered)
-        self.assertNotIn("| Asset ID | Title |", rendered)
-        self.assertNotIn("ASSET/B | Asset B", rendered)
+        self.assertNotIn("| # | Title |", rendered)
+        self.assertNotIn("| 1 | Asset B", rendered)
         self.assertLess(
             rendered.index("*1. Asset B*"),
             rendered.index("*Asset Title:* Asset B"),
