@@ -71,7 +71,6 @@ def create_aiops_worker_probe(
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
-        client_session = aiohttp.ClientSession()
         agent_catalog = AIOpsAgentValidator(
             AIOpsAgentService(uow_factory=runtime.uow_factory),
             model_client=AIModelConfigClient(
@@ -93,6 +92,15 @@ def create_aiops_worker_probe(
             if resolved.monitoring.catalog_path
             else None
         )
+        diagnostic_registry = create_diagnostic_registry(resolved)
+        action_registry = ActionRegistry.load()
+        diagnosis_prompts = DiagnosisPromptRegistry.load(
+            Path(resolved.diagnosis.prompt_catalog_path)
+            if resolved.diagnosis.prompt_catalog_path
+            else None
+        )
+        # 本地资源校验失败时不应提前创建网络会话。
+        client_session = aiohttp.ClientSession()
         provider_registry = MonitorProviderRegistry(
             session=client_session,
             request_timeout_seconds=(
@@ -101,13 +109,6 @@ def create_aiops_worker_probe(
             webhook_replay_seconds=(
                 resolved.monitoring.webhook_replay_seconds
             ),
-        )
-        diagnostic_registry = create_diagnostic_registry(resolved)
-        action_registry = ActionRegistry.load()
-        diagnosis_prompts = DiagnosisPromptRegistry.load(
-            Path(resolved.diagnosis.prompt_catalog_path)
-            if resolved.diagnosis.prompt_catalog_path
-            else None
         )
         diagnosis_model_client = AIOpsStructuredModelClient(
             base_url=resolved.clients.model_serving.base_url,

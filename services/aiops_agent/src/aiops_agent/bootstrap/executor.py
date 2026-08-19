@@ -53,6 +53,7 @@ def create_aiops_executor(
             process="db_executor",
         )
         registry = create_diagnostic_registry(resolved)
+        action_registry = ActionRegistry.load()
         client_session = aiohttp.ClientSession()
         diagnostic_executor = DiagnosticExecutorService(
             registry=registry,
@@ -78,7 +79,6 @@ def create_aiops_executor(
             ),
             concurrency=config.readonly_concurrency,
         )
-        action_registry = ActionRegistry.load()
         mutation_executor = MutationExecutorService(
             enabled=config.mutation_enabled,
             executor_instance_id=config.executor_instance_id,

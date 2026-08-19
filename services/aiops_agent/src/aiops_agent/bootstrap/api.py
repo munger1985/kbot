@@ -121,7 +121,6 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             cipher=credential_cipher,
         )
-        client_session = aiohttp.ClientSession()
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
             model_client=AIModelConfigClient(
@@ -168,15 +167,6 @@ def create_aiops_api(
             if resolved.monitoring.catalog_path
             else None
         )
-        provider_registry = MonitorProviderRegistry(
-            session=client_session,
-            request_timeout_seconds=(
-                resolved.monitoring.provider_timeout_seconds
-            ),
-            webhook_replay_seconds=(
-                resolved.monitoring.webhook_replay_seconds
-            ),
-        )
         diagnostic_registry = create_diagnostic_registry(resolved)
         action_registry = ActionRegistry.load()
         app.state.change_service = AIOpsChangeService(
@@ -206,6 +196,17 @@ def create_aiops_api(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path
             else None
+        )
+        # 资源目录和签名配置完成校验后再创建网络会话。
+        client_session = aiohttp.ClientSession()
+        provider_registry = MonitorProviderRegistry(
+            session=client_session,
+            request_timeout_seconds=(
+                resolved.monitoring.provider_timeout_seconds
+            ),
+            webhook_replay_seconds=(
+                resolved.monitoring.webhook_replay_seconds
+            ),
         )
         diagnosis_model_client = AIOpsStructuredModelClient(
             base_url=resolved.clients.model_serving.base_url,

@@ -22,10 +22,24 @@ EXPECTED = (
         "kbot-knowledge-retrieval-app",
         "knowledge_retrieval_app",
     ),
+    ("services/km_asset_app", "kbot-km-asset-app", "km_asset_app"),
     ("services/agent_runtime", "kbot-agent-runtime", "agent_runtime"),
     ("services/aiops_agent", "kbot-aiops-agent", "aiops_agent"),
     ("services/data_query", "kbot-data-query", "data_query"),
     ("services/main_api", "kbot-main-api", "main_api"),
+)
+
+AIOPS_DIAGNOSTIC_SQL = tuple(
+    f"{database}/sql/{template}.sql"
+    for database in ("mysql", "oracle", "postgresql")
+    for template in (
+        "instance_identity",
+        "replication_status",
+        "session_active",
+        "session_blocking",
+        "storage_capacity",
+        "transaction_long_running",
+    )
 )
 
 
@@ -128,6 +142,18 @@ def check_workspace_packages() -> list[str]:
             errors.append(
                 f"生产模式模块仍指向仓库源码：{module_name}={origin}"
             )
+        if module_name == "aiops_agent":
+            catalog_root = origin.parent / "diagnostics" / "catalog"
+            missing_sql = tuple(
+                relative_path
+                for relative_path in AIOPS_DIAGNOSTIC_SQL
+                if not (catalog_root / relative_path).is_file()
+            )
+            if missing_sql:
+                errors.append(
+                    "AIOps 发行包缺少诊断 SQL 模板："
+                    + ", ".join(missing_sql)
+                )
     return errors
 
 
