@@ -4,13 +4,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import os
 import unittest
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from loguru import logger
 
 from main_api.api.development_logs import router as development_logs_router
+from main_api.app import _repository_path
 from main_api.log_reader import LocalLogSearchService, LogQueryError
 from platform_core.logger import LogConfig, LogManager
 
@@ -85,6 +88,29 @@ service_name = "kbot-aiops-api"
     def tearDown(self):
         logger.remove()
         self.temporary_directory.cleanup()
+
+    def test_relative_paths_use_deployment_resource_root(self):
+        resource_dir = self.root / "resources"
+        config_file = self.root / "configuration" / "kbot.toml"
+        with patch.dict(
+            os.environ,
+            {
+                "KBOT_RESOURCE_DIR": str(resource_dir),
+                "KBOT_CONFIG_FILE": str(config_file),
+            },
+        ):
+            self.assertEqual(
+                self.root / "logs",
+                _repository_path("./logs"),
+            )
+            self.assertEqual(
+                resource_dir / "topology.toml",
+                _repository_path("resources/topology.toml"),
+            )
+
+    def test_absolute_log_path_is_unchanged(self):
+        absolute = self.root / "service-logs"
+        self.assertEqual(absolute, _repository_path(str(absolute)))
 
     def test_catalog_groups_runtime_and_access_by_service(self):
         services = self.service.services()

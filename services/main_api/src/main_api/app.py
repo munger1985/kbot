@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -58,13 +59,25 @@ from platform_core.security import (
 
 
 LifespanFactory = Callable[[FastAPI], AbstractAsyncContextManager[Any]]
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _runtime_root() -> Path:
+    """从部署资源目录确定仓库根，避免依赖安装包所在位置。"""
+    resource_dir = str(os.getenv("KBOT_RESOURCE_DIR") or "").strip()
+    if resource_dir:
+        return Path(resource_dir).resolve().parent
+    configured = Path(
+        os.getenv("KBOT_CONFIG_FILE") or "configuration/kbot.toml"
+    ).resolve()
+    if configured.parent.name == "configuration":
+        return configured.parent.parent
+    return Path.cwd().resolve()
 
 
 def _repository_path(value: str) -> Path:
     """将部署配置中的相对路径固定解析到 KBot 仓库根目录。"""
     path = Path(value)
-    return path if path.is_absolute() else _REPOSITORY_ROOT / path
+    return path if path.is_absolute() else _runtime_root() / path
 
 
 def _log_downstream_failure(
