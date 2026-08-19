@@ -53,6 +53,18 @@ _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
+_QUERY_ASSET_TABLE_FIELDS = (
+    ("Author", ("author_mail", "author", "author_mail_norm")),
+    ("Product", ("asset_product", "product")),
+    ("Solution", ("asset_solution", "solution")),
+    ("Industry", ("industry_id", "industry")),
+    ("Asset Status", ("asset_status",)),
+    ("Ingestion Status", ("ingestion_status",)),
+    (
+        "Asset Date",
+        ("asset_date_value", "asset_date", "publish_date", "create_time"),
+    ),
+)
 
 
 def waiting_message(question: str) -> str:
@@ -344,6 +356,138 @@ def _text_sections(text: str) -> list[dict[str, Any]]:
     ]
 
 
+def _normalized_query_key(value: object) -> str:
+    return re.sub(r"[\s_\\-]+", "", str(value)).strip().casefold()
+
+
+def _query_row_value(row: dict[str, Any], *aliases: str) -> str:
+    by_key = {
+        _normalized_query_key(key): value for key, value in row.items()
+    }
+    for alias in aliases:
+        value = by_key.get(_normalized_query_key(alias))
+        if value is None or isinstance(value, dict):
+            continue
+        if isinstance(value, (list, tuple, set)):
+            text = ", ".join(
+                str(item).strip() for item in value if str(item).strip()
+            )
+        else:
+            text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _query_asset_rows(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """从 QUERY_RESULT.v1 恢复表格型回答的 Asset 行顺序。"""
+    query_results = payload.get("query_results")
+    if not isinstance(query_results, (list, tuple)):
+        return []
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for query_result in query_results:
+        if not isinstance(query_result, dict):
+            continue
+        schema = str(query_result.get("schema") or "").strip()
+        if schema and schema != "QUERY_RESULT.v1":
+            continue
+        rows = query_result.get("rows")
+        if not isinstance(rows, (list, tuple)):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            asset_id = _query_row_value(
+                row,
+                "asset_id",
+                "external_asset_id",
+            )
+            km_asset_id = _query_row_value(row, "km_asset_id")
+            title = _query_row_value(row, "asset_title", "title")
+            if not title or not (asset_id or km_asset_id):
+                continue
+            identity = (asset_id or km_asset_id).casefold()
+            if identity in seen:
+                continue
+            seen.add(identity)
+            values = {
+                "asset_title": title,
+                "author": _query_row_value(
+                    row,
+                    "author_mail",
+                    "author",
+                    "author_mail_norm",
+                ),
+            }
+            for label, aliases in _QUERY_ASSET_TABLE_FIELDS[1:]:
+                values[_normalized_query_key(label)] = _query_row_value(
+                    row,
+                    *aliases,
+                )
+            result.append(values)
+    return result
+
+
+def _table_answer_intro(answer: str) -> str | None:
+    """返回 Asset Markdown 表格之前的自然语言说明。
+
+    非表格回答返回 None。
+    """
+    lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    for index, line in enumerate(lines):
+        if "|" not in line:
+            continue
+        header = _normalized_query_key(line)
+        if "assetid" in header and "title" in header:
+            return "\n".join(lines[:index]).strip()
+    return None
+
+
+def _query_asset_table_blocks(
+    payload: dict[str, Any],
+    answer: str,
+) -> list[dict[str, Any]]:
+    """将 Asset 表格转换为 Slack 可读的编号字段列表。"""
+    intro = _table_answer_intro(answer)
+    if intro is None:
+        return []
+    rows = _query_asset_rows(payload)
+    if not rows:
+        return []
+    blocks: list[dict[str, Any]] = []
+    safe_intro = _to_slack_mrkdwn(intro)
+    if safe_intro:
+        blocks.extend(_text_sections(safe_intro))
+    for index, row in enumerate(rows, start=1):
+        title = re.sub(
+            r"\s+",
+            " ",
+            _to_slack_mrkdwn(row.get("asset_title")),
+        ).strip()[:500]
+        author = str(row.get("author") or "").strip()
+        if author and _EMAIL_PATTERN.fullmatch(author):
+            safe_author = _escape_mrkdwn(author)
+            author_value = f"<mailto:{author}|{safe_author}>"
+        else:
+            author_value = _to_slack_mrkdwn(author) or "—"
+        lines = [f"*{index}. {title}*", f"*Author:* {author_value}"]
+        for label, _ in _QUERY_ASSET_TABLE_FIELDS[1:]:
+            key = _normalized_query_key(label)
+            value = _to_slack_mrkdwn(row.get(key)) or "—"
+            lines.append(f"*{label}:* {value[:500]}")
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "\n".join(lines)[:3000],
+                },
+            }
+        )
+    return blocks
+
+
 def _asset_blocks(
     asset_cards: list[dict[str, str]],
     config: SlackReplyConfig,
@@ -525,14 +669,27 @@ def render_slack_reply(
     if valid_envelope:
         status = answer_payload.get("status")
         blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
-    blocks.extend(_text_sections(safe_answer))
+    query_asset_blocks = (
+        _query_asset_table_blocks(answer_payload, answer)
+        if valid_envelope
+        else []
+    )
+    blocks.extend(query_asset_blocks or _text_sections(safe_answer))
     if valid_envelope:
         # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
         blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(_warning_blocks(answer_payload, reply_config))
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
-    fallback = f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"
+    query_fallback = "\n\n".join(
+        str(block.get("text", {}).get("text") or "")
+        for block in query_asset_blocks
+        if isinstance(block, dict) and isinstance(block.get("text"), dict)
+    )
+    fallback_answer = query_fallback or safe_answer
+    fallback = (
+        f"<@{user_id}> {reply_config.assistant_name}：{fallback_answer}"
+    )
     return {
         "channel": channel_id,
         "thread_ts": thread_ts,

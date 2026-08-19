@@ -506,6 +506,58 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             cards[0],
         )
 
+    async def test_table_answer_builds_templates_in_query_row_order(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "Here are the assets.\n\n"
+                    "| Asset ID | Title | Author | Solution |\n"
+                    "|---|---|---|---|\n"
+                    "| ASSET/B | Asset B | b@example.com | RAG |\n"
+                    "| ASSET/A | Asset A | a@example.com | AI | [Q1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [],
+                "query_results": [
+                    {
+                        "schema": "QUERY_RESULT.v1",
+                        "rows": [
+                            {
+                                "ASSET_ID": "ASSET/B",
+                                "ASSET_TITLE": "Asset B",
+                                "NORMALIZED_METADATA_JSON": {
+                                    "solution_briefing": "Asset B Briefing"
+                                },
+                            },
+                            {
+                                "ASSET_ID": "ASSET/A",
+                                "ASSET_TITLE": "Asset A",
+                                "NORMALIZED_METADATA_JSON": {
+                                    "solution_briefing": "Asset A Briefing"
+                                },
+                            },
+                        ],
+                    }
+                ],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=None,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(
+            ["Asset B", "Asset A"],
+            [card["asset_title"] for card in cards],
+        )
+
     async def test_missing_required_asset_field_fails_closed(self):
         reference = self._reference("C1", 98)
         manifest = (
@@ -1062,6 +1114,93 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
+    def test_asset_query_table_renders_as_numbered_field_sections(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "Here are all assets created since 01/01/2026.\n\n"
+                    "| Asset ID | Title | Author | Product | Solution | "
+                    "Industry | Asset Status | Ingestion Status | Asset Date |\n"
+                    "|---|---|---|---|---|---|---|---|---|\n"
+                    "| ASSET/B | Asset B | b@example.com | ADW | RAG | "
+                    "Financial Services | Published | READY | 2026-08-18 |\n"
+                    "| ASSET/A | Asset A | a@example.com | APEX | AI | "
+                    "Public Sector | Published | FAILED | 2026-08-17 | [Q1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [],
+                "query_results": [
+                    {
+                        "schema": "QUERY_RESULT.v1",
+                        "rows": [
+                            {
+                                "ASSET_ID": "ASSET/B",
+                                "ASSET_TITLE": "Asset B",
+                                "AUTHOR_MAIL": "b@example.com",
+                                "ASSET_PRODUCT": "ADW",
+                                "ASSET_SOLUTION": "RAG",
+                                "INDUSTRY_ID": "Financial Services",
+                                "ASSET_STATUS": "Published",
+                                "INGESTION_STATUS": "READY",
+                                "ASSET_DATE_VALUE": "2026-08-18",
+                            },
+                            {
+                                "ASSET_ID": "ASSET/A",
+                                "ASSET_TITLE": "Asset A",
+                                "AUTHOR_MAIL": "a@example.com",
+                                "ASSET_PRODUCT": "APEX",
+                                "ASSET_SOLUTION": "AI",
+                                "ASSET_STATUS": "Published",
+                                "INGESTION_STATUS": "FAILED",
+                                "ASSET_DATE_VALUE": "2026-08-17",
+                            },
+                        ],
+                    }
+                ],
+            },
+        }
+        payload = slack_visible_payload(
+            render_slack_reply(
+                channel_id="C1",
+                user_id="U1",
+                thread_ts="1.001",
+                artifact=artifact,
+                reply_config=SlackReplyConfig(),
+                asset_cards=[
+                    {
+                        "asset_id": "ASSET/B",
+                        "asset_title": "Asset B",
+                        "solution_briefing": "Asset B Briefing",
+                    },
+                    {
+                        "asset_id": "ASSET/A",
+                        "asset_title": "Asset A",
+                        "solution_briefing": "Asset A Briefing",
+                    },
+                ],
+            )
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("*1. Asset B*", rendered)
+        self.assertIn("*2. Asset A*", rendered)
+        self.assertIn("<mailto:b@example.com|b@example.com>", rendered)
+        self.assertIn("*Solution:* RAG", rendered)
+        self.assertIn("*Industry:* —", rendered)
+        self.assertIn("*Ingestion Status:* FAILED", rendered)
+        self.assertNotIn("| Asset ID | Title |", rendered)
+        self.assertNotIn("ASSET/B | Asset B", rendered)
+        self.assertLess(
+            rendered.index("*1. Asset B*"),
+            rendered.index("*Asset Title:* Asset B"),
+        )
+        self.assertLess(
+            rendered.index("*Asset Title:* Asset B"),
+            rendered.index("*Asset Title:* Asset A"),
+        )
+
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
             channel_id="C1",

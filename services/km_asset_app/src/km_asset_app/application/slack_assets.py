@@ -807,7 +807,8 @@ async def assemble_slack_asset_cards(
     answer = payload.get("answer")
     answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
     sections = _answer_asset_sections(answer)
-    if not answer_cards and not sections:
+    query_cards = _query_result_asset_cards(payload)
+    if not answer_cards and not sections and not query_cards:
         return []
     if answer_cards and all(
         all(
@@ -827,7 +828,6 @@ async def assemble_slack_asset_cards(
         )
         return result
     references = _used_document_references(payload)
-    query_cards = _query_result_asset_cards(payload)
     local_by_revision: dict[str, dict[str, str]] = {}
     local_cards: list[dict[str, str]] = []
     if uow_factory is not None:
@@ -899,6 +899,14 @@ async def assemble_slack_asset_cards(
         query_cards,
         local_cards,
     )
+    # 只有带稳定 Asset 身份的 QueryResult 行才能独立生成 Template。
+    # 只有通用 title 的非 Asset 问数不得触发模板或完整性异常。
+    query_cards = [
+        card
+        for card in query_cards
+        if _clean_value(card.get("asset_id"))
+        or _clean_value(card.get("_km_asset_id"))
+    ]
 
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
