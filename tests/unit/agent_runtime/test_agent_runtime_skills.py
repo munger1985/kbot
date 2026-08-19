@@ -200,6 +200,24 @@ class _MissingCitationModelClient(_ModelClient):
         yield LLMChunk(content="1+1=2。")
 
 
+class _QueryCitationModelClient(_ModelClient):
+    def __init__(self):
+        self.prompts = []
+
+    async def get_llm_json(self, **kwargs):
+        self.prompts.append(kwargs["prompt"])
+        return {
+            "answer": "- Asset A [C1]\n\n- Asset B [C2]",
+        }
+
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        self.prompts.append(kwargs["prompt"])
+        yield LLMChunk(content="- Asset A [C1]\n\n")
+        yield LLMChunk(content="- Asset B 【C2】")
+
+
 class _RewriteModelClient:
     def __init__(self):
         self.last_json_request = None
@@ -254,6 +272,7 @@ class _PromptResolver:
                 "standalone_query",
                 "evidence",
             ),
+            "agent_runtime.data_response_compose": (),
             "agent_runtime.query_image_description": (),
         }[prompt_key]
         content = "\n".join(
@@ -320,6 +339,36 @@ def _context(
 
 
 class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _query_result_artifact() -> LeasedArtifact:
+        return LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type="QUERY_RESULT",
+            schema_version="QUERY_RESULT.v1",
+            producer="data-query",
+            producer_version="1.0.0",
+            payload={
+                "schema": "QUERY_RESULT.v1",
+                "query_result_id": str(uuid7()),
+                "provider": "SEMANTIC",
+                "columns": [
+                    {"name": "title", "type": "STRING"},
+                ],
+                "rows": [
+                    {"title": "Asset A"},
+                    {"title": "Asset B"},
+                ],
+                "row_count": 2,
+                "truncated": False,
+                "warnings": [],
+                "provenance": {},
+            },
+            content_hash="query-result-hash",
+            provenance={},
+            security_level=2,
+        )
+
     @staticmethod
     def _ambiguous_rewrite_artifact() -> LeasedArtifact:
         return LeasedArtifact(
@@ -1051,6 +1100,47 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.calls, 2)
         self.assertEqual(deltas, ["证据支持的回答。[C1]"])
         self.assertNotIn("1+1=2", "".join(deltas))
+
+    async def test_query_composer_replaces_model_citations_with_query_label(self):
+        model = _QueryCitationModelClient()
+        context = _context(
+            input_artifacts=(self._query_result_artifact(),),
+            original_input="list all assets",
+            language="en-US",
+        )
+        agent = deepcopy(context.config_snapshot["agent"])
+        agent["instruction"] = "文档回答必须为每个 Asset 使用 [C1]、[C2]。"
+        context = context.model_copy(
+            update={
+                "config_snapshot": {
+                    **context.config_snapshot,
+                    "agent": agent,
+                }
+            }
+        )
+
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=model,
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(context)
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        payload = outputs[-1].artifact.payload
+        self.assertEqual(deltas, ["- Asset A\n\n- Asset B [Q1]"])
+        self.assertEqual(payload["answer"], deltas[0])
+        self.assertEqual(payload["used_citation_labels"], ["Q1"])
+        self.assertEqual(
+            [item["citation_label"] for item in payload["references"]],
+            ["Q1"],
+        )
+        self.assertNotIn("文档回答必须", str(model.prompts))
 
     async def test_composer_does_not_attach_unconfirmed_bundles(self):
         artifact = await self._retrieval_artifact()

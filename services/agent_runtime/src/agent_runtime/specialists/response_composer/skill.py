@@ -52,6 +52,15 @@ def _normalize_citations(value: str) -> str:
     return _CITATION_VARIANT_PATTERN.sub(replace, value)
 
 
+def _strip_model_citations(value: str) -> str:
+    """移除模型擅自生成的引用标签，由问数协议统一投影 QueryResult 引用。"""
+    normalized = _normalize_citations(value)
+    without_labels = _CITATION_PATTERN.sub("", normalized)
+    return "\n".join(
+        line.rstrip() for line in without_labels.splitlines()
+    ).strip()
+
+
 class ResponseComposerSkill:
     def __init__(self, *, model_client, prompt_resolver):
         self._model_client = model_client
@@ -575,11 +584,13 @@ class ResponseComposerSkill:
             raise ValueError("问数回答模型返回空回答")
         if not answer_matches_language(answer, language):
             raise ValueError(f"问数回答语言与 language={language} 不一致")
+        result = self._query_result_artifact(context, query, answer)
+        grounded_answer = str(result.artifact.payload.get("answer") or "")
         yield SkillProgress(
             event_type="answer.delta",
-            payload={"chunk_index": 1, "delta": answer},
+            payload={"chunk_index": 1, "delta": grounded_answer},
         )
-        yield self._query_result_artifact(context, query, answer)
+        yield result
 
     async def _query_response(
         self,
@@ -619,9 +630,11 @@ class ResponseComposerSkill:
             {
                 "role": "system",
                 "content": (
-                    f"{definition.content}\n\nAgent 指令：\n"
-                    f"{agent.get('instruction') or ''}\n\n"
-                    f"{language_instruction(language)}"
+                    f"{definition.content}\n\n"
+                    f"{language_instruction(language)}\n"
+                    "当前输入是一个受控 QueryResult，不是文档证据。"
+                    "不得应用 Agent 指令中的文档引用、Bundle 或附件规则，"
+                    "也不得自行生成任何引用标签；QueryResult 引用由系统添加。"
                 ),
             },
             {
@@ -641,6 +654,9 @@ class ResponseComposerSkill:
         answer: str,
     ) -> SkillResult:
         label = "Q1"
+        answer_without_labels = _strip_model_citations(answer)
+        if not answer_without_labels:
+            raise ValueError("问数回答移除模型引用标签后为空")
         charts = [
             EChartsResult.model_validate(item.payload).model_dump(
                 mode="json"
@@ -656,7 +672,7 @@ class ResponseComposerSkill:
         return self._result(
             context,
             GroundedAnswer(
-                answer=f"{answer} [{label}]",
+                answer=f"{answer_without_labels} [{label}]",
                 status="READY",
                 used_citation_labels=(label,),
                 references=(
