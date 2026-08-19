@@ -22,11 +22,11 @@ _FIELD_LINE_PATTERN = re.compile(
 )
 _ASSET_SECTION_PATTERN = re.compile(
     r"(?m)^[ \t]*(?P<prefix>[-+*•][ \t]+|\d+[.)][ \t]+)?"
-    r"(?P<marker>\*\*|__)(?P<title>.+?)(?P=marker)"
+    r"(?P<marker>\*\*|__|\*)(?P<title>.+?)(?P=marker)"
 )
 _UNTITLED_ASSET_SECTION_PATTERN = re.compile(
     r"(?m)^(?P<prefix>[-+*•][ \t]+|\d+[.)][ \t]+)"
-    r"(?!\*\*|__)(?P<summary>[^\r\n]+)"
+    r"(?!\*|__)(?P<summary>[^\r\n]+)"
 )
 _FIELD_ALIASES = {
     "assettitle": "asset_title",
@@ -55,6 +55,7 @@ _ASSET_FIELDS = (
     "author_mail",
     "create_time",
 )
+_MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
 
 
 def _normalized_label(value: str) -> str:
@@ -211,19 +212,27 @@ def _answer_asset_sections(answer: object) -> list[dict[str, Any]]:
     """提取正文中的 Asset 条目，包括无标题的顶层项目。"""
     if not isinstance(answer, str) or not answer.strip():
         return []
+    # 只在匹配副本中解除 CommonMark 转义，不改写 KBot Artifact。
+    # 回答组装器可能返回 **Title**、*Title* 或 \*\*Title\*\*，
+    # 三种形式在 Slack 最终都会显示为加粗标题。
+    source_answer = _MARKDOWN_ESCAPE_PATTERN.sub(r"\1", answer)
     matches = [
         (match.start(), "titled", match)
-        for match in _ASSET_SECTION_PATTERN.finditer(answer)
+        for match in _ASSET_SECTION_PATTERN.finditer(source_answer)
     ]
     matches.extend(
         (match.start(), "untitled", match)
-        for match in _UNTITLED_ASSET_SECTION_PATTERN.finditer(answer)
+        for match in _UNTITLED_ASSET_SECTION_PATTERN.finditer(source_answer)
     )
     matches.sort(key=lambda item: item[0])
     sections: list[dict[str, Any]] = []
     for index, (start, kind, match) in enumerate(matches):
-        end = matches[index + 1][0] if index + 1 < len(matches) else len(answer)
-        source = answer[start:end]
+        end = (
+            matches[index + 1][0]
+            if index + 1 < len(matches)
+            else len(source_answer)
+        )
+        source = source_answer[start:end]
         title = _clean_value(match.group("title")) if kind == "titled" else ""
         summary = (
             _clean_value(match.group("summary"))
@@ -353,6 +362,7 @@ def _match_manifest_cards_to_answer(
     sections = _answer_asset_sections(answer)
     if not sections:
         return _order_manifest_cards_by_answer(answer, cards)
+    unique_cards = _unique_asset_cards(cards)
     by_label = {
         str(card.get("citation_label") or "").strip().upper(): card
         for card in cards
@@ -367,7 +377,7 @@ def _match_manifest_cards_to_answer(
         scoped = [by_label[label] for label in labels if label in by_label]
         card, ambiguous = _best_title_card(title, scoped)
         if card is None and not ambiguous:
-            card, ambiguous = _best_title_card(title, cards)
+            card, ambiguous = _best_title_card(title, unique_cards)
         unique_scoped = _unique_asset_cards(scoped)
         if (
             card is None
@@ -394,6 +404,43 @@ def _match_manifest_cards_to_answer(
             continue
         seen_assets.add(key)
         matched.append(card)
+    # 新版回答可能不在每个 Asset 后输出引用标签，但仍会在
+    # used_citation_labels/references 中保留与正文等量的 Bundle。
+    # 只有当两侧数量完全一致时，才允许按正文顺序
+    # 补齐未命中项，
+    # 避免把额外背景文档当成 Asset Template。
+    if len(sections) == len(unique_cards) and len(matched) < len(sections):
+        assignments: list[dict[str, str] | None] = [None] * len(sections)
+        assigned_keys: set[str] = set()
+        for index, section in enumerate(sections):
+            title = str(section["asset_title"])
+            labels = tuple(section["citation_labels"])
+            scoped = [by_label[label] for label in labels if label in by_label]
+            card, ambiguous = _best_title_card(title, scoped)
+            if card is None and not ambiguous:
+                card, ambiguous = _best_title_card(title, unique_cards)
+            unique_scoped = _unique_asset_cards(scoped)
+            if card is None and len(unique_scoped) == 1:
+                card = unique_scoped[0]
+            if card is None:
+                continue
+            key = _asset_key(card)
+            if not key or key in assigned_keys:
+                continue
+            assigned_keys.add(key)
+            assignments[index] = card
+        remaining = [
+            card
+            for card in unique_cards
+            if _asset_key(card) not in assigned_keys
+        ]
+        missing_indexes = [
+            index for index, card in enumerate(assignments) if card is None
+        ]
+        if len(remaining) == len(missing_indexes):
+            for index, card in zip(missing_indexes, remaining, strict=True):
+                assignments[index] = card
+            return [card for card in assignments if card is not None]
     return matched
 
 

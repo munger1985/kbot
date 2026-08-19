@@ -665,6 +665,86 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(titles["C7"], [card["asset_title"] for card in cards])
         self.assertEqual(answer, artifact["payload"]["answer"])
 
+    async def test_single_or_escaped_markdown_builds_templates_in_answer_order(self):
+        references = [
+            self._reference("C1", 31),
+            self._reference("C2", 32),
+            self._reference("C3", 33),
+        ]
+        titles = {
+            "C1": "Asset A",
+            "C2": "Canonical Asset B",
+            "C3": "Asset C",
+        }
+        client = _ManifestClient(
+            {
+                reference["bundle_revision_id"]: self._manifest(
+                    f"ASSET/{reference['citation_label']}",
+                    titles[reference["citation_label"]],
+                )
+                for reference in references
+            }
+        )
+        answer = (
+            "Here are the assets:\n"
+            "- *Asset C*: C details.\n"
+            "- \\*\\*Displayed Asset B\\*\\*: B details.\n"
+            "- **Asset A**: A details."
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": answer,
+                "status": "READY",
+                # Bundle 候选顺序与正文顺序不同，
+                # 且正文不带逐项标签。
+                "used_citation_labels": ["C1", "C2", "C3"],
+                "references": references,
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=3,
+        )
+        self.assertEqual(
+            ["Asset C", "Canonical Asset B", "Asset A"],
+            [card["asset_title"] for card in cards],
+        )
+
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact=artifact,
+            reply_config=SlackReplyConfig(
+                km_portal_base_url="https://km.example.com/assets/",
+                max_references=3,
+            ),
+            asset_cards=cards,
+        )
+        template_titles = [
+            block["text"]["text"].removeprefix("*Asset Title:* ")
+            for block in payload["blocks"]
+            if block.get("type") == "section"
+            and isinstance(block.get("text"), dict)
+            and str(block["text"].get("text") or "").startswith(
+                "*Asset Title:* "
+            )
+        ]
+        self.assertEqual(
+            ["Asset C", "Canonical Asset B", "Asset A"],
+            template_titles,
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("参考资料", rendered)
+        self.assertNotIn("manifest.md", rendered)
+
+
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
