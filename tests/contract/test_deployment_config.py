@@ -90,6 +90,34 @@ class DeploymentConfigTest(unittest.TestCase):
 
         self.assertIn("[ui].main_api_base_url仍使用示例地址", errors)
 
+    def test_rejects_invalid_km_asset_slack_reply_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_production_config(Path(directory))
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "[integrations.slack.reply]\n"
+                    "max_references=15\n"
+                )
+            with patch.dict(
+                os.environ,
+                {
+                    "KBOT_ORACLE_PASSWORD": "secret",
+                    "KBOT_MASTER_KEY": "m" * 32,
+                    "ENV_FILE": str(Path(directory) / "missing.env"),
+                },
+                clear=True,
+            ):
+                errors = check_deployment(path)
+
+        self.assertTrue(
+            any(
+                "km_asset_app 配置无效" in error
+                and "max_references" in error
+                for error in errors
+            ),
+            errors,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

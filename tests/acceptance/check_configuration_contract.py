@@ -11,28 +11,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent_runtime.config import AgentRuntimeSettings  # noqa: E402
-from aiops_agent.config import AIOpsSettings  # noqa: E402
-from data_query.config import DataQuerySettings  # noqa: E402
-from knowledge_core.config import KnowledgeCoreSettings  # noqa: E402
-from knowledge_retrieval_app.config import (  # noqa: E402
-    KnowledgeRetrievalAppSettings,
-)
-from main_api.config import MainApiSettings  # noqa: E402
-from model_serving.config import ModelServingSettings  # noqa: E402
 from platform_core.config import Settings, load_settings  # noqa: E402
+from scripts.deployment.check_deployment import (  # noqa: E402
+    SERVICE_MODELS,
+)
 
 
 CONFIG_ROOT = ROOT / "configuration"
-SERVICE_MODELS = {
-    "agent_runtime": AgentRuntimeSettings,
-    "aiops_agent": AIOpsSettings,
-    "data_query": DataQuerySettings,
-    "knowledge_core": KnowledgeCoreSettings,
-    "knowledge_retrieval_app": KnowledgeRetrievalAppSettings,
-    "main_api": MainApiSettings,
-    "model_serving": ModelServingSettings,
-}
 
 
 def _required_config_files() -> tuple[Path, ...]:

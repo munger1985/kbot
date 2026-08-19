@@ -8,12 +8,31 @@ from urllib.parse import urlsplit
 
 import tomli
 
+from agent_runtime.config import AgentRuntimeSettings
+from aiops_agent.config import AIOpsSettings
+from data_query.config import DataQuerySettings
+from knowledge_core.config import KnowledgeCoreSettings
+from knowledge_retrieval_app.config import KnowledgeRetrievalAppSettings
+from km_asset_app.config import KmAssetAppSettings
+from main_api.config import MainApiSettings
+from model_serving.config import ModelServingSettings
+from platform_core.config import load_settings
+
 
 ROOT = Path(__file__).resolve().parents[2]
 TOPOLOGY_PATH = ROOT / "resources" / "topology.toml"
 
-from main_api.config import MainApiSettings
-from platform_core.config import load_settings
+
+SERVICE_MODELS = {
+    "agent_runtime": AgentRuntimeSettings,
+    "aiops_agent": AIOpsSettings,
+    "data_query": DataQuerySettings,
+    "knowledge_core": KnowledgeCoreSettings,
+    "knowledge_retrieval_app": KnowledgeRetrievalAppSettings,
+    "km_asset_app": KmAssetAppSettings,
+    "main_api": MainApiSettings,
+    "model_serving": ModelServingSettings,
+}
 
 
 def check_deployment(config_file: Path | None = None) -> list[str]:
@@ -23,14 +42,19 @@ def check_deployment(config_file: Path | None = None) -> list[str]:
         or ROOT / "configuration" / "kbot.toml"
     ).resolve()
     errors: list[str] = []
-    try:
-        settings = load_settings(
-            MainApiSettings,
-            service="main_api",
-            config_file=path,
-        )
-    except Exception as exc:
-        return [f"配置加载失败：{exc}"]
+    service_settings = {}
+    for service, model in SERVICE_MODELS.items():
+        try:
+            service_settings[service] = load_settings(
+                model,
+                service=service,
+                config_file=path,
+            )
+        except Exception as exc:
+            errors.append(f"{service} 配置无效：{exc}")
+    if errors:
+        return errors
+    settings = service_settings["main_api"]
 
     try:
         with path.open("rb") as stream:
