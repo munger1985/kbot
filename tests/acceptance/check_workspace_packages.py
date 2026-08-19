@@ -29,18 +29,7 @@ EXPECTED = (
     ("services/main_api", "kbot-main-api", "main_api"),
 )
 
-AIOPS_DIAGNOSTIC_SQL = tuple(
-    f"{database}/sql/{template}.sql"
-    for database in ("mysql", "oracle", "postgresql")
-    for template in (
-        "instance_identity",
-        "replication_status",
-        "session_active",
-        "session_blocking",
-        "storage_capacity",
-        "transaction_long_running",
-    )
-)
+AIOPS_RUNTIME_RESOURCE_SUFFIXES = frozenset({".json", ".sql", ".txt"})
 
 
 def _resolved(path: Path) -> Path:
@@ -143,16 +132,22 @@ def check_workspace_packages() -> list[str]:
                 f"生产模式模块仍指向仓库源码：{module_name}={origin}"
             )
         if module_name == "aiops_agent":
-            catalog_root = origin.parent / "diagnostics" / "catalog"
-            missing_sql = tuple(
-                relative_path
-                for relative_path in AIOPS_DIAGNOSTIC_SQL
-                if not (catalog_root / relative_path).is_file()
+            source_package_root = source_root / "aiops_agent"
+            runtime_resources = tuple(
+                path.relative_to(source_package_root)
+                for path in source_package_root.rglob("*")
+                if path.is_file()
+                and path.suffix in AIOPS_RUNTIME_RESOURCE_SUFFIXES
             )
-            if missing_sql:
+            missing_resources = tuple(
+                str(relative_path)
+                for relative_path in runtime_resources
+                if not (origin.parent / relative_path).is_file()
+            )
+            if missing_resources:
                 errors.append(
-                    "AIOps 发行包缺少诊断 SQL 模板："
-                    + ", ".join(missing_sql)
+                    "AIOps 发行包缺少运行资源："
+                    + ", ".join(missing_resources)
                 )
     return errors
 

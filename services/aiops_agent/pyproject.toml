@@ -28,7 +28,10 @@ include = ["aiops_agent*"]
 
 [tool.setuptools.package-data]
 aiops_agent = [
+  "actions/catalog/**/*.json",
+  "actions/catalog/**/*.sql",
   "diagnostics/catalog/**/*.json",
   "diagnostics/catalog/**/*.sql",
+  "orchestration/diagnosis/prompt_assets/*.txt",
   "resources/**/*.json",
 ]
