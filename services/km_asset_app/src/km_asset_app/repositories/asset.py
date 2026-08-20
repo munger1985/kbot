@@ -107,6 +107,23 @@ class KmAssetRepository:
         statement = select(KmAssetEntity).where(*conditions).order_by(KmAssetEntity.synced_at.desc()).offset(offset).limit(limit)
         return list(await self._session.scalars(statement))
 
+    async def list_latest_reindex_jobs(
+        self, *, domain_id: int, km_asset_ids: list[UUID]
+    ):
+        """按创建时间倒序返回所选 Asset 的重新索引跟踪任务。"""
+        if not km_asset_ids:
+            return []
+        statement = (
+            select(KmJobEntity)
+            .where(
+                KmJobEntity.domain_id == domain_id,
+                KmJobEntity.km_asset_id.in_(km_asset_ids),
+                KmJobEntity.idempotency_key.like("kc-reindex-status:%"),
+            )
+            .order_by(KmJobEntity.created_at.desc())
+        )
+        return list(await self._session.scalars(statement))
+
     async def next_revision_no(self, *, km_asset_id: UUID) -> int:
         value = await self._session.scalar(select(func.max(KmAssetRevisionEntity.revision_no)).where(KmAssetRevisionEntity.km_asset_id == km_asset_id))
         return int(value or 0) + 1

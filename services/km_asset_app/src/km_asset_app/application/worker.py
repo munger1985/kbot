@@ -51,6 +51,10 @@ class _KcRevisionPending(Exception):
     """KC Revision 仍在正常处理，当前任务应延后再次检查。"""
 
 
+class _KcReindexFailed(Exception):
+    """KC Discovery 重新索引已经进入失败终态。"""
+
+
 class KmAssetWorker:
     def __init__(self, *, uow_factory, credential_service: KmCredentialService, asset_service: KmAssetService, knowledge_core_client: KnowledgeCoreClient, poll_seconds: float = 5, lease_seconds: int = 120):
         self._uow_factory = uow_factory
@@ -77,6 +81,14 @@ class KmAssetWorker:
             except _KcRevisionPending as exc:
                 logger.debug("KC Revision 尚未完成：job_id={} status={}", job.job_id, exc)
                 await self._defer_kc_status_sync(job.job_id)
+            except _KcReindexFailed as exc:
+                logger.warning("KC 重新索引失败：job_id={} error={}", job.job_id, exc)
+                await self._complete(
+                    job.job_id,
+                    succeeded=False,
+                    error=exc,
+                    terminal=True,
+                )
             except Exception as exc:
                 logger.exception("KM Asset 任务失败：job_id={} type={}", job.job_id, job.job_type)
                 await self._complete(job.job_id, succeeded=False, error=exc)
@@ -345,6 +357,33 @@ class KmAssetWorker:
     async def _kc_status_sync(self, job: _JobSnapshot) -> None:
         bundle_id = UUID(str(job.payload_json["bundle_id"]))
         bundle_revision_id = UUID(str(job.payload_json["bundle_revision_id"]))
+        if job.payload_json.get("operation_type") == "DISCOVERY_REINDEX":
+            operation = await self._kc.get_reindex_discovery_status(
+                domain_id=int(job.domain_id),
+                bundle_id=bundle_id,
+                bundle_revision_id=bundle_revision_id,
+                generation=UUID(str(job.payload_json["reindex_generation"])),
+                auth_context=self._auth_context(domain_id=int(job.domain_id)),
+            )
+            operation_status = str(operation.get("status") or "").upper()
+            if operation_status in {"PENDING", "RUNNING"}:
+                raise _KcRevisionPending(f"REINDEX_{operation_status}")
+            if operation_status == "FAILED":
+                failed = next(
+                    (
+                        item for item in operation.get("jobs") or []
+                        if item.get("job_status") == "FAILED"
+                    ),
+                    {},
+                )
+                raise _KcReindexFailed(
+                    str(failed.get("failure_message") or "KC Discovery 重新索引失败")
+                )
+            if operation_status != "SUCCEEDED":
+                raise RuntimeError(
+                    f"KC 重新索引返回未知状态：{operation_status or 'EMPTY'}"
+                )
+            return
         status = await self._kc.get_revision_status(
             domain_id=int(job.domain_id),
             bundle_id=bundle_id,
@@ -442,7 +481,14 @@ class KmAssetWorker:
             payload_json=dict(row.payload_json or {}),
         )
 
-    async def _complete(self, job_id: UUID, *, succeeded: bool, error: Exception | None = None) -> None:
+    async def _complete(
+        self,
+        job_id: UUID,
+        *,
+        succeeded: bool,
+        error: Exception | None = None,
+        terminal: bool = False,
+    ) -> None:
         async with self._uow_factory() as uow:
             job = await uow.assets.get_job_by_id(job_id=job_id, lock=True)
             if job is None:
@@ -452,7 +498,7 @@ class KmAssetWorker:
                 job.completed_at = datetime.now(timezone.utc)
                 job.error_code = None
                 job.error_message = None
-            elif job.attempt_count < job.max_attempts:
+            elif not terminal and job.attempt_count < job.max_attempts:
                 job.status = "RETRY_WAIT"
                 job.available_at = datetime.now(timezone.utc) + timedelta(seconds=min(300, 2 ** job.attempt_count * 5))
                 job.error_code = type(error).__name__
@@ -462,7 +508,11 @@ class KmAssetWorker:
                 job.completed_at = datetime.now(timezone.utc)
                 job.error_code = type(error).__name__
                 job.error_message = str(error)[:1000]
-                if job.km_asset_id is not None:
+                is_reindex = (
+                    (job.payload_json or {}).get("operation_type")
+                    == "DISCOVERY_REINDEX"
+                )
+                if job.km_asset_id is not None and not is_reindex:
                     asset = await uow.assets.get_asset(domain_id=int(job.domain_id), km_asset_id=job.km_asset_id, lock=True)
                     if asset is not None:
                         asset.ingestion_status = "FAILED"

@@ -5,10 +5,48 @@ import unittest
 from unittest.mock import AsyncMock
 
 from km_asset_app.application.assets import KmAssetService
+from km_asset_app.application.worker import KmAssetWorker, _JobSnapshot
 from platform_core.identity import uuid7
 
 
 class KmAssetJobTreeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reindex_tracking_uses_kc_operation_terminal_status(self):
+        bundle_id = uuid7()
+        revision_id = uuid7()
+        generation = uuid7()
+        knowledge_core = SimpleNamespace(
+            get_reindex_discovery_status=AsyncMock(return_value={
+                "status": "SUCCEEDED",
+                "jobs": [],
+            }),
+            get_revision_status=AsyncMock(),
+        )
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=knowledge_core,
+        )
+        job = _JobSnapshot(
+            job_id=uuid7(),
+            job_type="KC_STATUS_SYNC",
+            domain_id=43,
+            source_id=uuid7(),
+            km_asset_id=uuid7(),
+            asset_revision_id=uuid7(),
+            payload_json={
+                "operation_type": "DISCOVERY_REINDEX",
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+                "reindex_generation": str(generation),
+            },
+        )
+
+        await worker._kc_status_sync(job)
+
+        knowledge_core.get_reindex_discovery_status.assert_awaited_once()
+        knowledge_core.get_revision_status.assert_not_awaited()
+
     async def test_processing_jobs_keep_source_and_kc_steps(self):
         class Source:
             def __init__(self):

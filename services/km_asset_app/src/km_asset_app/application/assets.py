@@ -3,7 +3,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import UUID
 
@@ -308,14 +308,37 @@ class KmAssetService:
 
     async def list_assets(self, *, domain_id: int, source_id: UUID | None, ingestion_status: str | None, offset: int, limit: int):
         async with self._uow_factory() as uow:
-            return [self._asset(row) for row in await uow.assets.list_assets(domain_id=domain_id, source_id=source_id, ingestion_status=ingestion_status, offset=offset, limit=limit)]
+            rows = await uow.assets.list_assets(
+                domain_id=domain_id,
+                source_id=source_id,
+                ingestion_status=ingestion_status,
+                offset=offset,
+                limit=limit,
+            )
+            jobs = await uow.assets.list_latest_reindex_jobs(
+                domain_id=domain_id,
+                km_asset_ids=[row.km_asset_id for row in rows],
+            )
+            latest = {}
+            for job in jobs:
+                latest.setdefault(job.km_asset_id, job)
+            return [
+                self._asset_with_reindex(row, latest.get(row.km_asset_id))
+                for row in rows
+            ]
 
     async def get_asset(self, *, domain_id: int, km_asset_id: UUID):
         async with self._uow_factory() as uow:
             row = await uow.assets.get_asset(domain_id=domain_id, km_asset_id=km_asset_id)
             if row is None:
                 self._not_found("KM_ASSET_NOT_FOUND", "KM Asset 不存在")
-            result = self._asset(row)
+            jobs = await uow.assets.list_latest_reindex_jobs(
+                domain_id=domain_id,
+                km_asset_ids=[row.km_asset_id],
+            )
+            result = self._asset_with_reindex(
+                row, jobs[0] if jobs else None
+            )
             result["raw_metadata"] = row.raw_metadata_json
             result["normalized_metadata"] = row.normalized_metadata_json
             result["attachments"] = [self._attachment(item) for item in await uow.assets.list_attachments(asset_revision_id=row.current_revision_id)] if row.current_revision_id else []
@@ -370,6 +393,18 @@ class KmAssetService:
                     code="ROW_VERSION_CONFLICT",
                     message="Asset 已被其他请求修改",
                 )
+            tracking_jobs = await uow.assets.list_latest_reindex_jobs(
+                domain_id=domain_id,
+                km_asset_ids=[row.km_asset_id],
+            )
+            if tracking_jobs and tracking_jobs[0].status in {
+                "PENDING", "RUNNING", "RETRY_WAIT"
+            }:
+                raise KmAssetApplicationError(
+                    status_code=409,
+                    code="KM_ASSET_REINDEX_IN_PROGRESS",
+                    message="Asset 已有重新索引任务正在处理",
+                )
             if row.kc_bundle_id is None or row.kc_bundle_revision_id is None:
                 raise KmAssetApplicationError(
                     status_code=409,
@@ -383,6 +418,7 @@ class KmAssetService:
             if source is None:
                 self._not_found("KM_SOURCE_NOT_FOUND", "KM Asset 来源不存在")
             collection_id = source.collection_id
+            source_id = row.source_id
             bundle_id = row.kc_bundle_id
             bundle_revision_id = row.kc_bundle_revision_id
             asset_snapshot = self._asset(row)
@@ -396,13 +432,51 @@ class KmAssetService:
                 actor_id=actor_id,
             ),
         )
-        # KC 已拥有 PROFILE/INDEX Job 与发布状态。这里不再重复创建
-        # KC_STATUS_SYNC，否则一次成功的 KC 调度可能被 KM 本地记账失败
-        # 错误包装成 503，造成“索引失败”的假象。
+        tracking_job = None
+        try:
+            generation = str(receipt["generation"])
+            async with self._uow_factory() as uow:
+                job = KmJobEntity(
+                    domain_id=domain_id,
+                    source_id=source_id,
+                    km_asset_id=km_asset_id,
+                    asset_revision_id=asset_snapshot["current_revision_id"],
+                    job_type="KC_STATUS_SYNC",
+                    idempotency_key=f"kc-reindex-status:{generation}",
+                    payload_json={
+                        "operation_type": "DISCOVERY_REINDEX",
+                        "bundle_id": str(bundle_id),
+                        "bundle_revision_id": str(bundle_revision_id),
+                        "reindex_generation": generation,
+                        "profile_job_id": str(receipt["profile_job_id"]),
+                        "expected_bundle_row_version": int(
+                            receipt["expected_bundle_row_version"]
+                        ),
+                    },
+                    status="PENDING",
+                    priority=100,
+                    max_attempts=120,
+                    available_at=datetime.now(timezone.utc)
+                    + timedelta(seconds=10),
+                    created_by=actor_id,
+                )
+                await uow.assets.add(job)
+                await uow.commit()
+                tracking_job = self._job(job)
+        except Exception:
+            # KC 已接收任务时不能把本地跟踪落库失败包装成提交失败。
+            logger.exception(
+                "KC 已接收重新索引，但 KM 跟踪任务落库失败 | km_asset_id={}",
+                km_asset_id,
+            )
         return {
             "asset": asset_snapshot,
             "status": "PENDING",
             "kc_reindex": receipt,
+            "tracking_job": tracking_job,
+            "tracking_status": (
+                "PENDING" if tracking_job is not None else "UNAVAILABLE"
+            ),
         }
 
     async def batch_reindex_assets(
@@ -427,6 +501,8 @@ class KmAssetService:
                     "km_asset_id": str(km_asset_id),
                     "status": "SUBMITTED",
                     "kc_reindex": receipt["kc_reindex"],
+                    "tracking_status": receipt["tracking_status"],
+                    "tracking_job": receipt["tracking_job"],
                 })
             except KmAssetApplicationError as exc:
                 results.append({
@@ -453,6 +529,10 @@ class KmAssetService:
             "requested_count": len(results),
             "submitted_count": submitted_count,
             "failed_count": len(results) - submitted_count,
+            "untracked_count": sum(
+                item.get("tracking_status") == "UNAVAILABLE"
+                for item in results
+            ),
             "results": results,
         }
 
@@ -546,6 +626,19 @@ class KmAssetService:
     @staticmethod
     def _asset(row):
         return {"km_asset_id": row.km_asset_id, "source_id": row.source_id, "current_revision_id": row.current_revision_id, "external_asset_id": row.external_asset_id, "source_revision": row.source_revision, "source_status": row.source_status, "ingestion_status": row.ingestion_status, "asset_title": row.asset_title, "author_mail": row.author_mail, "asset_product": row.asset_product, "asset_solution": row.asset_solution, "industry_id": row.industry_id, "content_category": row.content_category, "asset_status": row.asset_status, "publish_date": row.publish_date, "last_update_time": row.last_update_time, "kc_bundle_id": row.kc_bundle_id, "kc_bundle_revision_id": row.kc_bundle_revision_id, "failure_stage": row.failure_stage, "error_code": row.error_code, "error_message": row.error_message, "attempt_count": row.attempt_count, "synced_at": row.synced_at, "completed_at": row.completed_at, "row_version": row.row_version}
+
+    @classmethod
+    def _asset_with_reindex(cls, row, job):
+        result = cls._asset(row)
+        result["reindex"] = None if job is None else {
+            "job_id": job.job_id,
+            "status": job.status,
+            "requested_at": job.created_at,
+            "completed_at": job.completed_at,
+            "error_code": job.error_code,
+            "error_message": job.error_message,
+        }
+        return result
 
     @staticmethod
     def _attachment(row):

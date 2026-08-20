@@ -610,7 +610,7 @@ class KmSourceUpdateTest(unittest.IsolatedAsyncioTestCase):
 
 
 class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
-    async def test_reindex_returns_kc_receipt_without_local_status_job(self):
+    async def test_reindex_persists_local_status_tracking_job(self):
         asset_id = UUID("01900000-0000-7000-8000-000000000031")
         source_id = UUID("01900000-0000-7000-8000-000000000032")
         collection_id = UUID("01900000-0000-7000-8000-000000000033")
@@ -647,6 +647,7 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
         )
         source = SimpleNamespace(collection_id=collection_id)
         uow_entries = 0
+        added_jobs = []
 
         class Assets:
             async def get_asset(self, **_):
@@ -655,8 +656,11 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
             async def get_source(self, **_):
                 return source
 
-            async def add(self, _):
-                raise AssertionError("重新索引不应创建 KM 本地状态 Job")
+            async def list_latest_reindex_jobs(self, **_):
+                return []
+
+            async def add(self, job):
+                added_jobs.append(job)
 
         class Uow:
             assets = Assets()
@@ -667,6 +671,9 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
                 return self
 
             async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
                 return None
 
         receipt = {
@@ -690,9 +697,16 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
             actor_id="kmadmin",
         )
 
-        self.assertEqual(1, uow_entries)
+        self.assertEqual(2, uow_entries)
         self.assertEqual("PENDING", result["status"])
         self.assertEqual(receipt, result["kc_reindex"])
+        self.assertEqual("PENDING", result["tracking_status"])
+        self.assertEqual(1, len(added_jobs))
+        self.assertEqual("KC_STATUS_SYNC", added_jobs[0].job_type)
+        self.assertEqual(
+            "DISCOVERY_REINDEX",
+            added_jobs[0].payload_json["operation_type"],
+        )
         self.assertEqual("READY", result["asset"]["ingestion_status"])
         knowledge_core.reindex_discovery.assert_awaited_once()
 
@@ -707,6 +721,8 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
             {
                 "status": "PENDING",
                 "kc_reindex": {"profile_job_id": "job-1"},
+                "tracking_status": "PENDING",
+                "tracking_job": {"job_id": "tracking-1"},
             },
             KmAssetApplicationError(
                 status_code=409,
@@ -727,6 +743,7 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, result["requested_count"])
         self.assertEqual(1, result["submitted_count"])
         self.assertEqual(1, result["failed_count"])
+        self.assertEqual(0, result["untracked_count"])
         self.assertEqual("SUBMITTED", result["results"][0]["status"])
         self.assertEqual(
             "ROW_VERSION_CONFLICT",

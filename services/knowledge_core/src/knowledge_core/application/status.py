@@ -64,6 +64,13 @@ class ProcessingJobStatus:
 
 
 @dataclass(frozen=True)
+class DiscoveryReindexOperationStatus:
+    generation: UUID
+    status: str
+    jobs: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class ProcessingFileStatus:
     document_version_id: UUID | None
     name: str
@@ -180,6 +187,73 @@ class KnowledgeCoreStatusService:
                 ) for item in entities]
             result = self._revision(revision)
             return RevisionStatus(**{**result.__dict__, "members": members})
+
+    async def get_discovery_reindex_operation(
+        self,
+        *,
+        domain_id: int,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        generation: UUID,
+    ) -> DiscoveryReindexOperationStatus:
+        """查询一次 Discovery 重建的 PROFILE/INDEX 真实状态。"""
+        async with self._uow_factory() as uow:
+            if not all((uow.collections, uow.bundles, uow.revisions, uow.jobs)):
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            bundle = await uow.bundles.get_by_id(bundle_id=bundle_id)
+            revision = await uow.revisions.get_by_id(
+                bundle_revision_id=bundle_revision_id
+            )
+            if (
+                bundle is None
+                or revision is None
+                or revision.bundle_id != bundle_id
+                or await uow.collections.get_by_id_scope(
+                    domain_id=domain_id,
+                    collection_id=bundle.collection_id,
+                ) is None
+            ):
+                raise KnowledgeObjectNotFoundError(
+                    "Discovery reindex operation not found"
+                )
+            jobs = [
+                job
+                for job in await uow.jobs.list_by_revisions(
+                    bundle_revision_ids=[bundle_revision_id]
+                )
+                if str((job.payload_json or {}).get("reindex_generation") or "")
+                == str(generation)
+                and job.job_type in {"PROFILE", "INDEX"}
+            ]
+            if not jobs:
+                raise KnowledgeObjectNotFoundError(
+                    "Discovery reindex operation not found"
+                )
+            if any(job.job_status == "FAILED" for job in jobs):
+                status = "FAILED"
+            elif any(
+                job.job_type == "INDEX" and job.job_status == "SUCCEEDED"
+                for job in jobs
+            ):
+                status = "SUCCEEDED"
+            elif any(job.job_status == "RUNNING" for job in jobs):
+                status = "RUNNING"
+            else:
+                status = "PENDING"
+            return DiscoveryReindexOperationStatus(
+                generation=generation,
+                status=status,
+                jobs=[{
+                    "job_id": job.ingestion_job_id,
+                    "job_type": job.job_type,
+                    "job_status": job.job_status,
+                    "attempt_count": int(job.attempt_count),
+                    "failure_code": job.failure_code,
+                    "failure_message": job.failure_message,
+                    "started_at": job.started_at,
+                    "completed_at": job.completed_at,
+                } for job in jobs],
+            )
 
     async def list_processing(
         self, *, domain_id: int, collection_id: UUID,

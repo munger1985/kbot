@@ -408,6 +408,26 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def get_reindex_discovery_status(
+        self,
+        *,
+        domain_id: int,
+        bundle_id: UUID,
+        bundle_revision_id: UUID,
+        generation: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """查询 KC Discovery 重建操作状态。"""
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/bundles/{bundle_id}/revisions/{bundle_revision_id}"
+                f"/reindex-discovery/{generation}"
+            ),
+            auth_context=auth_context,
+        )
+
     async def list_pending_approvals(
         self,
         *,

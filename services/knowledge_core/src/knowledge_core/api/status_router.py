@@ -97,6 +97,34 @@ async def reindex_discovery(
     return asdict(result)
 
 
+@router.get(
+    "/{bundle_id}/revisions/{bundle_revision_id}"
+    "/reindex-discovery/{generation}"
+)
+async def get_reindex_discovery_status(
+    domain_id: int,
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
+    generation: UUID,
+    request: Request,
+):
+    """查询一次 Discovery 重建操作的执行状态。"""
+    require_domain_match(request, domain_id)
+    try:
+        result = await request.app.state.kc_status_service.get_discovery_reindex_operation(
+            domain_id=domain_id,
+            bundle_id=bundle_id,
+            bundle_revision_id=bundle_revision_id,
+            generation=generation,
+        )
+    except KnowledgeObjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "REINDEX_OPERATION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    return asdict(result)
+
+
 @router.get("/{bundle_id}")
 async def get_bundle_status(domain_id: int, bundle_id: UUID, request: Request):
     require_domain_match(request, domain_id)
