@@ -112,6 +112,12 @@ class KmAssetCatalogTest(unittest.TestCase):
         model = SemanticModelDefinition.model_validate(
             km_asset_definition(schema_name="KBOTUI_DEV")
         )
+        dimensions = {item.name: item for item in model.dimensions}
+        self.assertEqual("KC_BUNDLE_ID", dimensions["bundle_id"].physical_column)
+        self.assertEqual(
+            "KC_BUNDLE_REVISION_ID",
+            dimensions["bundle_revision_id"].physical_column,
+        )
         topic = next(item for item in model.dimensions if item.name == "topic")
         self.assertFalse(topic.groupable)
         self.assertEqual(("CONTAINS",), topic.allowed_filter_operators)

@@ -79,28 +79,39 @@ class KnowledgeRetrievalSkill:
             image_processing=image_processing,
             warnings=warnings,
         )
-        discovery = await self._client.discover(
-            query=retrieval_query,
-            collection_ids=collection_ids,
-            domain_id=context.domain_id,
-            agent_id=str(context.agent_id),
-            auth_context=self._auth_context(context),
-            max_security_level=self._security_level(context),
-            per_collection_limit=retrieval_config["max_bundles"],
-            coverage_mode=coverage_mode,
-            run_id=context.run_id,
-            task_id=context.task_id,
+        scoped_candidates = await self._scoped_candidates(
+            context=context,
+            allowed_collection_ids=collection_ids,
+            warnings=warnings,
         )
-        warnings.extend(discovery.get("warnings") or [])
-        discovery_diagnostics = dict(
-            discovery.get("diagnostics") or {}
-        )
-        candidates = list(discovery.get("candidates") or [])
-        candidates = self._merge_candidates(
-            visual_hits,
-            candidates,
-            limit=retrieval_config["max_bundles"],
-        )
+        if scoped_candidates is None:
+            discovery = await self._client.discover(
+                query=retrieval_query,
+                collection_ids=collection_ids,
+                domain_id=context.domain_id,
+                agent_id=str(context.agent_id),
+                auth_context=self._auth_context(context),
+                max_security_level=self._security_level(context),
+                per_collection_limit=retrieval_config["max_bundles"],
+                coverage_mode=coverage_mode,
+                run_id=context.run_id,
+                task_id=context.task_id,
+            )
+            warnings.extend(discovery.get("warnings") or [])
+            discovery_diagnostics = dict(
+                discovery.get("diagnostics") or {}
+            )
+            candidates = self._merge_candidates(
+                visual_hits,
+                list(discovery.get("candidates") or []),
+                limit=retrieval_config["max_bundles"],
+            )
+        else:
+            candidates = scoped_candidates
+            discovery_diagnostics = {
+                "strategy": "QUERY_RESULT_BUNDLE_SCOPE",
+                "target_count": len(candidates),
+            }
         if not candidates:
             return self._empty_result(
                 context,
@@ -216,6 +227,54 @@ class KnowledgeRetrievalSkill:
                 security_level=self._security_level(context),
             )
         )
+
+    async def _scoped_candidates(
+        self,
+        *,
+        context: ExecutionContext,
+        allowed_collection_ids: tuple[UUID, ...],
+        warnings: list[str],
+    ) -> list[dict[str, Any]] | None:
+        """把问数选定的 Bundle 转成 KC Evidence 的确定性候选。"""
+        scope = next(
+            (
+                item.payload or {}
+                for item in reversed(context.input_artifacts)
+                if item.artifact_type == "DOCUMENT_SCOPE"
+            ),
+            None,
+        )
+        if not isinstance(scope, dict) or "bundle_targets" not in scope:
+            return None
+        allowed = {str(value) for value in allowed_collection_ids}
+        candidates: list[dict[str, Any]] = []
+        for target in list(scope.get("bundle_targets") or [])[:10]:
+            if not isinstance(target, dict):
+                continue
+            try:
+                bundle_id = UUID(str(target["bundle_id"]))
+                revision_id = UUID(str(target["bundle_revision_id"]))
+                status = await self._client.get_bundle_status(
+                    domain_id=context.domain_id,
+                    bundle_id=bundle_id,
+                    auth_context=self._auth_context(context),
+                )
+                collection_id = str(status.get("collection_id") or "")
+                if collection_id not in allowed:
+                    warnings.append("问数命中的 Asset 不属于当前 Agent Collection")
+                    continue
+                candidates.append({
+                    "collection_id": collection_id,
+                    "bundle_id": str(bundle_id),
+                    "bundle_revision_id": str(revision_id),
+                    "document_version_ids": [],
+                    "display_title": str(target.get("title") or ""),
+                })
+            except (KeyError, TypeError, ValueError):
+                warnings.append("问数命中的 Asset 缺少有效 Bundle 定位信息")
+            except Exception:
+                warnings.append("部分问数命中的 Asset 无法解析对应 Bundle")
+        return candidates
 
     async def _visual_hits(
         self,

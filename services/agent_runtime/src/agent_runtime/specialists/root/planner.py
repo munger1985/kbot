@@ -35,6 +35,7 @@ class KMAnswerBasis(StrEnum):
     DOCUMENT_CONTENT = "DOCUMENT_CONTENT"
     SEMANTIC_RELEVANCE_BREADTH = "SEMANTIC_RELEVANCE_BREADTH"
     SEMANTIC_RELEVANCE_BALANCED = "SEMANTIC_RELEVANCE_BALANCED"
+    SEMANTIC_RELEVANCE_ENUMERATION = "SEMANTIC_RELEVANCE_ENUMERATION"
     SEMANTIC_RELEVANCE_AGGREGATE = "SEMANTIC_RELEVANCE_AGGREGATE"
     EXACT_METADATA = "EXACT_METADATA"
     UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
@@ -330,7 +331,9 @@ class RootAgentPlanner:
         base_request = {
             "language": language,
             "current_input": objective,
-            "available_routes": ["DOCUMENT", "DATA_QUERY", "CLARIFY"],
+            "available_routes": [
+                "DOCUMENT", "DATA_QUERY", "HYBRID_DATA_FIRST", "CLARIFY"
+            ],
             "managed_metadata": {
                 "dimensions": [
                     "asset_id", "title", "topic", "author", "product",
@@ -405,10 +408,12 @@ class RootAgentPlanner:
                 if route not in {
                     RouteType.DOCUMENT,
                     RouteType.DATA_QUERY,
+                    RouteType.HYBRID_DATA_FIRST,
                     RouteType.CLARIFY,
                 }:
                     raise ValueError(
-                        "route_type 只能是 DOCUMENT、DATA_QUERY 或 CLARIFY"
+                        "route_type 只能是 DOCUMENT、DATA_QUERY、"
+                        "HYBRID_DATA_FIRST 或 CLARIFY"
                     )
                 confidence = float(response.get("confidence"))
                 if not 0 <= confidence <= 1:
@@ -429,7 +434,10 @@ class RootAgentPlanner:
                 requires_chart = response.get("requires_chart", False)
                 if not isinstance(requires_chart, bool):
                     raise ValueError("requires_chart 必须为布尔值")
-                if route != RouteType.DATA_QUERY:
+                if route not in {
+                    RouteType.DATA_QUERY,
+                    RouteType.HYBRID_DATA_FIRST,
+                }:
                     requires_chart = False
                 coverage_mode = str(
                     response.get("coverage_mode") or ""
@@ -483,9 +491,12 @@ class RootAgentPlanner:
                             "必须包含 answer_basis，且只能是 "
                             "DOCUMENT_CONTENT、SEMANTIC_RELEVANCE_BREADTH、"
                             "SEMANTIC_RELEVANCE_BALANCED、"
+                            "SEMANTIC_RELEVANCE_ENUMERATION、"
                             "SEMANTIC_RELEVANCE_AGGREGATE、EXACT_METADATA、"
                             "UNSCOPED_AGGREGATE 或 AMBIGUOUS。"
-                            "主题相关 Asset 的计数或统计必须使用 "
+                            "主题相关 Asset 的列举必须使用 "
+                            "SEMANTIC_RELEVANCE_ENUMERATION、"
+                            "HYBRID_DATA_FIRST 和 BALANCED；计数或统计必须使用 "
                             "SEMANTIC_RELEVANCE_AGGREGATE、DATA_QUERY 和 "
                             "BALANCED。"
                         ),
@@ -511,6 +522,10 @@ class RootAgentPlanner:
             ),
             KMAnswerBasis.SEMANTIC_RELEVANCE_BALANCED: (
                 RouteType.DOCUMENT,
+                "BALANCED",
+            ),
+            KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION: (
+                RouteType.HYBRID_DATA_FIRST,
                 "BALANCED",
             ),
             KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE: (

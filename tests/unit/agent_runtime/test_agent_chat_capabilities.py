@@ -412,6 +412,82 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CONTAINS", plan.filters[0].operator)
         self.assertEqual(2, len(model_client.json_requests))
 
+    async def test_km_topic_enumeration_freezes_complete_asset_scope(self):
+        model_id = uuid7()
+        model_client = _ModelClient(response={
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 2,
+            "dataset": "assets",
+            "measures": [{
+                "name": "asset_count", "aggregation": "COUNT"
+            }],
+            "dimensions": ["title"],
+            "filters": [{
+                "field": "topic",
+                "operator": "CONTAINS",
+                "values": ["OAC"],
+            }],
+            "order_by": [],
+            "limit": 3,
+        })
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=model_client,
+            prompt_resolver=_PromptResolver(),
+        )
+        context = _context(
+            original_input="列出关于 OAC 的 asset",
+            agent={
+                "owner_app_id": "km_asset",
+                "models": {
+                    "data_planner_llm": {
+                        "served_model_name": "planner-model"
+                    }
+                },
+            },
+            route={
+                "route_type": "HYBRID_DATA_FIRST",
+                "answer_basis": "SEMANTIC_RELEVANCE_ENUMERATION",
+            },
+        )
+        dimensions = [
+            {"name": name}
+            for name in (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "topic",
+            )
+        ]
+        dimensions[-1].update({
+            "groupable": False,
+            "allowed_filter_operators": ["CONTAINS"],
+        })
+        models = [{
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 2,
+            "datasets": [{"name": "assets"}],
+            "dimensions": dimensions,
+            "measures": [{
+                "name": "asset_count", "aggregation": "COUNT"
+            }],
+            "max_rows": 1000,
+        }]
+
+        plan = await executor._create_plan(
+            context=context,
+            question="列出关于 OAC 的 asset",
+            models=models,
+        )
+
+        self.assertEqual(
+            (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution",
+            ),
+            plan.dimensions,
+        )
+        self.assertEqual(10, plan.limit)
+        self.assertEqual("topic", plan.filters[0].field)
+
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(
             response={
@@ -448,17 +524,17 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("DATA_QUERY", request["enabled_routes"])
         self.assertEqual(decision.route_type, RouteType.HYBRID_PARALLEL)
 
-    async def test_km_topic_search_uses_document_retrieval_only(self):
+    async def test_km_topic_enumeration_uses_data_first_hybrid(self):
         model = _ModelClient(
             response={
-                "route_type": "DOCUMENT",
+                "route_type": "HYBRID_DATA_FIRST",
                 "confidence": 0.9,
-                "reason": "需要按语义检索 Asset 主题与文档内容",
+                "reason": "先确定完整 Asset 集合，再读取对应正文",
                 "clarification_question": None,
                 "requires_chart": False,
                 "context_required": False,
-                "coverage_mode": "BREADTH",
-                "answer_basis": "SEMANTIC_RELEVANCE_BREADTH",
+                "coverage_mode": "BALANCED",
+                "answer_basis": "SEMANTIC_RELEVANCE_ENUMERATION",
             }
         )
         planner = RootAgentPlanner(
@@ -477,8 +553,8 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             objective="查一下关于 ChatBI 的 asset",
         )
 
-        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
-        self.assertEqual("BREADTH", decision.coverage_mode)
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, decision.route_type)
+        self.assertEqual("BALANCED", decision.coverage_mode)
         self.assertEqual(
             "llm-km-asset-v1:1.0.0", decision.classifier_version
         )
@@ -586,24 +662,24 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "Find assets related to ChatBI",
-                RouteType.DOCUMENT,
+                RouteType.HYBRID_DATA_FIRST,
                 "en-US",
-                "BREADTH",
-                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
+                "BALANCED",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
             ),
             (
                 "ChatBI 관련 자료를 찾아주세요",
-                RouteType.DOCUMENT,
+                RouteType.HYBRID_DATA_FIRST,
                 "ko-KR",
-                "BREADTH",
-                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
+                "BALANCED",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
             ),
             (
                 "ChatBIに関連する資料を探してください",
-                RouteType.DOCUMENT,
+                RouteType.HYBRID_DATA_FIRST,
                 "ja-JP",
-                "BREADTH",
-                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
+                "BALANCED",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
             ),
         )
         agent = {
@@ -1067,6 +1143,28 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(1, len(items))
         self.assertIsInstance(items[0], SkillResult)
+
+    def test_km_enumeration_threshold_message_is_exact(self):
+        complete = ResponseComposerSkill._enumeration_prefix(
+            language="zh-CN",
+            total_count=5,
+            shown_count=5,
+            truncated=False,
+            source_truncated=False,
+        )
+        clipped = ResponseComposerSkill._enumeration_prefix(
+            language="zh-CN",
+            total_count=12,
+            shown_count=10,
+            truncated=True,
+            source_truncated=False,
+        )
+
+        self.assertIn("共命中 5 个", complete)
+        self.assertIn("全部列出", complete)
+        self.assertIn("共命中 12 个", clipped)
+        self.assertIn("前 10 个", clipped)
+        self.assertIn("已截断", clipped)
 
     async def test_conversation_response_streams_and_returns_answer(self):
         skill = ConversationResponseSkill(

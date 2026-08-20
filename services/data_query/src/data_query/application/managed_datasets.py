@@ -28,6 +28,18 @@ def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
         {"name": "asset_id", "display_name": "Asset ID", "physical_column": "ASSET_ID"},
         {"name": "title", "display_name": "Asset 标题", "physical_column": "ASSET_TITLE", "synonyms": ["asset name", "标题"]},
         {
+            "name": "bundle_id",
+            "display_name": "Knowledge Bundle ID",
+            "physical_column": "KC_BUNDLE_ID",
+            "synonyms": ["knowledge bundle id"],
+        },
+        {
+            "name": "bundle_revision_id",
+            "display_name": "Knowledge Bundle Revision ID",
+            "physical_column": "KC_BUNDLE_REVISION_ID",
+            "synonyms": ["knowledge bundle revision id"],
+        },
+        {
             "name": "topic",
             "display_name": "Asset 相关主题（跨标题、产品和解决方案，仅用于筛选）",
             "physical_column": "ASSET_TITLE",

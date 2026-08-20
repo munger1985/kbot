@@ -11,9 +11,10 @@ from platform_core.prompts.catalog import DEFAULT_PROMPT_CATALOG
 
 
 EXPECTED_PROMPTS = {
-    "agent_runtime.km_asset_intent_route": "1.1.0",
-    "agent_runtime.km_asset_context_route": "1.1.0",
-    "agent_runtime.data_query_plan": "1.1.0",
+    "agent_runtime.km_asset_intent_route": "1.2.0",
+    "agent_runtime.km_asset_context_route": "1.2.0",
+    "agent_runtime.data_query_plan": "1.2.0",
+    "agent_runtime.km_asset_enumeration_compose": "1.0.0",
 }
 
 
@@ -26,11 +27,15 @@ def main() -> int:
         if item.active and item.prompt_key in EXPECTED_PROMPTS
     }
     definition = km_asset_definition(schema_name="CHECK_ONLY")
-    has_topic = any(
-        item.get("name") == "topic"
+    dimension_names = {
+        str(item.get("name"))
         for item in definition.get("dimensions", ())
         if isinstance(item, dict)
-    )
+    }
+    has_topic = "topic" in dimension_names
+    has_enumeration_scope = {
+        "asset_id", "title", "bundle_id", "bundle_revision_id"
+    }.issubset(dimension_names)
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -45,12 +50,13 @@ def main() -> int:
             f"(expected {expected_version})"
         )
     print(f"HAS_TOPIC_IN_CODE = {has_topic}")
+    print(f"HAS_ENUMERATION_SCOPE_IN_CODE = {has_enumeration_scope}")
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
         for prompt_key, expected_version in EXPECTED_PROMPTS.items()
     )
-    if prompts_ok and has_topic:
+    if prompts_ok and has_topic and has_enumeration_scope:
         print("KM 主题问数代码加载检查通过")
         return 0
     print("KM 主题问数代码加载检查失败：当前环境仍在加载旧代码")

@@ -1,5 +1,6 @@
 """仅消费已验证 Artifact 的最终回答组合器。"""
 
+import json
 import re
 from typing import Any
 
@@ -87,9 +88,17 @@ class ResponseComposerSkill:
         if aiops_result is not None:
             return self._compose_aiops(context, aiops_result)
         query_result = self._query_result(context)
+        retrieval = self._document_result(context)
+        if (
+            query_result is not None
+            and retrieval is not None
+            and self._is_km_asset_enumeration(context)
+        ):
+            return await self._compose_km_asset_enumeration(
+                context, query_result, retrieval
+            )
         if query_result is not None:
             return await self._compose_query_result(context, query_result)
-        retrieval = self._document_result(context)
         if retrieval is None or not retrieval.citation_pack.citations:
             retrieval_warnings = (
                 retrieval.warnings if retrieval is not None else ()
@@ -224,13 +233,28 @@ class ResponseComposerSkill:
             yield result
             return
         query_result = self._query_result(context)
+        retrieval = self._document_result(context)
+        if (
+            query_result is not None
+            and retrieval is not None
+            and self._is_km_asset_enumeration(context)
+        ):
+            result = await self._compose_km_asset_enumeration(
+                context, query_result, retrieval
+            )
+            answer = str(result.artifact.payload.get("answer") or "")
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": answer},
+            )
+            yield result
+            return
         if query_result is not None:
             async for item in self._stream_query_result(
                 context, query_result
             ):
                 yield item
             return
-        retrieval = self._document_result(context)
         if retrieval is None or not retrieval.citation_pack.citations:
             retrieval_warnings = (
                 retrieval.warnings if retrieval is not None else ()
@@ -521,6 +545,126 @@ class ResponseComposerSkill:
         return dict(artifacts[-1].payload) if artifacts else None
 
     @staticmethod
+    def _is_km_asset_enumeration(context: ExecutionContext) -> bool:
+        route = context.config_snapshot.get("route") or {}
+        return (
+            isinstance(route, dict)
+            and route.get("answer_basis")
+            == "SEMANTIC_RELEVANCE_ENUMERATION"
+        )
+
+    @staticmethod
+    def _document_scope(context: ExecutionContext) -> dict[str, Any]:
+        artifact = next(
+            (
+                item for item in reversed(context.input_artifacts)
+                if item.artifact_type == "DOCUMENT_SCOPE"
+            ),
+            None,
+        )
+        return dict(artifact.payload or {}) if artifact is not None else {}
+
+    @staticmethod
+    def _enumeration_prefix(
+        *, language: str, total_count: int, shown_count: int,
+        truncated: bool, source_truncated: bool,
+    ) -> str:
+        if language.startswith("zh"):
+            if source_truncated:
+                return (
+                    f"问数结果至少命中 {total_count} 个相关 Asset；"
+                    f"以下列出前 {shown_count} 个，其他结果已截断。[Q1]"
+                )
+            if truncated:
+                return (
+                    f"问数结果共命中 {total_count} 个相关 Asset；"
+                    f"以下列出前 {shown_count} 个，其他结果已截断。[Q1]"
+                )
+            return (
+                f"问数结果共命中 {total_count} 个相关 Asset，"
+                f"以下全部列出。[Q1]"
+            )
+        if source_truncated:
+            return (
+                f"The data query found at least {total_count} related assets. "
+                f"The first {shown_count} are listed; the rest are truncated. [Q1]"
+            )
+        if truncated:
+            return (
+                f"The data query found {total_count} related assets. "
+                f"The first {shown_count} are listed; the rest are truncated. [Q1]"
+            )
+        return (
+            f"The data query found {total_count} related assets; all are "
+            "listed below. [Q1]"
+        )
+
+    @staticmethod
+    def _validate_enumeration_body(
+        answer: str,
+        *,
+        assets: list[dict[str, Any]],
+        allowed: dict[str, Any],
+        language: str,
+    ) -> None:
+        if not answer:
+            raise ValueError("主题 Asset 清单为空")
+        missing_titles = [
+            str(item.get("title") or "")
+            for item in assets
+            if str(item.get("title") or "") not in answer
+        ]
+        if missing_titles:
+            raise ValueError(f"主题 Asset 清单缺少标题：{missing_titles}")
+        labels = set(_CITATION_PATTERN.findall(answer))
+        unknown = labels - allowed.keys() - {"Q1"}
+        if unknown:
+            raise ValueError(f"主题 Asset 清单使用未知引用：{sorted(unknown)}")
+        if allowed and not labels.intersection(allowed):
+            raise ValueError("已有正文证据但清单未使用文档引用")
+        if not answer_matches_language(
+            answer,
+            language,
+            ignored_texts=(
+                str(item.get(field) or "")
+                for item in assets
+                for field in ("title", "product", "solution")
+            ),
+        ):
+            raise ValueError(f"主题 Asset 清单语言与 language={language} 不一致")
+
+    @staticmethod
+    def _enumeration_fallback(
+        assets: list[dict[str, Any]], *, language: str
+    ) -> str:
+        if not assets:
+            return "未找到匹配的 Asset。" if language.startswith("zh") else (
+                "No matching assets were found."
+            )
+        lines = []
+        for index, item in enumerate(assets, start=1):
+            title = str(item.get("title") or item.get("asset_id") or "Asset")
+            product = str(item.get("product") or "").strip()
+            solution = str(item.get("solution") or "").strip()
+            if language.startswith("zh"):
+                details = "；".join(
+                    value for value in (
+                        f"产品：{product}" if product else "",
+                        f"解决方案：{solution}" if solution else "",
+                    ) if value
+                )
+            else:
+                details = "; ".join(
+                    value for value in (
+                        f"Product: {product}" if product else "",
+                        f"Solution: {solution}" if solution else "",
+                    ) if value
+                )
+            suffix = f" — {details}" if details else ""
+            lines.append(f"{index}. **{title}**{suffix} [Q1]")
+        return "\n".join(lines)
+
+    @staticmethod
     def _query_result(
         context: ExecutionContext,
     ) -> QueryResult | None:
@@ -548,6 +692,122 @@ class ResponseComposerSkill:
         if not answer_matches_language(answer, language):
             raise ValueError(f"问数回答语言与 language={language} 不一致")
         return self._query_result_artifact(context, query, answer)
+
+    async def _compose_km_asset_enumeration(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+    ) -> SkillResult:
+        """用问数冻结清单边界，再用对应正文补充可引用说明。"""
+        scope = self._document_scope(context)
+        assets = [
+            dict(item) for item in scope.get("assets") or ()
+            if isinstance(item, dict)
+        ][:10]
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        prefix = self._enumeration_prefix(
+            language=language,
+            total_count=int(scope.get("total_count") or query.row_count),
+            shown_count=len(assets),
+            truncated=bool(scope.get("truncated") or query.truncated),
+            source_truncated=not bool(
+                query.provenance.get("count_exact", True)
+            ),
+        )
+        citations = retrieval.citation_pack.citations
+        allowed = {item.citation_label: item for item in citations}
+        body = ""
+        model_name = str(agent_model_name(
+            context.config_snapshot.get("agent", {}), "composer_llm"
+        ) or "").strip()
+        if model_name and assets:
+            prompt = await self._prompt_resolver.resolve(
+                "agent_runtime.km_asset_enumeration_compose"
+            )
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"{prompt.content}\n\n{language_instruction(language)}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps({
+                        "question": context.original_input,
+                        "assets": assets,
+                        "citations": [
+                            {
+                                "citation_label": item.citation_label,
+                                "bundle_id": str(item.bundle_id),
+                                "title": item.title,
+                                "excerpt": item.excerpt,
+                            }
+                            for item in citations
+                        ],
+                    }, ensure_ascii=False, default=str),
+                },
+            ]
+            for attempt in range(2):
+                response = await self._model_client.get_llm_json(
+                    served_model_name=model_name,
+                    prompt=messages,
+                )
+                candidate = _normalize_citations(
+                    str(response.get("answer") or "").strip()
+                    if isinstance(response, dict) else ""
+                )
+                try:
+                    self._validate_enumeration_body(
+                        candidate,
+                        assets=assets,
+                        allowed=allowed,
+                        language=language,
+                    )
+                    body = candidate
+                    break
+                except ValueError as exc:
+                    if attempt == 0:
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "上一份清单未通过校验，请完整重写所有 Asset。"
+                                f"错误：{exc}"
+                            ),
+                        })
+        if not body:
+            body = self._enumeration_fallback(assets, language=language)
+        answer = f"{prefix}\n\n{body}".strip()
+        used_labels = tuple(dict.fromkeys(
+            label for label in _CITATION_PATTERN.findall(body)
+            if label in allowed
+        ))
+        references = (
+            QueryResultReferenceCard(
+                citation_label="Q1",
+                query_result_id=query.query_result_id,
+                provider=query.provider,
+                row_count=query.row_count,
+            ),
+            *(
+                self._reference_card(allowed[label])
+                for label in used_labels
+            ),
+        )
+        warnings = list(retrieval.warnings)
+        if bool(scope.get("truncated")):
+            warnings.append("相关 Asset 超过十个，回答仅展示前十个")
+        return self._result(context, GroundedAnswer(
+            answer=answer,
+            status="READY",
+            used_citation_labels=("Q1", *used_labels),
+            references=references,
+            query_results=(query.model_dump(mode="json"),),
+            warnings=tuple(dict.fromkeys(warnings)),
+        ))
 
     async def _stream_query_result(
         self, context: ExecutionContext, query: QueryResult

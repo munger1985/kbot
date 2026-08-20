@@ -85,9 +85,48 @@ class SemanticDataQueryExecutor:
         if not isinstance(models, list) or not models:
             raise RuntimeError("SEMANTIC_DATA_QUERY_NOT_CONFIGURED")
         plan = await self._create_plan(context=context, question=question, models=models)
+        if (
+            consumer_app_id == "km_asset"
+            and self._answer_basis(context)
+            == "SEMANTIC_RELEVANCE_ENUMERATION"
+        ):
+            return await self._execute_km_asset_enumeration(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                list_plan=plan,
+            )
+        run_id, result = await self._run_plan(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            plan=plan,
+            idempotency_suffix="query",
+        )
+        return self._query_result_from_response(
+            run_id=run_id, result=result, plan=plan
+        )
+
+    async def _run_plan(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        plan: DataQueryPlanV1,
+        idempotency_suffix: str,
+    ) -> tuple[UUID, dict]:
         receipt = await self._client.create_run(
             payload={
-                "idempotency_key": f"{context.run_id}:{context.task_id}",
+                "idempotency_key": (
+                    f"{context.run_id}:{context.task_id}:{idempotency_suffix}"
+                ),
                 "original_question": context.original_input,
                 "standalone_query": question,
                 "plan": plan.model_dump(mode="json"),
@@ -110,6 +149,11 @@ class SemanticDataQueryExecutor:
             auth_context=auth_context,
             deadline_at=context.deadline_at,
         )
+        return run_id, result
+
+    def _query_result_from_response(
+        self, *, run_id: UUID, result: dict, plan: DataQueryPlanV1
+    ) -> QueryResult:
         raw_rows = result.get("preview_rows")
         if not isinstance(raw_rows, list) or any(not isinstance(item, dict) for item in raw_rows):
             raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
@@ -128,6 +172,95 @@ class SemanticDataQueryExecutor:
             warnings=warnings,
             provenance=provenance,
         )
+
+    async def _execute_km_asset_enumeration(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        list_plan: DataQueryPlanV1,
+    ) -> QueryResult:
+        """先精确计数，再按同一 topic 条件取最多十个 Asset。"""
+        count_plan = list_plan.model_copy(update={
+            "dimensions": (),
+            "order_by": (),
+            "limit": 1,
+        })
+        count_run_id, count_response = await self._run_plan(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            plan=count_plan,
+            idempotency_suffix="count",
+        )
+        total_count = self._asset_count(count_response)
+        list_run_id, list_response = await self._run_plan(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            plan=list_plan,
+            idempotency_suffix="list",
+        )
+        rows = list_response.get("preview_rows")
+        if not isinstance(rows, list) or any(
+            not isinstance(item, dict) for item in rows
+        ):
+            raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
+        provenance = dict(list_response.get("provenance") or {})
+        provenance.update({
+            "data_query_run_id": str(list_run_id),
+            "data_query_run_ids": [str(count_run_id), str(list_run_id)],
+            "count_query_plan_hash": self._plan_hash(count_plan),
+            "list_query_plan_hash": self._plan_hash(list_plan),
+            "count_exact": not bool(count_response.get("truncated")),
+        })
+        return QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=tuple(
+                dict(item) for item in list_response.get("columns") or ()
+            ),
+            rows=tuple(dict(item) for item in rows),
+            row_count=total_count,
+            truncated=total_count > len(rows),
+            warnings=(
+                ("相关 Asset 超过十个，清单已截断",)
+                if total_count > len(rows) else ()
+            ),
+            provenance=provenance,
+        )
+
+    @staticmethod
+    def _asset_count(result: dict) -> int:
+        rows = result.get("preview_rows")
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise RuntimeError("KM_ASSET_COUNT_RESULT_INVALID")
+        row = rows[0]
+        if not isinstance(row, dict):
+            raise RuntimeError("KM_ASSET_COUNT_RESULT_INVALID")
+        value = next(
+            (
+                item for key, item in row.items()
+                if str(key).casefold() == "asset_count"
+            ),
+            None,
+        )
+        if isinstance(value, bool):
+            raise RuntimeError("KM_ASSET_COUNT_RESULT_INVALID")
+        try:
+            count = int(value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("KM_ASSET_COUNT_RESULT_INVALID") from exc
+        if count < 0:
+            raise RuntimeError("KM_ASSET_COUNT_RESULT_INVALID")
+        return count
 
     async def _create_plan(self, *, context, question, models) -> DataQueryPlanV1:
         agent = context.config_snapshot.get("agent", {})
@@ -174,9 +307,10 @@ class SemanticDataQueryExecutor:
                     models=models,
                     question=question,
                     consumer_app_id=str(agent.get("owner_app_id") or ""),
+                    answer_basis=self._answer_basis(context),
                 )
                 plan = DataQueryPlanV1.model_validate(normalized)
-                self._validate_km_topic_aggregate_plan(
+                self._validate_km_topic_plan(
                     context=context,
                     consumer_app_id=str(agent.get("owner_app_id") or ""),
                     plan=plan,
@@ -203,14 +337,17 @@ class SemanticDataQueryExecutor:
         raise ValueError(f"问数 Planner 模型输出不符合契约：{last_error}")
 
     @staticmethod
-    def _validate_km_topic_aggregate_plan(
+    def _validate_km_topic_plan(
         *, context, consumer_app_id: str, plan: DataQueryPlanV1
     ) -> None:
-        """确保 KM 主题问数使用跨字段 topic 维度，避免单字段漏计。"""
+        """确保 KM 主题计数与列举共享同一 topic 过滤口径。"""
+        answer_basis = SemanticDataQueryExecutor._answer_basis(context)
         if (
             consumer_app_id != "km_asset"
-            or SemanticDataQueryExecutor._answer_basis(context)
-            != "SEMANTIC_RELEVANCE_AGGREGATE"
+            or answer_basis not in {
+                "SEMANTIC_RELEVANCE_AGGREGATE",
+                "SEMANTIC_RELEVANCE_ENUMERATION",
+            }
         ):
             return
         topic_filters = [
@@ -229,6 +366,10 @@ class SemanticDataQueryExecutor:
             item.field == "topic" for item in plan.order_by
         ):
             raise ValueError("KM topic 是仅筛选维度，不能分组或排序")
+        if answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION" and not {
+            "asset_id", "title", "bundle_id", "bundle_revision_id"
+        }.issubset(plan.dimensions):
+            raise ValueError("KM 主题列举缺少 Asset 或 Bundle 标识维度")
 
     @staticmethod
     def _answer_basis(context) -> str | None:
@@ -243,7 +384,8 @@ class SemanticDataQueryExecutor:
 
     @staticmethod
     def _normalize_plan_response(
-        *, response, models, question: str, consumer_app_id: str
+        *, response, models, question: str, consumer_app_id: str,
+        answer_basis: str | None = None,
     ) -> dict:
         """只使用规划目录中的值修复常见 LLM JSON 类型与缺省字段。"""
         if not isinstance(response, dict):
@@ -349,6 +491,33 @@ class SemanticDataQueryExecutor:
                 "values": values,
             })
         normalized["filters"] = filters
+        if (
+            consumer_app_id == "km_asset"
+            and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+        ):
+            required = (
+                "asset_id", "title", "bundle_id", "bundle_revision_id"
+            )
+            missing = [
+                name for name in required if name not in catalog_dimensions
+            ]
+            if missing:
+                raise ValueError(f"KM 托管模型缺少列举维度：{missing}")
+            normalized["dimensions"] = [
+                name for name in (*required, "product", "solution")
+                if name in catalog_dimensions
+            ]
+            asset_count = catalog_measures.get("asset_count")
+            if asset_count is None:
+                raise ValueError("KM 托管模型缺少 asset_count 指标")
+            normalized["measures"] = [{
+                "name": "asset_count",
+                "aggregation": asset_count.get("aggregation"),
+            }]
+            normalized["order_by"] = [{
+                "field": "title",
+                "direction": "ASC",
+            }]
         raw_limit = normalized.get("limit")
         if isinstance(raw_limit, str) and raw_limit.strip().isdigit():
             raw_limit = int(raw_limit.strip())
@@ -356,7 +525,14 @@ class SemanticDataQueryExecutor:
             raw_limit = 100
         max_rows = selected.get("max_rows")
         if isinstance(max_rows, int):
-            raw_limit = min(raw_limit, max_rows)
+            raw_limit = (
+                min(10, max_rows)
+                if (
+                    consumer_app_id == "km_asset"
+                    and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+                )
+                else min(raw_limit, max_rows)
+            )
         normalized["limit"] = max(1, min(raw_limit, 10_000))
         for field in ("dimensions", "order_by"):
             normalized.setdefault(field, [])

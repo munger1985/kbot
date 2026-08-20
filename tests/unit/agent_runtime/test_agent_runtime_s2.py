@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
+from agent_runtime.application.commands import LeasedArtifact
 from agent_runtime.application.conversations import ConversationService
 from agent_runtime.application.memory import (
     MemoryConsolidationWorker,
@@ -22,6 +23,7 @@ from agent_runtime.specialists.hybrid import (
     DataConstraintExtractSkill,
     DocumentScopeExtractSkill,
 )
+from agent_runtime.specialists.data_query import QueryResult
 from agent_runtime.specialists.root import (
     RootAgentPlanner,
     RouteDecision,
@@ -142,6 +144,61 @@ class AgentRuntimeS2Test(unittest.IsolatedAsyncioTestCase):
                 model_client=_ModelClient({"sql": "SELECT * FROM secret"}),
                 prompt_resolver=_PromptResolver(),
             ).execute(_context())
+
+    async def test_km_enumeration_scope_uses_query_result_and_caps_at_ten(self):
+        rows = tuple({
+            "asset_id": f"asset-{index}",
+            "title": f"Asset {index:02d}",
+            "product": "OAC",
+            "solution": "Analytics",
+            "bundle_id": str(uuid7()),
+            "bundle_revision_id": str(uuid7()),
+            "asset_count": 1,
+        } for index in range(12))
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=rows,
+            row_count=12,
+            truncated=False,
+            provenance={},
+        )
+        artifact = LeasedArtifact(
+            artifact_id=uuid7(),
+            artifact_type="QUERY_RESULT",
+            schema_version="QUERY_RESULT.v1",
+            producer="data-query",
+            producer_version="1.0.0",
+            payload=query.model_dump(mode="json"),
+            content_hash="hash",
+            security_level=0,
+        )
+        context = _context().model_copy(update={
+            "original_input": "列出关于 OAC 的 asset",
+            "config_snapshot": {
+                "route": {
+                    "answer_basis": "SEMANTIC_RELEVANCE_ENUMERATION"
+                },
+                "agent": {
+                    "models": {
+                        "composer_llm": {"served_model_name": "composer"}
+                    }
+                },
+            },
+            "input_artifacts": (artifact,),
+        })
+
+        result = await DocumentScopeExtractSkill(
+            model_client=_ModelClient({"sql": "不应调用模型"}),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        payload = result.artifact.payload
+        self.assertEqual(12, payload["total_count"])
+        self.assertEqual(10, len(payload["assets"]))
+        self.assertEqual(10, len(payload["bundle_targets"]))
+        self.assertTrue(payload["truncated"])
         with self.assertRaisesRegex(ValueError, "QUERY_INVALID"):
             await DocumentScopeExtractSkill(
                 model_client=_ModelClient({"query": "x" * 513}),
