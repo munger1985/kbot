@@ -413,7 +413,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CONTAINS", plan.filters[0].operator)
         self.assertEqual(2, len(model_client.json_requests))
 
-    async def test_km_topic_enumeration_freezes_complete_asset_scope(self):
+    async def test_km_topic_enumeration_preserves_requested_limit_and_order(self):
         model_id = uuid7()
         model_client = _ModelClient(response={
             "semantic_model_id": str(model_id),
@@ -428,7 +428,10 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "operator": "CONTAINS",
                 "values": ["OAC"],
             }],
-            "order_by": [],
+            "order_by": [{
+                "field": "asset_date",
+                "direction": "DESC",
+            }],
             "limit": 3,
         })
         executor = SemanticDataQueryExecutor(
@@ -437,7 +440,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             prompt_resolver=_PromptResolver(),
         )
         context = _context(
-            original_input="列出关于 OAC 的 asset",
+            original_input="列出最新 3 个关于 OAC 的 asset",
             agent={
                 "owner_app_id": "km_asset",
                 "models": {
@@ -475,7 +478,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         plan = await executor._create_plan(
             context=context,
-            question="列出关于 OAC 的 asset",
+            question="列出最新 3 个关于 OAC 的 asset",
             models=models,
         )
 
@@ -486,7 +489,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             ),
             plan.dimensions,
         )
-        self.assertEqual(10, plan.limit)
+        self.assertEqual(3, plan.limit)
         self.assertEqual("topic", plan.filters[0].field)
         self.assertEqual("asset_date", plan.order_by[0].field)
         self.assertEqual("DESC", plan.order_by[0].direction)
@@ -1440,6 +1443,29 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("共命中 12 个", clipped)
         self.assertIn("前 10 个", clipped)
         self.assertIn("已截断", clipped)
+
+    def test_km_enumeration_rejects_serialized_rows_and_asset_ids(self):
+        assets = [{
+            "asset_id": "ASSET-1",
+            "title": "APEX Asset",
+            "product": "Application Express",
+            "solution": "Development",
+        }]
+
+        with self.assertRaisesRegex(ValueError, "序列化容器"):
+            ResponseComposerSkill._validate_enumeration_body(
+                "[{'asset_id': 'ASSET-1', 'title': 'APEX Asset'}]",
+                assets=assets,
+                allowed={},
+                language="en-US",
+            )
+        with self.assertRaisesRegex(ValueError, "asset_id"):
+            ResponseComposerSkill._validate_enumeration_body(
+                "1. **APEX Asset** — asset_id: ASSET-1 [Q1]",
+                assets=assets,
+                allowed={},
+                language="en-US",
+            )
 
     def test_km_enumeration_can_restore_assets_from_query_rows(self):
         query = QueryResult(

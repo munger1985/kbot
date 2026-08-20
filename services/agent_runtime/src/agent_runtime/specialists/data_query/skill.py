@@ -962,18 +962,19 @@ class SemanticDataQueryExecutor:
                 "name": "asset_count",
                 "aggregation": asset_count.get("aggregation"),
             }]
-            normalized["order_by"] = [{
-                "field": (
-                    "asset_date"
-                    if "asset_date" in catalog_dimensions
-                    else "title"
-                ),
-                "direction": (
-                    "DESC"
-                    if "asset_date" in catalog_dimensions
-                    else "ASC"
-                ),
-            }]
+            if not normalized.get("order_by"):
+                normalized["order_by"] = [{
+                    "field": (
+                        "asset_date"
+                        if "asset_date" in catalog_dimensions
+                        else "title"
+                    ),
+                    "direction": (
+                        "DESC"
+                        if "asset_date" in catalog_dimensions
+                        else "ASC"
+                    ),
+                }]
         raw_limit = normalized.get("limit")
         if isinstance(raw_limit, str) and raw_limit.strip().isdigit():
             raw_limit = int(raw_limit.strip())
@@ -982,7 +983,7 @@ class SemanticDataQueryExecutor:
         max_rows = selected.get("max_rows")
         if isinstance(max_rows, int):
             raw_limit = (
-                min(10, max_rows)
+                min(raw_limit, 10, max_rows)
                 if (
                     consumer_app_id == "km_asset"
                     and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"

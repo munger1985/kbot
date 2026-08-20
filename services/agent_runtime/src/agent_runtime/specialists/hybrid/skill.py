@@ -153,7 +153,7 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
             "bundle_targets": targets,
             "assets": assets,
             "total_count": query.row_count,
-            "display_limit": 10,
+            "display_limit": len(selected),
             "truncated": query.truncated or query.row_count > 10,
         }
         return SkillResult(artifact=SkillArtifact(

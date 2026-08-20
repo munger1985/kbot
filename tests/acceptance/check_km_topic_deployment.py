@@ -7,6 +7,7 @@ import inspect
 import platform_core
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
 from agent_runtime.specialists.data_query.contracts import KMTopicExpansion
+from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.root import (
     KMAnswerBasis,
     RootAgentPlanner,
@@ -92,6 +93,70 @@ def main() -> int:
         ).values) == 2
     except ValueError:
         has_contains_any = False
+    normalization_models = [{
+        "semantic_model_id": "00000000-0000-0000-0000-000000000001",
+        "semantic_model_version": 1,
+        "datasets": [{"name": "assets"}],
+        "dimensions": [
+            {"name": name}
+            for name in (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "asset_date", "topic",
+            )
+        ],
+        "measures": [{
+            "name": "asset_count",
+            "aggregation": "COUNT",
+        }],
+        "max_rows": 1000,
+    }]
+    normalized_enumeration = (
+        SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": (
+                    "00000000-0000-0000-0000-000000000001"
+                ),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "dimensions": ["title"],
+                "filters": [{
+                    "field": "topic",
+                    "operator": "CONTAINS",
+                    "values": ["APEX"],
+                }],
+                "order_by": [{
+                    "field": "asset_date",
+                    "direction": "DESC",
+                }],
+                "limit": 3,
+            },
+            models=normalization_models,
+            question="list 3 latest assets related to apex",
+            consumer_app_id="km_asset",
+            answer_basis="SEMANTIC_RELEVANCE_ENUMERATION",
+        )
+    )
+    has_flexible_enumeration_limit = (
+        normalized_enumeration.get("limit") == 3
+        and normalized_enumeration.get("order_by") == [{
+            "field": "asset_date",
+            "direction": "DESC",
+        }]
+    )
+    try:
+        ResponseComposerSkill._validate_enumeration_body(
+            "[{'asset_id': 'ASSET-1', 'title': 'APEX Asset'}]",
+            assets=[{"asset_id": "ASSET-1", "title": "APEX Asset"}],
+            allowed={},
+            language="en-US",
+        )
+        has_serialized_row_guard = False
+    except ValueError:
+        has_serialized_row_guard = True
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -114,6 +179,11 @@ def main() -> int:
     )
     print(f"HAS_ENGLISH_KEYWORD_GROUP = {has_english_keyword_group}")
     print(f"HAS_CONTAINS_ANY = {has_contains_any}")
+    print(
+        "HAS_FLEXIBLE_ENUMERATION_LIMIT = "
+        f"{has_flexible_enumeration_limit}"
+    )
+    print(f"HAS_SERIALIZED_ROW_GUARD = {has_serialized_row_guard}")
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
@@ -127,6 +197,8 @@ def main() -> int:
         and has_multilingual_topic_search
         and has_english_keyword_group
         and has_contains_any
+        and has_flexible_enumeration_limit
+        and has_serialized_row_guard
     ):
         print("KM 主题问数代码加载检查通过")
         return 0

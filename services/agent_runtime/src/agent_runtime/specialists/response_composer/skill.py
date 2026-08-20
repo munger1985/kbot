@@ -624,6 +624,18 @@ class ResponseComposerSkill:
     ) -> None:
         if not answer:
             raise ValueError("主题 Asset 清单为空")
+        if re.match(r"^\s*[\[{]\s*(?:[\{\[\"']|$)", answer):
+            raise ValueError("主题 Asset 清单不得输出序列化容器")
+        leaked_asset_ids = [
+            str(item.get("asset_id") or "")
+            for item in assets
+            if str(item.get("asset_id") or "")
+            and str(item.get("asset_id")) in answer
+        ]
+        if leaked_asset_ids or re.search(
+            r"(?i)['\"]?asset_id['\"]?\s*:", answer
+        ):
+            raise ValueError("主题 Asset 清单不得显示 asset_id")
         missing_titles = [
             str(item.get("title") or "")
             for item in assets
