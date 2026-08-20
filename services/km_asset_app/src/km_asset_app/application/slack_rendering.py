@@ -266,16 +266,22 @@ def _is_truncated_reply(
     payload: dict[str, Any],
     config: SlackReplyConfig,
 ) -> bool:
+    has_document = _has_used_document_reference(payload)
     query_results = payload.get("query_results")
-    query_truncated = isinstance(query_results, (list, tuple)) and any(
-        isinstance(result, dict) and result.get("truncated") is True
-        for result in query_results
+    query_truncated = (
+        not has_document
+        and isinstance(query_results, (list, tuple))
+        and any(
+            isinstance(result, dict) and result.get("truncated") is True
+            for result in query_results
+        )
     )
     references_exceeded = (
         _used_document_reference_count(payload) > config.max_references
     )
     query_assets_exceeded = (
-        len(_query_asset_rows(payload)) > config.max_references
+        not has_document
+        and len(_query_asset_rows(payload)) > config.max_references
     )
     return query_truncated or references_exceeded or query_assets_exceeded
 
@@ -853,10 +859,12 @@ def render_slack_reply(
     )
     if not answer:
         answer = _EMPTY_ANSWER
+    has_used_document = (
+        valid_envelope and _has_used_document_reference(answer_payload)
+    )
     display_answer = (
         answer
-        if not valid_envelope
-        or _has_used_document_reference(answer_payload)
+        if not valid_envelope or has_used_document
         else _query_only_visible_answer(answer)
     )
     display_answer = _without_completion_boilerplate(display_answer)
@@ -882,7 +890,7 @@ def render_slack_reply(
             answer,
             limit=reply_config.max_references,
         )
-        if valid_envelope
+        if valid_envelope and not has_used_document
         else []
     )
     blocks.extend(query_asset_blocks or _text_sections(safe_answer))
@@ -890,9 +898,7 @@ def render_slack_reply(
         # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
         # 表格型问数结果暂时只展示格式化正文，不追加 Asset Template。
-        if not query_asset_blocks and _has_used_document_reference(
-            answer_payload
-        ):
+        if not query_asset_blocks and has_used_document:
             blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(
             _warning_blocks(

@@ -133,7 +133,12 @@ Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。�
 状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
 `asset_title`、`solution_briefing`、`author_mail`、`create_time` 从本次实际使用的
 DOCUMENT 引用所对应的 `manifest.md` 白名单补齐；Manifest 暂时不可读时，按同一
-Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同白名单字段。组装
+Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同白名单字段。
+只要 `used_citation_labels` 中存在可匹配的 DOCUMENT 引用，Slack 就必须优先
+保留文档型回复，并使用该回复与附件元数据组装 Template。即使同一
+Artifact 中还包含 QueryResult，问数格式化、QueryResult 行和其 `truncated`
+状态也不得覆盖文档回复或替换 Template。
+
 Template 时，先按原回答中的
 独立加粗标题、加粗项目符号或编号条目提取 Asset 顺序，再使用该条目范围内的引用
 标签和规范化 `asset_title` 匹配对应 Manifest；标题存在轻微标点或后缀差异时允许

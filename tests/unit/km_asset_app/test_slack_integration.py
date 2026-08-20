@@ -725,6 +725,84 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             [card["asset_title"] for card in cards],
         )
 
+    async def test_document_assets_override_zero_count_query_result(self):
+        references = [
+            self._reference("C1", 71),
+            self._reference("C2", 72),
+            self._reference("C4", 74),
+        ]
+        titles = [
+            "KM Store: SE-HUB Travel AI Agent on Oracle Analytics Cloud",
+            "SE-HUB OCI GenAI Agentic Credit Card Recommendation",
+            (
+                "AI Agent Factory: From Cost Reports to Cost Intelligence "
+                "with OCI GenAI Services for FinOps"
+            ),
+        ]
+        manifests = {
+            reference["bundle_revision_id"]: self._manifest(
+                f"OAC/{index}",
+                title,
+            )
+            for index, (reference, title) in enumerate(
+                zip(references, titles, strict=True),
+                start=1,
+            )
+        }
+        answer = (
+            "Based on the provided evidence, there are 3 assets related "
+            "to OAC:\n\n"
+            f"• **{titles[0]}**: Travel analytics details. [C1]\n\n"
+            f"• **{titles[1]}**: Credit card recommendation details. [C2]\n\n"
+            f"• **{titles[2]}**: FinOps analytics details. [C4]"
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": answer,
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2", "C4", "Q1"],
+                "references": [
+                    *references,
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                    },
+                ],
+                "query_results": [{
+                    "schema": "QUERY_RESULT.v1",
+                    "truncated": False,
+                    "rows": [{"ASSET_COUNT": 0}],
+                }],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=_ManifestClient(manifests),
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+        visible = slack_visible_payload(
+            render_slack_reply(
+                channel_id="C1",
+                user_id="U1",
+                thread_ts="1.001",
+                artifact=artifact,
+                reply_config=SlackReplyConfig(max_references=10),
+                asset_cards=cards,
+            )
+        )
+        rendered = json.dumps(visible, ensure_ascii=False)
+
+        self.assertEqual(titles, [card["asset_title"] for card in cards])
+        for title in titles:
+            self.assertIn(f"*Asset Title:* {title}", rendered)
+        self.assertIn("Travel analytics details", rendered)
+        self.assertNotIn("asset count of 0", rendered)
+
     async def test_answer_order_applies_before_limit_and_asset_dedup(self):
         references = [
             self._reference("C1", 11),
@@ -1564,6 +1642,69 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*2. Asset 2*", rendered)
         self.assertNotIn("Asset 3", rendered)
         self.assertIn("结果超过上限，当前仅展示部分内容", rendered)
+
+    def test_document_metadata_takes_precedence_over_query_rendering(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "Based on the provided evidence:\n\n"
+                    "• **OAC Travel Asset**: Document-grounded details. [C1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1", "Q1"],
+                "references": [
+                    {
+                        "reference_type": "DOCUMENT",
+                        "citation_label": "C1",
+                    },
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                    },
+                ],
+                "query_results": [{
+                    "schema": "QUERY_RESULT.v1",
+                    "truncated": True,
+                    "rows": [{
+                        "ASSET_ID": "QUERY-ASSET",
+                        "ASSET_TITLE": "Query Asset Must Not Override",
+                        "AUTHOR_MAIL": "query@example.com",
+                    }],
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=5),
+                    asset_cards=[{
+                        "asset_id": "OAC-TRAVEL",
+                        "asset_title": "OAC Travel Asset",
+                        "solution_briefing": "OAC travel solution briefing",
+                        "author_mail": "owner@example.com",
+                        "create_time": "2026-08-18T12:00:00Z",
+                    }],
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("Document-grounded details", rendered)
+        self.assertIn("*Asset Title:* OAC Travel Asset", rendered)
+        self.assertIn(
+            "*Solution Briefing:* OAC travel solution briefing",
+            rendered,
+        )
+        self.assertIn("KM Link", rendered)
+        self.assertNotIn("Query Asset Must Not Override", rendered)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
 
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
