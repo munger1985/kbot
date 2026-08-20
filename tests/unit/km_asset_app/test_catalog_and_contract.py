@@ -696,6 +696,43 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("READY", result["asset"]["ingestion_status"])
         knowledge_core.reindex_discovery.assert_awaited_once()
 
+    async def test_batch_reindex_keeps_partial_success_results(self):
+        first_id = UUID("01900000-0000-7000-8000-000000000071")
+        second_id = UUID("01900000-0000-7000-8000-000000000072")
+        service = KmAssetService(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+        )
+        service.reindex_asset = AsyncMock(side_effect=[
+            {
+                "status": "PENDING",
+                "kc_reindex": {"profile_job_id": "job-1"},
+            },
+            KmAssetApplicationError(
+                status_code=409,
+                code="ROW_VERSION_CONFLICT",
+                message="Asset 已被其他请求修改",
+            ),
+        ])
+
+        result = await service.batch_reindex_assets(
+            domain_id=43,
+            items=[
+                {"km_asset_id": first_id, "expected_row_version": 2},
+                {"km_asset_id": second_id, "expected_row_version": 3},
+            ],
+            actor_id="kmadmin",
+        )
+
+        self.assertEqual(2, result["requested_count"])
+        self.assertEqual(1, result["submitted_count"])
+        self.assertEqual(1, result["failed_count"])
+        self.assertEqual("SUBMITTED", result["results"][0]["status"])
+        self.assertEqual(
+            "ROW_VERSION_CONFLICT",
+            result["results"][1]["error_code"],
+        )
+
 
 class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod

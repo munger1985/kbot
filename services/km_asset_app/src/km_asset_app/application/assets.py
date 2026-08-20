@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import UUID
 
+from loguru import logger
+
 from km_asset_app.application.credentials import KmCredentialService
 from km_asset_app.entities import KmAssetEntity, KmAssetRevisionEntity, KmJobEntity, KmSourceEntity
 from km_asset_app.integrations import AssetMetaDbClient, AssetMetaDbError
@@ -401,6 +403,57 @@ class KmAssetService:
             "asset": asset_snapshot,
             "status": "PENDING",
             "kc_reindex": receipt,
+        }
+
+    async def batch_reindex_assets(
+        self,
+        *,
+        domain_id: int,
+        items: list[dict[str, Any]],
+        actor_id: str,
+    ) -> dict[str, Any]:
+        """逐条提交重新索引，并保留批次中的部分成功结果。"""
+        results: list[dict[str, Any]] = []
+        for item in items:
+            km_asset_id = UUID(str(item["km_asset_id"]))
+            try:
+                receipt = await self.reindex_asset(
+                    domain_id=domain_id,
+                    km_asset_id=km_asset_id,
+                    expected_row_version=int(item["expected_row_version"]),
+                    actor_id=actor_id,
+                )
+                results.append({
+                    "km_asset_id": str(km_asset_id),
+                    "status": "SUBMITTED",
+                    "kc_reindex": receipt["kc_reindex"],
+                })
+            except KmAssetApplicationError as exc:
+                results.append({
+                    "km_asset_id": str(km_asset_id),
+                    "status": "FAILED",
+                    "error_code": exc.code,
+                    "message": exc.message,
+                })
+            except Exception:
+                logger.exception(
+                    "批量重新索引提交失败 | km_asset_id={}",
+                    km_asset_id,
+                )
+                results.append({
+                    "km_asset_id": str(km_asset_id),
+                    "status": "FAILED",
+                    "error_code": "KM_ASSET_REINDEX_SUBMISSION_FAILED",
+                    "message": "KC 重新索引任务提交失败",
+                })
+        submitted_count = sum(
+            item["status"] == "SUBMITTED" for item in results
+        )
+        return {
+            "requested_count": len(results),
+            "submitted_count": submitted_count,
+            "failed_count": len(results) - submitted_count,
+            "results": results,
         }
 
     async def list_jobs(self, *, domain_id: int, source_id: UUID | None, limit: int):

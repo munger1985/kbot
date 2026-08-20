@@ -33,7 +33,13 @@ class KmUiStaticPagesTest(unittest.TestCase):
         "dashboard.html": {"metric-sources", "metric-ready", "metric-failed", "dashboard-job-rows"},
         "metadb.html": {"metadb-form", "metadb-source", "metadb-rows", "metadb-detail-dialog"},
         "sources.html": {"source-form", "source-edit-form", "source-rows", "data-model-dialog"},
-        "assets.html": {"asset-form", "asset-rows", "asset-detail-dialog"},
+        "assets.html": {
+            "asset-form",
+            "asset-rows",
+            "asset-select-all",
+            "asset-bulk-reindex",
+            "asset-detail-dialog",
+        },
         "jobs.html": {
             "job-form",
             "job-tree",

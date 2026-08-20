@@ -1,9 +1,11 @@
 (function () {
   "use strict";
   const base = "/api/v1/apps/km-asset";
+  const batchLimit = 100;
   const $ = (id) => document.getElementById(id);
   let rows = [];
   let sources = [];
+  const selectedAssetIds = new Set();
 
   async function initialize() {
     try {
@@ -18,18 +20,32 @@
     const limit = Number($("asset-limit").value);
     try {
       rows = KBotKmApi.items(await KBotKmApi.request(`${base}/assets${KBotKmApi.query({ source_id: $("asset-source").value, ingestion_status: $("asset-status").value, offset, limit })}`));
+      selectedAssetIds.clear();
       $("asset-status-text").textContent = `偏移 ${offset}，本页 ${rows.length} 条`;
       render();
     } catch (error) { KBotKmShell.showError(error, "Asset 查询失败"); }
   }
   function render() {
     const body = $("asset-rows");
-    if (!rows.length) return KBotKmShell.renderEmpty(body, 7, "当前筛选条件下没有 Asset");
+    if (!rows.length) { updateSelection(); return KBotKmShell.renderEmpty(body, 8, "当前筛选条件下没有 Asset"); }
     body.innerHTML = rows.map((row, index) => {
       const retryable = ["FAILED", "DOWNLOAD_FAILED"].includes(row.ingestion_status) || row.source_status === "F";
       const reindexable = row.ingestion_status === "READY" && row.kc_bundle_revision_id;
-      return `<tr><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div></td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}${reindexable ? ` <button class="small" data-reindex="${index}">重新索引</button>` : ""}</td></tr>`;
+      const checked = selectedAssetIds.has(String(row.km_asset_id)) ? " checked" : "";
+      return `<tr><td class="km-select-cell"><input type="checkbox" data-select="${index}" aria-label="选择 ${KBotKmShell.escapeHtml(row.asset_title || row.external_asset_id)}"${reindexable ? checked : " disabled"}></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div></td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}${reindexable ? ` <button class="small" data-reindex="${index}">重新索引</button>` : ""}</td></tr>`;
     }).join("");
+    updateSelection();
+  }
+  function reindexableRows() { return rows.filter((row) => row.ingestion_status === "READY" && row.kc_bundle_revision_id); }
+  function updateSelection() {
+    const eligible = reindexableRows();
+    const selectedCount = eligible.filter((row) => selectedAssetIds.has(String(row.km_asset_id))).length;
+    $("asset-selection-text").textContent = `已选择 ${selectedCount} 条（最多 ${batchLimit} 条）`;
+    $("asset-bulk-reindex").disabled = selectedCount === 0;
+    $("asset-select-all").disabled = eligible.length === 0;
+    const selectableCount = Math.min(eligible.length, batchLimit);
+    $("asset-select-all").checked = selectableCount > 0 && selectedCount === selectableCount;
+    $("asset-select-all").indeterminate = selectedCount > 0 && selectedCount < selectableCount;
   }
   async function detail(index) {
     try { const payload = await KBotKmApi.request(`${base}/assets/${rows[index].km_asset_id}`); $("asset-detail-json").textContent = JSON.stringify(payload, null, 2); KBotKmShell.openDialog("asset-detail-dialog"); }
@@ -47,10 +63,30 @@
     catch (error) { KBotKmShell.showError(error, "Asset 重新索引失败"); }
     finally { KBotKmShell.setBusy(button, false); }
   }
+  async function batchReindex() {
+    const selected = reindexableRows().filter((row) => selectedAssetIds.has(String(row.km_asset_id)));
+    if (!selected.length || !window.confirm(`确认提交 ${selected.length} 个 Asset 的全文与向量重新索引任务？`)) return;
+    const button = $("asset-bulk-reindex"); KBotKmShell.setBusy(button, true, "批量提交中…");
+    try {
+      const result = await KBotKmApi.json(`${base}/assets/actions/reindex`, "POST", { items: selected.map((row) => ({ km_asset_id: row.km_asset_id, expected_row_version: row.row_version })) });
+      if (result.failed_count) {
+        $("asset-detail-json").textContent = JSON.stringify(result, null, 2);
+        KBotKmShell.openDialog("asset-detail-dialog");
+        KBotKmShell.toast(`已提交 ${result.submitted_count} 条，失败 ${result.failed_count} 条`, "warning");
+      } else {
+        KBotKmShell.toast(`已提交 ${result.submitted_count} 个 Asset 的重新索引任务`, "success");
+      }
+      await load();
+    } catch (error) { KBotKmShell.showError(error, "Asset 批量重新索引失败"); }
+    finally { KBotKmShell.setBusy(button, false); updateSelection(); }
+  }
   window.addEventListener("DOMContentLoaded", () => {
     $("asset-form").addEventListener("submit", (event) => { event.preventDefault(); $("asset-offset").value = "0"; load(); });
     $("asset-prev").addEventListener("click", () => { $("asset-offset").value = String(Math.max(0, Number($("asset-offset").value) - Number($("asset-limit").value))); load(); });
     $("asset-next").addEventListener("click", () => { if (rows.length < Number($("asset-limit").value)) return; $("asset-offset").value = String(Number($("asset-offset").value) + Number($("asset-limit").value)); load(); });
+    $("asset-select-all").addEventListener("change", (event) => { selectedAssetIds.clear(); if (event.target.checked) reindexableRows().slice(0, batchLimit).forEach((row) => selectedAssetIds.add(String(row.km_asset_id))); render(); });
+    $("asset-bulk-reindex").addEventListener("click", batchReindex);
+    $("asset-rows").addEventListener("change", (event) => { const checkbox = event.target.closest("[data-select]"); if (!checkbox) return; const row = rows[Number(checkbox.dataset.select)]; const id = String(row.km_asset_id); if (checkbox.checked && selectedAssetIds.size >= batchLimit) { checkbox.checked = false; KBotKmShell.toast(`每批最多选择 ${batchLimit} 个 Asset`, "warning"); return; } if (checkbox.checked) selectedAssetIds.add(id); else selectedAssetIds.delete(id); updateSelection(); });
     $("asset-rows").addEventListener("click", (event) => { const view = event.target.closest("[data-view]"); const again = event.target.closest("[data-retry]"); const reindexButton = event.target.closest("[data-reindex]"); if (view) detail(Number(view.dataset.view)); if (again) retry(Number(again.dataset.retry), again); if (reindexButton) reindex(Number(reindexButton.dataset.reindex), reindexButton); });
   });
   KBotKmShell.ready.then(initialize).catch(() => {});

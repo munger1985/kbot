@@ -92,6 +92,16 @@ class VersionRequest(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
+class BatchReindexItem(_Payload):
+    km_asset_id: UUID
+    expected_row_version: int = Field(ge=1)
+
+
+class BatchReindexRequest(_Payload):
+    domain_id: int = Field(ge=1)
+    items: list[BatchReindexItem] = Field(min_length=1, max_length=100)
+
+
 class RawAssetRequest(_Payload):
     domain_id: int = Field(ge=1)
     source_id: UUID
@@ -243,6 +253,16 @@ async def retry_asset(km_asset_id: UUID, payload: VersionRequest, request: Reque
         return await _service(request).retry_asset(domain_id=payload.domain_id, km_asset_id=km_asset_id, expected_row_version=payload.expected_row_version, actor_id=actor_id)
     except KmAssetApplicationError as exc:
         _raise(exc)
+
+
+@router.post("/assets/actions/reindex", status_code=202)
+async def batch_reindex_assets(payload: BatchReindexRequest, request: Request):
+    actor_id = _context(request, payload.domain_id)
+    return await _service(request).batch_reindex_assets(
+        domain_id=payload.domain_id,
+        items=[item.model_dump() for item in payload.items],
+        actor_id=actor_id,
+    )
 
 
 @router.post("/assets/{km_asset_id}/reindex", status_code=202)

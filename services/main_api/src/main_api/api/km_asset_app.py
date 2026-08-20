@@ -133,6 +133,15 @@ class VersionPayload(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
+class BatchReindexItemPayload(_Payload):
+    km_asset_id: UUID
+    expected_row_version: int = Field(ge=1)
+
+
+class BatchReindexPayload(_Payload):
+    items: list[BatchReindexItemPayload] = Field(min_length=1, max_length=100)
+
+
 class AgentCreatePayload(_Payload):
     source_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
@@ -396,6 +405,15 @@ async def get_asset(km_asset_id: UUID, request: Request):
 async def retry_asset(km_asset_id: UUID, payload: VersionPayload, request: Request):
     domain_id = await _require(request, "km_asset:operations_manage")
     return await _client(request).retry_asset(km_asset_id=km_asset_id, payload={"domain_id": domain_id, **payload.model_dump()}, auth_context=request.state.auth_context)
+
+
+@router.post("/assets/actions/reindex", status_code=status.HTTP_202_ACCEPTED)
+async def batch_reindex_assets(payload: BatchReindexPayload, request: Request):
+    domain_id = await _require(request, "km_asset:operations_manage")
+    return await _client(request).batch_reindex_assets(
+        payload={"domain_id": domain_id, **payload.model_dump(mode="json")},
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.post("/assets/{km_asset_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
