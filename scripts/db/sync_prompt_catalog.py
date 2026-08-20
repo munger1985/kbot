@@ -7,6 +7,7 @@ import asyncio
 
 from sqlalchemy import text
 
+from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.prompts import load_prompt_catalog, sync_prompt_catalog
 
@@ -20,7 +21,8 @@ REQUIRED_TABLES = {
 async def synchronize(*, selected_services: set[str]) -> tuple[int, str, str, str]:
     """同步指定服务并返回数量、Catalog Hash、PDB 和 Schema。"""
     catalog = load_prompt_catalog()
-    runtime = create_database_runtime()
+    settings = get_settings()
+    runtime = create_database_runtime(settings)
     try:
         async with runtime.engine.connect() as connection:
             target = (
@@ -59,6 +61,7 @@ async def synchronize(*, selected_services: set[str]) -> tuple[int, str, str, st
             count = await sync_prompt_catalog(
                 connection,
                 selected_services=selected_services,
+                environment=settings.environment,
             )
             return count, catalog.catalog_sha256, str(target[0]), str(target[1])
     finally:
@@ -97,7 +100,8 @@ def main() -> int:
     print(
         "Prompt Catalog 同步完成："
         f"PDB={pdb_name}，Schema={schema_name}，"
-        f"Prompt={count}，Catalog Hash={catalog_hash}"
+        f"Prompt={count}，Catalog Hash={catalog_hash}，"
+        f"Environment={get_settings().environment}"
     )
     return 0
 

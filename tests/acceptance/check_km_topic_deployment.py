@@ -17,9 +17,9 @@ from platform_core.prompts.catalog import DEFAULT_PROMPT_CATALOG
 
 
 EXPECTED_PROMPTS = {
-    "agent_runtime.km_asset_intent_route": "1.2.0",
-    "agent_runtime.km_asset_context_route": "1.2.0",
-    "agent_runtime.data_query_plan": "1.2.0",
+    "agent_runtime.km_asset_intent_route": "1.0.0",
+    "agent_runtime.km_asset_context_route": "1.0.0",
+    "agent_runtime.data_query_plan": "1.0.0",
     "agent_runtime.km_asset_enumeration_compose": "1.0.0",
 }
 

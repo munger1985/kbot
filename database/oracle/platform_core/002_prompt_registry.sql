@@ -1,4 +1,5 @@
--- KBot 4.0 共享 Prompt Definition 与不可变版本。
+-- KBot 4.0 共享 Prompt Definition 与版本注册表。
+-- 开发环境允许同步器原位更新 FILE_SEED@1.0.0；数据库人工版本保持不可变。
 
 CREATE TABLE KBOT_PLATFORM_PROMPT (
     PROMPT_ID RAW(16) PRIMARY KEY,

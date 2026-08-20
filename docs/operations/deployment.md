@@ -91,7 +91,7 @@ systemd 或 Supervisor 并发拉起多个服务时，各进程会争用同一安
 
 ### 同步现有数据库的 Prompt Catalog
 
-部署包含 Prompt 版本变更的新代码后，必须使用同一运行环境把仓库 Catalog 同步到
+部署包含 Prompt 内容变更的新代码后，必须使用同一运行环境把仓库 Catalog 同步到
 现有 Oracle Schema。该脚本只写入 `KBOT_PLATFORM_PROMPT` 和
 `KBOT_PLATFORM_PROMPT_VERSION`，不会执行 DDL，也不会修改 Domain、用户或授权：
 
@@ -103,8 +103,11 @@ KBOT_CONFIG_FILE=configuration/kbot.toml \
 ```
 
 默认同步 Catalog 中全部服务；只更新 Agent Runtime 时可使用
-`--service agent_runtime`。脚本可重复执行；如果数据库已有相同版本但正文 Hash 不同，
-会拒绝覆盖并返回失败。同步成功后，数据库 Active 指针立即指向文件声明的版本。
+`--service agent_runtime`。开发环境中，TOML 的每个 Prompt 固定使用唯一的 `1.0.0`
+文件基线；脚本可重复执行，并原位更新数据库中的 `FILE_SEED@1.0.0` 正文、Hash 和契约，
+不会创建新版本。数据库界面中的人工修改仍应创建新版本。非开发环境继续执行版本不可变
+校验，相同版本正文 Hash 不同会拒绝覆盖。同步成功后，数据库 Active 指针立即指向文件
+声明的版本；已有人工版本和历史版本不会被删除。
 
 可通过 `KBOT_PYTHON=/path/to/python` 指定解释器。未指定时，安装脚本与
 `start_kbot.sh` 使用同一选择规则：优先安装到 `KBOT_CONDA_ENV`，否则自动选择

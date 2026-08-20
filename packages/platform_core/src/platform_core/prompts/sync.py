@@ -14,11 +14,28 @@ async def sync_prompt_catalog(
     connection: AsyncConnection,
     *,
     selected_services: set[str],
+    environment: str,
     actor_id: str = "prompt-catalog-sync",
 ) -> int:
     """写入所选服务的 Prompt，并切换文件声明的 Active 版本。"""
     catalog = load_prompt_catalog()
     entries = catalog.for_services(selected_services)
+    is_development = environment.lower() in {
+        "dev",
+        "development",
+        "debug",
+    }
+    if is_development:
+        invalid_entries = [
+            f"{entry.prompt_key}@{entry.version}"
+            for entry in entries
+            if entry.version != "1.0.0"
+        ]
+        if invalid_entries:
+            raise RuntimeError(
+                "开发环境的文件 Prompt 必须固定为 1.0.0："
+                + "、".join(invalid_entries)
+            )
     for entry in entries:
         row = (
             await connection.execute(
@@ -84,7 +101,7 @@ async def sync_prompt_catalog(
             await connection.execute(
                 text(
                     """
-                    SELECT prompt_version_id, content_sha256
+                    SELECT prompt_version_id, content_sha256, source
                     FROM KBOT_PLATFORM_PROMPT_VERSION
                     WHERE prompt_id = :prompt_id
                       AND version = :version
@@ -94,26 +111,61 @@ async def sync_prompt_catalog(
             )
         ).one_or_none()
         if version_row is not None:
-            prompt_version_id, existing_hash = version_row
-            if str(existing_hash) != entry.sha256:
+            prompt_version_id, existing_hash, source = version_row
+            if is_development and str(source) != "FILE_SEED":
+                raise RuntimeError(
+                    "开发环境的 1.0.0 文件基线不是 FILE_SEED，拒绝覆盖："
+                    f"{entry.prompt_key}@{entry.version}"
+                )
+            if is_development:
+                await connection.execute(
+                    text(
+                        """
+                        UPDATE KBOT_PLATFORM_PROMPT_VERSION
+                        SET content = :content,
+                            content_sha256 = :content_sha256,
+                            input_variables_json = :input_variables_json,
+                            output_schema_ref = :output_schema_ref,
+                            status = :status
+                        WHERE prompt_version_id = :prompt_version_id
+                        """
+                    ),
+                    {
+                        "content": entry.content,
+                        "content_sha256": entry.sha256,
+                        "input_variables_json": (
+                            "["
+                            + ",".join(
+                                f'"{value}"'
+                                for value in entry.input_variables
+                            )
+                            + "]"
+                        ),
+                        "output_schema_ref": entry.output_schema,
+                        "status": "ACTIVE" if entry.active else "RETIRED",
+                        "prompt_version_id": prompt_version_id,
+                    },
+                )
+            elif str(existing_hash) != entry.sha256:
                 raise RuntimeError(
                     "Prompt 相同版本正文 Hash 冲突："
                     f"{entry.prompt_key}@{entry.version}"
                 )
-            await connection.execute(
-                text(
-                    """
-                    UPDATE KBOT_PLATFORM_PROMPT_VERSION
-                    SET status = :status
-                    WHERE prompt_version_id = :prompt_version_id
-                      AND status <> :status
-                    """
-                ),
-                {
-                    "status": "ACTIVE" if entry.active else "RETIRED",
-                    "prompt_version_id": prompt_version_id,
-                },
-            )
+            else:
+                await connection.execute(
+                    text(
+                        """
+                        UPDATE KBOT_PLATFORM_PROMPT_VERSION
+                        SET status = :status
+                        WHERE prompt_version_id = :prompt_version_id
+                          AND status <> :status
+                        """
+                    ),
+                    {
+                        "status": "ACTIVE" if entry.active else "RETIRED",
+                        "prompt_version_id": prompt_version_id,
+                    },
+                )
         else:
             prompt_version_id = uuid7().bytes
             await connection.execute(

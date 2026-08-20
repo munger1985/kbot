@@ -87,6 +87,7 @@ PLATFORM_FOUNDATION_ROLES = {
     ("aiops", "app_admin"),
 }
 
+from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.identity import uuid7
 from platform_core.prompts import load_prompt_catalog, sync_prompt_catalog
@@ -971,7 +972,8 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
         )
         return
 
-    runtime = create_database_runtime()
+    settings = get_settings()
+    runtime = create_database_runtime(settings)
     try:
         async with runtime.engine.connect() as connection:
             pdb_name, schema_name = await _read_target(connection)
@@ -1004,6 +1006,7 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
             prompt_count = await sync_prompt_catalog(
                 connection,
                 selected_services=set(selection.ordered),
+                environment=settings.environment,
                 actor_id="schema-initializer",
             )
             foundation_label = "未选择 Main API"

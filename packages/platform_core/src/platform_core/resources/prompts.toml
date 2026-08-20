@@ -4,7 +4,7 @@ schema_version = "kbot-prompt-catalog.v1"
 [[prompts]]
 prompt_key = "agent_runtime.intent_route"
 owner_service = "agent_runtime"
-version = "1.0.1"
+version = "1.0.0"
 active = true
 purpose = "在单个聊天 Agent 的已启用能力中选择唯一执行路由"
 input_variables = []
@@ -31,7 +31,7 @@ requires_chart。不要输出隐藏思维过程。
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_intent_route"
 owner_service = "agent_runtime"
-version = "1.2.0"
+version = "1.0.0"
 active = true
 purpose = "根据 KM Asset 的文档检索和托管元数据能力选择唯一执行路由"
 input_variables = []
@@ -100,7 +100,7 @@ reason 使用与 current_input 相同的主要语言给出一句可审计说明�
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_context_route"
 owner_service = "agent_runtime"
-version = "1.2.0"
+version = "1.0.0"
 active = true
 purpose = "结合会话上下文消解 KM Asset 追问并选择执行路由"
 input_variables = []
@@ -166,7 +166,7 @@ query 仅用于后续文档检索；禁止 SQL、物理字段、原始数据行�
 [[prompts]]
 prompt_key = "agent_runtime.data_query_plan"
 owner_service = "agent_runtime"
-version = "1.2.0"
+version = "1.0.0"
 active = true
 purpose = "从受控逻辑语义模型生成 DataQueryPlan.v1"
 input_variables = []
@@ -225,7 +225,7 @@ content = """
 [[prompts]]
 prompt_key = "agent_runtime.context_rewrite"
 owner_service = "agent_runtime"
-version = "1.0.2"
+version = "1.0.0"
 active = true
 purpose = "根据会话上下文生成可独立理解的问题"
 input_variables = [
@@ -268,7 +268,7 @@ ${recalled_memories}
 [[prompts]]
 prompt_key = "agent_runtime.conversation_snapshot"
 owner_service = "agent_runtime"
-version = "1.0.2"
+version = "1.0.0"
 active = true
 purpose = "生成可重建的会话工作摘要"
 input_variables = ["previous_summary", "new_turns"]
@@ -296,33 +296,6 @@ ${new_turns}
 prompt_key = "agent_runtime.memory_extract"
 owner_service = "agent_runtime"
 version = "1.0.0"
-active = false
-purpose = "从用户原话提取长期记忆候选"
-input_variables = ["user_message", "existing_memories"]
-output_schema = "MemoryCandidateBatch.v1"
-content = """
-你是 KBot 的长期记忆候选提取器。只从用户本轮明确表达的原话提取稳定事实或偏好。
-不得从助手回答、文档内容或推断中创建用户事实。
-密码、Token、连接凭据、完整 SQL 结果和其他秘密必须忽略。
-短期任务参数、一次性问题和不确定陈述默认不记忆。
-为每项候选提供稳定 canonical_key、类型、结构化值、置信度和显著性。
-输出 JSON 顶层只能包含 candidates 数组；每项字段必须是 memory_type、
-canonical_key、value、search_text、confidence、salience。memory_type 只能是
-USER_FACT 或 USER_PREFERENCE；canonical_key 使用小写英文、数字、点、下划线或连字符。
-没有应记忆内容时返回 {"candidates":[]}。
-输出必须严格满足 MemoryCandidateBatch.v1，不要输出思维过程。
-
-用户原话：
-${user_message}
-
-现有有效记忆：
-${existing_memories}
-"""
-
-[[prompts]]
-prompt_key = "agent_runtime.memory_extract"
-owner_service = "agent_runtime"
-version = "1.1.0"
 active = true
 purpose = "从用户原话提取长期记忆候选和明确忘记请求"
 input_variables = ["user_message", "existing_memories"]
@@ -353,27 +326,6 @@ ${existing_memories}
 prompt_key = "agent_runtime.memory_conflict_assess"
 owner_service = "agent_runtime"
 version = "1.0.0"
-active = false
-purpose = "判断记忆候选与现有记忆的关系"
-input_variables = ["candidate", "existing_memory"]
-output_schema = "MemoryConflictDecision.v1"
-content = """
-你是 KBot 的记忆冲突评估器。比较候选与同一 canonical_key 的现有记忆。
-只能选择 ADD、CONFIRM、SUPERSEDE、DISPUTE 或 IGNORE。
-用户明确的新更正优先；无法确认时间顺序或语义冲突时选择 DISPUTE。
-不得修改候选值、生成新事实或输出思维过程。
-
-候选：
-${candidate}
-
-现有记忆：
-${existing_memory}
-"""
-
-[[prompts]]
-prompt_key = "agent_runtime.memory_conflict_assess"
-owner_service = "agent_runtime"
-version = "1.1.0"
 active = true
 purpose = "判断同键异值记忆候选与现有记忆的关系"
 input_variables = ["candidate", "existing_memory"]
@@ -398,7 +350,7 @@ ${existing_memory}
 [[prompts]]
 prompt_key = "agent_runtime.response_compose"
 owner_service = "agent_runtime"
-version = "1.0.1"
+version = "1.0.0"
 active = true
 purpose = "根据类型化证据生成最终回答"
 input_variables = ["agent_instruction", "raw_input", "standalone_query", "evidence"]
