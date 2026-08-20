@@ -1166,6 +1166,29 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("前 10 个", clipped)
         self.assertIn("已截断", clipped)
 
+    def test_km_enumeration_can_restore_assets_from_query_rows(self):
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=({
+                "ASSET_ID": "asset-1",
+                "TITLE": "OAC Asset",
+                "PRODUCT": "OAC",
+                "SOLUTION": "Analytics",
+                "BUNDLE_ID": str(uuid7()),
+                "BUNDLE_REVISION_ID": str(uuid7()),
+            },),
+            row_count=1,
+            provenance={},
+        )
+
+        assets = ResponseComposerSkill._enumeration_assets_from_query(query)
+
+        self.assertEqual(1, len(assets))
+        self.assertEqual("asset-1", assets[0]["asset_id"])
+        self.assertEqual("OAC Asset", assets[0]["title"])
+
     async def test_conversation_response_streams_and_returns_answer(self):
         skill = ConversationResponseSkill(
             model_client=_ModelClient(chunks=("你", "好")),

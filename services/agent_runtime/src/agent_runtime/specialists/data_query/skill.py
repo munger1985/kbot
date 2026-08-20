@@ -213,6 +213,13 @@ class SemanticDataQueryExecutor:
             not isinstance(item, dict) for item in rows
         ):
             raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
+        expected_count = min(total_count, list_plan.limit)
+        if len(rows) != expected_count:
+            raise RuntimeError(
+                "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
+                f"count={total_count}, list={len(rows)}, "
+                f"expected={expected_count}"
+            )
         provenance = dict(list_response.get("provenance") or {})
         provenance.update({
             "data_query_run_id": str(list_run_id),

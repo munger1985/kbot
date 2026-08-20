@@ -5,6 +5,12 @@ from __future__ import annotations
 import inspect
 
 import platform_core
+from agent_runtime.specialists.root import (
+    KMAnswerBasis,
+    RootAgentPlanner,
+    RouteDecision,
+    RouteType,
+)
 from data_query.application.managed_datasets import km_asset_definition
 from platform_core.prompts import load_prompt_catalog
 from platform_core.prompts.catalog import DEFAULT_PROMPT_CATALOG
@@ -36,6 +42,22 @@ def main() -> int:
     has_enumeration_scope = {
         "asset_id", "title", "bundle_id", "bundle_revision_id"
     }.issubset(dimension_names)
+    plan = RootAgentPlanner().build_plan(
+        objective="列出关于 OAC 的 asset",
+        decision=RouteDecision(
+            route_type=RouteType.HYBRID_DATA_FIRST,
+            confidence=1,
+            reason="部署检查",
+            answer_basis=KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
+        ),
+    )
+    compose_task = next(
+        item for item in plan.tasks if item.task_key == "response_compose"
+    )
+    has_scope_in_compose_plan = (
+        "document_scope" in compose_task.depends_on
+        and "task_output:document_scope" in compose_task.input_refs
+    )
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -51,12 +73,18 @@ def main() -> int:
         )
     print(f"HAS_TOPIC_IN_CODE = {has_topic}")
     print(f"HAS_ENUMERATION_SCOPE_IN_CODE = {has_enumeration_scope}")
+    print(f"HAS_SCOPE_IN_COMPOSE_PLAN = {has_scope_in_compose_plan}")
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
         for prompt_key, expected_version in EXPECTED_PROMPTS.items()
     )
-    if prompts_ok and has_topic and has_enumeration_scope:
+    if (
+        prompts_ok
+        and has_topic
+        and has_enumeration_scope
+        and has_scope_in_compose_plan
+    ):
         print("KM 主题问数代码加载检查通过")
         return 0
     print("KM 主题问数代码加载检查失败：当前环境仍在加载旧代码")

@@ -565,6 +565,21 @@ class ResponseComposerSkill:
         return dict(artifact.payload or {}) if artifact is not None else {}
 
     @staticmethod
+    def _enumeration_assets_from_query(
+        query: QueryResult,
+    ) -> list[dict[str, Any]]:
+        """当编排输入缺少范围 Artifact 时，从同一问数结果恢复清单。"""
+        fields = (
+            "asset_id", "title", "product", "solution",
+            "bundle_id", "bundle_revision_id",
+        )
+        assets: list[dict[str, Any]] = []
+        for row in query.rows[:10]:
+            folded = {str(key).casefold(): value for key, value in row.items()}
+            assets.append({name: folded.get(name.casefold()) for name in fields})
+        return assets
+
+    @staticmethod
     def _enumeration_prefix(
         *, language: str, total_count: int, shown_count: int,
         truncated: bool, source_truncated: bool,
@@ -705,12 +720,17 @@ class ResponseComposerSkill:
             dict(item) for item in scope.get("assets") or ()
             if isinstance(item, dict)
         ][:10]
+        if not assets:
+            assets = self._enumeration_assets_from_query(query)
+        total_count = int(scope.get("total_count") or query.row_count)
+        if total_count > 0 and not assets:
+            raise ValueError("KM_ASSET_ENUMERATION_LIST_EMPTY")
         language = response_language(
             context.config_snapshot, context.original_input
         )
         prefix = self._enumeration_prefix(
             language=language,
-            total_count=int(scope.get("total_count") or query.row_count),
+            total_count=total_count,
             shown_count=len(assets),
             truncated=bool(scope.get("truncated") or query.truncated),
             source_truncated=not bool(
