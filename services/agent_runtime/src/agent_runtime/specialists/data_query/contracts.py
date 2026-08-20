@@ -37,10 +37,17 @@ class KMTopicExpansion(_Contract):
 
     source_language: str = Field(min_length=1, max_length=16)
     original_topic: str = Field(min_length=1, max_length=256)
-    english_topic: str = Field(min_length=1, max_length=256)
+    english_topics: tuple[str, ...] = Field(min_length=2, max_length=3)
 
     @model_validator(mode="after")
-    def validate_english_topic(self) -> "KMTopicExpansion":
-        if not re.search(r"[A-Za-z]", self.english_topic):
-            raise ValueError("english_topic 必须包含英文字符")
+    def validate_english_topics(self) -> "KMTopicExpansion":
+        normalized: set[str] = set()
+        for topic in self.english_topics:
+            value = topic.strip()
+            if not value or not re.search(r"[A-Za-z]", value):
+                raise ValueError("english_topics 每项必须包含英文字符")
+            key = value.casefold()
+            if key in normalized:
+                raise ValueError("english_topics 不能包含重复词")
+            normalized.add(key)
         return self

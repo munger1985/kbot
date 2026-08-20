@@ -6,6 +6,7 @@ import inspect
 
 import platform_core
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
+from agent_runtime.specialists.data_query.contracts import KMTopicExpansion
 from agent_runtime.specialists.root import (
     KMAnswerBasis,
     RootAgentPlanner,
@@ -13,6 +14,7 @@ from agent_runtime.specialists.root import (
     RouteType,
 )
 from data_query.application.managed_datasets import km_asset_definition
+from platform_core.contracts.data_query import PlanFilter
 from platform_core.prompts import load_prompt_catalog
 from platform_core.prompts.catalog import DEFAULT_PROMPT_CATALOG
 
@@ -68,6 +70,28 @@ def main() -> int:
             "_execute_km_asset_multilingual_count",
         )
     )
+    english_topics_field = KMTopicExpansion.model_fields.get(
+        "english_topics"
+    )
+    has_english_keyword_group = (
+        english_topics_field is not None
+        and any(
+            getattr(item, "min_length", None) == 2
+            for item in english_topics_field.metadata
+        )
+        and any(
+            getattr(item, "max_length", None) == 3
+            for item in english_topics_field.metadata
+        )
+    )
+    try:
+        has_contains_any = len(PlanFilter(
+            field="topic",
+            operator="CONTAINS",
+            values=("finance", "financial"),
+        ).values) == 2
+    except ValueError:
+        has_contains_any = False
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -88,6 +112,8 @@ def main() -> int:
         "HAS_MULTILINGUAL_TOPIC_SEARCH = "
         f"{has_multilingual_topic_search}"
     )
+    print(f"HAS_ENGLISH_KEYWORD_GROUP = {has_english_keyword_group}")
+    print(f"HAS_CONTAINS_ANY = {has_contains_any}")
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
@@ -99,6 +125,8 @@ def main() -> int:
         and has_enumeration_scope
         and has_scope_in_compose_plan
         and has_multilingual_topic_search
+        and has_english_keyword_group
+        and has_contains_any
     ):
         print("KM 主题问数代码加载检查通过")
         return 0

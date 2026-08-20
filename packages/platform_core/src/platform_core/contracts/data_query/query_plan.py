@@ -43,7 +43,10 @@ class PlanFilter(_PlanContract):
             raise ValueError("BETWEEN 必须包含两个值")
         if self.operator in collection and len(self.values) > 100:
             raise ValueError(f"{self.operator} 最多 100 个值")
-        if self.operator not in collection | {"BETWEEN"} and len(self.values) != 1:
+        if (
+            self.operator not in collection | {"BETWEEN", "CONTAINS"}
+            and len(self.values) != 1
+        ):
             raise ValueError(f"{self.operator} 必须包含一个值")
         return self
 

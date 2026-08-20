@@ -60,8 +60,16 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
                 predicates.append(f"{column} {token} ({', '.join(placeholder(start+offset+1) for offset in range(len(values)))})"); continue
             start = len(params); params.extend(values)
             if operator == "BETWEEN": predicates.append(f"{column} BETWEEN {placeholder(start+1)} AND {placeholder(start+2)}"); continue
+            if operator == "CONTAINS":
+                predicates.extend(
+                    f"{column} LIKE ('%' || {placeholder(start+offset+1)} || '%')"
+                    if dialect == "ORACLE"
+                    else f"{column} LIKE CONCAT('%', {placeholder(start+offset+1)}, '%')"
+                    for offset in range(len(values))
+                )
+                continue
             token = placeholder(start+1); mapping = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
-            predicates.append(f"{column} LIKE ('%' || {token} || '%')" if operator == "CONTAINS" and dialect == "ORACLE" else f"{column} LIKE CONCAT('%', {token}, '%')" if operator == "CONTAINS" else f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
+            predicates.append(f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
         conjunction = " AND " if item.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
         where.append(predicates[0] if len(predicates) == 1 else f"({conjunction.join(predicates)})")
     clauses = [f"SELECT {', '.join(select)}", f"FROM {quote(dataset.physical_schema)}.{quote(dataset.physical_object)}"]

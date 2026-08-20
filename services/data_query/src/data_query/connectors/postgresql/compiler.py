@@ -86,11 +86,17 @@ def compile_postgresql_query(
                 parameters.extend(values)
                 predicates.append(f"{column} BETWEEN ${len(parameters) - 1} AND ${len(parameters)}")
                 continue
+            if operator == "CONTAINS":
+                for value in values:
+                    parameters.append(value)
+                    placeholder = f"${len(parameters)}"
+                    predicates.append(
+                        f"{column} LIKE ('%' || {placeholder} || '%')"
+                    )
+                continue
             parameters.append(values[0])
             placeholder = f"${len(parameters)}"
-            if operator == "CONTAINS":
-                predicates.append(f"{column} LIKE ('%' || {placeholder} || '%')")
-            elif operator == "STARTS_WITH":
+            if operator == "STARTS_WITH":
                 predicates.append(f"{column} LIKE ({placeholder} || '%')")
             else:
                 sql_operator = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}[operator]

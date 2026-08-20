@@ -525,18 +525,27 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((), warnings)
                 self.assertEqual([], model_client.json_requests)
 
-    async def test_km_topic_cjk_inputs_add_one_english_search_branch(self):
+    async def test_km_topic_cjk_inputs_add_english_keyword_search_branch(self):
         cases = (
-            ("zh-CN", "列出关于金融的asset", "金融", "financial"),
-            ("ja-JP", "金融詐欺に関するasset", "金融詐欺", "financial fraud"),
-            ("ko-KR", "금융 관련 asset", "금융", "financial"),
+            (
+                "zh-CN", "列出关于金融的asset", "金融",
+                ("finance", "financial"),
+            ),
+            (
+                "ja-JP", "金融詐欺に関するasset", "金融詐欺",
+                ("finance fraud", "financial fraud"),
+            ),
+            (
+                "ko-KR", "금융 관련 asset", "금융",
+                ("finance", "financial"),
+            ),
         )
-        for language, question, original, english in cases:
+        for language, question, original, english_topics in cases:
             with self.subTest(language=language):
                 model_client = _ModelClient(response={
                     "source_language": language,
                     "original_topic": original,
-                    "english_topic": english,
+                    "english_topics": english_topics,
                 })
                 executor = SemanticDataQueryExecutor(
                     client=None,
@@ -571,7 +580,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                     plan=plan,
                 )
 
-                self.assertEqual((original, english), terms)
+                self.assertEqual((original, *english_topics), terms)
                 self.assertEqual((), warnings)
                 self.assertEqual(1, len(model_client.json_requests))
 
@@ -615,11 +624,13 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "topic-overlap-count": 1,
         }
         started: set[str] = set()
+        submitted_plans: dict[str, DataQueryPlanV1] = {}
         all_started = asyncio.Event()
 
         async def run_plan(**kwargs):
             suffix = kwargs["idempotency_suffix"]
             started.add(suffix)
+            submitted_plans[suffix] = kwargs["plan"]
             if len(started) == 5:
                 all_started.set()
             await asyncio.wait_for(all_started.wait(), timeout=1)
@@ -653,7 +664,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             agent_version_id=uuid7(),
             auth_context=auth,
             list_plan=list_plan,
-            topic_terms=("金融", "financial"),
+            topic_terms=("金融", "finance", "financial"),
             expansion_warnings=(),
         )
 
@@ -664,6 +675,26 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "ORIGINAL_AND_ENGLISH_PARALLEL",
             result.provenance["topic_search_mode"],
+        )
+        self.assertEqual(
+            ["金融", "finance", "financial"],
+            result.provenance["topic_terms"],
+        )
+        self.assertEqual(
+            ("finance", "financial"),
+            next(
+                item.values
+                for item in submitted_plans["topic-english-list"].filters
+                if item.field == "topic"
+            ),
+        )
+        self.assertEqual(
+            [("金融",), ("finance", "financial")],
+            [
+                item.values
+                for item in submitted_plans["topic-overlap-count"].filters
+                if item.field == "topic"
+            ],
         )
 
     async def test_km_multilingual_count_uses_exact_set_union(self):
@@ -723,7 +754,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             agent_version_id=uuid7(),
             auth_context=auth,
             plan=plan,
-            topic_terms=("金融", "financial"),
+            topic_terms=("金融", "finance", "financial"),
             expansion_warnings=(),
         )
 

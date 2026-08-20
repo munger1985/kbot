@@ -157,6 +157,35 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
         for compiled in (postgresql, mysql, oracle):
             self.assertNotIn("DROP TABLE", compiled.sql)
 
+    def test_contains_accepts_multiple_values_as_parameterized_or(self):
+        plan = _plan().model_copy(update={
+            "filters": (PlanFilter(
+                field="region",
+                operator="CONTAINS",
+                values=("finance", "financial"),
+            ),),
+        })
+        postgresql = compile_postgresql_query(
+            plan=plan, model=_model(), policy_max_limit=100
+        )
+        mysql = compile_dialect_query(
+            dialect="MYSQL", plan=plan, model=_model(),
+            policy_max_limit=100,
+        )
+        oracle = compile_dialect_query(
+            dialect="ORACLE", plan=plan, model=_model(),
+            policy_max_limit=100,
+        )
+
+        self.assertIn("$1", postgresql.sql)
+        self.assertIn("$2", postgresql.sql)
+        self.assertIn(" OR ", postgresql.sql)
+        self.assertEqual(("finance", "financial", 20), postgresql.parameters)
+        self.assertEqual(("finance", "financial", 20), mysql.parameters)
+        self.assertEqual(("finance", "financial", 20), oracle.parameters)
+        self.assertIn(" OR ", mysql.sql)
+        self.assertIn(" OR ", oracle.sql)
+
     def test_cipher_uses_aad_and_rejects_tampering(self):
         cipher = ManagedCredentialCipher(
             key=b"k" * 32, key_version="2026-08"

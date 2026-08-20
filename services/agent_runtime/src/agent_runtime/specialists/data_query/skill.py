@@ -124,7 +124,7 @@ class SemanticDataQueryExecutor:
         if (
             consumer_app_id == "km_asset"
             and answer_basis == "SEMANTIC_RELEVANCE_AGGREGATE"
-            and len(topic_terms) == 2
+            and len(topic_terms) >= 3
         ):
             return await self._execute_km_asset_multilingual_count(
                 context=context,
@@ -133,7 +133,7 @@ class SemanticDataQueryExecutor:
                 agent_version_id=agent_version_id,
                 auth_context=auth_context,
                 plan=plan,
-                topic_terms=(topic_terms[0], topic_terms[1]),
+                topic_terms=topic_terms,
                 expansion_warnings=expansion_warnings,
             )
         run_id, result = await self._run_plan(
@@ -229,7 +229,7 @@ class SemanticDataQueryExecutor:
         expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
         """按原语言和英文主题检索，并按 Asset 唯一标识合并。"""
-        if len(topic_terms) == 2:
+        if len(topic_terms) >= 3:
             return await self._execute_km_asset_multilingual_enumeration(
                 context=context,
                 question=question,
@@ -237,7 +237,7 @@ class SemanticDataQueryExecutor:
                 agent_version_id=agent_version_id,
                 auth_context=auth_context,
                 list_plan=list_plan,
-                topic_terms=(topic_terms[0], topic_terms[1]),
+                topic_terms=topic_terms,
                 expansion_warnings=expansion_warnings,
             )
         count_plan = self._count_plan(list_plan)
@@ -308,19 +308,19 @@ class SemanticDataQueryExecutor:
         agent_version_id: UUID,
         auth_context: AuthContext,
         list_plan: DataQueryPlanV1,
-        topic_terms: tuple[str, str],
+        topic_terms: tuple[str, ...],
         expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
-        """并发执行双路主题检索，用交集计数得到准确去重总数。"""
-        original_term, english_term = topic_terms
-        original_list_plan = self._replace_topic_terms(
-            list_plan, (original_term,)
+        """并发执行原语言与英文词组检索，用交集计数得到准确去重总数。"""
+        original_term, *english_terms = topic_terms
+        original_list_plan = self._replace_topic_groups(
+            list_plan, ((original_term,),)
         )
-        english_list_plan = self._replace_topic_terms(
-            list_plan, (english_term,)
+        english_list_plan = self._replace_topic_groups(
+            list_plan, (tuple(english_terms),)
         )
-        overlap_list_plan = self._replace_topic_terms(
-            list_plan, (original_term, english_term)
+        overlap_list_plan = self._replace_topic_groups(
+            list_plan, ((original_term,), tuple(english_terms))
         )
         original_count_plan = self._count_plan(original_list_plan)
         english_count_plan = self._count_plan(english_list_plan)
@@ -450,19 +450,21 @@ class SemanticDataQueryExecutor:
         agent_version_id: UUID,
         auth_context: AuthContext,
         plan: DataQueryPlanV1,
-        topic_terms: tuple[str, str],
+        topic_terms: tuple[str, ...],
         expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
-        """并发统计双路 Asset 集合及交集，返回准确去重数量。"""
-        original_term, english_term = topic_terms
+        """并发统计原语言与英文词组及交集，返回准确去重数量。"""
+        original_term, *english_terms = topic_terms
         original_plan = self._count_plan(
-            self._replace_topic_terms(plan, (original_term,))
+            self._replace_topic_groups(plan, ((original_term,),))
         )
         english_plan = self._count_plan(
-            self._replace_topic_terms(plan, (english_term,))
+            self._replace_topic_groups(plan, (tuple(english_terms),))
         )
         overlap_plan = self._count_plan(
-            self._replace_topic_terms(plan, (original_term, english_term))
+            self._replace_topic_groups(
+                plan, ((original_term,), tuple(english_terms))
+            )
         )
         results = await self._run_plan_variants(
             context=context,
@@ -556,7 +558,7 @@ class SemanticDataQueryExecutor:
         question: str,
         plan: DataQueryPlanV1,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """为中日韩主题生成一个英文补充词；英文及其他语言保持单路。"""
+        """为中日韩主题生成两到三个英文补充词；英文及其他语言保持单路。"""
         topic_filter = next(
             (item for item in plan.filters if item.field == "topic"),
             None,
@@ -610,10 +612,10 @@ class SemanticDataQueryExecutor:
                     raise ValueError("source_language 与输入不一致")
                 if expansion.original_topic.strip() != original_topic:
                     raise ValueError("original_topic 不得改写")
-                english_topic = expansion.english_topic.strip()
-                if english_topic.casefold() == original_topic.casefold():
-                    return (original_topic,), ()
-                return (original_topic, english_topic), ()
+                english_topics = tuple(
+                    item.strip() for item in expansion.english_topics
+                )
+                return (original_topic, *english_topics), ()
             except (TypeError, ValueError) as exc:
                 last_error = str(exc)
                 if attempt == 0:
@@ -634,19 +636,19 @@ class SemanticDataQueryExecutor:
         )
 
     @staticmethod
-    def _replace_topic_terms(
-        plan: DataQueryPlanV1, terms: tuple[str, ...]
+    def _replace_topic_groups(
+        plan: DataQueryPlanV1, groups: tuple[tuple[str, ...], ...]
     ) -> DataQueryPlanV1:
-        """复制计划并用一个或两个单值 topic 条件替换原条件。"""
+        """复制计划；组内 topic 按 OR，组之间按 AND 组合。"""
         filters = tuple(
             item for item in plan.filters if item.field != "topic"
         ) + tuple(
             PlanFilter(
                 field="topic",
                 operator="CONTAINS",
-                values=(term,),
+                values=group,
             )
-            for term in terms
+            for group in groups
         )
         return plan.model_copy(update={"filters": filters})
 
