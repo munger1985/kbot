@@ -39,7 +39,6 @@ class EChartsSkill:
                     ),
                 },
             ],
-            max_tokens=4096,
         )
         output = EChartsResult(
             chart_type=str(response.get("chart_type") or "custom"),

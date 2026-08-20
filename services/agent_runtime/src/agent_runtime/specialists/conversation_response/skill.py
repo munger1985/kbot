@@ -107,7 +107,6 @@ class ConversationResponseSkill:
         async for chunk in self._model_client.stream_llm_chunks(
             served_model_name=model_name,
             prompt=messages,
-            max_tokens=4096,
             temperature=0.2,
         ):
             if not chunk.content:

@@ -159,9 +159,6 @@ class AIOpsDiagnosisConfig(BaseModel):
     prompt_catalog_path: str | None = None
     max_rounds: int = Field(default=3, ge=1, le=3)
     max_tool_calls: int = Field(default=12, ge=0, le=64)
-    max_output_tokens_per_call: int = Field(
-        default=4096, ge=256, le=32768
-    )
     max_evidence_facts: int = Field(default=256, ge=1, le=2000)
 
 

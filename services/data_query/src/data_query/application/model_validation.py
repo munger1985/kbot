@@ -130,7 +130,6 @@ async def create_model_validation_run(
                     )[:60_000],
                 },
             ],
-            max_tokens=8192,
         )
     except SemanticModelValidationError:
         raise

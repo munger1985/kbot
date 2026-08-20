@@ -50,7 +50,6 @@ class _HybridExtractSkill:
                     ),
                 },
             ],
-            max_tokens=1024,
         )
         if not isinstance(response, dict):
             raise ValueError("HYBRID_EXTRACT_INVALID")

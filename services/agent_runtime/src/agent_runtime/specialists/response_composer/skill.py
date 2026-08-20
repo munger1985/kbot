@@ -142,7 +142,6 @@ class ResponseComposerSkill:
             response = await self._model_client.get_llm_json(
                 served_model_name=model_name,
                 prompt=attempt_prompt,
-                max_tokens=4096,
             )
             try:
                 validated = self._validate_model_answer(
@@ -307,7 +306,6 @@ class ResponseComposerSkill:
             async for chunk in self._model_client.stream_llm_chunks(
                 served_model_name=model_name,
                 prompt=attempt_prompt,
-                max_tokens=4096,
                 temperature=0,
             ):
                 if chunk.content:
@@ -581,7 +579,6 @@ class ResponseComposerSkill:
             async for chunk in self._model_client.stream_llm_chunks(
                 served_model_name=model_name,
                 prompt=attempt_prompt,
-                max_tokens=4096,
                 temperature=0,
             ):
                 if chunk.content:
@@ -620,7 +617,6 @@ class ResponseComposerSkill:
             prompt=self._answer_attempt_prompt(
                 messages, language=language, repair=repair
             ),
-            max_tokens=4096,
         )
 
     async def _query_prompt(

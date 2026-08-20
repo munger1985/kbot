@@ -208,7 +208,6 @@ class RootAgentPlanner:
                     ),
                 },
             ],
-            max_tokens=1024,
         )
         route_value = str(
             response.get("route_type") or "CLARIFY"
@@ -385,7 +384,6 @@ class RootAgentPlanner:
             response = await self._model_client.get_llm_json(
                 served_model_name=model_name,
                 prompt=messages,
-                max_tokens=1024,
             )
             try:
                 if not isinstance(response, dict):

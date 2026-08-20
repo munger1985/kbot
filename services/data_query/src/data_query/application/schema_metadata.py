@@ -404,7 +404,6 @@ async def enrich_semantic_candidate(
                     )[:60_000],
                 },
             ],
-            max_tokens=4096,
         )
         enriched = _merge_ai_labels(definition=definition, suggestions=response)
         warnings = tuple(candidate.warnings) + tuple(

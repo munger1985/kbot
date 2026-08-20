@@ -85,7 +85,6 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
                     ).hexdigest(),
                 },
                 input_payload={"question": "数据库慢"},
-                max_output_tokens=1024,
                 deadline=None,
                 idempotency_key="test",
             )
@@ -94,6 +93,7 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
             session.payload["response_format"],
             {"type": "json_object"},
         )
+        self.assertNotIn("max_tokens", session.payload)
         system_prompt = session.payload["messages"][0]["content"]
         self.assertIn("JSON Schema", system_prompt)
         self.assertIn('"answer"', system_prompt)

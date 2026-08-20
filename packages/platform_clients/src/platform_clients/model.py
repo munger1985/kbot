@@ -589,10 +589,6 @@ class AIModelClient():
         raw_lines_log: list[str] = []  # 记录前几条原始响应行用于调试
         kwargs.pop('temperature', None)
 
-        # 确保 max_tokens 足够容纳完整的 JSON 响应
-        if 'max_tokens' not in kwargs:
-            kwargs['max_tokens'] = 4096
-
         # 防御：在 prompt 中强制注入 JSON-only 指令，防止 LLM 忽略格式要求
         prompt = self._enforce_json_format(prompt)
 

@@ -65,7 +65,6 @@ class AIOpsStructuredModelClient:
         model_snapshot: dict[str, Any],
         prompt_ref: dict[str, str],
         input_payload: dict[str, Any],
-        max_output_tokens: int,
         deadline: datetime | None,
         idempotency_key: str,
     ) -> StructuredModelResult:
@@ -100,7 +99,6 @@ class AIOpsStructuredModelClient:
             ],
             "stream": False,
             "temperature": 0,
-            "max_tokens": max_output_tokens,
             # OpenAI 兼容厂商对 json_schema 的支持并不一致。统一使用
             # JSON Mode，并在本服务内执行同一份 Schema 的严格校验。
             "response_format": {"type": "json_object"},

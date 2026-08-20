@@ -91,7 +91,6 @@ class ContextRewriteSkill:
         response = await self._model_client.get_llm_json(
             served_model_name=model_name,
             prompt=messages,
-            max_tokens=2048,
         )
         try:
             output = self._validate_response(
@@ -120,7 +119,6 @@ class ContextRewriteSkill:
                         ),
                     },
                 ],
-                max_tokens=2048,
             )
             try:
                 output = self._validate_response(

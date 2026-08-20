@@ -221,12 +221,10 @@ class MemoryConsolidationWorker:
                 self._model_client.get_llm_json(
                     served_model_name=model_name,
                     prompt=snapshot_request,
-                    max_tokens=2048,
                 ),
                 self._model_client.get_llm_json(
                     served_model_name=model_name,
                     prompt=memory_request,
-                    max_tokens=2048,
                 ),
             )
             snapshot = await self._validate_model_output(
@@ -338,7 +336,6 @@ class MemoryConsolidationWorker:
                 "请仅重新输出满足原 Schema 的 JSON 对象；"
                 + correction_instruction
             ),
-            max_tokens=2048,
         )
         try:
             return model_type.model_validate(corrected)
@@ -1004,7 +1001,6 @@ class MemoryConsolidationWorker:
             raw = await self._model_client.get_llm_json(
                 served_model_name=model_name,
                 prompt=rendered,
-                max_tokens=1024,
             )
             assessed = MemoryConflictDecision.model_validate(raw)
             if assessed.action not in {

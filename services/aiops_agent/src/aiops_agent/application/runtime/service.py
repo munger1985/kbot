@@ -949,9 +949,6 @@ class AIOpsRuntimeService:
             "budget": {
                 "max_rounds": int(config.max_rounds),
                 "max_tool_calls": int(config.max_tool_calls),
-                "max_output_tokens_per_call": int(
-                    config.max_output_tokens_per_call
-                ),
                 "max_evidence_facts": int(config.max_evidence_facts),
             },
         }

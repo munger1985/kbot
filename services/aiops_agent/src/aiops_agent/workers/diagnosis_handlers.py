@@ -342,9 +342,6 @@ class DiagnosisRoundDraftHandler:
                         "content": prompt.content,
                     },
                     input_payload=request_payload,
-                    max_output_tokens=diagnosis["budget"][
-                        "max_output_tokens_per_call"
-                    ],
                     deadline=(
                         _parse_time(context.deadline_at)
                         if context.deadline_at
@@ -646,9 +643,6 @@ class DiagnosisRoundAssessmentHandler:
                 model_snapshot=diagnosis["model"],
                 prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload=input_payload,
-                max_output_tokens=diagnosis["budget"][
-                    "max_output_tokens_per_call"
-                ],
                 deadline=(
                     _parse_time(context.deadline_at)
                     if context.deadline_at
@@ -996,10 +990,6 @@ class GroundingVerificationHandler:
                 model_snapshot=diagnosis["model"],
                 prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload=input_payload,
-                max_output_tokens=min(
-                    2048,
-                    diagnosis["budget"]["max_output_tokens_per_call"],
-                ),
                 deadline=(
                     _parse_time(context.deadline_at)
                     if context.deadline_at

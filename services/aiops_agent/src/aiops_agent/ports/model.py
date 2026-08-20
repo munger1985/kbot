@@ -29,7 +29,6 @@ class AIOpsModelPort(Protocol):
         model_snapshot: dict[str, Any],
         prompt_ref: dict[str, str],
         input_payload: dict[str, Any],
-        max_output_tokens: int,
         deadline: datetime | None,
         idempotency_key: str,
     ) -> StructuredModelResult: ...

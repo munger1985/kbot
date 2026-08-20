@@ -54,7 +54,6 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
         await model.chat(
             messages=[{"role": "user", "content": "hi"}],
             stream=False,
-            max_tokens=2
         )
         logger.debug(f"LLM 模型 {served_model_name} 健康检查通过")
 

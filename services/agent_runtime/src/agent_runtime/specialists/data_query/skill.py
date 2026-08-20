@@ -157,7 +157,6 @@ class SemanticDataQueryExecutor:
                     ),
                 },
             ],
-            max_tokens=2048,
         )
         normalized = self._normalize_plan_response(
             response=response,

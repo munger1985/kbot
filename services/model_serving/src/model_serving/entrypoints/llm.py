@@ -194,8 +194,8 @@ async def handle_chat_completions(
     model = await service.get_llm_model(request.served_model_name)
     provider = model.config.provider
 
-    # Get max token limit (use model config default if not provided by user)
-    max_tokens_limit = getattr(model.config, "max_tokens", 4096)
+    # 请求未指定输出上限时，统一使用当前模型目录配置。
+    max_tokens_limit = int(model.config.max_tokens)
     current_max_tokens = request.max_tokens or max_tokens_limit
 
     try:
