@@ -131,6 +131,15 @@ class AgentRuntimeS2Test(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("response_compose", plan.final_task_key)
             for task in plan.tasks:
                 self.assertTrue(set(task.depends_on).issubset(keys))
+            if route == RouteType.HYBRID_DATA_FIRST:
+                compose = next(
+                    item for item in plan.tasks
+                    if item.task_key == "response_compose"
+                )
+                self.assertIn("document_scope", compose.depends_on)
+                self.assertIn(
+                    "task_output:document_scope", compose.input_refs
+                )
 
     async def test_hybrid_extractors_reject_uncontrolled_output(self):
         valid = await DataConstraintExtractSkill(

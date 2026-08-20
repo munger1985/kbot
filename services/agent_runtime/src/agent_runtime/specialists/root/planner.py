@@ -942,6 +942,7 @@ class RootAgentPlanner:
             cls._compose_task(dependencies=(
                 "context_rewrite",
                 "data_query",
+                "document_scope",
                 "knowledge_retrieval",
             )),
         )
