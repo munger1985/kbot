@@ -39,6 +39,8 @@ def _normalize_filter_value(*, dimension: DimensionDefinition, value: Any) -> An
             except ValueError as exc:
                 raise ValueError("DATETIME_FILTER_VALUE_INVALID") from exc
         raise ValueError("DATETIME_FILTER_VALUE_INVALID")
-    if dimension.value_normalization == "LOWER_TRIM" and isinstance(value, str):
+    if dimension.value_normalization in {
+        "LOWER_TRIM", "CASE_INSENSITIVE_TRIM"
+    } and isinstance(value, str):
         return value.strip().lower()
     return value

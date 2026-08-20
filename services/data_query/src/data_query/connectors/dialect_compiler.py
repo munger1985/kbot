@@ -48,7 +48,10 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
         values = normalize_filter_values(dimension=dimension, values=item.values)
         predicates: list[str] = []
         for physical_column in columns:
-            column = quote(physical_column); operator = item.operator
+            column = quote(physical_column)
+            if dimension.value_normalization == "CASE_INSENSITIVE_TRIM":
+                column = f"LOWER({column})"
+            operator = item.operator
             if operator == "IS_NULL": predicates.append(f"{column} IS NULL"); continue
             if operator == "IS_NOT_NULL": predicates.append(f"{column} IS NOT NULL"); continue
             if operator in {"IN", "NOT_IN"}:

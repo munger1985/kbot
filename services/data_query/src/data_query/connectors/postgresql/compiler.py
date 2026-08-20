@@ -65,6 +65,8 @@ def compile_postgresql_query(
         predicates: list[str] = []
         for physical_column in (dimension.physical_column, *dimension.filter_alias_columns):
             column = _quote(physical_column)
+            if dimension.value_normalization == "CASE_INSENSITIVE_TRIM":
+                column = f"LOWER({column})"
             operator = filter_.operator
             if operator == "IS_NULL":
                 predicates.append(f"{column} IS NULL")

@@ -90,7 +90,9 @@ class DimensionDefinition(_Contract):
     filterable: bool = True
     sensitivity: Literal["PUBLIC", "INTERNAL", "SENSITIVE"] = "INTERNAL"
     synonyms: tuple[str, ...] = Field(default=(), max_length=32)
-    value_normalization: Literal["NONE", "LOWER_TRIM"] = "NONE"
+    value_normalization: Literal[
+        "NONE", "LOWER_TRIM", "CASE_INSENSITIVE_TRIM"
+    ] = "NONE"
     allowed_filter_operators: tuple[FilterOperator, ...] = (
         "EQ", "NE", "IN", "NOT_IN", "BETWEEN", "GT", "GTE", "LT", "LTE",
         "CONTAINS", "STARTS_WITH", "IS_NULL", "IS_NOT_NULL",

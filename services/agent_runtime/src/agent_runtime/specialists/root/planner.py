@@ -31,6 +31,16 @@ class RouteType(StrEnum):
     CLARIFY = "CLARIFY"
 
 
+class KMAnswerBasis(StrEnum):
+    DOCUMENT_CONTENT = "DOCUMENT_CONTENT"
+    SEMANTIC_RELEVANCE_BREADTH = "SEMANTIC_RELEVANCE_BREADTH"
+    SEMANTIC_RELEVANCE_BALANCED = "SEMANTIC_RELEVANCE_BALANCED"
+    SEMANTIC_RELEVANCE_AGGREGATE = "SEMANTIC_RELEVANCE_AGGREGATE"
+    EXACT_METADATA = "EXACT_METADATA"
+    UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
 class RouteDecision(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -41,6 +51,7 @@ class RouteDecision(BaseModel):
     requires_chart: bool = False
     context_required: bool | None = None
     coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
+    answer_basis: KMAnswerBasis | None = None
     classifier_version: str = "deterministic-document-v1"
 
 
@@ -322,8 +333,8 @@ class RootAgentPlanner:
             "available_routes": ["DOCUMENT", "DATA_QUERY", "CLARIFY"],
             "managed_metadata": {
                 "dimensions": [
-                    "asset_id", "title", "author", "product", "solution",
-                    "industry", "content_category", "status",
+                    "asset_id", "title", "topic", "author", "product",
+                    "solution", "industry", "content_category", "status",
                     "publish_date", "last_update_time",
                 ],
                 "measures": ["asset_count", "author_count"],
@@ -348,6 +359,8 @@ class RootAgentPlanner:
                     "clarify_asset_scope", language
                 ),
                 "requires_chart": False,
+                "coverage_mode": "BALANCED",
+                "answer_basis": KMAnswerBasis.AMBIGUOUS,
             })
         return await self._request_km_route_decision(
             model_name=model_name,
@@ -425,8 +438,27 @@ class RootAgentPlanner:
                     raise ValueError(
                         "coverage_mode 只能是 BREADTH 或 BALANCED"
                     )
-                if route != RouteType.DOCUMENT:
-                    coverage_mode = "BALANCED"
+                try:
+                    answer_basis = KMAnswerBasis(
+                        str(response.get("answer_basis") or "")
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        "answer_basis 不符合 KM 路由契约"
+                    ) from exc
+                expected_route, expected_coverage = (
+                    self._km_route_for_answer_basis(answer_basis)
+                )
+                if route != expected_route:
+                    raise ValueError(
+                        f"answer_basis={answer_basis.value} 必须使用 "
+                        f"route_type={expected_route.value}"
+                    )
+                if coverage_mode != expected_coverage:
+                    raise ValueError(
+                        f"answer_basis={answer_basis.value} 必须使用 "
+                        f"coverage_mode={expected_coverage}"
+                    )
                 return RouteDecision(
                     route_type=route,
                     confidence=confidence,
@@ -435,6 +467,7 @@ class RootAgentPlanner:
                     requires_chart=requires_chart,
                     context_required=context_required,
                     coverage_mode=coverage_mode,
+                    answer_basis=answer_basis,
                     classifier_version=(
                         f"llm-km-asset-v1:{prompt.version}"
                     ),
@@ -450,6 +483,46 @@ class RootAgentPlanner:
                         ),
                     })
         raise ValueError(f"KM Router 模型输出不符合契约：{last_error}")
+
+    @staticmethod
+    def _km_route_for_answer_basis(
+        answer_basis: KMAnswerBasis,
+    ) -> tuple[RouteType, Literal["BREADTH", "BALANCED"]]:
+        """依据结构化答案来源确定 KM 的唯一执行路由。"""
+        mapping: dict[
+            KMAnswerBasis,
+            tuple[RouteType, Literal["BREADTH", "BALANCED"]],
+        ] = {
+            KMAnswerBasis.DOCUMENT_CONTENT: (
+                RouteType.DOCUMENT,
+                "BALANCED",
+            ),
+            KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH: (
+                RouteType.DOCUMENT,
+                "BREADTH",
+            ),
+            KMAnswerBasis.SEMANTIC_RELEVANCE_BALANCED: (
+                RouteType.DOCUMENT,
+                "BALANCED",
+            ),
+            KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE: (
+                RouteType.DATA_QUERY,
+                "BALANCED",
+            ),
+            KMAnswerBasis.EXACT_METADATA: (
+                RouteType.DATA_QUERY,
+                "BALANCED",
+            ),
+            KMAnswerBasis.UNSCOPED_AGGREGATE: (
+                RouteType.DATA_QUERY,
+                "BALANCED",
+            ),
+            KMAnswerBasis.AMBIGUOUS: (
+                RouteType.CLARIFY,
+                "BALANCED",
+            ),
+        }
+        return mapping[answer_basis]
 
     @classmethod
     def _validate_capabilities(cls, capabilities: set[str]) -> None:

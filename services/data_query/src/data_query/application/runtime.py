@@ -95,6 +95,8 @@ class DataQueryRuntimeService:
                         "dataset": item.dataset,
                         "value_type": item.value_type,
                         "synonyms": item.synonyms,
+                        "groupable": item.groupable,
+                        "filterable": item.filterable,
                         "allowed_filter_operators": item.allowed_filter_operators,
                     } for item in definition.dimensions),
                     measures=tuple({"name": item.name, "dataset": item.dataset, "aggregation": item.aggregation, "value_type": item.value_type} for item in definition.measures),

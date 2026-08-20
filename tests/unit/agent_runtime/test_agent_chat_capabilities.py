@@ -17,7 +17,11 @@ from agent_runtime.specialists.data_query import (
 )
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.visualization import EChartsSkill
-from agent_runtime.specialists.root import RootAgentPlanner, RouteType
+from agent_runtime.specialists.root import (
+    KMAnswerBasis,
+    RootAgentPlanner,
+    RouteType,
+)
 from main_api.api.dify import _records
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.data_query import DataQueryPlanV1
@@ -331,6 +335,83 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         plan = DataQueryPlanV1.model_validate(normalized)
         self.assertEqual("EQ", plan.filters[0].operator)
 
+    async def test_km_topic_aggregate_plan_repairs_single_field_filter(self):
+        model_id = uuid7()
+        base_response = {
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 1,
+            "dataset": "assets",
+            "dimensions": [],
+            "measures": [{"name": "asset_count", "aggregation": "COUNT"}],
+            "order_by": [],
+            "limit": 100,
+        }
+        model_client = _ModelClient(responses=(
+            {
+                **base_response,
+                "filters": [{
+                    "field": "solution",
+                    "operator": "CONTAINS",
+                    "values": ["OAC"],
+                }],
+            },
+            {
+                **base_response,
+                "filters": [{
+                    "field": "topic",
+                    "operator": "CONTAINS",
+                    "values": ["OAC"],
+                }],
+            },
+        ))
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=model_client,
+            prompt_resolver=_PromptResolver(),
+        )
+        context = _context(
+            original_input="how many asset about OAC",
+            agent={
+                "owner_app_id": "km_asset",
+                "models": {
+                    "data_planner_llm": {
+                        "served_model_name": "planner-model"
+                    }
+                },
+            },
+            route={
+                "route_type": "DATA_QUERY",
+                "answer_basis": "SEMANTIC_RELEVANCE_AGGREGATE",
+            },
+        )
+        models = [{
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 1,
+            "datasets": [{"name": "assets"}],
+            "dimensions": [
+                {
+                    "name": "topic",
+                    "groupable": False,
+                    "allowed_filter_operators": ["CONTAINS"],
+                },
+                {"name": "solution"},
+            ],
+            "measures": [
+                {"name": "asset_count", "aggregation": "COUNT"}
+            ],
+            "max_rows": 1000,
+        }]
+
+        plan = await executor._create_plan(
+            context=context,
+            question="how many asset about OAC",
+            models=models,
+        )
+
+        self.assertEqual("topic", plan.filters[0].field)
+        self.assertEqual("CONTAINS", plan.filters[0].operator)
+        self.assertEqual(2, len(model_client.json_requests))
+
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(
             response={
@@ -377,6 +458,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "requires_chart": False,
                 "context_required": False,
                 "coverage_mode": "BREADTH",
+                "answer_basis": "SEMANTIC_RELEVANCE_BREADTH",
             }
         )
         planner = RootAgentPlanner(
@@ -412,6 +494,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "requires_chart": False,
                 "context_required": False,
                 "coverage_mode": "BALANCED",
+                "answer_basis": "EXACT_METADATA",
             }),
             prompt_resolver=_PromptResolver(),
         )
@@ -438,6 +521,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "requires_chart": False,
             "context_required": False,
             "coverage_mode": "BALANCED",
+            "answer_basis": "UNSCOPED_AGGREGATE",
         })
         planner = RootAgentPlanner(
             model_client=model,
@@ -470,36 +554,56 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 RouteType.DATA_QUERY,
                 "en-US",
                 "BALANCED",
+                KMAnswerBasis.UNSCOPED_AGGREGATE,
             ),
             (
                 "현재 자산은 몇 개입니까?",
                 RouteType.DATA_QUERY,
                 "ko-KR",
                 "BALANCED",
+                KMAnswerBasis.UNSCOPED_AGGREGATE,
             ),
             (
                 "現在のアセット数はいくつですか？",
                 RouteType.DATA_QUERY,
                 "ja-JP",
                 "BALANCED",
+                KMAnswerBasis.UNSCOPED_AGGREGATE,
+            ),
+            (
+                "how many asset about OAC",
+                RouteType.DATA_QUERY,
+                "en-US",
+                "BALANCED",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE,
+            ),
+            (
+                "有多少关于 OAC 的 asset",
+                RouteType.DATA_QUERY,
+                "zh-CN",
+                "BALANCED",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE,
             ),
             (
                 "Find assets related to ChatBI",
                 RouteType.DOCUMENT,
                 "en-US",
                 "BREADTH",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
             ),
             (
                 "ChatBI 관련 자료를 찾아주세요",
                 RouteType.DOCUMENT,
                 "ko-KR",
                 "BREADTH",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
             ),
             (
                 "ChatBIに関連する資料を探してください",
                 RouteType.DOCUMENT,
                 "ja-JP",
                 "BREADTH",
+                KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH,
             ),
         )
         agent = {
@@ -509,7 +613,13 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "router_llm": {"served_model_name": "router-model"}
             },
         }
-        for objective, expected, expected_language, coverage_mode in cases:
+        for (
+            objective,
+            expected,
+            expected_language,
+            coverage_mode,
+            answer_basis,
+        ) in cases:
             with self.subTest(objective=objective):
                 model = _ModelClient(response={
                     "route_type": expected.value,
@@ -519,6 +629,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                     "requires_chart": False,
                     "context_required": False,
                     "coverage_mode": coverage_mode,
+                    "answer_basis": answer_basis.value,
                 })
                 planner = RootAgentPlanner(
                     model_client=model,
@@ -530,6 +641,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(expected, decision.route_type)
                 self.assertEqual(coverage_mode, decision.coverage_mode)
+                self.assertEqual(answer_basis, decision.answer_basis)
                 messages = model.last_json_request["prompt"]
                 request = json.loads(messages[2]["content"])
                 self.assertEqual(expected_language, request["language"])
@@ -548,15 +660,17 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "requires_chart": False,
                 "context_required": True,
                 "coverage_mode": "BALANCED",
+                "answer_basis": "AMBIGUOUS",
             },
             {
-                "route_type": "DOCUMENT",
+                "route_type": "DATA_QUERY",
                 "confidence": 0.96,
-                "reason": "用户已回答上一轮澄清，应检索 ChatBI 语义相关 Asset",
+                "reason": "用户已回答上一轮澄清，应统计 ChatBI 主题相关 Asset",
                 "clarification_question": None,
                 "requires_chart": False,
                 "context_required": False,
-                "coverage_mode": "BREADTH",
+                "coverage_mode": "BALANCED",
+                "answer_basis": "SEMANTIC_RELEVANCE_AGGREGATE",
             },
         ))
         planner = RootAgentPlanner(
@@ -596,11 +710,57 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             conversation_context=context,
         )
 
-        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
         self.assertIsNone(decision.clarification_question)
         request = json.loads(model.last_json_request["prompt"][2]["content"])
         self.assertEqual("chatbi相关的", request["current_input"])
         self.assertEqual(context["recent_items"], request["recent_items"])
+        self.assertEqual(2, len(model.json_requests))
+
+    async def test_km_topic_count_rejects_document_route_and_repairs(self):
+        model = _ModelClient(responses=(
+            {
+                "route_type": "DOCUMENT",
+                "confidence": 0.91,
+                "reason": "需要查找相关 Asset",
+                "clarification_question": None,
+                "requires_chart": False,
+                "context_required": False,
+                "coverage_mode": "BREADTH",
+                "answer_basis": "SEMANTIC_RELEVANCE_AGGREGATE",
+            },
+            {
+                "route_type": "DATA_QUERY",
+                "confidence": 0.99,
+                "reason": "主题相关 Asset 数量应由托管问数模型统计",
+                "clarification_question": None,
+                "requires_chart": False,
+                "context_required": False,
+                "coverage_mode": "BALANCED",
+                "answer_basis": "SEMANTIC_RELEVANCE_AGGREGATE",
+            },
+        ))
+        planner = RootAgentPlanner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="how many asset about OAC",
+        )
+
+        self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
+        self.assertEqual(
+            KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE,
+            decision.answer_basis,
+        )
         self.assertEqual(2, len(model.json_requests))
 
     async def test_km_genuine_ambiguity_can_request_clarification(self):
@@ -612,6 +772,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "requires_chart": False,
             "context_required": True,
             "coverage_mode": "BALANCED",
+            "answer_basis": "AMBIGUOUS",
         })
         planner = RootAgentPlanner(
             model_client=model,

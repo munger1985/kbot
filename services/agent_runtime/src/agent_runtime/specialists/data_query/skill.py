@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -146,30 +147,99 @@ class SemanticDataQueryExecutor:
             ),
             None,
         )
-        response = await self._model_client.get_llm_json(
-            served_model_name=model_name,
-            prompt=[
-                {"role": "system", "content": prompt.content},
-                {
-                    "role": "user",
-                    "content": json.dumps(
+        messages = [
+            {"role": "system", "content": prompt.content},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "question": question,
+                        "models": models,
+                        "document_constraints": constraints,
+                        "answer_basis": self._answer_basis(context),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        last_error = ""
+        for attempt in range(2):
+            response = await self._model_client.get_llm_json(
+                served_model_name=model_name,
+                prompt=messages,
+            )
+            try:
+                normalized = self._normalize_plan_response(
+                    response=response,
+                    models=models,
+                    question=question,
+                    consumer_app_id=str(agent.get("owner_app_id") or ""),
+                )
+                plan = DataQueryPlanV1.model_validate(normalized)
+                self._validate_km_topic_aggregate_plan(
+                    context=context,
+                    consumer_app_id=str(agent.get("owner_app_id") or ""),
+                    plan=plan,
+                )
+                return plan
+            except (TypeError, ValueError) as exc:
+                last_error = str(exc)
+                if attempt == 0:
+                    messages.extend([
                         {
-                            "question": question,
-                            "models": models,
-                            "document_constraints": constraints,
+                            "role": "assistant",
+                            "content": json.dumps(
+                                response, ensure_ascii=False, default=str
+                            ),
                         },
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
+                        {
+                            "role": "system",
+                            "content": (
+                                "上一个计划不符合问数契约，请仅输出修正后的 "
+                                f"DataQueryPlan.v1 JSON。错误：{last_error}"
+                            ),
+                        },
+                    ])
+        raise ValueError(f"问数 Planner 模型输出不符合契约：{last_error}")
+
+    @staticmethod
+    def _validate_km_topic_aggregate_plan(
+        *, context, consumer_app_id: str, plan: DataQueryPlanV1
+    ) -> None:
+        """确保 KM 主题问数使用跨字段 topic 维度，避免单字段漏计。"""
+        if (
+            consumer_app_id != "km_asset"
+            or SemanticDataQueryExecutor._answer_basis(context)
+            != "SEMANTIC_RELEVANCE_AGGREGATE"
+        ):
+            return
+        topic_filters = [
+            item for item in plan.filters if item.field == "topic"
+        ]
+        if len(topic_filters) != 1:
+            raise ValueError("KM 主题问数必须且只能包含一个 topic 筛选")
+        topic_filter = topic_filters[0]
+        if (
+            topic_filter.operator != "CONTAINS"
+            or len(topic_filter.values) != 1
+            or not str(topic_filter.values[0]).strip()
+        ):
+            raise ValueError("KM topic 筛选必须使用单值 CONTAINS")
+        if "topic" in plan.dimensions or any(
+            item.field == "topic" for item in plan.order_by
+        ):
+            raise ValueError("KM topic 是仅筛选维度，不能分组或排序")
+
+    @staticmethod
+    def _answer_basis(context) -> str | None:
+        """从冻结路由快照读取结构化答案依据。"""
+        route = context.config_snapshot.get("route")
+        value = (
+            route.get("answer_basis")
+            if isinstance(route, Mapping)
+            else getattr(route, "answer_basis", None)
         )
-        normalized = self._normalize_plan_response(
-            response=response,
-            models=models,
-            question=question,
-            consumer_app_id=str(agent.get("owner_app_id") or ""),
-        )
-        return DataQueryPlanV1.model_validate(normalized)
+        return str(value) if value is not None else None
 
     @staticmethod
     def _normalize_plan_response(
