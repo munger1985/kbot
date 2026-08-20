@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 
 import platform_core
+from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
 from agent_runtime.specialists.root import (
     KMAnswerBasis,
     RootAgentPlanner,
@@ -21,6 +22,7 @@ EXPECTED_PROMPTS = {
     "agent_runtime.km_asset_context_route": "1.0.0",
     "agent_runtime.data_query_plan": "1.0.0",
     "agent_runtime.km_asset_enumeration_compose": "1.0.0",
+    "agent_runtime.km_topic_english_expand": "1.0.0",
 }
 
 
@@ -58,6 +60,14 @@ def main() -> int:
         "document_scope" in compose_task.depends_on
         and "task_output:document_scope" in compose_task.input_refs
     )
+    has_multilingual_topic_search = all(
+        hasattr(SemanticDataQueryExecutor, name)
+        for name in (
+            "_km_topic_terms",
+            "_execute_km_asset_multilingual_enumeration",
+            "_execute_km_asset_multilingual_count",
+        )
+    )
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -74,6 +84,10 @@ def main() -> int:
     print(f"HAS_TOPIC_IN_CODE = {has_topic}")
     print(f"HAS_ENUMERATION_SCOPE_IN_CODE = {has_enumeration_scope}")
     print(f"HAS_SCOPE_IN_COMPOSE_PLAN = {has_scope_in_compose_plan}")
+    print(
+        "HAS_MULTILINGUAL_TOPIC_SEARCH = "
+        f"{has_multilingual_topic_search}"
+    )
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
@@ -84,6 +98,7 @@ def main() -> int:
         and has_topic
         and has_enumeration_scope
         and has_scope_in_compose_plan
+        and has_multilingual_topic_search
     ):
         print("KM 主题问数代码加载检查通过")
         return 0

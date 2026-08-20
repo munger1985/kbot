@@ -4,23 +4,27 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from datetime import UTC, datetime
 import hashlib
 import json
-from datetime import UTC, datetime
 from uuid import UUID
 
+from loguru import logger
+
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import detect_unicode_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.contracts import AuthContext
-from platform_core.contracts.data_query import DataQueryPlanV1
+from platform_core.contracts.data_query import DataQueryPlanV1, PlanFilter
 from platform_core.identity import uuid7
 
-from .contracts import QueryResult
+from .contracts import KMTopicExpansion, QueryResult
 
 
 _PLANNER_INPUT_ECHO_FIELDS = frozenset(
     {"question", "models", "document_constraints"}
 )
+_KM_TOPIC_EXPANSION_LANGUAGES = frozenset({"zh-CN", "ja-JP", "ko-KR"})
 
 
 class MCPDataQueryExecutor:
@@ -85,10 +89,27 @@ class SemanticDataQueryExecutor:
         if not isinstance(models, list) or not models:
             raise RuntimeError("SEMANTIC_DATA_QUERY_NOT_CONFIGURED")
         plan = await self._create_plan(context=context, question=question, models=models)
+        answer_basis = self._answer_basis(context)
+        topic_terms: tuple[str, ...] = ()
+        expansion_warnings: tuple[str, ...] = ()
         if (
             consumer_app_id == "km_asset"
-            and self._answer_basis(context)
-            == "SEMANTIC_RELEVANCE_ENUMERATION"
+            and (
+                answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+                or (
+                    answer_basis == "SEMANTIC_RELEVANCE_AGGREGATE"
+                    and self._is_asset_count_plan(plan)
+                )
+            )
+        ):
+            topic_terms, expansion_warnings = await self._km_topic_terms(
+                context=context,
+                question=question,
+                plan=plan,
+            )
+        if (
+            consumer_app_id == "km_asset"
+            and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
         ):
             return await self._execute_km_asset_enumeration(
                 context=context,
@@ -97,6 +118,23 @@ class SemanticDataQueryExecutor:
                 agent_version_id=agent_version_id,
                 auth_context=auth_context,
                 list_plan=plan,
+                topic_terms=topic_terms,
+                expansion_warnings=expansion_warnings,
+            )
+        if (
+            consumer_app_id == "km_asset"
+            and answer_basis == "SEMANTIC_RELEVANCE_AGGREGATE"
+            and len(topic_terms) == 2
+        ):
+            return await self._execute_km_asset_multilingual_count(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                plan=plan,
+                topic_terms=(topic_terms[0], topic_terms[1]),
+                expansion_warnings=expansion_warnings,
             )
         run_id, result = await self._run_plan(
             context=context,
@@ -107,9 +145,14 @@ class SemanticDataQueryExecutor:
             plan=plan,
             idempotency_suffix="query",
         )
-        return self._query_result_from_response(
+        query_result = self._query_result_from_response(
             run_id=run_id, result=result, plan=plan
         )
+        if expansion_warnings:
+            query_result = query_result.model_copy(update={
+                "warnings": query_result.warnings + expansion_warnings,
+            })
+        return query_result
 
     async def _run_plan(
         self,
@@ -182,13 +225,22 @@ class SemanticDataQueryExecutor:
         agent_version_id: UUID,
         auth_context: AuthContext,
         list_plan: DataQueryPlanV1,
+        topic_terms: tuple[str, ...],
+        expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
-        """先精确计数，再按同一 topic 条件取最多十个 Asset。"""
-        count_plan = list_plan.model_copy(update={
-            "dimensions": (),
-            "order_by": (),
-            "limit": 1,
-        })
+        """按原语言和英文主题检索，并按 Asset 唯一标识合并。"""
+        if len(topic_terms) == 2:
+            return await self._execute_km_asset_multilingual_enumeration(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                list_plan=list_plan,
+                topic_terms=(topic_terms[0], topic_terms[1]),
+                expansion_warnings=expansion_warnings,
+            )
+        count_plan = self._count_plan(list_plan)
         count_run_id, count_response = await self._run_plan(
             context=context,
             question=question,
@@ -238,11 +290,397 @@ class SemanticDataQueryExecutor:
             row_count=total_count,
             truncated=total_count > len(rows),
             warnings=(
-                ("相关 Asset 超过十个，清单已截断",)
-                if total_count > len(rows) else ()
+                expansion_warnings
+                + (
+                    ("相关 Asset 超过十个，清单已截断",)
+                    if total_count > len(rows) else ()
+                )
             ),
             provenance=provenance,
         )
+
+    async def _execute_km_asset_multilingual_enumeration(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        list_plan: DataQueryPlanV1,
+        topic_terms: tuple[str, str],
+        expansion_warnings: tuple[str, ...],
+    ) -> QueryResult:
+        """并发执行双路主题检索，用交集计数得到准确去重总数。"""
+        original_term, english_term = topic_terms
+        original_list_plan = self._replace_topic_terms(
+            list_plan, (original_term,)
+        )
+        english_list_plan = self._replace_topic_terms(
+            list_plan, (english_term,)
+        )
+        overlap_list_plan = self._replace_topic_terms(
+            list_plan, (original_term, english_term)
+        )
+        original_count_plan = self._count_plan(original_list_plan)
+        english_count_plan = self._count_plan(english_list_plan)
+        overlap_count_plan = self._count_plan(overlap_list_plan)
+
+        results = await self._run_plan_variants(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            variants=(
+                ("topic-original-count", original_count_plan),
+                ("topic-english-count", english_count_plan),
+                ("topic-overlap-count", overlap_count_plan),
+                ("topic-original-list", original_list_plan),
+                ("topic-english-list", english_list_plan),
+            ),
+        )
+        original_count_run_id, original_count_response = results[
+            "topic-original-count"
+        ]
+        english_count_run_id, english_count_response = results[
+            "topic-english-count"
+        ]
+        overlap_count_run_id, overlap_count_response = results[
+            "topic-overlap-count"
+        ]
+        original_list_run_id, original_list_response = results[
+            "topic-original-list"
+        ]
+        english_list_run_id, english_list_response = results[
+            "topic-english-list"
+        ]
+        original_count = self._asset_count(original_count_response)
+        english_count = self._asset_count(english_count_response)
+        overlap_count = self._asset_count(overlap_count_response)
+        total_count = original_count + english_count - overlap_count
+        if total_count < 0:
+            raise RuntimeError("KM_ASSET_MULTILINGUAL_COUNT_INVALID")
+
+        original_rows = self._asset_rows(
+            original_list_response,
+            expected_count=min(original_count, original_list_plan.limit),
+        )
+        english_rows = self._asset_rows(
+            english_list_response,
+            expected_count=min(english_count, english_list_plan.limit),
+        )
+        rows_by_id: dict[str, dict] = {}
+        for row in (*original_rows, *english_rows):
+            asset_id = str(row.get("asset_id") or "").strip().casefold()
+            if not asset_id:
+                raise RuntimeError("KM_ASSET_ENUMERATION_ASSET_ID_MISSING")
+            rows_by_id.setdefault(asset_id, row)
+        merged_rows = sorted(
+            rows_by_id.values(),
+            key=lambda item: str(item.get("asset_date") or ""),
+            reverse=True,
+        )[:list_plan.limit]
+        expected_count = min(total_count, list_plan.limit)
+        if len(merged_rows) != expected_count:
+            raise RuntimeError(
+                "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
+                f"count={total_count}, list={len(merged_rows)}, "
+                f"expected={expected_count}"
+            )
+
+        run_ids = (
+            original_count_run_id,
+            english_count_run_id,
+            overlap_count_run_id,
+            original_list_run_id,
+            english_list_run_id,
+        )
+        provenance = dict(original_list_response.get("provenance") or {})
+        provenance.update({
+            "data_query_run_id": str(original_list_run_id),
+            "data_query_run_ids": [str(item) for item in run_ids],
+            "topic_search_mode": "ORIGINAL_AND_ENGLISH_PARALLEL",
+            "topic_terms": list(topic_terms),
+            "query_plan_hashes": [
+                self._plan_hash(item)
+                for item in (
+                    original_count_plan,
+                    english_count_plan,
+                    overlap_count_plan,
+                    original_list_plan,
+                    english_list_plan,
+                )
+            ],
+            "count_exact": not any(
+                bool(item.get("truncated"))
+                for item in (
+                    original_count_response,
+                    english_count_response,
+                    overlap_count_response,
+                )
+            ),
+        })
+        return QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=tuple(
+                dict(item)
+                for item in original_list_response.get("columns") or ()
+            ),
+            rows=tuple(dict(item) for item in merged_rows),
+            row_count=total_count,
+            truncated=total_count > len(merged_rows),
+            warnings=(
+                expansion_warnings
+                + (
+                    ("相关 Asset 超过十个，清单已截断",)
+                    if total_count > len(merged_rows) else ()
+                )
+            ),
+            provenance=provenance,
+        )
+
+    async def _execute_km_asset_multilingual_count(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        plan: DataQueryPlanV1,
+        topic_terms: tuple[str, str],
+        expansion_warnings: tuple[str, ...],
+    ) -> QueryResult:
+        """并发统计双路 Asset 集合及交集，返回准确去重数量。"""
+        original_term, english_term = topic_terms
+        original_plan = self._count_plan(
+            self._replace_topic_terms(plan, (original_term,))
+        )
+        english_plan = self._count_plan(
+            self._replace_topic_terms(plan, (english_term,))
+        )
+        overlap_plan = self._count_plan(
+            self._replace_topic_terms(plan, (original_term, english_term))
+        )
+        results = await self._run_plan_variants(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            variants=(
+                ("topic-original-count", original_plan),
+                ("topic-english-count", english_plan),
+                ("topic-overlap-count", overlap_plan),
+            ),
+        )
+        original_run_id, original_response = results["topic-original-count"]
+        english_run_id, english_response = results["topic-english-count"]
+        overlap_run_id, overlap_response = results["topic-overlap-count"]
+        total_count = (
+            self._asset_count(original_response)
+            + self._asset_count(english_response)
+            - self._asset_count(overlap_response)
+        )
+        if total_count < 0:
+            raise RuntimeError("KM_ASSET_MULTILINGUAL_COUNT_INVALID")
+        run_ids = (original_run_id, english_run_id, overlap_run_id)
+        provenance = dict(original_response.get("provenance") or {})
+        provenance.update({
+            "data_query_run_id": str(original_run_id),
+            "data_query_run_ids": [str(item) for item in run_ids],
+            "topic_search_mode": "ORIGINAL_AND_ENGLISH_PARALLEL",
+            "topic_terms": list(topic_terms),
+            "query_plan_hashes": [
+                self._plan_hash(item)
+                for item in (original_plan, english_plan, overlap_plan)
+            ],
+            "count_exact": not any(
+                bool(item.get("truncated"))
+                for item in (
+                    original_response,
+                    english_response,
+                    overlap_response,
+                )
+            ),
+        })
+        return QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=tuple(
+                dict(item) for item in original_response.get("columns") or ()
+            ),
+            rows=({"asset_count": total_count},),
+            row_count=1,
+            truncated=False,
+            warnings=expansion_warnings,
+            provenance=provenance,
+        )
+
+    async def _run_plan_variants(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        variants: tuple[tuple[str, DataQueryPlanV1], ...],
+    ) -> dict[str, tuple[UUID, dict]]:
+        """并发执行具备独立幂等键的问数计划变体。"""
+        responses = await asyncio.gather(*(
+            self._run_plan(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                plan=plan,
+                idempotency_suffix=suffix,
+            )
+            for suffix, plan in variants
+        ))
+        return {
+            suffix: response
+            for (suffix, _), response in zip(
+                variants, responses, strict=True
+            )
+        }
+
+    async def _km_topic_terms(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        plan: DataQueryPlanV1,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """为中日韩主题生成一个英文补充词；英文及其他语言保持单路。"""
+        topic_filter = next(
+            (item for item in plan.filters if item.field == "topic"),
+            None,
+        )
+        if topic_filter is None or len(topic_filter.values) != 1:
+            raise ValueError("KM topic 筛选缺少单一原语言主题")
+        original_topic = str(topic_filter.values[0]).strip()
+        language = detect_unicode_language(question)
+        if (
+            language not in _KM_TOPIC_EXPANSION_LANGUAGES
+            or detect_unicode_language(original_topic) == "en-US"
+        ):
+            return (original_topic,), ()
+
+        agent = context.config_snapshot.get("agent", {})
+        model_name = str(
+            agent_model_name(agent, "data_planner_llm")
+            or agent_model_name(agent, "composer_llm")
+            or ""
+        ).strip()
+        if not model_name:
+            return (original_topic,), (
+                "主题英文补充检索不可用，已仅使用原语言检索",
+            )
+        prompt = await self._prompt_resolver.resolve(
+            "agent_runtime.km_topic_english_expand"
+        )
+        messages = [
+            {"role": "system", "content": prompt.content},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "source_language": language,
+                        "question": question,
+                        "original_topic": original_topic,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        last_error = ""
+        for attempt in range(2):
+            try:
+                response = await self._model_client.get_llm_json(
+                    served_model_name=model_name,
+                    prompt=messages,
+                )
+                expansion = KMTopicExpansion.model_validate(response)
+                if expansion.source_language != language:
+                    raise ValueError("source_language 与输入不一致")
+                if expansion.original_topic.strip() != original_topic:
+                    raise ValueError("original_topic 不得改写")
+                english_topic = expansion.english_topic.strip()
+                if english_topic.casefold() == original_topic.casefold():
+                    return (original_topic,), ()
+                return (original_topic, english_topic), ()
+            except (TypeError, ValueError) as exc:
+                last_error = str(exc)
+                if attempt == 0:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "上一个结果不符合 KMTopicExpansion.v1，"
+                            f"请只输出修正后的 JSON。错误：{last_error}"
+                        ),
+                    })
+        logger.warning(
+            "KM 主题英文补充提取失败，退化为原语言单路：language={} error={}",
+            language,
+            last_error,
+        )
+        return (original_topic,), (
+            "主题英文补充检索失败，已仅使用原语言检索",
+        )
+
+    @staticmethod
+    def _replace_topic_terms(
+        plan: DataQueryPlanV1, terms: tuple[str, ...]
+    ) -> DataQueryPlanV1:
+        """复制计划并用一个或两个单值 topic 条件替换原条件。"""
+        filters = tuple(
+            item for item in plan.filters if item.field != "topic"
+        ) + tuple(
+            PlanFilter(
+                field="topic",
+                operator="CONTAINS",
+                values=(term,),
+            )
+            for term in terms
+        )
+        return plan.model_copy(update={"filters": filters})
+
+    @staticmethod
+    def _count_plan(plan: DataQueryPlanV1) -> DataQueryPlanV1:
+        return plan.model_copy(update={
+            "dimensions": (),
+            "order_by": (),
+            "limit": 1,
+        })
+
+    @staticmethod
+    def _is_asset_count_plan(plan: DataQueryPlanV1) -> bool:
+        """只对无分组的 Asset 数量执行双路集合容斥。"""
+        return (
+            not plan.dimensions
+            and len(plan.measures) == 1
+            and plan.measures[0].name == "asset_count"
+            and plan.measures[0].aggregation == "COUNT"
+        )
+
+    @staticmethod
+    def _asset_rows(result: dict, *, expected_count: int) -> tuple[dict, ...]:
+        rows = result.get("preview_rows")
+        if not isinstance(rows, list) or any(
+            not isinstance(item, dict) for item in rows
+        ):
+            raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
+        if len(rows) != expected_count:
+            raise RuntimeError(
+                "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
+                f"list={len(rows)}, expected={expected_count}"
+            )
+        return tuple(dict(item) for item in rows)
 
     @staticmethod
     def _asset_count(result: dict) -> int:
@@ -511,7 +949,8 @@ class SemanticDataQueryExecutor:
             if missing:
                 raise ValueError(f"KM 托管模型缺少列举维度：{missing}")
             normalized["dimensions"] = [
-                name for name in (*required, "product", "solution")
+                name
+                for name in (*required, "product", "solution", "asset_date")
                 if name in catalog_dimensions
             ]
             asset_count = catalog_measures.get("asset_count")
@@ -522,8 +961,16 @@ class SemanticDataQueryExecutor:
                 "aggregation": asset_count.get("aggregation"),
             }]
             normalized["order_by"] = [{
-                "field": "title",
-                "direction": "ASC",
+                "field": (
+                    "asset_date"
+                    if "asset_date" in catalog_dimensions
+                    else "title"
+                ),
+                "direction": (
+                    "DESC"
+                    if "asset_date" in catalog_dimensions
+                    else "ASC"
+                ),
             }]
         raw_limit = normalized.get("limit")
         if isinstance(raw_limit, str) and raw_limit.strip().isdigit():

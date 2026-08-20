@@ -1,5 +1,6 @@
 """4.0 通用对话、问数、图表与 Dify Adapter 的聚焦测试。"""
 
+import asyncio
 import json
 import unittest
 from types import SimpleNamespace
@@ -454,7 +455,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             {"name": name}
             for name in (
                 "asset_id", "title", "bundle_id", "bundle_revision_id",
-                "product", "solution", "topic",
+                "product", "solution", "asset_date", "topic",
             )
         ]
         dimensions[-1].update({
@@ -481,12 +482,255 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (
                 "asset_id", "title", "bundle_id", "bundle_revision_id",
-                "product", "solution",
+                "product", "solution", "asset_date",
             ),
             plan.dimensions,
         )
         self.assertEqual(10, plan.limit)
         self.assertEqual("topic", plan.filters[0].field)
+        self.assertEqual("asset_date", plan.order_by[0].field)
+        self.assertEqual("DESC", plan.order_by[0].direction)
+
+    async def test_km_topic_english_input_keeps_single_search_branch(self):
+        model_client = _ModelClient(response={})
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=model_client,
+            prompt_resolver=_PromptResolver(),
+        )
+        plan = DataQueryPlanV1(
+            semantic_model_id=uuid7(),
+            semantic_model_version=1,
+            dataset="assets",
+            measures=({"name": "asset_count", "aggregation": "COUNT"},),
+            filters=({
+                "field": "topic",
+                "operator": "CONTAINS",
+                "values": ("financial",),
+            },),
+        )
+
+        for question in (
+            "list assets about financial",
+            "列出关于financial的asset",
+        ):
+            with self.subTest(question=question):
+                terms, warnings = await executor._km_topic_terms(
+                    context=_context(agent={}),
+                    question=question,
+                    plan=plan,
+                )
+
+                self.assertEqual(("financial",), terms)
+                self.assertEqual((), warnings)
+                self.assertEqual([], model_client.json_requests)
+
+    async def test_km_topic_cjk_inputs_add_one_english_search_branch(self):
+        cases = (
+            ("zh-CN", "列出关于金融的asset", "金融", "financial"),
+            ("ja-JP", "金融詐欺に関するasset", "金融詐欺", "financial fraud"),
+            ("ko-KR", "금융 관련 asset", "금융", "financial"),
+        )
+        for language, question, original, english in cases:
+            with self.subTest(language=language):
+                model_client = _ModelClient(response={
+                    "source_language": language,
+                    "original_topic": original,
+                    "english_topic": english,
+                })
+                executor = SemanticDataQueryExecutor(
+                    client=None,
+                    model_client=model_client,
+                    prompt_resolver=_PromptResolver(),
+                )
+                plan = DataQueryPlanV1(
+                    semantic_model_id=uuid7(),
+                    semantic_model_version=1,
+                    dataset="assets",
+                    measures=({
+                        "name": "asset_count",
+                        "aggregation": "COUNT",
+                    },),
+                    filters=({
+                        "field": "topic",
+                        "operator": "CONTAINS",
+                        "values": (original,),
+                    },),
+                )
+                context = _context(agent={
+                    "models": {
+                        "data_planner_llm": {
+                            "served_model_name": "planner-model"
+                        }
+                    }
+                })
+
+                terms, warnings = await executor._km_topic_terms(
+                    context=context,
+                    question=question,
+                    plan=plan,
+                )
+
+                self.assertEqual((original, english), terms)
+                self.assertEqual((), warnings)
+                self.assertEqual(1, len(model_client.json_requests))
+
+    async def test_km_multilingual_enumeration_runs_in_parallel_and_deduplicates(self):
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        )
+        model_id = uuid7()
+        list_plan = DataQueryPlanV1(
+            semantic_model_id=model_id,
+            semantic_model_version=1,
+            dataset="assets",
+            measures=({"name": "asset_count", "aggregation": "COUNT"},),
+            dimensions=(
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "asset_date",
+            ),
+            filters=({
+                "field": "topic",
+                "operator": "CONTAINS",
+                "values": ("金融",),
+            },),
+            order_by=({"field": "asset_date", "direction": "DESC"},),
+            limit=10,
+        )
+        rows = {
+            "topic-original-list": [
+                {"asset_id": "A", "title": "A", "asset_date": "2026-01-01"},
+                {"asset_id": "B", "title": "B", "asset_date": "2026-03-01"},
+            ],
+            "topic-english-list": [
+                {"asset_id": "B", "title": "B", "asset_date": "2026-03-01"},
+                {"asset_id": "C", "title": "C", "asset_date": "2026-02-01"},
+            ],
+        }
+        counts = {
+            "topic-original-count": 2,
+            "topic-english-count": 2,
+            "topic-overlap-count": 1,
+        }
+        started: set[str] = set()
+        all_started = asyncio.Event()
+
+        async def run_plan(**kwargs):
+            suffix = kwargs["idempotency_suffix"]
+            started.add(suffix)
+            if len(started) == 5:
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), timeout=1)
+            preview_rows = (
+                [{"asset_count": counts[suffix]}]
+                if suffix in counts
+                else rows[suffix]
+            )
+            return uuid7(), {
+                "columns": [{"name": "asset_id"}],
+                "preview_rows": preview_rows,
+                "truncated": False,
+                "provenance": {},
+            }
+
+        executor._run_plan = run_plan
+        auth = AuthContext(
+            principal_kind=PrincipalKind.SERVICE,
+            client_id="test",
+            calling_service="test",
+            request_id="request-1",
+            trace_id="trace-1",
+            domain_id="20",
+            asserted_user_id="user-1",
+        )
+
+        result = await executor._execute_km_asset_enumeration(
+            context=_context(),
+            question="列出关于金融的asset",
+            consumer_app_id="km_asset",
+            agent_version_id=uuid7(),
+            auth_context=auth,
+            list_plan=list_plan,
+            topic_terms=("金融", "financial"),
+            expansion_warnings=(),
+        )
+
+        self.assertEqual(5, len(started))
+        self.assertEqual(3, result.row_count)
+        self.assertEqual(["B", "C", "A"], [row["asset_id"] for row in result.rows])
+        self.assertFalse(result.truncated)
+        self.assertEqual(
+            "ORIGINAL_AND_ENGLISH_PARALLEL",
+            result.provenance["topic_search_mode"],
+        )
+
+    async def test_km_multilingual_count_uses_exact_set_union(self):
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        )
+        plan = DataQueryPlanV1(
+            semantic_model_id=uuid7(),
+            semantic_model_version=1,
+            dataset="assets",
+            measures=({"name": "asset_count", "aggregation": "COUNT"},),
+            filters=({
+                "field": "topic",
+                "operator": "CONTAINS",
+                "values": ("金融",),
+            },),
+            limit=1,
+        )
+        counts = {
+            "topic-original-count": 2,
+            "topic-english-count": 4,
+            "topic-overlap-count": 1,
+        }
+        started: set[str] = set()
+        all_started = asyncio.Event()
+
+        async def run_plan(**kwargs):
+            suffix = kwargs["idempotency_suffix"]
+            started.add(suffix)
+            if len(started) == 3:
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), timeout=1)
+            return uuid7(), {
+                "columns": [{"name": "asset_count"}],
+                "preview_rows": [{"asset_count": counts[suffix]}],
+                "truncated": False,
+                "provenance": {},
+            }
+
+        executor._run_plan = run_plan
+        auth = AuthContext(
+            principal_kind=PrincipalKind.SERVICE,
+            client_id="test",
+            calling_service="test",
+            request_id="request-1",
+            trace_id="trace-1",
+            domain_id="20",
+            asserted_user_id="user-1",
+        )
+
+        result = await executor._execute_km_asset_multilingual_count(
+            context=_context(),
+            question="有多少关于金融的asset",
+            consumer_app_id="km_asset",
+            agent_version_id=uuid7(),
+            auth_context=auth,
+            plan=plan,
+            topic_terms=("金融", "financial"),
+            expansion_warnings=(),
+        )
+
+        self.assertEqual(3, len(started))
+        self.assertEqual(1, result.row_count)
+        self.assertEqual(5, result.rows[0]["asset_count"])
+        self.assertTrue(result.provenance["count_exact"])
 
     async def test_router_only_exposes_selected_knowledge_capabilities(self):
         model = _ModelClient(

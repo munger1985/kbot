@@ -1,9 +1,10 @@
 """两种问数 Provider 共用的稳定 Artifact 契约。"""
 
+import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Contract(BaseModel):
@@ -29,3 +30,17 @@ class QueryResult(_Contract):
     truncated: bool = False
     warnings: tuple[str, ...] = ()
     provenance: dict[str, Any]
+
+
+class KMTopicExpansion(_Contract):
+    """KM 主题原语言与英文补充检索词。"""
+
+    source_language: str = Field(min_length=1, max_length=16)
+    original_topic: str = Field(min_length=1, max_length=256)
+    english_topic: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_english_topic(self) -> "KMTopicExpansion":
+        if not re.search(r"[A-Za-z]", self.english_topic):
+            raise ValueError("english_topic 必须包含英文字符")
+        return self
