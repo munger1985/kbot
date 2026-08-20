@@ -1082,6 +1082,103 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(job.error_code)
         self.assertIsNone(job.error_message)
 
+    async def test_terminal_failure_reuses_existing_source_status_job(self):
+        revision_id = UUID("01900000-0000-7000-8000-000000000047")
+        job = SimpleNamespace(
+            status="RUNNING",
+            attempt_count=5,
+            max_attempts=5,
+            completed_at=None,
+            error_code=None,
+            error_message=None,
+            lease_owner="worker",
+            lease_until=object(),
+            domain_id=41,
+            source_id=UUID("01900000-0000-7000-8000-000000000031"),
+            km_asset_id=UUID("01900000-0000-7000-8000-000000000048"),
+            asset_revision_id=revision_id,
+            job_type="RETRY",
+            payload_json={},
+        )
+        asset = SimpleNamespace(
+            external_asset_id="ASSET-1",
+            ingestion_status="READY",
+            failure_stage=None,
+            error_code=None,
+            error_message=None,
+            row_version=1,
+        )
+
+        class Assets:
+            added = []
+            requested_key = None
+
+            async def get_job_by_id(self, **_):
+                return job
+
+            async def get_asset(self, **_):
+                return asset
+
+            async def find_job_by_key(self, **values):
+                self.requested_key = values["idempotency_key"]
+                return SimpleNamespace(job_id=UUID(int=1))
+
+            async def add(self, row):
+                self.added.append(row)
+
+        assets = Assets()
+
+        class Uow:
+            async def __aenter__(self):
+                self.assets = assets
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def commit(self):
+                return None
+
+        worker = KmAssetWorker(
+            uow_factory=Uow,
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+        await worker._complete(
+            self._kc_job().job_id,
+            succeeded=False,
+            error=RuntimeError("重试失败"),
+        )
+
+        self.assertEqual("FAILED", job.status)
+        self.assertEqual(
+            f"source-failed:{revision_id}:RETRY",
+            assets.requested_key,
+        )
+        self.assertEqual([], assets.added)
+        self.assertIsNone(job.lease_owner)
+        self.assertIsNone(job.lease_until)
+
+    async def test_completion_failure_does_not_escape_worker_loop(self):
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+        worker._complete = AsyncMock(
+            side_effect=RuntimeError("收尾事务失败")
+        )
+
+        await worker._complete_safely(
+            self._kc_job().job_id,
+            succeeded=False,
+            error=RuntimeError("任务失败"),
+        )
+
+        worker._complete.assert_awaited_once()
+
     async def test_disabled_source_skips_automatic_sync_job(self):
         source_id = UUID("01900000-0000-7000-8000-000000000031")
         worker = KmAssetWorker(

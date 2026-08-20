@@ -75,7 +75,7 @@ class KmAssetWorker:
                 continue
             try:
                 await self._dispatch(job)
-                await self._complete(job.job_id, succeeded=True)
+                await self._complete_safely(job.job_id, succeeded=True)
             except asyncio.CancelledError:
                 raise
             except _KcRevisionPending as exc:
@@ -83,7 +83,7 @@ class KmAssetWorker:
                 await self._defer_kc_status_sync(job.job_id)
             except _KcReindexFailed as exc:
                 logger.warning("KC 重新索引失败：job_id={} error={}", job.job_id, exc)
-                await self._complete(
+                await self._complete_safely(
                     job.job_id,
                     succeeded=False,
                     error=exc,
@@ -91,7 +91,11 @@ class KmAssetWorker:
                 )
             except Exception as exc:
                 logger.exception("KM Asset 任务失败：job_id={} type={}", job.job_id, job.job_type)
-                await self._complete(job.job_id, succeeded=False, error=exc)
+                await self._complete_safely(
+                    job.job_id,
+                    succeeded=False,
+                    error=exc,
+                )
 
     async def _claim(self):
         async with self._uow_factory() as uow:
@@ -521,10 +525,57 @@ class KmAssetWorker:
                         asset.error_message = str(error)[:1000]
                         asset.row_version += 1
                         if job.job_type != "SOURCE_STATUS_UPDATE":
-                            await uow.assets.add(KmJobEntity(domain_id=job.domain_id, source_id=job.source_id, km_asset_id=job.km_asset_id, asset_revision_id=job.asset_revision_id, job_type="SOURCE_STATUS_UPDATE", idempotency_key=f"source-failed:{job.asset_revision_id}:{job.job_type}", payload_json={"asset_id": asset.external_asset_id, "processed": "F", "next_job_type": None}, status="PENDING", priority=100, created_by=self._worker_id))
+                            failure_key = (
+                                f"source-failed:{job.asset_revision_id}:"
+                                f"{job.job_type}"
+                            )
+                            existing_failure_job = (
+                                await uow.assets.find_job_by_key(
+                                    domain_id=int(job.domain_id),
+                                    idempotency_key=failure_key,
+                                )
+                            )
+                            if existing_failure_job is None:
+                                await uow.assets.add(
+                                    KmJobEntity(
+                                        domain_id=job.domain_id,
+                                        source_id=job.source_id,
+                                        km_asset_id=job.km_asset_id,
+                                        asset_revision_id=job.asset_revision_id,
+                                        job_type="SOURCE_STATUS_UPDATE",
+                                        idempotency_key=failure_key,
+                                        payload_json={
+                                            "asset_id": asset.external_asset_id,
+                                            "processed": "F",
+                                            "next_job_type": None,
+                                        },
+                                        status="PENDING",
+                                        priority=100,
+                                        created_by=self._worker_id,
+                                    )
+                                )
             job.lease_owner = None
             job.lease_until = None
             await uow.commit()
+
+    async def _complete_safely(
+        self,
+        job_id: UUID,
+        *,
+        succeeded: bool,
+        error: Exception | None = None,
+        terminal: bool = False,
+    ) -> None:
+        """隔离单个任务的收尾异常，避免一条坏任务终止整个 Worker。"""
+        try:
+            await self._complete(
+                job_id,
+                succeeded=succeeded,
+                error=error,
+                terminal=terminal,
+            )
+        except Exception:
+            logger.exception("KM Asset 任务收尾失败：job_id={}", job_id)
 
     async def _defer_kc_status_sync(self, job_id: UUID) -> None:
         """延后正常进行中的 KC 状态检查，不消耗失败重试额度。"""

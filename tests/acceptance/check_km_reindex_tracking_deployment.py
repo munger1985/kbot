@@ -15,6 +15,8 @@ def main() -> int:
     """打印实际加载位置并校验重新索引跟踪链路。"""
     asset_source = inspect.getsource(KmAssetService.reindex_asset)
     worker_source = inspect.getsource(KmAssetWorker._kc_status_sync)
+    worker_loop_source = inspect.getsource(KmAssetWorker.run_forever)
+    worker_completion_source = inspect.getsource(KmAssetWorker._complete)
     status_method = getattr(
         KnowledgeCoreStatusService,
         "get_discovery_reindex_operation",
@@ -46,6 +48,13 @@ def main() -> int:
         ),
         "KM_WORKER_POLLS_REINDEX_OPERATION": (
             "get_reindex_discovery_status" in worker_source
+        ),
+        "KM_WORKER_FAILURE_COMPLETION_IS_IDEMPOTENT": (
+            "existing_failure_job" in worker_completion_source
+            and "find_job_by_key" in worker_completion_source
+        ),
+        "KM_WORKER_ISOLATES_JOB_COMPLETION_FAILURE": (
+            "_complete_safely" in worker_loop_source
         ),
         "KC_STATUS_AGGREGATES_REINDEX_JOBS": (
             "reindex_generation" in status_source
