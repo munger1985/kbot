@@ -7,6 +7,7 @@ import inspect
 import platform_core
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
 from agent_runtime.specialists.data_query.contracts import KMTopicExpansion
+from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.root import (
     KMAnswerBasis,
@@ -157,6 +158,18 @@ def main() -> int:
         has_serialized_row_guard = False
     except ValueError:
         has_serialized_row_guard = True
+    has_oracle_raw_bundle_uuid = (
+        DocumentScopeExtractSkill._uuid_row_value(
+            {
+                "bundle_id": {
+                    "encoding": "base64",
+                    "value": "AaATx4pDcfuZFydoc6rFpg==",
+                }
+            },
+            "bundle_id",
+        )
+        == "01a013c7-8a43-71fb-9917-276873aac5a6"
+    )
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -184,6 +197,10 @@ def main() -> int:
         f"{has_flexible_enumeration_limit}"
     )
     print(f"HAS_SERIALIZED_ROW_GUARD = {has_serialized_row_guard}")
+    print(
+        "HAS_ORACLE_RAW_BUNDLE_UUID = "
+        f"{has_oracle_raw_bundle_uuid}"
+    )
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
@@ -199,6 +216,7 @@ def main() -> int:
         and has_contains_any
         and has_flexible_enumeration_limit
         and has_serialized_row_guard
+        and has_oracle_raw_bundle_uuid
     ):
         print("KM 主题问数代码加载检查通过")
         return 0

@@ -1,7 +1,10 @@
 """Hybrid 中间结果只允许结构化约束或受限检索范围。"""
 
+import base64
+import binascii
 import json
 from collections.abc import Mapping
+from uuid import UUID
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
@@ -135,9 +138,14 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
                 key: cls._row_value(row, key)
                 for key in (
                     "asset_id", "title", "product", "solution",
-                    "bundle_id", "bundle_revision_id",
                 )
             }
+            asset.update({
+                "bundle_id": cls._uuid_row_value(row, "bundle_id"),
+                "bundle_revision_id": cls._uuid_row_value(
+                    row, "bundle_revision_id"
+                ),
+            })
             assets.append(asset)
             if asset["bundle_id"] and asset["bundle_revision_id"]:
                 targets.append({
@@ -173,3 +181,28 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
             if str(key).casefold() == name.casefold():
                 return value
         return None
+
+    @classmethod
+    def _uuid_row_value(cls, row: Mapping, name: str) -> str | None:
+        """将问数结果中的 UUID 字符串或 RAW(16) 传输值统一为 UUID。"""
+        value = cls._row_value(row, name)
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, str):
+            try:
+                return str(UUID(value))
+            except ValueError:
+                return None
+        if not isinstance(value, Mapping):
+            return None
+        if value.get("encoding") != "base64" or not isinstance(
+            value.get("value"), str
+        ):
+            return None
+        try:
+            raw = base64.b64decode(value["value"], validate=True)
+            if len(raw) != 16:
+                return None
+            return str(UUID(bytes=raw))
+        except (binascii.Error, ValueError):
+            return None

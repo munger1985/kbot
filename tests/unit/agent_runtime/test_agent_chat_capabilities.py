@@ -16,6 +16,7 @@ from agent_runtime.specialists.data_query import (
     QueryResult,
     SemanticDataQueryExecutor,
 )
+from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import (
@@ -1489,6 +1490,52 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(assets))
         self.assertEqual("asset-1", assets[0]["asset_id"])
         self.assertEqual("OAC Asset", assets[0]["title"])
+
+    def test_km_document_scope_decodes_oracle_raw_bundle_ids(self):
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=({
+                "asset_id": "ASSET-1",
+                "title": "APEX Asset",
+                "bundle_id": {
+                    "encoding": "base64",
+                    "value": "AaATx4pDcfuZFydoc6rFpg==",
+                },
+                "bundle_revision_id": {
+                    "encoding": "base64",
+                    "value": "AaATx4vfeai2yCm4reAl7g==",
+                },
+            },),
+            row_count=1,
+            provenance={},
+        )
+        context = _context(
+            artifacts=(_artifact(
+                "QUERY_RESULT", query.model_dump(mode="json")
+            ),),
+            route={
+                "answer_basis": "SEMANTIC_RELEVANCE_ENUMERATION"
+            },
+            original_input="list assets related to apex",
+        )
+
+        result = DocumentScopeExtractSkill._km_asset_enumeration_scope(
+            context
+        )
+
+        self.assertEqual([{
+            "bundle_id": "01a013c7-8a43-71fb-9917-276873aac5a6",
+            "bundle_revision_id": (
+                "01a013c7-8bdf-79a8-b6c8-29b8ade025ee"
+            ),
+            "title": "APEX Asset",
+        }], result.artifact.payload["bundle_targets"])
+        self.assertEqual(
+            "01a013c7-8a43-71fb-9917-276873aac5a6",
+            result.artifact.payload["assets"][0]["bundle_id"],
+        )
 
     async def test_conversation_response_streams_and_returns_answer(self):
         skill = ConversationResponseSkill(
