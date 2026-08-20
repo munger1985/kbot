@@ -53,6 +53,42 @@ bash scripts/deployment/install_workspace.sh --production
 并仅从该目录强制重装当次构建的 Wheel。因此，即使内部包版本仍为
 `4.0.0`，也不会误用之前部署留下的同名 Wheel。
 
+### 启动时自动校验内部包
+
+`start_kbot.sh` 在导入任何服务包之前，会比较仓库源码与当前 Python
+解释器实际加载的内部包内容指纹。指纹覆盖全部 Python 文件，以及
+`pyproject.toml` 声明的包内运行资源，因此能够识别“源码已更新，但
+site-packages 仍是同版本旧 Wheel”的情况。
+
+发现不一致时，启动脚本会在
+`var/run/workspace-package-install.lock` 跨进程文件锁内调用规范安装脚本；
+安装并复检成功后才启动服务。安装失败或复检仍不一致时，所有服务均不启动，
+避免同一部署同时加载新旧包。
+
+默认启用自动更新；如生产变更流程只允许检查，可设置：
+
+```bash
+KBOT_AUTO_INSTALL_PACKAGES=false bash start_kbot.sh
+```
+
+此时发现不一致会直接阻止启动，不会静默使用旧包。可单独执行只读检查：
+
+```bash
+python scripts/deployment/ensure_workspace_packages.py \
+  --mode production --check-only
+```
+
+正式进程编排应使用统一单服务入口，而不是直接执行 `python -m`：
+
+```bash
+KBOT_PYTHON=/home/ubuntu/anaconda3/envs/kbot4/bin/python \
+KBOT_INSTALL_MODE=production \
+scripts/deployment/run_service.sh knowledge_core.entrypoints.api
+```
+
+systemd 或 Supervisor 并发拉起多个服务时，各进程会争用同一安装锁；第一个
+进程完成更新后，其余进程只复检并启动，不会并发修改 Conda 环境。
+
 ### 同步现有数据库的 Prompt Catalog
 
 部署包含 Prompt 版本变更的新代码后，必须使用同一运行环境把仓库 Catalog 同步到

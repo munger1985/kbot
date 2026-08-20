@@ -7,6 +7,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import sys
 
 import tomli
 
@@ -149,6 +150,16 @@ def check_workspace_packages() -> list[str]:
                     "AIOps 发行包缺少运行资源："
                     + ", ".join(missing_resources)
                 )
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from scripts.deployment.workspace_fingerprint import (
+        compare_workspace_packages,
+    )
+
+    errors.extend(
+        f"内部包内容与源码不一致：{item}"
+        for item in compare_workspace_packages()
+    )
     return errors
 
 

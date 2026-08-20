@@ -15,11 +15,21 @@ def main() -> int:
     """打印实际加载位置并校验重新索引跟踪链路。"""
     asset_source = inspect.getsource(KmAssetService.reindex_asset)
     worker_source = inspect.getsource(KmAssetWorker._kc_status_sync)
-    status_source = inspect.getsource(
-        KnowledgeCoreStatusService.get_discovery_reindex_operation
+    status_method = getattr(
+        KnowledgeCoreStatusService,
+        "get_discovery_reindex_operation",
+        None,
     )
-    client_source = inspect.getsource(
-        KnowledgeCoreClient.get_reindex_discovery_status
+    client_method = getattr(
+        KnowledgeCoreClient,
+        "get_reindex_discovery_status",
+        None,
+    )
+    status_source = (
+        inspect.getsource(status_method) if status_method is not None else ""
+    )
+    client_source = (
+        inspect.getsource(client_method) if client_method is not None else ""
     )
     route_paths = {
         route.path

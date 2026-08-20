@@ -20,10 +20,12 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "db/apply_oracle_schema.py",
                 "db/sync_prompt_catalog.py",
                 "deployment/check_deployment.py",
+                "deployment/ensure_workspace_packages.py",
                 "deployment/init_local_env.py",
                 "deployment/models/download_colqwen_model.py",
                 "deployment/models/download_easyocr_model.py",
                 "deployment/models/download_qwen_model.py",
+                "deployment/workspace_fingerprint.py",
                 "release/verify_release.py",
             },
             entries,
@@ -65,6 +67,17 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         startup = (ROOT / "start_kbot.sh").read_text(encoding="utf-8")
         self.assertIn("当前 Conda 环境缺少 KBot 内部包", startup)
         self.assertIn("scripts/deployment/install_workspace.sh", startup)
+        self.assertIn(
+            "scripts/deployment/ensure_workspace_packages.py", startup
+        )
+        self.assertIn("KBOT_AUTO_INSTALL_PACKAGES", (
+            SCRIPTS_ROOT
+            / "deployment"
+            / "ensure_workspace_packages.py"
+        ).read_text(encoding="utf-8"))
+        self.assertTrue(
+            (SCRIPTS_ROOT / "deployment" / "run_service.sh").is_file()
+        )
         self.assertIn("--check-foundation", startup)
         self.assertIn("--foundation-only", startup)
         self.assertIn('FOUNDATION_CHECK_STATUS" -eq 0', startup)

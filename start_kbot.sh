@@ -53,6 +53,27 @@ if ! conda activate "$KBOT_CONDA_ENV"; then
 fi
 echo "使用 Conda 环境：${KBOT_CONDA_ENV}（$(command -v python)）"
 
+# 启动前先以内容指纹校验内部包。版本号相同但 Wheel 内容落后时，
+# 在跨进程锁内自动更新；更新失败则不允许服务继续加载混合版本。
+KBOT_CONFIG_FILE="${KBOT_CONFIG_FILE:-configuration/kbot.toml}"
+if [ ! -f "$KBOT_CONFIG_FILE" ]; then
+    echo "❌ 未找到部署配置：${KBOT_CONFIG_FILE}"
+    echo "   请先复制 configuration/kbot.toml.example 并按环境修改。"
+    exit 1
+fi
+export KBOT_CONFIG_FILE
+CONFIG_ENVIRONMENT=$(python -c 'import sys; exec("try:\n import tomllib as toml\nexcept ImportError:\n import tomli as toml"); print(toml.load(open(sys.argv[1], "rb")).get("environment", "development"))' "$KBOT_CONFIG_FILE")
+PACKAGE_INSTALL_MODE="${KBOT_INSTALL_MODE:-$CONFIG_ENVIRONMENT}"
+case "${PACKAGE_INSTALL_MODE,,}" in
+    production) PACKAGE_INSTALL_MODE="production" ;;
+    *) PACKAGE_INSTALL_MODE="development" ;;
+esac
+if ! python scripts/deployment/ensure_workspace_packages.py \
+    --mode "$PACKAGE_INSTALL_MODE"; then
+    echo "❌ 内部包与源码不一致且自动更新失败，未启动任何服务。"
+    exit 1
+fi
+
 # 安装与启动必须使用同一个解释器，避免内部包被装入 base 或其他 Conda 环境。
 if ! python -c '
 import agent_runtime
@@ -81,18 +102,10 @@ export KBOT_LOG_CONSOLE="false"
 export KBOT_RESOURCE_DIR="${KBOT_RESOURCE_DIR:-${SERVICE_ROOT}/resources}"
 
 # 启动脚本与各服务读取同一份部署配置。
-KBOT_CONFIG_FILE="${KBOT_CONFIG_FILE:-configuration/kbot.toml}"
-if [ ! -f "$KBOT_CONFIG_FILE" ]; then
-    echo "❌ 未找到部署配置：${KBOT_CONFIG_FILE}"
-    echo "   请先复制 configuration/kbot.toml.example 并按环境修改。"
-    exit 1
-fi
-export KBOT_CONFIG_FILE
 if ! python scripts/deployment/check_deployment.py; then
     echo "❌ 部署配置校验失败，未启动任何服务。"
     exit 1
 fi
-CONFIG_ENVIRONMENT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("environment", "development"))' "$KBOT_CONFIG_FILE")
 CONFIG_LOG_ROOT=$(python -c 'import sys, tomli; print(tomli.load(open(sys.argv[1], "rb")).get("log_dir", "./logs"))' "$KBOT_CONFIG_FILE")
 
 LOG_ROOT="$CONFIG_LOG_ROOT"

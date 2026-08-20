@@ -8,6 +8,8 @@
 - `scripts/db/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%` 表和视图，仅用于确认不保留数据的开发 Schema。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
 - `scripts/deployment/install_workspace.sh`：开发环境安装第三方依赖和内部 editable package；生产环境构建并安装 Wheel。
+- `scripts/deployment/ensure_workspace_packages.py`：启动前比较源码与已安装内部包内容指纹，不一致时加锁自动更新。
+- `scripts/deployment/run_service.sh`：正式编排的单服务启动入口，完成包预检后执行指定 Python 模块。
 - `scripts/deployment/bootstrap_kbot.sh`：空白环境一键安装、配置检查、建表和系统种子初始化；发现已有 KBot 对象时停止。
 - `scripts/deployment/models/`：按需下载本地 OCR、Tokenizer、VLM 或视觉模型。
 - `scripts/release/verify_release.py`：编排发布前检查、实库验收并生成发布证据。
