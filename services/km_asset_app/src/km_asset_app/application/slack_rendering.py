@@ -274,7 +274,10 @@ def _is_truncated_reply(
     references_exceeded = (
         _used_document_reference_count(payload) > config.max_references
     )
-    return query_truncated or references_exceeded
+    query_assets_exceeded = (
+        len(_query_asset_rows(payload)) > config.max_references
+    )
+    return query_truncated or references_exceeded or query_assets_exceeded
 
 
 def _visible_asset_titles(payload: dict[str, Any]) -> list[str]:
@@ -599,19 +602,49 @@ def _table_answer_intro(answer: str) -> str | None:
 def _query_asset_table_blocks(
     payload: dict[str, Any],
     answer: str,
+    *,
+    limit: int,
 ) -> list[dict[str, Any]]:
-    """将 Asset 表格转换为 Slack 可读的编号字段列表。"""
-    intro = _table_answer_intro(answer)
-    if intro is None:
-        return []
+    """将 Asset 问数结果转换为 Slack 可读的编号字段列表。"""
     rows = _query_asset_rows(payload)
     if not rows:
         return []
+    intro = _table_answer_intro(answer)
+    if intro is None:
+        normalized_answer = html.unescape(answer).casefold()
+        all_titles_present = all(
+            row["asset_title"].casefold() in normalized_answer
+            for row in rows
+        )
+        if len(rows) <= limit and all_titles_present:
+            return []
+        answer_lines = answer.replace("\r\n", "\n").replace(
+            "\r", "\n"
+        ).splitlines()
+        first_asset_line = next(
+            (
+                index
+                for index, line in enumerate(answer_lines)
+                if any(
+                    row["asset_title"].casefold()
+                    in html.unescape(line).casefold()
+                    for row in rows
+                )
+            ),
+            None,
+        )
+        intro = _without_completion_boilerplate(
+            "\n".join(
+                answer_lines
+                if first_asset_line is None
+                else answer_lines[:first_asset_line]
+            )
+        )
     blocks: list[dict[str, Any]] = []
     safe_intro = _to_slack_mrkdwn(intro)
     if safe_intro:
         blocks.extend(_text_sections(safe_intro))
-    for index, row in enumerate(rows, start=1):
+    for index, row in enumerate(rows[:limit], start=1):
         title = re.sub(
             r"\s+",
             " ",
@@ -844,7 +877,11 @@ def render_slack_reply(
         status = answer_payload.get("status")
         blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
     query_asset_blocks = (
-        _query_asset_table_blocks(answer_payload, answer)
+        _query_asset_table_blocks(
+            answer_payload,
+            answer,
+            limit=reply_config.max_references,
+        )
         if valid_envelope
         else []
     )

@@ -1453,6 +1453,118 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("*Solution Briefing:*", rendered)
         self.assertNotIn("KM Link", rendered)
 
+    def test_query_summary_appends_structured_asset_details(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "The user madhumitha.k@oracle.com has 1 asset "
+                    "associated with their account."
+                ),
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [{
+                    "reference_type": "QUERY_RESULT",
+                    "citation_label": "Q1",
+                }],
+                "query_results": [{
+                    "schema": "QUERY_RESULT.v1",
+                    "truncated": False,
+                    "rows": [{
+                        "ASSET_ID": "4996DC40D76BE6F8E0630D427364C968",
+                        "ASSET_TITLE": (
+                            "Selecting Insurance Plans with an Apex AI Agent"
+                        ),
+                        "AUTHOR_MAIL": "madhumitha.k@oracle.com",
+                        "ASSET_PRODUCT": (
+                            "Data Management -> Application Express (Apex)"
+                        ),
+                        "ASSET_SOLUTION": "Oracle ChatBot",
+                        "ASSET_STATUS": "Published",
+                        "INGESTION_STATUS": "READY",
+                        "ASSET_DATE_VALUE": "2026-08-18",
+                    }],
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=5),
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("has 1 asset associated", rendered)
+        self.assertIn(
+            "*1. Selecting Insurance Plans with an Apex AI Agent*",
+            rendered,
+        )
+        self.assertIn(
+            "<mailto:madhumitha.k@oracle.com|madhumitha.k@oracle.com>",
+            rendered,
+        )
+        self.assertIn("*Solution:* Oracle ChatBot", rendered)
+        self.assertIn("*Asset Status:* Published", rendered)
+        self.assertIn("*Asset Date:* 2026-08-18", rendered)
+        self.assertNotIn("4996DC40D76BE6F8E0630D427364C968", rendered)
+        self.assertNotIn("*Asset Title:*", rendered)
+        self.assertNotIn("KM Link", rendered)
+
+    def test_query_asset_details_are_limited_and_marked_truncated(self):
+        rows = [
+            {
+                "ASSET_ID": f"ASSET-{index}",
+                "ASSET_TITLE": f"Asset {index}",
+                "AUTHOR_MAIL": f"author{index}@example.com",
+                "ASSET_SOLUTION": "AI",
+            }
+            for index in range(1, 4)
+        ]
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "The query returned 3 assets.",
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [{
+                    "reference_type": "QUERY_RESULT",
+                    "citation_label": "Q1",
+                }],
+                "query_results": [{
+                    "schema": "QUERY_RESULT.v1",
+                    "truncated": False,
+                    "rows": rows,
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=2),
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("*1. Asset 1*", rendered)
+        self.assertIn("*2. Asset 2*", rendered)
+        self.assertNotIn("Asset 3", rendered)
+        self.assertIn("结果超过上限，当前仅展示部分内容", rendered)
+
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
             channel_id="C1",

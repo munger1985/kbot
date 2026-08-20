@@ -93,9 +93,9 @@ username = "kbot"
 # slack_reply_dump_enabled = false
 # slack_reply_dump_dir = "/tmp/slackmess"
 
-# Slack 中 Asset问答助手的最终回复展示策略。非 READY 状态始终显示；实际使用的
-# DOCUMENT 引用超过 max_references 时显示统一截断提示；Asset 回复使用
-# km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
+# Slack 中 Asset问答助手的最终回复展示策略。非 READY 状态始终显示；无文档问数
+# 最多展示 max_references 个 Asset，或 DOCUMENT 引用超过该值时显示统一截断提示；
+# Asset 回复使用 km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
 # [integrations.slack.reply]
 # assistant_name = "Asset问答助手"
 # max_references = 5

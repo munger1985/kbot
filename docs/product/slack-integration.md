@@ -58,8 +58,9 @@ Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 
 `km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
 `km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
 编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
-`max_references` 不截断 Slack Asset Template，也不会触发旧“参考资料”回退；当
-本次实际使用的 DOCUMENT 引用数超过该值时，Slack 将本次结果标记为截断并显示
+`max_references` 不截断 DOCUMENT Slack Asset Template，也不会触发旧“参考资料”
+回退；无 DOCUMENT 的问数结果最多展示该数量的唯一 Asset。当问数 Asset 行或本次
+实际使用的 DOCUMENT 引用数超过该值时，Slack 将本次结果标记为截断并显示
 “结果超过上限，当前仅展示部分内容”。`show_query_result_summary` 仅为旧参考资料
 展示配置保留。
 
@@ -150,6 +151,9 @@ Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮
 当实际使用的 DOCUMENT 引用数超过 `max_references`，或结构化 QueryResult 的
 `truncated=true` 时，Slack 均强制显示统一截断提示；该提示不受普通警告展示开关
 影响，也不会修改原始 GroundedAnswer Artifact。
+无 DOCUMENT 的 Asset 问数若模型正文只返回数量摘要或未完整列出结果标题，Slack
+直接按 QueryResult 行顺序补充编号 Asset 字段；展示数量受 `max_references` 限制，
+超出的行不展示并触发同一截断提示。该路径不生成 Asset Template。
 
 Knowledge Core 的检索实现、模型或候选顺序调整不作为 Slack Template 的
 展示顺序。Slack 按 `payload.answer` 中引用首次出现的顺序恢复文档，
