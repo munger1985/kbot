@@ -1433,7 +1433,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                     "asset_title": "Claim Prediction Architecture",
                     "solution_briefing": "Real-time insights",
                     "author_mail": "AUTHOR@example.com",
-                    "create_time": "2026-08-17",
+                    "create_time": "2026-08-17T19:50:11Z",
                 }
             ],
         )

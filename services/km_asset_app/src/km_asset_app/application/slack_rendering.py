@@ -534,6 +534,13 @@ def _query_asset_table_blocks(
     return blocks
 
 
+def _template_date(value: object) -> str:
+    """Slack Template 只展示 ISO 时间值中的日期部分。"""
+    text = re.sub(r"\s+", " ", _escape_mrkdwn(value)).strip()
+    matched = re.match(r"^(\d{4}-\d{2}-\d{2})(?:[Tt ]|$)", text)
+    return matched.group(1) if matched else text
+
+
 def _asset_blocks(
     asset_cards: list[dict[str, str]],
     config: SlackReplyConfig,
@@ -547,9 +554,7 @@ def _asset_blocks(
         ).strip()
         briefing = _to_slack_mrkdwn(card.get("solution_briefing"))
         author_mail = str(card.get("author_mail") or "").strip().lower()
-        create_time = re.sub(
-            r"\s+", " ", _escape_mrkdwn(card.get("create_time"))
-        ).strip()
+        create_time = _template_date(card.get("create_time"))
         asset_id = str(card.get("asset_id") or "").strip()
         if title:
             blocks.append(
