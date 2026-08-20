@@ -153,6 +153,8 @@ Template，且顺序与正文一致；不再应用 `max_references` 截断。完
 缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 KM Link。整个过程不修改
 `payload.answer`。回答原文保留，每个 Template 由分隔线、Asset Title、Solution
 Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。
+Template 展示层会将 Asset Title 和 Solution Briefing 元数据中的 OOXML
+`_x000D_` 回车标记还原为正常换行；不修改 KBot Artifact、Manifest 或调试报文。
 当实际使用的 DOCUMENT 引用数超过 `max_references`，或结构化 QueryResult 的
 `truncated=true` 时，Slack 均强制显示统一截断提示；该提示不受普通警告展示开关
 影响，也不会修改原始 GroundedAnswer Artifact。

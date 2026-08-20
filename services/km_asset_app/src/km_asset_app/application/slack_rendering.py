@@ -72,6 +72,10 @@ _QUERY_COMPLETION_LINE_PATTERN = re.compile(
     r"(?:\[[A-Za-z]\d+\])?\s*$",
     re.IGNORECASE,
 )
+_OOXML_CARRIAGE_RETURN_PATTERN = re.compile(
+    r"_x000d_[ \t]*(?:\r?\n)?",
+    re.IGNORECASE,
+)
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
 _TRUNCATION_NOTICE = "结果超过上限，当前仅展示部分内容"
@@ -686,6 +690,13 @@ def _template_date(value: object) -> str:
     return matched.group(1) if matched else text
 
 
+def _template_source_text(value: object) -> str:
+    """将资产元数据中的 OOXML 回车标记还原为换行。"""
+    if not isinstance(value, str):
+        return ""
+    return _OOXML_CARRIAGE_RETURN_PATTERN.sub("\n", value)
+
+
 def _asset_blocks(
     asset_cards: list[dict[str, str]],
     config: SlackReplyConfig,
@@ -695,9 +706,15 @@ def _asset_blocks(
     for card in asset_cards:
         blocks.append({"type": "divider"})
         title = re.sub(
-            r"\s+", " ", _to_slack_mrkdwn(card.get("asset_title"))
+            r"\s+",
+            " ",
+            _to_slack_mrkdwn(
+                _template_source_text(card.get("asset_title"))
+            ),
         ).strip()
-        briefing = _to_slack_mrkdwn(card.get("solution_briefing"))
+        briefing = _to_slack_mrkdwn(
+            _template_source_text(card.get("solution_briefing"))
+        )
         author_mail = str(card.get("author_mail") or "").strip().lower()
         create_time = _template_date(card.get("create_time"))
         asset_id = str(card.get("asset_id") or "").strip()

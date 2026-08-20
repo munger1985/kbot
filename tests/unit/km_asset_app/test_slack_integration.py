@@ -1706,6 +1706,47 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("Query Asset Must Not Override", rendered)
         self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
 
+    def test_template_replaces_ooxml_carriage_return_marker(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "• **Credit Card Asset**: Details. [C1]",
+                "status": "READY",
+                "used_citation_labels": ["C1"],
+                "references": [{
+                    "reference_type": "DOCUMENT",
+                    "citation_label": "C1",
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=5),
+                    asset_cards=[{
+                        "asset_id": "CREDIT-CARD",
+                        "asset_title": "Credit Card Asset",
+                        "solution_briefing": (
+                            "Two demo flows._x000D_\n"
+                            "1) New customer._X000D_2) Existing customer."
+                        ),
+                    }],
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertNotIn("_x000D_", rendered)
+        self.assertNotIn("_X000D_", rendered)
+        self.assertIn(r"Two demo flows.\n1) New customer.", rendered)
+        self.assertIn(r"\n2) Existing customer.", rendered)
+
     def test_renders_latest_grounded_answer_without_internal_details(self):
         payload = render_slack_reply(
             channel_id="C1",
