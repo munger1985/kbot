@@ -372,9 +372,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], cards)
 
-    async def test_query_result_assets_ignore_group_headings_and_keep_answer_order(
-        self,
-    ):
+    async def test_query_result_without_document_does_not_build_templates(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
@@ -438,14 +436,9 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             limit=10,
         )
 
-        self.assertEqual(
-            ["Asset B", "Asset A"],
-            [card["asset_title"] for card in cards],
-        )
-        self.assertEqual("ASSET/B", cards[0]["asset_id"])
-        self.assertEqual("Asset B Briefing", cards[0]["solution_briefing"])
+        self.assertEqual([], cards)
 
-    async def test_query_result_title_is_enriched_from_local_asset(self):
+    async def test_query_result_without_document_skips_local_enrichment(self):
         row = SimpleNamespace(
             km_asset_id=UUID("01900000-0000-7000-8000-000000000601"),
             external_asset_id="ASSET/LOCAL",
@@ -497,14 +490,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=Uow,
         )
 
-        self.assertEqual(
-            {
-                "asset_id": "ASSET/LOCAL",
-                "asset_title": "Local Asset",
-                "solution_briefing": "Local Asset Briefing",
-            },
-            cards[0],
-        )
+        self.assertEqual([], cards)
 
     async def test_table_answer_does_not_build_asset_templates(self):
         artifact = {
@@ -1111,6 +1097,136 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
+    def test_query_only_field_list_renders_without_asset_template(self):
+        answer = (
+            "The query returned 1 asset authored by "
+            "madhumitha.k@oracle.com:\n\n"
+            "**Title:** Selecting Insurance Plans with an Apex AI Agent\n"
+            "**Asset ID:** 4996DC40D76BE6F8E0630D427364C968\n"
+            "**Product:** Data Management -> Application Express (Apex)\n"
+            "**Solution:** Oracle ChatBot\n"
+            "**Asset Status:** Published\n"
+            "**Ingestion Status:** READY\n"
+            "**Asset Date:** 2026-08-18\n"
+            "**Category:** Not specified\n"
+            "**Industry:** Not specified\n"
+            "The result is complete (not truncated). [Q1]"
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": answer,
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                        "query_result_id": (
+                            "01900000-0000-7000-8000-000000000701"
+                        ),
+                    }
+                ],
+                "query_results": [
+                    {
+                        "schema": "QUERY_RESULT.v1",
+                        "rows": [
+                            {
+                                "ASSET_ID": (
+                                    "4996DC40D76BE6F8E0630D427364C968"
+                                ),
+                                "ASSET_TITLE": (
+                                    "Selecting Insurance Plans with an "
+                                    "Apex AI Agent"
+                                ),
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+
+        payload = slack_visible_payload(
+            render_slack_reply(
+                channel_id="C1",
+                user_id="U1",
+                thread_ts="1.001",
+                artifact=artifact,
+                reply_config=SlackReplyConfig(
+                    km_portal_base_url="https://km.example.com/assets/"
+                ),
+                # 即使调用方误传卡片，无文档回答也只能显示无 Template 正文。
+                asset_cards=[
+                    {
+                        "asset_id": "SHOULD-NOT-RENDER",
+                        "asset_title": "Should Not Render",
+                        "solution_briefing": "Should Not Render",
+                    }
+                ],
+            )
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+
+        self.assertIn(
+            "*Title:* Selecting Insurance Plans with an Apex AI Agent",
+            rendered,
+        )
+        self.assertIn(
+            "*Product:* Data Management -&gt; Application Express (Apex)",
+            rendered,
+        )
+        self.assertIn("*Solution:* Oracle ChatBot", rendered)
+        self.assertIn("*Asset Status:* Published", rendered)
+        self.assertIn("*Ingestion Status:* READY", rendered)
+        self.assertIn("*Asset Date:* 2026-08-18", rendered)
+        self.assertIn("*Category:* Not specified", rendered)
+        self.assertIn("*Industry:* Not specified", rendered)
+        self.assertNotIn("Asset ID", rendered)
+        self.assertNotIn("4996DC40D76BE6F8E0630D427364C968", rendered)
+        self.assertNotIn("complete (not truncated)", rendered)
+        self.assertNotIn("[Q1]", rendered)
+        self.assertNotIn("*Asset Title:*", rendered)
+        self.assertNotIn("*Solution Briefing:*", rendered)
+        self.assertNotIn("KM Link", rendered)
+        self.assertNotIn("参考资料", rendered)
+
+    def test_query_only_completion_suffix_is_removed_from_intro(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "The query returned 1 asset, and the results are "
+                    "complete (not truncated). [Q1]\n\n"
+                    "**Title:** Asset A"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                    }
+                ],
+            },
+        }
+
+        payload = slack_visible_payload(
+            render_slack_reply(
+                channel_id="C1",
+                user_id="U1",
+                thread_ts="1.001",
+                artifact=artifact,
+                reply_config=SlackReplyConfig(),
+            )
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+
+        self.assertIn("The query returned 1 asset", rendered)
+        self.assertIn("*Title:* Asset A", rendered)
+        self.assertNotIn("complete (not truncated)", rendered)
+
     def test_asset_query_table_renders_as_numbered_field_sections(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
@@ -1475,10 +1591,15 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                 "artifact_type": "GROUNDED_ANSWER",
                 "schema_version": "GroundedAnswer.v1",
                 "payload": {
-                    "answer": "**Asset A**: A details.",
+                    "answer": "**Asset A**: A details. [C1]",
                     "status": "READY",
-                    "used_citation_labels": [],
-                    "references": [],
+                    "used_citation_labels": ["C1"],
+                    "references": [
+                        {
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "C1",
+                        }
+                    ],
                 },
             },
             reply_config=SlackReplyConfig(
@@ -1521,8 +1642,13 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                         for index in range(1, 16)
                     ),
                     "status": "READY",
-                    "used_citation_labels": [],
-                    "references": [],
+                    "used_citation_labels": ["C1"],
+                    "references": [
+                        {
+                            "reference_type": "DOCUMENT",
+                            "citation_label": "C1",
+                        }
+                    ],
                 },
             },
             reply_config=SlackReplyConfig(

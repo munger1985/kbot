@@ -841,6 +841,11 @@ async def assemble_slack_asset_cards(
     # 表格型问数回答只展示格式化正文，不生成 Asset Template。
     if _is_asset_table_answer(answer):
         return []
+    references = _used_document_references(payload)
+    # 未实际使用 DOCUMENT/Markdown 附件时，回答只能按无 Template 正文展示。
+    # QueryResult 和模型正文都不得被当作 Asset 元数据补齐来源。
+    if not references:
+        return []
     answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
     sections = _answer_asset_sections(answer)
     query_cards = _query_result_asset_cards(payload)
@@ -863,7 +868,6 @@ async def assemble_slack_asset_cards(
             expected_count=len(answer_cards),
         )
         return result
-    references = _used_document_references(payload)
     local_by_revision: dict[str, dict[str, str]] = {}
     local_cards: list[dict[str, str]] = []
     if uow_factory is not None:

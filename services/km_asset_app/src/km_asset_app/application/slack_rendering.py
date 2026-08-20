@@ -51,6 +51,16 @@ _VISIBLE_CITATION_PATTERN = re.compile(r"\[[A-Za-z]\d+\]")
 _PUNCTUATION_PATTERN = re.compile(r"[ \t]+(?=[,.;:!?，。；：！？])")
 _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
+_ASSET_ID_FIELD_LINE_PATTERN = re.compile(
+    r"^\s*(?:[-+•]\s*)?(?:\*\*|__|\*)?\s*"
+    r"Asset[ _-]*ID\s*[:：]\s*(?:\*\*|__|\*)?",
+    re.IGNORECASE,
+)
+_QUERY_COMPLETION_SUFFIX_PATTERN = re.compile(
+    r",?\s*(?:and\s+)?the\s+results?\s+(?:is|are)\s+complete\s*"
+    r"\(not\s+truncated\)\.?\s*(?:\[[A-Za-z]\d+\])?\s*$",
+    re.IGNORECASE,
+)
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
 _QUERY_ASSET_TABLE_FIELDS = (
@@ -168,6 +178,42 @@ def _hide_visible_citation_labels(value: str) -> str:
     text = _PUNCTUATION_PATTERN.sub("", text)
     text = _INLINE_SPACE_PATTERN.sub(" ", text)
     text = _TRAILING_SPACE_PATTERN.sub("", text)
+    return text.strip()
+
+
+def _has_used_document_reference(payload: dict[str, Any]) -> bool:
+    """判断本次回答是否实际使用了 DOCUMENT/Markdown 附件。"""
+    references = payload.get("references")
+    labels = payload.get("used_citation_labels")
+    if not isinstance(references, (list, tuple)) or not isinstance(
+        labels, (list, tuple)
+    ):
+        return False
+    used_labels = {
+        str(value).strip() for value in labels if str(value).strip()
+    }
+    return any(
+        isinstance(reference, dict)
+        and str(reference.get("reference_type") or "").upper()
+        == "DOCUMENT"
+        and str(reference.get("citation_label") or "").strip()
+        in used_labels
+        for reference in references
+    )
+
+
+def _query_only_visible_answer(answer: str) -> str:
+    """清理无文档问数回答中不应展示的内部字段和完成性套话。"""
+    lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    visible_lines: list[str] = []
+    for line in lines:
+        if _ASSET_ID_FIELD_LINE_PATTERN.match(line):
+            continue
+        cleaned = _QUERY_COMPLETION_SUFFIX_PATTERN.sub("", line).rstrip()
+        if cleaned or not line.strip():
+            visible_lines.append(cleaned)
+    text = "\n".join(visible_lines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
@@ -704,7 +750,13 @@ def render_slack_reply(
     )
     if not answer:
         answer = _EMPTY_ANSWER
-    safe_answer = _to_slack_mrkdwn(answer)
+    display_answer = (
+        answer
+        if not valid_envelope
+        or _has_used_document_reference(answer_payload)
+        else _query_only_visible_answer(answer)
+    )
+    safe_answer = _to_slack_mrkdwn(display_answer)
     blocks: list[dict[str, Any]] = [
         {
             "type": "context",
@@ -730,7 +782,9 @@ def render_slack_reply(
         # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
         # 表格型问数结果暂时只展示格式化正文，不追加 Asset Template。
-        if not query_asset_blocks:
+        if not query_asset_blocks and _has_used_document_reference(
+            answer_payload
+        ):
             blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(_warning_blocks(answer_payload, reply_config))
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
