@@ -1117,9 +1117,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             "schema_version": "GroundedAnswer.v1",
             "payload": {
                 "answer": (
-                    "Here are all assets created since 01/01/2026. "
-                    "The query returned 2 assets, and the results are complete "
-                    "(not truncated).\n\n"
+                    "Here are all assets created since 01/01/2026.\n\n"
                     "| # | Title | Author | Product | Solution | "
                     "Industry | Asset Status | Ingestion Status | Asset Date |\n"
                     "|---|---|---|---|---|---|---|---|---|\n"
@@ -1189,8 +1187,6 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*Ingestion Status:* FAILED", rendered)
         self.assertNotIn("| # | Title |", rendered)
         self.assertNotIn("| 1 | Asset B", rendered)
-        self.assertNotIn("and the results are complete", rendered)
-        self.assertIn("The query returned 2 assets.", rendered)
         self.assertNotIn("*Asset Title:*", rendered)
         self.assertNotIn("*Solution Briefing:*", rendered)
         self.assertNotIn("KM Link", rendered)

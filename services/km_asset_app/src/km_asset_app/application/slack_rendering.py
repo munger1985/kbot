@@ -53,10 +53,6 @@ _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
-_TABLE_COMPLETION_PHRASE_PATTERN = re.compile(
-    r",?\s*and the results are complete\s*\(not truncated\)\s*\.",
-    re.IGNORECASE,
-)
 _QUERY_ASSET_TABLE_FIELDS = (
     ("Author", ("author_mail", "author", "author_mail_norm")),
     ("Product", ("asset_product", "product")),
@@ -490,9 +486,7 @@ def _table_answer_intro(answer: str) -> str | None:
             or len(asset_columns & columns) >= 2
         )
         if has_title and has_asset_shape:
-            intro = "\n".join(lines[:index]).strip()
-            intro = _TABLE_COMPLETION_PHRASE_PATTERN.sub(".", intro)
-            return re.sub(r"\.{2,}", ".", intro).strip()
+            return "\n".join(lines[:index]).strip()
     return None
 
 
