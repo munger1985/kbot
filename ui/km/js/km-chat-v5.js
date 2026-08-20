@@ -4,6 +4,8 @@
   const base = "/api/v1/apps/km-asset";
   const $ = (id) => document.getElementById(id);
   let agents = [], conversations = [], active = null, currentPreview = null;
+  const runResults = new Map();
+  const citationPattern = /\[((?:Q|C)\d+)\]/g;
 
   function activeAgentId() { return $("chat-agent").value; }
   function agentName(id) { return agents.find((row) => String(row.agent_id) === String(id))?.display_name || KBotKmShell.shortId(id); }
@@ -12,6 +14,40 @@
     if (typeof value === "string") return value;
     if (!value || typeof value !== "object") return "";
     return String(value.answer ?? value.text ?? value.input ?? value.content ?? "");
+  }
+  function renderAssistantMarkdown(value) {
+    const template = document.createElement("template");
+    template.innerHTML = KBotMarkdown.render(value);
+    const walker = document.createTreeWalker(
+      template.content,
+      NodeFilter.SHOW_TEXT,
+    );
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach((node) => {
+      if (node.parentElement?.closest("code, pre, a, sup")) return;
+      const text = node.textContent || "";
+      citationPattern.lastIndex = 0;
+      if (!citationPattern.test(text)) return;
+      citationPattern.lastIndex = 0;
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      for (const match of text.matchAll(citationPattern)) {
+        fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+        const marker = document.createElement("button");
+        marker.type = "button";
+        marker.className = "km-citation-marker";
+        marker.textContent = match[1];
+        marker.title = `引用 ${match[1]}`;
+        marker.setAttribute("aria-label", `引用 ${match[1]}`);
+        marker.dataset.citationLabel = match[1];
+        fragment.append(marker);
+        cursor = match.index + match[0].length;
+      }
+      fragment.append(document.createTextNode(text.slice(cursor)));
+      node.replaceWith(fragment);
+    });
+    return template.innerHTML;
   }
 
   async function initialize() {
@@ -82,9 +118,9 @@
   }
   function messageMarkup(role, label, text, runId) {
     const content = role === "assistant"
-      ? KBotMarkdown.render(text)
+      ? renderAssistantMarkdown(text)
       : KBotKmShell.escapeHtml(text);
-    return `<div class="km-message ${role}"><div class="meta">${KBotKmShell.escapeHtml(label)}</div><div class="content">${content}</div>${runId ? `<div data-references-for="${KBotKmShell.escapeHtml(runId)}"></div>` : ""}</div>`;
+    return `<div class="km-message ${role}"${runId ? ` data-run-id="${KBotKmShell.escapeHtml(runId)}"` : ""}><div class="meta">${KBotKmShell.escapeHtml(label)}</div><div class="content">${content}</div>${runId ? `<div data-references-for="${KBotKmShell.escapeHtml(runId)}"></div>` : ""}</div>`;
   }
   function appendPending(input) {
     const stream = $("chat-stream");
@@ -112,7 +148,7 @@
     const eventType = item.type || data.event_type || "message";
     if (eventType === "answer.delta") {
       pending.markdown += String(payload.delta || "");
-      pending.content.innerHTML = KBotMarkdown.render(pending.markdown);
+      pending.content.innerHTML = renderAssistantMarkdown(pending.markdown);
       pending.message.setAttribute("aria-busy", "false");
       $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
       return;
@@ -167,7 +203,7 @@
         const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
         if (!pending.markdown) {
           pending.markdown = String(result?.payload?.answer || "");
-          pending.content.innerHTML = KBotMarkdown.render(pending.markdown);
+          pending.content.innerHTML = renderAssistantMarkdown(pending.markdown);
         }
         pending.message.setAttribute("aria-busy", "false");
         await refreshActive();
@@ -180,6 +216,7 @@
   }
   async function refreshActive() { if (active) active = await KBotKmApi.request(`${base}/conversations/${active.conversation_id}`); }
   function renderReferences(runId, result) {
+    runResults.set(String(runId), result);
     const refs = Array.isArray(result?.payload?.references) ? result.payload.references.filter((row) => row.reference_type === "DOCUMENT") : [];
     const host = Array.from(document.querySelectorAll("[data-references-for]"))
       .find((node) => node.dataset.referencesFor === String(runId));
@@ -187,12 +224,72 @@
     host.innerHTML = refs.map((row, index) => `<button class="km-reference" data-run="${KBotKmShell.escapeHtml(runId)}" data-reference="${index}">${KBotKmShell.escapeHtml(row.citation_label || `[${index + 1}]`)} · ${KBotKmShell.escapeHtml(row.title || "引用文档")}</button>`).join("");
     host._references = refs;
   }
-  async function prepareReference(button) {
-    const host = button.parentElement; const reference = host._references?.[Number(button.dataset.reference)]; if (!reference) return;
+  async function prepareDocumentReference(runId, reference) {
+    if (!reference) return;
     try {
-      const preview = await KBotKmApi.request(`${base}/runs/${encodeURIComponent(button.dataset.run)}/references/${encodeURIComponent(reference.citation_label)}/preview`);
-      currentPreview = preview; $("reference-title").textContent = preview.title || reference.title || "引用文档"; $("reference-meta").textContent = `${preview.mime_type} · ${preview.page_no ? `第 ${preview.page_no}${preview.page_end && preview.page_end !== preview.page_no ? `–${preview.page_end}` : ""} 页` : "未指定页码"}`; KBotKmShell.openDialog("reference-dialog");
+      const preview = await KBotKmApi.request(`${base}/runs/${encodeURIComponent(runId)}/references/${encodeURIComponent(reference.citation_label)}/preview`);
+      currentPreview = preview;
+      $("reference-title").textContent = preview.title || reference.title || "引用文档";
+      $("reference-meta").textContent = `${preview.mime_type} · ${preview.page_no ? `第 ${preview.page_no}${preview.page_end && preview.page_end !== preview.page_no ? `–${preview.page_end}` : ""} 页` : "未指定页码"}`;
+      $("reference-description").textContent = "浏览器将打开原始文档；PDF 会定位到引用页码。";
+      $("reference-query-preview").hidden = true;
+      $("reference-query-preview").replaceChildren();
+      $("open-reference").hidden = false;
+      KBotKmShell.openDialog("reference-dialog");
     } catch (error) { KBotKmShell.showError(error, "引用描述读取失败"); }
+  }
+  function queryResultForReference(result, reference) {
+    const queryResults = Array.isArray(result?.payload?.query_results) ? result.payload.query_results : [];
+    return queryResults.find((row) => String(row?.query_result_id || "") === String(reference?.query_result_id || "")) || queryResults[0] || null;
+  }
+  function showQueryReference(reference, queryResult) {
+    currentPreview = null;
+    const rows = Array.isArray(queryResult?.rows) ? queryResult.rows.slice(0, 20) : [];
+    const totalRows = Number(reference.row_count ?? queryResult?.row_count ?? rows.length);
+    const rowSummary = totalRows > rows.length ? `共 ${totalRows} 行 · 展示 ${rows.length} 行` : `${totalRows} 行`;
+    $("reference-title").textContent = `问数依据 · ${reference.citation_label || "Q"}`;
+    $("reference-meta").textContent = `${reference.provider || queryResult?.provider || "DATA QUERY"} · ${rowSummary}`;
+    $("reference-description").textContent = "以下为本次回答使用的结构化查询结果。";
+    $("open-reference").hidden = true;
+    const host = $("reference-query-preview");
+    host.replaceChildren();
+    const hiddenFields = new Set(["asset_id", "bundle_id", "bundle_revision_id"]);
+    const fields = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))))
+      .filter((field) => !hiddenFields.has(String(field).toLowerCase()));
+    if (!rows.length || !fields.length) {
+      const empty = document.createElement("p");
+      empty.className = "km-help";
+      empty.textContent = "该问数依据没有可展示的结果行。";
+      host.append(empty);
+    } else {
+      const table = document.createElement("table");
+      const head = table.createTHead().insertRow();
+      fields.forEach((field) => { const cell = document.createElement("th"); cell.textContent = field; head.append(cell); });
+      const body = table.createTBody();
+      rows.forEach((row) => {
+        const line = body.insertRow();
+        fields.forEach((field) => { const cell = line.insertCell(); const value = row?.[field]; cell.textContent = value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); });
+      });
+      host.append(table);
+    }
+    host.hidden = false;
+    KBotKmShell.openDialog("reference-dialog");
+  }
+  async function prepareCitationMarker(marker) {
+    const message = marker.closest(".km-message[data-run-id]");
+    const runId = String(message?.dataset.runId || "");
+    const result = runResults.get(runId);
+    const label = String(marker.dataset.citationLabel || "");
+    const references = Array.isArray(result?.payload?.references) ? result.payload.references : [];
+    const reference = references.find((row) => String(row?.citation_label || "") === label);
+    if (!runId || !reference) return KBotKmShell.toast("引用依据尚未加载", "error");
+    if (reference.reference_type === "QUERY_RESULT") return showQueryReference(reference, queryResultForReference(result, reference));
+    return prepareDocumentReference(runId, reference);
+  }
+  async function prepareReference(button) {
+    const host = button.parentElement;
+    const reference = host._references?.[Number(button.dataset.reference)];
+    return prepareDocumentReference(button.dataset.run, reference);
   }
   async function openReference() {
     if (!currentPreview?.content_url) return;
@@ -206,6 +303,8 @@
     $("chat-stream").addEventListener("click", (event) => {
       const copyButton = event.target.closest("[data-copy-code]");
       if (copyButton) { KBotMarkdown.copyCode(copyButton); return; }
+      const citationMarker = event.target.closest("[data-citation-label]");
+      if (citationMarker) { prepareCitationMarker(citationMarker); return; }
       const button = event.target.closest("[data-reference]");
       if (button) prepareReference(button);
     }); $("open-reference").addEventListener("click", openReference);

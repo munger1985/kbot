@@ -649,6 +649,39 @@ class ResponseComposerSkill:
             raise ValueError(f"主题 Asset 清单使用未知引用：{sorted(unknown)}")
         if allowed and not labels.intersection(allowed):
             raise ValueError("已有正文证据但清单未使用文档引用")
+        labels_by_bundle = (
+            ResponseComposerSkill._citation_labels_by_bundle(allowed)
+        )
+        title_positions = [
+            answer.index(str(item.get("title") or ""))
+            for item in assets
+        ]
+        if title_positions != sorted(title_positions):
+            raise ValueError("主题 Asset 清单顺序与问数结果不一致")
+        for index, item in enumerate(assets):
+            segment_end = (
+                title_positions[index + 1]
+                if index + 1 < len(title_positions)
+                else len(answer)
+            )
+            segment_labels = set(_CITATION_PATTERN.findall(
+                answer[title_positions[index]:segment_end]
+            )) & allowed.keys()
+            expected_labels = set(labels_by_bundle.get(
+                str(item.get("bundle_id") or "").casefold(), ()
+            ))
+            if expected_labels and not segment_labels.intersection(
+                expected_labels
+            ):
+                raise ValueError(
+                    "Asset 清单缺少对应 Bundle 的正文引用："
+                    f"{item.get('title')}"
+                )
+            if segment_labels - expected_labels:
+                raise ValueError(
+                    "Asset 清单使用了其他 Bundle 的正文引用："
+                    f"{item.get('title')}"
+                )
         if not answer_matches_language(
             answer,
             language,
@@ -662,8 +695,12 @@ class ResponseComposerSkill:
 
     @staticmethod
     def _enumeration_fallback(
-        assets: list[dict[str, Any]], *, language: str
+        assets: list[dict[str, Any]], *, language: str,
+        allowed: dict[str, Any] | None = None,
     ) -> str:
+        labels_by_bundle = ResponseComposerSkill._citation_labels_by_bundle(
+            allowed or {}
+        )
         if not assets:
             return "未找到匹配的 Asset。" if language.startswith("zh") else (
                 "No matching assets were found."
@@ -688,8 +725,29 @@ class ResponseComposerSkill:
                     ) if value
                 )
             suffix = f" — {details}" if details else ""
-            lines.append(f"{index}. **{title}**{suffix} [Q1]")
+            citation_labels = labels_by_bundle.get(
+                str(item.get("bundle_id") or "").casefold(), ()
+            )
+            references = " ".join(
+                ("[Q1]", *(f"[{label}]" for label in citation_labels[:1]))
+            )
+            lines.append(f"{index}. **{title}**{suffix} {references}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _citation_labels_by_bundle(
+        allowed: dict[str, Any],
+    ) -> dict[str, tuple[str, ...]]:
+        """按 Bundle 归并 Citation，确保每个 Asset 只使用自己的正文证据。"""
+        grouped: dict[str, list[str]] = {}
+        for label, citation in allowed.items():
+            bundle_id = str(getattr(citation, "bundle_id", "") or "")
+            if bundle_id:
+                grouped.setdefault(bundle_id.casefold(), []).append(label)
+        return {
+            bundle_id: tuple(labels)
+            for bundle_id, labels in grouped.items()
+        }
 
     @staticmethod
     def _query_result(
@@ -811,7 +869,9 @@ class ResponseComposerSkill:
                             ),
                         })
         if not body:
-            body = self._enumeration_fallback(assets, language=language)
+            body = self._enumeration_fallback(
+                assets, language=language, allowed=allowed
+            )
         answer = f"{prefix}\n\n{body}".strip()
         used_labels = tuple(dict.fromkeys(
             label for label in _CITATION_PATTERN.findall(body)

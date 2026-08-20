@@ -28,4 +28,11 @@
 .km-message.assistant .agent-code-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; color: #d8d2c8; background: #20231f; font: 600 12px/1.5 ui-monospace, monospace; }
 .km-message.assistant .agent-code-toolbar button { padding: 3px 8px; color: inherit; border: 1px solid #5b5e57; background: transparent; }
 .km-message.assistant .agent-code-block pre { margin: 0; border-radius: 0; }
-.km-query-citation { display: inline-block; padding: 1px 5px; color: var(--km-accent-dark); background: #eadbd1; border-radius: 3px; font: 600 11px/1.5 ui-monospace, monospace; }
+.km-citation-marker { position: relative; top: -.12em; margin: 0 0 0 2px; padding: 0; color: var(--km-accent-dark); background: transparent; border: 0; font: 700 .72em/1 Georgia, "Times New Roman", serif; letter-spacing: .01em; vertical-align: super; white-space: nowrap; cursor: pointer; }
+.km-citation-marker:hover,
+.km-citation-marker:focus-visible { color: var(--km-accent); text-decoration: underline; text-underline-offset: 2px; }
+.km-reference-query-preview { max-height: 50vh; overflow: auto; border: 1px solid var(--km-line); border-radius: 4px; }
+.km-reference-query-preview table { width: 100%; border-spacing: 0; border-collapse: collapse; background: #fffdf9; font-size: 12px; }
+.km-reference-query-preview th,
+.km-reference-query-preview td { min-width: 110px; padding: 7px 9px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--km-line); }
+.km-reference-query-preview th { position: sticky; top: 0; background: #eee7dc; }

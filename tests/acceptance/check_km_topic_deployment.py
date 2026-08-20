@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 import platform_core
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
@@ -170,6 +171,25 @@ def main() -> int:
         )
         == "01a013c7-8a43-71fb-9917-276873aac5a6"
     )
+    citation_fallback = ResponseComposerSkill._enumeration_fallback(
+        [{
+            "asset_id": "ASSET-1",
+            "title": "APEX Asset",
+            "bundle_id": "01a013c7-8a43-71fb-9917-276873aac5a6",
+        }],
+        language="en-US",
+        allowed={
+            "C1": SimpleNamespace(
+                bundle_id=(
+                    "01a013c7-8a43-71fb-9917-276873aac5a6"
+                )
+            )
+        },
+    )
+    has_bundle_citation_fallback = (
+        "APEX Asset" in citation_fallback
+        and "[Q1] [C1]" in citation_fallback
+    )
 
     print(f"platform_core = {platform_core.__file__}")
     print(f"prompt_catalog = {DEFAULT_PROMPT_CATALOG}")
@@ -201,6 +221,10 @@ def main() -> int:
         "HAS_ORACLE_RAW_BUNDLE_UUID = "
         f"{has_oracle_raw_bundle_uuid}"
     )
+    print(
+        "HAS_BUNDLE_CITATION_FALLBACK = "
+        f"{has_bundle_citation_fallback}"
+    )
 
     prompts_ok = all(
         active_versions.get(prompt_key) == expected_version
@@ -217,6 +241,7 @@ def main() -> int:
         and has_flexible_enumeration_limit
         and has_serialized_row_guard
         and has_oracle_raw_bundle_uuid
+        and has_bundle_citation_fallback
     ):
         print("KM 主题问数代码加载检查通过")
         return 0

@@ -1468,6 +1468,65 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 language="en-US",
             )
 
+    def test_km_enumeration_fallback_keeps_bundle_citations(self):
+        first_bundle_id = uuid7()
+        second_bundle_id = uuid7()
+        allowed = {
+            "C1": SimpleNamespace(bundle_id=first_bundle_id),
+            "C2": SimpleNamespace(bundle_id=second_bundle_id),
+        }
+        assets = [
+            {
+                "asset_id": "ASSET-1",
+                "title": "First APEX Asset",
+                "bundle_id": str(first_bundle_id),
+            },
+            {
+                "asset_id": "ASSET-2",
+                "title": "Second APEX Asset",
+                "bundle_id": str(second_bundle_id),
+            },
+        ]
+
+        answer = ResponseComposerSkill._enumeration_fallback(
+            assets, language="en-US", allowed=allowed
+        )
+
+        self.assertIn("First APEX Asset** [Q1] [C1]", answer)
+        self.assertIn("Second APEX Asset** [Q1] [C2]", answer)
+        ResponseComposerSkill._validate_enumeration_body(
+            answer,
+            assets=assets,
+            allowed=allowed,
+            language="en-US",
+        )
+
+    def test_km_enumeration_rejects_cross_bundle_citation(self):
+        first_bundle_id = uuid7()
+        second_bundle_id = uuid7()
+        assets = [
+            {
+                "title": "First APEX Asset",
+                "bundle_id": str(first_bundle_id),
+            },
+            {
+                "title": "Second APEX Asset",
+                "bundle_id": str(second_bundle_id),
+            },
+        ]
+        allowed = {
+            "C1": SimpleNamespace(bundle_id=first_bundle_id),
+            "C2": SimpleNamespace(bundle_id=second_bundle_id),
+        }
+
+        with self.assertRaisesRegex(ValueError, "Bundle"):
+            ResponseComposerSkill._validate_enumeration_body(
+                "1. **First APEX Asset** [Q1] [C2]\n"
+                "2. **Second APEX Asset** [Q1] [C1]",
+                assets=assets,
+                allowed=allowed,
+                language="en-US",
+            )
     def test_km_enumeration_can_restore_assets_from_query_rows(self):
         query = QueryResult(
             query_result_id=uuid7(),

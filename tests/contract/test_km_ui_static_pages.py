@@ -156,11 +156,34 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('eventType === "answer.delta"', source)
         self.assertIn('pending.markdown += String(payload.delta || "")', source)
         self.assertIn(
-            "KBotMarkdown.render(pending.markdown)", source
+            "renderAssistantMarkdown(pending.markdown)", source
         )
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260819_2", html)
+        self.assertIn("km-chat-v5.js?v=20260820_1", html)
+
+    def test_km_chat_uses_interactive_paper_style_citations(self):
+        source = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+        ).read_text(encoding="utf-8")
+        styles = (
+            ROOT / "ui" / "km" / "css" / "km-chat-markdown.css"
+        ).read_text(encoding="utf-8")
+        html = (ROOT / "ui" / "km" / "chat.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("renderAssistantMarkdown", source)
+        self.assertIn("document.createTreeWalker", source)
+        self.assertIn('marker.className = "km-citation-marker"', source)
+        self.assertIn("marker.dataset.citationLabel", source)
+        self.assertIn("prepareCitationMarker", source)
+        self.assertIn("showQueryReference", source)
+        self.assertIn("prepareDocumentReference", source)
+        self.assertIn('closest("code, pre, a, sup")', source)
+        self.assertIn(".km-citation-marker", styles)
+        self.assertIn("vertical-align: super", styles)
+        self.assertIn('id="reference-query-preview"', html)
 
     def test_jobs_page_uses_asset_revision_step_tree(self):
         source = (KM_ROOT / "js" / "km-jobs.js").read_text(
@@ -190,7 +213,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         chat = (
             ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("KBotMarkdown.render(text)", chat)
+        self.assertIn("KBotMarkdown.render(value)", chat)
         self.assertIn("escapeHtml(source)", source)
         self.assertIn('target="_blank" rel="noopener noreferrer"', source)
         self.assertNotIn("innerHTML = value", source)
@@ -235,7 +258,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("purifier.sanitize", renderer)
         self.assertIn("overflow-x: auto", styles)
         self.assertIn("border-collapse: separate", styles)
-        self.assertIn("km-chat-markdown.css?v=20260819_2", chat)
+        self.assertIn("km-chat-markdown.css?v=20260820_1", chat)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")
