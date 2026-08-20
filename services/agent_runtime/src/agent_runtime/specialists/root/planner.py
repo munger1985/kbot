@@ -480,6 +480,14 @@ class RootAgentPlanner:
                         "content": (
                             "上一份输出不符合 RouteDecision 契约："
                             f"{last_error}。请只重新输出合法 JSON。"
+                            "必须包含 answer_basis，且只能是 "
+                            "DOCUMENT_CONTENT、SEMANTIC_RELEVANCE_BREADTH、"
+                            "SEMANTIC_RELEVANCE_BALANCED、"
+                            "SEMANTIC_RELEVANCE_AGGREGATE、EXACT_METADATA、"
+                            "UNSCOPED_AGGREGATE 或 AMBIGUOUS。"
+                            "主题相关 Asset 的计数或统计必须使用 "
+                            "SEMANTIC_RELEVANCE_AGGREGATE、DATA_QUERY 和 "
+                            "BALANCED。"
                         ),
                     })
         raise ValueError(f"KM Router 模型输出不符合契约：{last_error}")

@@ -762,6 +762,9 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             decision.answer_basis,
         )
         self.assertEqual(2, len(model.json_requests))
+        repair_message = model.json_requests[1]["prompt"][-1]["content"]
+        self.assertIn("SEMANTIC_RELEVANCE_AGGREGATE", repair_message)
+        self.assertIn("DATA_QUERY", repair_message)
 
     async def test_km_genuine_ambiguity_can_request_clarification(self):
         model = _ModelClient(response={

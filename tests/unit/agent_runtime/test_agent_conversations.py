@@ -234,6 +234,74 @@ class MemorySafetyTest(unittest.TestCase):
 
 
 class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
+    async def test_existing_turn_is_snapshotted_before_uow_closes(self):
+        conversation_id = uuid7()
+        agent_id = uuid7()
+        turn_id = uuid7()
+        existing = SimpleNamespace(
+            turn_id=turn_id,
+            conversation_id=conversation_id,
+            turn_sequence=2,
+            status="FAILED",
+            raw_input_hash="a" * 64,
+            root_run_id=None,
+            context_snapshot_json={"summary": {}},
+        )
+        conversation = SimpleNamespace(agent_id=agent_id)
+
+        class _Conversations:
+            async def get_scoped(self, **kwargs):
+                del kwargs
+                return conversation
+
+        class _Turns:
+            async def get_by_idempotency(self, **kwargs):
+                del kwargs
+                return existing
+
+        class _Uow:
+            conversations = _Conversations()
+            turns = _Turns()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                del exc_type, exc, traceback
+                existing.__dict__.clear()
+                conversation.__dict__.clear()
+
+        execution_spec = AgentExecutionSpec(
+            schema_version="1.0",
+            owner_app_id="km_asset",
+            domain_id=20,
+            consumer_agent_id=agent_id,
+            consumer_agent_version_id=uuid7(),
+            agent_kind="KNOWLEDGE_RETRIEVAL",
+            display_name="KM Agent",
+            enabled_capabilities=("document", "data_query"),
+            models={"composer_llm": uuid7()},
+        )
+        service = ConversationService(
+            uow_factory=_Uow,
+            runtime_service=None,
+        )
+
+        turn, accepted_conversation = await service._accept_turn(
+            conversation_id=conversation_id,
+            domain_id=20,
+            actor_id="user-1",
+            idempotency_key="existing-turn",
+            raw_input="关于 OAC 有几个 asset",
+            raw_hash="a" * 64,
+            expected_conversation_version=1,
+            execution_spec=execution_spec,
+        )
+
+        self.assertEqual(turn_id, turn.turn_id)
+        self.assertEqual("FAILED", turn.status)
+        self.assertEqual(agent_id, accepted_conversation.agent_id)
+
     async def test_new_turn_atomically_refreshes_execution_spec(self):
         agent_id = uuid7()
         old_version_id = uuid7()

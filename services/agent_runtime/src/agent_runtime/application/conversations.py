@@ -72,6 +72,26 @@ class MemoryRecallQuery:
     embedding: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class _AcceptedTurnSnapshot:
+    """Turn 离开 Unit of Work 后所需的不可变字段。"""
+
+    turn_id: UUID
+    conversation_id: UUID
+    turn_sequence: int
+    status: str
+    raw_input_hash: str
+    root_run_id: UUID | None
+    context_snapshot_json: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _AcceptedConversationSnapshot:
+    """创建 Run 时所需的 Conversation 不可变字段。"""
+
+    agent_id: UUID
+
+
 class MemoryRecallService:
     """在进入会话写事务前生成记忆查询向量。"""
 
@@ -530,7 +550,7 @@ class ConversationService:
         execution_spec: AgentExecutionSpec,
         recall_query: MemoryRecallQuery | None = None,
         image_descriptors: tuple[dict[str, Any], ...] = (),
-    ) -> tuple[AgentConversationTurnEntity, AgentConversationEntity]:
+    ) -> tuple[_AcceptedTurnSnapshot, _AcceptedConversationSnapshot]:
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_scoped(
                 conversation_id=conversation_id,
@@ -545,7 +565,9 @@ class ConversationService:
                 idempotency_key=idempotency_key,
             )
             if existing is not None:
-                return existing, conversation
+                return self._accepted_turn_snapshot(
+                    existing
+                ), self._accepted_conversation_snapshot(conversation)
             if execution_spec.consumer_agent_id != conversation.agent_id:
                 raise AgentRuntimeConflict(
                     "EXECUTION_SPEC_AGENT_MISMATCH",
@@ -675,7 +697,31 @@ class ConversationService:
             if not conversation.title:
                 conversation.title = raw_input.strip()[:100]
             await uow.commit()
-            return turn, conversation
+            return self._accepted_turn_snapshot(
+                turn
+            ), self._accepted_conversation_snapshot(conversation)
+
+    @staticmethod
+    def _accepted_turn_snapshot(
+        turn: AgentConversationTurnEntity,
+    ) -> _AcceptedTurnSnapshot:
+        """在 Session 有效期内复制 Turn 标量，禁止泄漏 ORM Entity。"""
+        return _AcceptedTurnSnapshot(
+            turn_id=turn.turn_id,
+            conversation_id=turn.conversation_id,
+            turn_sequence=int(turn.turn_sequence),
+            status=turn.status,
+            raw_input_hash=turn.raw_input_hash,
+            root_run_id=turn.root_run_id,
+            context_snapshot_json=dict(turn.context_snapshot_json),
+        )
+
+    @staticmethod
+    def _accepted_conversation_snapshot(
+        conversation: AgentConversationEntity,
+    ) -> _AcceptedConversationSnapshot:
+        """在 Session 有效期内复制 Conversation 标量。"""
+        return _AcceptedConversationSnapshot(agent_id=conversation.agent_id)
 
     @classmethod
     def _select_memories(
