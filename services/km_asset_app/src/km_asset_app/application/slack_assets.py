@@ -1010,10 +1010,20 @@ async def assemble_slack_asset_cards(
             matched_cards,
             limit=expected_count,
         )
-    _validate_complete_templates(
-        cards=result,
-        expected_count=expected_count,
-    )
+    try:
+        _validate_complete_templates(
+            cards=result,
+            expected_count=expected_count,
+        )
+    except SlackAssetTemplateIncompleteError as exc:
+        # Template 是 Slack 展示增强，不得因为附件缺失或元数据不完整
+        # 阻断 KBot 原始回答。渲染层会改用 QueryResult；若不存在
+        # QueryResult，则直接展示原始回答正文。
+        logger.warning(
+            "Slack Asset 附件元数据不完整，跳过 Template 组装：cause={}",
+            str(exc),
+        )
+        return []
     return result
 
 

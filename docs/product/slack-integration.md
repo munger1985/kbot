@@ -148,8 +148,9 @@ Template 时，先按原回答中的
 映射到正文条目的 Asset，歧义、未匹配以及正文未展示的候选均不追加，并记录诊断
 日志。完成映射和 Asset 去重后，必须保证正文每个唯一 Asset 都有且仅有一个
 Template，且顺序与正文一致；不再应用 `max_references` 截断。完整性只校验
-`asset_id`、`asset_title`、`solution_briefing` 三个字段，任一缺失时本次组装失败并
-进入 Worker 重试，不发送部分 Template。`author_mail`、`create_time` 为可选字段，
+`asset_id`、`asset_title`、`solution_briefing` 三个字段。任一缺失时不发送部分
+Template，也不终止 Worker：存在 QueryResult 时按问数结果格式展示；不存在
+QueryResult 时直接展示 KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
 缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 KM Link。整个过程不修改
 `payload.answer`。回答原文保留，每个 Template 由分隔线、Asset Title、Solution
 Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。

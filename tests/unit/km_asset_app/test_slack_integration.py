@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 from km_asset_app.application.slack_assets import (
-    SlackAssetTemplateIncompleteError,
     assemble_slack_asset_cards,
     extract_answer_asset_cards,
     parse_manifest_asset_fields,
@@ -567,7 +566,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], cards)
 
-    async def test_missing_required_asset_field_fails_closed(self):
+    async def test_missing_required_asset_field_skips_template(self):
         reference = self._reference("C1", 98)
         manifest = (
             "# Asset A\n\n"
@@ -586,16 +585,33 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        with self.assertRaises(SlackAssetTemplateIncompleteError):
-            await assemble_slack_asset_cards(
-                artifact=artifact,
-                knowledge_core_client=_ManifestClient(
-                    {reference["bundle_revision_id"]: manifest}
-                ),
-                domain_id=1001,
-                auth_context=None,
-                limit=10,
-            )
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=_ManifestClient(
+                {reference["bundle_revision_id"]: manifest}
+            ),
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual([], cards)
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=10),
+                    asset_cards=cards,
+                )
+            ),
+            ensure_ascii=False,
+        )
+        self.assertIn("Asset A", rendered)
+        self.assertIn("A details", rendered)
+        self.assertNotIn("*Asset Title:*", rendered)
 
     async def test_answer_values_win_and_manifest_fills_missing_fields(self):
         collection_id = "01900000-0000-7000-8000-000000000101"
