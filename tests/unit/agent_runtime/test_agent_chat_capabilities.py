@@ -114,6 +114,78 @@ def _context(
 
 
 class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
+    def test_semantic_plan_removes_only_known_input_echo_fields(self):
+        model_id = uuid7()
+        models = [{
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 1,
+            "datasets": [{"name": "assets"}],
+            "dimensions": [{"name": "author"}],
+            "measures": [{
+                "name": "asset_count",
+                "aggregation": "COUNT",
+            }],
+            "max_rows": 1000,
+        }]
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "contract_version": "DataQueryPlan.v1",
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["title"],
+                "filters": [{
+                    "field": "author",
+                    "operator": "EQ",
+                    "values": ["madhumitha.k@oracle.com"],
+                }],
+                "limit": 100,
+                "question": "any assets of madhumitha.k@oracle.com；",
+                "models": models,
+                "document_constraints": None,
+            },
+            models=models,
+            question="any assets of madhumitha.k@oracle.com；",
+            consumer_app_id="km_asset",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        self.assertEqual(
+            ("madhumitha.k@oracle.com",),
+            plan.filters[0].values,
+        )
+        for field in ("question", "models", "document_constraints"):
+            self.assertNotIn(field, normalized)
+
+    def test_semantic_plan_keeps_unknown_fields_for_strict_validation(self):
+        model_id = uuid7()
+        models = [{
+            "semantic_model_id": str(model_id),
+            "semantic_model_version": 1,
+            "datasets": [{"name": "assets"}],
+            "measures": [{
+                "name": "asset_count",
+                "aggregation": "COUNT",
+            }],
+            "max_rows": 1000,
+        }]
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "unexpected_field": "must still fail",
+            },
+            models=models,
+            question="any assets",
+            consumer_app_id="km_asset",
+        )
+
+        with self.assertRaises(ValueError):
+            DataQueryPlanV1.model_validate(normalized)
+
     def test_semantic_plan_normalizes_catalog_aggregation_and_limit(self):
         model_id = uuid7()
         normalized = SemanticDataQueryExecutor._normalize_plan_response(

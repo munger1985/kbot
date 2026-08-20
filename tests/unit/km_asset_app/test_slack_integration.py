@@ -101,6 +101,32 @@ class SlackEventParsingTest(unittest.TestCase):
             self.assertEqual(event_type, parsed["event_type"])
             self.assertEqual("1.001", parsed["root_thread_ts"])
 
+    def test_mailto_wrapper_is_restored_to_user_visible_email(self):
+        payload = {
+            "type": "event_callback",
+            "team_id": "T1",
+            "event_id": "E-email",
+            "event": {
+                "type": "message",
+                "user": "U1",
+                "channel": "C1",
+                "text": (
+                    "any assets of "
+                    "<mailto:madhumitha.k@oracle.com|"
+                    "madhumitha.k@oracle.com>；"
+                ),
+                "event_ts": "1.001",
+            },
+        }
+
+        parsed = parse_message_event(payload)
+
+        self.assertEqual(
+            "any assets of madhumitha.k@oracle.com；",
+            parsed["message_text"],
+        )
+        self.assertIn("<mailto:", payload["event"]["text"])
+
     def test_message_and_mention_share_message_identity(self):
         message = {
             "type": "event_callback",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -14,6 +15,21 @@ from sqlalchemy.exc import IntegrityError
 
 from km_asset_app.entities import SlackInboxEntity
 from platform_core.identity import uuid7
+
+
+_SLACK_MAILTO_PATTERN = re.compile(
+    r"<mailto:[^|>]+\|(?P<label>[^>]+)>",
+    re.IGNORECASE,
+)
+
+
+def _visible_message_text(value: object) -> str:
+    """恢复 Slack 界面可见文本，不改变邮箱本身或原始 Event 报文。"""
+    text = str(value or "")
+    return _SLACK_MAILTO_PATTERN.sub(
+        lambda match: match.group("label"),
+        text,
+    ).strip()
 
 
 class SlackWebhookError(ValueError):
@@ -79,7 +95,7 @@ def parse_message_event(payload: dict[str, Any]) -> dict[str, str] | None:
         "event_type": event_type,
         "channel_id": str(event.get("channel") or ""),
         "slack_user_id": str(event.get("user") or ""),
-        "message_text": str(event.get("text") or "").strip(),
+        "message_text": _visible_message_text(event.get("text")),
         "event_ts": event_ts,
         "root_thread_ts": str(event.get("thread_ts") or message_ts),
         # Slack 可为同一条 @mention 同时投递 message 与 app_mention。

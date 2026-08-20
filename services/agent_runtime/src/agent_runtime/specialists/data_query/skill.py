@@ -17,6 +17,11 @@ from platform_core.identity import uuid7
 from .contracts import QueryResult
 
 
+_PLANNER_INPUT_ECHO_FIELDS = frozenset(
+    {"question", "models", "document_constraints"}
+)
+
+
 class MCPDataQueryExecutor:
     def __init__(self, *, client) -> None:
         self._client = client
@@ -173,7 +178,13 @@ class SemanticDataQueryExecutor:
         """只使用规划目录中的值修复常见 LLM JSON 类型与缺省字段。"""
         if not isinstance(response, dict):
             raise ValueError("问数 Planner 返回的计划不是 JSON Object")
-        normalized = dict(response)
+        # 部分模型会在合法计划旁回显 Planner 输入；只清理这三个已知
+        # 输入字段，其他未知字段仍由 DataQueryPlanV1 严格拒绝。
+        normalized = {
+            key: value
+            for key, value in response.items()
+            if key not in _PLANNER_INPUT_ECHO_FIELDS
+        }
         selected = next(
             (
                 item for item in models
