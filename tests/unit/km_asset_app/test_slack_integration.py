@@ -1253,6 +1253,126 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*Title:* Asset A", rendered)
         self.assertNotIn("complete (not truncated)", rendered)
 
+    def test_completion_boilerplate_is_removed_from_document_answer(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "完整回答。[C1]\n\n"
+                    "The result is complete and not truncated."
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1"],
+                "references": [{
+                    "reference_type": "DOCUMENT",
+                    "citation_label": "C1",
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(),
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("完整回答", rendered)
+        self.assertNotIn("complete and not truncated", rendered)
+
+    def test_query_truncated_uses_unified_mandatory_notice(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "当前结果",
+                "status": "READY",
+                "used_citation_labels": ["Q1"],
+                "references": [{
+                    "reference_type": "QUERY_RESULT",
+                    "citation_label": "Q1",
+                }],
+                "query_results": [{"truncated": True}],
+                "warnings": ["问数结果已按服务端上限截断"],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(show_warnings=False),
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("问数结果已按服务端上限截断", rendered)
+
+    def test_max_references_exceeded_uses_truncation_notice(self):
+        references = [
+            {
+                "reference_type": "DOCUMENT",
+                "citation_label": f"C{index}",
+            }
+            for index in range(1, 4)
+        ]
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": "完整回答",
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2", "C3"],
+                "references": references,
+            },
+        }
+
+        exceeded = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(
+                        max_references=2,
+                        show_warnings=False,
+                    ),
+                )
+            ),
+            ensure_ascii=False,
+        )
+        at_limit = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(
+                        max_references=3,
+                        show_warnings=False,
+                    ),
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("结果超过上限，当前仅展示部分内容", exceeded)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", at_limit)
+
     def test_asset_query_table_renders_as_numbered_field_sections(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",

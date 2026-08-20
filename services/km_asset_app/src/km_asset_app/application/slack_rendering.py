@@ -57,12 +57,24 @@ _ASSET_ID_FIELD_LINE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _QUERY_COMPLETION_SUFFIX_PATTERN = re.compile(
-    r",?\s*(?:and\s+)?the\s+results?\s+(?:is|are)\s+complete\s*"
-    r"\(not\s+truncated\)\.?\s*(?:\[[A-Za-z]\d+\])?\s*$",
+    r",?\s*(?:and\s+)?the\s+(?:query\s+)?results?\s+"
+    r"(?:is|are)\s+complete(?:\s+and\s+not\s+truncated|"
+    r"\s*\(not\s+truncated\))?\.?\s*"
+    r"(?:\[[A-Za-z]\d+\])?\s*$",
+    re.IGNORECASE,
+)
+_QUERY_COMPLETION_LINE_PATTERN = re.compile(
+    r"^\s*(?:all\s+results?\s+(?:are\s+shown|have\s+been\s+shown)|"
+    r"(?:the\s+)?(?:query\s+)?results?\s+(?:is|are)\s+complete"
+    r"(?:\s+and\s+not\s+truncated|\s*\(not\s+truncated\))?|"
+    r"(?:查询)?结果(?:完整[，,、和及 ]*)?(?:且|并且|并)?未截断|"
+    r"已(?:返回|展示|显示)全部结果)[。.]?\s*"
+    r"(?:\[[A-Za-z]\d+\])?\s*$",
     re.IGNORECASE,
 )
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
+_TRUNCATION_NOTICE = "结果超过上限，当前仅展示部分内容"
 _QUERY_ASSET_TABLE_FIELDS = (
     ("Author", ("author_mail", "author", "author_mail_norm")),
     ("Product", ("asset_product", "product")),
@@ -209,12 +221,60 @@ def _query_only_visible_answer(answer: str) -> str:
     for line in lines:
         if _ASSET_ID_FIELD_LINE_PATTERN.match(line):
             continue
+        visible_lines.append(line)
+    return _without_completion_boilerplate("\n".join(visible_lines))
+
+
+def _without_completion_boilerplate(answer: str) -> str:
+    """只清理 Slack 可见正文中的结果完整性套话。"""
+    lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    visible_lines: list[str] = []
+    for line in lines:
+        if _QUERY_COMPLETION_LINE_PATTERN.match(line):
+            continue
         cleaned = _QUERY_COMPLETION_SUFFIX_PATTERN.sub("", line).rstrip()
         if cleaned or not line.strip():
             visible_lines.append(cleaned)
     text = "\n".join(visible_lines)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def _used_document_reference_count(payload: dict[str, Any]) -> int:
+    references = payload.get("references")
+    labels = payload.get("used_citation_labels")
+    if not isinstance(references, (list, tuple)) or not isinstance(
+        labels, (list, tuple)
+    ):
+        return 0
+    used_labels = {
+        str(value).strip() for value in labels if str(value).strip()
+    }
+    matched_labels = {
+        str(reference.get("citation_label") or "").strip()
+        for reference in references
+        if isinstance(reference, dict)
+        and str(reference.get("reference_type") or "").upper()
+        == "DOCUMENT"
+        and str(reference.get("citation_label") or "").strip()
+        in used_labels
+    }
+    return len(matched_labels)
+
+
+def _is_truncated_reply(
+    payload: dict[str, Any],
+    config: SlackReplyConfig,
+) -> bool:
+    query_results = payload.get("query_results")
+    query_truncated = isinstance(query_results, (list, tuple)) and any(
+        isinstance(result, dict) and result.get("truncated") is True
+        for result in query_results
+    )
+    references_exceeded = (
+        _used_document_reference_count(payload) > config.max_references
+    )
+    return query_truncated or references_exceeded
 
 
 def _visible_asset_titles(payload: dict[str, Any]) -> list[str]:
@@ -673,17 +733,27 @@ def _is_internal_retrieval_warning(value: object) -> bool:
     return "专用重排失败" in text and "已保留 RRF 顺序" in text
 
 
+def _is_truncation_warning(value: object) -> bool:
+    text = str(value).casefold()
+    return "截断" in text or "truncat" in text
+
+
 def _warning_blocks(
-    answer_payload: dict[str, Any], config: SlackReplyConfig
+    answer_payload: dict[str, Any],
+    config: SlackReplyConfig,
+    *,
+    truncated: bool = False,
 ) -> list[dict[str, Any]]:
     warnings = answer_payload.get("warnings")
-    if not config.show_warnings or not isinstance(warnings, (list, tuple)):
-        return []
-    values = [
-        _escape_mrkdwn(value)
-        for value in warnings
-        if not _is_internal_retrieval_warning(value)
-    ]
+    values = [_TRUNCATION_NOTICE] if truncated else []
+    if config.show_warnings and isinstance(warnings, (list, tuple)):
+        values.extend(
+            _escape_mrkdwn(value)
+            for value in warnings
+            if not _is_internal_retrieval_warning(value)
+            and _TRUNCATION_NOTICE not in str(value)
+            and (not truncated or not _is_truncation_warning(value))
+        )
     values = [value for value in values if value][:5]
     if not values:
         return []
@@ -756,6 +826,7 @@ def render_slack_reply(
         or _has_used_document_reference(answer_payload)
         else _query_only_visible_answer(answer)
     )
+    display_answer = _without_completion_boilerplate(display_answer)
     safe_answer = _to_slack_mrkdwn(display_answer)
     blocks: list[dict[str, Any]] = [
         {
@@ -786,7 +857,16 @@ def render_slack_reply(
             answer_payload
         ):
             blocks.extend(_asset_blocks(asset_cards or [], reply_config))
-        blocks.extend(_warning_blocks(answer_payload, reply_config))
+        blocks.extend(
+            _warning_blocks(
+                answer_payload,
+                reply_config,
+                truncated=_is_truncated_reply(
+                    answer_payload,
+                    reply_config,
+                ),
+            )
+        )
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
     query_fallback = "\n\n".join(
         str(block.get("text", {}).get("text") or "")
