@@ -522,6 +522,16 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             [item["evidence_id"] for item in groups["c1"][0]["items"]],
         )
 
+    def test_kc_evidence_groups_are_not_rejected_by_second_llm(self):
+        hit_sets = KnowledgeRetrievalSkill._evidence_hit_sets({
+            "c1": [{
+                "bundle_id": "fraud-bundle",
+                "items": [{"evidence": {"content_text": "Fraud detection"}}],
+            }],
+        })
+
+        self.assertEqual({"fraud-bundle"}, hit_sets["c1"])
+
     def test_translated_semantic_term_supports_english_asset_title(self):
         criterion = _base_plan(
             criteria=[{

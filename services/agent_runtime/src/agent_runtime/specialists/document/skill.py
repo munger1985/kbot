@@ -344,11 +344,7 @@ class KnowledgeRetrievalSkill:
             retrieve_one(*request) for request in requests
         ))
         groups_by_key = self._merge_groups_by_criterion(retrieved)
-        hit_sets, support_judgments = await self._judge_asset_support(
-            context=context,
-            plan=plan,
-            groups_by_key=groups_by_key,
-        )
+        hit_sets = self._evidence_hit_sets(groups_by_key)
         ranks = {
             key: {
                 str(group.get("bundle_id") or ""): rank
@@ -432,7 +428,7 @@ class KnowledgeRetrievalSkill:
         logger.info(
             "Asset 条件证据收敛完成 | run_id={} | task_id={} | "
             "candidate_count={} | evidence_bundle_count={} | "
-            "direct_support_count={} | eligible_count={}",
+            "evidence_hit_count={} | eligible_count={}",
             context.run_id,
             context.task_id,
             len(candidates),
@@ -477,119 +473,22 @@ class KnowledgeRetrievalSkill:
                 "preference_count": len(preference_content),
                 "eligible_count": len(eligible),
                 "requirements": matrix,
-                "support_judgments": support_judgments,
             },
         }, eligible
 
-    async def _judge_asset_support(
-        self,
-        *,
-        context: ExecutionContext,
-        plan: AssetSearchPlanV1,
+    @staticmethod
+    def _evidence_hit_sets(
         groups_by_key: dict[str, list[dict[str, Any]]],
-    ) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
-        """只让直接正文支持通过语义硬条件，缺失判定一律视为不支持。"""
-        entries = []
-        for key, groups in groups_by_key.items():
-            for group in groups:
-                excerpts = []
-                for item in group.get("items") or []:
-                    evidence = item.get("evidence") or {}
-                    content = str(evidence.get("content_text") or "").strip()
-                    if content:
-                        excerpts.append(content[:1200])
-                if excerpts:
-                    entries.append({
-                        "criterion_key": key,
-                        "bundle_id": str(group.get("bundle_id") or ""),
-                        "excerpts": excerpts,
-                    })
-        if not entries:
-            return {key: set() for key in groups_by_key}, []
-        model_name = str(agent_model_name(
-            context.config_snapshot.get("agent", {}), "composer_llm"
-        ) or "").strip()
-        if not model_name or self._model_client is None or self._prompt_resolver is None:
-            raise ValueError("Agent 未配置 Asset 条件支持判断模型")
-        prompt = await self._prompt_resolver.resolve(
-            "agent_runtime.km_asset_criterion_support"
-        )
-        criteria = {
-            item.criterion_id: {
-                "kind": item.kind,
-                "values": list(item.values),
-                "field_scope": list(item.field_scope),
+    ) -> dict[str, set[str]]:
+        """KC 已选中的同 Bundle 引用就是语义条件证据，不再交给 LLM 否决。"""
+        return {
+            key: {
+                str(group.get("bundle_id") or "")
+                for group in groups
+                if group.get("bundle_id") and group.get("items")
             }
-            for item in plan.criteria
-            if item.kind not in {"METADATA", "IDENTIFIER"}
+            for key, groups in groups_by_key.items()
         }
-        criteria.update({
-            item.preference_id: {
-                "kind": item.criterion.kind,
-                "values": list(item.criterion.values),
-                "field_scope": list(item.criterion.field_scope),
-            }
-            for item in plan.preferences
-            if item.criterion.kind not in {"METADATA", "IDENTIFIER"}
-        })
-        criteria["__content__"] = {
-            "kind": "QUESTION_SUPPORT",
-            "values": [plan.query_text],
-            "field_scope": ["CONTENT"],
-        }
-        known = {
-            (item["criterion_key"], item["bundle_id"]) for item in entries
-        }
-        last_error = ""
-        for attempt in range(2):
-            response = await self._model_client.get_llm_json(
-                served_model_name=model_name,
-                prompt=[
-                    {"role": "system", "content": prompt.content},
-                    {"role": "user", "content": json.dumps({
-                        "question": plan.query_text,
-                        "criteria": criteria,
-                        "evidence": entries,
-                    }, ensure_ascii=False)},
-                ],
-            )
-            try:
-                judgments = response.get("judgments")
-                if not isinstance(judgments, list):
-                    raise ValueError("judgments 必须是数组")
-                normalized = []
-                seen = set()
-                for item in judgments:
-                    if not isinstance(item, dict):
-                        raise ValueError("judgment 必须是对象")
-                    pair = (
-                        str(item.get("criterion_key") or ""),
-                        str(item.get("bundle_id") or ""),
-                    )
-                    status = str(item.get("status") or "")
-                    if pair not in known or pair in seen:
-                        raise ValueError("judgment 引用了未知或重复的条件证据")
-                    if status not in {
-                        "DIRECT_SUPPORT", "PARTIAL_SUPPORT", "CONTEXT_ONLY",
-                        "CONTRADICTS", "NO_SUPPORT",
-                    }:
-                        raise ValueError("judgment status 不符合支持判断协议")
-                    seen.add(pair)
-                    normalized.append({
-                        "criterion_key": pair[0],
-                        "bundle_id": pair[1],
-                        "status": status,
-                    })
-                hit_sets = {key: set() for key in groups_by_key}
-                for item in normalized:
-                    if item["status"] == "DIRECT_SUPPORT":
-                        hit_sets[item["criterion_key"]].add(item["bundle_id"])
-                return hit_sets, normalized
-            except (AttributeError, TypeError, ValueError) as exc:
-                last_error = str(exc)
-                if attempt == 0:
-                    continue
-        raise ValueError(f"Asset 条件支持判断输出不符合协议：{last_error}")
 
     @staticmethod
     def _document_scope_assets(context: ExecutionContext) -> list[dict[str, Any]]:
