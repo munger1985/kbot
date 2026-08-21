@@ -14,7 +14,8 @@ from loguru import logger
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import detect_unicode_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
-from platform_core.contracts import AuthContext
+from agent_runtime.specialists.asset_search import AssetSearchDataQueryCompiler
+from platform_core.contracts import AssetSearchPlanV1, AuthContext
 from platform_core.contracts.data_query import DataQueryPlanV1, PlanFilter
 from platform_core.identity import uuid7
 
@@ -92,7 +93,23 @@ class SemanticDataQueryExecutor:
         models = planning.get("models") if isinstance(planning, dict) else None
         if not isinstance(models, list) or not models:
             raise RuntimeError("SEMANTIC_DATA_QUERY_NOT_CONFIGURED")
-        plan = await self._create_plan(context=context, question=question, models=models)
+        asset_search_plan = self._asset_search_plan(context)
+        plan = await self._create_plan(
+            context=context,
+            question=question,
+            models=models,
+        )
+        if asset_search_plan is not None:
+            return await self._execute_asset_search_plan(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                search_plan=asset_search_plan,
+                query_plan=plan,
+                models=models,
+            )
         answer_basis = self._answer_basis(context)
         topic_terms: tuple[str, ...] = ()
         expansion_warnings: tuple[str, ...] = ()
@@ -680,6 +697,12 @@ class SemanticDataQueryExecutor:
 
     async def _create_plan(self, *, context, question, models) -> DataQueryPlanV1:
         agent = context.config_snapshot.get("agent", {})
+        asset_search_plan = self._asset_search_plan(context)
+        if asset_search_plan is not None:
+            return AssetSearchDataQueryCompiler.compile(
+                search_plan=asset_search_plan,
+                models=models,
+            )
         model_name = str(
             agent_model_name(agent, "data_planner_llm")
             or agent_model_name(agent, "composer_llm")
@@ -752,6 +775,113 @@ class SemanticDataQueryExecutor:
                     ])
         raise ValueError(f"问数 Planner 模型输出不符合契约：{last_error}")
 
+    async def _execute_asset_search_plan(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        search_plan: AssetSearchPlanV1,
+        query_plan: DataQueryPlanV1,
+        models: list[dict],
+    ) -> QueryResult:
+        """执行统一计划；KM 问数阶段不再二次调用规划模型。"""
+        semantic = search_plan.has_semantic_eligibility or bool(
+            search_plan.preferences
+        )
+        if search_plan.operation == "LIST" and not semantic:
+            result = await self._execute_km_asset_enumeration(
+                context=context,
+                question=question,
+                consumer_app_id=consumer_app_id,
+                agent_version_id=agent_version_id,
+                auth_context=auth_context,
+                list_plan=query_plan,
+                topic_terms=(),
+                expansion_warnings=(),
+            )
+            return result.model_copy(update={
+                "provenance": {
+                    **result.provenance,
+                    "asset_search_plan": search_plan.model_payload(),
+                    "planning_mode": "ASSET_SEARCH_DETERMINISTIC",
+                },
+            })
+        aggregate_run_id, aggregate_response = await self._run_plan(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            plan=query_plan,
+            idempotency_suffix="asset-search-primary",
+        )
+        primary = self._query_result_from_response(
+            run_id=aggregate_run_id,
+            result=aggregate_response,
+            plan=query_plan,
+        )
+        provenance = {
+            **primary.provenance,
+            "asset_search_plan": search_plan.model_payload(),
+            "planning_mode": "ASSET_SEARCH_DETERMINISTIC",
+            "unsupported_requests": list(search_plan.unsupported_requests),
+        }
+        if search_plan.operation == "LIST":
+            return primary.model_copy(update={"provenance": provenance})
+        if "asset_id" in query_plan.dimensions:
+            return primary.model_copy(update={"provenance": provenance})
+
+        sample_payload = search_plan.model_dump(mode="json")
+        sample_payload.update({
+            "operation": "LIST",
+            "target": "ASSET",
+            "measures": [],
+            "group_by": [],
+            "include_total_count": False,
+            "display_limit": search_plan.result_assets.target_count,
+            "result_assets": {
+                "mode": "PRIMARY",
+                "target_count": search_plan.result_assets.target_count,
+                "selection": "RECENT_WITHIN_RESULT",
+            },
+            "order_by": [{
+                "field": "asset_date",
+                "direction": "DESC",
+            }],
+        })
+        sample_search_plan = AssetSearchPlanV1.model_validate(sample_payload)
+        sample_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=sample_search_plan,
+            models=models,
+        )
+        sample = await self._execute_km_asset_enumeration(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            list_plan=sample_plan,
+            topic_terms=(),
+            expansion_warnings=(),
+        )
+        provenance.update({
+            "data_query_run_ids": [
+                str(aggregate_run_id),
+                *list(sample.provenance.get("data_query_run_ids") or []),
+            ],
+            "supporting_query_result_id": str(sample.query_result_id),
+        })
+        return primary.model_copy(update={
+            "supporting_columns": sample.columns,
+            "supporting_rows": sample.rows,
+            "supporting_query_result_id": sample.query_result_id,
+            "provenance": provenance,
+            "warnings": primary.warnings + sample.warnings,
+        })
+
     @staticmethod
     def _validate_km_topic_plan(
         *, context, consumer_app_id: str, plan: DataQueryPlanV1
@@ -797,6 +927,18 @@ class SemanticDataQueryExecutor:
             else getattr(route, "answer_basis", None)
         )
         return str(value) if value is not None else None
+
+    @staticmethod
+    def _asset_search_plan(context) -> AssetSearchPlanV1 | None:
+        route = context.config_snapshot.get("route") or {}
+        payload = (
+            route.get("asset_search_plan")
+            if isinstance(route, Mapping)
+            else getattr(route, "asset_search_plan", None)
+        )
+        if not payload:
+            return None
+        return AssetSearchPlanV1.model_validate(payload)
 
     @staticmethod
     def _normalize_plan_response(

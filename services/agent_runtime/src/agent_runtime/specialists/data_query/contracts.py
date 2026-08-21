@@ -26,6 +26,9 @@ class QueryResult(_Contract):
     provider: Literal["MCP", "SEMANTIC"]
     columns: tuple[dict[str, Any], ...]
     rows: tuple[dict[str, Any], ...]
+    supporting_columns: tuple[dict[str, Any], ...] = ()
+    supporting_rows: tuple[dict[str, Any], ...] = ()
+    supporting_query_result_id: UUID | None = None
     row_count: int = Field(ge=0)
     truncated: bool = False
     warnings: tuple[str, ...] = ()

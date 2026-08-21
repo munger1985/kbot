@@ -245,6 +245,7 @@
   function showQueryReference(reference, queryResult) {
     currentPreview = null;
     const rows = Array.isArray(queryResult?.rows) ? queryResult.rows.slice(0, 20) : [];
+    const supportingRows = Array.isArray(queryResult?.supporting_rows) ? queryResult.supporting_rows.slice(0, 20) : [];
     const totalRows = Number(reference.row_count ?? queryResult?.row_count ?? rows.length);
     const rowSummary = totalRows > rows.length ? `共 ${totalRows} 行 · 展示 ${rows.length} 行` : `${totalRows} 行`;
     $("reference-title").textContent = `问数依据 · ${reference.citation_label || "Q"}`;
@@ -254,23 +255,29 @@
     const host = $("reference-query-preview");
     host.replaceChildren();
     const hiddenFields = new Set(["asset_id", "bundle_id", "bundle_revision_id"]);
-    const fields = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))))
-      .filter((field) => !hiddenFields.has(String(field).toLowerCase()));
-    if (!rows.length || !fields.length) {
-      const empty = document.createElement("p");
-      empty.className = "km-help";
-      empty.textContent = "该问数依据没有可展示的结果行。";
-      host.append(empty);
-    } else {
+    function appendRowsTable(tableRows, heading) {
+      const fields = Array.from(new Set(tableRows.flatMap((row) => Object.keys(row || {}))))
+        .filter((field) => !hiddenFields.has(String(field).toLowerCase()));
+      if (!tableRows.length || !fields.length) return false;
+      if (heading) { const title = document.createElement("h4"); title.textContent = heading; host.append(title); }
       const table = document.createElement("table");
       const head = table.createTHead().insertRow();
       fields.forEach((field) => { const cell = document.createElement("th"); cell.textContent = field; head.append(cell); });
       const body = table.createTBody();
-      rows.forEach((row) => {
+      tableRows.forEach((row) => {
         const line = body.insertRow();
         fields.forEach((field) => { const cell = line.insertCell(); const value = row?.[field]; cell.textContent = value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); });
       });
       host.append(table);
+      return true;
+    }
+    const hasPrimary = appendRowsTable(rows, supportingRows.length ? "聚合结果" : "");
+    const hasSupporting = appendRowsTable(supportingRows, "同一筛选范围内的较新 Asset");
+    if (!hasPrimary && !hasSupporting) {
+      const empty = document.createElement("p");
+      empty.className = "km-help";
+      empty.textContent = "该问数依据没有可展示的结果行。";
+      host.append(empty);
     }
     host.hidden = false;
     KBotKmShell.openDialog("reference-dialog");

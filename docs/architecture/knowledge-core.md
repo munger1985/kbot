@@ -39,10 +39,20 @@ KM Asset App 从 Asset MetaDB 读取完整业务元数据和全部附件，并�
 `Bundle Revision.manifest_json.metadata` 中，并进入 Manifest 与 Discovery Profile，
 用于标题、主题、行业、解决方案等语义检索。
 
-`KBOT_V_KM_ASSET_CURRENT` 由 KM Asset App 投影当前同步状态，并把作者、主题、产品、
-行业和时间等常用字段展开为关系列。KM App 自动维护固定语义模型；按作者计数、
-分组、排序等结构化问题走问数，文档正文
-及语义主题问题走 Knowledge Core，避免用向量召回结果估算聚合值。
+`KBOT_V_KM_ASSET_CURRENT` 保留当前同步状态用于运维；所有用户搜索统一从
+`KBOT_V_KM_ASSET_SEARCHABLE` 读取。后者只投影 Asset 和当前 Revision 均为 `READY`、
+Bundle 与 Bundle Revision 完整且一致的记录。FAILED、处理中和映射不完整的 Asset
+不能参与问文、问数或混合搜索。
+
+Root 只生成一次 `AssetSearchPlan.v1`，完整表达多个硬条件、布尔关系、软偏好、排序和
+数量。精确元数据条件由确定性编译器转换为 `DataQueryPlan.v1`，Data Query 继续执行
+模型目录校验、Domain 强制范围和参数化 SQL，不接受自由 SQL，也不调用第二个 LLM
+重新规划。语义条件先从可搜索视图形成候选范围，再由 Knowledge Core 验证正文相关性。
+语义召回 Top-K 不作为总数；主题总数请求返回明确的能力说明和最多 5 个较新相关 Asset。
+
+所有成功回答都投影 Asset：精确清单逐项使用 `Qn`；文档回答使用同 Bundle 的 `Cn`；
+混合结果逐项同时使用资格集合 `Qn` 和正文 `Cn`。精确 COUNT/GROUP 在同一个可审计
+查询快照中返回聚合结果 `Q1` 和同条件下 3 至 5 个较新 Asset 样例 `Q2`。
 
 ## 自适应解析
 

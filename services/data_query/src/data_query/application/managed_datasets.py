@@ -40,19 +40,6 @@ def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
             "synonyms": ["knowledge bundle revision id"],
         },
         {
-            "name": "topic",
-            "display_name": "Asset 相关主题（跨标题、产品和解决方案，仅用于筛选）",
-            "physical_column": "ASSET_TITLE",
-            "filter_alias_columns": ["ASSET_PRODUCT", "ASSET_SOLUTION"],
-            "value_normalization": "CASE_INSENSITIVE_TRIM",
-            "allowed_filter_operators": ["CONTAINS"],
-            "groupable": False,
-            "synonyms": [
-                "about", "related topic", "relevant to", "关于",
-                "相关主题", "与之相关",
-            ],
-        },
-        {
             "name": "author",
             "display_name": "作者邮箱或邮箱用户名",
             "physical_column": "AUTHOR_MAIL_NORM",
@@ -65,8 +52,6 @@ def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
         {"name": "solution", "display_name": "解决方案或主题", "physical_column": "ASSET_SOLUTION"},
         {"name": "industry", "display_name": "行业", "physical_column": "INDUSTRY_ID"},
         {"name": "category", "display_name": "内容分类", "physical_column": "CONTENT_CATEGORY"},
-        {"name": "asset_status", "display_name": "Asset 状态", "physical_column": "ASSET_STATUS"},
-        {"name": "ingestion_status", "display_name": "入库状态", "physical_column": "INGESTION_STATUS"},
         {
             "name": "asset_date",
             "display_name": "Asset 日期（优先发布日期，缺失时使用创建日期）",
@@ -77,7 +62,7 @@ def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
         },
     ]
     return {
-        "datasets": [{"name": dataset, "display_name": "KM Asset", "physical_schema": schema_name, "physical_object": "KBOT_V_KM_ASSET_CURRENT", "primary_time_dimension": None, "scope_column": "DOMAIN_ID"}],
+        "datasets": [{"name": dataset, "display_name": "KM Asset", "physical_schema": schema_name, "physical_object": "KBOT_V_KM_ASSET_SEARCHABLE", "primary_time_dimension": None, "scope_column": "DOMAIN_ID"}],
         "dimensions": [{
             "dataset": dataset,
             "value_type": "STRING",
@@ -113,7 +98,7 @@ class ManagedDatasetService:
             km_asset_definition(schema_name=schema_name)
         ).model_dump(mode="json")
         catalog_hash = _hash(definition)
-        columns = ["DOMAIN_ID", "SOURCE_ID", "KM_ASSET_ID", "ASSET_ID", "SOURCE_REVISION", "SOURCE_STATUS", "INGESTION_STATUS", "ASSET_TITLE", "AUTHOR_MAIL", "AUTHOR_MAIL_NORM", "AUTHOR_LOCAL_PART", "ASSET_PRODUCT", "ASSET_SOLUTION", "INDUSTRY_ID", "CONTENT_CATEGORY", "ASSET_STATUS", "PUBLISH_DATE", "ASSET_DATE_VALUE", "LAST_UPDATE_TIME", "KC_BUNDLE_ID", "KC_BUNDLE_REVISION_ID", "FAILURE_STAGE", "ERROR_CODE", "RAW_METADATA_JSON", "NORMALIZED_METADATA_JSON", "SYNCED_AT", "COMPLETED_AT"]
+        columns = ["DOMAIN_ID", "SOURCE_ID", "KM_ASSET_ID", "ASSET_ID", "SOURCE_REVISION", "SOURCE_STATUS", "ASSET_TITLE", "AUTHOR_MAIL", "AUTHOR_MAIL_NORM", "AUTHOR_LOCAL_PART", "ASSET_PRODUCT", "ASSET_SOLUTION", "INDUSTRY_ID", "CONTENT_CATEGORY", "ASSET_STATUS", "PUBLISH_DATE", "ASSET_DATE_VALUE", "LAST_UPDATE_TIME", "KC_BUNDLE_ID", "KC_BUNDLE_REVISION_ID", "RAW_METADATA_JSON", "NORMALIZED_METADATA_JSON", "SYNCED_AT", "COMPLETED_AT"]
         async with self._uow_factory() as uow:
             source = await uow.data_sources.find_by_name(domain_id=domain_id, display_name=self.SOURCE_NAME, lock=True)
             if source is None:
@@ -125,9 +110,9 @@ class ManagedDatasetService:
             model = await uow.semantic_models.find_by_name(domain_id=domain_id, display_name=self.MODEL_NAME, lock=True)
             active = None if model is None else await uow.semantic_model_versions.get_active(semantic_model_id=model.semantic_model_id, lock=True)
             if model is None or active is None or active.definition_hash != catalog_hash:
-                snapshot = SchemaSnapshotEntity(data_source_id=source.data_source_id, source_version=source.current_version, status="READY", snapshot_hash=catalog_hash, connector_type="ORACLE", connector_version="managed-v1", capabilities_json={"managed": True}, objects_json={"objects": [{"schema": schema_name, "name": "KBOT_V_KM_ASSET_CURRENT", "type": "VIEW", "columns": columns}]}, requested_by=actor_id, completed_at=datetime.now(timezone.utc))
+                snapshot = SchemaSnapshotEntity(data_source_id=source.data_source_id, source_version=source.current_version, status="READY", snapshot_hash=catalog_hash, connector_type="ORACLE", connector_version="managed-v1", capabilities_json={"managed": True}, objects_json={"objects": [{"schema": schema_name, "name": "KBOT_V_KM_ASSET_SEARCHABLE", "type": "VIEW", "columns": columns}]}, requested_by=actor_id, completed_at=datetime.now(timezone.utc))
                 await uow.schema_snapshots.add(snapshot)
-                await uow.schema_snapshot_objects.add(SchemaSnapshotObjectEntity(schema_snapshot_id=snapshot.schema_snapshot_id, schema_name=schema_name, object_name="KBOT_V_KM_ASSET_CURRENT", object_type="VIEW", selected=1, status="READY", attempt_count=1, metadata_source="MANUAL", metadata_json={"columns": columns}, completed_at=datetime.now(timezone.utc)))
+                await uow.schema_snapshot_objects.add(SchemaSnapshotObjectEntity(schema_snapshot_id=snapshot.schema_snapshot_id, schema_name=schema_name, object_name="KBOT_V_KM_ASSET_SEARCHABLE", object_type="VIEW", selected=1, status="READY", attempt_count=1, metadata_source="MANUAL", metadata_json={"columns": columns}, completed_at=datetime.now(timezone.utc)))
                 if model is None:
                     model = SemanticModelEntity(domain_id=domain_id, display_name=self.MODEL_NAME, description="由 KBot 管理的 KM Asset 固定问数模型", active_version=None, created_by=actor_id, updated_by=actor_id)
                     await uow.semantic_models.add(model)

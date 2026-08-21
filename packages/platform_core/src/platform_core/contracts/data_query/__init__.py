@@ -62,7 +62,14 @@ from .management import (
     PromoteVerifiedQueryCommand,
     VerifiedQueryView,
 )
-from .query_plan import DataQueryPlanV1, FilterOperator, PlanFilter, PlanMeasure, PlanOrderBy
+from .query_plan import (
+    DataQueryPlanV1,
+    FilterOperator,
+    PlanFilter,
+    PlanFilterExpression,
+    PlanMeasure,
+    PlanOrderBy,
+)
 from .runtime import (
     CreateDataQueryRun,
     DataQueryResultView,
@@ -136,6 +143,7 @@ __all__ = [
     "VerifiedQueryView",
     "DataQueryPlanV1",
     "PlanFilter",
+    "PlanFilterExpression",
     "PlanMeasure",
     "PlanOrderBy",
     "CreateDataQueryRun",

@@ -24,6 +24,7 @@ from agent_runtime.specialists.document.contracts import (
 )
 from agent_runtime.specialists.data_query.contracts import QueryResult
 from agent_runtime.specialists.visualization import EChartsResult
+from platform_core.contracts import AssetSearchPlanV1
 from platform_core.prompts import StrictPromptRenderer
 
 from .contracts import (
@@ -89,15 +90,25 @@ class ResponseComposerSkill:
             return self._compose_aiops(context, aiops_result)
         query_result = self._query_result(context)
         retrieval = self._document_result(context)
+        asset_search_plan = self._asset_search_plan(context)
         if (
             query_result is not None
             and retrieval is not None
-            and self._is_km_asset_enumeration(context)
+            and asset_search_plan is not None
         ):
+            if asset_search_plan.operation in {"COUNT", "GROUP"}:
+                return await self._compose_asset_aggregate_with_evidence(
+                    context, query_result, retrieval, asset_search_plan
+                )
             return await self._compose_km_asset_enumeration(
-                context, query_result, retrieval
+                context, query_result, retrieval,
+                search_plan=asset_search_plan,
             )
         if query_result is not None:
+            if asset_search_plan is not None:
+                return await self._compose_asset_query_result(
+                    context, query_result, asset_search_plan
+                )
             return await self._compose_query_result(context, query_result)
         if retrieval is None or not retrieval.citation_pack.citations:
             retrieval_warnings = (
@@ -182,6 +193,13 @@ class ResponseComposerSkill:
                 ),
             )
         answer_text, used_labels = validated
+        answer_text, used_labels = self._append_asset_supporting_list(
+            answer_text,
+            used_labels,
+            allowed,
+            search_plan=asset_search_plan,
+            language=language,
+        )
         references = tuple(
             ReferenceCard(
                 citation_label=label,
@@ -234,13 +252,26 @@ class ResponseComposerSkill:
             return
         query_result = self._query_result(context)
         retrieval = self._document_result(context)
+        asset_search_plan = self._asset_search_plan(context)
         if (
             query_result is not None
             and retrieval is not None
-            and self._is_km_asset_enumeration(context)
+            and asset_search_plan is not None
         ):
+            if asset_search_plan.operation in {"COUNT", "GROUP"}:
+                result = await self._compose_asset_aggregate_with_evidence(
+                    context, query_result, retrieval, asset_search_plan
+                )
+                answer = str(result.artifact.payload.get("answer") or "")
+                yield SkillProgress(
+                    event_type="answer.delta",
+                    payload={"chunk_index": 1, "delta": answer},
+                )
+                yield result
+                return
             result = await self._compose_km_asset_enumeration(
-                context, query_result, retrieval
+                context, query_result, retrieval,
+                search_plan=asset_search_plan,
             )
             answer = str(result.artifact.payload.get("answer") or "")
             yield SkillProgress(
@@ -250,6 +281,17 @@ class ResponseComposerSkill:
             yield result
             return
         if query_result is not None:
+            if asset_search_plan is not None:
+                result = await self._compose_asset_query_result(
+                    context, query_result, asset_search_plan
+                )
+                answer = str(result.artifact.payload.get("answer") or "")
+                yield SkillProgress(
+                    event_type="answer.delta",
+                    payload={"chunk_index": 1, "delta": answer},
+                )
+                yield result
+                return
             async for item in self._stream_query_result(
                 context, query_result
             ):
@@ -380,6 +422,13 @@ class ResponseComposerSkill:
             yield self._result(context, grounded)
             return
         answer_text, used_labels = validated
+        answer_text, used_labels = self._append_asset_supporting_list(
+            answer_text,
+            used_labels,
+            allowed,
+            search_plan=asset_search_plan,
+            language=language,
+        )
         for index, delta in enumerate(
             _markdown_answer_deltas(answer_text), start=1
         ):
@@ -545,13 +594,17 @@ class ResponseComposerSkill:
         return dict(artifacts[-1].payload) if artifacts else None
 
     @staticmethod
-    def _is_km_asset_enumeration(context: ExecutionContext) -> bool:
+    def _asset_search_plan(
+        context: ExecutionContext,
+    ) -> AssetSearchPlanV1 | None:
+        """读取 Root 冻结的统一 Asset 搜索计划。"""
         route = context.config_snapshot.get("route") or {}
-        return (
-            isinstance(route, dict)
-            and route.get("answer_basis")
-            == "SEMANTIC_RELEVANCE_ENUMERATION"
+        raw = (
+            route.get("asset_search_plan")
+            if isinstance(route, dict)
+            else getattr(route, "asset_search_plan", None)
         )
+        return AssetSearchPlanV1.model_validate(raw) if raw else None
 
     @staticmethod
     def _document_scope(context: ExecutionContext) -> dict[str, Any]:
@@ -697,6 +750,7 @@ class ResponseComposerSkill:
     def _enumeration_fallback(
         assets: list[dict[str, Any]], *, language: str,
         allowed: dict[str, Any] | None = None,
+        query_label: str = "Q1",
     ) -> str:
         labels_by_bundle = ResponseComposerSkill._citation_labels_by_bundle(
             allowed or {}
@@ -729,7 +783,10 @@ class ResponseComposerSkill:
                 str(item.get("bundle_id") or "").casefold(), ()
             )
             references = " ".join(
-                ("[Q1]", *(f"[{label}]" for label in citation_labels[:1]))
+                (
+                    f"[{query_label}]",
+                    *(f"[{label}]" for label in citation_labels[:1]),
+                )
             )
             lines.append(f"{index}. **{title}**{suffix} {references}")
         return "\n".join(lines)
@@ -748,6 +805,48 @@ class ResponseComposerSkill:
             bundle_id: tuple(labels)
             for bundle_id, labels in grouped.items()
         }
+
+    @staticmethod
+    def _append_asset_supporting_list(
+        answer: str,
+        used_labels: tuple[str, ...],
+        allowed: dict[str, Any],
+        *,
+        search_plan: AssetSearchPlanV1 | None,
+        language: str,
+    ) -> tuple[str, tuple[str, ...]]:
+        """纯文档回答附带 3 到 5 个可追溯 Asset，不放宽实际命中。"""
+        if search_plan is None or search_plan.operation == "LIST":
+            return answer, used_labels
+        target = search_plan.result_assets.target_count
+        selected: list[tuple[str, Any]] = []
+        seen_bundles: set[str] = set()
+        for label, citation in allowed.items():
+            bundle_key = str(getattr(citation, "bundle_id", "") or "")
+            if not bundle_key or bundle_key in seen_bundles:
+                continue
+            selected.append((label, citation))
+            seen_bundles.add(bundle_key)
+            if len(selected) >= target:
+                break
+        if not selected:
+            return answer, used_labels
+        heading = "相关 Asset：" if language.startswith("zh") else (
+            "Related assets:"
+        )
+        lines = []
+        for index, (label, citation) in enumerate(selected, start=1):
+            title = str(
+                getattr(citation, "bundle_title", None)
+                or getattr(citation, "title", None)
+                or "Asset"
+            )
+            lines.append(f"{index}. **{title}** [{label}]")
+        labels = tuple(dict.fromkeys((
+            *used_labels,
+            *(label for label, _ in selected),
+        )))
+        return f"{answer}\n\n{heading}\n\n" + "\n".join(lines), labels
 
     @staticmethod
     def _query_result(
@@ -783,32 +882,120 @@ class ResponseComposerSkill:
         context: ExecutionContext,
         query: QueryResult,
         retrieval: DocumentRetrievalResult,
+        *,
+        search_plan: AssetSearchPlanV1 | None = None,
+        query_label: str = "Q1",
     ) -> SkillResult:
-        """用问数冻结清单边界，再用对应正文补充可引用说明。"""
+        """用问数冻结资格边界，再按同 Bundle 正文证据确定最终清单。"""
         scope = self._document_scope(context)
-        assets = [
+        candidate_assets = [
             dict(item) for item in scope.get("assets") or ()
             if isinstance(item, dict)
-        ][:10]
-        if not assets:
-            assets = self._enumeration_assets_from_query(query)
-        total_count = int(scope.get("total_count") or query.row_count)
-        if total_count > 0 and not assets:
+        ]
+        if not candidate_assets:
+            candidate_assets = self._enumeration_assets_from_query(query)
+        citations = retrieval.citation_pack.citations
+        allowed = {item.citation_label: item for item in citations}
+        asset_by_bundle = {
+            str(item.get("bundle_id") or "").casefold(): item
+            for item in candidate_assets
+            if str(item.get("bundle_id") or "")
+        }
+        assets: list[dict[str, Any]] = []
+        seen_bundles: set[str] = set()
+        result_limit = (
+            search_plan.result_assets.target_count
+            if search_plan is not None
+            else 10
+        )
+        for citation in citations:
+            bundle_key = str(citation.bundle_id).casefold()
+            asset = asset_by_bundle.get(bundle_key)
+            if asset is None or bundle_key in seen_bundles:
+                continue
+            assets.append(asset)
+            seen_bundles.add(bundle_key)
+            if len(assets) >= result_limit:
+                break
+        if search_plan is not None and search_plan.preferences:
+            for asset in candidate_assets:
+                bundle_key = str(asset.get("bundle_id") or "").casefold()
+                if not bundle_key or bundle_key in seen_bundles:
+                    continue
+                assets.append(asset)
+                seen_bundles.add(bundle_key)
+                if len(assets) >= result_limit:
+                    break
+        if query.row_count > 0 and not candidate_assets:
             raise ValueError("KM_ASSET_ENUMERATION_LIST_EMPTY")
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        prefix = self._enumeration_prefix(
-            language=language,
-            total_count=total_count,
-            shown_count=len(assets),
-            truncated=bool(scope.get("truncated") or query.truncated),
-            source_truncated=not bool(
-                query.provenance.get("count_exact", True)
-            ),
+        semantic = bool(
+            search_plan is not None
+            and (
+                search_plan.has_semantic_eligibility
+                or search_plan.preferences
+            )
         )
-        citations = retrieval.citation_pack.citations
-        allowed = {item.citation_label: item for item in citations}
+        if semantic and not assets:
+            return self._result(context, GroundedAnswer(
+                answer=localized_message("insufficient_evidence", language),
+                status="INSUFFICIENT_EVIDENCE",
+                warnings=tuple(dict.fromkeys((
+                    *retrieval.warnings,
+                    "没有 Asset 同时满足资格边界与正文证据要求",
+                ))),
+            ))
+        if semantic:
+            semantic_count_fallback = bool(
+                search_plan is not None
+                and "SEMANTIC_TOTAL_COUNT" in search_plan.unsupported_requests
+            )
+            if semantic_count_fallback:
+                prefix = (
+                    f"语义相关性不能用于精确统计总数；以下提供 {len(assets)} 个"
+                    "较新且有正文证据的相关 Asset 供参考。"
+                    if language.startswith("zh")
+                    else (
+                        "Semantic relevance cannot produce an exact total. "
+                        f"Here are {len(assets)} recent relevant assets with "
+                        "content evidence."
+                    )
+                )
+            else:
+                if citations:
+                    prefix = (
+                        f"以下是 {len(assets)} 个满足条件的 Asset；"
+                        "正文证据已用于语义条件或偏好排序。"
+                        if language.startswith("zh")
+                        else (
+                            f"Here are {len(assets)} matching assets; content "
+                            "evidence was used for semantic conditions or preferences."
+                        )
+                    )
+                else:
+                    prefix = (
+                        f"以下是 {len(assets)} 个满足精确条件的 Asset；"
+                        "未找到可证明软偏好的正文证据，因此保留原排序。"
+                        if language.startswith("zh")
+                        else (
+                            f"Here are {len(assets)} assets matching the exact "
+                            "criteria. No content evidence proved the soft preference, "
+                            "so the original order is retained."
+                        )
+                    )
+        else:
+            total_count = int(scope.get("total_count") or query.row_count)
+            prefix = self._enumeration_prefix(
+                language=language,
+                total_count=total_count,
+                shown_count=len(assets),
+                truncated=bool(scope.get("truncated") or query.truncated),
+                source_truncated=not bool(
+                    query.provenance.get("count_exact", True)
+                ),
+            )
         body = ""
         model_name = str(agent_model_name(
             context.config_snapshot.get("agent", {}), "composer_llm"
@@ -828,6 +1015,12 @@ class ResponseComposerSkill:
                     "role": "user",
                     "content": json.dumps({
                         "question": context.original_input,
+                        "operation": (
+                            search_plan.operation if search_plan else "LIST"
+                        ),
+                        "answer_detail": (
+                            search_plan.answer_detail if search_plan else "BRIEF"
+                        ),
                         "assets": assets,
                         "citations": [
                             {
@@ -870,8 +1063,16 @@ class ResponseComposerSkill:
                         })
         if not body:
             body = self._enumeration_fallback(
-                assets, language=language, allowed=allowed
+                assets,
+                language=language,
+                allowed=allowed,
+                query_label=query_label,
             )
+        else:
+            for asset in assets:
+                title = str(asset.get("title") or "")
+                if title:
+                    body = body.replace(title, f"{title} [{query_label}]", 1)
         answer = f"{prefix}\n\n{body}".strip()
         used_labels = tuple(dict.fromkeys(
             label for label in _CITATION_PATTERN.findall(body)
@@ -879,7 +1080,7 @@ class ResponseComposerSkill:
         ))
         references = (
             QueryResultReferenceCard(
-                citation_label="Q1",
+                citation_label=query_label,
                 query_result_id=query.query_result_id,
                 provider=query.provider,
                 row_count=query.row_count,
@@ -898,11 +1099,177 @@ class ResponseComposerSkill:
         return self._result(context, GroundedAnswer(
             answer=answer,
             status="READY",
-            used_citation_labels=("Q1", *used_labels),
+            used_citation_labels=(query_label, *used_labels),
             references=references,
             query_results=(query.model_dump(mode="json"),),
             warnings=tuple(dict.fromkeys(warnings)),
         ))
+
+    async def _compose_asset_aggregate_with_evidence(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+        search_plan: AssetSearchPlanV1,
+    ) -> SkillResult:
+        """组合精确聚合 Q1 与经语义偏好排序的支撑 Asset Q2/Cn。"""
+        aggregate = await self._compose_query_result(context, query)
+        aggregate_answer = GroundedAnswer.model_validate(
+            aggregate.artifact.payload
+        )
+        if not query.supporting_rows:
+            return aggregate
+        sample = query.model_copy(update={
+            "query_result_id": (
+                query.supporting_query_result_id or query.query_result_id
+            ),
+            "columns": query.supporting_columns,
+            "rows": query.supporting_rows,
+            "row_count": len(query.supporting_rows),
+            "truncated": False,
+            "supporting_columns": (),
+            "supporting_rows": (),
+            "supporting_query_result_id": None,
+        })
+        support_result = await self._compose_km_asset_enumeration(
+            context,
+            sample,
+            retrieval,
+            search_plan=search_plan,
+            query_label="Q2",
+        )
+        support_answer = GroundedAnswer.model_validate(
+            support_result.artifact.payload
+        )
+        if support_answer.status != "READY":
+            return self._result(context, aggregate_answer.model_copy(update={
+                "warnings": tuple(dict.fromkeys((
+                    *aggregate_answer.warnings,
+                    *support_answer.warnings,
+                ))),
+            }))
+        return self._result(context, GroundedAnswer(
+            answer=f"{aggregate_answer.answer}\n\n{support_answer.answer}",
+            status="READY",
+            used_citation_labels=(
+                *aggregate_answer.used_citation_labels,
+                *support_answer.used_citation_labels,
+            ),
+            references=(
+                *aggregate_answer.references,
+                *support_answer.references,
+            ),
+            query_results=(
+                query.model_copy(update={
+                    "supporting_columns": (),
+                    "supporting_rows": (),
+                    "supporting_query_result_id": None,
+                }).model_dump(mode="json"),
+                sample.model_dump(mode="json"),
+            ),
+            warnings=tuple(dict.fromkeys((
+                *aggregate_answer.warnings,
+                *support_answer.warnings,
+            ))),
+        ))
+
+    async def _compose_asset_query_result(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        search_plan: AssetSearchPlanV1,
+    ) -> SkillResult:
+        """确定性展示 Asset 清单，并为聚合问数附带同范围样例。"""
+        if search_plan.operation == "LIST":
+            assets = self._enumeration_assets_from_query(query)[
+                :search_plan.result_assets.target_count
+            ]
+            language = response_language(
+                context.config_snapshot, context.original_input
+            )
+            prefix = self._enumeration_prefix(
+                language=language,
+                total_count=query.row_count,
+                shown_count=len(assets),
+                truncated=query.truncated,
+                source_truncated=not bool(
+                    query.provenance.get("count_exact", True)
+                ),
+            )
+            body = self._enumeration_fallback(
+                assets, language=language, allowed={}
+            )
+            return self._result(context, GroundedAnswer(
+                answer=f"{prefix}\n\n{body}",
+                status="READY",
+                used_citation_labels=("Q1",),
+                references=(QueryResultReferenceCard(
+                    citation_label="Q1",
+                    query_result_id=query.query_result_id,
+                    provider=query.provider,
+                    row_count=query.row_count,
+                ),),
+                query_results=(query.model_dump(mode="json"),),
+                warnings=(
+                    ("问数结果已按服务端上限截断",)
+                    if query.truncated else ()
+                ),
+            ))
+
+        base = await self._compose_query_result(context, query)
+        if not query.supporting_rows:
+            return base
+        payload = GroundedAnswer.model_validate(base.artifact.payload)
+        sample = query.model_copy(update={
+            "query_result_id": (
+                query.supporting_query_result_id or query.query_result_id
+            ),
+            "rows": query.supporting_rows,
+            "columns": query.supporting_columns,
+            "row_count": len(query.supporting_rows),
+            "truncated": False,
+            "supporting_columns": (),
+            "supporting_rows": (),
+            "supporting_query_result_id": None,
+            "provenance": {
+                **query.provenance,
+                "supporting_of": str(query.query_result_id),
+            },
+        })
+        assets = self._enumeration_assets_from_query(sample)[
+            :search_plan.result_assets.target_count
+        ]
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        heading = "同条件下的较新 Asset：" if language.startswith("zh") else (
+            "Recent assets from the same result scope:"
+        )
+        asset_lines = self._enumeration_fallback(
+            assets, language=language, allowed={}, query_label="Q2"
+        )
+        answer = f"{payload.answer}\n\n{heading}\n\n{asset_lines}"
+        return self._result(context, payload.model_copy(update={
+            "answer": answer,
+            "used_citation_labels": (*payload.used_citation_labels, "Q2"),
+            "references": (
+                *payload.references,
+                QueryResultReferenceCard(
+                    citation_label="Q2",
+                    query_result_id=sample.query_result_id,
+                    provider=sample.provider,
+                    row_count=sample.row_count,
+                ),
+            ),
+            "query_results": (
+                query.model_copy(update={
+                    "supporting_columns": (),
+                    "supporting_rows": (),
+                    "supporting_query_result_id": None,
+                }).model_dump(mode="json"),
+                sample.model_dump(mode="json"),
+            ),
+        }))
 
     async def _stream_query_result(
         self, context: ExecutionContext, query: QueryResult

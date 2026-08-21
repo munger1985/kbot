@@ -25,6 +25,18 @@ from .conversation import (
 )
 from .identity import AuthContext, IdentityEntryKind, PrincipalKind, ServiceIdentity
 from .slack import SlackWebhookEnvelope, SlackWebhookReceipt
+from .asset_search import (
+    AssetBooleanExpression,
+    AssetEvidencePolicy,
+    AssetResultPolicy,
+    AssetSearchAmbiguity,
+    AssetSearchCriterion,
+    AssetSearchMeasure,
+    AssetSearchOrder,
+    AssetSearchPlanV1,
+    AssetSearchPreference,
+    ResolvedAssetConcept,
+)
 from .model import (
     EmbeddingDataItem,
     ModelArchiveRequest,
@@ -74,6 +86,16 @@ __all__ = [
     "ServiceIdentity",
     "SlackWebhookEnvelope",
     "SlackWebhookReceipt",
+    "AssetBooleanExpression",
+    "AssetEvidencePolicy",
+    "AssetResultPolicy",
+    "AssetSearchAmbiguity",
+    "AssetSearchCriterion",
+    "AssetSearchMeasure",
+    "AssetSearchOrder",
+    "AssetSearchPlanV1",
+    "AssetSearchPreference",
+    "ResolvedAssetConcept",
     "PUBLIC_API_V1",
     "INTERNAL_API_V1",
     "data_query",

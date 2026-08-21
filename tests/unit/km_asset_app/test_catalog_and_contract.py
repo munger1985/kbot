@@ -51,7 +51,7 @@ class KmAssetCatalogTest(unittest.TestCase):
         model = SemanticModelDefinition.model_validate(
             km_asset_definition(schema_name="KBOTUI_DEV")
         )
-        self.assertEqual("KBOT_V_KM_ASSET_CURRENT", model.datasets[0].physical_object)
+        self.assertEqual("KBOT_V_KM_ASSET_SEARCHABLE", model.datasets[0].physical_object)
         self.assertEqual("DOMAIN_ID", model.datasets[0].scope_column)
 
     def test_compiler_injects_domain_scope_before_user_filters(self):
@@ -108,7 +108,7 @@ class KmAssetCatalogTest(unittest.TestCase):
             compiled.parameters,
         )
 
-    def test_topic_filter_matches_title_product_and_solution(self):
+    def test_semantic_topic_is_not_exposed_as_query_dimension(self):
         model = SemanticModelDefinition.model_validate(
             km_asset_definition(schema_name="KBOTUI_DEV")
         )
@@ -118,34 +118,9 @@ class KmAssetCatalogTest(unittest.TestCase):
             "KC_BUNDLE_REVISION_ID",
             dimensions["bundle_revision_id"].physical_column,
         )
-        topic = next(item for item in model.dimensions if item.name == "topic")
-        self.assertFalse(topic.groupable)
-        self.assertEqual(("CONTAINS",), topic.allowed_filter_operators)
+        self.assertNotIn("topic", {item.name for item in model.dimensions})
 
-        plan = DataQueryPlanV1.model_validate({
-            "semantic_model_id": "01900000-0000-7000-8000-000000000003",
-            "semantic_model_version": 1,
-            "dataset": "assets",
-            "dimensions": [],
-            "measures": [{"name": "asset_count", "aggregation": "COUNT"}],
-            "filters": [{
-                "field": "topic",
-                "operator": "CONTAINS",
-                "values": [" OAC "],
-            }],
-            "limit": 100,
-        })
-
-        compiled = compile_dialect_query(
-            dialect="ORACLE", plan=plan, model=model,
-            policy_max_limit=1000, scope_value=41,
-        )
-
-        self.assertIn('LOWER("ASSET_TITLE") LIKE', compiled.sql)
-        self.assertIn('LOWER("ASSET_PRODUCT") LIKE', compiled.sql)
-        self.assertIn('LOWER("ASSET_SOLUTION") LIKE', compiled.sql)
-        self.assertIn(" OR ", compiled.sql)
-        self.assertEqual((41, "oac", "oac", "oac", 100), compiled.parameters)
+        self.assertNotIn("topic", dimensions)
 
     def test_asset_date_filter_uses_typed_date_parameter(self):
         model = SemanticModelDefinition.model_validate(

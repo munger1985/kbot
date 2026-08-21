@@ -52,6 +52,7 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     for item in plan.measures:
         expression = measure_expression(item.name)
         select.append(f"{expression} AS {quote(item.name)}")
+    filter_predicates: list[str] = []
     for item in plan.filters:
         dimension = dimensions[item.field]
         columns = (dimension.physical_column, *dimension.filter_alias_columns)
@@ -81,7 +82,26 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
             token = placeholder(start+1); mapping = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
             predicates.append(f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
         conjunction = " AND " if item.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
-        where.append(predicates[0] if len(predicates) == 1 else f"({conjunction.join(predicates)})")
+        filter_predicates.append(
+            predicates[0]
+            if len(predicates) == 1
+            else f"({conjunction.join(predicates)})"
+        )
+    if plan.filter_expression is None:
+        where.extend(filter_predicates)
+    else:
+        def compile_filter_expression(expression) -> str:
+            if expression.node_type == "FILTER":
+                return filter_predicates[int(expression.filter_index)]
+            if expression.node_type == "NOT":
+                return f"NOT ({compile_filter_expression(expression.child)})"
+            token = " AND " if expression.node_type == "ALL" else " OR "
+            return "(" + token.join(
+                compile_filter_expression(item)
+                for item in expression.children
+            ) + ")"
+
+        where.append(compile_filter_expression(plan.filter_expression))
     clauses = [f"SELECT {', '.join(select)}", f"FROM {quote(dataset.physical_schema)}.{quote(dataset.physical_object)}"]
     if where: clauses.append("WHERE " + " AND ".join(where))
     if group: clauses.append("GROUP BY " + ", ".join(group))

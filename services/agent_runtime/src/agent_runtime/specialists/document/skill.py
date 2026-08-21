@@ -2,13 +2,20 @@
 
 import base64
 import asyncio
+import json
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from PIL import Image
-from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.contracts import (
+    AssetBooleanExpression,
+    AssetSearchCriterion,
+    AssetSearchPlanV1,
+    AuthContext,
+    PrincipalKind,
+)
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
@@ -126,31 +133,29 @@ class KnowledgeRetrievalSkill:
                 },
             )
 
-        evidence = await self._client.retrieve_evidence(
-            query=retrieval_query,
-            candidates=[
-                {
-                    "collection_id": item["collection_id"],
-                    "bundle_id": item["bundle_id"],
-                    "bundle_revision_id": item["bundle_revision_id"],
-                    "document_version_ids": (
-                        [item["document_version_id"]]
-                        if item.get("document_version_id")
-                        else []
-                    ),
-                }
-                for item in candidates
-            ],
-            domain_id=context.domain_id,
-            agent_id=str(context.agent_id),
-            auth_context=self._auth_context(context),
-            max_security_level=self._security_level(context),
-            max_evidence=retrieval_config["max_citations"],
-            context_limit=retrieval_config["context_limit"],
-            coverage_mode=coverage_mode,
-            run_id=context.run_id,
-            task_id=context.task_id,
-        )
+        asset_search_plan = self._asset_search_plan(context)
+        if asset_search_plan is not None and scoped_candidates is not None:
+            evidence, candidates = await self._retrieve_asset_plan_evidence(
+                context=context,
+                plan=asset_search_plan,
+                candidates=candidates,
+                retrieval_config=retrieval_config,
+                coverage_mode=coverage_mode,
+            )
+        else:
+            evidence = await self._client.retrieve_evidence(
+                query=retrieval_query,
+                candidates=self._evidence_candidates(candidates),
+                domain_id=context.domain_id,
+                agent_id=str(context.agent_id),
+                auth_context=self._auth_context(context),
+                max_security_level=self._security_level(context),
+                max_evidence=retrieval_config["max_citations"],
+                context_limit=retrieval_config["context_limit"],
+                coverage_mode=coverage_mode,
+                run_id=context.run_id,
+                task_id=context.task_id,
+            )
         warnings.extend(evidence.get("warnings") or [])
         evidence_diagnostics = dict(
             evidence.get("diagnostics") or {}
@@ -159,6 +164,7 @@ class KnowledgeRetrievalSkill:
         citations = self._map_citations(
             raw_citations,
             candidates=candidates,
+            prefer_evidence_order=self._prefer_evidence_order(context),
         )
         status = "READY" if citations else "INSUFFICIENT_EVIDENCE"
         gaps = () if citations else ("未找到可引用的正文证据",)
@@ -228,6 +234,415 @@ class KnowledgeRetrievalSkill:
             )
         )
 
+    @staticmethod
+    def _asset_search_plan(
+        context: ExecutionContext,
+    ) -> AssetSearchPlanV1 | None:
+        route = context.config_snapshot.get("route") or {}
+        raw = route.get("asset_search_plan") if isinstance(route, dict) else None
+        return AssetSearchPlanV1.model_validate(raw) if raw else None
+
+    @staticmethod
+    def _evidence_candidates(
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """只向 KC 发送 Evidence API 声明的候选字段。"""
+        return [{
+            "collection_id": item["collection_id"],
+            "bundle_id": item["bundle_id"],
+            "bundle_revision_id": item["bundle_revision_id"],
+            "document_version_ids": (
+                [item["document_version_id"]]
+                if item.get("document_version_id") else []
+            ),
+        } for item in candidates]
+
+    async def _retrieve_asset_plan_evidence(
+        self,
+        *,
+        context: ExecutionContext,
+        plan: AssetSearchPlanV1,
+        candidates: list[dict[str, Any]],
+        retrieval_config: dict[str, int],
+        coverage_mode: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """逐个语义条件取证，再按布尔表达式生成条件命中矩阵。"""
+        hard_content = [
+            item for item in plan.criteria
+            if item.kind not in {"METADATA", "IDENTIFIER"}
+        ]
+        preference_content = [
+            item for item in plan.preferences
+            if item.criterion.kind not in {"METADATA", "IDENTIFIER"}
+        ]
+        requests: list[tuple[str, AssetSearchCriterion | None, str]] = []
+        for criterion in hard_content:
+            requests.append((
+                criterion.criterion_id,
+                criterion,
+                self._criterion_query(criterion),
+            ))
+        for preference in preference_content:
+            requests.append((
+                preference.preference_id,
+                preference.criterion,
+                self._criterion_query(preference.criterion),
+            ))
+        content_support_required = bool(
+            not hard_content
+            and plan.target == "CONTENT"
+            and plan.operation in {"ANSWER", "COMPARE"}
+        )
+        if content_support_required:
+            requests.append(("__content__", None, plan.query_text))
+
+        semaphore = asyncio.Semaphore(4)
+
+        async def retrieve_one(key, criterion, query):
+            async with semaphore:
+                response = await self._client.retrieve_evidence(
+                    query=query,
+                    candidates=self._evidence_candidates(candidates),
+                    domain_id=context.domain_id,
+                    agent_id=str(context.agent_id),
+                    auth_context=self._auth_context(context),
+                    max_security_level=self._security_level(context),
+                    max_evidence=retrieval_config["max_citations"],
+                    context_limit=retrieval_config["context_limit"],
+                    coverage_mode=coverage_mode,
+                    run_id=context.run_id,
+                    task_id=context.task_id,
+                )
+            groups = list(response.get("citations") or [])
+            if criterion is not None and criterion.kind == "EXACT_PHRASE":
+                groups = self._exact_phrase_groups(groups, criterion)
+            return key, response, groups
+
+        retrieved = await asyncio.gather(*(
+            retrieve_one(*request) for request in requests
+        ))
+        groups_by_key = {key: groups for key, _, groups in retrieved}
+        hit_sets, support_judgments = await self._judge_asset_support(
+            context=context,
+            plan=plan,
+            groups_by_key=groups_by_key,
+        )
+        ranks = {
+            key: {
+                str(group.get("bundle_id") or ""): rank
+                for rank, group in enumerate(groups, start=1)
+            }
+            for key, groups in groups_by_key.items()
+        }
+        assets = {
+            str(item.get("bundle_id") or ""): item
+            for item in self._document_scope_assets(context)
+        }
+        criterion_by_id = {item.criterion_id: item for item in plan.criteria}
+        eligible: list[dict[str, Any]] = []
+        matrix: list[dict[str, Any]] = []
+        candidate_order = {
+            str(item.get("bundle_id") or ""): index
+            for index, item in enumerate(candidates)
+        }
+        for candidate in candidates:
+            bundle_id = str(candidate.get("bundle_id") or "")
+            asset = assets.get(bundle_id, {})
+            statuses = {
+                criterion_id: self._criterion_matches(
+                    criterion,
+                    asset=asset,
+                    bundle_id=bundle_id,
+                    hit_sets=hit_sets,
+                )
+                for criterion_id, criterion in criterion_by_id.items()
+            }
+            is_eligible = self._expression_matches(
+                plan.eligibility_expression, statuses
+            )
+            if content_support_required:
+                is_eligible = is_eligible and bundle_id in hit_sets.get(
+                    "__content__", set()
+                )
+            preference_hits = [
+                preference.preference_id
+                for preference in plan.preferences
+                if self._criterion_matches(
+                    preference.criterion,
+                    asset=asset,
+                    bundle_id=bundle_id,
+                    hit_sets={
+                        preference.criterion.criterion_id: hit_sets.get(
+                            preference.preference_id, set()
+                        )
+                    },
+                )
+            ]
+            matrix.append({
+                "asset_id": asset.get("asset_id"),
+                "bundle_id": bundle_id,
+                "eligible": is_eligible,
+                "requirements": statuses,
+                "matched_preferences": preference_hits,
+            })
+            if is_eligible:
+                candidate = dict(candidate)
+                candidate["_preference_hits"] = len(preference_hits)
+                hard_ranks = [
+                    ranks.get(item.criterion_id, {}).get(bundle_id, 10**6)
+                    for item in hard_content
+                    if statuses.get(item.criterion_id)
+                ]
+                candidate["_weakest_hard_rank"] = max(hard_ranks, default=0)
+                eligible.append(candidate)
+        eligible.sort(key=lambda item: (
+            -int(item.get("_preference_hits") or 0),
+            int(item.get("_weakest_hard_rank") or 0),
+            candidate_order.get(str(item.get("bundle_id") or ""), 10**6),
+        ))
+
+        merged_groups: list[dict[str, Any]] = []
+        for candidate in eligible:
+            bundle_id = str(candidate.get("bundle_id") or "")
+            merged_items: list[dict[str, Any]] = []
+            first_group: dict[str, Any] | None = None
+            for key, groups in groups_by_key.items():
+                for group in groups:
+                    if str(group.get("bundle_id") or "") != bundle_id:
+                        continue
+                    if first_group is None:
+                        first_group = dict(group)
+                    merged_items.extend(group.get("items") or [])
+            if first_group is not None and merged_items:
+                first_group["items"] = merged_items
+                merged_groups.append(first_group)
+            candidate.pop("_preference_hits", None)
+            candidate.pop("_weakest_hard_rank", None)
+        warnings = [
+            warning
+            for _, response, _ in retrieved
+            for warning in response.get("warnings") or []
+        ]
+        return {
+            "citations": merged_groups,
+            "warnings": warnings,
+            "diagnostics": {
+                "strategy": "ASSET_CRITERION_MATRIX.v1",
+                "criteria_count": len(hard_content),
+                "preference_count": len(preference_content),
+                "eligible_count": len(eligible),
+                "requirements": matrix,
+                "support_judgments": support_judgments,
+            },
+        }, eligible
+
+    async def _judge_asset_support(
+        self,
+        *,
+        context: ExecutionContext,
+        plan: AssetSearchPlanV1,
+        groups_by_key: dict[str, list[dict[str, Any]]],
+    ) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
+        """只让直接正文支持通过语义硬条件，缺失判定一律视为不支持。"""
+        entries = []
+        for key, groups in groups_by_key.items():
+            for group in groups:
+                excerpts = []
+                for item in group.get("items") or []:
+                    evidence = item.get("evidence") or {}
+                    content = str(evidence.get("content_text") or "").strip()
+                    if content:
+                        excerpts.append(content[:1200])
+                if excerpts:
+                    entries.append({
+                        "criterion_key": key,
+                        "bundle_id": str(group.get("bundle_id") or ""),
+                        "excerpts": excerpts,
+                    })
+        if not entries:
+            return {key: set() for key in groups_by_key}, []
+        model_name = str(agent_model_name(
+            context.config_snapshot.get("agent", {}), "composer_llm"
+        ) or "").strip()
+        if not model_name or self._model_client is None or self._prompt_resolver is None:
+            raise ValueError("Agent 未配置 Asset 条件支持判断模型")
+        prompt = await self._prompt_resolver.resolve(
+            "agent_runtime.km_asset_criterion_support"
+        )
+        criteria = {
+            item.criterion_id: {
+                "kind": item.kind,
+                "values": list(item.values),
+                "field_scope": list(item.field_scope),
+            }
+            for item in plan.criteria
+            if item.kind not in {"METADATA", "IDENTIFIER"}
+        }
+        criteria.update({
+            item.preference_id: {
+                "kind": item.criterion.kind,
+                "values": list(item.criterion.values),
+                "field_scope": list(item.criterion.field_scope),
+            }
+            for item in plan.preferences
+            if item.criterion.kind not in {"METADATA", "IDENTIFIER"}
+        })
+        criteria["__content__"] = {
+            "kind": "QUESTION_SUPPORT",
+            "values": [plan.query_text],
+            "field_scope": ["CONTENT"],
+        }
+        known = {
+            (item["criterion_key"], item["bundle_id"]) for item in entries
+        }
+        last_error = ""
+        for attempt in range(2):
+            response = await self._model_client.get_llm_json(
+                served_model_name=model_name,
+                prompt=[
+                    {"role": "system", "content": prompt.content},
+                    {"role": "user", "content": json.dumps({
+                        "question": plan.query_text,
+                        "criteria": criteria,
+                        "evidence": entries,
+                    }, ensure_ascii=False)},
+                ],
+            )
+            try:
+                judgments = response.get("judgments")
+                if not isinstance(judgments, list):
+                    raise ValueError("judgments 必须是数组")
+                normalized = []
+                seen = set()
+                for item in judgments:
+                    if not isinstance(item, dict):
+                        raise ValueError("judgment 必须是对象")
+                    pair = (
+                        str(item.get("criterion_key") or ""),
+                        str(item.get("bundle_id") or ""),
+                    )
+                    status = str(item.get("status") or "")
+                    if pair not in known or pair in seen:
+                        raise ValueError("judgment 引用了未知或重复的条件证据")
+                    if status not in {
+                        "DIRECT_SUPPORT", "PARTIAL_SUPPORT", "CONTEXT_ONLY",
+                        "CONTRADICTS", "NO_SUPPORT",
+                    }:
+                        raise ValueError("judgment status 不符合支持判断协议")
+                    seen.add(pair)
+                    normalized.append({
+                        "criterion_key": pair[0],
+                        "bundle_id": pair[1],
+                        "status": status,
+                    })
+                hit_sets = {key: set() for key in groups_by_key}
+                for item in normalized:
+                    if item["status"] == "DIRECT_SUPPORT":
+                        hit_sets[item["criterion_key"]].add(item["bundle_id"])
+                return hit_sets, normalized
+            except (AttributeError, TypeError, ValueError) as exc:
+                last_error = str(exc)
+                if attempt == 0:
+                    continue
+        raise ValueError(f"Asset 条件支持判断输出不符合协议：{last_error}")
+
+    @staticmethod
+    def _document_scope_assets(context: ExecutionContext) -> list[dict[str, Any]]:
+        for artifact in reversed(context.input_artifacts):
+            if artifact.artifact_type == "DOCUMENT_SCOPE":
+                return [
+                    dict(item) for item in (artifact.payload or {}).get("assets") or []
+                    if isinstance(item, dict)
+                ]
+        return []
+
+    @staticmethod
+    def _criterion_query(criterion: AssetSearchCriterion) -> str:
+        return " ".join(str(value) for value in criterion.values).strip()
+
+    @staticmethod
+    def _exact_phrase_groups(
+        groups: list[dict[str, Any]], criterion: AssetSearchCriterion
+    ) -> list[dict[str, Any]]:
+        phrases = [str(value).casefold() for value in criterion.values]
+        result = []
+        for group in groups:
+            items = [
+                item for item in group.get("items") or []
+                if all(
+                    phrase in str(
+                        (item.get("evidence") or {}).get("content_text") or ""
+                    ).casefold()
+                    for phrase in phrases
+                )
+            ]
+            if items:
+                copy = dict(group)
+                copy["items"] = items
+                result.append(copy)
+        return result
+
+    @classmethod
+    def _criterion_matches(
+        cls,
+        criterion: AssetSearchCriterion,
+        *,
+        asset: dict[str, Any],
+        bundle_id: str,
+        hit_sets: dict[str, set[str]],
+    ) -> bool:
+        if criterion.kind not in {"METADATA", "IDENTIFIER"}:
+            return bundle_id in hit_sets.get(criterion.criterion_id, set())
+        values = [asset.get(field.casefold()) for field in criterion.field_scope]
+        expected = list(criterion.values)
+        value = values[0] if values else None
+        operator = criterion.operator
+        if operator == "IS_NULL":
+            return value is None
+        if operator == "IS_NOT_NULL":
+            return value is not None
+        normalized = str(value or "").strip().casefold()
+        expected_text = [str(item).strip().casefold() for item in expected]
+        if operator == "EQ":
+            return normalized == expected_text[0]
+        if operator == "NE":
+            return normalized != expected_text[0]
+        if operator == "IN":
+            return normalized in expected_text
+        if operator == "NOT_IN":
+            return normalized not in expected_text
+        if operator == "CONTAINS":
+            return all(item in normalized for item in expected_text)
+        if operator == "STARTS_WITH":
+            return normalized.startswith(expected_text[0])
+        if operator == "BETWEEN":
+            return expected_text[0] <= normalized <= expected_text[1]
+        comparisons = {
+            "GT": normalized > expected_text[0],
+            "GTE": normalized >= expected_text[0],
+            "LT": normalized < expected_text[0],
+            "LTE": normalized <= expected_text[0],
+        }
+        return comparisons.get(operator, False)
+
+    @classmethod
+    def _expression_matches(
+        cls,
+        expression: AssetBooleanExpression | None,
+        statuses: dict[str, bool],
+    ) -> bool:
+        if expression is None:
+            return True
+        if expression.node_type == "REF":
+            return statuses.get(str(expression.criterion_id), False)
+        if expression.node_type == "NOT":
+            return not cls._expression_matches(expression.child, statuses)
+        values = [
+            cls._expression_matches(item, statuses)
+            for item in expression.children
+        ]
+        return all(values) if expression.node_type == "ALL" else any(values)
+
     async def _scoped_candidates(
         self,
         *,
@@ -248,32 +663,56 @@ class KnowledgeRetrievalSkill:
             return None
         allowed = {str(value) for value in allowed_collection_ids}
         candidates: list[dict[str, Any]] = []
-        for target in list(scope.get("bundle_targets") or [])[:10]:
+        retrieval_config = self._retrieval_config(context)
+        raw_targets = list(scope.get("bundle_targets") or [])
+        scoped_targets = raw_targets[:retrieval_config["candidate_scope_limit"]]
+        semaphore = asyncio.Semaphore(16)
+
+        async def resolve_target(target):
             if not isinstance(target, dict):
-                continue
+                return None, None
             try:
                 bundle_id = UUID(str(target["bundle_id"]))
                 revision_id = UUID(str(target["bundle_revision_id"]))
-                status = await self._client.get_bundle_status(
-                    domain_id=context.domain_id,
-                    bundle_id=bundle_id,
-                    auth_context=self._auth_context(context),
+                async with semaphore:
+                    status = await self._client.get_bundle_status(
+                        domain_id=context.domain_id,
+                        bundle_id=bundle_id,
+                        auth_context=self._auth_context(context),
+                    )
+                availability = str(
+                    status.get("availability_status") or ""
+                ).upper()
+                current_revision_id = str(
+                    status.get("current_revision_id") or ""
                 )
+                if availability not in {"READY", "PARTIAL"}:
+                    return None, "问数命中的 Asset 当前 Bundle 不可检索"
+                if current_revision_id != str(revision_id):
+                    return None, "问数命中的 Asset 已切换到其他 Bundle Revision"
                 collection_id = str(status.get("collection_id") or "")
                 if collection_id not in allowed:
-                    warnings.append("问数命中的 Asset 不属于当前 Agent Collection")
-                    continue
-                candidates.append({
+                    return None, "问数命中的 Asset 不属于当前 Agent Collection"
+                return {
                     "collection_id": collection_id,
                     "bundle_id": str(bundle_id),
                     "bundle_revision_id": str(revision_id),
                     "document_version_ids": [],
                     "display_title": str(target.get("title") or ""),
-                })
+                }, None
             except (KeyError, TypeError, ValueError):
-                warnings.append("问数命中的 Asset 缺少有效 Bundle 定位信息")
+                return None, "问数命中的 Asset 缺少有效 Bundle 定位信息"
             except Exception:
-                warnings.append("部分问数命中的 Asset 无法解析对应 Bundle")
+                return None, "部分问数命中的 Asset 无法解析对应 Bundle"
+
+        resolved = await asyncio.gather(*(
+            resolve_target(target) for target in scoped_targets
+        ))
+        for candidate, warning in resolved:
+            if candidate is not None:
+                candidates.append(candidate)
+            if warning:
+                warnings.append(warning)
         return candidates
 
     async def _visual_hits(
@@ -539,6 +978,10 @@ class KnowledgeRetrievalSkill:
             "context_limit": max(
                 0, min(int(retrieval.get("context_limit", 4)), 20)
             ),
+            "candidate_scope_limit": max(
+                1,
+                min(int(retrieval.get("candidate_scope_limit", 1000)), 1000),
+            ),
         }
 
     @staticmethod
@@ -546,6 +989,7 @@ class KnowledgeRetrievalSkill:
         raw_citations: list[dict[str, Any]],
         *,
         candidates: list[dict[str, Any]],
+        prefer_evidence_order: bool = False,
     ) -> list[Citation]:
         titles = {
             str(item["bundle_id"]): str(item.get("display_title") or "")
@@ -557,9 +1001,11 @@ class KnowledgeRetrievalSkill:
                 group
             )
         candidate_order = [str(item["bundle_id"]) for item in candidates]
-        ordered_bundle_ids = list(
-            dict.fromkeys((*candidate_order, *groups_by_bundle.keys()))
-        )
+        ordered_bundle_ids = list(dict.fromkeys(
+            (*groups_by_bundle.keys(), *candidate_order)
+            if prefer_evidence_order
+            else (*candidate_order, *groups_by_bundle.keys())
+        ))
         result: list[Citation] = []
         for bundle_key in ordered_bundle_ids:
             groups = groups_by_bundle.get(bundle_key, [])
@@ -641,6 +1087,15 @@ class KnowledgeRetrievalSkill:
                 )
             )
         return result
+
+    @staticmethod
+    def _prefer_evidence_order(context: ExecutionContext) -> bool:
+        route = context.config_snapshot.get("route") or {}
+        plan = route.get("asset_search_plan") if isinstance(route, dict) else None
+        if not isinstance(plan, dict):
+            return False
+        unsupported = set(plan.get("unsupported_requests") or ())
+        return "SEMANTIC_TOTAL_COUNT" not in unsupported
 
     @staticmethod
     def _empty_result(

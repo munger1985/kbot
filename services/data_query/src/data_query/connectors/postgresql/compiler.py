@@ -71,6 +71,7 @@ def compile_postgresql_query(
             raise ValueError("受 Domain 约束的数据集缺少 scope_value")
         parameters.append(scope_value)
         where_parts.append(f"{_quote(dataset.scope_column)} = ${len(parameters)}")
+    filter_predicates: list[str] = []
     for filter_ in plan.filters:
         dimension = dimensions[filter_.field]
         values = normalize_filter_values(dimension=dimension, values=filter_.values)
@@ -114,7 +115,26 @@ def compile_postgresql_query(
                 sql_operator = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}[operator]
                 predicates.append(f"{column} {sql_operator} {placeholder}")
         conjunction = " AND " if filter_.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
-        where_parts.append(predicates[0] if len(predicates) == 1 else f"({conjunction.join(predicates)})")
+        filter_predicates.append(
+            predicates[0]
+            if len(predicates) == 1
+            else f"({conjunction.join(predicates)})"
+        )
+    if plan.filter_expression is None:
+        where_parts.extend(filter_predicates)
+    else:
+        def compile_filter_expression(expression) -> str:
+            if expression.node_type == "FILTER":
+                return filter_predicates[int(expression.filter_index)]
+            if expression.node_type == "NOT":
+                return f"NOT ({compile_filter_expression(expression.child)})"
+            token = " AND " if expression.node_type == "ALL" else " OR "
+            return "(" + token.join(
+                compile_filter_expression(item)
+                for item in expression.children
+            ) + ")"
+
+        where_parts.append(compile_filter_expression(plan.filter_expression))
 
     source = f"{_quote(dataset.physical_schema)}.{_quote(dataset.physical_object)}"
     clauses = [f"SELECT {', '.join(select_parts)}", f"FROM {source}"]

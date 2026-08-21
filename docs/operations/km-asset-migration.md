@@ -129,10 +129,16 @@ Agent 版本的固定资源定位，不能通过该接口修改。
 
 ## 问文与问数
 
-文档问题使用来源绑定的 KC Collection。结构化统计使用系统托管模型，对
-`KBOT_V_KM_ASSET_CURRENT` 执行只读查询。数据集声明 `scope_column=DOMAIN_ID`，Data
-Query 编译器会使用可信 AuthContext 中的 Domain ID 强制注入参数化条件，LLM 和前端
-都不能移除或覆盖该条件。
+所有 Asset 搜索先受 `KBOT_V_KM_ASSET_SEARCHABLE` 约束；该视图只包含当前
+Asset/Revision 均为 `READY` 且 Bundle 映射完整一致的记录。结构化统计和正文候选范围
+都使用同一个系统托管模型。数据集声明 `scope_column=DOMAIN_ID`，Data Query 编译器会
+使用可信 AuthContext 中的 Domain ID 强制注入参数化条件，LLM 和前端都不能移除或覆盖。
+
+Agent Runtime 使用 `AssetSearchPlan.v1` 作为唯一意图合同，并确定性编译为受控
+`DataQueryPlan.v1`；不存在自由文生 SQL 或第二次 LLM 问数规划。精确条件可计数、分组或
+列举；语义主题不提供总数，只返回能力说明和最多 5 个较新且有正文证据的 Asset。
+成功结果必须带 Asset 与可点击引用：精确元数据使用 `Qn`，正文使用同 Bundle 的 `Cn`，
+混合结果同时使用二者。聚合数字使用 `Q1`，同筛选范围内的 Asset 样例使用 `Q2`。
 
 作者筛选使用标准化完整邮箱和邮箱 `@` 前用户名两个受控索引键。例如
 `lavkesh.singh@oracle.com` 与 `lavkesh.singh` 都会匹配同一作者，大小写及首尾空格不
@@ -149,7 +155,8 @@ Query 编译器会使用可信 AuthContext 中的 Domain ID 强制注入参数�
 - KC Bundle 达到 `READY`；
 - MetaDB 状态更新为 `Y`；
 - Agent 能回答正文问题并给出文档来源；
-- Agent 能正确回答按作者、主题、行业的数量和明细问题；
+- Agent 能正确回答按作者、行业的精确数量和明细问题；
+- Agent 对主题总数明确拒绝伪统计，并返回有正文引用的参考 Asset；
 - 人工制造失败后，可以从 `F` 重置并重试成功。
 
 验收通过后，不再运行 `/home/chris/km_portal/km_portal.py`，旧实现仅从 Git 历史恢复。

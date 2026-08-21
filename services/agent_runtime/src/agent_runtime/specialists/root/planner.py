@@ -6,6 +6,7 @@ import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from platform_core.contracts import AssetSearchPlanV1
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
@@ -19,6 +20,7 @@ from agent_runtime.domain.planning import (
     PlanDraft,
     TaskSpec,
 )
+from agent_runtime.specialists.asset_search import AssetSearchPlanner
 
 
 class RouteType(StrEnum):
@@ -54,6 +56,7 @@ class RouteDecision(BaseModel):
     context_required: bool | None = None
     coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
     answer_basis: KMAnswerBasis | None = None
+    asset_search_plan: AssetSearchPlanV1 | None = None
     classifier_version: str = "deterministic-document-v1"
 
 
@@ -67,6 +70,10 @@ class RootAgentPlanner:
     def __init__(self, *, model_client=None, prompt_resolver=None):
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
+        self._asset_search_planner = AssetSearchPlanner(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        )
 
     def decide(
         self,
@@ -319,7 +326,7 @@ class RootAgentPlanner:
         conversation_context: dict[str, Any] | None,
         language: str,
     ) -> RouteDecision:
-        """依据 KM 能力契约执行多语言语义路由，不匹配自然语言关键词。"""
+        """生成统一 Asset Search Plan，再确定性选择执行 DAG。"""
         model_name = str(
             agent_model_name(agent_snapshot, "router_llm") or ""
         ).strip()
@@ -329,229 +336,86 @@ class RootAgentPlanner:
             or self._prompt_resolver is None
         ):
             raise ValueError("KM Agent 未配置可用的 Router 模型")
-        base_request = {
-            "language": language,
-            "current_input": objective,
-            "available_routes": [
-                "DOCUMENT", "DATA_QUERY", "HYBRID_DATA_FIRST", "CLARIFY"
-            ],
-            "managed_metadata": {
-                "dimensions": [
-                    "asset_id", "title", "topic", "author", "product",
-                    "solution", "industry", "content_category", "status",
-                    "publish_date", "last_update_time",
-                ],
-                "measures": ["asset_count", "author_count"],
-            },
-        }
-        decision = await self._request_km_route_decision(
+        plan, prompt_version = await self._asset_search_planner.plan(
             model_name=model_name,
-            prompt_key="agent_runtime.km_asset_intent_route",
-            request=base_request,
+            question=objective,
+            language=language,
+            conversation_context=conversation_context,
         )
-        if not decision.context_required:
-            return decision
-        context = conversation_context or {}
-        if not (context.get("summary") or context.get("recent_items")):
-            if decision.route_type == RouteType.CLARIFY:
-                return decision
-            return decision.model_copy(update={
-                "route_type": RouteType.CLARIFY,
-                "confidence": 0,
-                "reason": "当前输入依赖历史语境，但没有可用会话上下文",
-                "clarification_question": localized_message(
-                    "clarify_asset_scope", language
-                ),
-                "requires_chart": False,
-                "coverage_mode": "BALANCED",
-                "answer_basis": KMAnswerBasis.AMBIGUOUS,
-            })
-        return await self._request_km_route_decision(
-            model_name=model_name,
-            prompt_key="agent_runtime.km_asset_context_route",
-            request={
-                **base_request,
-                "conversation_summary": context.get("summary") or {},
-                "recent_items": context.get("recent_items") or [],
-            },
-        )
-
-    async def _request_km_route_decision(
-        self,
-        *,
-        model_name: str,
-        prompt_key: str,
-        request: dict[str, Any],
-    ) -> RouteDecision:
-        """调用 KM 语义路由并严格校验可执行或澄清结果。"""
-        prompt = await self._prompt_resolver.resolve(prompt_key)
-        messages = [
-            {"role": "system", "content": prompt.content},
-            {
-                "role": "system",
-                "content": language_instruction(str(request["language"])),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(request, ensure_ascii=False, default=str),
-            },
-        ]
-        last_error = ""
-        for attempt in range(2):
-            response = await self._model_client.get_llm_json(
-                served_model_name=model_name,
-                prompt=messages,
+        if plan.ambiguities:
+            return RouteDecision(
+                route_type=RouteType.CLARIFY,
+                confidence=0,
+                reason="统一搜索计划存在会改变结果集合的歧义",
+                clarification_question=plan.ambiguities[0].question,
+                requires_chart=False,
+                context_required=False,
+                coverage_mode="BALANCED",
+                answer_basis=KMAnswerBasis.AMBIGUOUS,
+                asset_search_plan=plan,
+                classifier_version=f"asset-search-plan-v1:{prompt_version}",
             )
-            try:
-                if not isinstance(response, dict):
-                    raise TypeError("输出必须是 JSON 对象")
-                route = RouteType(str(response.get("route_type") or ""))
-                if route not in {
-                    RouteType.DOCUMENT,
-                    RouteType.DATA_QUERY,
-                    RouteType.HYBRID_DATA_FIRST,
-                    RouteType.CLARIFY,
-                }:
-                    raise ValueError(
-                        "route_type 只能是 DOCUMENT、DATA_QUERY、"
-                        "HYBRID_DATA_FIRST 或 CLARIFY"
-                    )
-                confidence = float(response.get("confidence"))
-                if not 0 <= confidence <= 1:
-                    raise ValueError("confidence 必须在 0 到 1 之间")
-                reason = str(response.get("reason") or "").strip()
-                if not reason:
-                    raise ValueError("reason 不能为空")
-                clarification = str(
-                    response.get("clarification_question") or ""
-                ).strip()
-                if route == RouteType.CLARIFY and not clarification:
-                    raise ValueError("CLARIFY 必须提供 clarification_question")
-                if route != RouteType.CLARIFY and clarification:
-                    raise ValueError("可执行路由不得提供 clarification_question")
-                context_required = response.get("context_required")
-                if not isinstance(context_required, bool):
-                    raise ValueError("context_required 必须为布尔值")
-                requires_chart = response.get("requires_chart", False)
-                if not isinstance(requires_chart, bool):
-                    raise ValueError("requires_chart 必须为布尔值")
-                if route not in {
-                    RouteType.DATA_QUERY,
-                    RouteType.HYBRID_DATA_FIRST,
-                }:
-                    requires_chart = False
-                coverage_mode = str(
-                    response.get("coverage_mode") or ""
-                ).upper()
-                if coverage_mode not in {"BREADTH", "BALANCED"}:
-                    raise ValueError(
-                        "coverage_mode 只能是 BREADTH 或 BALANCED"
-                    )
-                try:
-                    answer_basis = KMAnswerBasis(
-                        str(response.get("answer_basis") or "")
-                    )
-                except ValueError as exc:
-                    raise ValueError(
-                        "answer_basis 不符合 KM 路由契约"
-                    ) from exc
-                expected_route, expected_coverage = (
-                    self._km_route_for_answer_basis(answer_basis)
-                )
-                if route != expected_route:
-                    raise ValueError(
-                        f"answer_basis={answer_basis.value} 必须使用 "
-                        f"route_type={expected_route.value}"
-                    )
-                if coverage_mode != expected_coverage:
-                    raise ValueError(
-                        f"answer_basis={answer_basis.value} 必须使用 "
-                        f"coverage_mode={expected_coverage}"
-                    )
-                return RouteDecision(
-                    route_type=route,
-                    confidence=confidence,
-                    reason=reason,
-                    clarification_question=clarification or None,
-                    requires_chart=requires_chart,
-                    context_required=context_required,
-                    coverage_mode=coverage_mode,
-                    answer_basis=answer_basis,
-                    classifier_version=(
-                        f"llm-km-asset-v1:{prompt.version}"
-                    ),
-                )
-            except (TypeError, ValueError) as exc:
-                last_error = str(exc)
-                if attempt == 0:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "上一份输出不符合 RouteDecision 契约："
-                            f"{last_error}。请只重新输出合法 JSON。"
-                            "必须包含 answer_basis，且只能是 "
-                            "DOCUMENT_CONTENT、SEMANTIC_RELEVANCE_BREADTH、"
-                            "SEMANTIC_RELEVANCE_BALANCED、"
-                            "SEMANTIC_RELEVANCE_ENUMERATION、"
-                            "SEMANTIC_RELEVANCE_AGGREGATE、"
-                            "EXACT_METADATA_ENUMERATION、EXACT_METADATA、"
-                            "UNSCOPED_AGGREGATE 或 AMBIGUOUS。"
-                            "主题相关 Asset 的列举必须使用 "
-                            "SEMANTIC_RELEVANCE_ENUMERATION、"
-                            "HYBRID_DATA_FIRST 和 BALANCED；计数或统计必须使用 "
-                            "SEMANTIC_RELEVANCE_AGGREGATE、DATA_QUERY 和 "
-                            "BALANCED。"
-                        ),
-                    })
-        raise ValueError(f"KM Router 模型输出不符合契约：{last_error}")
+        route_type, answer_basis, coverage_mode = self._route_for_asset_plan(plan)
+        return RouteDecision(
+            route_type=route_type,
+            confidence=1,
+            reason="统一 Asset Search Plan 已通过合同校验",
+            clarification_question=None,
+            requires_chart=(
+                self._requests_chart(objective)
+                and route_type == RouteType.DATA_QUERY
+            ),
+            context_required=False,
+            coverage_mode=coverage_mode,
+            answer_basis=answer_basis,
+            asset_search_plan=plan,
+            classifier_version=f"asset-search-plan-v1:{prompt_version}",
+        )
 
     @staticmethod
-    def _km_route_for_answer_basis(
-        answer_basis: KMAnswerBasis,
-    ) -> tuple[RouteType, Literal["BREADTH", "BALANCED"]]:
-        """依据结构化答案来源确定 KM 的唯一执行路由。"""
-        mapping: dict[
-            KMAnswerBasis,
-            tuple[RouteType, Literal["BREADTH", "BALANCED"]],
-        ] = {
-            KMAnswerBasis.DOCUMENT_CONTENT: (
-                RouteType.DOCUMENT,
-                "BALANCED",
-            ),
-            KMAnswerBasis.SEMANTIC_RELEVANCE_BREADTH: (
-                RouteType.DOCUMENT,
-                "BREADTH",
-            ),
-            KMAnswerBasis.SEMANTIC_RELEVANCE_BALANCED: (
-                RouteType.DOCUMENT,
-                "BALANCED",
-            ),
-            KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION: (
+    def _route_for_asset_plan(
+        plan: AssetSearchPlanV1,
+    ) -> tuple[
+        RouteType,
+        KMAnswerBasis,
+        Literal["BREADTH", "BALANCED"],
+    ]:
+        """只依据已校验计划选择现有 Task DAG。"""
+        semantic = plan.has_semantic_eligibility or any(
+            item.criterion.kind in {
+                "SEMANTIC_CONCEPT", "EXACT_PHRASE", "CONTENT_TYPE"
+            }
+            for item in plan.preferences
+        )
+        if plan.operation == "LIST" and semantic:
+            return (
                 RouteType.HYBRID_DATA_FIRST,
+                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
                 "BALANCED",
-            ),
-            KMAnswerBasis.SEMANTIC_RELEVANCE_AGGREGATE: (
+            )
+        if semantic or plan.target == "CONTENT":
+            return (
+                RouteType.HYBRID_DATA_FIRST,
+                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
+                "BALANCED",
+            )
+        if plan.operation == "LIST":
+            return (
                 RouteType.DATA_QUERY,
+                KMAnswerBasis.EXACT_METADATA_ENUMERATION,
                 "BALANCED",
-            ),
-            KMAnswerBasis.EXACT_METADATA: (
+            )
+        if not plan.criteria and plan.operation == "COUNT":
+            return (
                 RouteType.DATA_QUERY,
+                KMAnswerBasis.UNSCOPED_AGGREGATE,
                 "BALANCED",
-            ),
-            KMAnswerBasis.EXACT_METADATA_ENUMERATION: (
-                RouteType.DATA_QUERY,
-                "BALANCED",
-            ),
-            KMAnswerBasis.UNSCOPED_AGGREGATE: (
-                RouteType.DATA_QUERY,
-                "BALANCED",
-            ),
-            KMAnswerBasis.AMBIGUOUS: (
-                RouteType.CLARIFY,
-                "BALANCED",
-            ),
-        }
-        return mapping[answer_basis]
+            )
+        return (
+            RouteType.DATA_QUERY,
+            KMAnswerBasis.EXACT_METADATA,
+            "BALANCED",
+        )
 
     @classmethod
     def _validate_capabilities(cls, capabilities: set[str]) -> None:

@@ -164,7 +164,10 @@ SERVICE_VIEWS = {
         "KBOT_V_OPS_SCHEMA_VERSION",
     },
     "knowledge_retrieval_app": set(),
-    "km_asset_app": {"KBOT_V_KM_ASSET_CURRENT"},
+    "km_asset_app": {
+        "KBOT_V_KM_ASSET_CURRENT",
+        "KBOT_V_KM_ASSET_SEARCHABLE",
+    },
 }
 FORBIDDEN_TOKENS = (
     "KBOT_MD_",

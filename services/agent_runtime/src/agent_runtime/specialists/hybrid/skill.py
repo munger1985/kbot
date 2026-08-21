@@ -9,6 +9,7 @@ from uuid import UUID
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from agent_runtime.specialists.data_query.contracts import QueryResult
+from platform_core.contracts import AssetSearchPlanV1
 
 
 class _HybridExtractSkill:
@@ -119,7 +120,7 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
     def _km_asset_enumeration_scope(
         cls, context: ExecutionContext
     ) -> SkillResult:
-        """用问数结果冻结最多十个 Asset，再定向获取对应正文。"""
+        """用元数据资格集合冻结 Bundle 范围，不按展示数量提前截断。"""
         artifact = next(
             (
                 item for item in reversed(context.input_artifacts)
@@ -130,15 +131,32 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
         if artifact is None:
             raise ValueError("KM_ASSET_ENUMERATION_QUERY_RESULT_MISSING")
         query = QueryResult.model_validate(artifact.payload)
-        selected = list(query.rows[:10])
+        route = context.config_snapshot.get("route") or {}
+        raw_search_plan = (
+            route.get("asset_search_plan")
+            if isinstance(route, Mapping)
+            else getattr(route, "asset_search_plan", None)
+        )
+        search_plan = (
+            AssetSearchPlanV1.model_validate(raw_search_plan)
+            if raw_search_plan
+            else None
+        )
+        source_rows = (
+            query.supporting_rows
+            if search_plan is not None
+            and search_plan.operation in {"COUNT", "GROUP"}
+            and query.supporting_rows
+            else query.rows
+        )
+        selected = list(
+            source_rows if search_plan is not None else source_rows[:10]
+        )
         assets = []
         targets = []
         for row in selected:
             asset = {
-                key: cls._row_value(row, key)
-                for key in (
-                    "asset_id", "title", "product", "solution",
-                )
+                str(key).casefold(): value for key, value in row.items()
             }
             asset.update({
                 "bundle_id": cls._uuid_row_value(row, "bundle_id"),
@@ -147,12 +165,21 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
                 ),
             })
             assets.append(asset)
-            if asset["bundle_id"] and asset["bundle_revision_id"]:
-                targets.append({
-                    "bundle_id": asset["bundle_id"],
-                    "bundle_revision_id": asset["bundle_revision_id"],
-                    "title": asset["title"],
-                })
+            if not asset["bundle_id"] or not asset["bundle_revision_id"]:
+                if search_plan is not None:
+                    raise ValueError("KM_ASSET_SEARCHABLE_MAPPING_INVALID")
+                continue
+            targets.append({
+                "bundle_id": asset["bundle_id"],
+                "bundle_revision_id": asset["bundle_revision_id"],
+                "title": asset["title"],
+                "asset_id": asset["asset_id"],
+            })
+        result_limit = (
+            search_plan.result_assets.target_count
+            if search_plan is not None
+            else len(selected)
+        )
         payload = {
             "query": context.original_input[:512],
             "entity_ids": [
@@ -160,9 +187,19 @@ class DocumentScopeExtractSkill(_HybridExtractSkill):
             ],
             "bundle_targets": targets,
             "assets": assets,
-            "total_count": query.row_count,
-            "display_limit": len(selected),
-            "truncated": query.truncated or query.row_count > 10,
+            "total_count": (
+                query.row_count
+                if search_plan is None or not (
+                    search_plan.has_semantic_eligibility
+                    or search_plan.preferences
+                )
+                else None
+            ),
+            "display_limit": result_limit,
+            "truncated": query.truncated or len(query.rows) > len(selected),
+            "asset_search_plan": (
+                search_plan.model_payload() if search_plan is not None else None
+            ),
         }
         return SkillResult(artifact=SkillArtifact(
             artifact_type="DOCUMENT_SCOPE",
