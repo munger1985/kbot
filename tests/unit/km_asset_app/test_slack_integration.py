@@ -1722,6 +1722,63 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("Query Asset Must Not Override", rendered)
         self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
 
+    def test_document_without_template_does_not_fallback_to_query_rows(self):
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    "Here are 1 matching assets; content evidence was used "
+                    "for semantic conditions or preferences.\n\n"
+                    "1. **A K3s HA environment operations guides** [C1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1", "Q1"],
+                "references": [
+                    {
+                        "reference_type": "DOCUMENT",
+                        "citation_label": "C1",
+                    },
+                    {
+                        "reference_type": "QUERY_RESULT",
+                        "citation_label": "Q1",
+                    },
+                ],
+                "query_results": [{
+                    "schema": "QUERY_RESULT.v1",
+                    "truncated": True,
+                    "rows": [
+                        {
+                            "ASSET_ID": f"QUERY-{index}",
+                            "ASSET_TITLE": f"Unrelated Query Asset {index}",
+                            "AUTHOR_MAIL": f"owner{index}@example.com",
+                        }
+                        for index in range(1, 11)
+                    ],
+                }],
+            },
+        }
+
+        rendered = json.dumps(
+            slack_visible_payload(
+                render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact=artifact,
+                    reply_config=SlackReplyConfig(max_references=9),
+                    asset_cards=[],
+                )
+            ),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("Here are 1 matching assets", rendered)
+        self.assertIn("A K3s HA environment operations guides", rendered)
+        self.assertNotIn("Unrelated Query Asset", rendered)
+        self.assertNotIn("*Author:*", rendered)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
+
     def test_template_replaces_ooxml_carriage_return_marker(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",

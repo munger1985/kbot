@@ -269,13 +269,11 @@ def _used_document_reference_count(payload: dict[str, Any]) -> int:
 def _is_truncated_reply(
     payload: dict[str, Any],
     config: SlackReplyConfig,
-    *,
-    use_document_template: bool,
 ) -> bool:
     has_document = _has_used_document_reference(payload)
     query_results = payload.get("query_results")
     query_truncated = (
-        not use_document_template
+        not has_document
         and isinstance(query_results, (list, tuple))
         and any(
             isinstance(result, dict) and result.get("truncated") is True
@@ -287,7 +285,7 @@ def _is_truncated_reply(
         and _used_document_reference_count(payload) > config.max_references
     )
     query_assets_exceeded = (
-        not use_document_template
+        not has_document
         and len(_query_asset_rows(payload)) > config.max_references
     )
     return query_truncated or references_exceeded or query_assets_exceeded
@@ -882,11 +880,10 @@ def render_slack_reply(
     has_used_document = (
         valid_envelope and _has_used_document_reference(answer_payload)
     )
+    is_query_only = valid_envelope and not has_used_document
     use_document_template = has_used_document and bool(asset_cards)
     display_answer = (
-        answer
-        if not valid_envelope or use_document_template
-        else _query_only_visible_answer(answer)
+        _query_only_visible_answer(answer) if is_query_only else answer
     )
     display_answer = _without_completion_boilerplate(display_answer)
     safe_answer = _to_slack_mrkdwn(display_answer)
@@ -911,7 +908,7 @@ def render_slack_reply(
             answer,
             limit=reply_config.max_references,
         )
-        if valid_envelope and not use_document_template
+        if is_query_only
         else []
     )
     blocks.extend(query_asset_blocks or _text_sections(safe_answer))
@@ -925,11 +922,7 @@ def render_slack_reply(
             _warning_blocks(
                 answer_payload,
                 reply_config,
-                truncated=_is_truncated_reply(
-                    answer_payload,
-                    reply_config,
-                    use_document_template=use_document_template,
-                ),
+                truncated=_is_truncated_reply(answer_payload, reply_config),
             )
         )
         blocks.extend(_visualization_blocks(answer_payload, reply_config))

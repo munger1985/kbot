@@ -1017,8 +1017,8 @@ async def assemble_slack_asset_cards(
         )
     except SlackAssetTemplateIncompleteError as exc:
         # Template 是 Slack 展示增强，不得因为附件缺失或元数据不完整
-        # 阻断 KBot 原始回答。渲染层会改用 QueryResult；若不存在
-        # QueryResult，则直接展示原始回答正文。
+        # 阻断 KBot 原始回答。DOCUMENT 回答不得回退展示 QueryResult
+        # 候选行；渲染层应直接展示 KBot 原始回答正文。
         logger.warning(
             "Slack Asset 附件元数据不完整，跳过 Template 组装：cause={}",
             str(exc),
