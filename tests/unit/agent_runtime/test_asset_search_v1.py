@@ -2,6 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from agent_runtime.application.commands import LeasedArtifact
 from agent_runtime.runtime import ExecutionContext
@@ -353,6 +354,80 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             bundle_id="b1",
             hit_sets={"c1": set()},
         ))
+
+    async def test_cjk_semantic_criterion_adds_separate_english_queries(self):
+        plan = _base_plan(
+            query_text="找几个关于金融欺诈的 Asset",
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["金融欺诈"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        )
+        model_client = SimpleNamespace(get_llm_json=AsyncMock(return_value={
+            "source_language": "zh-CN",
+            "original_topic": "金融欺诈",
+            "english_topics": ["financial fraud", "fraud detection"],
+        }))
+        prompt_resolver = SimpleNamespace(resolve=AsyncMock(
+            return_value=SimpleNamespace(content="translate")
+        ))
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=None,
+            service_name="agent_runtime",
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        )
+        context = ExecutionContext(
+            domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
+            task_key="test", actor_id="user", request_id="request",
+            trace_id="trace", original_input=plan.query_text,
+            policy_snapshot={},
+            config_snapshot={
+                "agent": {"models": {"data_planner_llm": {
+                    "served_model_name": "planner",
+                }}},
+            },
+            input_artifacts=(),
+        )
+
+        queries, warnings = await skill._criterion_queries(
+            context=context,
+            plan=plan,
+            criterion=plan.criteria[0],
+        )
+
+        self.assertEqual(
+            ("金融欺诈", "financial fraud", "fraud detection"), queries
+        )
+        self.assertEqual((), warnings)
+
+    def test_multilingual_evidence_groups_merge_by_bundle(self):
+        groups = KnowledgeRetrievalSkill._merge_groups_by_criterion([
+            ("c1", {}, [{
+                "bundle_id": "b1",
+                "items": [{"evidence_id": "e1"}],
+            }]),
+            ("c1", {}, [{
+                "bundle_id": "b1",
+                "items": [
+                    {"evidence_id": "e1"},
+                    {"evidence_id": "e2"},
+                ],
+            }]),
+        ])
+
+        self.assertEqual(1, len(groups["c1"]))
+        self.assertEqual(
+            ["e1", "e2"],
+            [item["evidence_id"] for item in groups["c1"][0]["items"]],
+        )
 
     def test_exact_phrase_requires_literal_content_support(self):
         criterion = _base_plan(

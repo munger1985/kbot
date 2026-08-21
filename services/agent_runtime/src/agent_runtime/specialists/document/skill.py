@@ -3,6 +3,7 @@
 import base64
 import asyncio
 import json
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from platform_core.contracts import (
 )
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import detect_unicode_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 
 from .contracts import (
@@ -26,6 +28,9 @@ from .contracts import (
     DocumentRetrievalResult,
     RetrievalCoverage,
 )
+
+
+_TOPIC_EXPANSION_LANGUAGES = frozenset({"zh-CN", "ja-JP", "ko-KR"})
 
 
 class KnowledgeRetrievalSkill:
@@ -275,18 +280,12 @@ class KnowledgeRetrievalSkill:
             item for item in plan.preferences
             if item.criterion.kind not in {"METADATA", "IDENTIFIER"}
         ]
-        requests: list[tuple[str, AssetSearchCriterion | None, str]] = []
+        criterion_requests: list[tuple[str, AssetSearchCriterion | None]] = []
         for criterion in hard_content:
-            requests.append((
-                criterion.criterion_id,
-                criterion,
-                self._criterion_query(criterion),
-            ))
+            criterion_requests.append((criterion.criterion_id, criterion))
         for preference in preference_content:
-            requests.append((
-                preference.preference_id,
-                preference.criterion,
-                self._criterion_query(preference.criterion),
+            criterion_requests.append((
+                preference.preference_id, preference.criterion
             ))
         content_support_required = bool(
             not hard_content
@@ -294,7 +293,27 @@ class KnowledgeRetrievalSkill:
             and plan.operation in {"ANSWER", "COMPARE"}
         )
         if content_support_required:
-            requests.append(("__content__", None, plan.query_text))
+            criterion_requests.append(("__content__", None))
+
+        expansions = await asyncio.gather(*(
+            self._criterion_queries(
+                context=context,
+                plan=plan,
+                criterion=criterion,
+            )
+            if criterion is not None
+            else self._content_queries(plan.query_text)
+            for _, criterion in criterion_requests
+        ))
+        requests: list[tuple[str, AssetSearchCriterion | None, str]] = []
+        expansion_warnings: list[str] = []
+        for (key, criterion), (queries, query_warnings) in zip(
+            criterion_requests, expansions, strict=True
+        ):
+            expansion_warnings.extend(query_warnings)
+            requests.extend(
+                (key, criterion, query) for query in queries
+            )
 
         semaphore = asyncio.Semaphore(4)
 
@@ -321,7 +340,7 @@ class KnowledgeRetrievalSkill:
         retrieved = await asyncio.gather(*(
             retrieve_one(*request) for request in requests
         ))
-        groups_by_key = {key: groups for key, _, groups in retrieved}
+        groups_by_key = self._merge_groups_by_criterion(retrieved)
         hit_sets, support_judgments = await self._judge_asset_support(
             context=context,
             plan=plan,
@@ -418,7 +437,7 @@ class KnowledgeRetrievalSkill:
                 merged_groups.append(first_group)
             candidate.pop("_preference_hits", None)
             candidate.pop("_weakest_hard_rank", None)
-        warnings = [
+        warnings = expansion_warnings + [
             warning
             for _, response, _ in retrieved
             for warning in response.get("warnings") or []
@@ -559,6 +578,146 @@ class KnowledgeRetrievalSkill:
     @staticmethod
     def _criterion_query(criterion: AssetSearchCriterion) -> str:
         return " ".join(str(value) for value in criterion.values).strip()
+
+    @staticmethod
+    async def _content_queries(
+        query: str,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """把普通正文问题包装为与条件扩展一致的异步结果。"""
+        return (query,), ()
+
+    async def _criterion_queries(
+        self,
+        *,
+        context: ExecutionContext,
+        plan: AssetSearchPlanV1,
+        criterion: AssetSearchCriterion,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """为中日韩语义条件补充英文检索词，原文与译词保持独立查询。"""
+        original = self._criterion_query(criterion)
+        if not original:
+            return (), ()
+        equivalents = (
+            tuple(criterion.resolved_concept.equivalents)
+            if criterion.resolved_concept is not None
+            else ()
+        )
+        if equivalents:
+            return tuple(dict.fromkeys((original, *equivalents))), ()
+        if criterion.kind != "SEMANTIC_CONCEPT" or len(criterion.values) != 1:
+            return (original,), ()
+        source_language = detect_unicode_language(original)
+        if source_language not in _TOPIC_EXPANSION_LANGUAGES:
+            return (original,), ()
+        agent = context.config_snapshot.get("agent", {})
+        model_name = str(
+            agent_model_name(agent, "data_planner_llm")
+            or agent_model_name(agent, "composer_llm")
+            or ""
+        ).strip()
+        if (
+            not model_name
+            or self._model_client is None
+            or self._prompt_resolver is None
+        ):
+            return (original,), (
+                "主题英文补充检索不可用，已仅使用原语言检索",
+            )
+        prompt = await self._prompt_resolver.resolve(
+            "agent_runtime.km_topic_english_expand"
+        )
+        messages = [
+            {"role": "system", "content": prompt.content},
+            {"role": "user", "content": json.dumps({
+                "source_language": source_language,
+                "question": plan.query_text,
+                "original_topic": original,
+            }, ensure_ascii=False)},
+        ]
+        for attempt in range(2):
+            try:
+                response = await self._model_client.get_llm_json(
+                    served_model_name=model_name,
+                    prompt=messages,
+                )
+                english_topics = self._validate_topic_expansion(
+                    response,
+                    source_language=source_language,
+                    original_topic=original,
+                )
+                return tuple(dict.fromkeys((original, *english_topics))), ()
+            except (AttributeError, TypeError, ValueError) as exc:
+                if attempt == 0:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "上一个结果不符合 KMTopicExpansion.v1，"
+                            f"请只输出修正后的 JSON。错误：{exc}"
+                        ),
+                    })
+        return (original,), (
+            "主题英文补充检索失败，已仅使用原语言检索",
+        )
+
+    @staticmethod
+    def _validate_topic_expansion(
+        response: Any,
+        *,
+        source_language: str,
+        original_topic: str,
+    ) -> tuple[str, ...]:
+        """校验主题扩展回显和英文词数量，拒绝模型擅自改写主题。"""
+        if not isinstance(response, dict):
+            raise TypeError("主题扩展输出必须是 JSON Object")
+        if str(response.get("source_language") or "") != source_language:
+            raise ValueError("source_language 与输入不一致")
+        if str(response.get("original_topic") or "").strip() != original_topic:
+            raise ValueError("original_topic 不得改写")
+        raw_topics = response.get("english_topics")
+        if not isinstance(raw_topics, list) or not 2 <= len(raw_topics) <= 3:
+            raise ValueError("english_topics 必须包含 2 到 3 项")
+        topics = tuple(str(item).strip() for item in raw_topics)
+        if any(
+            not value or re.search(r"[A-Za-z]", value) is None
+            for value in topics
+        ):
+            raise ValueError("english_topics 每项必须包含英文字符")
+        if len({value.casefold() for value in topics}) != len(topics):
+            raise ValueError("english_topics 不能包含重复词")
+        return topics
+
+    @staticmethod
+    def _merge_groups_by_criterion(
+        retrieved: list[tuple[str, dict[str, Any], list[dict[str, Any]]]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        """按条件和 Bundle 合并多语言证据，避免同一条件重复判定。"""
+        merged: dict[str, dict[str, dict[str, Any]]] = {}
+        seen_items: dict[tuple[str, str], set[str]] = {}
+        for key, _, groups in retrieved:
+            by_bundle = merged.setdefault(key, {})
+            for group in groups:
+                bundle_id = str(group.get("bundle_id") or "")
+                if not bundle_id:
+                    continue
+                if bundle_id not in by_bundle:
+                    target = dict(group)
+                    target["items"] = []
+                    by_bundle[bundle_id] = target
+                else:
+                    target = by_bundle[bundle_id]
+                item_keys = seen_items.setdefault((key, bundle_id), set())
+                for item in group.get("items") or []:
+                    item_key = json.dumps(
+                        item, ensure_ascii=False, sort_keys=True, default=str
+                    )
+                    if item_key in item_keys:
+                        continue
+                    item_keys.add(item_key)
+                    target["items"].append(item)
+        return {
+            key: list(groups.values())
+            for key, groups in merged.items()
+        }
 
     @staticmethod
     def _exact_phrase_groups(
