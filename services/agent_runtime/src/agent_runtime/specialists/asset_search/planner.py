@@ -130,10 +130,11 @@ class AssetSearchPlanner:
         normalized.setdefault("ambiguities", [])
         normalized.setdefault("evidence_policy", {})
 
+        raw_criteria = normalized.get("criteria")
         criteria = [
-            item for item in normalized.get("criteria") or []
+            item for item in raw_criteria
             if isinstance(item, dict)
-        ]
+        ] if isinstance(raw_criteria, (list, tuple)) else []
         semantic = any(
             str(item.get("kind") or "") in {
                 "SEMANTIC_CONCEPT", "EXACT_PHRASE", "CONTENT_TYPE"
@@ -168,12 +169,15 @@ class AssetSearchPlanner:
             if isinstance(raw_limit, bool) or not isinstance(raw_limit, int):
                 raw_limit = 10
             display_limit = max(1, min(raw_limit, 10))
+            raw_result_assets = normalized.get("result_assets")
+            if not isinstance(raw_result_assets, dict):
+                raw_result_assets = {}
             normalized["display_limit"] = display_limit
             normalized["result_assets"] = {
                 "mode": "PRIMARY",
                 "target_count": display_limit,
                 "selection": str(
-                    (normalized.get("result_assets") or {}).get("selection")
+                    raw_result_assets.get("selection")
                     or "REQUESTED_ORDER"
                 ),
             }
@@ -191,7 +195,12 @@ class AssetSearchPlanner:
         if str(normalized.get("operation") or "").upper() in {
             "LIST", "COUNT", "GROUP", "COMPARE"
         }:
-            projection = [str(item) for item in normalized.get("projection") or []]
+            raw_projection = normalized.get("projection")
+            projection = (
+                [str(item) for item in raw_projection]
+                if isinstance(raw_projection, (list, tuple))
+                else []
+            )
             for field in _DEFAULT_ASSET_PROJECTION:
                 if field not in projection:
                     projection.append(field)

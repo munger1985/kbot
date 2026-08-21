@@ -177,6 +177,31 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(plan.include_total_count)
         self.assertEqual(5, plan.display_limit)
 
+    def test_list_normalizes_string_result_assets_without_crashing(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="找几个关于 OAC 的 Asset，最好关于金融欺诈的案例",
+            language="zh-CN",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [],
+                "result_assets": "优先返回相关案例",
+                "projection": "title",
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("PRIMARY", plan.result_assets.mode)
+        self.assertEqual("REQUESTED_ORDER", plan.result_assets.selection)
+        self.assertEqual(10, plan.result_assets.target_count)
+        self.assertEqual(
+            (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "asset_date",
+            ),
+            plan.projection,
+        )
+
     def test_condition_matrix_enforces_all_any_and_not(self):
         expression = AssetSearchPlanV1.model_validate({
             **_base_plan().model_dump(mode="json"),
