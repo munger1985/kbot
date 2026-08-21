@@ -202,6 +202,9 @@ asset_date ASC；其他明确排序要求也必须保留，未要求排序时默
 主题列举含主主题及次级偏好时，只能为主主题生成一个单值 topic + CONTAINS 筛选；“最好涉及金融欺诈”
 这类偏好保留在原始问题中供后续正文检索排序，不得再生成第二个 topic 筛选。主主题以用户表达的核心
 检索对象为准，不得用次级偏好替换。
+KM Asset 的所有查询只允许使用 ingestion_status=READY 的可查询 Asset；FAILED 或其他未完成入库状态
+不得参与明细、计数、分组、主题候选集合或后续正文检索。该系统约束由运行时强制执行，不得根据用户
+问题移除或改写。
 当 answer_basis=EXACT_METADATA_ENUMERATION 时，必须生成逐 Asset 清单：dimensions 必须包含
 asset_id、title、bundle_id、bundle_revision_id，并保留用户要求的元数据筛选和排序维度；不得改写为
 仅按 product、solution、status 等维度分组计数。未指定数量时 limit=10，系统同样多取一条判断截断。

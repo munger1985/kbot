@@ -907,6 +907,19 @@ class SemanticDataQueryExecutor:
                 "values": values,
             })
         normalized["filters"] = filters
+        if (
+            consumer_app_id == "km_asset"
+            and "ingestion_status" in catalog_dimensions
+        ):
+            normalized["filters"] = [
+                item for item in normalized["filters"]
+                if item.get("field") != "ingestion_status"
+            ]
+            normalized["filters"].append({
+                "field": "ingestion_status",
+                "operator": "EQ",
+                "values": ["READY"],
+            })
         if answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION":
             primary_topic_seen = False
             scoped_filters = []

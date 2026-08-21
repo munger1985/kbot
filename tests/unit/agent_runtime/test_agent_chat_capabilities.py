@@ -442,6 +442,52 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(topic_filters))
         self.assertEqual(("OAC",), topic_filters[0].values)
 
+    def test_km_plan_forces_ready_assets_even_when_model_selects_failed(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["title", "ingestion_status"],
+                "filters": [{
+                    "field": "ingestion_status",
+                    "operator": "EQ",
+                    "values": ["FAILED"],
+                }],
+                "limit": 10,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": [
+                    {"name": "title"},
+                    {
+                        "name": "ingestion_status",
+                        "allowed_filter_operators": ["EQ"],
+                    },
+                ],
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="列出金融欺诈相关的 Asset",
+            consumer_app_id="km_asset",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        status_filters = [
+            item for item in plan.filters
+            if item.field == "ingestion_status"
+        ]
+        self.assertEqual(1, len(status_filters))
+        self.assertEqual("EQ", status_filters[0].operator)
+        self.assertEqual(("READY",), status_filters[0].values)
+
     def test_km_semantic_plan_uses_catalog_author_operator(self):
         model_id = uuid7()
         normalized = SemanticDataQueryExecutor._normalize_plan_response(
