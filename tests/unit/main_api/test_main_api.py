@@ -1047,6 +1047,18 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(200, response.status_code)
         self.assertIn("services", response.json())
+        detail = self.client.get(
+            "/api/v1/development/logs/events/not-an-event-id",
+            headers={
+                TEST_AUTH_BYPASS_HEADER: "true",
+                USER_ID_HEADER: "developer",
+            },
+        )
+        self.assertEqual(422, detail.status_code)
+        self.assertEqual(
+            "DEVELOPMENT_LOG_QUERY_INVALID",
+            detail.json()["code"],
+        )
 
     def test_development_agent_run_console_is_domain_scoped(self) -> None:
         response = self.client.get(

@@ -117,6 +117,11 @@ class UiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(f'value="{value}"', html)
         self.assertIn("/api/v1/development/logs/events", script)
+        self.assertIn(
+            "/api/v1/development/logs/events/${encodeURIComponent(eventId)}",
+            script,
+        )
+        self.assertIn("正在读取完整日志", script)
         self.assertIn("/api/v1/development/logs/services", script)
         self.assertIn("KBotUI.developmentLogApi", script)
         self.assertIn('params.set("stream", logTypeFilter.value)', script)

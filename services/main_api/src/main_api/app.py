@@ -230,6 +230,7 @@ def create_main_api_app(
         "/api/v1/domains",
         "/api/v1/model-catalog",
     }
+    domainless_prefixes = {"/api/v1/platform/"}
     if settings.platform.debug:
         domainless_paths.update(
             {
@@ -237,6 +238,7 @@ def create_main_api_app(
                 "/api/v1/development/logs/events",
             }
         )
+        domainless_prefixes.add("/api/v1/development/logs/events/")
     app.middleware("http")(
         create_public_auth_middleware(
             domain_validator=validate_domain,
@@ -257,7 +259,7 @@ def create_main_api_app(
                 "/api/v1/apps/km-asset/auth/login",
             },
             domainless_paths=domainless_paths,
-            domainless_prefixes={"/api/v1/platform/"},
+            domainless_prefixes=domainless_prefixes,
             public_prefixes={
                 "/api/v1/auth/apps/",
                 "/api/v1/integrations/monitoring/",

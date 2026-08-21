@@ -73,7 +73,7 @@
       .join("");
   }
 
-  function showEvent(eventId) {
+  async function showEvent(eventId) {
     const event = eventsById.get(eventId);
     if (!event) return;
     metaElement.textContent = [
@@ -89,7 +89,15 @@
     ]
       .filter(Boolean)
       .join(" · ");
-    detailElement.textContent = event.raw || event.message;
+    detailElement.textContent = "正在读取完整日志…";
+    try {
+      const detail = await KBotUI.developmentLogApi(
+        `/api/v1/development/logs/events/${encodeURIComponent(eventId)}`
+      );
+      detailElement.textContent = detail.raw || detail.message || event.message;
+    } catch (error) {
+      detailElement.textContent = `完整日志读取失败：${error.message}`;
+    }
   }
 
   async function loadServices() {
@@ -182,12 +190,12 @@
   });
   rowsElement.addEventListener("click", (event) => {
     const row = event.target.closest("tr[data-event-id]");
-    if (row) showEvent(row.dataset.eventId);
+    if (row) void showEvent(row.dataset.eventId);
   });
   rowsElement.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target.closest("tr[data-event-id]");
-    if (row) showEvent(row.dataset.eventId);
+    if (row) void showEvent(row.dataset.eventId);
   });
 
   resetTimer();

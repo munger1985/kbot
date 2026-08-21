@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from loguru import logger
+
 from data_query.connectors.postgresql import (
     CompiledPostgreSQLQuery,
     NormalizedQueryResult,
@@ -103,7 +105,19 @@ class DataQueryWorkerService:
                 ),
             )
         except Exception as exc:
-            await self._complete_failure(claimed=claimed, error_code=self._stable_error(exc))
+            error_code = self._stable_error(exc)
+            logger.exception(
+                "Data Query 执行失败 | run_id={} | execution_id={} | "
+                "connector={} | error_code={} | compiled_query_hash={}",
+                claimed.run_id,
+                claimed.execution_id,
+                claimed.connector_type,
+                error_code,
+                claimed.compiled_query_hash,
+            )
+            await self._complete_failure(
+                claimed=claimed, error_code=error_code
+            )
             return True
         await self._complete_success(claimed=claimed, result=result)
         return True

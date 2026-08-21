@@ -121,6 +121,15 @@ append_startup_log() {
         "$timestamp" "$level" "$message" >>"$STARTUP_LOG_FILE"
 }
 
+# 把包预检结论写入运维日志，便于确认服务实际加载的源码或 Wheel。
+AGENT_RUNTIME_ORIGIN=$(python -c '
+import agent_runtime
+print(agent_runtime.__file__ or "-")
+')
+SOURCE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')
+append_startup_log "INFO" \
+    "内部包预检通过：mode=${PACKAGE_INSTALL_MODE} commit=${SOURCE_COMMIT} python=$(command -v python) agent_runtime=${AGENT_RUNTIME_ORIGIN}"
+
 FOUNDATION_CHECK_OUTPUT=$(python scripts/db/apply_oracle_schema.py --check-foundation 2>&1)
 FOUNDATION_CHECK_STATUS=$?
 if [ -n "$FOUNDATION_CHECK_OUTPUT" ]; then

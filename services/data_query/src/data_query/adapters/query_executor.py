@@ -113,6 +113,16 @@ class DataSourceExecutorResolver:
                 ),
                 timeout=17,
             )
+        except (oracledb.Error, OSError, TimeoutError) as exc:
+            code = getattr(getattr(exc, "args", [None])[0], "code", None)
+            raise ValueError(
+                "DATA_SOURCE_AUTHENTICATION_FAILED"
+                if code in {1017, 28000, 28001}
+                else "DATA_SOURCE_CONNECTION_TIMEOUT"
+                if isinstance(exc, TimeoutError)
+                else "DATA_SOURCE_CONNECTION_FAILED"
+            ) from exc
+        try:
             connection.call_timeout = int(budget.get("statement_timeout_seconds", 30)) * 1000
             cursor = connection.cursor()
             try:
@@ -125,9 +135,10 @@ class DataSourceExecutorResolver:
             finally:
                 cursor.close()
             await connection.rollback()
-        except (oracledb.Error, OSError, TimeoutError) as exc:
-            code = getattr(getattr(exc, "args", [None])[0], "code", None)
-            raise ValueError("DATA_SOURCE_AUTHENTICATION_FAILED" if code in {1017, 28000, 28001} else "DATA_SOURCE_CONNECTION_TIMEOUT" if isinstance(exc, TimeoutError) else "DATA_SOURCE_CONNECTION_FAILED") from exc
+        except oracledb.Error as exc:
+            raise ValueError("DATA_QUERY_EXECUTION_FAILED") from exc
+        except (OSError, TimeoutError) as exc:
+            raise ValueError("DATA_QUERY_EXECUTION_FAILED") from exc
         finally:
             if connection is not None: await connection.close()
         return normalize_rows(rows=rows, max_rows=int(budget.get("max_rows", 1000)), max_result_bytes=int(budget.get("max_result_bytes", 1048576)))

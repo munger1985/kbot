@@ -1,9 +1,14 @@
 """Data Query 状态、编译器与凭据安全边界。"""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import oracledb
 
 from data_query import entities as _data_query_entities  # noqa: F401
 from data_query.connectors import compile_dialect_query
+from data_query.adapters.query_executor import DataSourceExecutorResolver
 from data_query.connectors.postgresql import compile_postgresql_query
 from data_query.contracts import (
     AgentBindingMatch,
@@ -216,6 +221,65 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
                 credential_kind="database",
                 credential_id=credential_id,
             )
+
+
+class DataSourceExecutorErrorBoundaryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_oracle_query_error_is_not_reported_as_connection_failure(self):
+        cursor = SimpleNamespace(
+            execute=AsyncMock(side_effect=[
+                None,
+                oracledb.DatabaseError("ORA-00933"),
+            ]),
+            description=(("VALUE",),),
+            fetchall=AsyncMock(return_value=[]),
+            close=lambda: None,
+        )
+        connection = SimpleNamespace(
+            call_timeout=0,
+            cursor=lambda: cursor,
+            rollback=AsyncMock(),
+            close=AsyncMock(),
+        )
+        endpoint = SimpleNamespace(
+            host="db.example.com",
+            port=1521,
+            database="KBot",
+            tls_enabled=False,
+        )
+        compiled = SimpleNamespace(sql="SELECT 1 FROM dual", parameters=())
+
+        with patch(
+            "data_query.adapters.query_executor.oracledb.connect_async",
+            new=AsyncMock(return_value=connection),
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "DATA_QUERY_EXECUTION_FAILED"
+            ):
+                await DataSourceExecutorResolver._execute_oracle(
+                    endpoint, "readonly", "secret", {}, compiled
+                )
+
+    async def test_oracle_connect_error_remains_connection_failure(self):
+        endpoint = SimpleNamespace(
+            host="db.example.com",
+            port=1521,
+            database="KBot",
+            tls_enabled=False,
+        )
+        compiled = SimpleNamespace(sql="SELECT 1 FROM dual", parameters=())
+
+        with patch(
+            "data_query.adapters.query_executor.oracledb.connect_async",
+            new=AsyncMock(
+                side_effect=oracledb.DatabaseError("DPY-6005")
+            ),
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "DATA_SOURCE_CONNECTION_FAILED"
+            ):
+                await DataSourceExecutorResolver._execute_oracle(
+                    endpoint, "readonly", "secret", {}, compiled
+                )
 
 
 if __name__ == "__main__":
