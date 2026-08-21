@@ -463,6 +463,121 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             plan.projection,
         )
 
+    def test_metadata_field_aliases_map_to_managed_dimensions(self):
+        list_plan = AssetSearchPlanV1.model_validate(
+            AssetSearchPlanner.normalize_response(
+                question="show assets sorted by domains",
+                language="en-US",
+                response={
+                    "operation": "LIST",
+                    "target": "ASSET",
+                    "criteria": [{
+                        "criterion_id": "source-field",
+                        "kind": "METADATA",
+                        "field_scope": ["products"],
+                        "operator": "EQ",
+                        "values": ["OAC"],
+                        "evidence_requirement": "QUERY_RESULT",
+                    }],
+                    "eligibility_expression": {
+                        "node_type": "REF",
+                        "criterion_id": "source-field",
+                    },
+                    "projection": ["title", "products"],
+                    "order_by": [{
+                        "field": "domains", "direction": "ASC",
+                    }],
+                    "display_limit": 10,
+                    "result_assets": {
+                        "mode": "PRIMARY",
+                        "target_count": 10,
+                        "selection": "REQUESTED_ORDER",
+                    },
+                },
+            )
+        )
+
+        self.assertEqual(("product",), list_plan.criteria[0].field_scope)
+        self.assertEqual("product", list_plan.order_by[0].field)
+        self.assertEqual(1, list_plan.projection.count("product"))
+        compiled_list = AssetSearchDataQueryCompiler.compile(
+            search_plan=list_plan,
+            models=_catalog(),
+        )
+        self.assertEqual("product", compiled_list.filters[0].field)
+        self.assertEqual("product", compiled_list.order_by[0].field)
+
+        group_plan = AssetSearchPlanV1.model_validate(
+            AssetSearchPlanner.normalize_response(
+                question="group assets by domain",
+                language="en-US",
+                response={
+                    "operation": "GROUP",
+                    "target": "ASSET",
+                    "criteria": [],
+                    "group_by": ["domain"],
+                    "measures": [{
+                        "name": "asset_count", "aggregation": "COUNT",
+                    }],
+                    "result_assets": {
+                        "mode": "SUPPORTING",
+                        "target_count": 5,
+                        "selection": "RECENT_WITHIN_RESULT",
+                    },
+                },
+            )
+        )
+
+        self.assertEqual(("product",), group_plan.group_by)
+        compiled_group = AssetSearchDataQueryCompiler.compile(
+            search_plan=group_plan,
+            models=_catalog(),
+        )
+        self.assertIn("product", compiled_group.dimensions)
+
+        ready_plan = AssetSearchPlanV1.model_validate(
+            AssetSearchPlanner.normalize_response(
+                question="list top 3 assets which status is ready",
+                language="en-US",
+                response={
+                    "operation": "LIST",
+                    "target": "ASSET",
+                    "criteria": [{
+                        "criterion_id": "status-field",
+                        "kind": "METADATA",
+                        "field_scope": ["status"],
+                        "operator": "EQ",
+                        "values": ["READY"],
+                        "evidence_requirement": "QUERY_RESULT",
+                    }],
+                    "eligibility_expression": {
+                        "node_type": "REF",
+                        "criterion_id": "status-field",
+                    },
+                    "projection": ["title", "status"],
+                    "order_by": [{
+                        "field": "asset_date", "direction": "DESC",
+                    }],
+                    "display_limit": 3,
+                    "result_assets": {
+                        "mode": "PRIMARY",
+                        "target_count": 3,
+                        "selection": "REQUESTED_ORDER",
+                    },
+                },
+            )
+        )
+        self.assertEqual((), ready_plan.criteria)
+        self.assertIsNone(ready_plan.eligibility_expression)
+        self.assertNotIn("ingestion_status", ready_plan.projection)
+        compiled_ready = AssetSearchDataQueryCompiler.compile(
+            search_plan=ready_plan,
+            models=_catalog(),
+        )
+
+        self.assertEqual((), compiled_ready.filters)
+        self.assertEqual(3, compiled_ready.limit)
+
     def test_list_normalizes_observed_planner_contract_dialect(self):
         normalized = AssetSearchPlanner.normalize_response(
             question="找几个关于OAC的asset，最好关于金融欺诈的案例",

@@ -25,10 +25,80 @@ _EVIDENCE_REQUIREMENTS = {
     "QUERY_RESULT", "CONTENT", "METADATA_OR_CONTENT",
 }
 
+_METADATA_FIELD_ALIASES = {
+    "domain": "product",
+    "domains": "product",
+    "products": "product",
+    "solutions": "solution",
+    "authors": "author",
+    "creator": "author",
+    "creators": "author",
+    "industries": "industry",
+    "categories": "category",
+    "date": "asset_date",
+    "dates": "asset_date",
+    "publish_date": "asset_date",
+    "published_date": "asset_date",
+    "created_date": "asset_date",
+    "creation_date": "asset_date",
+    "status": "ingestion_status",
+    "statuses": "ingestion_status",
+    "state": "ingestion_status",
+}
+
+_SYSTEM_SCOPE_FIELDS = frozenset({"ingestion_status"})
+
 
 def _items(value: Any) -> list[Any]:
     """只接受 JSON Array，避免把字符串拆成字段列表。"""
     return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _canonical_metadata_field(value: Any) -> str:
+    """把用户和规划模型使用的字段别名收敛为受管逻辑字段。"""
+    normalized = "_".join(
+        str(value).strip().casefold().replace("-", " ").split()
+    )
+    return _METADATA_FIELD_ALIASES.get(normalized, normalized)
+
+
+def _canonical_metadata_fields(value: Any) -> list[str]:
+    """规范化字段列表并删除别名收敛后产生的重复项。"""
+    return list(dict.fromkeys(
+        field
+        for item in _items(value)
+        if (field := _canonical_metadata_field(item))
+        and field not in _SYSTEM_SCOPE_FIELDS
+    ))
+
+
+def _canonical_order_by(value: Any) -> list[dict[str, Any]]:
+    """规范化排序字段；同一逻辑字段只保留第一次声明。"""
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in _items(value):
+        if not isinstance(item, dict):
+            continue
+        field = _canonical_metadata_field(item.get("field"))
+        if not field or field in _SYSTEM_SCOPE_FIELDS or field in seen:
+            continue
+        result.append({**item, "field": field})
+        seen.add(field)
+    return result
+
+
+def _is_ready_scope_criterion(criterion: dict[str, Any]) -> bool:
+    """识别已由 searchable view 强制满足的 READY 状态条件。"""
+    return (
+        criterion.get("kind") in {"METADATA", "IDENTIFIER"}
+        and criterion.get("field_scope") == ["ingestion_status"]
+        and criterion.get("operator") in {"EQ", "IN"}
+        and bool(criterion.get("values"))
+        and all(
+            str(value).strip().upper() == "READY"
+            for value in criterion.get("values") or ()
+        )
+    )
 
 
 def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
@@ -43,7 +113,7 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
         field_scope = _items(field_scope)
     field_scope = [
         (
-            str(item).casefold()
+            _canonical_metadata_field(item)
             if kind in {"METADATA", "IDENTIFIER"}
             else str(item).upper()
         )
@@ -368,16 +438,15 @@ class AssetSearchPlanner:
             item for item in _items(normalized.get("measures"))
             if isinstance(item, dict)
         ]
-        normalized["group_by"] = [
-            str(item) for item in _items(normalized.get("group_by"))
-        ]
-        normalized["projection"] = [
-            str(item) for item in _items(normalized.get("projection"))
-        ]
-        normalized["order_by"] = [
-            item for item in _items(normalized.get("order_by"))
-            if isinstance(item, dict)
-        ]
+        normalized["group_by"] = _canonical_metadata_fields(
+            normalized.get("group_by")
+        )
+        normalized["projection"] = _canonical_metadata_fields(
+            normalized.get("projection")
+        )
+        normalized["order_by"] = _canonical_order_by(
+            normalized.get("order_by")
+        )
         normalized.setdefault("include_total_count", False)
         normalized.setdefault("unsupported_requests", [])
         normalized.setdefault("ambiguities", [])
@@ -393,7 +462,7 @@ class AssetSearchPlanner:
             criterion = _normalize_criterion(
                 raw.get("criterion"), sequence=position
             )
-            if criterion is None:
+            if criterion is None or _is_ready_scope_criterion(criterion):
                 continue
             preference_signatures.add(_criterion_signature(criterion))
             preferences.append({
@@ -408,7 +477,7 @@ class AssetSearchPlanner:
         criterion_ids: dict[str, str] = {}
         for position, raw in enumerate(_items(normalized.get("criteria"))):
             criterion = _normalize_criterion(raw, sequence=len(criteria) + 1)
-            if criterion is None:
+            if criterion is None or _is_ready_scope_criterion(criterion):
                 continue
             if _criterion_signature(criterion) in preference_signatures:
                 continue
