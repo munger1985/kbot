@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 import json
 from typing import Any
 
+from loguru import logger
 from platform_core.contracts import AssetSearchPlanV1
 
 
@@ -173,9 +175,16 @@ def _apply_asset_list_semantic_scope(criterion: dict[str, Any]) -> None:
 class AssetSearchPlanner:
     """调用冻结模型生成搜索计划，并执行确定性产品边界规范化。"""
 
-    def __init__(self, *, model_client, prompt_resolver) -> None:
+    def __init__(
+        self,
+        *,
+        model_client,
+        prompt_resolver,
+        timeout_seconds: float = 30,
+    ) -> None:
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
+        self._timeout_seconds = timeout_seconds
 
     async def plan(
         self,
@@ -230,10 +239,30 @@ class AssetSearchPlanner:
         ]
         last_error = ""
         for attempt in range(2):
-            response = await self._model_client.get_llm_json(
-                served_model_name=model_name,
-                prompt=messages,
-            )
+            try:
+                response = await asyncio.wait_for(
+                    self._model_client.get_llm_json(
+                        served_model_name=model_name,
+                        prompt=messages,
+                    ),
+                    timeout=self._timeout_seconds,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Asset Search Planner 模型调用失败，降级为合同化语义检索："
+                    "model={} timeout_seconds={} error_type={} error={}",
+                    model_name,
+                    self._timeout_seconds,
+                    type(exc).__name__,
+                    str(exc),
+                )
+                return (
+                    self.semantic_fallback_plan(
+                        question=question,
+                        language=language,
+                    ),
+                    f"{prompt.version}-semantic-fallback",
+                )
             try:
                 normalized = self.normalize_response(
                     response=response,
@@ -261,7 +290,60 @@ class AssetSearchPlanner:
                             ),
                         },
                     ])
-        raise ValueError(f"Asset Search Planner 输出不符合契约：{last_error}")
+        logger.warning(
+            "Asset Search Planner 连续输出无效合同，降级为合同化语义检索：{}",
+            last_error,
+        )
+        return (
+            self.semantic_fallback_plan(
+                question=question,
+                language=language,
+            ),
+            f"{prompt.version}-semantic-fallback",
+        )
+
+    @staticmethod
+    def semantic_fallback_plan(
+        *, question: str, language: str
+    ) -> AssetSearchPlanV1:
+        """在规划模型不可用时保留 READY Asset 候选约束与引用链路。"""
+        normalized = AssetSearchPlanner.normalize_response(
+            question=question,
+            language=language,
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "answer_detail": "BRIEF",
+                "criteria": [
+                    {
+                        "criterion_id": "c1",
+                        "kind": "SEMANTIC_CONCEPT",
+                        "field_scope": [
+                            "TITLE", "PRODUCT", "SOLUTION", "CONTENT"
+                        ],
+                        "operator": "RELATED_TO",
+                        "values": [question],
+                        "occurrence": "MUST",
+                        "evidence_requirement": "METADATA_OR_CONTENT",
+                    }
+                ],
+                "eligibility_expression": {
+                    "node_type": "REF",
+                    "criterion_id": "c1",
+                },
+                "projection": list(_DEFAULT_ASSET_PROJECTION),
+                "order_by": [
+                    {"field": "asset_date", "direction": "DESC"}
+                ],
+                "display_limit": 5,
+                "result_assets": {
+                    "mode": "PRIMARY",
+                    "target_count": 5,
+                    "selection": "RECENT_RELEVANT",
+                },
+            },
+        )
+        return AssetSearchPlanV1.model_validate(normalized)
 
     @staticmethod
     def normalize_response(

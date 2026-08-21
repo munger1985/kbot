@@ -74,6 +74,9 @@ class AgentRuntimeSettings(Settings):
     attachments: ConversationAttachmentConfig = Field(
         default_factory=ConversationAttachmentConfig
     )
+    asset_search_planning_timeout_seconds: float = Field(
+        default=30, ge=1, le=120
+    )
     ask_data_api: MCPDataConfig = Field(default_factory=MCPDataConfig)
     knowledge_core: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(

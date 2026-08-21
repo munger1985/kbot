@@ -67,12 +67,19 @@ class RootAgentPlanner:
         {"conversation", "document", "data_query"}
     )
 
-    def __init__(self, *, model_client=None, prompt_resolver=None):
+    def __init__(
+        self,
+        *,
+        model_client=None,
+        prompt_resolver=None,
+        asset_search_timeout_seconds: float = 30,
+    ):
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
         self._asset_search_planner = AssetSearchPlanner(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
+            timeout_seconds=asset_search_timeout_seconds,
         )
 
     def decide(

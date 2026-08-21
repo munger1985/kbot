@@ -152,6 +152,9 @@ async def lifespan(app: FastAPIOffline):
         root_planner=RootAgentPlanner(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
+            asset_search_timeout_seconds=(
+                settings.asset_search_planning_timeout_seconds
+            ),
         ),
         model_resolver=model_resolver,
         notification_publisher=AgentRunOutboxPublisher(),

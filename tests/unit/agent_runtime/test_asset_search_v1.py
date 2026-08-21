@@ -1,5 +1,6 @@
 """KM Asset 统一搜索计划、编译和结果展示的聚焦测试。"""
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -69,6 +70,47 @@ def _artifact(artifact_type: str, payload: dict) -> LeasedArtifact:
 
 
 class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
+    async def test_planner_timeout_falls_back_to_contractual_semantic_list(self):
+        async def slow_model_call(**kwargs):
+            await asyncio.sleep(1)
+            return {}
+
+        model_client = SimpleNamespace(get_llm_json=slow_model_call)
+        prompt_resolver = SimpleNamespace(
+            resolve=AsyncMock(
+                return_value=SimpleNamespace(
+                    content="测试规划提示词",
+                    version="1.0.0",
+                )
+            )
+        )
+        planner = AssetSearchPlanner(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+            timeout_seconds=0.01,
+        )
+
+        plan, version = await planner.plan(
+            model_name="slow-router",
+            question="找个financial fraud的asset",
+            language="zh-CN",
+            conversation_context=None,
+        )
+
+        self.assertEqual("LIST", plan.operation)
+        self.assertEqual(5, plan.display_limit)
+        self.assertEqual("SEMANTIC_CONCEPT", plan.criteria[0].kind)
+        self.assertEqual(
+            ("找个financial fraud的asset",),
+            plan.criteria[0].values,
+        )
+        self.assertIn("TITLE", plan.criteria[0].field_scope)
+        self.assertIn("CONTENT", plan.criteria[0].field_scope)
+        self.assertEqual(
+            "1.0.0-semantic-fallback",
+            version,
+        )
+
     def test_complex_metadata_expression_compiles_to_parameterized_sql(self):
         plan = _base_plan(
             criteria=[
