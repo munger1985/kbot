@@ -393,6 +393,16 @@
             "title": "Dimensions",
             "type": "array"
           },
+          "filter_expression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanFilterExpression"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "filters": {
             "default": [],
             "items": {
@@ -1082,6 +1092,43 @@
       "DimensionDefinition": {
         "additionalProperties": false,
         "properties": {
+          "allowed_filter_operators": {
+            "default": [
+              "EQ",
+              "NE",
+              "IN",
+              "NOT_IN",
+              "BETWEEN",
+              "GT",
+              "GTE",
+              "LT",
+              "LTE",
+              "CONTAINS",
+              "STARTS_WITH",
+              "IS_NULL",
+              "IS_NOT_NULL"
+            ],
+            "items": {
+              "enum": [
+                "EQ",
+                "NE",
+                "IN",
+                "NOT_IN",
+                "BETWEEN",
+                "GT",
+                "GTE",
+                "LT",
+                "LTE",
+                "CONTAINS",
+                "STARTS_WITH",
+                "IS_NULL",
+                "IS_NOT_NULL"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Filter Operators",
+            "type": "array"
+          },
           "dataset": {
             "pattern": "^[a-z][a-z0-9._-]{0,127}$",
             "title": "Dataset",
@@ -1099,6 +1146,15 @@
               }
             ],
             "title": "Display Name"
+          },
+          "filter_alias_columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Filter Alias Columns",
+            "type": "array"
           },
           "filterable": {
             "default": true,
@@ -1138,6 +1194,16 @@
             "maxItems": 32,
             "title": "Synonyms",
             "type": "array"
+          },
+          "value_normalization": {
+            "default": "NONE",
+            "enum": [
+              "NONE",
+              "LOWER_TRIM",
+              "CASE_INSENSITIVE_TRIM"
+            ],
+            "title": "Value Normalization",
+            "type": "string"
           },
           "value_type": {
             "enum": [
@@ -1326,6 +1392,59 @@
           "operator"
         ],
         "title": "PlanFilter",
+        "type": "object"
+      },
+      "PlanFilterExpression": {
+        "additionalProperties": false,
+        "description": "按 filters 下标组合受控谓词，不承载 SQL 片段。",
+        "properties": {
+          "child": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanFilterExpression"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlanFilterExpression"
+            },
+            "maxItems": 64,
+            "title": "Children",
+            "type": "array"
+          },
+          "filter_index": {
+            "anyOf": [
+              {
+                "maximum": 63.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter Index"
+          },
+          "node_type": {
+            "enum": [
+              "FILTER",
+              "ALL",
+              "ANY",
+              "NOT"
+            ],
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_type"
+        ],
+        "title": "PlanFilterExpression",
         "type": "object"
       },
       "PlanMeasure": {

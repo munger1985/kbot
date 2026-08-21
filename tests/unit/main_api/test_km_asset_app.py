@@ -7,7 +7,10 @@ from pydantic import ValidationError
 
 from main_api.api.km_asset_app import (
     AgentCreatePayload,
+    AssetReferencePreview,
     ConversationTurnPayload,
+    _asset_attachment,
+    _asset_reference_fields,
     _km_turn_receipt,
 )
 
@@ -59,6 +62,81 @@ class KmAssetAppContractTest(unittest.TestCase):
         receipt = _km_turn_receipt({"run_id": None, "events_url": None})
 
         self.assertIsNone(receipt["events_url"])
+
+    def test_asset_reference_fields_match_bundle_without_internal_ids(self) -> None:
+        bundle_id = UUID("01900000-0000-7000-8000-000000000011")
+        fields = _asset_reference_fields(
+            {
+                "query_results": [{
+                    "rows": [{
+                        "asset_id": "ASSET-1",
+                        "bundle_id": str(bundle_id),
+                        "bundle_revision_id": (
+                            "01900000-0000-7000-8000-000000000012"
+                        ),
+                        "title": "OAC Fraud Asset",
+                        "product": "OAC",
+                        "solution": "Financial Fraud",
+                    }],
+                }],
+            },
+            bundle_id=bundle_id,
+        )
+
+        self.assertEqual("OAC Fraud Asset", fields["title"])
+        self.assertEqual("OAC", fields["product"])
+        self.assertNotIn("asset_id", fields)
+        self.assertNotIn("bundle_id", fields)
+
+    def test_asset_attachment_excludes_manifest_and_keeps_evidence_locator(self) -> None:
+        run_id = UUID("01900000-0000-7000-8000-000000000021")
+        document_version_id = UUID(
+            "01900000-0000-7000-8000-000000000022"
+        )
+        manifest = _asset_attachment(
+            run_id=run_id,
+            citation_label="C1",
+            item={
+                "document_role": "MANIFEST",
+                "document_version_id": str(document_version_id),
+                "preview_available": True,
+            },
+            evidence_document_version_id=document_version_id,
+            locator=(3, 4, None),
+        )
+        attachment = _asset_attachment(
+            run_id=run_id,
+            citation_label="C1",
+            item={
+                "document_role": "ATTACHMENT",
+                "document_version_id": str(document_version_id),
+                "declared_name": "fraud.pdf",
+                "detected_mime_type": "application/pdf",
+                "preview_available": True,
+            },
+            evidence_document_version_id=document_version_id,
+            locator=(3, 4, None),
+        )
+
+        self.assertIsNone(manifest)
+        self.assertIsNotNone(attachment)
+        self.assertTrue(attachment.evidence_source)
+        self.assertEqual(3, attachment.page_no)
+        self.assertIn(f"/files/{document_version_id}/content", attachment.content_url)
+
+    def test_asset_reference_can_exist_without_attachments(self) -> None:
+        preview = AssetReferencePreview(
+            citation_label="C1",
+            title="Metadata-only Asset",
+            revision_no=1,
+            status="READY",
+            approval_status="APPROVED",
+            is_current_revision=True,
+            asset_content_available=True,
+        )
+
+        self.assertEqual("ASSET", preview.reference_type)
+        self.assertEqual((), preview.attachments)
 
 
 if __name__ == "__main__":

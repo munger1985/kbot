@@ -160,7 +160,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         )
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260820_1", html)
+        self.assertIn("km-chat-v5.js?v=20260821_1", html)
 
     def test_km_chat_uses_interactive_paper_style_citations(self):
         source = (
@@ -179,11 +179,16 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("marker.dataset.citationLabel", source)
         self.assertIn("prepareCitationMarker", source)
         self.assertIn("showQueryReference", source)
-        self.assertIn("prepareDocumentReference", source)
+        self.assertIn("prepareAssetReference", source)
+        self.assertIn("appendAssetAttachments", source)
+        self.assertIn("data-attachment-url", source)
         self.assertIn('closest("code, pre, a, sup")', source)
         self.assertIn(".km-citation-marker", styles)
+        self.assertIn(".km-reference-asset-preview", styles)
         self.assertIn("vertical-align: super", styles)
+        self.assertIn('id="reference-asset-preview"', html)
         self.assertIn('id="reference-query-preview"', html)
+        self.assertNotIn('id="open-reference"', html)
 
     def test_jobs_page_uses_asset_revision_step_tree(self):
         source = (KM_ROOT / "js" / "km-jobs.js").read_text(
@@ -258,7 +263,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("purifier.sanitize", renderer)
         self.assertIn("overflow-x: auto", styles)
         self.assertIn("border-collapse: separate", styles)
-        self.assertIn("km-chat-markdown.css?v=20260820_1", chat)
+        self.assertIn("km-chat-markdown.css?v=20260821_1", chat)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")

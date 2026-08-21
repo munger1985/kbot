@@ -36,6 +36,7 @@ TEST_COLLECTION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
 TEST_BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a021")
 TEST_BUNDLE_REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a022")
 TEST_DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a023")
+TEST_MANIFEST_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a024")
 TEST_DOCUMENT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a025")
 
 
@@ -50,6 +51,7 @@ class _FakeKnowledgeCoreClient:
         self.last_collection_id: UUID | None = None
         self.last_document_version_id: UUID | None = None
         self.last_agent_id: UUID | None = None
+        self.only_manifest = False
 
     async def list_agent_bindings(
         self,
@@ -160,12 +162,31 @@ class _FakeKnowledgeCoreClient:
         self.last_bundle_id = bundle_id
         self.last_bundle_revision_id = bundle_revision_id
         return {
-            "files": [{
-                "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
-                "detected_mime_type": "application/pdf",
-                "declared_mime_type": "application/pdf",
-                "preview_available": True,
-            }]
+            "title": "员工移动套餐",
+            "revision_no": 2,
+            "status": "READY",
+            "approval_status": "APPROVED",
+            "is_current_revision": True,
+            "files": [
+                {
+                    "document_version_id": str(TEST_MANIFEST_VERSION_ID),
+                    "external_document_id": "__manifest__",
+                    "declared_name": "manifest.md",
+                    "document_role": "MANIFEST",
+                    "detected_mime_type": "text/markdown",
+                    "declared_mime_type": "text/markdown",
+                    "preview_available": True,
+                },
+                *([] if self.only_manifest else [{
+                    "document_version_id": str(TEST_DOCUMENT_VERSION_ID),
+                    "external_document_id": "mobile-plan.pdf",
+                    "declared_name": "员工移动套餐.pdf",
+                    "document_role": "ATTACHMENT",
+                    "detected_mime_type": "application/pdf",
+                    "declared_mime_type": "application/pdf",
+                    "preview_available": True,
+                }]),
+            ],
         }
 
     async def stream_source_file(
@@ -399,6 +420,18 @@ class _FakeAgentRuntimeClient:
                             "bbox": [0.1, 0.2, 0.9, 0.4],
                         }]
                     },
+                }],
+                "query_results": [{
+                    "query_result_id": str(
+                        UUID("019f8eae-2c25-7d48-b044-350ec3f5a030")
+                    ),
+                    "rows": [{
+                        "asset_id": "ASSET-1",
+                        "bundle_id": str(TEST_BUNDLE_ID),
+                        "bundle_revision_id": str(TEST_BUNDLE_REVISION_ID),
+                        "title": "员工移动套餐",
+                        "product": "Mobile Services",
+                    }],
                 }],
             },
             "storage_uri": None,
@@ -774,6 +807,7 @@ class MainApiTest(unittest.TestCase):
         self.knowledge_retrieval_app = (
             self.app.state.knowledge_retrieval_app_client
         )
+        self.app.state.km_asset_client = self.knowledge_retrieval_app
         self.data_query = _FakeDataQueryClient()
         self.app.state.data_query_client = self.data_query
         self.app.state.access_control_service = _FakeAccessControlService()
@@ -1433,6 +1467,65 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(404, response.status_code)
         self.assertEqual("DOCUMENT_REFERENCE_NOT_FOUND", response.json()["code"])
+
+    def test_km_reference_opens_asset_before_its_attachments(self) -> None:
+        base = (
+            "/api/v1/apps/km-asset/runs/"
+            f"{self.agent_runtime.run_id}/references/C1"
+        )
+
+        response = self.client.get(f"{base}/preview", headers=self._headers())
+
+        self.assertEqual(200, response.status_code, response.text)
+        payload = response.json()
+        self.assertEqual("ASSET", payload["reference_type"])
+        self.assertEqual("员工移动套餐", payload["title"])
+        self.assertTrue(payload["asset_content_available"])
+        self.assertEqual("Mobile Services", payload["asset_fields"]["product"])
+        self.assertEqual(1, len(payload["attachments"]))
+        attachment = payload["attachments"][0]
+        self.assertEqual("员工移动套餐.pdf", attachment["name"])
+        self.assertTrue(attachment["evidence_source"])
+        self.assertEqual(3, attachment["page_no"])
+        self.assertIn(
+            f"/files/{TEST_DOCUMENT_VERSION_ID}/content",
+            attachment["content_url"],
+        )
+
+        content = self.client.get(
+            attachment["content_url"],
+            headers={**self._headers(), "Range": "bytes=0-11"},
+        )
+        self.assertEqual(206, content.status_code)
+        self.assertEqual(TEST_DOCUMENT_VERSION_ID, self.kc.last_document_version_id)
+
+    def test_km_reference_never_exposes_manifest_as_attachment(self) -> None:
+        response = self.client.get(
+            (
+                "/api/v1/apps/km-asset/runs/"
+                f"{self.agent_runtime.run_id}/references/C1/files/"
+                f"{TEST_MANIFEST_VERSION_ID}/content"
+            ),
+            headers=self._headers(),
+        )
+
+        self.assertEqual(404, response.status_code, response.text)
+
+    def test_km_reference_without_attachments_still_opens_asset(self) -> None:
+        self.kc.only_manifest = True
+
+        response = self.client.get(
+            (
+                "/api/v1/apps/km-asset/runs/"
+                f"{self.agent_runtime.run_id}/references/C1/preview"
+            ),
+            headers=self._headers(),
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("ASSET", response.json()["reference_type"])
+        self.assertTrue(response.json()["asset_content_available"])
+        self.assertEqual([], response.json()["attachments"])
 
     def test_regular_user_with_use_permission_can_use_active_agent(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(

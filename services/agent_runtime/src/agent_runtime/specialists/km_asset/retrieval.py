@@ -180,6 +180,11 @@ class KmAssetRetrievalMixin:
             })
             if is_eligible:
                 candidate = dict(candidate)
+                candidate["_asset_title"] = str(
+                    asset.get("title")
+                    or candidate.get("display_title")
+                    or ""
+                )
                 candidate["_preference_hits"] = len(preference_hits)
                 hard_ranks = [
                     ranks.get(item.criterion_id, {}).get(bundle_id, 10**6)
@@ -193,6 +198,57 @@ class KmAssetRetrievalMixin:
             int(item.get("_weakest_hard_rank") or 0),
             candidate_order.get(str(item.get("bundle_id") or ""), 10**6),
         ))
+
+        identity_warnings: list[str] = []
+        identity_targets = self._missing_identity_candidates(
+            eligible,
+            groups_by_key,
+            limit=plan.result_assets.target_count,
+        )
+
+        async def retrieve_asset_identity(candidate):
+            """用 Asset 标题从同 Bundle manifest 取得最低可引用证据。"""
+            query = str(
+                candidate.get("_asset_title") or plan.query_text
+            ).strip()
+            async with semaphore:
+                response = await self._client.retrieve_evidence(
+                    query=query,
+                    candidates=self._evidence_candidates([candidate]),
+                    domain_id=context.domain_id,
+                    agent_id=str(context.agent_id),
+                    auth_context=self._auth_context(context),
+                    max_security_level=self._security_level(context),
+                    max_evidence=1,
+                    context_limit=0,
+                    coverage_mode=coverage_mode,
+                    run_id=context.run_id,
+                    task_id=context.task_id,
+                )
+            bundle_id = str(candidate.get("bundle_id") or "")
+            groups = [
+                group
+                for group in response.get("citations") or ()
+                if str(group.get("bundle_id") or "") == bundle_id
+                and group.get("items")
+            ]
+            return groups, list(response.get("warnings") or ())
+
+        if identity_targets:
+            identity_results = await asyncio.gather(*(
+                retrieve_asset_identity(candidate)
+                for candidate in identity_targets
+            ))
+            groups_by_key["__asset_identity__"] = [
+                group
+                for groups, _warnings in identity_results
+                for group in groups
+            ]
+            identity_warnings.extend(
+                warning
+                for _groups, warnings in identity_results
+                for warning in warnings
+            )
         logger.info(
             "Asset 条件证据收敛完成 | run_id={} | task_id={} | "
             "candidate_count={} | evidence_bundle_count={} | "
@@ -206,7 +262,11 @@ class KmAssetRetrievalMixin:
                 for group in groups
                 if group.get("bundle_id")
             }),
-            sum(len(values) for values in hit_sets.values()),
+            sum(
+                len(group.get("items") or ())
+                for groups in groups_by_key.values()
+                for group in groups
+            ),
             len(eligible),
         )
 
@@ -227,11 +287,12 @@ class KmAssetRetrievalMixin:
                 merged_groups.append(first_group)
             candidate.pop("_preference_hits", None)
             candidate.pop("_weakest_hard_rank", None)
+            candidate.pop("_asset_title", None)
         warnings = expansion_warnings + [
             warning
             for _, response, _ in retrieved
             for warning in response.get("warnings") or []
-        ]
+        ] + identity_warnings
         return {
             "citations": merged_groups,
             "warnings": warnings,
@@ -243,6 +304,30 @@ class KmAssetRetrievalMixin:
                 "requirements": matrix,
             },
         }, eligible
+
+    @staticmethod
+    def _missing_identity_candidates(
+        eligible: list[dict[str, Any]],
+        groups_by_key: dict[str, list[dict[str, Any]]],
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """找出还没有正文 C 的展示候选，用 manifest 补齐 Asset 自身引用。"""
+        covered = {
+            str(group.get("bundle_id") or "")
+            for groups in groups_by_key.values()
+            for group in groups
+            if any(
+                (item.get("evidence") or {}).get("document_id")
+                for item in group.get("items") or ()
+                if isinstance(item, dict)
+            )
+        }
+        return [
+            candidate
+            for candidate in eligible[:limit]
+            if str(candidate.get("bundle_id") or "") not in covered
+        ]
 
     @staticmethod
     def _evidence_hit_sets(

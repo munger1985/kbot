@@ -534,6 +534,95 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual({"fraud-bundle"}, hit_sets["c1"])
 
+    async def test_asset_without_attachments_gets_manifest_citation(self):
+        collection_id = uuid7()
+        bundle_id = uuid7()
+        revision_id = uuid7()
+        manifest_document_id = uuid7()
+        manifest_version_id = uuid7()
+        manifest_evidence_id = uuid7()
+        client = SimpleNamespace(retrieve_evidence=AsyncMock(return_value={
+            "citations": [{
+                "collection_id": str(collection_id),
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+                "document_version_id": str(manifest_version_id),
+                "items": [{
+                    "final_role": "PRIMARY",
+                    "evidence": {
+                        "evidence_id": str(manifest_evidence_id),
+                        "document_id": str(manifest_document_id),
+                        "document_version_id": str(manifest_version_id),
+                        "document_role": "MANIFEST",
+                        "content_text": "Asset Title: Metadata-only Asset",
+                        "locator": {},
+                        "locator_schema_version": "document/v1",
+                    },
+                }],
+            }],
+            "warnings": [],
+        }))
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent_runtime",
+            model_client=None,
+            prompt_resolver=None,
+        )
+        candidate = {
+            "collection_id": str(collection_id),
+            "bundle_id": str(bundle_id),
+            "bundle_revision_id": str(revision_id),
+            "document_version_ids": [],
+            "display_title": "Metadata-only Asset",
+        }
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input="list assets",
+            policy_snapshot={},
+            config_snapshot={"agent": {"config": {}}},
+            input_artifacts=(_artifact("DOCUMENT_SCOPE", {
+                "assets": [{
+                    "title": "Metadata-only Asset",
+                    "bundle_id": str(bundle_id),
+                }],
+            }),),
+        )
+
+        evidence, eligible = await skill._retrieve_asset_plan_evidence(
+            context=context,
+            plan=_base_plan(result_assets={
+                "mode": "PRIMARY",
+                "target_count": 1,
+                "selection": "REQUESTED_ORDER",
+            }),
+            candidates=[candidate],
+            retrieval_config={"max_citations": 12, "context_limit": 4},
+            coverage_mode="ANSWER",
+        )
+
+        self.assertEqual(1, len(eligible))
+        self.assertEqual(1, len(evidence["citations"]))
+        self.assertEqual(
+            "MANIFEST",
+            evidence["citations"][0]["items"][0]["evidence"]["document_role"],
+        )
+        citations = skill._map_citations(
+            evidence["citations"], candidates=[candidate]
+        )
+        self.assertEqual(1, len(citations))
+        self.assertEqual("MANIFEST", citations[0].document_role)
+        self.assertEqual(manifest_version_id, citations[0].document_version_id)
+        request = client.retrieve_evidence.await_args.kwargs
+        self.assertEqual("Metadata-only Asset", request["query"])
+        self.assertEqual([], request["candidates"][0]["document_version_ids"])
+
     def test_translated_semantic_term_supports_english_asset_title(self):
         criterion = _base_plan(
             criteria=[{

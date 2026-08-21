@@ -3,7 +3,7 @@
   "use strict";
   const base = "/api/v1/apps/km-asset";
   const $ = (id) => document.getElementById(id);
-  let agents = [], conversations = [], active = null, currentPreview = null;
+  let agents = [], conversations = [], active = null;
   const runResults = new Map();
   const citationPattern = /\[((?:Q|C)\d+)\]/g;
 
@@ -224,17 +224,69 @@
     host.innerHTML = refs.map((row, index) => `<button class="km-reference" data-run="${KBotKmShell.escapeHtml(runId)}" data-reference="${index}">${KBotKmShell.escapeHtml(row.citation_label || `[${index + 1}]`)} · ${KBotKmShell.escapeHtml(row.title || "引用文档")}</button>`).join("");
     host._references = refs;
   }
-  async function prepareDocumentReference(runId, reference) {
+  function appendAssetFields(host, fields) {
+    const labels = { title: "标题", author: "作者", product: "产品", solution: "解决方案", industry: "行业", category: "类别", content_category: "内容类别", asset_date: "发布日期" };
+    const entries = Object.entries(fields || {}).filter(([, value]) => value != null && String(value).trim());
+    if (!entries.length) return;
+    const details = document.createElement("dl");
+    details.className = "km-reference-asset-fields";
+    entries.forEach(([field, value]) => {
+      const term = document.createElement("dt");
+      term.textContent = labels[field] || field;
+      const description = document.createElement("dd");
+      description.textContent = typeof value === "object" ? JSON.stringify(value) : String(value);
+      details.append(term, description);
+    });
+    host.append(details);
+  }
+  function appendAssetAttachments(host, attachments) {
+    const heading = document.createElement("h3");
+    heading.textContent = "Asset 附件";
+    host.append(heading);
+    if (!attachments.length) {
+      const empty = document.createElement("p");
+      empty.className = "km-help";
+      empty.textContent = "该 Asset 没有附件；当前引用依据来自 Asset 本身内容。";
+      host.append(empty);
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "km-reference-attachments";
+    attachments.forEach((attachment) => {
+      const item = document.createElement("li");
+      const copy = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = attachment.name || "附件";
+      const meta = document.createElement("span");
+      const pages = attachment.page_no ? ` · 第 ${attachment.page_no}${attachment.page_end && attachment.page_end !== attachment.page_no ? `–${attachment.page_end}` : ""} 页` : "";
+      meta.textContent = `${attachment.mime_type || "文件"}${attachment.evidence_source ? " · 当前引用命中" : ""}${pages}`;
+      copy.append(name, meta);
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "small";
+      open.textContent = "打开附件";
+      open.dataset.attachmentUrl = attachment.content_url;
+      open.dataset.previewType = attachment.preview_type || "DOWNLOAD";
+      open.dataset.pageNo = attachment.page_no || "";
+      item.append(copy, open);
+      list.append(item);
+    });
+    host.append(list);
+  }
+  async function prepareAssetReference(runId, reference) {
     if (!reference) return;
     try {
       const preview = await KBotKmApi.request(`${base}/runs/${encodeURIComponent(runId)}/references/${encodeURIComponent(reference.citation_label)}/preview`);
-      currentPreview = preview;
-      $("reference-title").textContent = preview.title || reference.title || "引用文档";
-      $("reference-meta").textContent = `${preview.mime_type} · ${preview.page_no ? `第 ${preview.page_no}${preview.page_end && preview.page_end !== preview.page_no ? `–${preview.page_end}` : ""} 页` : "未指定页码"}`;
-      $("reference-description").textContent = "浏览器将打开原始文档；PDF 会定位到引用页码。";
+      $("reference-title").textContent = preview.title || reference.title || "Asset 引用";
+      $("reference-meta").textContent = `${preview.citation_label || reference.citation_label} · 版本 ${preview.revision_no} · ${preview.status || "UNKNOWN"}${preview.is_current_revision ? " · 当前版本" : ""}`;
+      $("reference-description").textContent = preview.asset_content_available ? "该引用首先指向 Asset 本身内容；下方附件属于同一 Asset。" : "该引用首先指向 Asset；当前版本未提供可预览的 Asset 内容文件。";
       $("reference-query-preview").hidden = true;
       $("reference-query-preview").replaceChildren();
-      $("open-reference").hidden = false;
+      const host = $("reference-asset-preview");
+      host.replaceChildren();
+      appendAssetFields(host, preview.asset_fields);
+      appendAssetAttachments(host, Array.isArray(preview.attachments) ? preview.attachments : []);
+      host.hidden = false;
       KBotKmShell.openDialog("reference-dialog");
     } catch (error) { KBotKmShell.showError(error, "引用描述读取失败"); }
   }
@@ -243,7 +295,6 @@
     return queryResults.find((row) => String(row?.query_result_id || "") === String(reference?.query_result_id || "")) || queryResults[0] || null;
   }
   function showQueryReference(reference, queryResult) {
-    currentPreview = null;
     const rows = Array.isArray(queryResult?.rows) ? queryResult.rows.slice(0, 20) : [];
     const supportingRows = Array.isArray(queryResult?.supporting_rows) ? queryResult.supporting_rows.slice(0, 20) : [];
     const totalRows = Number(reference.row_count ?? queryResult?.row_count ?? rows.length);
@@ -251,7 +302,8 @@
     $("reference-title").textContent = `问数依据 · ${reference.citation_label || "Q"}`;
     $("reference-meta").textContent = `${reference.provider || queryResult?.provider || "DATA QUERY"} · ${rowSummary}`;
     $("reference-description").textContent = "以下为本次回答使用的结构化查询结果。";
-    $("open-reference").hidden = true;
+    $("reference-asset-preview").hidden = true;
+    $("reference-asset-preview").replaceChildren();
     const host = $("reference-query-preview");
     host.replaceChildren();
     const hiddenFields = new Set(["asset_id", "bundle_id", "bundle_revision_id"]);
@@ -291,18 +343,19 @@
     const reference = references.find((row) => String(row?.citation_label || "") === label);
     if (!runId || !reference) return KBotKmShell.toast("引用依据尚未加载", "error");
     if (reference.reference_type === "QUERY_RESULT") return showQueryReference(reference, queryResultForReference(result, reference));
-    return prepareDocumentReference(runId, reference);
+    return prepareAssetReference(runId, reference);
   }
   async function prepareReference(button) {
     const host = button.parentElement;
     const reference = host._references?.[Number(button.dataset.reference)];
-    return prepareDocumentReference(button.dataset.run, reference);
+    return prepareAssetReference(button.dataset.run, reference);
   }
-  async function openReference() {
-    if (!currentPreview?.content_url) return;
+  async function openAttachment(button) {
+    const contentUrl = String(button?.dataset?.attachmentUrl || "");
+    if (!contentUrl) return;
     const popup = window.open("about:blank", "_blank");
-    try { const file = await KBotKmApi.blob(currentPreview.content_url); const url = URL.createObjectURL(file.data); const target = currentPreview.preview_type === "PDF" && currentPreview.page_no ? `${url}#page=${currentPreview.page_no}` : url; if (popup) popup.location.href = target; else window.open(target, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000); }
-    catch (error) { popup?.close(); KBotKmShell.showError(error, "原文打开失败"); }
+    try { const file = await KBotKmApi.blob(contentUrl); const url = URL.createObjectURL(file.data); const target = button.dataset.previewType === "PDF" && button.dataset.pageNo ? `${url}#page=${button.dataset.pageNo}` : url; if (popup) popup.location.href = target; else window.open(target, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000); }
+    catch (error) { popup?.close(); KBotKmShell.showError(error, "附件打开失败"); }
   }
   window.addEventListener("DOMContentLoaded", () => {
     $("chat-agent").addEventListener("change", () => loadConversations()); $("new-conversation").addEventListener("click", createConversation); $("refresh-conversations").addEventListener("click", () => loadConversations(active?.conversation_id)); $("chat-form").addEventListener("submit", send);
@@ -312,9 +365,11 @@
       if (copyButton) { KBotMarkdown.copyCode(copyButton); return; }
       const citationMarker = event.target.closest("[data-citation-label]");
       if (citationMarker) { prepareCitationMarker(citationMarker); return; }
+      const attachment = event.target.closest("[data-attachment-url]");
+      if (attachment) { openAttachment(attachment); return; }
       const button = event.target.closest("[data-reference]");
       if (button) prepareReference(button);
-    }); $("open-reference").addEventListener("click", openReference);
+    });
   });
   KBotKmShell.ready.then(initialize).catch(() => {});
 })();

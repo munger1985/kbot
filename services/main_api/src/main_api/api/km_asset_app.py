@@ -1,6 +1,6 @@
 """KM Asset App 公开 BFF API。"""
 
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
@@ -20,7 +20,6 @@ from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreCli
 from platform_core.contracts import ConversationQueryImage, PUBLIC_API_V1, UpdateConversationRequest
 from fastapi import Response
 from main_api.api.runs import (
-    DocumentReferencePreview,
     _DocumentReference,
     _document_locator,
     _effective_security_level,
@@ -35,6 +34,17 @@ from platform_core.security import get_auth_context
 
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/km-asset", tags=["KM Asset App"])
 KM_ASSET_COLLECTION_NAME = "assets"
+
+_ASSET_REFERENCE_FIELDS = (
+    "title",
+    "author",
+    "product",
+    "solution",
+    "industry",
+    "category",
+    "content_category",
+    "asset_date",
+)
 
 
 class _Payload(BaseModel):
@@ -140,6 +150,35 @@ class BatchReindexItemPayload(_Payload):
 
 class BatchReindexPayload(_Payload):
     items: list[BatchReindexItemPayload] = Field(min_length=1, max_length=100)
+
+
+class AssetAttachmentPreview(_Payload):
+    """Asset 引用下可由用户二次打开的附件。"""
+
+    document_version_id: UUID
+    name: str
+    document_role: str
+    mime_type: str
+    preview_type: Literal["PDF", "IMAGE", "TEXT", "DOWNLOAD"]
+    evidence_source: bool = False
+    page_no: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    content_url: str
+
+
+class AssetReferencePreview(_Payload):
+    """KM 引用首先投影 Asset，附件只能作为下级资源出现。"""
+
+    reference_type: Literal["ASSET"] = "ASSET"
+    citation_label: str
+    title: str
+    revision_no: int = Field(ge=1)
+    status: str
+    approval_status: str
+    is_current_revision: bool
+    asset_fields: dict[str, Any] = Field(default_factory=dict)
+    asset_content_available: bool
+    attachments: tuple[AssetAttachmentPreview, ...] = ()
 
 
 class AgentCreatePayload(_Payload):
@@ -578,7 +617,10 @@ async def stream_run_events(
     )
 
 
-async def _document_reference(request: Request, run_id: UUID, citation_label: str) -> _DocumentReference:
+async def _document_reference(
+    request: Request, run_id: UUID, citation_label: str
+) -> tuple[_DocumentReference, dict[str, Any]]:
+    """读取已完成回答中的不可变引用和同一回答数据。"""
     await _km_run(request, run_id, int(request.state.auth_context.domain_id))
     artifact = await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).get_result(run_id=run_id, auth_context=request.state.auth_context)
     payload = artifact.get("payload")
@@ -587,31 +629,170 @@ async def _document_reference(request: Request, run_id: UUID, citation_label: st
     if raw is None:
         raise _reference_not_found()
     try:
-        return _DocumentReference.model_validate(raw)
+        return _DocumentReference.model_validate(raw), payload
     except ValueError as exc:
         raise HTTPException(409, {"code": "DOCUMENT_REFERENCE_INVALID", "message": "Run 引用缺少不可变文档定位信息"}) from exc
 
 
-@router.get("/runs/{run_id}/references/{citation_label}/preview", response_model=DocumentReferencePreview)
+def _asset_reference_fields(
+    payload: dict[str, Any], *, bundle_id: UUID
+) -> dict[str, Any]:
+    """从同一回答的问数结果投影可展示 Asset 元数据。"""
+    bundle_key = str(bundle_id).casefold()
+    for result in payload.get("query_results") or ():
+        if not isinstance(result, dict):
+            continue
+        rows = (
+            *(result.get("rows") or ()),
+            *(result.get("supporting_rows") or ()),
+        )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            folded = {str(key).casefold(): value for key, value in row.items()}
+            if str(folded.get("bundle_id") or "").casefold() != bundle_key:
+                continue
+            return {
+                field: folded[field]
+                for field in _ASSET_REFERENCE_FIELDS
+                if folded.get(field) not in (None, "")
+            }
+    return {}
+
+
+def _asset_attachment(
+    *,
+    run_id: UUID,
+    citation_label: str,
+    item: dict[str, Any],
+    evidence_document_version_id: UUID,
+    locator: tuple[
+        int | None,
+        int | None,
+        tuple[float, float, float, float] | None,
+    ],
+) -> AssetAttachmentPreview | None:
+    """把 Bundle 成员投影为 Asset 下级附件，忽略 manifest。"""
+    if (
+        str(item.get("document_role") or "").upper() == "MANIFEST"
+        or not bool(item.get("preview_available"))
+        or not item.get("document_version_id")
+    ):
+        return None
+    document_version_id = UUID(str(item["document_version_id"]))
+    mime_type = str(
+        item.get("detected_mime_type")
+        or item.get("declared_mime_type")
+        or "application/octet-stream"
+    ).split(";", 1)[0].strip().lower()
+    evidence_source = document_version_id == evidence_document_version_id
+    page_no, page_end, _bbox = locator if evidence_source else (None, None, None)
+    return AssetAttachmentPreview(
+        document_version_id=document_version_id,
+        name=str(
+            item.get("declared_name")
+            or item.get("external_document_id")
+            or "附件"
+        ),
+        document_role=str(item.get("document_role") or "ATTACHMENT"),
+        mime_type=mime_type,
+        preview_type=_preview_type(mime_type),
+        evidence_source=evidence_source,
+        page_no=page_no,
+        page_end=page_end,
+        content_url=(
+            f"{PUBLIC_API_V1}/apps/km-asset/runs/{run_id}/references/"
+            f"{citation_label}/files/{document_version_id}/content"
+        ),
+    )
+
+
+@router.get(
+    "/runs/{run_id}/references/{citation_label}/preview",
+    response_model=AssetReferencePreview,
+)
 async def get_reference_preview(run_id: UUID, citation_label: str, request: Request):
     await _require(request, "km_asset:use")
     require_app_api_scope(request, "km:reference:read")
-    reference = await _document_reference(request, run_id, citation_label)
+    reference, payload = await _document_reference(
+        request, run_id, citation_label
+    )
     preview = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).get_bundle_revision_preview(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, auth_context=request.state.auth_context)
-    source_file = next((item for item in preview.get("files", []) if str(item.get("document_version_id")) == str(reference.document_version_id) and bool(item.get("preview_available"))), None)
-    if source_file is None:
-        raise _reference_not_found()
-    mime_type = str(source_file.get("detected_mime_type") or source_file.get("declared_mime_type") or "application/octet-stream").split(";", 1)[0].strip().lower()
-    page_no, page_end, bbox = _document_locator(reference)
-    return DocumentReferencePreview(citation_label=reference.citation_label, title=reference.title, mime_type=mime_type, preview_type=_preview_type(mime_type), page_no=page_no, page_end=page_end, bbox=bbox, content_url=f"{PUBLIC_API_V1}/apps/km-asset/runs/{run_id}/references/{reference.citation_label}/content")
+    files = [item for item in preview.get("files", []) if isinstance(item, dict)]
+    locator = _document_locator(reference)
+    attachments = tuple(
+        attachment
+        for item in files
+        if (
+            attachment := _asset_attachment(
+                run_id=run_id,
+                citation_label=reference.citation_label,
+                item=item,
+                evidence_document_version_id=reference.document_version_id,
+                locator=locator,
+            )
+        ) is not None
+    )
+    return AssetReferencePreview(
+        citation_label=reference.citation_label,
+        title=str(preview.get("title") or reference.title),
+        revision_no=int(preview.get("revision_no") or 1),
+        status=str(preview.get("status") or "UNKNOWN"),
+        approval_status=str(preview.get("approval_status") or "UNKNOWN"),
+        is_current_revision=bool(preview.get("is_current_revision")),
+        asset_fields=_asset_reference_fields(
+            payload, bundle_id=reference.bundle_id
+        ),
+        asset_content_available=any(
+            str(item.get("document_role") or "").upper() == "MANIFEST"
+            and bool(item.get("preview_available"))
+            for item in files
+        ),
+        attachments=attachments,
+    )
 
 
-@router.get("/runs/{run_id}/references/{citation_label}/content")
-async def stream_reference_content(run_id: UUID, citation_label: str, request: Request, range_header: str | None = Header(default=None, alias="Range")):
+@router.get(
+    "/runs/{run_id}/references/{citation_label}/files/"
+    "{document_version_id}/content"
+)
+async def stream_reference_attachment(
+    run_id: UUID,
+    citation_label: str,
+    document_version_id: UUID,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+):
+    """只允许打开当前 Asset 引用预览中列出的下级附件。"""
     await _require(request, "km_asset:use")
     require_app_api_scope(request, "km:reference:read")
-    reference = await _document_reference(request, run_id, citation_label)
-    upstream = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).stream_source_file(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, document_version_id=reference.document_version_id, range_header=range_header, auth_context=request.state.auth_context)
+    reference, _payload = await _document_reference(
+        request, run_id, citation_label
+    )
+    preview = await cast(
+        KnowledgeCoreClient, request.app.state.knowledge_core_client
+    ).get_bundle_revision_preview(
+        domain_id=int(request.state.auth_context.domain_id),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        auth_context=request.state.auth_context,
+    )
+    attachment = next(
+        (
+            item
+            for item in preview.get("files", [])
+            if isinstance(item, dict)
+            and str(item.get("document_version_id"))
+            == str(document_version_id)
+            and str(item.get("document_role") or "").upper() != "MANIFEST"
+            and bool(item.get("preview_available"))
+        ),
+        None,
+    )
+    if attachment is None:
+        raise _reference_not_found()
+    upstream = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).stream_source_file(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, document_version_id=document_version_id, range_header=range_header, auth_context=request.state.auth_context)
     forwarded = {name: upstream.headers[name] for name in ("accept-ranges", "cache-control", "content-disposition", "content-length", "content-range", "content-security-policy", "x-content-type-options") if name in upstream.headers}
     return StreamingResponse(upstream.body, status_code=upstream.status_code, media_type=upstream.headers.get("content-type", "application/octet-stream"), headers=forwarded)
 

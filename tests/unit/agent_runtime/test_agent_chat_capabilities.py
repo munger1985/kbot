@@ -1804,6 +1804,39 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             language="en-US",
         )
 
+    def test_km_metadata_assets_each_keep_query_citation_without_documents(self):
+        assets = [
+            {"title": "First Asset", "bundle_id": str(uuid7())},
+            {"title": "Second Asset", "bundle_id": str(uuid7())},
+        ]
+
+        selected = ResponseComposerSkill._select_result_assets(
+            assets, (), semantic=False, result_limit=10
+        )
+        answer = ResponseComposerSkill._enumeration_fallback(
+            selected, language="en-US"
+        )
+
+        self.assertEqual(assets, selected)
+        self.assertIn("First Asset** [Q1]", answer)
+        self.assertIn("Second Asset** [Q1]", answer)
+        self.assertEqual(2, answer.count("[Q1]"))
+
+    def test_km_semantic_assets_require_same_bundle_document_citation(self):
+        cited_bundle = uuid7()
+        uncited_bundle = uuid7()
+        assets = [
+            {"title": "Cited Asset", "bundle_id": str(cited_bundle)},
+            {"title": "Uncited Asset", "bundle_id": str(uncited_bundle)},
+        ]
+        citations = (SimpleNamespace(bundle_id=cited_bundle),)
+
+        selected = ResponseComposerSkill._select_result_assets(
+            assets, citations, semantic=True, result_limit=10
+        )
+
+        self.assertEqual([assets[0]], selected)
+
     def test_km_enumeration_rejects_cross_bundle_citation(self):
         first_bundle_id = uuid7()
         second_bundle_id = uuid7()

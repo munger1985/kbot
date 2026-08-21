@@ -154,6 +154,52 @@
         "title": "AgentUpdateRequest",
         "type": "object"
       },
+      "BatchReindexItem": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "km_asset_id": {
+            "format": "uuid",
+            "title": "Km Asset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "km_asset_id",
+          "expected_row_version"
+        ],
+        "title": "BatchReindexItem",
+        "type": "object"
+      },
+      "BatchReindexRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchReindexItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain_id",
+          "items"
+        ],
+        "title": "BatchReindexRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -967,6 +1013,45 @@
           }
         },
         "summary": "List Assets",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/internal/v1/km-asset/assets/actions/reindex": {
+      "post": {
+        "operationId": "batch_reindex_assets_internal_v1_km_asset_assets_actions_reindex_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchReindexRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Reindex Assets",
         "tags": [
           "KM Asset App"
         ]

@@ -245,6 +245,42 @@ class KmAssetComposerMixin:
         }
 
     @staticmethod
+    def _select_result_assets(
+        candidate_assets: list[dict[str, Any]],
+        citations: tuple[Any, ...],
+        *,
+        semantic: bool,
+        result_limit: int,
+    ) -> list[dict[str, Any]]:
+        """纯元数据保留问数清单；语义清单只保留有同 Bundle C 的 Asset。"""
+        asset_by_bundle = {
+            str(item.get("bundle_id") or "").casefold(): item
+            for item in candidate_assets
+            if str(item.get("bundle_id") or "")
+        }
+        ordered = (
+            (
+                asset_by_bundle.get(str(citation.bundle_id).casefold())
+                for citation in citations
+            )
+            if semantic
+            else iter(candidate_assets)
+        )
+        selected: list[dict[str, Any]] = []
+        seen_bundles: set[str] = set()
+        for asset in ordered:
+            if asset is None:
+                continue
+            bundle_key = str(asset.get("bundle_id") or "").casefold()
+            if not bundle_key or bundle_key in seen_bundles:
+                continue
+            selected.append(asset)
+            seen_bundles.add(bundle_key)
+            if len(selected) >= result_limit:
+                break
+        return selected
+
+    @staticmethod
     def _append_asset_supporting_list(
         answer: str,
         used_labels: tuple[str, ...],
@@ -305,47 +341,28 @@ class KmAssetComposerMixin:
             candidate_assets = self._enumeration_assets_from_query(query)
         citations = retrieval.citation_pack.citations
         allowed = {item.citation_label: item for item in citations}
-        asset_by_bundle = {
-            str(item.get("bundle_id") or "").casefold(): item
-            for item in candidate_assets
-            if str(item.get("bundle_id") or "")
-        }
-        assets: list[dict[str, Any]] = []
-        seen_bundles: set[str] = set()
-        result_limit = (
-            search_plan.result_assets.target_count
-            if search_plan is not None
-            else 10
-        )
-        for citation in citations:
-            bundle_key = str(citation.bundle_id).casefold()
-            asset = asset_by_bundle.get(bundle_key)
-            if asset is None or bundle_key in seen_bundles:
-                continue
-            assets.append(asset)
-            seen_bundles.add(bundle_key)
-            if len(assets) >= result_limit:
-                break
-        if search_plan is not None and search_plan.preferences:
-            for asset in candidate_assets:
-                bundle_key = str(asset.get("bundle_id") or "").casefold()
-                if not bundle_key or bundle_key in seen_bundles:
-                    continue
-                assets.append(asset)
-                seen_bundles.add(bundle_key)
-                if len(assets) >= result_limit:
-                    break
-        if query.row_count > 0 and not candidate_assets:
-            raise ValueError("KM_ASSET_ENUMERATION_LIST_EMPTY")
-        language = response_language(
-            context.config_snapshot, context.original_input
-        )
         semantic = bool(
             search_plan is not None
             and (
                 search_plan.has_semantic_eligibility
                 or search_plan.preferences
             )
+        )
+        result_limit = (
+            search_plan.result_assets.target_count
+            if search_plan is not None
+            else 10
+        )
+        assets = self._select_result_assets(
+            candidate_assets,
+            citations,
+            semantic=semantic,
+            result_limit=result_limit,
+        )
+        if query.row_count > 0 and not candidate_assets:
+            raise ValueError("KM_ASSET_ENUMERATION_LIST_EMPTY")
+        language = response_language(
+            context.config_snapshot, context.original_input
         )
         if semantic and not assets:
             return self._result(context, GroundedAnswer(
@@ -373,27 +390,15 @@ class KmAssetComposerMixin:
                     )
                 )
             else:
-                if citations:
-                    prefix = (
-                        f"以下是 {len(assets)} 个满足条件的 Asset；"
-                        "正文证据已用于语义条件或偏好排序。"
-                        if language.startswith("zh")
-                        else (
-                            f"Here are {len(assets)} matching assets; content "
-                            "evidence was used for semantic conditions or preferences."
-                        )
+                prefix = (
+                    f"以下是 {len(assets)} 个满足条件的 Asset；"
+                    "正文证据已用于语义条件或偏好排序。"
+                    if language.startswith("zh")
+                    else (
+                        f"Here are {len(assets)} matching assets; content "
+                        "evidence was used for semantic conditions or preferences."
                     )
-                else:
-                    prefix = (
-                        f"以下是 {len(assets)} 个满足精确条件的 Asset；"
-                        "未找到可证明软偏好的正文证据，因此保留原排序。"
-                        if language.startswith("zh")
-                        else (
-                            f"Here are {len(assets)} assets matching the exact "
-                            "criteria. No content evidence proved the soft preference, "
-                            "so the original order is retained."
-                        )
-                    )
+                )
         else:
             total_count = int(scope.get("total_count") or query.row_count)
             prefix = self._enumeration_prefix(

@@ -1640,6 +1640,187 @@
         "title": "ArtifactRef",
         "type": "object"
       },
+      "AssetAttachmentPreview": {
+        "additionalProperties": false,
+        "description": "Asset 引用下可由用户二次打开的附件。",
+        "properties": {
+          "content_url": {
+            "title": "Content Url",
+            "type": "string"
+          },
+          "document_role": {
+            "title": "Document Role",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "evidence_source": {
+            "default": false,
+            "title": "Evidence Source",
+            "type": "boolean"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "page_end": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page End"
+          },
+          "page_no": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page No"
+          },
+          "preview_type": {
+            "enum": [
+              "PDF",
+              "IMAGE",
+              "TEXT",
+              "DOWNLOAD"
+            ],
+            "title": "Preview Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_version_id",
+          "name",
+          "document_role",
+          "mime_type",
+          "preview_type",
+          "content_url"
+        ],
+        "title": "AssetAttachmentPreview",
+        "type": "object"
+      },
+      "AssetReferencePreview": {
+        "additionalProperties": false,
+        "description": "KM 引用首先投影 Asset，附件只能作为下级资源出现。",
+        "properties": {
+          "approval_status": {
+            "title": "Approval Status",
+            "type": "string"
+          },
+          "asset_content_available": {
+            "title": "Asset Content Available",
+            "type": "boolean"
+          },
+          "asset_fields": {
+            "additionalProperties": true,
+            "title": "Asset Fields",
+            "type": "object"
+          },
+          "attachments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AssetAttachmentPreview"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "citation_label": {
+            "title": "Citation Label",
+            "type": "string"
+          },
+          "is_current_revision": {
+            "title": "Is Current Revision",
+            "type": "boolean"
+          },
+          "reference_type": {
+            "const": "ASSET",
+            "default": "ASSET",
+            "title": "Reference Type",
+            "type": "string"
+          },
+          "revision_no": {
+            "minimum": 1.0,
+            "title": "Revision No",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_label",
+          "title",
+          "revision_no",
+          "status",
+          "approval_status",
+          "is_current_revision",
+          "asset_content_available"
+        ],
+        "title": "AssetReferencePreview",
+        "type": "object"
+      },
+      "BatchReindexItemPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "km_asset_id": {
+            "format": "uuid",
+            "title": "Km Asset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "km_asset_id",
+          "expected_row_version"
+        ],
+        "title": "BatchReindexItemPayload",
+        "type": "object"
+      },
+      "BatchReindexPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchReindexItemPayload"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BatchReindexPayload",
+        "type": "object"
+      },
       "Body_create_turn_with_images_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_multipart_post": {
         "properties": {
           "client_metadata_json": {
@@ -2336,6 +2517,16 @@
             "maxItems": 32,
             "title": "Dimensions",
             "type": "array"
+          },
+          "filter_expression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanFilterExpression"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "filters": {
             "default": [],
@@ -5910,6 +6101,59 @@
           "operator"
         ],
         "title": "PlanFilter",
+        "type": "object"
+      },
+      "PlanFilterExpression": {
+        "additionalProperties": false,
+        "description": "按 filters 下标组合受控谓词，不承载 SQL 片段。",
+        "properties": {
+          "child": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanFilterExpression"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlanFilterExpression"
+            },
+            "maxItems": 64,
+            "title": "Children",
+            "type": "array"
+          },
+          "filter_index": {
+            "anyOf": [
+              {
+                "maximum": 63.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter Index"
+          },
+          "node_type": {
+            "enum": [
+              "FILTER",
+              "ALL",
+              "ANY",
+              "NOT"
+            ],
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_type"
+        ],
+        "title": "PlanFilterExpression",
         "type": "object"
       },
       "PlanMeasure": {
@@ -13320,6 +13564,45 @@
         ]
       }
     },
+    "/api/v1/apps/km-asset/assets/actions/reindex": {
+      "post": {
+        "operationId": "batch_reindex_assets_api_v1_apps_km_asset_assets_actions_reindex_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchReindexPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Reindex Assets",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
     "/api/v1/apps/km-asset/assets/{km_asset_id}": {
       "get": {
         "operationId": "get_asset_api_v1_apps_km_asset_assets__km_asset_id__get",
@@ -14123,9 +14406,10 @@
         ]
       }
     },
-    "/api/v1/apps/km-asset/runs/{run_id}/references/{citation_label}/content": {
+    "/api/v1/apps/km-asset/runs/{run_id}/references/{citation_label}/files/{document_version_id}/content": {
       "get": {
-        "operationId": "stream_reference_content_api_v1_apps_km_asset_runs__run_id__references__citation_label__content_get",
+        "description": "只允许打开当前 Asset 引用预览中列出的下级附件。",
+        "operationId": "stream_reference_attachment_api_v1_apps_km_asset_runs__run_id__references__citation_label__files__document_version_id__content_get",
         "parameters": [
           {
             "in": "path",
@@ -14143,6 +14427,16 @@
             "required": true,
             "schema": {
               "title": "Citation Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Version Id",
               "type": "string"
             }
           },
@@ -14183,7 +14477,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Stream Reference Content",
+        "summary": "Stream Reference Attachment",
         "tags": [
           "KM Asset App"
         ]
@@ -14218,7 +14512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentReferencePreview"
+                  "$ref": "#/components/schemas/AssetReferencePreview"
                 }
               }
             },

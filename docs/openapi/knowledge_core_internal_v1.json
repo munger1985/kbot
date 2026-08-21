@@ -1881,6 +1881,77 @@
         ]
       }
     },
+    "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/reindex-discovery/{generation}": {
+      "get": {
+        "description": "查询一次 Discovery 重建操作的执行状态。",
+        "operationId": "get_reindex_discovery_status_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__revisions__bundle_revision_id__reindex_discovery__generation__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "generation",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Generation",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Reindex Discovery Status",
+        "tags": [
+          "Knowledge Core Status"
+        ]
+      }
+    },
     "/internal/v1/knowledge/domains/{domain_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess": {
       "post": {
         "operationId": "reprocess_revision_internal_v1_knowledge_domains__domain_id__bundles__bundle_id__revisions__bundle_revision_id__reprocess_post",
