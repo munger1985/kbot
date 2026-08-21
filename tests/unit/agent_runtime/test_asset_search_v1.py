@@ -202,6 +202,69 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             plan.projection,
         )
 
+    def test_list_normalizes_observed_planner_contract_dialect(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="找几个关于OAC的asset，最好关于金融欺诈的案例",
+            language="zh-CN",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [
+                    {
+                        "criterion_id": 0,
+                        "kind": "SEMANTIC_CONCEPT",
+                        "field_scope": ["CONTENT"],
+                        "operator": "RELATED_TO",
+                        "value": "OAC",
+                        "evidence_requirement": "SUGGESTED",
+                    },
+                    {
+                        "criterion_id": 1,
+                        "kind": "SEMANTIC_CONCEPT",
+                        "field_scope": ["CONTENT"],
+                        "operator": "RELATED_TO",
+                        "value": "金融欺诈案例",
+                        "evidence_requirement": "SUGGESTED",
+                    },
+                ],
+                "eligibility_expression": {
+                    "node_type": "ALL",
+                    "conditions": [
+                        {"node_type": "REF", "ref": 0},
+                        {"node_type": "REF", "ref": 1},
+                    ],
+                },
+                "preferences": [{
+                    "preference_id": 1,
+                    "priority": 1,
+                    "description": "优先展示关于金融欺诈案例的资产",
+                    "criterion": {
+                        "criterion_id": 1,
+                        "kind": "SEMANTIC_CONCEPT",
+                        "field_scope": ["CONTENT"],
+                        "operator": "RELATED_TO",
+                        "value": "金融欺诈案例",
+                        "evidence_requirement": "SUGGESTED",
+                    },
+                }],
+                "group_by": None,
+                "evidence_policy": {
+                    "citations": "REQUIRED",
+                    "confidence": "SHOW",
+                },
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual(1, len(plan.criteria))
+        self.assertEqual(("OAC",), plan.criteria[0].values)
+        self.assertEqual("c1", plan.criteria[0].criterion_id)
+        self.assertEqual("c1", plan.eligibility_expression.criterion_id)
+        self.assertEqual(1, len(plan.preferences))
+        self.assertEqual(("金融欺诈案例",), plan.preferences[0].criterion.values)
+        self.assertEqual("p1", plan.preferences[0].preference_id)
+        self.assertEqual("CONTENT", plan.preferences[0].evidence_requirement)
+
     def test_condition_matrix_enforces_all_any_and_not(self):
         expression = AssetSearchPlanV1.model_validate({
             **_base_plan().model_dump(mode="json"),

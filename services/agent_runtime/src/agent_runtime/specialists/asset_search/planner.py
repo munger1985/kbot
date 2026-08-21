@@ -19,6 +19,131 @@ _DEFAULT_ASSET_PROJECTION = (
     "asset_date",
 )
 
+_EVIDENCE_REQUIREMENTS = {
+    "QUERY_RESULT", "CONTENT", "METADATA_OR_CONTENT",
+}
+
+
+def _items(value: Any) -> list[Any]:
+    """只接受 JSON Array，避免把字符串拆成字段列表。"""
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
+    """把可无歧义识别的条件近似字段转换为正式合同字段。"""
+    if not isinstance(raw, dict):
+        return None
+    kind = str(raw.get("kind") or "").upper()
+    field_scope = raw.get("field_scope")
+    if isinstance(field_scope, str):
+        field_scope = [field_scope]
+    else:
+        field_scope = _items(field_scope)
+    values = raw.get("values")
+    if values is None and "value" in raw:
+        values = raw.get("value")
+    if not isinstance(values, (list, tuple)):
+        values = [] if values is None else [values]
+    evidence_requirement = str(
+        raw.get("evidence_requirement") or ""
+    ).upper()
+    if evidence_requirement not in _EVIDENCE_REQUIREMENTS:
+        evidence_requirement = (
+            "QUERY_RESULT" if kind == "METADATA" else "CONTENT"
+        )
+    result: dict[str, Any] = {
+        "criterion_id": f"c{sequence}",
+        "kind": kind,
+        "field_scope": [str(item) for item in field_scope],
+        "operator": str(raw.get("operator") or "").upper(),
+        "values": list(values),
+        "occurrence": str(raw.get("occurrence") or "MUST").upper(),
+        "evidence_requirement": evidence_requirement,
+        "resolved_concept": None,
+    }
+    concept = raw.get("resolved_concept")
+    if isinstance(concept, dict):
+        result["resolved_concept"] = {
+            key: concept[key]
+            for key in (
+                "concept_id", "canonical_name", "equivalents",
+                "vocabulary_version",
+            )
+            if key in concept
+        }
+    return result
+
+
+def _criterion_signature(item: dict[str, Any]) -> str:
+    """生成条件语义签名，用于识别被模型重复放入硬条件的软偏好。"""
+    return json.dumps(
+        {
+            "kind": item.get("kind"),
+            "field_scope": item.get("field_scope"),
+            "operator": item.get("operator"),
+            "values": item.get("values"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _normalize_expression(
+    raw: Any, *, criterion_ids: dict[str, str]
+) -> dict[str, Any] | None:
+    """规范化布尔表达式别名，并删除已迁移为软偏好的引用。"""
+    if not isinstance(raw, dict):
+        return None
+    node_type = str(raw.get("node_type") or "").upper()
+    if node_type == "REF":
+        reference = raw.get("criterion_id", raw.get("ref"))
+        criterion_id = criterion_ids.get(str(reference))
+        return (
+            {"node_type": "REF", "criterion_id": criterion_id}
+            if criterion_id else None
+        )
+    if node_type in {"ALL", "ANY"}:
+        raw_children = raw.get("children", raw.get("conditions"))
+        children = [
+            child
+            for item in _items(raw_children)
+            if (child := _normalize_expression(
+                item, criterion_ids=criterion_ids
+            )) is not None
+        ]
+        if not children:
+            return None
+        if len(children) == 1:
+            return children[0]
+        return {"node_type": node_type, "children": children}
+    if node_type == "NOT":
+        raw_child = raw.get("child")
+        if raw_child is None:
+            candidates = _items(raw.get("conditions"))
+            raw_child = candidates[0] if candidates else None
+        child = _normalize_expression(raw_child, criterion_ids=criterion_ids)
+        return {"node_type": "NOT", "child": child} if child else None
+    return None
+
+
+def _default_expression(criteria: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """在模型未生成可用表达式时按全部硬条件构造确定性表达式。"""
+    children: list[dict[str, Any]] = []
+    for item in criteria:
+        reference: dict[str, Any] = {
+            "node_type": "REF",
+            "criterion_id": item["criterion_id"],
+        }
+        if item.get("occurrence") == "MUST_NOT":
+            reference = {"node_type": "NOT", "child": reference}
+        children.append(reference)
+    if not children:
+        return None
+    if len(children) == 1:
+        return children[0]
+    return {"node_type": "ALL", "children": children}
+
 
 class AssetSearchPlanner:
     """调用冻结模型生成搜索计划，并执行确定性产品边界规范化。"""
@@ -58,6 +183,7 @@ class AssetSearchPlanner:
                             ],
                             "measures": ["asset_count", "author_count"],
                         },
+                        "contract_schema": AssetSearchPlanV1.model_json_schema(),
                         "conversation_summary": (
                             (conversation_context or {}).get("summary") or {}
                         ),
@@ -117,24 +243,74 @@ class AssetSearchPlanner:
         normalized["query_text"] = question
         normalized["language"] = language
         normalized["time_zone"] = "Asia/Shanghai"
-        normalized.setdefault("answer_detail", "BRIEF")
-        normalized.setdefault("criteria", [])
-        normalized.setdefault("eligibility_expression", None)
-        normalized.setdefault("preferences", [])
-        normalized.setdefault("measures", [])
-        normalized.setdefault("group_by", [])
-        normalized.setdefault("projection", [])
-        normalized.setdefault("order_by", [])
+        normalized["answer_detail"] = str(
+            normalized.get("answer_detail") or "BRIEF"
+        ).upper()
+        normalized["operation"] = str(
+            normalized.get("operation") or ""
+        ).upper()
+        normalized["target"] = str(normalized.get("target") or "").upper()
+        normalized["measures"] = [
+            item for item in _items(normalized.get("measures"))
+            if isinstance(item, dict)
+        ]
+        normalized["group_by"] = [
+            str(item) for item in _items(normalized.get("group_by"))
+        ]
+        normalized["projection"] = [
+            str(item) for item in _items(normalized.get("projection"))
+        ]
+        normalized["order_by"] = [
+            item for item in _items(normalized.get("order_by"))
+            if isinstance(item, dict)
+        ]
         normalized.setdefault("include_total_count", False)
         normalized.setdefault("unsupported_requests", [])
         normalized.setdefault("ambiguities", [])
-        normalized.setdefault("evidence_policy", {})
+        normalized["evidence_policy"] = {}
 
-        raw_criteria = normalized.get("criteria")
-        criteria = [
-            item for item in raw_criteria
-            if isinstance(item, dict)
-        ] if isinstance(raw_criteria, (list, tuple)) else []
+        preferences: list[dict[str, Any]] = []
+        preference_signatures: set[str] = set()
+        for position, raw in enumerate(
+            _items(normalized.get("preferences")), start=1
+        ):
+            if not isinstance(raw, dict):
+                continue
+            criterion = _normalize_criterion(
+                raw.get("criterion"), sequence=position
+            )
+            if criterion is None:
+                continue
+            preference_signatures.add(_criterion_signature(criterion))
+            preferences.append({
+                "preference_id": f"p{position}",
+                "criterion": criterion,
+                "priority": position,
+                "evidence_requirement": criterion["evidence_requirement"],
+            })
+        normalized["preferences"] = preferences
+
+        criteria: list[dict[str, Any]] = []
+        criterion_ids: dict[str, str] = {}
+        for position, raw in enumerate(_items(normalized.get("criteria"))):
+            criterion = _normalize_criterion(raw, sequence=len(criteria) + 1)
+            if criterion is None:
+                continue
+            if _criterion_signature(criterion) in preference_signatures:
+                continue
+            criteria.append(criterion)
+            if isinstance(raw, dict):
+                raw_id = raw.get("criterion_id", position)
+                criterion_ids[str(raw_id)] = criterion["criterion_id"]
+            criterion_ids.setdefault(str(position), criterion["criterion_id"])
+        normalized["criteria"] = criteria
+        normalized["eligibility_expression"] = (
+            _normalize_expression(
+                normalized.get("eligibility_expression"),
+                criterion_ids=criterion_ids,
+            )
+            or _default_expression(criteria)
+        )
         semantic = any(
             str(item.get("kind") or "") in {
                 "SEMANTIC_CONCEPT", "EXACT_PHRASE", "CONTENT_TYPE"
@@ -195,14 +371,13 @@ class AssetSearchPlanner:
         if str(normalized.get("operation") or "").upper() in {
             "LIST", "COUNT", "GROUP", "COMPARE"
         }:
-            raw_projection = normalized.get("projection")
-            projection = (
-                [str(item) for item in raw_projection]
-                if isinstance(raw_projection, (list, tuple))
-                else []
-            )
+            projection = list(normalized["projection"])
             for field in _DEFAULT_ASSET_PROJECTION:
                 if field not in projection:
                     projection.append(field)
             normalized["projection"] = projection
-        return normalized
+        allowed_fields = set(AssetSearchPlanV1.model_fields)
+        return {
+            key: value for key, value in normalized.items()
+            if key in allowed_fields
+        }
