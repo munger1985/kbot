@@ -12,6 +12,12 @@ from agent_runtime.specialists.km_asset.search import (
     AssetSearchPlanner,
 )
 from agent_runtime.specialists.data_query import QueryResult
+from agent_runtime.specialists.document import (
+    Citation,
+    CitationPack,
+    DocumentRetrievalResult,
+    RetrievalCoverage,
+)
 from agent_runtime.specialists.km_asset import (
     KmAssetKnowledgeRetrievalSkill as KnowledgeRetrievalSkill,
     KmAssetResponseComposerSkill as ResponseComposerSkill,
@@ -72,6 +78,171 @@ def _artifact(artifact_type: str, payload: dict) -> LeasedArtifact:
 
 
 class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
+    async def test_completed_asset_list_has_one_c_reference_per_asset(self):
+        first_bundle = uuid7()
+        second_bundle = uuid7()
+        first_revision = uuid7()
+        second_revision = uuid7()
+        assets = [
+            {
+                "asset_id": "ASSET-1",
+                "title": "First Asset",
+                "bundle_id": str(first_bundle),
+                "bundle_revision_id": str(first_revision),
+            },
+            {
+                "asset_id": "ASSET-2",
+                "title": "Second Asset",
+                "bundle_id": str(second_bundle),
+                "bundle_revision_id": str(second_revision),
+            },
+        ]
+
+        def citation(label, bundle_id, revision_id, title):
+            return Citation(
+                citation_label=label,
+                collection_id=uuid7(),
+                bundle_id=bundle_id,
+                bundle_revision_id=revision_id,
+                document_id=uuid7(),
+                document_version_id=uuid7(),
+                evidence_ids=(uuid7(),),
+                title=title,
+                bundle_title=title,
+                document_role="MANIFEST",
+                excerpt=f"Asset Title: {title}",
+                locator={},
+                locator_schema_version="document/v1",
+                relevance_reason="Asset manifest",
+            )
+
+        citations = (
+            citation("C1", first_bundle, first_revision, "First Asset"),
+            citation("C2", second_bundle, second_revision, "Second Asset"),
+        )
+        retrieval = DocumentRetrievalResult(
+            status="READY",
+            citation_pack=CitationPack(
+                question="list assets",
+                query_plan={},
+                bundle_candidates=(),
+                citations=citations,
+                coverage=RetrievalCoverage(
+                    candidate_bundle_count=2,
+                    selected_document_count=2,
+                    selected_evidence_count=2,
+                ),
+            ),
+            retrieval_report={},
+        )
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=tuple(assets),
+            row_count=2,
+            provenance={"count_exact": True},
+        )
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input="list assets",
+            policy_snapshot={},
+            config_snapshot={"agent": {}},
+            input_artifacts=(_artifact("DOCUMENT_SCOPE", {
+                "assets": assets,
+                "total_count": 2,
+                "truncated": False,
+            }),),
+        )
+        skill = ResponseComposerSkill(
+            model_client=None,
+            prompt_resolver=None,
+        )
+
+        result = await skill._compose_km_asset_enumeration(
+            context,
+            query,
+            retrieval,
+            search_plan=_base_plan(result_assets={
+                "mode": "PRIMARY",
+                "target_count": 2,
+                "selection": "REQUESTED_ORDER",
+            }),
+        )
+
+        payload = result.artifact.payload
+        self.assertEqual("READY", payload["status"])
+        self.assertIn("First Asset** [Q1] [C1]", payload["answer"])
+        self.assertIn("Second Asset** [Q1] [C2]", payload["answer"])
+        self.assertEqual(["Q1", "C1", "C2"], payload["used_citation_labels"])
+        self.assertEqual(3, len(payload["references"]))
+        self.assertEqual(
+            ["C1", "C2"],
+            [
+                item["citation_label"]
+                for item in payload["references"]
+                if item["reference_type"] == "DOCUMENT"
+            ],
+        )
+        self.assertEqual(
+            ["First Asset", "Second Asset"],
+            [
+                item["title"]
+                for item in payload["references"]
+                if item["reference_type"] == "DOCUMENT"
+            ],
+        )
+
+    async def test_asset_list_never_falls_back_to_query_only_references(self):
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=({
+                "asset_id": "ASSET-1",
+                "title": "Metadata-only Asset",
+                "bundle_id": str(uuid7()),
+                "bundle_revision_id": str(uuid7()),
+            },),
+            row_count=1,
+            provenance={"count_exact": True},
+        )
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input="list assets",
+            policy_snapshot={},
+            config_snapshot={"agent": {}},
+            input_artifacts=(),
+        )
+        skill = ResponseComposerSkill(
+            model_client=None,
+            prompt_resolver=None,
+        )
+
+        result = await skill._compose_asset_query_result(
+            context, query, _base_plan()
+        )
+
+        self.assertEqual(
+            "INSUFFICIENT_EVIDENCE", result.artifact.payload["status"]
+        )
+        self.assertEqual([], result.artifact.payload["references"])
+        self.assertNotIn("Metadata-only Asset", result.artifact.payload["answer"])
+
     async def test_planner_timeout_falls_back_to_contractual_semantic_list(self):
         async def slow_model_call(**kwargs):
             await asyncio.sleep(1)
@@ -669,7 +840,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(["b1"], [item["bundle_id"] for item in filtered])
 
-    async def test_exact_list_renders_every_asset_with_query_reference(self):
+    async def test_exact_list_rejects_query_only_asset_references(self):
         plan = _base_plan(display_limit=2, result_assets={
             "mode": "PRIMARY", "target_count": 2,
             "selection": "REQUESTED_ORDER",
@@ -700,12 +871,16 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         )
         result = await composer.execute(context)
         answer = result.artifact.payload["answer"]
-        self.assertIn("Asset One", answer)
-        self.assertIn("Asset Two", answer)
-        self.assertEqual(3, answer.count("[Q1]"))
-        self.assertEqual(["Q1"], result.artifact.payload["used_citation_labels"])
+        self.assertNotIn("Asset One", answer)
+        self.assertNotIn("Asset Two", answer)
+        self.assertEqual(
+            "INSUFFICIENT_EVIDENCE",
+            result.artifact.payload["status"],
+        )
+        self.assertEqual([], result.artifact.payload["used_citation_labels"])
+        self.assertEqual([], result.artifact.payload["references"])
 
-    async def test_exact_count_uses_separate_query_reference_for_samples(self):
+    async def test_exact_count_hides_samples_without_asset_citations(self):
         plan = _base_plan(
             operation="COUNT", display_limit=None,
             measures=[{"name": "asset_count", "aggregation": "COUNT"}],
@@ -754,11 +929,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         ).execute(context)
         payload = result.artifact.payload
         self.assertIn("41", payload["answer"])
-        self.assertIn("Asset One", payload["answer"])
-        self.assertIn("[Q2]", payload["answer"])
-        self.assertEqual(["Q1", "Q2"], payload["used_citation_labels"])
-        self.assertEqual(2, len(payload["query_results"]))
-        self.assertEqual(str(supporting_id), payload["query_results"][1]["query_result_id"])
+        self.assertNotIn("Asset One", payload["answer"])
+        self.assertNotIn("[Q2]", payload["answer"])
+        self.assertEqual(["Q1"], payload["used_citation_labels"])
+        self.assertEqual(1, len(payload["query_results"]))
+        self.assertIn("缺少必需", payload["warnings"][-1])
 
 
 if __name__ == "__main__":

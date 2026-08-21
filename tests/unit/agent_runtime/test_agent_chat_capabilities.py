@@ -1804,23 +1804,38 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             language="en-US",
         )
 
-    def test_km_metadata_assets_each_keep_query_citation_without_documents(self):
+    def test_km_metadata_assets_each_require_query_and_asset_citations(self):
+        first_bundle = uuid7()
+        second_bundle = uuid7()
         assets = [
-            {"title": "First Asset", "bundle_id": str(uuid7())},
-            {"title": "Second Asset", "bundle_id": str(uuid7())},
+            {"title": "First Asset", "bundle_id": str(first_bundle)},
+            {"title": "Second Asset", "bundle_id": str(second_bundle)},
         ]
+        citations = (
+            SimpleNamespace(bundle_id=first_bundle),
+            SimpleNamespace(bundle_id=second_bundle),
+        )
+        allowed = {
+            "C1": citations[0],
+            "C2": citations[1],
+        }
 
         selected = ResponseComposerSkill._select_result_assets(
-            assets, (), semantic=False, result_limit=10
+            assets, citations, semantic=False, result_limit=10
         )
         answer = ResponseComposerSkill._enumeration_fallback(
-            selected, language="en-US"
+            selected, language="en-US", allowed=allowed
         )
 
         self.assertEqual(assets, selected)
-        self.assertIn("First Asset** [Q1]", answer)
-        self.assertIn("Second Asset** [Q1]", answer)
+        self.assertIn("First Asset** [Q1] [C1]", answer)
+        self.assertIn("Second Asset** [Q1] [C2]", answer)
         self.assertEqual(2, answer.count("[Q1]"))
+        self.assertEqual(1, answer.count("[C1]"))
+        self.assertEqual(1, answer.count("[C2]"))
+        self.assertEqual([], ResponseComposerSkill._select_result_assets(
+            assets, (), semantic=False, result_limit=10
+        ))
 
     def test_km_semantic_assets_require_same_bundle_document_citation(self):
         cited_bundle = uuid7()

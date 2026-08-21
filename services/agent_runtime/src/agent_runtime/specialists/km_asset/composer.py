@@ -161,9 +161,12 @@ class KmAssetComposerMixin:
             expected_labels = set(labels_by_bundle.get(
                 str(item.get("bundle_id") or "").casefold(), ()
             ))
-            if expected_labels and not segment_labels.intersection(
-                expected_labels
-            ):
+            if not expected_labels:
+                raise ValueError(
+                    "Asset 清单缺少可投影的 Bundle 正文引用："
+                    f"{item.get('title')}"
+                )
+            if not segment_labels.intersection(expected_labels):
                 raise ValueError(
                     "Asset 清单缺少对应 Bundle 的正文引用："
                     f"{item.get('title')}"
@@ -220,6 +223,11 @@ class KmAssetComposerMixin:
             citation_labels = labels_by_bundle.get(
                 str(item.get("bundle_id") or "").casefold(), ()
             )
+            if not citation_labels:
+                raise ValueError(
+                    "KM_ASSET_CITATION_MISSING: "
+                    f"{item.get('title') or item.get('asset_id') or 'Asset'}"
+                )
             references = " ".join(
                 (
                     f"[{query_label}]",
@@ -258,13 +266,22 @@ class KmAssetComposerMixin:
             for item in candidate_assets
             if str(item.get("bundle_id") or "")
         }
+        cited_bundles = {
+            str(citation.bundle_id).casefold()
+            for citation in citations
+        }
         ordered = (
             (
                 asset_by_bundle.get(str(citation.bundle_id).casefold())
                 for citation in citations
             )
             if semantic
-            else iter(candidate_assets)
+            else (
+                asset
+                for asset in candidate_assets
+                if str(asset.get("bundle_id") or "").casefold()
+                in cited_bundles
+            )
         )
         selected: list[dict[str, Any]] = []
         seen_bundles: set[str] = set()
@@ -364,13 +381,13 @@ class KmAssetComposerMixin:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        if semantic and not assets:
+        if candidate_assets and not assets:
             return self._result(context, GroundedAnswer(
                 answer=localized_message("insufficient_evidence", language),
                 status="INSUFFICIENT_EVIDENCE",
                 warnings=tuple(dict.fromkeys((
                     *retrieval.warnings,
-                    "没有 Asset 同时满足资格边界与正文证据要求",
+                    "没有 Asset 同时具备查询资格与 Asset 正文引用",
                 ))),
             ))
         if semantic:
@@ -595,92 +612,22 @@ class KmAssetComposerMixin:
     ) -> SkillResult:
         """确定性展示 Asset 清单，并为聚合问数附带同范围样例。"""
         if search_plan.operation == "LIST":
-            assets = self._enumeration_assets_from_query(query)[
-                :search_plan.result_assets.target_count
-            ]
             language = response_language(
                 context.config_snapshot, context.original_input
             )
-            prefix = self._enumeration_prefix(
-                language=language,
-                total_count=query.row_count,
-                shown_count=len(assets),
-                truncated=query.truncated,
-                source_truncated=not bool(
-                    query.provenance.get("count_exact", True)
-                ),
-            )
-            body = self._enumeration_fallback(
-                assets, language=language, allowed={}
-            )
             return self._result(context, GroundedAnswer(
-                answer=f"{prefix}\n\n{body}",
-                status="READY",
-                used_citation_labels=("Q1",),
-                references=(QueryResultReferenceCard(
-                    citation_label="Q1",
-                    query_result_id=query.query_result_id,
-                    provider=query.provider,
-                    row_count=query.row_count,
-                ),),
-                query_results=(query.model_dump(mode="json"),),
-                warnings=(
-                    ("问数结果已按服务端上限截断",)
-                    if query.truncated else ()
-                ),
+                answer=localized_message("insufficient_evidence", language),
+                status="INSUFFICIENT_EVIDENCE",
+                warnings=("Asset 清单缺少必需的 Asset 正文引用",),
             ))
 
         base = await self._compose_query_result(context, query)
         if not query.supporting_rows:
             return base
         payload = GroundedAnswer.model_validate(base.artifact.payload)
-        sample = query.model_copy(update={
-            "query_result_id": (
-                query.supporting_query_result_id or query.query_result_id
-            ),
-            "rows": query.supporting_rows,
-            "columns": query.supporting_columns,
-            "row_count": len(query.supporting_rows),
-            "truncated": False,
-            "supporting_columns": (),
-            "supporting_rows": (),
-            "supporting_query_result_id": None,
-            "provenance": {
-                **query.provenance,
-                "supporting_of": str(query.query_result_id),
-            },
-        })
-        assets = self._enumeration_assets_from_query(sample)[
-            :search_plan.result_assets.target_count
-        ]
-        language = response_language(
-            context.config_snapshot, context.original_input
-        )
-        heading = "同条件下的较新 Asset：" if language.startswith("zh") else (
-            "Recent assets from the same result scope:"
-        )
-        asset_lines = self._enumeration_fallback(
-            assets, language=language, allowed={}, query_label="Q2"
-        )
-        answer = f"{payload.answer}\n\n{heading}\n\n{asset_lines}"
         return self._result(context, payload.model_copy(update={
-            "answer": answer,
-            "used_citation_labels": (*payload.used_citation_labels, "Q2"),
-            "references": (
-                *payload.references,
-                QueryResultReferenceCard(
-                    citation_label="Q2",
-                    query_result_id=sample.query_result_id,
-                    provider=sample.provider,
-                    row_count=sample.row_count,
-                ),
-            ),
-            "query_results": (
-                query.model_copy(update={
-                    "supporting_columns": (),
-                    "supporting_rows": (),
-                    "supporting_query_result_id": None,
-                }).model_dump(mode="json"),
-                sample.model_dump(mode="json"),
-            ),
+            "warnings": tuple(dict.fromkeys((
+                *payload.warnings,
+                "支撑 Asset 缺少必需的 Asset 正文引用，未在回答中展示",
+            ))),
         }))
