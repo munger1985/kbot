@@ -907,6 +907,17 @@ class SemanticDataQueryExecutor:
                 "values": values,
             })
         normalized["filters"] = filters
+        if answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION":
+            primary_topic_seen = False
+            scoped_filters = []
+            for item in normalized["filters"]:
+                if item.get("field") != "topic":
+                    scoped_filters.append(item)
+                    continue
+                if not primary_topic_seen:
+                    scoped_filters.append(item)
+                    primary_topic_seen = True
+            normalized["filters"] = scoped_filters
         if consumer_app_id == "km_asset" and (
             answer_basis in _KM_ENUMERATION_ANSWER_BASES
         ):

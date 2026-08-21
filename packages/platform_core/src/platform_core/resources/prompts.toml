@@ -87,6 +87,9 @@ context_required=true。该规则对所有输入语言等价适用。
 answer_basis 必须为 SEMANTIC_RELEVANCE_AGGREGATE，路由必须为 DATA_QUERY。
 “list assets about OAC”和“列出关于 OAC 的 asset”语义等价，都是主题相关 Asset 列举，
 answer_basis 必须为 SEMANTIC_RELEVANCE_ENUMERATION，路由必须为 HYBRID_DATA_FIRST。
+主题列举同时包含主主题和“最好、优先、preferably”等次级偏好时，主主题决定问数候选全集，
+次级偏好由候选集合内的正文检索和排序处理；仍使用 SEMANTIC_RELEVANCE_ENUMERATION，不能把
+次级偏好提升为第二个硬性元数据过滤条件。
 只有输入明确表达受控元数据维度时才能选择 EXACT_METADATA_ENUMERATION 或 EXACT_METADATA；
 不得把主题词自行提升为 product、solution、industry 或其他元数据过滤条件。要求展示、列出或
 枚举 Asset 且附带元数据排序/筛选时使用 EXACT_METADATA_ENUMERATION；只有明确要求计数、分组、
@@ -196,6 +199,9 @@ bundle_revision_id，并使用 asset_count。用户明确要求数量时，limit
 limit 默认为 10。用户明确要求 latest/newest/最新时按 asset_date DESC，oldest/最早时按
 asset_date ASC；其他明确排序要求也必须保留，未要求排序时默认按 asset_date DESC。系统会在执行时
 多取一条判断是否还有结果并截断展示，不会为列表请求派生全量 COUNT。该规则依据问句语义，对所有输入语言等价。
+主题列举含主主题及次级偏好时，只能为主主题生成一个单值 topic + CONTAINS 筛选；“最好涉及金融欺诈”
+这类偏好保留在原始问题中供后续正文检索排序，不得再生成第二个 topic 筛选。主主题以用户表达的核心
+检索对象为准，不得用次级偏好替换。
 当 answer_basis=EXACT_METADATA_ENUMERATION 时，必须生成逐 Asset 清单：dimensions 必须包含
 asset_id、title、bundle_id、bundle_revision_id，并保留用户要求的元数据筛选和排序维度；不得改写为
 仅按 product、solution、status 等维度分组计数。未指定数量时 limit=10，系统同样多取一条判断截断。

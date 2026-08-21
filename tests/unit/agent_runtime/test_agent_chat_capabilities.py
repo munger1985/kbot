@@ -384,6 +384,64 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CONTAINS", plan.filters[0].operator)
         self.assertEqual(("chatbi",), plan.filters[0].values)
 
+    def test_km_enumeration_keeps_primary_topic_and_defers_preference(self):
+        model_id = uuid7()
+        dimensions = [
+            {"name": name}
+            for name in (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "asset_date", "topic",
+            )
+        ]
+        dimensions[-1].update({
+            "groupable": False,
+            "allowed_filter_operators": ["CONTAINS"],
+        })
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["title"],
+                "filters": [
+                    {
+                        "field": "topic",
+                        "operator": "CONTAINS",
+                        "values": ["OAC"],
+                    },
+                    {
+                        "field": "topic",
+                        "operator": "CONTAINS",
+                        "values": ["金融欺诈"],
+                    },
+                ],
+                "order_by": [],
+                "limit": 10,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": dimensions,
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="有哪些asset是关于oac的，最好涉及金融欺诈领域",
+            consumer_app_id="km_asset",
+            answer_basis="SEMANTIC_RELEVANCE_ENUMERATION",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        topic_filters = [
+            item for item in plan.filters if item.field == "topic"
+        ]
+        self.assertEqual(1, len(topic_filters))
+        self.assertEqual(("OAC",), topic_filters[0].values)
+
     def test_km_semantic_plan_uses_catalog_author_operator(self):
         model_id = uuid7()
         normalized = SemanticDataQueryExecutor._normalize_plan_response(
