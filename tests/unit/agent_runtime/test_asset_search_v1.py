@@ -260,11 +260,18 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(plan.criteria))
         self.assertEqual(("OAC",), plan.criteria[0].values)
         self.assertEqual("c1", plan.criteria[0].criterion_id)
+        self.assertEqual(
+            ("CONTENT", "TITLE", "PRODUCT", "SOLUTION"),
+            plan.criteria[0].field_scope,
+        )
         self.assertEqual("c1", plan.eligibility_expression.criterion_id)
         self.assertEqual(1, len(plan.preferences))
         self.assertEqual(("金融欺诈案例",), plan.preferences[0].criterion.values)
         self.assertEqual("p1", plan.preferences[0].preference_id)
-        self.assertEqual("CONTENT", plan.preferences[0].evidence_requirement)
+        self.assertEqual(
+            "METADATA_OR_CONTENT",
+            plan.preferences[0].evidence_requirement,
+        )
 
     def test_condition_matrix_enforces_all_any_and_not(self):
         expression = AssetSearchPlanV1.model_validate({
@@ -428,6 +435,29 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             ["e1", "e2"],
             [item["evidence_id"] for item in groups["c1"][0]["items"]],
         )
+
+    def test_translated_semantic_term_supports_english_asset_title(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["金融欺诈"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+
+        self.assertTrue(KnowledgeRetrievalSkill._criterion_matches(
+            criterion,
+            asset={"title": "Agentic Financial Fraud Detection"},
+            bundle_id="b1",
+            hit_sets={"c1": set()},
+            semantic_terms=("金融欺诈", "financial fraud", "fraud detection"),
+        ))
 
     def test_exact_phrase_requires_literal_content_support(self):
         criterion = _base_plan(

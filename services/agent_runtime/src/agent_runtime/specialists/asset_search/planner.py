@@ -158,6 +158,18 @@ def _default_expression(criteria: list[dict[str, Any]]) -> dict[str, Any] | None
     return {"node_type": "ALL", "children": children}
 
 
+def _apply_asset_list_semantic_scope(criterion: dict[str, Any]) -> None:
+    """Asset 主题列举统一覆盖可搜索元数据和正文。"""
+    if criterion.get("kind") != "SEMANTIC_CONCEPT":
+        return
+    scopes = list(criterion.get("field_scope") or [])
+    for field in ("TITLE", "PRODUCT", "SOLUTION", "CONTENT"):
+        if field not in scopes:
+            scopes.append(field)
+    criterion["field_scope"] = scopes
+    criterion["evidence_requirement"] = "METADATA_OR_CONTENT"
+
+
 class AssetSearchPlanner:
     """调用冻结模型生成搜索计划，并执行确定性产品边界规范化。"""
 
@@ -338,6 +350,14 @@ class AssetSearchPlanner:
             for item in criteria
         )
         requested_operation = str(normalized.get("operation") or "").upper()
+        if requested_operation == "LIST" and normalized.get("target") == "ASSET":
+            for criterion in criteria:
+                _apply_asset_list_semantic_scope(criterion)
+            for preference in preferences:
+                _apply_asset_list_semantic_scope(preference["criterion"])
+                preference["evidence_requirement"] = preference[
+                    "criterion"
+                ]["evidence_requirement"]
         if semantic and (
             requested_operation == "COUNT"
             or bool(normalized.get("include_total_count"))

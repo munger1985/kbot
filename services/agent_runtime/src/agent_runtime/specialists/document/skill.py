@@ -306,10 +306,12 @@ class KnowledgeRetrievalSkill:
             for _, criterion in criterion_requests
         ))
         requests: list[tuple[str, AssetSearchCriterion | None, str]] = []
+        queries_by_key: dict[str, tuple[str, ...]] = {}
         expansion_warnings: list[str] = []
         for (key, criterion), (queries, query_warnings) in zip(
             criterion_requests, expansions, strict=True
         ):
+            queries_by_key[key] = queries
             expansion_warnings.extend(query_warnings)
             requests.extend(
                 (key, criterion, query) for query in queries
@@ -373,6 +375,7 @@ class KnowledgeRetrievalSkill:
                     asset=asset,
                     bundle_id=bundle_id,
                     hit_sets=hit_sets,
+                    semantic_terms=queries_by_key.get(criterion_id, ()),
                 )
                 for criterion_id, criterion in criterion_by_id.items()
             }
@@ -395,6 +398,9 @@ class KnowledgeRetrievalSkill:
                             preference.preference_id, set()
                         )
                     },
+                    semantic_terms=queries_by_key.get(
+                        preference.preference_id, ()
+                    ),
                 )
             ]
             matrix.append({
@@ -749,11 +755,16 @@ class KnowledgeRetrievalSkill:
         asset: dict[str, Any],
         bundle_id: str,
         hit_sets: dict[str, set[str]],
+        semantic_terms: tuple[str, ...] = (),
     ) -> bool:
         if criterion.kind not in {"METADATA", "IDENTIFIER"}:
             if bundle_id in hit_sets.get(criterion.criterion_id, set()):
                 return True
-            return cls._semantic_metadata_matches(criterion, asset=asset)
+            return cls._semantic_metadata_matches(
+                criterion,
+                asset=asset,
+                semantic_terms=semantic_terms,
+            )
         values = [asset.get(field.casefold()) for field in criterion.field_scope]
         expected = list(criterion.values)
         value = values[0] if values else None
@@ -791,6 +802,7 @@ class KnowledgeRetrievalSkill:
         criterion: AssetSearchCriterion,
         *,
         asset: dict[str, Any],
+        semantic_terms: tuple[str, ...] = (),
     ) -> bool:
         """仅用合同声明的可搜索元数据字段提供确定性直接支持。"""
         if criterion.evidence_requirement != "METADATA_OR_CONTENT":
@@ -811,8 +823,15 @@ class KnowledgeRetrievalSkill:
             for value in criterion.values
             if str(value).strip()
         ]
-        return bool(expected) and all(
-            value in searchable_text for value in expected
+        if expected and all(value in searchable_text for value in expected):
+            return True
+        alternatives = [
+            str(value).strip().casefold()
+            for value in semantic_terms
+            if str(value).strip()
+        ]
+        return any(
+            value in searchable_text for value in alternatives
         )
 
     @classmethod
