@@ -97,7 +97,7 @@ criterion_key、bundle_id、status。不要回答用户问题，不要输出 Mar
 prompt_key = "agent_runtime.km_asset_intent_route"
 owner_service = "agent_runtime"
 version = "1.0.0"
-active = false
+active = true
 purpose = "根据 KM Asset 的文档检索和托管元数据能力选择唯一执行路由"
 input_variables = []
 output_schema = "KMAssetRouteDecision.v1"
@@ -173,7 +173,7 @@ reason 使用与 current_input 相同的主要语言给出一句可审计说明�
 prompt_key = "agent_runtime.km_asset_context_route"
 owner_service = "agent_runtime"
 version = "1.0.0"
-active = false
+active = true
 purpose = "结合会话上下文消解 KM Asset 追问并选择执行路由"
 input_variables = []
 output_schema = "KMAssetRouteDecision.v1"
@@ -281,7 +281,7 @@ limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符
 prompt_key = "agent_runtime.km_topic_english_expand"
 owner_service = "agent_runtime"
 version = "1.0.0"
-active = false
+active = true
 purpose = "为中日韩 KM Asset 主题生成英文补充检索词"
 input_variables = []
 output_schema = "KMTopicExpansion.v1"
