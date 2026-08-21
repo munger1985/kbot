@@ -478,8 +478,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
 
-    async def test_km_run_removes_conversation_from_legacy_snapshot(self):
-        legacy_spec = self.execution_spec.model_copy(
+    async def test_runtime_preserves_app_owned_capabilities(self):
+        app_spec = self.execution_spec.model_copy(
             update={
                 "owner_app_id": "km_asset",
                 "enabled_capabilities": (
@@ -490,15 +490,15 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
         receipt = await self.service.create_run(
             self.create_command.model_copy(
                 update={
-                    "idempotency_key": "create-km-legacy",
-                    "execution_spec": legacy_spec,
+                    "idempotency_key": "create-app-capabilities",
+                    "execution_spec": app_spec,
                 }
             )
         )
 
         snapshot = self.store.runs[receipt.run_id].config_snapshot_json
         self.assertEqual(
-            ["document", "data_query"],
+            ["conversation", "document", "data_query"],
             snapshot["agent"]["enabled_capabilities"],
         )
 

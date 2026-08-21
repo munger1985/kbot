@@ -137,16 +137,7 @@ class AgentRuntimeService:
         self, command: CreateRunCommand
     ) -> AgentRunReceipt:
         execution_spec = command.execution_spec
-        if execution_spec.owner_app_id == "km_asset":
-            execution_spec = execution_spec.model_copy(
-                update={
-                    "enabled_capabilities": ("document", "data_query")
-                }
-            )
-        if (
-            execution_spec.owner_app_id not in {"knowledge_retrieval", "km_asset"}
-            or execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL"
-        ):
+        if execution_spec.agent_kind != "KNOWLEDGE_RETRIEVAL":
             raise AgentRuntimeConflict(
                 "AGENT_KIND_UNSUPPORTED",
                 "Agent Runtime 聊天运行只接受知识检索 Agent；"

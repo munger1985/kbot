@@ -7,9 +7,13 @@ from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 
 from .document_scope import KmAssetDocumentScopeExtractSkill
+from .composer import KmAssetComposerMixin
+from .retrieval import KmAssetRetrievalMixin
 
 
-class KmAssetKnowledgeRetrievalSkill(KnowledgeRetrievalSkill):
+class KmAssetKnowledgeRetrievalSkill(
+    KmAssetRetrievalMixin, KnowledgeRetrievalSkill
+):
     """执行 KM Asset Search Plan 与同 Bundle KC 取证。"""
 
     @staticmethod
@@ -50,7 +54,9 @@ class KmAssetKnowledgeRetrievalSkill(KnowledgeRetrievalSkill):
         )
 
 
-class KmAssetResponseComposerSkill(ResponseComposerSkill):
+class KmAssetResponseComposerSkill(
+    KmAssetComposerMixin, ResponseComposerSkill
+):
     """组合 KM Asset 问文、问数和引用结果。"""
 
     async def _compose_specialized(self, context):

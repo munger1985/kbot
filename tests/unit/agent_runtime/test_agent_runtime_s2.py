@@ -23,6 +23,9 @@ from agent_runtime.specialists.hybrid import (
     DataConstraintExtractSkill,
     DocumentScopeExtractSkill,
 )
+from agent_runtime.specialists.km_asset import (
+    KmAssetDocumentScopeExtractSkill,
+)
 from agent_runtime.specialists.data_query import QueryResult
 from agent_runtime.specialists.root import (
     RootAgentPlanner,
@@ -198,7 +201,7 @@ class AgentRuntimeS2Test(unittest.IsolatedAsyncioTestCase):
             "input_artifacts": (artifact,),
         })
 
-        result = await DocumentScopeExtractSkill(
+        result = await KmAssetDocumentScopeExtractSkill(
             model_client=_ModelClient({"sql": "不应调用模型"}),
             prompt_resolver=_PromptResolver(),
         ).execute(context)

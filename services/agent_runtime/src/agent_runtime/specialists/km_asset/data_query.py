@@ -2,11 +2,23 @@
 
 from agent_runtime.specialists.data_query import SemanticDataQueryExecutor
 
+from .data_query_support import KmAssetDataQuerySupportMixin
 from .search import AssetSearchDataQueryCompiler
 
 
-class KmAssetSemanticDataQueryExecutor(SemanticDataQueryExecutor):
+class KmAssetSemanticDataQueryExecutor(
+    KmAssetDataQuerySupportMixin, SemanticDataQueryExecutor
+):
     """执行 Asset Search Plan 与 KM 专属多语言枚举。"""
+
+    def _validate_specialized_plan(
+        self, *, context, consumer_app_id, plan
+    ) -> None:
+        self._validate_km_topic_plan(
+            context=context,
+            consumer_app_id=consumer_app_id,
+            plan=plan,
+        )
 
     @staticmethod
     def _compile_asset_plan(search_plan, models):

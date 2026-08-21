@@ -14,15 +14,15 @@ from agent_runtime.specialists.data_query import (
     DataQuerySkill,
     MCPDataQueryExecutor,
     QueryResult,
-    SemanticDataQueryExecutor,
 )
 from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
 from agent_runtime.specialists.km_asset import (
     KmAssetAnswerBasis,
     KmAssetDocumentScopeExtractSkill,
     KmAssetRoutePlanner,
+    KmAssetResponseComposerSkill as ResponseComposerSkill,
+    KmAssetSemanticDataQueryExecutor as SemanticDataQueryExecutor,
 )
-from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import (
     RootAgentPlanner,
