@@ -891,7 +891,10 @@ class ResponseComposerSkill:
         )
         warnings = list(retrieval.warnings)
         if bool(scope.get("truncated")):
-            warnings.append("相关 Asset 超过十个，回答仅展示前十个")
+            display_limit = int(scope.get("display_limit") or len(assets) or 10)
+            warnings.append(
+                f"相关 Asset 超过 {display_limit} 个，回答已按请求数量截断"
+            )
         return self._result(context, GroundedAnswer(
             answer=answer,
             status="READY",

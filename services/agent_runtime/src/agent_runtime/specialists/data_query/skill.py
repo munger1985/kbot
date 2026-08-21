@@ -228,7 +228,7 @@ class SemanticDataQueryExecutor:
         topic_terms: tuple[str, ...],
         expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
-        """按原语言和英文主题检索，并按 Asset 唯一标识合并。"""
+        """按展示上限多取一条判断截断，避免列表请求先做全量计数。"""
         if len(topic_terms) >= 3:
             return await self._execute_km_asset_multilingual_enumeration(
                 context=context,
@@ -240,45 +240,29 @@ class SemanticDataQueryExecutor:
                 topic_terms=topic_terms,
                 expansion_warnings=expansion_warnings,
             )
-        count_plan = self._count_plan(list_plan)
-        count_run_id, count_response = await self._run_plan(
-            context=context,
-            question=question,
-            consumer_app_id=consumer_app_id,
-            agent_version_id=agent_version_id,
-            auth_context=auth_context,
-            plan=count_plan,
-            idempotency_suffix="count",
-        )
-        total_count = self._asset_count(count_response)
+        probe_plan = self._enumeration_probe_plan(list_plan)
         list_run_id, list_response = await self._run_plan(
             context=context,
             question=question,
             consumer_app_id=consumer_app_id,
             agent_version_id=agent_version_id,
             auth_context=auth_context,
-            plan=list_plan,
+            plan=probe_plan,
             idempotency_suffix="list",
         )
-        rows = list_response.get("preview_rows")
-        if not isinstance(rows, list) or any(
-            not isinstance(item, dict) for item in rows
-        ):
-            raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
-        expected_count = min(total_count, list_plan.limit)
-        if len(rows) != expected_count:
-            raise RuntimeError(
-                "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
-                f"count={total_count}, list={len(rows)}, "
-                f"expected={expected_count}"
-            )
+        probe_rows = self._asset_rows_up_to(
+            list_response, query_limit=probe_plan.limit
+        )
+        rows = probe_rows[:list_plan.limit]
+        source_truncated = bool(list_response.get("truncated"))
+        truncated = source_truncated or len(probe_rows) > len(rows)
         provenance = dict(list_response.get("provenance") or {})
         provenance.update({
             "data_query_run_id": str(list_run_id),
-            "data_query_run_ids": [str(count_run_id), str(list_run_id)],
-            "count_query_plan_hash": self._plan_hash(count_plan),
-            "list_query_plan_hash": self._plan_hash(list_plan),
-            "count_exact": not bool(count_response.get("truncated")),
+            "data_query_run_ids": [str(list_run_id)],
+            "list_query_plan_hash": self._plan_hash(probe_plan),
+            "count_exact": not truncated,
+            "display_limit": list_plan.limit,
         })
         return QueryResult(
             query_result_id=uuid7(),
@@ -287,13 +271,13 @@ class SemanticDataQueryExecutor:
                 dict(item) for item in list_response.get("columns") or ()
             ),
             rows=tuple(dict(item) for item in rows),
-            row_count=total_count,
-            truncated=total_count > len(rows),
+            row_count=len(probe_rows),
+            truncated=truncated,
             warnings=(
                 expansion_warnings
                 + (
-                    ("相关 Asset 超过十个，清单已截断",)
-                    if total_count > len(rows) else ()
+                    (self._enumeration_truncation_warning(list_plan.limit),)
+                    if truncated else ()
                 )
             ),
             provenance=provenance,
@@ -311,20 +295,14 @@ class SemanticDataQueryExecutor:
         topic_terms: tuple[str, ...],
         expansion_warnings: tuple[str, ...],
     ) -> QueryResult:
-        """并发执行原语言与英文词组检索，用交集计数得到准确去重总数。"""
+        """并发检索双语清单，多取一条判断截断并按 Asset 去重。"""
         original_term, *english_terms = topic_terms
-        original_list_plan = self._replace_topic_groups(
-            list_plan, ((original_term,),)
+        original_list_plan = self._enumeration_probe_plan(
+            self._replace_topic_groups(list_plan, ((original_term,),))
         )
-        english_list_plan = self._replace_topic_groups(
-            list_plan, (tuple(english_terms),)
+        english_list_plan = self._enumeration_probe_plan(
+            self._replace_topic_groups(list_plan, (tuple(english_terms),))
         )
-        overlap_list_plan = self._replace_topic_groups(
-            list_plan, ((original_term,), tuple(english_terms))
-        )
-        original_count_plan = self._count_plan(original_list_plan)
-        english_count_plan = self._count_plan(english_list_plan)
-        overlap_count_plan = self._count_plan(overlap_list_plan)
 
         results = await self._run_plan_variants(
             context=context,
@@ -333,42 +311,21 @@ class SemanticDataQueryExecutor:
             agent_version_id=agent_version_id,
             auth_context=auth_context,
             variants=(
-                ("topic-original-count", original_count_plan),
-                ("topic-english-count", english_count_plan),
-                ("topic-overlap-count", overlap_count_plan),
                 ("topic-original-list", original_list_plan),
                 ("topic-english-list", english_list_plan),
             ),
         )
-        original_count_run_id, original_count_response = results[
-            "topic-original-count"
-        ]
-        english_count_run_id, english_count_response = results[
-            "topic-english-count"
-        ]
-        overlap_count_run_id, overlap_count_response = results[
-            "topic-overlap-count"
-        ]
         original_list_run_id, original_list_response = results[
             "topic-original-list"
         ]
         english_list_run_id, english_list_response = results[
             "topic-english-list"
         ]
-        original_count = self._asset_count(original_count_response)
-        english_count = self._asset_count(english_count_response)
-        overlap_count = self._asset_count(overlap_count_response)
-        total_count = original_count + english_count - overlap_count
-        if total_count < 0:
-            raise RuntimeError("KM_ASSET_MULTILINGUAL_COUNT_INVALID")
-
-        original_rows = self._asset_rows(
-            original_list_response,
-            expected_count=min(original_count, original_list_plan.limit),
+        original_rows = self._asset_rows_up_to(
+            original_list_response, query_limit=original_list_plan.limit,
         )
-        english_rows = self._asset_rows(
-            english_list_response,
-            expected_count=min(english_count, english_list_plan.limit),
+        english_rows = self._asset_rows_up_to(
+            english_list_response, query_limit=english_list_plan.limit,
         )
         rows_by_id: dict[str, dict] = {}
         for row in (*original_rows, *english_rows):
@@ -376,23 +333,30 @@ class SemanticDataQueryExecutor:
             if not asset_id:
                 raise RuntimeError("KM_ASSET_ENUMERATION_ASSET_ID_MISSING")
             rows_by_id.setdefault(asset_id, row)
-        merged_rows = sorted(
+        merged_probe_rows = sorted(
             rows_by_id.values(),
             key=lambda item: str(item.get("asset_date") or ""),
             reverse=True,
-        )[:list_plan.limit]
-        expected_count = min(total_count, list_plan.limit)
-        if len(merged_rows) != expected_count:
-            raise RuntimeError(
-                "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
-                f"count={total_count}, list={len(merged_rows)}, "
-                f"expected={expected_count}"
+        )
+        merged_rows = merged_probe_rows[:list_plan.limit]
+        source_truncated = any(
+            bool(item.get("truncated"))
+            for item in (original_list_response, english_list_response)
+        )
+        probe_exhausted = any(
+            len(rows) >= plan.limit
+            for rows, plan in (
+                (original_rows, original_list_plan),
+                (english_rows, english_list_plan),
             )
+        )
+        truncated = (
+            source_truncated
+            or probe_exhausted
+            or len(merged_probe_rows) > len(merged_rows)
+        )
 
         run_ids = (
-            original_count_run_id,
-            english_count_run_id,
-            overlap_count_run_id,
             original_list_run_id,
             english_list_run_id,
         )
@@ -405,21 +369,12 @@ class SemanticDataQueryExecutor:
             "query_plan_hashes": [
                 self._plan_hash(item)
                 for item in (
-                    original_count_plan,
-                    english_count_plan,
-                    overlap_count_plan,
                     original_list_plan,
                     english_list_plan,
                 )
             ],
-            "count_exact": not any(
-                bool(item.get("truncated"))
-                for item in (
-                    original_count_response,
-                    english_count_response,
-                    overlap_count_response,
-                )
-            ),
+            "count_exact": not truncated,
+            "display_limit": list_plan.limit,
         })
         return QueryResult(
             query_result_id=uuid7(),
@@ -429,13 +384,13 @@ class SemanticDataQueryExecutor:
                 for item in original_list_response.get("columns") or ()
             ),
             rows=tuple(dict(item) for item in merged_rows),
-            row_count=total_count,
-            truncated=total_count > len(merged_rows),
+            row_count=len(merged_probe_rows),
+            truncated=truncated,
             warnings=(
                 expansion_warnings
                 + (
-                    ("相关 Asset 超过十个，清单已截断",)
-                    if total_count > len(merged_rows) else ()
+                    (self._enumeration_truncation_warning(list_plan.limit),)
+                    if truncated else ()
                 )
             ),
             provenance=provenance,
@@ -661,6 +616,15 @@ class SemanticDataQueryExecutor:
         })
 
     @staticmethod
+    def _enumeration_probe_plan(plan: DataQueryPlanV1) -> DataQueryPlanV1:
+        """列表只多取一条作为截断探针，展示边界仍由原计划决定。"""
+        return plan.model_copy(update={"limit": plan.limit + 1})
+
+    @staticmethod
+    def _enumeration_truncation_warning(display_limit: int) -> str:
+        return f"相关 Asset 超过 {display_limit} 个，清单已截断"
+
+    @staticmethod
     def _is_asset_count_plan(plan: DataQueryPlanV1) -> bool:
         """只对无分组的 Asset 数量执行双路集合容斥。"""
         return (
@@ -671,16 +635,18 @@ class SemanticDataQueryExecutor:
         )
 
     @staticmethod
-    def _asset_rows(result: dict, *, expected_count: int) -> tuple[dict, ...]:
+    def _asset_rows_up_to(
+        result: dict, *, query_limit: int
+    ) -> tuple[dict, ...]:
         rows = result.get("preview_rows")
         if not isinstance(rows, list) or any(
             not isinstance(item, dict) for item in rows
         ):
             raise RuntimeError("SEMANTIC_DATA_QUERY_INVALID_RESULT")
-        if len(rows) != expected_count:
+        if len(rows) > query_limit:
             raise RuntimeError(
                 "KM_ASSET_ENUMERATION_RESULT_INCONSISTENT: "
-                f"list={len(rows)}, expected={expected_count}"
+                f"list={len(rows)}, query_limit={query_limit}"
             )
         return tuple(dict(item) for item in rows)
 

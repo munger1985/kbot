@@ -189,8 +189,8 @@ product 或 solution 的单字段筛选。topic 不得出现在 dimensions 或 o
 纯数量问题必须使用 dimensions=[]。主题列举必须包含 asset_id、title、bundle_id 和
 bundle_revision_id，并使用 asset_count。用户明确要求数量时，limit 必须使用该数量；未要求数量时
 limit 默认为 10。用户明确要求 latest/newest/最新时按 asset_date DESC，oldest/最早时按
-asset_date ASC；其他明确排序要求也必须保留，未要求排序时默认按 asset_date DESC。系统会从相同
-过滤条件派生独立 COUNT；不得自行改变两次查询的 topic 条件。该规则依据问句语义，对所有输入语言等价。
+asset_date ASC；其他明确排序要求也必须保留，未要求排序时默认按 asset_date DESC。系统会在执行时
+多取一条判断是否还有结果并截断展示，不会为列表请求派生全量 COUNT。该规则依据问句语义，对所有输入语言等价。
 order_by 每项只能包含 field 和 direction，direction 只能是 ASC 或 DESC。
 limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符串或 null。
 """

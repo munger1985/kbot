@@ -622,11 +622,6 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 {"asset_id": "C", "title": "C", "asset_date": "2026-02-01"},
             ],
         }
-        counts = {
-            "topic-original-count": 2,
-            "topic-english-count": 2,
-            "topic-overlap-count": 1,
-        }
         started: set[str] = set()
         submitted_plans: dict[str, DataQueryPlanV1] = {}
         all_started = asyncio.Event()
@@ -635,17 +630,12 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             suffix = kwargs["idempotency_suffix"]
             started.add(suffix)
             submitted_plans[suffix] = kwargs["plan"]
-            if len(started) == 5:
+            if len(started) == 2:
                 all_started.set()
             await asyncio.wait_for(all_started.wait(), timeout=1)
-            preview_rows = (
-                [{"asset_count": counts[suffix]}]
-                if suffix in counts
-                else rows[suffix]
-            )
             return uuid7(), {
                 "columns": [{"name": "asset_id"}],
-                "preview_rows": preview_rows,
+                "preview_rows": rows[suffix],
                 "truncated": False,
                 "provenance": {},
             }
@@ -672,7 +662,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             expansion_warnings=(),
         )
 
-        self.assertEqual(5, len(started))
+        self.assertEqual(2, len(started))
         self.assertEqual(3, result.row_count)
         self.assertEqual(["B", "C", "A"], [row["asset_id"] for row in result.rows])
         self.assertFalse(result.truncated)
@@ -692,14 +682,70 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 if item.field == "topic"
             ),
         )
-        self.assertEqual(
-            [("金融",), ("finance", "financial")],
-            [
-                item.values
-                for item in submitted_plans["topic-overlap-count"].filters
-                if item.field == "topic"
-            ],
+        self.assertEqual(11, submitted_plans["topic-original-list"].limit)
+        self.assertEqual(11, submitted_plans["topic-english-list"].limit)
+
+    async def test_km_asset_enumeration_returns_ten_and_marks_remainder_truncated(self):
+        executor = SemanticDataQueryExecutor(
+            client=None,
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
         )
+        list_plan = DataQueryPlanV1(
+            semantic_model_id=uuid7(),
+            semantic_model_version=1,
+            dataset="assets",
+            measures=({"name": "asset_count", "aggregation": "COUNT"},),
+            dimensions=(
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "asset_date",
+            ),
+            order_by=({"field": "asset_date", "direction": "DESC"},),
+            limit=10,
+        )
+        submitted_plans: list[DataQueryPlanV1] = []
+
+        async def run_plan(**kwargs):
+            submitted_plans.append(kwargs["plan"])
+            return uuid7(), {
+                "columns": [{"name": "asset_id"}],
+                "preview_rows": [
+                    {"asset_id": f"A{index}", "title": f"Asset {index}"}
+                    for index in range(11)
+                ],
+                "truncated": False,
+                "provenance": {},
+            }
+
+        executor._run_plan = run_plan
+        auth = AuthContext(
+            principal_kind=PrincipalKind.SERVICE,
+            client_id="test",
+            calling_service="test",
+            request_id="request-1",
+            trace_id="trace-1",
+            domain_id="20",
+            asserted_user_id="user-1",
+        )
+
+        result = await executor._execute_km_asset_enumeration(
+            context=_context(),
+            question="list all assets",
+            consumer_app_id="km_asset",
+            agent_version_id=uuid7(),
+            auth_context=auth,
+            list_plan=list_plan,
+            topic_terms=(),
+            expansion_warnings=(),
+        )
+
+        self.assertEqual(1, len(submitted_plans))
+        self.assertEqual(11, submitted_plans[0].limit)
+        self.assertEqual(10, len(result.rows))
+        self.assertEqual(11, result.row_count)
+        self.assertTrue(result.truncated)
+        self.assertFalse(result.provenance["count_exact"])
+        self.assertIn("相关 Asset 超过 10 个，清单已截断", result.warnings)
 
     async def test_km_multilingual_count_uses_exact_set_union(self):
         executor = SemanticDataQueryExecutor(
