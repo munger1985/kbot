@@ -1765,7 +1765,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaisesRegex(ValueError, "asset_id"):
             ResponseComposerSkill._validate_enumeration_body(
-                "1. **APEX Asset** — asset_id: ASSET-1 [Q1]",
+                "1. **APEX Asset** — asset_id: ASSET-1 [C1]",
                 assets=assets,
                 allowed={},
                 language="en-US",
@@ -1795,8 +1795,8 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             assets, language="en-US", allowed=allowed
         )
 
-        self.assertIn("First APEX Asset** [Q1] [C1]", answer)
-        self.assertIn("Second APEX Asset** [Q1] [C2]", answer)
+        self.assertIn("First APEX Asset** [C1]", answer)
+        self.assertIn("Second APEX Asset** [C2]", answer)
         ResponseComposerSkill._validate_enumeration_body(
             answer,
             assets=assets,
@@ -1828,9 +1828,9 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(assets, selected)
-        self.assertIn("First Asset** [Q1] [C1]", answer)
-        self.assertIn("Second Asset** [Q1] [C2]", answer)
-        self.assertEqual(2, answer.count("[Q1]"))
+        self.assertIn("First Asset** [C1]", answer)
+        self.assertIn("Second Asset** [C2]", answer)
+        self.assertNotIn("[Q", answer)
         self.assertEqual(1, answer.count("[C1]"))
         self.assertEqual(1, answer.count("[C2]"))
         self.assertEqual([], ResponseComposerSkill._select_result_assets(
@@ -1872,8 +1872,8 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ValueError, "Bundle"):
             ResponseComposerSkill._validate_enumeration_body(
-                "1. **First APEX Asset** [Q1] [C2]\n"
-                "2. **Second APEX Asset** [Q1] [C1]",
+                "1. **First APEX Asset** [C2]\n"
+                "2. **Second APEX Asset** [C1]",
                 assets=assets,
                 allowed=allowed,
                 language="en-US",

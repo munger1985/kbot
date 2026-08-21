@@ -79,30 +79,30 @@ class KmAssetComposerMixin:
             if source_truncated:
                 return (
                     f"问数结果至少命中 {total_count} 个相关 Asset；"
-                    f"以下列出前 {shown_count} 个，其他结果已截断。[Q1]"
+                    f"以下列出前 {shown_count} 个，其他结果已截断。"
                 )
             if truncated:
                 return (
                     f"问数结果共命中 {total_count} 个相关 Asset；"
-                    f"以下列出前 {shown_count} 个，其他结果已截断。[Q1]"
+                    f"以下列出前 {shown_count} 个，其他结果已截断。"
                 )
             return (
                 f"问数结果共命中 {total_count} 个相关 Asset，"
-                f"以下全部列出。[Q1]"
+                f"以下全部列出。"
             )
         if source_truncated:
             return (
                 f"The data query found at least {total_count} related assets. "
-                f"The first {shown_count} are listed; the rest are truncated. [Q1]"
+                f"The first {shown_count} are listed; the rest are truncated."
             )
         if truncated:
             return (
                 f"The data query found {total_count} related assets. "
-                f"The first {shown_count} are listed; the rest are truncated. [Q1]"
+                f"The first {shown_count} are listed; the rest are truncated."
             )
         return (
             f"The data query found {total_count} related assets; all are "
-            "listed below. [Q1]"
+            "listed below."
         )
 
     @staticmethod
@@ -135,7 +135,7 @@ class KmAssetComposerMixin:
         if missing_titles:
             raise ValueError(f"主题 Asset 清单缺少标题：{missing_titles}")
         labels = set(_CITATION_PATTERN.findall(answer))
-        unknown = labels - allowed.keys() - {"Q1"}
+        unknown = labels - allowed.keys()
         if unknown:
             raise ValueError(f"主题 Asset 清单使用未知引用：{sorted(unknown)}")
         if allowed and not labels.intersection(allowed):
@@ -191,7 +191,6 @@ class KmAssetComposerMixin:
     def _enumeration_fallback(
         assets: list[dict[str, Any]], *, language: str,
         allowed: dict[str, Any] | None = None,
-        query_label: str = "Q1",
     ) -> str:
         labels_by_bundle = KmAssetComposerMixin._citation_labels_by_bundle(
             allowed or {}
@@ -228,14 +227,30 @@ class KmAssetComposerMixin:
                     "KM_ASSET_CITATION_MISSING: "
                     f"{item.get('title') or item.get('asset_id') or 'Asset'}"
                 )
-            references = " ".join(
-                (
-                    f"[{query_label}]",
-                    *(f"[{label}]" for label in citation_labels[:1]),
-                )
-            )
+            references = f"[{citation_labels[0]}]"
             lines.append(f"{index}. **{title}**{suffix} {references}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _without_query_references(answer: GroundedAnswer) -> GroundedAnswer:
+        """KM 结果保留问数数据，但不向用户投影 Q 引用。"""
+        body = re.sub(r"[ \t]*\[Q\d+\]", "", answer.answer)
+        body = "\n".join(line.rstrip() for line in body.splitlines()).strip()
+        payload = answer.model_dump(mode="json")
+        payload.update({
+            "answer": body,
+            "used_citation_labels": [
+                label
+                for label in answer.used_citation_labels
+                if not label.startswith("Q")
+            ],
+            "references": [
+                item.model_dump(mode="json")
+                for item in answer.references
+                if not isinstance(item, QueryResultReferenceCard)
+            ],
+        })
+        return GroundedAnswer.model_validate(payload)
 
     @staticmethod
     def _citation_labels_by_bundle(
@@ -346,7 +361,6 @@ class KmAssetComposerMixin:
         retrieval: DocumentRetrievalResult,
         *,
         search_plan: AssetSearchPlanV1 | None = None,
-        query_label: str = "Q1",
     ) -> SkillResult:
         """用问数冻结资格边界，再按同 Bundle 正文证据确定最终清单。"""
         scope = self._document_scope(context)
@@ -497,29 +511,15 @@ class KmAssetComposerMixin:
                 assets,
                 language=language,
                 allowed=allowed,
-                query_label=query_label,
             )
-        else:
-            for asset in assets:
-                title = str(asset.get("title") or "")
-                if title:
-                    body = body.replace(title, f"{title} [{query_label}]", 1)
         answer = f"{prefix}\n\n{body}".strip()
         used_labels = tuple(dict.fromkeys(
             label for label in _CITATION_PATTERN.findall(body)
             if label in allowed
         ))
-        references = (
-            QueryResultReferenceCard(
-                citation_label=query_label,
-                query_result_id=query.query_result_id,
-                provider=query.provider,
-                row_count=query.row_count,
-            ),
-            *(
-                self._reference_card(allowed[label])
-                for label in used_labels
-            ),
+        references = tuple(
+            self._reference_card(allowed[label])
+            for label in used_labels
         )
         warnings = list(retrieval.warnings)
         if bool(scope.get("truncated")):
@@ -530,7 +530,7 @@ class KmAssetComposerMixin:
         return self._result(context, GroundedAnswer(
             answer=answer,
             status="READY",
-            used_citation_labels=(query_label, *used_labels),
+            used_citation_labels=used_labels,
             references=references,
             query_results=(query.model_dump(mode="json"),),
             warnings=tuple(dict.fromkeys(warnings)),
@@ -543,13 +543,13 @@ class KmAssetComposerMixin:
         retrieval: DocumentRetrievalResult,
         search_plan: AssetSearchPlanV1,
     ) -> SkillResult:
-        """组合精确聚合 Q1 与经语义偏好排序的支撑 Asset Q2/Cn。"""
+        """组合精确聚合结果与只包含 Asset C 的支撑清单。"""
         aggregate = await self._compose_query_result(context, query)
-        aggregate_answer = GroundedAnswer.model_validate(
-            aggregate.artifact.payload
+        aggregate_answer = self._without_query_references(
+            GroundedAnswer.model_validate(aggregate.artifact.payload)
         )
         if not query.supporting_rows:
-            return aggregate
+            return self._result(context, aggregate_answer)
         sample = query.model_copy(update={
             "query_result_id": (
                 query.supporting_query_result_id or query.query_result_id
@@ -567,7 +567,6 @@ class KmAssetComposerMixin:
             sample,
             retrieval,
             search_plan=search_plan,
-            query_label="Q2",
         )
         support_answer = GroundedAnswer.model_validate(
             support_result.artifact.payload
@@ -622,9 +621,11 @@ class KmAssetComposerMixin:
             ))
 
         base = await self._compose_query_result(context, query)
+        payload = self._without_query_references(
+            GroundedAnswer.model_validate(base.artifact.payload)
+        )
         if not query.supporting_rows:
-            return base
-        payload = GroundedAnswer.model_validate(base.artifact.payload)
+            return self._result(context, payload)
         return self._result(context, payload.model_copy(update={
             "warnings": tuple(dict.fromkeys((
                 *payload.warnings,

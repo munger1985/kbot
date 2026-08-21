@@ -179,10 +179,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
 
         payload = result.artifact.payload
         self.assertEqual("READY", payload["status"])
-        self.assertIn("First Asset** [Q1] [C1]", payload["answer"])
-        self.assertIn("Second Asset** [Q1] [C2]", payload["answer"])
-        self.assertEqual(["Q1", "C1", "C2"], payload["used_citation_labels"])
-        self.assertEqual(3, len(payload["references"]))
+        self.assertIn("First Asset** [C1]", payload["answer"])
+        self.assertIn("Second Asset** [C2]", payload["answer"])
+        self.assertNotIn("[Q", payload["answer"])
+        self.assertEqual(["C1", "C2"], payload["used_citation_labels"])
+        self.assertEqual(2, len(payload["references"]))
         self.assertEqual(
             ["C1", "C2"],
             [
@@ -930,8 +931,9 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         payload = result.artifact.payload
         self.assertIn("41", payload["answer"])
         self.assertNotIn("Asset One", payload["answer"])
-        self.assertNotIn("[Q2]", payload["answer"])
-        self.assertEqual(["Q1"], payload["used_citation_labels"])
+        self.assertNotIn("[Q", payload["answer"])
+        self.assertEqual([], payload["used_citation_labels"])
+        self.assertEqual([], payload["references"])
         self.assertEqual(1, len(payload["query_results"]))
         self.assertIn("缺少必需", payload["warnings"][-1])
 

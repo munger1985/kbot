@@ -160,7 +160,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         )
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260821_1", html)
+        self.assertIn("km-chat-v5.js?v=20260821_2", html)
 
     def test_km_chat_uses_interactive_paper_style_citations(self):
         source = (
@@ -178,7 +178,8 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('marker.className = "km-citation-marker"', source)
         self.assertIn("marker.dataset.citationLabel", source)
         self.assertIn("prepareCitationMarker", source)
-        self.assertIn("showQueryReference", source)
+        self.assertNotIn("showQueryReference", source)
+        self.assertIn('const citationPattern = /\\[(C\\d+)\\]/g;', source)
         self.assertIn("prepareAssetReference", source)
         self.assertIn("appendAssetAttachments", source)
         self.assertIn("data-attachment-url", source)
@@ -187,7 +188,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn(".km-reference-asset-preview", styles)
         self.assertIn("vertical-align: super", styles)
         self.assertIn('id="reference-asset-preview"', html)
-        self.assertIn('id="reference-query-preview"', html)
+        self.assertNotIn('id="reference-query-preview"', html)
         self.assertNotIn('id="open-reference"', html)
 
     def test_jobs_page_uses_asset_revision_step_tree(self):

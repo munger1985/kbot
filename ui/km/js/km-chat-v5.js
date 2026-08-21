@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   let agents = [], conversations = [], active = null;
   const runResults = new Map();
-  const citationPattern = /\[((?:Q|C)\d+)\]/g;
+  const citationPattern = /\[(C\d+)\]/g;
 
   function activeAgentId() { return $("chat-agent").value; }
   function agentName(id) { return agents.find((row) => String(row.agent_id) === String(id))?.display_name || KBotKmShell.shortId(id); }
@@ -280,8 +280,6 @@
       $("reference-title").textContent = preview.title || reference.title || "Asset 引用";
       $("reference-meta").textContent = `${preview.citation_label || reference.citation_label} · 版本 ${preview.revision_no} · ${preview.status || "UNKNOWN"}${preview.is_current_revision ? " · 当前版本" : ""}`;
       $("reference-description").textContent = preview.asset_content_available ? "该引用首先指向 Asset 本身内容；下方附件属于同一 Asset。" : "该引用首先指向 Asset；当前版本未提供可预览的 Asset 内容文件。";
-      $("reference-query-preview").hidden = true;
-      $("reference-query-preview").replaceChildren();
       const host = $("reference-asset-preview");
       host.replaceChildren();
       appendAssetFields(host, preview.asset_fields);
@@ -289,50 +287,6 @@
       host.hidden = false;
       KBotKmShell.openDialog("reference-dialog");
     } catch (error) { KBotKmShell.showError(error, "引用描述读取失败"); }
-  }
-  function queryResultForReference(result, reference) {
-    const queryResults = Array.isArray(result?.payload?.query_results) ? result.payload.query_results : [];
-    return queryResults.find((row) => String(row?.query_result_id || "") === String(reference?.query_result_id || "")) || queryResults[0] || null;
-  }
-  function showQueryReference(reference, queryResult) {
-    const rows = Array.isArray(queryResult?.rows) ? queryResult.rows.slice(0, 20) : [];
-    const supportingRows = Array.isArray(queryResult?.supporting_rows) ? queryResult.supporting_rows.slice(0, 20) : [];
-    const totalRows = Number(reference.row_count ?? queryResult?.row_count ?? rows.length);
-    const rowSummary = totalRows > rows.length ? `共 ${totalRows} 行 · 展示 ${rows.length} 行` : `${totalRows} 行`;
-    $("reference-title").textContent = `问数依据 · ${reference.citation_label || "Q"}`;
-    $("reference-meta").textContent = `${reference.provider || queryResult?.provider || "DATA QUERY"} · ${rowSummary}`;
-    $("reference-description").textContent = "以下为本次回答使用的结构化查询结果。";
-    $("reference-asset-preview").hidden = true;
-    $("reference-asset-preview").replaceChildren();
-    const host = $("reference-query-preview");
-    host.replaceChildren();
-    const hiddenFields = new Set(["asset_id", "bundle_id", "bundle_revision_id"]);
-    function appendRowsTable(tableRows, heading) {
-      const fields = Array.from(new Set(tableRows.flatMap((row) => Object.keys(row || {}))))
-        .filter((field) => !hiddenFields.has(String(field).toLowerCase()));
-      if (!tableRows.length || !fields.length) return false;
-      if (heading) { const title = document.createElement("h4"); title.textContent = heading; host.append(title); }
-      const table = document.createElement("table");
-      const head = table.createTHead().insertRow();
-      fields.forEach((field) => { const cell = document.createElement("th"); cell.textContent = field; head.append(cell); });
-      const body = table.createTBody();
-      tableRows.forEach((row) => {
-        const line = body.insertRow();
-        fields.forEach((field) => { const cell = line.insertCell(); const value = row?.[field]; cell.textContent = value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); });
-      });
-      host.append(table);
-      return true;
-    }
-    const hasPrimary = appendRowsTable(rows, supportingRows.length ? "聚合结果" : "");
-    const hasSupporting = appendRowsTable(supportingRows, "同一筛选范围内的较新 Asset");
-    if (!hasPrimary && !hasSupporting) {
-      const empty = document.createElement("p");
-      empty.className = "km-help";
-      empty.textContent = "该问数依据没有可展示的结果行。";
-      host.append(empty);
-    }
-    host.hidden = false;
-    KBotKmShell.openDialog("reference-dialog");
   }
   async function prepareCitationMarker(marker) {
     const message = marker.closest(".km-message[data-run-id]");
@@ -342,7 +296,6 @@
     const references = Array.isArray(result?.payload?.references) ? result.payload.references : [];
     const reference = references.find((row) => String(row?.citation_label || "") === label);
     if (!runId || !reference) return KBotKmShell.toast("引用依据尚未加载", "error");
-    if (reference.reference_type === "QUERY_RESULT") return showQueryReference(reference, queryResultForReference(result, reference));
     return prepareAssetReference(runId, reference);
   }
   async function prepareReference(button) {
