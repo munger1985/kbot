@@ -696,15 +696,135 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             [item["evidence_id"] for item in groups["c1"][0]["items"]],
         )
 
-    def test_kc_evidence_groups_are_not_rejected_by_second_llm(self):
-        hit_sets = KnowledgeRetrievalSkill._evidence_hit_sets({
-            "c1": [{
-                "bundle_id": "fraud-bundle",
-                "items": [{"evidence": {"content_text": "Fraud detection"}}],
+    def test_kc_evidence_must_contain_original_or_expanded_topic(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["金融欺诈"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
             }],
-        })
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+        hit_sets = KnowledgeRetrievalSkill._qualified_evidence_hit_sets(
+            {"c1": [{
+                "bundle_id": "fraud-bundle",
+                "items": [{"evidence": {
+                    "content_text": "Financial fraud detection and risk insights",
+                }}],
+            }, {
+                "bundle_id": "k3s-bundle",
+                "items": [{"evidence": {
+                    "content_text": "A K3s HA environment operations guide",
+                }}],
+            }]},
+            criteria_by_key={"c1": criterion},
+            queries_by_key={
+                "c1": ("金融欺诈", "financial fraud", "fraud detection")
+            },
+        )
 
         self.assertEqual({"fraud-bundle"}, hit_sets["c1"])
+
+    async def test_semantic_qualification_covers_scope_and_rejects_noise(self):
+        collection_id = uuid7()
+        fraud_bundle = uuid7()
+        noise_bundle = uuid7()
+        fraud_revision = uuid7()
+        noise_revision = uuid7()
+        plan = _base_plan(
+            query_text="find financial fraud assets",
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["financial fraud"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+            display_limit=2,
+            result_assets={
+                "mode": "PRIMARY",
+                "target_count": 2,
+                "selection": "RECENT_RELEVANT",
+            },
+        )
+        client = SimpleNamespace(retrieve_evidence=AsyncMock(return_value={
+            "citations": [{
+                "bundle_id": str(fraud_bundle),
+                "items": [{"evidence": {
+                    "document_id": str(uuid7()),
+                    "content_text": "Financial fraud detection and risk insights",
+                }}],
+            }, {
+                "bundle_id": str(noise_bundle),
+                "items": [{"evidence": {
+                    "document_id": str(uuid7()),
+                    "content_text": "A K3s HA environment operations guide",
+                }}],
+            }],
+            "warnings": [],
+        }))
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent_runtime",
+            model_client=None,
+            prompt_resolver=None,
+        )
+        candidates = [{
+            "collection_id": str(collection_id),
+            "bundle_id": str(fraud_bundle),
+            "bundle_revision_id": str(fraud_revision),
+            "document_version_ids": [],
+            "display_title": "Risk Analytics",
+        }, {
+            "collection_id": str(collection_id),
+            "bundle_id": str(noise_bundle),
+            "bundle_revision_id": str(noise_revision),
+            "document_version_ids": [],
+            "display_title": "K3s Operations",
+        }]
+        context = ExecutionContext(
+            domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
+            task_key="test", actor_id="user", request_id="request",
+            trace_id="trace", original_input=plan.query_text,
+            policy_snapshot={},
+            config_snapshot={"agent": {"config": {}}},
+            input_artifacts=(_artifact("DOCUMENT_SCOPE", {
+                "assets": [{
+                    "title": "Risk Analytics",
+                    "bundle_id": str(fraud_bundle),
+                }, {
+                    "title": "K3s Operations",
+                    "bundle_id": str(noise_bundle),
+                }],
+            }),),
+        )
+
+        evidence, eligible = await skill._retrieve_asset_plan_evidence(
+            context=context,
+            plan=plan,
+            candidates=candidates,
+            retrieval_config={"max_citations": 1, "context_limit": 0},
+            coverage_mode="BALANCED",
+        )
+
+        self.assertEqual(
+            [str(fraud_bundle)],
+            [item["bundle_id"] for item in eligible],
+        )
+        self.assertEqual(1, len(evidence["citations"]))
+        self.assertEqual(
+            2,
+            client.retrieve_evidence.await_args.kwargs["max_evidence"],
+        )
 
     async def test_asset_without_attachments_gets_manifest_citation(self):
         collection_id = uuid7()

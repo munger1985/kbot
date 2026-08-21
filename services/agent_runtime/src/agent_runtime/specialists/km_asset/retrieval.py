@@ -88,6 +88,11 @@ class KmAssetRetrievalMixin:
 
         semaphore = asyncio.Semaphore(4)
 
+        qualification_limit = min(
+            100,
+            max(retrieval_config["max_citations"], len(candidates)),
+        )
+
         async def retrieve_one(key, criterion, query):
             async with semaphore:
                 response = await self._client.retrieve_evidence(
@@ -97,7 +102,7 @@ class KmAssetRetrievalMixin:
                     agent_id=str(context.agent_id),
                     auth_context=self._auth_context(context),
                     max_security_level=self._security_level(context),
-                    max_evidence=retrieval_config["max_citations"],
+                    max_evidence=qualification_limit,
                     context_limit=retrieval_config["context_limit"],
                     coverage_mode=coverage_mode,
                     run_id=context.run_id,
@@ -112,7 +117,18 @@ class KmAssetRetrievalMixin:
             retrieve_one(*request) for request in requests
         ))
         groups_by_key = self._merge_groups_by_criterion(retrieved)
-        hit_sets = self._evidence_hit_sets(groups_by_key)
+        criteria_by_key = {
+            item.criterion_id: item for item in hard_content
+        }
+        criteria_by_key.update({
+            item.preference_id: item.criterion
+            for item in preference_content
+        })
+        hit_sets = self._qualified_evidence_hit_sets(
+            groups_by_key,
+            criteria_by_key=criteria_by_key,
+            queries_by_key=queries_by_key,
+        )
         ranks = {
             key: {
                 str(group.get("bundle_id") or ""): rank
@@ -252,7 +268,8 @@ class KmAssetRetrievalMixin:
         logger.info(
             "Asset 条件证据收敛完成 | run_id={} | task_id={} | "
             "candidate_count={} | evidence_bundle_count={} | "
-            "evidence_hit_count={} | eligible_count={}",
+            "evidence_hit_count={} | qualified_bundle_count={} | "
+            "eligible_count={}",
             context.run_id,
             context.task_id,
             len(candidates),
@@ -267,6 +284,11 @@ class KmAssetRetrievalMixin:
                 for groups in groups_by_key.values()
                 for group in groups
             ),
+            len({
+                bundle_id
+                for bundle_ids in hit_sets.values()
+                for bundle_id in bundle_ids
+            }),
             len(eligible),
         )
 
@@ -330,18 +352,73 @@ class KmAssetRetrievalMixin:
         ]
 
     @staticmethod
-    def _evidence_hit_sets(
+    def _qualified_evidence_hit_sets(
         groups_by_key: dict[str, list[dict[str, Any]]],
+        *,
+        criteria_by_key: dict[str, AssetSearchCriterion],
+        queries_by_key: dict[str, tuple[str, ...]],
     ) -> dict[str, set[str]]:
-        """KC 已选中的同 Bundle 引用就是语义条件证据，不再交给 LLM 否决。"""
-        return {
-            key: {
+        """只把明确包含条件主题的同 Bundle KC 证据视为资格支持。"""
+        result: dict[str, set[str]] = {}
+        for key, groups in groups_by_key.items():
+            criterion = criteria_by_key.get(key)
+            if criterion is None:
+                result[key] = {
+                    str(group.get("bundle_id") or "")
+                    for group in groups
+                    if group.get("bundle_id") and group.get("items")
+                }
+                continue
+            terms = tuple(dict.fromkeys((
+                *(
+                    str(value).strip()
+                    for value in criterion.values
+                    if str(value).strip()
+                ),
+                *queries_by_key.get(key, ()),
+            )))
+            result[key] = {
                 str(group.get("bundle_id") or "")
                 for group in groups
-                if group.get("bundle_id") and group.get("items")
+                if group.get("bundle_id")
+                and KmAssetRetrievalMixin._group_supports_terms(
+                    group,
+                    terms=terms,
+                )
             }
-            for key, groups in groups_by_key.items()
-        }
+        return result
+
+    @staticmethod
+    def _group_supports_terms(
+        group: dict[str, Any], *, terms: tuple[str, ...]
+    ) -> bool:
+        """在 KC 返回的 Asset 正文中确定性核对原主题或扩展主题。"""
+        searchable = "\n".join(
+            str(value or "")
+            for item in group.get("items") or ()
+            if isinstance(item, dict)
+            for evidence in (item.get("evidence") or {},)
+            for value in (
+                evidence.get("content_text"),
+                evidence.get("retrieval_text"),
+                evidence.get("bundle_title"),
+                evidence.get("document_name"),
+            )
+        ).casefold()
+        if not searchable:
+            return False
+        for term in terms:
+            normalized = " ".join(str(term).casefold().split())
+            if not normalized:
+                continue
+            if re.search(r"[a-z0-9]", normalized):
+                pattern = r"(?<![a-z0-9])" + re.escape(normalized)
+                pattern += r"(?![a-z0-9])"
+                if re.search(pattern, searchable):
+                    return True
+            elif normalized in searchable:
+                return True
+        return False
 
     @staticmethod
     def _document_scope_assets(context: ExecutionContext) -> list[dict[str, Any]]:
