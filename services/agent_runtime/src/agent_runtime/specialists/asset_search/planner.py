@@ -39,6 +39,14 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
         field_scope = [field_scope]
     else:
         field_scope = _items(field_scope)
+    field_scope = [
+        (
+            str(item).casefold()
+            if kind in {"METADATA", "IDENTIFIER"}
+            else str(item).upper()
+        )
+        for item in field_scope
+    ]
     values = raw.get("values")
     if values is None and "value" in raw:
         values = raw.get("value")
@@ -51,10 +59,15 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
         evidence_requirement = (
             "QUERY_RESULT" if kind == "METADATA" else "CONTENT"
         )
+    if kind not in {"METADATA", "IDENTIFIER"} and any(
+        field in {"TITLE", "PRODUCT", "SOLUTION"}
+        for field in field_scope
+    ):
+        evidence_requirement = "METADATA_OR_CONTENT"
     result: dict[str, Any] = {
         "criterion_id": f"c{sequence}",
         "kind": kind,
-        "field_scope": [str(item) for item in field_scope],
+        "field_scope": field_scope,
         "operator": str(raw.get("operator") or "").upper(),
         "values": list(values),
         "occurrence": str(raw.get("occurrence") or "MUST").upper(),
@@ -184,6 +197,13 @@ class AssetSearchPlanner:
                             "measures": ["asset_count", "author_count"],
                         },
                         "contract_schema": AssetSearchPlanV1.model_json_schema(),
+                        "planning_rules": {
+                            "broad_semantic_asset_scope": [
+                                "TITLE", "PRODUCT", "SOLUTION", "CONTENT"
+                            ],
+                            "content_only_scope_requires_explicit_request": True,
+                            "metadata_or_content_for_searchable_metadata": True,
+                        },
                         "conversation_summary": (
                             (conversation_context or {}).get("summary") or {}
                         ),

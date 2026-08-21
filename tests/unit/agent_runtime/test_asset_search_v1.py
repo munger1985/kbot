@@ -310,6 +310,50 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             expression, {"c1": True, "c2": False, "c3": True}
         ))
 
+    def test_semantic_asset_scope_accepts_exact_product_metadata_support(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["OAC"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+
+        self.assertTrue(KnowledgeRetrievalSkill._criterion_matches(
+            criterion,
+            asset={"product": "Business Analytics -> OAC (Oracle Analytics Cloud)"},
+            bundle_id="b1",
+            hit_sets={"c1": set()},
+        ))
+
+    def test_content_only_semantic_scope_rejects_metadata_only_support(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["OAC"],
+                "evidence_requirement": "CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+
+        self.assertFalse(KnowledgeRetrievalSkill._criterion_matches(
+            criterion,
+            asset={"product": "Business Analytics -> OAC (Oracle Analytics Cloud)"},
+            bundle_id="b1",
+            hit_sets={"c1": set()},
+        ))
+
     def test_exact_phrase_requires_literal_content_support(self):
         criterion = _base_plan(
             criteria=[{

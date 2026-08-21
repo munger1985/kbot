@@ -592,7 +592,9 @@ class KnowledgeRetrievalSkill:
         hit_sets: dict[str, set[str]],
     ) -> bool:
         if criterion.kind not in {"METADATA", "IDENTIFIER"}:
-            return bundle_id in hit_sets.get(criterion.criterion_id, set())
+            if bundle_id in hit_sets.get(criterion.criterion_id, set()):
+                return True
+            return cls._semantic_metadata_matches(criterion, asset=asset)
         values = [asset.get(field.casefold()) for field in criterion.field_scope]
         expected = list(criterion.values)
         value = values[0] if values else None
@@ -624,6 +626,35 @@ class KnowledgeRetrievalSkill:
             "LTE": normalized <= expected_text[0],
         }
         return comparisons.get(operator, False)
+
+    @staticmethod
+    def _semantic_metadata_matches(
+        criterion: AssetSearchCriterion,
+        *,
+        asset: dict[str, Any],
+    ) -> bool:
+        """仅用合同声明的可搜索元数据字段提供确定性直接支持。"""
+        if criterion.evidence_requirement != "METADATA_OR_CONTENT":
+            return False
+        searchable_fields = [
+            field.casefold()
+            for field in criterion.field_scope
+            if field.upper() in {"TITLE", "PRODUCT", "SOLUTION"}
+        ]
+        if not searchable_fields:
+            return False
+        searchable_text = "\n".join(
+            str(asset.get(field) or "").strip().casefold()
+            for field in searchable_fields
+        )
+        expected = [
+            str(value).strip().casefold()
+            for value in criterion.values
+            if str(value).strip()
+        ]
+        return bool(expected) and all(
+            value in searchable_text for value in expected
+        )
 
     @classmethod
     def _expression_matches(
