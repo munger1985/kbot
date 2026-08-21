@@ -22,6 +22,7 @@ from data_query.contracts import (
     MeasureDefinition,
     PlanFilter,
     PlanMeasure,
+    PlanOrderBy,
     SemanticModelDefinition,
 )
 from data_query.domain import (
@@ -190,6 +191,74 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
         self.assertEqual(("finance", "financial", 20), oracle.parameters)
         self.assertIn(" OR ", mysql.sql)
         self.assertIn(" OR ", oracle.sql)
+
+    def test_order_by_uses_semantic_model_physical_expressions(self):
+        model = SemanticModelDefinition(
+            datasets=(DatasetDefinition(
+                name="assets",
+                display_name="Asset",
+                physical_schema="app",
+                physical_object="KBOT_V_KM_ASSET_CURRENT",
+            ),),
+            dimensions=(DimensionDefinition(
+                name="asset_date",
+                dataset="assets",
+                physical_column="ASSET_DATE_VALUE",
+                value_type="DATE",
+            ),),
+            measures=(MeasureDefinition(
+                name="asset_count",
+                dataset="assets",
+                physical_column=None,
+                aggregation="COUNT",
+                value_type="INTEGER",
+            ),),
+        )
+        plan = DataQueryPlanV1(
+            semantic_model_id=uuid7(),
+            semantic_model_version=1,
+            dataset="assets",
+            measures=(PlanMeasure(
+                name="asset_count", aggregation="COUNT",
+            ),),
+            dimensions=("asset_date",),
+            order_by=(PlanOrderBy(
+                field="asset_date", direction="DESC",
+            ),),
+            limit=11,
+        )
+
+        oracle = compile_dialect_query(
+            dialect="ORACLE", plan=plan, model=model,
+            policy_max_limit=100,
+        )
+        mysql = compile_dialect_query(
+            dialect="MYSQL", plan=plan, model=model,
+            policy_max_limit=100,
+        )
+        postgresql = compile_postgresql_query(
+            plan=plan, model=model, policy_max_limit=100,
+        )
+
+        self.assertIn('ORDER BY "ASSET_DATE_VALUE" DESC', oracle.sql)
+        self.assertNotIn('ORDER BY "asset_date"', oracle.sql)
+        self.assertIn("ORDER BY `ASSET_DATE_VALUE` DESC", mysql.sql)
+        self.assertIn('ORDER BY "ASSET_DATE_VALUE" DESC', postgresql.sql)
+
+    def test_order_by_rejects_field_missing_from_projection(self):
+        plan = _plan().model_copy(update={
+            "dimensions": (),
+            "order_by": (PlanOrderBy(
+                field="region", direction="DESC",
+            ),),
+        })
+
+        with self.assertRaisesRegex(
+            QueryPlanValidationError, "ORDER_FIELD_NOT_SELECTED",
+        ):
+            validate_query_plan(
+                plan=plan, model=_model(), policy_max_limit=100,
+            )
 
     def test_cipher_uses_aad_and_rejects_tampering(self):
         cipher = ManagedCredentialCipher(

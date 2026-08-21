@@ -24,6 +24,23 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     dataset = next(item for item in model.datasets if item.name == plan.dataset)
     dimensions = {item.name: item for item in model.dimensions if item.dataset == plan.dataset}
     measures = {item.name: item for item in model.measures if item.dataset == plan.dataset}
+    selected_measures = {item.name: item for item in plan.measures}
+
+    def measure_expression(name: str) -> str:
+        selected = selected_measures[name]
+        measure = measures[name]
+        if selected.aggregation == "COUNT":
+            return "COUNT(*)"
+        column = quote(measure.physical_column or "")
+        if selected.aggregation == "COUNT_DISTINCT":
+            return f"COUNT(DISTINCT {column})"
+        return f"{selected.aggregation}({column})"
+
+    def order_expression(name: str) -> str:
+        if name in dimensions:
+            return quote(dimensions[name].physical_column)
+        return measure_expression(name)
+
     select: list[str] = []; group: list[str] = []; params: list[Any] = []; where: list[str] = []
     if dataset.scope_column is not None:
         if scope_value is None:
@@ -33,14 +50,7 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     for name in plan.dimensions:
         column = quote(dimensions[name].physical_column); select.append(f"{column} AS {quote(name)}"); group.append(column)
     for item in plan.measures:
-        measure = measures[item.name]
-        expression = (
-            "COUNT(*)"
-            if item.aggregation == "COUNT"
-            else f"COUNT(DISTINCT {quote(measure.physical_column or '')})"
-            if item.aggregation == "COUNT_DISTINCT"
-            else f"{item.aggregation}({quote(measure.physical_column or '')})"
-        )
+        expression = measure_expression(item.name)
         select.append(f"{expression} AS {quote(item.name)}")
     for item in plan.filters:
         dimension = dimensions[item.field]
@@ -75,7 +85,7 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     clauses = [f"SELECT {', '.join(select)}", f"FROM {quote(dataset.physical_schema)}.{quote(dataset.physical_object)}"]
     if where: clauses.append("WHERE " + " AND ".join(where))
     if group: clauses.append("GROUP BY " + ", ".join(group))
-    if plan.order_by: clauses.append("ORDER BY " + ", ".join(f"{quote(item.field)} {item.direction}" for item in plan.order_by))
+    if plan.order_by: clauses.append("ORDER BY " + ", ".join(f"{order_expression(item.field)} {item.direction}" for item in plan.order_by))
     if dialect == "MYSQL": clauses.append("LIMIT %s"); params.append(plan.limit)
     else: clauses.append(f"FETCH FIRST {placeholder(len(params)+1)} ROWS ONLY"); params.append(plan.limit)
     return CompiledDialectQuery("\n".join(clauses), tuple(params))

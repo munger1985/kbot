@@ -36,6 +36,23 @@ def compile_postgresql_query(
     dataset = next(item for item in model.datasets if item.name == plan.dataset)
     dimensions = {item.name: item for item in model.dimensions if item.dataset == plan.dataset}
     measures = {item.name: item for item in model.measures if item.dataset == plan.dataset}
+    selected_measures = {item.name: item for item in plan.measures}
+
+    def measure_expression(name: str) -> str:
+        selected = selected_measures[name]
+        definition = measures[name]
+        if selected.aggregation == "COUNT":
+            return "COUNT(*)"
+        assert definition.physical_column is not None
+        column = _quote(definition.physical_column)
+        if selected.aggregation == "COUNT_DISTINCT":
+            return f"COUNT(DISTINCT {column})"
+        return f"{selected.aggregation}({column})"
+
+    def order_expression(name: str) -> str:
+        if name in dimensions:
+            return _quote(dimensions[name].physical_column)
+        return measure_expression(name)
 
     select_parts: list[str] = []
     group_parts: list[str] = []
@@ -44,12 +61,7 @@ def compile_postgresql_query(
         select_parts.append(f"{column} AS {_quote(name)}")
         group_parts.append(column)
     for item in plan.measures:
-        definition = measures[item.name]
-        if item.aggregation == "COUNT":
-            expression = "COUNT(*)"
-        else:
-            assert definition.physical_column is not None
-            expression = f"{item.aggregation}({_quote(definition.physical_column)})"
+        expression = measure_expression(item.name)
         select_parts.append(f"{expression} AS {_quote(item.name)}")
 
     parameters: list[Any] = []
@@ -111,7 +123,7 @@ def compile_postgresql_query(
     if group_parts:
         clauses.append("GROUP BY " + ", ".join(group_parts))
     if plan.order_by:
-        clauses.append("ORDER BY " + ", ".join(f"{_quote(item.field)} {item.direction}" for item in plan.order_by))
+        clauses.append("ORDER BY " + ", ".join(f"{order_expression(item.field)} {item.direction}" for item in plan.order_by))
     parameters.append(plan.limit)
     clauses.append(f"LIMIT ${len(parameters)}")
     return CompiledPostgreSQLQuery(sql="\n".join(clauses), parameters=tuple(parameters))
