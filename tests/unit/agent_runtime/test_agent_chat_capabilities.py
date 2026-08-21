@@ -223,6 +223,47 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(100, normalized["limit"])
 
+    def test_semantic_plan_projects_order_dimension_from_catalog(self):
+        model_id = uuid7()
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "contract_version": "DataQueryPlan.v1",
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["asset_id", "title"],
+                "order_by": [{
+                    "field": "asset_date",
+                    "direction": "DESC",
+                }],
+                "limit": 10,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": [
+                    {"name": "asset_id"},
+                    {"name": "title"},
+                    {"name": "asset_date"},
+                ],
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="list all assets",
+            consumer_app_id="km_asset",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        self.assertEqual(
+            ("asset_id", "title", "asset_date"), plan.dimensions,
+        )
+        self.assertEqual("asset_date", plan.order_by[0].field)
+
     def test_km_semantic_plan_restores_empty_measure_from_managed_catalog(self):
         model_id = uuid7()
         normalized = SemanticDataQueryExecutor._normalize_plan_response(

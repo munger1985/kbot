@@ -941,6 +941,34 @@ class SemanticDataQueryExecutor:
                         else "ASC"
                     ),
                 }]
+        raw_dimensions = normalized.get("dimensions")
+        if raw_dimensions is None or isinstance(
+            raw_dimensions, (list, tuple)
+        ):
+            projected_dimensions = list(raw_dimensions or ())
+            projected_measures = {
+                str(item.get("name"))
+                for item in normalized["measures"]
+                if isinstance(item, dict) and item.get("name")
+            }
+            for order in normalized.get("order_by") or ():
+                if not isinstance(order, dict):
+                    continue
+                field = str(order.get("field") or "")
+                if (
+                    field in catalog_dimensions
+                    and field not in projected_dimensions
+                ):
+                    projected_dimensions.append(field)
+                    continue
+                if field in catalog_measures and field not in projected_measures:
+                    catalog = catalog_measures[field]
+                    normalized["measures"].append({
+                        "name": field,
+                        "aggregation": catalog.get("aggregation"),
+                    })
+                    projected_measures.add(field)
+            normalized["dimensions"] = projected_dimensions
         raw_limit = normalized.get("limit")
         if isinstance(raw_limit, str) and raw_limit.strip().isdigit():
             raw_limit = int(raw_limit.strip())
