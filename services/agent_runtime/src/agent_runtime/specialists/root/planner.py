@@ -37,6 +37,7 @@ class KMAnswerBasis(StrEnum):
     SEMANTIC_RELEVANCE_BALANCED = "SEMANTIC_RELEVANCE_BALANCED"
     SEMANTIC_RELEVANCE_ENUMERATION = "SEMANTIC_RELEVANCE_ENUMERATION"
     SEMANTIC_RELEVANCE_AGGREGATE = "SEMANTIC_RELEVANCE_AGGREGATE"
+    EXACT_METADATA_ENUMERATION = "EXACT_METADATA_ENUMERATION"
     EXACT_METADATA = "EXACT_METADATA"
     UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
     AMBIGUOUS = "AMBIGUOUS"
@@ -492,7 +493,8 @@ class RootAgentPlanner:
                             "DOCUMENT_CONTENT、SEMANTIC_RELEVANCE_BREADTH、"
                             "SEMANTIC_RELEVANCE_BALANCED、"
                             "SEMANTIC_RELEVANCE_ENUMERATION、"
-                            "SEMANTIC_RELEVANCE_AGGREGATE、EXACT_METADATA、"
+                            "SEMANTIC_RELEVANCE_AGGREGATE、"
+                            "EXACT_METADATA_ENUMERATION、EXACT_METADATA、"
                             "UNSCOPED_AGGREGATE 或 AMBIGUOUS。"
                             "主题相关 Asset 的列举必须使用 "
                             "SEMANTIC_RELEVANCE_ENUMERATION、"
@@ -533,6 +535,10 @@ class RootAgentPlanner:
                 "BALANCED",
             ),
             KMAnswerBasis.EXACT_METADATA: (
+                RouteType.DATA_QUERY,
+                "BALANCED",
+            ),
+            KMAnswerBasis.EXACT_METADATA_ENUMERATION: (
                 RouteType.DATA_QUERY,
                 "BALANCED",
             ),

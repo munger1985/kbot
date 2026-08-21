@@ -75,7 +75,9 @@ context_required=true。该规则对所有输入语言等价适用。
   HYBRID_DATA_FIRST/BALANCED；必须先由问数确定全集和数量，再读取对应 Asset 正文；
 - SEMANTIC_RELEVANCE_AGGREGATE：需要计数、统计或聚合与某主题相关的 Asset，使用
   DATA_QUERY/BALANCED，并由问数语义模型的 topic 维度表达跨标题、产品和解决方案的相关范围；
-- EXACT_METADATA：用户明确给出了受控元数据维度及精确筛选、统计或清单要求，使用
+- EXACT_METADATA_ENUMERATION：用户要求按受控元数据维度筛选、排序或展示 Asset 清单，使用
+  DATA_QUERY/BALANCED；“show/list assets sorted by domain/product/status”属于清单，不得改写为分组计数；
+- EXACT_METADATA：用户明确要求按受控元数据维度计数、统计、分组、排名或趋势，使用
   DATA_QUERY/BALANCED；
 - UNSCOPED_AGGREGATE：统计当前授权范围内全部 Asset，没有主题或筛选范围，使用
   DATA_QUERY/BALANCED；
@@ -85,12 +87,14 @@ context_required=true。该规则对所有输入语言等价适用。
 answer_basis 必须为 SEMANTIC_RELEVANCE_AGGREGATE，路由必须为 DATA_QUERY。
 “list assets about OAC”和“列出关于 OAC 的 asset”语义等价，都是主题相关 Asset 列举，
 answer_basis 必须为 SEMANTIC_RELEVANCE_ENUMERATION，路由必须为 HYBRID_DATA_FIRST。
-只有输入明确表达受控元数据维度时才能选择 EXACT_METADATA；不得把主题词自行提升为 product、
-solution、industry 或其他元数据过滤条件。
+只有输入明确表达受控元数据维度时才能选择 EXACT_METADATA_ENUMERATION 或 EXACT_METADATA；
+不得把主题词自行提升为 product、solution、industry 或其他元数据过滤条件。要求展示、列出或
+枚举 Asset 且附带元数据排序/筛选时使用 EXACT_METADATA_ENUMERATION；只有明确要求计数、分组、
+统计、排名或趋势时才使用 EXACT_METADATA。
 
 只输出 JSON 对象，字段必须为 route_type、confidence、reason、clarification_question、
 requires_chart、context_required、coverage_mode、answer_basis。route_type 只能是 DOCUMENT、DATA_QUERY、
-HYBRID_DATA_FIRST 或 CLARIFY；answer_basis 只能使用上面声明的八个协议值，且 route_type、coverage_mode 必须与
+HYBRID_DATA_FIRST 或 CLARIFY；answer_basis 只能使用上面声明的九个协议值，且 route_type、coverage_mode 必须与
 answer_basis 的映射完全一致；
 CLARIFY 必须提供一个简洁 clarification_question，其他路由必须为 null；context_required 必须
 是 JSON 布尔值。能够形成可执行问题时不得选择 CLARIFY。
@@ -125,10 +129,11 @@ HYBRID_DATA_FIRST，
 
 必须使用与独立问题路由相同的 answer_basis 协议：DOCUMENT_CONTENT、
 SEMANTIC_RELEVANCE_BREADTH、SEMANTIC_RELEVANCE_BALANCED、SEMANTIC_RELEVANCE_ENUMERATION、
-SEMANTIC_RELEVANCE_AGGREGATE、EXACT_METADATA、
+SEMANTIC_RELEVANCE_AGGREGATE、EXACT_METADATA_ENUMERATION、EXACT_METADATA、
 UNSCOPED_AGGREGATE 或 AMBIGUOUS。route_type 和 coverage_mode 必须使用该协议的固定映射。
 按主题查找或列出相关 Asset 使用 SEMANTIC_RELEVANCE_ENUMERATION；按主题计数、统计或聚合相关
-Asset 使用 SEMANTIC_RELEVANCE_AGGREGATE。两者使用相同 topic 过滤口径。该判断对所有输入语言等价。
+Asset 使用 SEMANTIC_RELEVANCE_AGGREGATE。按受控元数据筛选或排序展示 Asset 清单使用
+EXACT_METADATA_ENUMERATION；按受控元数据计数、分组或统计使用 EXACT_METADATA。该判断对所有输入语言等价。
 
 只输出 JSON 对象，字段必须为 route_type、confidence、reason、clarification_question、
 requires_chart、context_required、coverage_mode、answer_basis。CLARIFY 必须提供简洁且可回答的
@@ -191,6 +196,9 @@ bundle_revision_id，并使用 asset_count。用户明确要求数量时，limit
 limit 默认为 10。用户明确要求 latest/newest/最新时按 asset_date DESC，oldest/最早时按
 asset_date ASC；其他明确排序要求也必须保留，未要求排序时默认按 asset_date DESC。系统会在执行时
 多取一条判断是否还有结果并截断展示，不会为列表请求派生全量 COUNT。该规则依据问句语义，对所有输入语言等价。
+当 answer_basis=EXACT_METADATA_ENUMERATION 时，必须生成逐 Asset 清单：dimensions 必须包含
+asset_id、title、bundle_id、bundle_revision_id，并保留用户要求的元数据筛选和排序维度；不得改写为
+仅按 product、solution、status 等维度分组计数。未指定数量时 limit=10，系统同样多取一条判断截断。
 order_by 每项只能包含 field 和 direction，direction 只能是 ASC 或 DESC。
 limit 必须是 1 到 models.max_rows 之间的 JSON 整数，不能使用字符串或 null。
 """

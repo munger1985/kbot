@@ -989,6 +989,17 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
+        result_scope = (
+            f"结构化范围事实：当前只展示 {len(query.rows)} 行，"
+            f"已观察到至少 {query.row_count} 行且仍有其他结果；"
+            "未执行全量计数。必须明确说明结果已截断，"
+            "不得声称这是全部结果或给出精确总数。"
+            if query.truncated
+            else (
+                f"结构化范围事实：当前返回 {len(query.rows)} 行，"
+                "QueryResult 未标记截断。"
+            )
+        )
         return model_name, [
             {
                 "role": "system",
@@ -998,6 +1009,7 @@ class ResponseComposerSkill:
                     "当前输入是一个受控 QueryResult，不是文档证据。"
                     "不得应用 Agent 指令中的文档引用、Bundle 或附件规则，"
                     "也不得自行生成任何引用标签；QueryResult 引用由系统添加。"
+                    f"{result_scope}"
                 ),
             },
             {
@@ -1020,6 +1032,33 @@ class ResponseComposerSkill:
         answer_without_labels = _strip_model_citations(answer)
         if not answer_without_labels:
             raise ValueError("问数回答移除模型引用标签后为空")
+        if query.truncated:
+            language = response_language(
+                context.config_snapshot, context.original_input
+            )
+            if language.startswith("zh"):
+                scope_notice = (
+                    f"当前显示前 {len(query.rows)} 条，仍有其他结果；"
+                    "本次未执行全量计数。"
+                )
+            elif language.startswith("ko"):
+                scope_notice = (
+                    f"현재 처음 {len(query.rows)}개 결과만 표시하며 더 많은 "
+                    "결과가 있습니다. 전체 건수는 계산하지 않았습니다."
+                )
+            elif language.startswith("ja"):
+                scope_notice = (
+                    f"現在は先頭 {len(query.rows)} 件のみを表示しており、"
+                    "ほかにも結果があります。全件数は集計していません。"
+                )
+            else:
+                scope_notice = (
+                    f"Showing the first {len(query.rows)} results; more "
+                    "results exist, and no full count was run."
+                )
+            answer_without_labels = (
+                f"{answer_without_labels}\n\n{scope_notice}"
+            )
         charts = [
             EChartsResult.model_validate(item.payload).model_dump(
                 mode="json"

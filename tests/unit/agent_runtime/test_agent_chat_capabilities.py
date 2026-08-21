@@ -264,6 +264,52 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("asset_date", plan.order_by[0].field)
 
+    def test_exact_metadata_enumeration_preserves_asset_rows_and_order(self):
+        model_id = uuid7()
+        dimensions = [
+            {"name": name}
+            for name in (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "ingestion_status", "asset_date",
+            )
+        ]
+        normalized = SemanticDataQueryExecutor._normalize_plan_response(
+            response={
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "dataset": "assets",
+                "measures": [{"name": "asset_count"}],
+                "dimensions": ["product"],
+                "order_by": [{"field": "product", "direction": "ASC"}],
+                "limit": 100,
+            },
+            models=[{
+                "semantic_model_id": str(model_id),
+                "semantic_model_version": 1,
+                "datasets": [{"name": "assets"}],
+                "dimensions": dimensions,
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "max_rows": 1000,
+            }],
+            question="Show assets sorted by domain",
+            consumer_app_id="km_asset",
+            answer_basis="EXACT_METADATA_ENUMERATION",
+        )
+
+        plan = DataQueryPlanV1.model_validate(normalized)
+        self.assertEqual(
+            (
+                "asset_id", "title", "bundle_id", "bundle_revision_id",
+                "product", "solution", "ingestion_status", "asset_date",
+            ),
+            plan.dimensions,
+        )
+        self.assertEqual("product", plan.order_by[0].field)
+        self.assertEqual(10, plan.limit)
+
     def test_km_semantic_plan_restores_empty_measure_from_managed_catalog(self):
         model_id = uuid7()
         normalized = SemanticDataQueryExecutor._normalize_plan_response(
@@ -954,6 +1000,38 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
 
+    async def test_km_exact_metadata_list_uses_enumeration_basis(self):
+        planner = RootAgentPlanner(
+            model_client=_ModelClient(response={
+                "route_type": "DATA_QUERY",
+                "confidence": 0.99,
+                "reason": "需要逐项展示并按产品域排序 Asset",
+                "clarification_question": None,
+                "requires_chart": False,
+                "context_required": False,
+                "coverage_mode": "BALANCED",
+                "answer_basis": "EXACT_METADATA_ENUMERATION",
+            }),
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="Show assets sorted by domain",
+        )
+
+        self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
+        self.assertEqual(
+            KMAnswerBasis.EXACT_METADATA_ENUMERATION,
+            decision.answer_basis,
+        )
+
     async def test_km_colloquial_count_questions_use_data_query(self):
         model = _ModelClient(response={
             "route_type": "DATA_QUERY",
@@ -1408,6 +1486,54 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("language=ko-KR", messages[0]["content"])
         self.assertIn("language=ko-KR", messages[1]["content"])
+
+    async def test_truncated_query_cannot_claim_all_results_are_shown(self):
+        query = QueryResult.model_validate({
+            "query_result_id": str(uuid7()),
+            "provider": "SEMANTIC",
+            "columns": [{"name": "asset_id"}],
+            "rows": [
+                {"asset_id": f"A{index}"} for index in range(10)
+            ],
+            "row_count": 11,
+            "truncated": True,
+            "warnings": [],
+            "provenance": {
+                "count_exact": False,
+                "display_limit": 10,
+            },
+        })
+        skill = ResponseComposerSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=_PromptResolver(),
+        )
+        context = _context(
+            original_input="Show assets sorted by domain",
+            language="en-US",
+            agent={
+                "models": {
+                    "composer_llm": {
+                        "served_model_name": "composer-model"
+                    }
+                }
+            },
+        )
+
+        _, messages = await skill._query_prompt(context, query)
+        self.assertIn("不得声称这是全部结果", messages[0]["content"])
+
+        result = skill._query_result_artifact(
+            context,
+            query,
+            "| Asset |\n|---|\n| A0 |",
+        )
+        answer = str(result.artifact.payload["answer"])
+        self.assertIn("Showing the first 10 results", answer)
+        self.assertIn("no full count was run", answer)
+        self.assertIn(
+            "问数结果已按服务端上限截断",
+            result.artifact.payload["warnings"],
+        )
 
     async def test_semantic_and_mcp_share_query_result_contract(self):
         semantic_model_id = uuid7()

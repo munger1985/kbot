@@ -25,6 +25,10 @@ _PLANNER_INPUT_ECHO_FIELDS = frozenset(
     {"question", "models", "document_constraints"}
 )
 _KM_TOPIC_EXPANSION_LANGUAGES = frozenset({"zh-CN", "ja-JP", "ko-KR"})
+_KM_ENUMERATION_ANSWER_BASES = frozenset({
+    "SEMANTIC_RELEVANCE_ENUMERATION",
+    "EXACT_METADATA_ENUMERATION",
+})
 
 
 class MCPDataQueryExecutor:
@@ -107,9 +111,8 @@ class SemanticDataQueryExecutor:
                 question=question,
                 plan=plan,
             )
-        if (
-            consumer_app_id == "km_asset"
-            and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+        if consumer_app_id == "km_asset" and (
+            answer_basis in _KM_ENUMERATION_ANSWER_BASES
         ):
             return await self._execute_km_asset_enumeration(
                 context=context,
@@ -904,9 +907,8 @@ class SemanticDataQueryExecutor:
                 "values": values,
             })
         normalized["filters"] = filters
-        if (
-            consumer_app_id == "km_asset"
-            and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+        if consumer_app_id == "km_asset" and (
+            answer_basis in _KM_ENUMERATION_ANSWER_BASES
         ):
             required = (
                 "asset_id", "title", "bundle_id", "bundle_revision_id"
@@ -918,7 +920,10 @@ class SemanticDataQueryExecutor:
                 raise ValueError(f"KM 托管模型缺少列举维度：{missing}")
             normalized["dimensions"] = [
                 name
-                for name in (*required, "product", "solution", "asset_date")
+                for name in (
+                    *required, "product", "solution", "ingestion_status",
+                    "asset_date",
+                )
                 if name in catalog_dimensions
             ]
             asset_count = catalog_measures.get("asset_count")
@@ -980,7 +985,7 @@ class SemanticDataQueryExecutor:
                 min(raw_limit, 10, max_rows)
                 if (
                     consumer_app_id == "km_asset"
-                    and answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
+                    and answer_basis in _KM_ENUMERATION_ANSWER_BASES
                 )
                 else min(raw_limit, max_rows)
             )
