@@ -220,6 +220,50 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(plan.include_total_count)
         self.assertEqual(5, plan.display_limit)
 
+    def test_asset_answer_semantic_scope_includes_searchable_metadata(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="找个 financial fraud 的 Asset",
+            language="zh-CN",
+            response={
+                "operation": "ANSWER",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "SEMANTIC_CONCEPT",
+                    "field_scope": ["CONTENT"],
+                    "operator": "RELATED_TO",
+                    "values": ["financial fraud"],
+                    "evidence_requirement": "CONTENT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1"
+                },
+                "result_assets": {
+                    "mode": "SUPPORTING",
+                    "target_count": 5,
+                    "selection": "EVIDENCE_COVERAGE_THEN_RECENT",
+                },
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        criterion = plan.criteria[0]
+        self.assertEqual(
+            ("CONTENT", "TITLE", "PRODUCT", "SOLUTION"),
+            criterion.field_scope,
+        )
+        self.assertEqual(
+            "METADATA_OR_CONTENT",
+            criterion.evidence_requirement,
+        )
+        self.assertTrue(KnowledgeRetrievalSkill._criterion_matches(
+            criterion,
+            asset={"title": "Agentic Financial Fraud Detection"},
+            bundle_id="b1",
+            hit_sets={"c1": set()},
+            semantic_terms=("financial fraud",),
+        ))
+
     def test_list_normalizes_string_result_assets_without_crashing(self):
         normalized = AssetSearchPlanner.normalize_response(
             question="找几个关于 OAC 的 Asset，最好关于金融欺诈的案例",

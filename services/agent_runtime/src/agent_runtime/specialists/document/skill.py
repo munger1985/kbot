@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from loguru import logger
 from PIL import Image
 from platform_core.contracts import (
     AssetBooleanExpression,
@@ -368,7 +369,10 @@ class KnowledgeRetrievalSkill:
         }
         for candidate in candidates:
             bundle_id = str(candidate.get("bundle_id") or "")
-            asset = assets.get(bundle_id, {})
+            asset = dict(candidate)
+            asset.update(assets.get(bundle_id, {}))
+            if not asset.get("title") and asset.get("display_title"):
+                asset["title"] = asset["display_title"]
             statuses = {
                 criterion_id: self._criterion_matches(
                     criterion,
@@ -425,6 +429,22 @@ class KnowledgeRetrievalSkill:
             int(item.get("_weakest_hard_rank") or 0),
             candidate_order.get(str(item.get("bundle_id") or ""), 10**6),
         ))
+        logger.info(
+            "Asset 条件证据收敛完成 | run_id={} | task_id={} | "
+            "candidate_count={} | evidence_bundle_count={} | "
+            "direct_support_count={} | eligible_count={}",
+            context.run_id,
+            context.task_id,
+            len(candidates),
+            len({
+                str(group.get("bundle_id") or "")
+                for groups in groups_by_key.values()
+                for group in groups
+                if group.get("bundle_id")
+            }),
+            sum(len(values) for values in hit_sets.values()),
+            len(eligible),
+        )
 
         merged_groups: list[dict[str, Any]] = []
         for candidate in eligible:
