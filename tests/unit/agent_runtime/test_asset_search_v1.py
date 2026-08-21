@@ -19,9 +19,12 @@ from agent_runtime.specialists.document import (
     RetrievalCoverage,
 )
 from agent_runtime.specialists.km_asset import (
+    KmAssetAnswerBasis,
     KmAssetKnowledgeRetrievalSkill as KnowledgeRetrievalSkill,
+    KmAssetRoutePlanner,
     KmAssetResponseComposerSkill as ResponseComposerSkill,
 )
+from agent_runtime.specialists.root import RouteType
 from data_query.application.managed_datasets import km_asset_definition
 from data_query.connectors.dialect_compiler import compile_dialect_query
 from data_query.contracts import SemanticModelDefinition
@@ -577,6 +580,16 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual((), compiled_ready.filters)
         self.assertEqual(3, compiled_ready.limit)
+        self.assertEqual("asset_date", compiled_ready.order_by[0].field)
+        self.assertEqual("DESC", compiled_ready.order_by[0].direction)
+        route_type, answer_basis, _ = KmAssetRoutePlanner._route_for_plan(
+            ready_plan
+        )
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, route_type)
+        self.assertEqual(
+            KmAssetAnswerBasis.EXACT_METADATA_ENUMERATION,
+            answer_basis,
+        )
 
     def test_list_normalizes_observed_planner_contract_dialect(self):
         normalized = AssetSearchPlanner.normalize_response(

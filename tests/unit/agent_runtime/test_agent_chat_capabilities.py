@@ -1171,7 +1171,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             objective="Show assets sorted by domain",
         )
 
-        self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, decision.route_type)
         self.assertEqual(
             KMAnswerBasis.EXACT_METADATA_ENUMERATION,
             decision.answer_basis,

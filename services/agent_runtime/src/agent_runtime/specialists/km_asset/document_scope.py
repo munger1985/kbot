@@ -16,7 +16,10 @@ class KmAssetDocumentScopeExtractSkill(DocumentScopeExtractSkill):
     """把问数资格集合冻结为 KM Asset Bundle 检索范围。"""
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
-        if self._answer_basis(context) == "SEMANTIC_RELEVANCE_ENUMERATION":
+        if self._answer_basis(context) in {
+            "SEMANTIC_RELEVANCE_ENUMERATION",
+            "EXACT_METADATA_ENUMERATION",
+        }:
             return self._enumeration_scope(context)
         return await super().execute(context)
 

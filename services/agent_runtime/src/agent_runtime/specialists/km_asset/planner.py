@@ -128,7 +128,7 @@ class KmAssetRoutePlanner:
             )
         if plan.operation == "LIST":
             return (
-                RouteType.DATA_QUERY,
+                RouteType.HYBRID_DATA_FIRST,
                 KmAssetAnswerBasis.EXACT_METADATA_ENUMERATION,
                 "BALANCED",
             )

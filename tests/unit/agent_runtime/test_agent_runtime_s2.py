@@ -211,6 +211,24 @@ class AgentRuntimeS2Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(10, len(payload["assets"]))
         self.assertEqual(10, len(payload["bundle_targets"]))
         self.assertTrue(payload["truncated"])
+
+        exact_context = context.model_copy(update={
+            "config_snapshot": {
+                **context.config_snapshot,
+                "route": {
+                    "answer_basis": "EXACT_METADATA_ENUMERATION"
+                },
+            },
+        })
+        exact_result = await KmAssetDocumentScopeExtractSkill(
+            model_client=_ModelClient({"sql": "不应调用模型"}),
+            prompt_resolver=_PromptResolver(),
+        ).execute(exact_context)
+        self.assertEqual(
+            payload["bundle_targets"],
+            exact_result.artifact.payload["bundle_targets"],
+        )
+
         with self.assertRaisesRegex(ValueError, "QUERY_INVALID"):
             await DocumentScopeExtractSkill(
                 model_client=_ModelClient({"query": "x" * 513}),
