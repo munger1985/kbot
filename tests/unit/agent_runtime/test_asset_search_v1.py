@@ -127,7 +127,22 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             status="READY",
             citation_pack=CitationPack(
                 question="list assets",
-                query_plan={},
+                query_plan={
+                    "diagnostics": {
+                        "evidence": {
+                            "requirements": [
+                                {
+                                    "bundle_id": str(first_bundle),
+                                    "matched_preferences": ["p1"],
+                                },
+                                {
+                                    "bundle_id": str(second_bundle),
+                                    "matched_preferences": ["p1"],
+                                },
+                            ],
+                        },
+                    },
+                },
                 bundle_candidates=(),
                 citations=citations,
                 coverage=RetrievalCoverage(
@@ -155,7 +170,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             actor_id="user",
             request_id="request",
             trace_id="trace",
-            original_input="list assets",
+            original_input="列出关于 OAC 的 Asset，最好还有关联 APEX",
             policy_snapshot={},
             config_snapshot={"agent": {}},
             input_artifacts=(_artifact("DOCUMENT_SCOPE", {
@@ -173,17 +188,36 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             context,
             query,
             retrieval,
-            search_plan=_base_plan(result_assets={
-                "mode": "PRIMARY",
-                "target_count": 2,
-                "selection": "REQUESTED_ORDER",
-            }),
+            search_plan=_base_plan(
+                preferences=[{
+                    "preference_id": "p1",
+                    "criterion": {
+                        "criterion_id": "c1",
+                        "kind": "SEMANTIC_CONCEPT",
+                        "field_scope": ["CONTENT"],
+                        "operator": "RELATED_TO",
+                        "values": ["APEX"],
+                        "evidence_requirement": "CONTENT",
+                    },
+                    "priority": 1,
+                    "evidence_requirement": "CONTENT",
+                }],
+                result_assets={
+                    "mode": "PRIMARY",
+                    "target_count": 2,
+                    "selection": "PREFERENCES_THEN_RELEVANCE",
+                },
+            ),
         )
 
         payload = result.artifact.payload
         self.assertEqual("READY", payload["status"])
         self.assertIn("First Asset** [C1]", payload["answer"])
         self.assertIn("Second Asset** [C2]", payload["answer"])
+        self.assertIn(
+            "其中，[C1]、[C2] 还命中“APEX”偏好，可优先参考。",
+            payload["answer"],
+        )
         self.assertNotIn("[Q", payload["answer"])
         self.assertEqual(["C1", "C2"], payload["used_citation_labels"])
         self.assertEqual(2, len(payload["references"]))

@@ -267,6 +267,74 @@ class KmAssetComposerMixin:
             for bundle_id, labels in grouped.items()
         }
 
+    @classmethod
+    def _preference_summary(
+        cls,
+        *,
+        search_plan: AssetSearchPlanV1 | None,
+        retrieval: DocumentRetrievalResult,
+        assets: list[dict[str, Any]],
+        allowed: dict[str, Any],
+        language: str,
+    ) -> str:
+        """按检索条件矩阵说明展示结果实际命中的软偏好。"""
+        if search_plan is None or not search_plan.preferences:
+            return ""
+        query_diagnostics = retrieval.citation_pack.query_plan.get(
+            "diagnostics", {}
+        )
+        evidence_diagnostics = (
+            query_diagnostics.get("evidence", {})
+            if isinstance(query_diagnostics, dict)
+            else {}
+        )
+        matrix = (
+            evidence_diagnostics.get("requirements", ())
+            if isinstance(evidence_diagnostics, dict)
+            else ()
+        )
+        matched_by_bundle = {
+            str(item.get("bundle_id") or "").casefold(): {
+                str(value) for value in item.get("matched_preferences") or ()
+            }
+            for item in matrix
+            if isinstance(item, dict) and item.get("bundle_id")
+        }
+        labels_by_bundle = cls._citation_labels_by_bundle(allowed)
+        lines: list[str] = []
+        for preference in sorted(
+            search_plan.preferences, key=lambda item: item.priority
+        ):
+            labels: list[str] = []
+            for asset in assets:
+                bundle_id = str(asset.get("bundle_id") or "").casefold()
+                if preference.preference_id not in matched_by_bundle.get(
+                    bundle_id, set()
+                ):
+                    continue
+                citation_labels = labels_by_bundle.get(bundle_id, ())
+                if citation_labels:
+                    labels.append(citation_labels[0])
+            labels = list(dict.fromkeys(labels))
+            if not labels:
+                continue
+            preference_text = " / ".join(
+                str(value) for value in preference.criterion.values
+            )
+            references = "、".join(f"[{label}]" for label in labels)
+            if language.startswith("zh"):
+                lines.append(
+                    f"其中，{references} 还命中“{preference_text}”偏好，"
+                    "可优先参考。"
+                )
+            else:
+                references = ", ".join(f"[{label}]" for label in labels)
+                lines.append(
+                    f"Among these, {references} also match the "
+                    f'“{preference_text}” preference and may be prioritized.'
+                )
+        return "\n".join(lines)
+
     @staticmethod
     def _select_result_assets(
         candidate_assets: list[dict[str, Any]],
@@ -512,6 +580,15 @@ class KmAssetComposerMixin:
                 language=language,
                 allowed=allowed,
             )
+        preference_summary = self._preference_summary(
+            search_plan=search_plan,
+            retrieval=retrieval,
+            assets=assets,
+            allowed=allowed,
+            language=language,
+        )
+        if preference_summary:
+            body = f"{body}\n\n{preference_summary}"
         answer = f"{prefix}\n\n{body}".strip()
         used_labels = tuple(dict.fromkeys(
             label for label in _CITATION_PATTERN.findall(body)
