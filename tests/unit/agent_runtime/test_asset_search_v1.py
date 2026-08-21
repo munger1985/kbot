@@ -7,13 +7,15 @@ from unittest.mock import AsyncMock
 
 from agent_runtime.application.commands import LeasedArtifact
 from agent_runtime.runtime import ExecutionContext
-from agent_runtime.specialists.asset_search import (
+from agent_runtime.specialists.km_asset.search import (
     AssetSearchDataQueryCompiler,
     AssetSearchPlanner,
 )
 from agent_runtime.specialists.data_query import QueryResult
-from agent_runtime.specialists.document import KnowledgeRetrievalSkill
-from agent_runtime.specialists.response_composer import ResponseComposerSkill
+from agent_runtime.specialists.km_asset import (
+    KmAssetKnowledgeRetrievalSkill as KnowledgeRetrievalSkill,
+    KmAssetResponseComposerSkill as ResponseComposerSkill,
+)
 from data_query.application.managed_datasets import km_asset_definition
 from data_query.connectors.dialect_compiler import compile_dialect_query
 from data_query.contracts import SemanticModelDefinition

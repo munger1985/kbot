@@ -3,10 +3,10 @@
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 import json
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from platform_core.contracts import AssetSearchPlanV1
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
@@ -20,7 +20,6 @@ from agent_runtime.domain.planning import (
     PlanDraft,
     TaskSpec,
 )
-from agent_runtime.specialists.asset_search import AssetSearchPlanner
 
 
 class RouteType(StrEnum):
@@ -33,18 +32,6 @@ class RouteType(StrEnum):
     CLARIFY = "CLARIFY"
 
 
-class KMAnswerBasis(StrEnum):
-    DOCUMENT_CONTENT = "DOCUMENT_CONTENT"
-    SEMANTIC_RELEVANCE_BREADTH = "SEMANTIC_RELEVANCE_BREADTH"
-    SEMANTIC_RELEVANCE_BALANCED = "SEMANTIC_RELEVANCE_BALANCED"
-    SEMANTIC_RELEVANCE_ENUMERATION = "SEMANTIC_RELEVANCE_ENUMERATION"
-    SEMANTIC_RELEVANCE_AGGREGATE = "SEMANTIC_RELEVANCE_AGGREGATE"
-    EXACT_METADATA_ENUMERATION = "EXACT_METADATA_ENUMERATION"
-    EXACT_METADATA = "EXACT_METADATA"
-    UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
-    AMBIGUOUS = "AMBIGUOUS"
-
-
 class RouteDecision(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -55,8 +42,7 @@ class RouteDecision(BaseModel):
     requires_chart: bool = False
     context_required: bool | None = None
     coverage_mode: Literal["BREADTH", "BALANCED"] = "BALANCED"
-    answer_basis: KMAnswerBasis | None = None
-    asset_search_plan: AssetSearchPlanV1 | None = None
+    answer_basis: str | None = None
     classifier_version: str = "deterministic-document-v1"
 
 
@@ -72,15 +58,11 @@ class RootAgentPlanner:
         *,
         model_client=None,
         prompt_resolver=None,
-        asset_search_timeout_seconds: float = 30,
+        app_route_planners: Mapping[str, Any] | None = None,
     ):
         self._model_client = model_client
         self._prompt_resolver = prompt_resolver
-        self._asset_search_planner = AssetSearchPlanner(
-            model_client=model_client,
-            prompt_resolver=prompt_resolver,
-            timeout_seconds=asset_search_timeout_seconds,
-        )
+        self._app_route_planners = dict(app_route_planners or {})
 
     def decide(
         self,
@@ -159,15 +141,16 @@ class RootAgentPlanner:
             )
         if len(capabilities) == 1:
             return self.decide(agent_snapshot=agent_snapshot)
-        if (
-            str(agent_snapshot.get("owner_app_id") or "") == "km_asset"
-            and {"document", "data_query"}.issubset(capabilities)
-        ):
-            return await self._decide_km_asset_route(
+        app_planner = self._app_route_planners.get(
+            str(agent_snapshot.get("owner_app_id") or "")
+        )
+        if app_planner is not None:
+            return await app_planner.decide_for_input(
                 agent_snapshot=agent_snapshot,
                 objective=objective,
                 conversation_context=conversation_context,
                 language=resolved_language,
+                requests_chart=self._requests_chart,
             )
         enabled_routes = [
             route
@@ -323,105 +306,6 @@ class RootAgentPlanner:
                 "plot ",
                 "visualize",
             )
-        )
-
-    async def _decide_km_asset_route(
-        self,
-        *,
-        agent_snapshot: dict[str, Any],
-        objective: str,
-        conversation_context: dict[str, Any] | None,
-        language: str,
-    ) -> RouteDecision:
-        """生成统一 Asset Search Plan，再确定性选择执行 DAG。"""
-        model_name = str(
-            agent_model_name(agent_snapshot, "router_llm") or ""
-        ).strip()
-        if (
-            not model_name
-            or self._model_client is None
-            or self._prompt_resolver is None
-        ):
-            raise ValueError("KM Agent 未配置可用的 Router 模型")
-        plan, prompt_version = await self._asset_search_planner.plan(
-            model_name=model_name,
-            question=objective,
-            language=language,
-            conversation_context=conversation_context,
-        )
-        if plan.ambiguities:
-            return RouteDecision(
-                route_type=RouteType.CLARIFY,
-                confidence=0,
-                reason="统一搜索计划存在会改变结果集合的歧义",
-                clarification_question=plan.ambiguities[0].question,
-                requires_chart=False,
-                context_required=False,
-                coverage_mode="BALANCED",
-                answer_basis=KMAnswerBasis.AMBIGUOUS,
-                asset_search_plan=plan,
-                classifier_version=f"asset-search-plan-v1:{prompt_version}",
-            )
-        route_type, answer_basis, coverage_mode = self._route_for_asset_plan(plan)
-        return RouteDecision(
-            route_type=route_type,
-            confidence=1,
-            reason="统一 Asset Search Plan 已通过合同校验",
-            clarification_question=None,
-            requires_chart=(
-                self._requests_chart(objective)
-                and route_type == RouteType.DATA_QUERY
-            ),
-            context_required=False,
-            coverage_mode=coverage_mode,
-            answer_basis=answer_basis,
-            asset_search_plan=plan,
-            classifier_version=f"asset-search-plan-v1:{prompt_version}",
-        )
-
-    @staticmethod
-    def _route_for_asset_plan(
-        plan: AssetSearchPlanV1,
-    ) -> tuple[
-        RouteType,
-        KMAnswerBasis,
-        Literal["BREADTH", "BALANCED"],
-    ]:
-        """只依据已校验计划选择现有 Task DAG。"""
-        semantic = plan.has_semantic_eligibility or any(
-            item.criterion.kind in {
-                "SEMANTIC_CONCEPT", "EXACT_PHRASE", "CONTENT_TYPE"
-            }
-            for item in plan.preferences
-        )
-        if plan.operation == "LIST" and semantic:
-            return (
-                RouteType.HYBRID_DATA_FIRST,
-                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
-                "BALANCED",
-            )
-        if semantic or plan.target == "CONTENT":
-            return (
-                RouteType.HYBRID_DATA_FIRST,
-                KMAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
-                "BALANCED",
-            )
-        if plan.operation == "LIST":
-            return (
-                RouteType.DATA_QUERY,
-                KMAnswerBasis.EXACT_METADATA_ENUMERATION,
-                "BALANCED",
-            )
-        if not plan.criteria and plan.operation == "COUNT":
-            return (
-                RouteType.DATA_QUERY,
-                KMAnswerBasis.UNSCOPED_AGGREGATE,
-                "BALANCED",
-            )
-        return (
-            RouteType.DATA_QUERY,
-            KMAnswerBasis.EXACT_METADATA,
-            "BALANCED",
         )
 
     @classmethod

@@ -139,29 +139,14 @@ class KnowledgeRetrievalSkill:
                 },
             )
 
-        asset_search_plan = self._asset_search_plan(context)
-        if asset_search_plan is not None and scoped_candidates is not None:
-            evidence, candidates = await self._retrieve_asset_plan_evidence(
-                context=context,
-                plan=asset_search_plan,
-                candidates=candidates,
-                retrieval_config=retrieval_config,
-                coverage_mode=coverage_mode,
-            )
-        else:
-            evidence = await self._client.retrieve_evidence(
-                query=retrieval_query,
-                candidates=self._evidence_candidates(candidates),
-                domain_id=context.domain_id,
-                agent_id=str(context.agent_id),
-                auth_context=self._auth_context(context),
-                max_security_level=self._security_level(context),
-                max_evidence=retrieval_config["max_citations"],
-                context_limit=retrieval_config["context_limit"],
-                coverage_mode=coverage_mode,
-                run_id=context.run_id,
-                task_id=context.task_id,
-            )
+        evidence, candidates = await self._retrieve_evidence(
+            context=context,
+            query=retrieval_query,
+            candidates=candidates,
+            scoped=scoped_candidates is not None,
+            retrieval_config=retrieval_config,
+            coverage_mode=coverage_mode,
+        )
         warnings.extend(evidence.get("warnings") or [])
         evidence_diagnostics = dict(
             evidence.get("diagnostics") or {}
@@ -239,6 +224,33 @@ class KnowledgeRetrievalSkill:
                 security_level=self._security_level(context),
             )
         )
+
+    async def _retrieve_evidence(
+        self,
+        *,
+        context: ExecutionContext,
+        query: str,
+        candidates: list[dict[str, Any]],
+        scoped: bool,
+        retrieval_config: dict[str, int],
+        coverage_mode: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """通用 Document Skill 只执行标准 KC 证据检索。"""
+        del scoped
+        evidence = await self._client.retrieve_evidence(
+            query=query,
+            candidates=self._evidence_candidates(candidates),
+            domain_id=context.domain_id,
+            agent_id=str(context.agent_id),
+            auth_context=self._auth_context(context),
+            max_security_level=self._security_level(context),
+            max_evidence=retrieval_config["max_citations"],
+            context_limit=retrieval_config["context_limit"],
+            coverage_mode=coverage_mode,
+            run_id=context.run_id,
+            task_id=context.task_id,
+        )
+        return evidence, candidates
 
     @staticmethod
     def _asset_search_plan(
@@ -1218,12 +1230,8 @@ class KnowledgeRetrievalSkill:
 
     @staticmethod
     def _prefer_evidence_order(context: ExecutionContext) -> bool:
-        route = context.config_snapshot.get("route") or {}
-        plan = route.get("asset_search_plan") if isinstance(route, dict) else None
-        if not isinstance(plan, dict):
-            return False
-        unsupported = set(plan.get("unsupported_requests") or ())
-        return "SEMANTIC_TOTAL_COUNT" not in unsupported
+        del context
+        return False
 
     @staticmethod
     def _empty_result(

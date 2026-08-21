@@ -88,27 +88,12 @@ class ResponseComposerSkill:
         aiops_result = self._aiops_result(context)
         if aiops_result is not None:
             return self._compose_aiops(context, aiops_result)
+        specialized = await self._compose_specialized(context)
+        if specialized is not None:
+            return specialized
         query_result = self._query_result(context)
         retrieval = self._document_result(context)
-        asset_search_plan = self._asset_search_plan(context)
-        if (
-            query_result is not None
-            and retrieval is not None
-            and asset_search_plan is not None
-        ):
-            if asset_search_plan.operation in {"COUNT", "GROUP"}:
-                return await self._compose_asset_aggregate_with_evidence(
-                    context, query_result, retrieval, asset_search_plan
-                )
-            return await self._compose_km_asset_enumeration(
-                context, query_result, retrieval,
-                search_plan=asset_search_plan,
-            )
         if query_result is not None:
-            if asset_search_plan is not None:
-                return await self._compose_asset_query_result(
-                    context, query_result, asset_search_plan
-                )
             return await self._compose_query_result(context, query_result)
         if retrieval is None or not retrieval.citation_pack.citations:
             retrieval_warnings = (
@@ -193,13 +178,6 @@ class ResponseComposerSkill:
                 ),
             )
         answer_text, used_labels = validated
-        answer_text, used_labels = self._append_asset_supporting_list(
-            answer_text,
-            used_labels,
-            allowed,
-            search_plan=asset_search_plan,
-            language=language,
-        )
         references = tuple(
             ReferenceCard(
                 citation_label=label,
@@ -250,48 +228,18 @@ class ResponseComposerSkill:
             )
             yield result
             return
-        query_result = self._query_result(context)
-        retrieval = self._document_result(context)
-        asset_search_plan = self._asset_search_plan(context)
-        if (
-            query_result is not None
-            and retrieval is not None
-            and asset_search_plan is not None
-        ):
-            if asset_search_plan.operation in {"COUNT", "GROUP"}:
-                result = await self._compose_asset_aggregate_with_evidence(
-                    context, query_result, retrieval, asset_search_plan
-                )
-                answer = str(result.artifact.payload.get("answer") or "")
-                yield SkillProgress(
-                    event_type="answer.delta",
-                    payload={"chunk_index": 1, "delta": answer},
-                )
-                yield result
-                return
-            result = await self._compose_km_asset_enumeration(
-                context, query_result, retrieval,
-                search_plan=asset_search_plan,
-            )
-            answer = str(result.artifact.payload.get("answer") or "")
+        specialized = await self._compose_specialized(context)
+        if specialized is not None:
+            answer = str(specialized.artifact.payload.get("answer") or "")
             yield SkillProgress(
                 event_type="answer.delta",
                 payload={"chunk_index": 1, "delta": answer},
             )
-            yield result
+            yield specialized
             return
+        query_result = self._query_result(context)
+        retrieval = self._document_result(context)
         if query_result is not None:
-            if asset_search_plan is not None:
-                result = await self._compose_asset_query_result(
-                    context, query_result, asset_search_plan
-                )
-                answer = str(result.artifact.payload.get("answer") or "")
-                yield SkillProgress(
-                    event_type="answer.delta",
-                    payload={"chunk_index": 1, "delta": answer},
-                )
-                yield result
-                return
             async for item in self._stream_query_result(
                 context, query_result
             ):
@@ -422,13 +370,6 @@ class ResponseComposerSkill:
             yield self._result(context, grounded)
             return
         answer_text, used_labels = validated
-        answer_text, used_labels = self._append_asset_supporting_list(
-            answer_text,
-            used_labels,
-            allowed,
-            search_plan=asset_search_plan,
-            language=language,
-        )
         for index, delta in enumerate(
             _markdown_answer_deltas(answer_text), start=1
         ):
@@ -592,6 +533,13 @@ class ResponseComposerSkill:
             if item.artifact_type == "DELEGATED_AIOPS_RESULT"
         ]
         return dict(artifacts[-1].payload) if artifacts else None
+
+    async def _compose_specialized(
+        self, context: ExecutionContext
+    ) -> SkillResult | None:
+        """供显式注册的 App 专属组合器扩展，通用实现不猜测业务。"""
+        del context
+        return None
 
     @staticmethod
     def _asset_search_plan(

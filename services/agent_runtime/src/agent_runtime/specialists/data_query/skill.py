@@ -14,7 +14,6 @@ from loguru import logger
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import detect_unicode_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
-from agent_runtime.specialists.asset_search import AssetSearchDataQueryCompiler
 from platform_core.contracts import AssetSearchPlanV1, AuthContext
 from platform_core.contracts.data_query import DataQueryPlanV1, PlanFilter
 from platform_core.identity import uuid7
@@ -93,69 +92,22 @@ class SemanticDataQueryExecutor:
         models = planning.get("models") if isinstance(planning, dict) else None
         if not isinstance(models, list) or not models:
             raise RuntimeError("SEMANTIC_DATA_QUERY_NOT_CONFIGURED")
-        asset_search_plan = self._asset_search_plan(context)
         plan = await self._create_plan(
             context=context,
             question=question,
             models=models,
         )
-        if asset_search_plan is not None:
-            return await self._execute_asset_search_plan(
-                context=context,
-                question=question,
-                consumer_app_id=consumer_app_id,
-                agent_version_id=agent_version_id,
-                auth_context=auth_context,
-                search_plan=asset_search_plan,
-                query_plan=plan,
-                models=models,
-            )
-        answer_basis = self._answer_basis(context)
-        topic_terms: tuple[str, ...] = ()
-        expansion_warnings: tuple[str, ...] = ()
-        if (
-            consumer_app_id == "km_asset"
-            and (
-                answer_basis == "SEMANTIC_RELEVANCE_ENUMERATION"
-                or (
-                    answer_basis == "SEMANTIC_RELEVANCE_AGGREGATE"
-                    and self._is_asset_count_plan(plan)
-                )
-            )
-        ):
-            topic_terms, expansion_warnings = await self._km_topic_terms(
-                context=context,
-                question=question,
-                plan=plan,
-            )
-        if consumer_app_id == "km_asset" and (
-            answer_basis in _KM_ENUMERATION_ANSWER_BASES
-        ):
-            return await self._execute_km_asset_enumeration(
-                context=context,
-                question=question,
-                consumer_app_id=consumer_app_id,
-                agent_version_id=agent_version_id,
-                auth_context=auth_context,
-                list_plan=plan,
-                topic_terms=topic_terms,
-                expansion_warnings=expansion_warnings,
-            )
-        if (
-            consumer_app_id == "km_asset"
-            and answer_basis == "SEMANTIC_RELEVANCE_AGGREGATE"
-            and len(topic_terms) >= 3
-        ):
-            return await self._execute_km_asset_multilingual_count(
-                context=context,
-                question=question,
-                consumer_app_id=consumer_app_id,
-                agent_version_id=agent_version_id,
-                auth_context=auth_context,
-                plan=plan,
-                topic_terms=topic_terms,
-                expansion_warnings=expansion_warnings,
-            )
+        specialized = await self._execute_specialized(
+            context=context,
+            question=question,
+            consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id,
+            auth_context=auth_context,
+            plan=plan,
+            models=models,
+        )
+        if specialized is not None:
+            return specialized
         run_id, result = await self._run_plan(
             context=context,
             question=question,
@@ -168,11 +120,30 @@ class SemanticDataQueryExecutor:
         query_result = self._query_result_from_response(
             run_id=run_id, result=result, plan=plan
         )
-        if expansion_warnings:
-            query_result = query_result.model_copy(update={
-                "warnings": query_result.warnings + expansion_warnings,
-            })
         return query_result
+
+    async def _execute_specialized(
+        self,
+        *,
+        context: ExecutionContext,
+        question: str,
+        consumer_app_id: str,
+        agent_version_id: UUID,
+        auth_context: AuthContext,
+        plan: DataQueryPlanV1,
+        models: list[dict],
+    ) -> QueryResult | None:
+        """供 App 专属语义问数执行器扩展。"""
+        del (
+            context,
+            question,
+            consumer_app_id,
+            agent_version_id,
+            auth_context,
+            plan,
+            models,
+        )
+        return None
 
     async def _run_plan(
         self,
@@ -697,12 +668,6 @@ class SemanticDataQueryExecutor:
 
     async def _create_plan(self, *, context, question, models) -> DataQueryPlanV1:
         agent = context.config_snapshot.get("agent", {})
-        asset_search_plan = self._asset_search_plan(context)
-        if asset_search_plan is not None:
-            return AssetSearchDataQueryCompiler.compile(
-                search_plan=asset_search_plan,
-                models=models,
-            )
         model_name = str(
             agent_model_name(agent, "data_planner_llm")
             or agent_model_name(agent, "composer_llm")
@@ -853,10 +818,7 @@ class SemanticDataQueryExecutor:
             }],
         })
         sample_search_plan = AssetSearchPlanV1.model_validate(sample_payload)
-        sample_plan = AssetSearchDataQueryCompiler.compile(
-            search_plan=sample_search_plan,
-            models=models,
-        )
+        sample_plan = self._compile_asset_plan(sample_search_plan, models)
         sample = await self._execute_km_asset_enumeration(
             context=context,
             question=question,
@@ -881,6 +843,13 @@ class SemanticDataQueryExecutor:
             "provenance": provenance,
             "warnings": primary.warnings + sample.warnings,
         })
+
+    def _compile_asset_plan(
+        self, search_plan: AssetSearchPlanV1, models: list[dict]
+    ) -> DataQueryPlanV1:
+        """Asset 专属执行器必须显式提供搜索计划编译器。"""
+        del search_plan, models
+        raise RuntimeError("ASSET_SEARCH_COMPILER_NOT_REGISTERED")
 
     @staticmethod
     def _validate_km_topic_plan(

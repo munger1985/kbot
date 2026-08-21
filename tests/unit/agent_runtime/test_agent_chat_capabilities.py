@@ -17,10 +17,14 @@ from agent_runtime.specialists.data_query import (
     SemanticDataQueryExecutor,
 )
 from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
+from agent_runtime.specialists.km_asset import (
+    KmAssetAnswerBasis,
+    KmAssetDocumentScopeExtractSkill,
+    KmAssetRoutePlanner,
+)
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.visualization import EChartsSkill
 from agent_runtime.specialists.root import (
-    KMAnswerBasis,
     RootAgentPlanner,
     RouteType,
 )
@@ -28,6 +32,24 @@ from main_api.api.dify import _records
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.identity import uuid7
+
+
+KMAnswerBasis = KmAssetAnswerBasis
+
+
+def _root_planner(*, model_client=None, prompt_resolver=None):
+    """测试 Root 时显式注册 KM Asset 专属路由器。"""
+    return RootAgentPlanner(
+        model_client=model_client,
+        prompt_resolver=prompt_resolver,
+        app_route_planners={
+            "km_asset": KmAssetRoutePlanner(
+                model_client=model_client,
+                prompt_resolver=prompt_resolver,
+                timeout_seconds=30,
+            ),
+        },
+    )
 
 
 class _PromptResolver:
@@ -1059,7 +1081,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "context_required": False,
             }
         )
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1088,7 +1110,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         model = _ModelClient(
             response=_asset_plan_response(semantic=True)
         )
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1112,7 +1134,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(model.last_json_request)
 
     async def test_km_aggregate_question_uses_data_query(self):
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=_ModelClient(response=_asset_plan_response(
                 operation="COUNT", author="THASNEEM.FATHIMA"
             )),
@@ -1133,7 +1155,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(RouteType.DATA_QUERY, decision.route_type)
 
     async def test_km_exact_metadata_list_uses_enumeration_basis(self):
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=_ModelClient(response=_asset_plan_response()),
             prompt_resolver=_PromptResolver(),
         )
@@ -1157,7 +1179,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_km_colloquial_count_questions_use_data_query(self):
         model = _ModelClient(response=_asset_plan_response(operation="COUNT"))
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1266,7 +1288,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 model = _ModelClient(response=_asset_plan_response(
                     operation=operation, semantic=semantic
                 ))
-                planner = RootAgentPlanner(
+                planner = _root_planner(
                     model_client=model,
                     prompt_resolver=_PromptResolver(),
                 )
@@ -1285,7 +1307,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         model = _ModelClient(response=_asset_plan_response(
             operation="COUNT", semantic=True
         ))
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1333,7 +1355,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         model = _ModelClient(response=_asset_plan_response(
             operation="COUNT", semantic=True
         ))
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1365,7 +1387,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             "code": "MISSING_SCOPE",
             "question": "请说明您要查询哪个 Asset，以及需要内容还是统计数据。",
         },)))
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=model,
             prompt_resolver=_PromptResolver(),
         )
@@ -1385,7 +1407,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(decision.clarification_question)
 
     async def test_multi_capability_router_selects_data_chart(self):
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=_ModelClient(
                 response={
                     "route_type": "DATA_QUERY",
@@ -1425,7 +1447,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_query_image_routes_to_document(self):
-        planner = RootAgentPlanner()
+        planner = _root_planner()
         decision = await planner.decide_for_input(
             agent_snapshot={
                 "enabled_capabilities": ["conversation", "document"],
@@ -1442,7 +1464,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.route_type, RouteType.DOCUMENT)
 
     async def test_managed_resources_falls_back_to_document(self):
-        planner = RootAgentPlanner(
+        planner = _root_planner(
             model_client=_ModelClient(
                 response={
                     "route_type": "CLARIFY",
@@ -1861,7 +1883,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             original_input="list assets related to apex",
         )
 
-        result = DocumentScopeExtractSkill._km_asset_enumeration_scope(
+        result = KmAssetDocumentScopeExtractSkill._enumeration_scope(
             context
         )
 
