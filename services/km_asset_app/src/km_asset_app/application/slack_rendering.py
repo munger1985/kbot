@@ -51,11 +51,6 @@ _VISIBLE_CITATION_PATTERN = re.compile(r"\[[A-Za-z]\d+\]")
 _PUNCTUATION_PATTERN = re.compile(r"[ \t]+(?=[,.;:!?，。；：！？])")
 _INLINE_SPACE_PATTERN = re.compile(r"(?<=\S)[ \t]{2,}(?=\S)")
 _TRAILING_SPACE_PATTERN = re.compile(r"(?m)[ \t]+$")
-_ASSET_ID_FIELD_LINE_PATTERN = re.compile(
-    r"^\s*(?:[-+•]\s*)?(?:\*\*|__|\*)?\s*"
-    r"Asset[ _-]*ID\s*[:：]\s*(?:\*\*|__|\*)?",
-    re.IGNORECASE,
-)
 _QUERY_COMPLETION_SUFFIX_PATTERN = re.compile(
     r",?\s*(?:and\s+)?the\s+(?:query\s+)?results?\s+"
     r"(?:is|are)\s+complete(?:\s+and\s+not\s+truncated|"
@@ -79,18 +74,6 @@ _OOXML_CARRIAGE_RETURN_PATTERN = re.compile(
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
 _TRUNCATION_NOTICE = "结果超过上限，当前仅展示部分内容"
-_QUERY_ASSET_TABLE_FIELDS = (
-    ("Author", ("author_mail", "author", "author_mail_norm")),
-    ("Product", ("asset_product", "product")),
-    ("Solution", ("asset_solution", "solution")),
-    ("Industry", ("industry_id", "industry")),
-    ("Asset Status", ("asset_status",)),
-    ("Ingestion Status", ("ingestion_status",)),
-    (
-        "Asset Date",
-        ("asset_date_value", "asset_date", "publish_date", "create_time"),
-    ),
-)
 
 
 def waiting_message(question: str) -> str:
@@ -218,17 +201,6 @@ def _has_used_document_reference(payload: dict[str, Any]) -> bool:
     )
 
 
-def _query_only_visible_answer(answer: str) -> str:
-    """清理无文档问数回答中不应展示的内部字段和完成性套话。"""
-    lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
-    visible_lines: list[str] = []
-    for line in lines:
-        if _ASSET_ID_FIELD_LINE_PATTERN.match(line):
-            continue
-        visible_lines.append(line)
-    return _without_completion_boilerplate("\n".join(visible_lines))
-
-
 def _without_completion_boilerplate(answer: str) -> str:
     """只清理 Slack 可见正文中的结果完整性套话。"""
     lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
@@ -270,25 +242,15 @@ def _is_truncated_reply(
     payload: dict[str, Any],
     config: SlackReplyConfig,
 ) -> bool:
-    has_document = _has_used_document_reference(payload)
-    query_results = payload.get("query_results")
-    query_truncated = (
-        not has_document
-        and isinstance(query_results, (list, tuple))
-        and any(
-            isinstance(result, dict) and result.get("truncated") is True
-            for result in query_results
-        )
-    )
-    references_exceeded = (
-        has_document
+    """仅根据已使用文档判断 Template 展示是否超限。
+
+    无文档回答由 KBot 完整决定，Slack 不再解析 QueryResult
+    来推断截断状态。
+    """
+    return (
+        _has_used_document_reference(payload)
         and _used_document_reference_count(payload) > config.max_references
     )
-    query_assets_exceeded = (
-        not has_document
-        and len(_query_asset_rows(payload)) > config.max_references
-    )
-    return query_truncated or references_exceeded or query_assets_exceeded
 
 
 def _visible_asset_titles(payload: dict[str, Any]) -> list[str]:
@@ -474,214 +436,6 @@ def _text_sections(text: str) -> list[dict[str, Any]]:
         }
         for offset in range(0, len(text), 3000)
     ]
-
-
-def _normalized_query_key(value: object) -> str:
-    return re.sub(r"[\s_\\-]+", "", str(value)).strip().casefold()
-
-
-def _query_row_value(row: dict[str, Any], *aliases: str) -> str:
-    by_key = {
-        _normalized_query_key(key): value for key, value in row.items()
-    }
-    for alias in aliases:
-        value = by_key.get(_normalized_query_key(alias))
-        if value is None or isinstance(value, dict):
-            continue
-        if isinstance(value, (list, tuple, set)):
-            text = ", ".join(
-                str(item).strip() for item in value if str(item).strip()
-            )
-        else:
-            text = str(value).strip()
-        if text:
-            return text
-    return ""
-
-
-def _query_asset_rows(payload: dict[str, Any]) -> list[dict[str, str]]:
-    """从 QUERY_RESULT.v1 恢复表格型回答的 Asset 行顺序。"""
-    query_results = payload.get("query_results")
-    if not isinstance(query_results, (list, tuple)):
-        return []
-    result: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for query_result in query_results:
-        if not isinstance(query_result, dict):
-            continue
-        schema = str(query_result.get("schema") or "").strip()
-        if schema and schema != "QUERY_RESULT.v1":
-            continue
-        rows = query_result.get("rows")
-        if not isinstance(rows, (list, tuple)):
-            continue
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            asset_id = _query_row_value(
-                row,
-                "asset_id",
-                "external_asset_id",
-            )
-            km_asset_id = _query_row_value(row, "km_asset_id")
-            title = _query_row_value(row, "asset_title", "title")
-            asset_signals = (
-                _query_row_value(
-                    row,
-                    "author_mail",
-                    "author",
-                    "author_mail_norm",
-                ),
-                _query_row_value(row, "asset_product", "product"),
-                _query_row_value(row, "asset_solution", "solution"),
-                _query_row_value(row, "industry_id", "industry"),
-                _query_row_value(row, "asset_status"),
-                _query_row_value(row, "ingestion_status"),
-                _query_row_value(
-                    row,
-                    "asset_date_value",
-                    "asset_date",
-                    "publish_date",
-                    "create_time",
-                ),
-            )
-            if not title or not (
-                asset_id or km_asset_id or any(asset_signals)
-            ):
-                continue
-            identity = (
-                asset_id
-                or km_asset_id
-                or _normalized_query_key(title)
-            ).casefold()
-            if identity in seen:
-                continue
-            seen.add(identity)
-            values = {
-                "asset_title": title,
-                "author": _query_row_value(
-                    row,
-                    "author_mail",
-                    "author",
-                    "author_mail_norm",
-                ),
-            }
-            for label, aliases in _QUERY_ASSET_TABLE_FIELDS[1:]:
-                values[_normalized_query_key(label)] = _query_row_value(
-                    row,
-                    *aliases,
-                )
-            result.append(values)
-    return result
-
-
-def _table_answer_intro(answer: str) -> str | None:
-    """返回 Asset Markdown 表格之前的自然语言说明。
-
-    非表格回答返回 None。
-    """
-    lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
-    for index, line in enumerate(lines):
-        if "|" not in line:
-            continue
-        columns = {
-            _normalized_query_key(value)
-            for value in line.strip().strip("|").split("|")
-            if value.strip()
-        }
-        has_title = bool({"title", "assettitle"} & columns)
-        asset_columns = {
-            "author",
-            "authormail",
-            "product",
-            "solution",
-            "industry",
-            "assetstatus",
-            "ingestionstatus",
-            "assetdate",
-        }
-        has_asset_shape = (
-            "assetid" in columns
-            or "#" in columns
-            or len(asset_columns & columns) >= 2
-        )
-        if has_title and has_asset_shape:
-            return "\n".join(lines[:index]).strip()
-    return None
-
-
-def _query_asset_table_blocks(
-    payload: dict[str, Any],
-    answer: str,
-    *,
-    limit: int,
-) -> list[dict[str, Any]]:
-    """将 Asset 问数结果转换为 Slack 可读的编号字段列表。"""
-    rows = _query_asset_rows(payload)
-    if not rows:
-        return []
-    intro = _table_answer_intro(answer)
-    if intro is None:
-        normalized_answer = html.unescape(answer).casefold()
-        all_titles_present = all(
-            row["asset_title"].casefold() in normalized_answer
-            for row in rows
-        )
-        if len(rows) <= limit and all_titles_present:
-            return []
-        answer_lines = answer.replace("\r\n", "\n").replace(
-            "\r", "\n"
-        ).splitlines()
-        first_asset_line = next(
-            (
-                index
-                for index, line in enumerate(answer_lines)
-                if any(
-                    row["asset_title"].casefold()
-                    in html.unescape(line).casefold()
-                    for row in rows
-                )
-            ),
-            None,
-        )
-        intro = _without_completion_boilerplate(
-            "\n".join(
-                answer_lines
-                if first_asset_line is None
-                else answer_lines[:first_asset_line]
-            )
-        )
-    blocks: list[dict[str, Any]] = []
-    safe_intro = _to_slack_mrkdwn(intro)
-    if safe_intro:
-        blocks.extend(_text_sections(safe_intro))
-    for index, row in enumerate(rows[:limit], start=1):
-        title = re.sub(
-            r"\s+",
-            " ",
-            _to_slack_mrkdwn(row.get("asset_title")),
-        ).strip()[:500]
-        author = str(row.get("author") or "").strip()
-        if author and _EMAIL_PATTERN.fullmatch(author):
-            safe_author = _escape_mrkdwn(author)
-            author_value = f"<mailto:{author}|{safe_author}>"
-        else:
-            author_value = _to_slack_mrkdwn(author) or "—"
-        lines = [f"*{index}. {title}*", f"*Author:* {author_value}"]
-        for label, _ in _QUERY_ASSET_TABLE_FIELDS[1:]:
-            key = _normalized_query_key(label)
-            value = _to_slack_mrkdwn(row.get(key)) or "—"
-            lines.append(f"*{label}:* {value[:500]}")
-        blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "\n".join(lines)[:3000],
-                },
-            }
-        )
-    return blocks
 
 
 def _template_date(value: object) -> str:
@@ -880,12 +634,8 @@ def render_slack_reply(
     has_used_document = (
         valid_envelope and _has_used_document_reference(answer_payload)
     )
-    is_query_only = valid_envelope and not has_used_document
     use_document_template = has_used_document and bool(asset_cards)
-    display_answer = (
-        _query_only_visible_answer(answer) if is_query_only else answer
-    )
-    display_answer = _without_completion_boilerplate(display_answer)
+    display_answer = _without_completion_boilerplate(answer)
     safe_answer = _to_slack_mrkdwn(display_answer)
     blocks: list[dict[str, Any]] = [
         {
@@ -902,21 +652,12 @@ def render_slack_reply(
     if valid_envelope:
         status = answer_payload.get("status")
         blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
-    query_asset_blocks = (
-        _query_asset_table_blocks(
-            answer_payload,
-            answer,
-            limit=reply_config.max_references,
-        )
-        if is_query_only
-        else []
-    )
-    blocks.extend(query_asset_blocks or _text_sections(safe_answer))
+    blocks.extend(_text_sections(safe_answer))
     if valid_envelope:
-        # Template 只由正文中已确认的 Asset 产生。正文无 Asset 时保持为空，
+        # Template 只由正文中已确认的 Asset 产生。
+        # 正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
-        # 表格型问数结果暂时只展示格式化正文，不追加 Asset Template。
-        if not query_asset_blocks and use_document_template:
+        if use_document_template:
             blocks.extend(_asset_blocks(asset_cards or [], reply_config))
         blocks.extend(
             _warning_blocks(
@@ -926,14 +667,8 @@ def render_slack_reply(
             )
         )
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
-    query_fallback = "\n\n".join(
-        str(block.get("text", {}).get("text") or "")
-        for block in query_asset_blocks
-        if isinstance(block, dict) and isinstance(block.get("text"), dict)
-    )
-    fallback_answer = query_fallback or safe_answer
     fallback = (
-        f"<@{user_id}> {reply_config.assistant_name}：{fallback_answer}"
+        f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"
     )
     return {
         "channel": channel_id,

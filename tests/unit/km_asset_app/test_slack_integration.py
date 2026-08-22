@@ -613,7 +613,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("A details", rendered)
         self.assertNotIn("*Asset Title:*", rendered)
 
-    async def test_answer_values_win_and_manifest_fills_missing_fields(self):
+    async def test_attachment_metadata_is_the_template_field_source(self):
         collection_id = "01900000-0000-7000-8000-000000000101"
         bundle_id = "01900000-0000-7000-8000-000000000102"
         revision_id = "01900000-0000-7000-8000-000000000103"
@@ -686,8 +686,8 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "asset_id": "ASSET/100",
-                    "asset_title": "Answer Title",
-                    "solution_briefing": "Answer Briefing",
+                    "asset_title": "Metadata Title",
+                    "solution_briefing": "Metadata Briefing",
                     "author_mail": "author@example.com",
                     "create_time": "2026-08-17",
                 }
@@ -1217,7 +1217,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SlackRenderingAndConfigurationTest(unittest.TestCase):
-    def test_query_only_field_list_renders_without_asset_template(self):
+    def test_query_only_field_list_preserves_kbot_answer_without_template(self):
         answer = (
             "The query returned 1 asset authored by "
             "madhumitha.k@oracle.com:\n\n"
@@ -1302,8 +1302,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("*Asset Date:* 2026-08-18", rendered)
         self.assertIn("*Category:* Not specified", rendered)
         self.assertIn("*Industry:* Not specified", rendered)
-        self.assertNotIn("Asset ID", rendered)
-        self.assertNotIn("4996DC40D76BE6F8E0630D427364C968", rendered)
+        self.assertIn("*Asset ID:* 4996DC40D76BE6F8E0630D427364C968", rendered)
         self.assertNotIn("complete (not truncated)", rendered)
         self.assertNotIn("[Q1]", rendered)
         self.assertNotIn("*Asset Title:*", rendered)
@@ -1381,7 +1380,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("完整回答", rendered)
         self.assertNotIn("complete and not truncated", rendered)
 
-    def test_query_truncated_uses_unified_mandatory_notice(self):
+    def test_query_truncation_is_not_inferred_when_warnings_are_hidden(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
@@ -1411,7 +1410,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        self.assertIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
         self.assertNotIn("问数结果已按服务端上限截断", rendered)
 
     def test_max_references_exceeded_uses_truncation_notice(self):
@@ -1467,7 +1466,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("结果超过上限，当前仅展示部分内容", exceeded)
         self.assertNotIn("结果超过上限，当前仅展示部分内容", at_limit)
 
-    def test_asset_query_table_renders_as_numbered_field_sections(self):
+    def test_asset_query_table_preserves_kbot_answer_without_reconstruction(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
@@ -1535,19 +1534,15 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             )
         )
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn("*1. Asset B*", rendered)
-        self.assertIn("*2. Asset A*", rendered)
-        self.assertIn("<mailto:b@example.com|b@example.com>", rendered)
-        self.assertIn("*Solution:* RAG", rendered)
-        self.assertIn("*Industry:* —", rendered)
-        self.assertIn("*Ingestion Status:* FAILED", rendered)
-        self.assertNotIn("| # | Title |", rendered)
-        self.assertNotIn("| 1 | Asset B", rendered)
+        self.assertIn("| # | Title | Author | Product | Solution |", rendered)
+        self.assertIn("| 1 | Asset B | b@example.com | ADW | RAG |", rendered)
+        self.assertIn("| 2 | Asset A | a@example.com | APEX | AI |", rendered)
+        self.assertNotIn("<mailto:b@example.com|b@example.com>", rendered)
         self.assertNotIn("*Asset Title:*", rendered)
         self.assertNotIn("*Solution Briefing:*", rendered)
         self.assertNotIn("KM Link", rendered)
 
-    def test_query_summary_appends_structured_asset_details(self):
+    def test_query_summary_does_not_append_query_result_fields(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
@@ -1597,22 +1592,19 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         )
 
         self.assertIn("has 1 asset associated", rendered)
-        self.assertIn(
-            "*1. Selecting Insurance Plans with an Apex AI Agent*",
+        self.assertNotIn(
+            "Selecting Insurance Plans with an Apex AI Agent",
             rendered,
         )
-        self.assertIn(
-            "<mailto:madhumitha.k@oracle.com|madhumitha.k@oracle.com>",
-            rendered,
-        )
-        self.assertIn("*Solution:* Oracle ChatBot", rendered)
-        self.assertIn("*Asset Status:* Published", rendered)
-        self.assertIn("*Asset Date:* 2026-08-18", rendered)
+        self.assertNotIn("<mailto:madhumitha.k@oracle.com", rendered)
+        self.assertNotIn("*Solution:* Oracle ChatBot", rendered)
+        self.assertNotIn("*Asset Status:* Published", rendered)
+        self.assertNotIn("*Asset Date:* 2026-08-18", rendered)
         self.assertNotIn("4996DC40D76BE6F8E0630D427364C968", rendered)
         self.assertNotIn("*Asset Title:*", rendered)
         self.assertNotIn("KM Link", rendered)
 
-    def test_query_asset_details_are_limited_and_marked_truncated(self):
+    def test_query_rows_do_not_change_or_truncate_kbot_answer(self):
         rows = [
             {
                 "ASSET_ID": f"ASSET-{index}",
@@ -1654,10 +1646,11 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        self.assertIn("*1. Asset 1*", rendered)
-        self.assertIn("*2. Asset 2*", rendered)
+        self.assertIn("The query returned 3 assets.", rendered)
+        self.assertNotIn("*1. Asset 1*", rendered)
+        self.assertNotIn("*2. Asset 2*", rendered)
         self.assertNotIn("Asset 3", rendered)
-        self.assertIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
 
     def test_document_metadata_takes_precedence_over_query_rendering(self):
         artifact = {
@@ -2566,7 +2559,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             channel_id="C1",
             slack_user_id="U1",
             root_thread_ts="1723880000.123456",
-            message_text="<@BOT> hello",
+            message_text="any assets of madhumitha.k@oracle.com；",
             event_id="E1",
             callback_sent_at=None,
         )
@@ -2642,6 +2635,12 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             "payload"
         ]
         self.assertIs(execution_spec, turn_payload["execution_spec"])
+        self.assertEqual(
+            "any assets of madhumitha.k@oracle.com；",
+            turn_payload["input"],
+        )
+        self.assertNotIn("route_type", turn_payload)
+        self.assertNotIn("task_type", turn_payload)
 
     async def test_run_check_does_not_read_inbox_after_uow_exit(self):
         agent_id = UUID("019ff999-6789-799b-97c3-500879812f7b")

@@ -14,7 +14,9 @@ HTTP 200 原样返回 `challenge`；普通事件仍必须携带并匹配 `team_i
 Main API 仅保真转发原始正文和 Slack 验签 Header；KM Asset 完成验签并将入站事件
 写入自有 Inbox，再由 KM Asset 的独立 Slack Worker 映射为 Agent Runtime
 Conversation 与 Turn。会话按 Workspace、频道、根线程和 Slack 用户隔离。Agent
-执行仍由持久化 Run/Task/Artifact 完成；Slack Worker 读取最终
+执行仍由持久化 Run/Task/Artifact 完成。Slack 不根据问题内容判断
+DATA_QUERY、DOCUMENT 或混合路由，而是把用户问题作为 Turn `input`
+直接交给绑定的 KBot Agent，由 Agent 自行规划和执行。Slack Worker 读取最终
 `GROUNDED_ANSWER`，通过 Outbox 调用 `chat.postMessage` 在线程内回复。进程重启后
 可继续领取未完成 Inbox 和 Delivery。
 
@@ -58,11 +60,10 @@ Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 
 `km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
 `km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
 编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
-`max_references` 不截断 DOCUMENT Slack Asset Template，也不会触发旧“参考资料”
-回退；无 DOCUMENT 的问数结果最多展示该数量的唯一 Asset。当问数 Asset 行或本次
-实际使用的 DOCUMENT 引用数超过该值时，Slack 将本次结果标记为截断并显示
-“结果超过上限，当前仅展示部分内容”。`show_query_result_summary` 仅为旧参考资料
-展示配置保留。
+`max_references` 不用于从 `query_results` 重建或截断 KBot 正文；无
+DOCUMENT 附件时，Slack 只展示 KBot 返回的 `payload.answer`。实际使用
+的 DOCUMENT 引用数超过该值时，Slack 可显示统一的 Template 展示超限
+提示。`show_query_result_summary` 仅为历史配置字段保留，不再触发问数结果重组。
 
 ## 查询 Workspace、Domain 与 Agent
 
@@ -129,15 +130,17 @@ SELECT T.WORKSPACE_ID,
 ## Asset问答助手回复
 
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
-来自 `payload.answer`，并先转换为安全的 Slack `mrkdwn`；非 `READY` 状态显示中文
-状态提示。Asset 字段先从 4.0 回答中按标签确定性提取，缺少的 `asset_id`、
-`asset_title`、`solution_briefing`、`author_mail`、`create_time` 从本次实际使用的
-DOCUMENT 引用所对应的 `manifest.md` 白名单补齐；Manifest 暂时不可读时，按同一
-Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同白名单字段。
-只要 `used_citation_labels` 中存在可匹配的 DOCUMENT 引用，Slack 就必须优先
-保留文档型回复，并使用该回复与附件元数据组装 Template。即使同一
-Artifact 中还包含 QueryResult，问数格式化、QueryResult 行和其 `truncated`
-状态也不得覆盖文档回复或替换 Template。
+来自 `payload.answer`，并只执行安全的 Slack `mrkdwn` 转换、引用标签隐藏和
+用户可见安全处理；非 `READY` 状态显示中文状态提示。Slack 不根据
+`query_results` 补充 Asset、不重建列表，也不重新决定回答应当走问数或问文展示。
+
+仅当 `used_citation_labels` 实际命中 `reference_type=DOCUMENT` 的附件时，
+Slack 才组装 Asset Template。Template 的 `asset_id`、`asset_title`、
+`solution_briefing`、`author_mail`、`create_time` 只从该 DOCUMENT 所属 Bundle 的
+`manifest.md` 白名单元数据读取；Manifest 暂时不可读时，仅允许按同一
+Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同字段。
+正文字段和 QueryResult 都不是 Template 元数据来源。即使同一 Artifact 中
+还包含 QueryResult，它也不得覆盖文档回复或生成额外 Template。
 
 Template 时，先按原回答中的
 独立加粗标题、加粗项目符号或编号条目提取 Asset 顺序，再使用该条目范围内的引用
@@ -149,19 +152,17 @@ Template 时，先按原回答中的
 日志。完成映射和 Asset 去重后，必须保证正文每个唯一 Asset 都有且仅有一个
 Template，且顺序与正文一致；不再应用 `max_references` 截断。完整性只校验
 `asset_id`、`asset_title`、`solution_briefing` 三个字段。任一缺失时不发送部分
-Template，也不终止 Worker：存在 QueryResult 时按问数结果格式展示；不存在
-QueryResult 时直接展示 KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
+Template，也不终止 Worker；无论 Artifact 是否同时包含 QueryResult，都直接展示
+KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
 缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 KM Link。整个过程不修改
 `payload.answer`。回答原文保留，每个 Template 由分隔线、Asset Title、Solution
 Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。
 Template 展示层会将 Asset Title 和 Solution Briefing 元数据中的 OOXML
 `_x000D_` 回车标记还原为正常换行；不修改 KBot Artifact、Manifest 或调试报文。
-当实际使用的 DOCUMENT 引用数超过 `max_references`，或结构化 QueryResult 的
-`truncated=true` 时，Slack 均强制显示统一截断提示；该提示不受普通警告展示开关
-影响，也不会修改原始 GroundedAnswer Artifact。
-无 DOCUMENT 的 Asset 问数若模型正文只返回数量摘要或未完整列出结果标题，Slack
-直接按 QueryResult 行顺序补充编号 Asset 字段；展示数量受 `max_references` 限制，
-超出的行不展示并触发同一截断提示。该路径不生成 Asset Template。
+当实际使用的 DOCUMENT 引用数超过 `max_references` 时，Slack 显示统一的
+Template 展示超限提示，不修改原始 GroundedAnswer Artifact。无 DOCUMENT 时，
+`query_results.truncated`、行数和 `max_references` 都不由 Slack 重新解释；是否截断及其
+用户可见说明应由 KBot 最终回答决定。
 
 Knowledge Core 的检索实现、模型或候选顺序调整不作为 Slack Template 的
 展示顺序。Slack 按 `payload.answer` 中引用首次出现的顺序恢复文档，

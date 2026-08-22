@@ -108,7 +108,7 @@ def _asset_values(value: dict[str, Any]) -> dict[str, str]:
 
 
 def _mapping_asset_fields(value: object) -> dict[str, str]:
-    """从大小写/命名风格不固定的 QueryResult 映射 Asset 字段。"""
+    """从大小写/命名风格不固定的元数据映射 Asset 字段。"""
     if not isinstance(value, dict):
         return {}
     canonical = {
@@ -122,90 +122,6 @@ def _mapping_asset_fields(value: object) -> dict[str, str]:
         if field and cleaned:
             result[field] = cleaned
     return result
-
-
-def _is_asset_table_answer(answer: object) -> bool:
-    """识别无需组装 Slack Template 的 Asset 表格回答。"""
-    if not isinstance(answer, str):
-        return False
-    asset_columns = {
-        "author",
-        "authormail",
-        "product",
-        "solution",
-        "industry",
-        "assetstatus",
-        "ingestionstatus",
-        "assetdate",
-    }
-    for line in answer.replace("\r\n", "\n").replace("\r", "\n").splitlines():
-        if "|" not in line:
-            continue
-        columns = {
-            _normalized_label(value)
-            for value in line.strip().strip("|").split("|")
-            if value.strip()
-        }
-        has_title = bool({"title", "assettitle"} & columns)
-        has_asset_shape = (
-            "assetid" in columns
-            or "#" in columns
-            or len(asset_columns & columns) >= 2
-        )
-        if has_title and has_asset_shape:
-            return True
-    return False
-
-
-def _query_result_asset_cards(payload: dict[str, Any]) -> list[dict[str, str]]:
-    """读取 GroundedAnswer 内嵌 QUERY_RESULT.v1 行，不把 Q1 当文档。"""
-    query_results = payload.get("query_results")
-    if not isinstance(query_results, (list, tuple)):
-        return []
-    cards: list[dict[str, str]] = []
-    for query_result in query_results:
-        if not isinstance(query_result, dict):
-            continue
-        schema = str(query_result.get("schema") or "").strip()
-        if schema and schema != "QUERY_RESULT.v1":
-            continue
-        rows = query_result.get("rows")
-        if not isinstance(rows, (list, tuple)):
-            continue
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            metadata_value = next(
-                (
-                    item
-                    for key, item in row.items()
-                    if _normalized_label(str(key))
-                    == "normalizedmetadatajson"
-                ),
-                {},
-            )
-            if isinstance(metadata_value, str):
-                try:
-                    metadata_value = json.loads(metadata_value)
-                except (TypeError, ValueError):
-                    metadata_value = {}
-            fields = {
-                **_mapping_asset_fields(metadata_value),
-                **_mapping_asset_fields(row),
-            }
-            km_asset_id = next(
-                (
-                    _clean_value(item)
-                    for key, item in row.items()
-                    if _normalized_label(str(key)) == "kmassetid"
-                ),
-                "",
-            )
-            if km_asset_id:
-                fields["_km_asset_id"] = km_asset_id
-            if fields:
-                cards.append(fields)
-    return _unique_asset_cards(cards)
 
 
 def extract_answer_asset_cards(answer: object) -> list[dict[str, str]]:
@@ -292,15 +208,6 @@ def _local_asset_fields(row: object) -> dict[str, str]:
     }
     values.update(_asset_values(columns))
     return values
-
-
-def _local_asset_card(row: object) -> dict[str, str]:
-    """在数据库 Session 内复制 Slack 所需字段，禁止泄漏 ORM 实例。"""
-    fields = _local_asset_fields(row)
-    km_asset_id = _clean_value(getattr(row, "km_asset_id", None))
-    if km_asset_id:
-        fields["_km_asset_id"] = km_asset_id
-    return fields
 
 
 def _used_document_references(
@@ -708,7 +615,7 @@ def _same_asset(answer: dict[str, str], manifest: dict[str, str]) -> bool:
 def _merge_candidate_sources(
     *sources: list[dict[str, str]],
 ) -> list[dict[str, str]]:
-    """合并 QueryResult、Manifest 和本地 Asset，保留首个来源顺序。"""
+    """合并附件 Manifest 和其关联的本地 Asset 元数据。"""
     result: list[dict[str, str]] = []
     for source in sources:
         for candidate in source:
@@ -725,47 +632,6 @@ def _merge_candidate_sources(
                 if value and not existing.get(key):
                     existing[key] = value
     return _unique_asset_cards(result)
-
-
-def _valid_uuid_values(values: list[str]) -> tuple[UUID, ...]:
-    result: list[UUID] = []
-    for value in values:
-        try:
-            parsed = UUID(value)
-        except (TypeError, ValueError, AttributeError):
-            continue
-        if parsed not in result:
-            result.append(parsed)
-    return tuple(result)
-
-
-def _enrich_query_cards_from_local_cards(
-    query_cards: list[dict[str, str]],
-    local_cards: list[dict[str, str]],
-) -> list[dict[str, str]]:
-    result: list[dict[str, str]] = []
-    for query_card in query_cards:
-        km_asset_id = _clean_value(query_card.get("_km_asset_id"))
-        local = next(
-            (
-                card
-                for card in local_cards
-                if km_asset_id
-                and _clean_value(card.get("_km_asset_id")) == km_asset_id
-            ),
-            None,
-        )
-        if local is None:
-            local = next(
-                (
-                    card
-                    for card in local_cards
-                    if _same_asset(query_card, card)
-                ),
-                None,
-            )
-        result.append({**(local or {}), **query_card})
-    return result
 
 
 def _merge_cards(
@@ -798,12 +664,11 @@ def _merge_cards(
         base = manifest_cards[match_index] if match_index is not None else {}
         if match_index is not None:
             used_manifest.add(match_index)
-        merged.append({**base, **answer})
-    merged.extend(
-        card
-        for index, card in enumerate(manifest_cards)
-        if index not in used_manifest
-    )
+            # 正文字段只用于定位和排序；Template 的字段值
+            # 必须来自附件 Manifest 或其稳定关联的本地 Asset。
+            merged.append(dict(base))
+    if not answer_cards:
+        merged.extend(manifest_cards)
     result: list[dict[str, str]] = []
     seen: set[str] = set()
     for card in merged:
@@ -833,43 +698,22 @@ async def assemble_slack_asset_cards(
     limit: int,
     uow_factory=None,
 ) -> list[dict[str, str]]:
-    """回答字段优先；仅用已使用引用对应的 Asset 元数据补齐。"""
+    """仅用回答实际引用的 DOCUMENT 附件元数据组装 Template。"""
     payload = artifact.get("payload")
     if not isinstance(payload, dict):
         return []
     answer = payload.get("answer")
-    # 表格型问数回答只展示格式化正文，不生成 Asset Template。
-    if _is_asset_table_answer(answer):
-        return []
     references = _used_document_references(payload)
-    # 未实际使用 DOCUMENT/Markdown 附件时，回答只能按无 Template 正文展示。
+    # 未实际使用 DOCUMENT/Markdown 附件时，回答只能按无 Template
+    # 正文展示。
     # QueryResult 和模型正文都不得被当作 Asset 元数据补齐来源。
     if not references:
         return []
     answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
     sections = _answer_asset_sections(answer)
-    query_cards = _query_result_asset_cards(payload)
-    if not answer_cards and not sections and not query_cards:
+    if not answer_cards and not sections:
         return []
-    if answer_cards and all(
-        all(
-            _clean_value(card.get(field))
-            for field in _REQUIRED_ASSET_FIELDS
-        )
-        for card in answer_cards
-    ):
-        result = _merge_cards(
-            answer_cards,
-            [],
-            limit=len(answer_cards),
-        )
-        _validate_complete_templates(
-            cards=result,
-            expected_count=len(answer_cards),
-        )
-        return result
     local_by_revision: dict[str, dict[str, str]] = {}
-    local_cards: list[dict[str, str]] = []
     if uow_factory is not None:
         try:
             async with uow_factory() as uow:
@@ -885,68 +729,11 @@ async def assemble_slack_asset_cards(
                     )
                     if row is not None:
                         local_by_revision[revision_id] = _local_asset_fields(row)
-                list_for_templates = getattr(
-                    uow.assets,
-                    "list_assets_for_slack_templates",
-                    None,
-                )
-                if list_for_templates is not None:
-                    km_asset_ids = _valid_uuid_values(
-                        [
-                            str(card.get("_km_asset_id") or "")
-                            for card in query_cards
-                        ]
-                    )
-                    external_asset_ids = tuple(
-                        dict.fromkeys(
-                            value
-                            for card in query_cards
-                            if (value := _clean_value(card.get("asset_id")))
-                        )
-                    )
-                    asset_titles = tuple(
-                        dict.fromkeys(
-                            value
-                            for value in (
-                                *(
-                                    _clean_value(card.get("asset_title"))
-                                    for card in query_cards
-                                ),
-                                *(
-                                    _clean_value(section.get("asset_title"))
-                                    for section in sections
-                                ),
-                            )
-                            if value
-                        )
-                    )
-                    local_rows = await list_for_templates(
-                        domain_id=domain_id,
-                        km_asset_ids=km_asset_ids,
-                        external_asset_ids=external_asset_ids,
-                        asset_titles=asset_titles,
-                    )
-                    local_cards = [
-                        _local_asset_card(row) for row in local_rows
-                    ]
         except Exception as exc:
             logger.warning(
                 "Slack Asset 本地元数据读取失败：cause={}",
                 str(exc),
             )
-
-    query_cards = _enrich_query_cards_from_local_cards(
-        query_cards,
-        local_cards,
-    )
-    # 只有带稳定 Asset 身份的 QueryResult 行才能独立生成 Template。
-    # 只有通用 title 的非 Asset 问数不得触发模板或完整性异常。
-    query_cards = [
-        card
-        for card in query_cards
-        if _clean_value(card.get("asset_id"))
-        or _clean_value(card.get("_km_asset_id"))
-    ]
 
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
@@ -986,9 +773,7 @@ async def assemble_slack_asset_cards(
                 }
             )
     candidate_cards = _merge_candidate_sources(
-        query_cards,
         manifest_cards,
-        local_cards,
     )
     if answer_cards:
         expected_count = len(answer_cards)

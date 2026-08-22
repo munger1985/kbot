@@ -9,7 +9,8 @@
 - 用户能够在 Slack 中正常发起问题并收到回复。
 - KBot 能正确理解精确、模糊、混合和多语言问题。
 - 回答内容与知识库事实一致，不编造、不串用不同 Asset 的信息。
-- 回答正文中的 Asset 数量、顺序与 Slack Template 一致。
+- 无附件时 Slack 展示与 KBot 回答一致；有 DOCUMENT 附件时，正文
+  Asset 数量、顺序与 Slack Template 一致。
 - Slack Markdown、按钮、长消息和多轮会话显示清晰、稳定。
 - 无结果、信息不足或处理失败时，用户能看到明确且安全的提示。
 
@@ -83,7 +84,7 @@
 | 事实准确率 | 标题、作者、日期、产品、方案、描述是否与黄金数据一致 | 关键字段 100% |
 | 回答有据率 | 回答中的事实能否在参考 Asset 或文档中找到 | 关键事实 100% |
 | 无来源内容 | 是否出现知识库没有的信息 | 0 条 |
-| Template 覆盖率 | 正文每个 Asset 是否有一个对应 Template | 100% |
+| Template 覆盖率 | 有 DOCUMENT 附件时，正文每个 Asset 是否有一个对应 Template | 100% |
 | 多余 Template | 是否出现正文未提到的 Asset Template | 0 个 |
 | 顺序一致率 | 正文 Asset 顺序是否与 Template 顺序一致 | 100% |
 | 去重准确率 | 同一 Asset 的多篇文档是否只显示一个 Template | 100% |
@@ -97,9 +98,9 @@
 2. 返回的 Asset 数量是否正确。
 3. Asset 标题及详细描述是否准确。
 4. 不同 Asset 的内容是否发生串用。
-5. 正文 Asset 顺序是否与 Template 顺序一致。
-6. 同一 Asset 是否只出现一次 Template。
-7. 正文是否隐藏 Asset ID、作者邮箱和创建时间。
+5. 无 DOCUMENT 附件时，Slack 正文是否与 KBot 窗口回答内容一致。
+6. 有 DOCUMENT 附件时，正文 Asset 顺序是否与 Template 顺序一致。
+7. 同一 Asset 是否只出现一次 Template。
 8. Template 是否正确显示 Title、Briefing、邮箱、日期和 KM Link。
 9. 是否存在 `[C1]`、`[C2]`、`[Q1]` 等用户不可见标签。
 10. 是否出现内部 ID、路径、堆栈、系统指令或“参考资料”列表。
@@ -126,6 +127,8 @@
 | ACC-014 | P1 | 多行问题 | 一次发送包含换行的问题 | 问题含义完整保留，回复正常 |
 | ACC-015 | P2 | 编辑原问题 | 发送后编辑消息 | 不应产生重复或混乱的新回答 |
 | ACC-016 | P2 | 删除原问题 | 发送后删除消息 | 不出现新的异常回复 |
+| ACC-017 | P0 | KBot 自行规划 | 分别提问文档内容、统计和混合问题 | Slack 不因自行分类而改变 KBot 回答 |
+| ACC-018 | P0 | 无附件回答一致性 | 同一问题分别在 KBot 窗口和 Slack 提问 | Asset 数量、顺序和事实内容一致，Slack 不追加其他 Asset |
 
 ### 5.2 精确 Asset 查询
 
@@ -262,9 +265,9 @@
 | TXT-003 | P1 | 项目符号 | 查看多项列表 | 符号整齐，不与正文粘连 |
 | TXT-004 | P1 | 编号列表 | 查看顺序型回答 | 序号连续、顺序正确 |
 | TXT-005 | P1 | 长段落换行 | 查看长详情 | 自动换行后仍容易阅读 |
-| TXT-006 | P0 | 正文不显示 Asset ID | 检查正文 | 无内部或外部 Asset ID |
-| TXT-007 | P0 | 正文不显示作者邮箱 | 检查正文 | 邮箱只在 Template 尾行出现 |
-| TXT-008 | P0 | 正文不显示创建时间 | 检查正文 | 时间只在 Template 尾行出现 |
+| TXT-006 | P0 | 附件问文不显示 Asset ID | 检查文档型正文 | 无内部或外部 Asset ID |
+| TXT-007 | P0 | 附件问文不显示作者邮箱 | 检查文档型正文 | 邮箱只在 Template 尾行出现 |
+| TXT-008 | P0 | 附件问文不显示创建时间 | 检查文档型正文 | 时间只在 Template 尾行出现 |
 | TXT-009 | P0 | 显示完整 Asset Details | 询问详细介绍 | 正文包含与问题最相关且完整的详情 |
 | TXT-010 | P0 | 隐藏引用标签 | 查看全文 | 不出现 `[C1]`、`[C2]`、`[Q1]` 等 |
 | TXT-011 | P0 | 不显示参考资料列表 | 查看回答末尾 | 不出现“参考资料”或 manifest.md 列表 |
@@ -320,25 +323,25 @@ author@example.com | 2025-09-25                 [KM Link]
 | TPL-025 | P1 | Web 展示 | Slack Web | 与 Desktop 内容一致 |
 | TPL-026 | P1 | Mobile 展示 | Slack Mobile | 按钮可点，文字不重叠 |
 
-### 5.10 表格型和列表型结果展示
+### 5.10 无 DOCUMENT 附件的列表和表格结果
 
 | ID | P | 测试场景 | 用户问题/检查点 | 预期结果 |
 |---|---|---|---|---|
-| LIST-001 | P0 | Asset 表格查询 | `列出 2026 年全部资产` | 不显示原始 Markdown 竖线表格 |
-| LIST-002 | P0 | 表格转编号项 | 查看每个结果 | 每个 Asset 有连续序号和加粗标题 |
-| LIST-003 | P0 | 必要字段 | 查看一项 | 显示 Author、Product、Solution、Industry、Status、Date |
-| LIST-004 | P1 | 缺字段 | 某项缺 Industry | 显示 `—` 或约定空值，不错位 |
-| LIST-005 | P0 | 不显示 Asset ID | 查看格式化列表 | 用户界面不显示 Asset ID |
-| LIST-006 | P0 | 表格模式无 Template | 查看列表末尾 | 不追加 Asset Template |
+| LIST-001 | P0 | Asset 表格查询 | `列出 2026 年全部资产` | Slack 保留 KBot 返回的语义和项目顺序 |
+| LIST-002 | P0 | 禁止 Slack 重建 | 对比 KBot 窗口 | Slack 不根据 QueryResult 另行生成编号项 |
+| LIST-003 | P0 | 字段一致性 | 对比单项内容 | KBot 正文显示什么字段，Slack 就显示什么字段 |
+| LIST-004 | P1 | 缺字段 | KBot 回答中某字段缺失 | Slack 不自行填充、不与其他 Asset 串值 |
+| LIST-005 | P0 | QueryResult 隐藏 | 对比最终回答 | 不显示 KBot 正文之外的 QueryResult 字段 |
+| LIST-006 | P0 | 无附件无 Template | 查看列表末尾 | 不追加 Asset Template |
 | LIST-007 | P0 | 列表顺序 | 与黄金排序比较 | 顺序准确稳定 |
-| LIST-008 | P0 | 列表数量 | 结果为 41 项 | 显示数量和实际条目数一致 |
+| LIST-008 | P0 | 列表数量 | KBot 返回多项 | Slack 可见数量与 KBot 正文一致 |
 | LIST-009 | P1 | 日期格式 | 查看 Asset Date | 显示统一、易读 |
 | LIST-010 | P1 | 作者邮箱 | 查看 Author | 邮箱可点击且属于当前 Asset |
 | LIST-011 | P1 | 0 结果列表 | 无匹配条件 | 显示无结果，不显示空表头 |
 | LIST-012 | P1 | 1 结果列表 | 唯一匹配 | 序号从 1 开始，字段完整 |
 | LIST-013 | P1 | 长字段 | Product/Solution 很长 | 换行后字段仍对应正确 |
 | LIST-014 | P1 | Slack 自动折叠 | 大量结果 | 展开后序号连续，不缺项 |
-| LIST-015 | P0 | 不显示完成性套话 | 查看开头 | 不显示误导性的“结果完整/未截断”表述 |
+| LIST-015 | P0 | 不显示完成性套话 | 查看开头 | Slack 展示层不显示误导性的“结果完整/未截断”表述 |
 
 ### 5.11 无结果、澄清和失败提示
 
@@ -502,7 +505,7 @@ author@example.com | 2025-09-25                 [KM Link]
 1. 所有 P0 用例通过。
 2. 精确 Asset 查询的 Asset、必填字段和 KM Link 准确率为 100%。
 3. 普通 Asset 回答中正文与 Template 的数量、去重和顺序准确率为 100%。
-4. 表格型问数结果不显示原始 Markdown 表格，也不追加 Template。
+4. 无 DOCUMENT 附件时，Slack 不根据 QueryResult 重建正文，也不追加 Template。
 5. Slack 可见消息不显示引用标签、参考资料列表、内部 ID 或技术错误。
 6. Template 的完整时间戳只显示日期。
 7. 无结果时不生成无关 Asset 或空 Template。
@@ -533,4 +536,3 @@ author@example.com | 2025-09-25                 [KM Link]
 | 测试结果 | 通过 / 失败 / 阻塞 |
 | Slack 截图 |  |
 | 缺陷编号与说明 |  |
-
