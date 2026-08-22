@@ -145,6 +145,8 @@ class SlackDispatchService:
             auth_context=context,
             scopes=("km_asset.slack.dispatch",),
         )
+        resource_context = execution_spec.get("resource_context") or {}
+        collection_ids = list(resource_context.get("collection_ids") or ())
         if thread is None:
             conversation = await self._agent_client.create_conversation(
                 payload={
@@ -200,7 +202,9 @@ class SlackDispatchService:
                 "input": inbox.message_text,
                 "expected_conversation_version": conversation["row_version"],
                 "execution_spec": execution_spec,
-                "collection_ids": [],
+                # 与 KM Asset 前端保持同一执行边界：Collection 只能来自
+                # KBot 签发的 execution_spec，Slack 不自行选择检索范围。
+                "collection_ids": collection_ids,
                 "security_level": workspace.security_level,
                 "client_metadata": {
                     "source": "SLACK",

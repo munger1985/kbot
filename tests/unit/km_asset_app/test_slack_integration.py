@@ -2262,6 +2262,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             signing_secret_env="KBOT_SLACK_TEST_SIGNING_SECRET",
             bot_token_env="KBOT_SLACK_TEST_BOT_TOKEN",
         )
+        self.assertEqual(1, config.security_level)
         with patch.dict(
             os.environ,
             {
@@ -2585,6 +2586,11 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             "agent_id": str(agent_id),
             "domain_id": 1001,
             "model_bindings": {},
+            "resource_context": {
+                "collection_ids": [
+                    "019ff999-6789-799b-97c3-500879812f7c"
+                ]
+            },
         }
         km_asset_client = SimpleNamespace(
             execution_spec=AsyncMock(return_value=execution_spec)
@@ -2639,6 +2645,11 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             "any assets of madhumitha.k@oracle.com；",
             turn_payload["input"],
         )
+        self.assertEqual(
+            ["019ff999-6789-799b-97c3-500879812f7c"],
+            turn_payload["collection_ids"],
+        )
+        self.assertEqual(1, turn_payload["security_level"])
         self.assertNotIn("route_type", turn_payload)
         self.assertNotIn("task_type", turn_payload)
 

@@ -16,7 +16,9 @@ Main API 仅保真转发原始正文和 Slack 验签 Header；KM Asset 完成验
 Conversation 与 Turn。会话按 Workspace、频道、根线程和 Slack 用户隔离。Agent
 执行仍由持久化 Run/Task/Artifact 完成。Slack 不根据问题内容判断
 DATA_QUERY、DOCUMENT 或混合路由，而是把用户问题作为 Turn `input`
-直接交给绑定的 KBot Agent，由 Agent 自行规划和执行。Slack Worker 读取最终
+原样交给绑定的 KBot Agent，由 Agent 自行规划和执行。创建 Turn 时使用 KBot
+`execution_spec.resource_context.collection_ids` 签发的固定 Collection，不允许
+Slack 自行选择、扩展或清空检索范围。Slack Worker 读取最终
 `GROUNDED_ANSWER`，通过 Outbox 调用 `chat.postMessage` 在线程内回复。进程重启后
 可继续领取未完成 Inbox 和 Delivery。
 
@@ -29,7 +31,11 @@ Slack App 至少需要接收消息与 `app_mention` 的 Event Subscription，以
 每个 Workspace 在部署配置中固定绑定一个 Domain、Agent UUID 和安全等级。内部
 调用使用 `SERVICE` 类型 AuthContext，Actor ID 为
 `slack:<workspace_id>:<user_id>`，并把绑定的 Agent 放入授权 Agent 集合。Slack
-提交的 Domain、Agent 或用户身份字段不会被信任。
+提交的 Domain、Agent 或用户身份字段不会被信任。KM Asset 正文统一使用内部安全
+级别 1，因此 Workspace 的 `security_level` 默认值为 1；如部署文件显式配置为 0，
+问数可能仍能得到候选 Asset，但正文检索无法取得级别 1 的引用，最终会被 KBot 判定
+为现有资料不足。生产环境只能根据 Workspace 的授权边界手工提高该值，Slack 不会
+冒用前端登录用户的安全级别。
 
 ## 外部 Callback
 

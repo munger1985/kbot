@@ -39,7 +39,10 @@ class SlackWorkspaceConfig(BaseModel):
     workspace_id: str = Field(min_length=1, max_length=64)
     domain_id: int = Field(ge=1)
     agent_id: UUID
-    security_level: int = Field(default=0, ge=0, le=999)
+    # KM Asset 正文统一按内部安全级别 1 入库。Slack 没有终端用户
+    # 鉴权上下文，因此由 Workspace 显式限定检索上限，默认只开放
+    # 该业务级别。
+    security_level: int = Field(default=1, ge=0, le=3)
     signing_secret_env: str = Field(
         default="KBOT_SLACK_SIGNING_SECRET",
         min_length=1,

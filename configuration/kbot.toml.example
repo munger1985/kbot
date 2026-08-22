@@ -78,7 +78,7 @@ username = "kbot"
 # workspace_id = "T0123456789"
 # domain_id = 1001
 # agent_id = "019fcbe0-e46c-7d33-907b-9d1621a2998f"
-# security_level = 0
+# security_level = 1
 # signing_secret_env = "KBOT_SLACK_SIGNING_SECRET"
 # bot_token_env = "KBOT_SLACK_BOT_TOKEN"
 
