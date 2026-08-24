@@ -7,6 +7,7 @@ from loguru import logger
 from agent_runtime.specialists.data_query import DataQuerySkill
 from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
+from agent_runtime.specialists.response_composer.contracts import GroundedAnswer
 
 from .document_scope import KmAssetDocumentScopeExtractSkill
 from .composer import KmAssetComposerMixin
@@ -83,6 +84,10 @@ class KmAssetResponseComposerSkill(
         if search_plan is None or query_result is None:
             return None
         if retrieval is not None:
+            if search_plan.operation == "ANSWER":
+                return await self._compose_answer_with_assets(
+                    context, retrieval, search_plan
+                )
             if search_plan.operation in {"COUNT", "GROUP"}:
                 return await self._compose_asset_aggregate_with_evidence(
                     context, query_result, retrieval, search_plan
@@ -96,6 +101,46 @@ class KmAssetResponseComposerSkill(
         return await self._compose_asset_query_result(
             context, query_result, search_plan
         )
+
+    async def _compose_answer_with_assets(
+        self, context, retrieval, search_plan
+    ):
+        """先回答正文问题，再附加同一证据范围内的相关 Asset。"""
+        document_context = context.model_copy(update={
+            "input_artifacts": tuple(
+                artifact for artifact in context.input_artifacts
+                if artifact.artifact_type != "QUERY_RESULT"
+            ),
+        })
+        document_result = await ResponseComposerSkill.execute(
+            self, document_context
+        )
+        grounded = GroundedAnswer.model_validate(
+            document_result.artifact.payload
+        )
+        if grounded.status != "READY":
+            return self._result(context, grounded)
+        allowed = {
+            item.citation_label: item
+            for item in retrieval.citation_pack.citations
+        }
+        answer, used_labels = self._append_asset_supporting_list(
+            grounded.answer,
+            grounded.used_citation_labels,
+            allowed,
+            search_plan=search_plan,
+            language=search_plan.language,
+        )
+        references = tuple(
+            self._reference_card(allowed[label])
+            for label in used_labels
+            if label in allowed
+        )
+        return self._result(context, grounded.model_copy(update={
+            "answer": answer,
+            "used_citation_labels": used_labels,
+            "references": references,
+        }))
 
 
 class KmAssetDataQuerySkill(DataQuerySkill):

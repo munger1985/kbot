@@ -81,6 +81,128 @@ def _artifact(artifact_type: str, payload: dict) -> LeasedArtifact:
 
 
 class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
+    async def test_answer_explains_topic_before_related_assets(self):
+        bundle_id = uuid7()
+        revision_id = uuid7()
+        citation = Citation(
+            citation_label="C1",
+            collection_id=uuid7(),
+            bundle_id=bundle_id,
+            bundle_revision_id=revision_id,
+            document_id=uuid7(),
+            document_version_id=uuid7(),
+            evidence_ids=(uuid7(),),
+            title="Vector Database Guide",
+            bundle_title="Vector Database Guide",
+            document_role="MANIFEST",
+            excerpt="向量数据库存储并检索向量嵌入。",
+            locator={},
+            locator_schema_version="document/v1",
+            relevance_reason="正文直接解释向量数据库",
+        )
+        retrieval = DocumentRetrievalResult(
+            status="READY",
+            citation_pack=CitationPack(
+                question="什么是 vector database",
+                query_plan={},
+                bundle_candidates=(),
+                citations=(citation,),
+                coverage=RetrievalCoverage(
+                    candidate_bundle_count=1,
+                    selected_document_count=1,
+                    selected_evidence_count=1,
+                ),
+            ),
+            retrieval_report={},
+        )
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=({
+                "asset_id": "ASSET-1",
+                "title": "Vector Database Guide",
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+            },),
+            row_count=1,
+            provenance={"count_exact": True},
+        )
+        plan = _base_plan(
+            query_text="什么是 vector database",
+            operation="ANSWER",
+            display_limit=None,
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["vector database"],
+                "evidence_requirement": "CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1",
+            },
+            result_assets={
+                "mode": "SUPPORTING",
+                "target_count": 3,
+                "selection": "EVIDENCE_COVERAGE_THEN_RECENT",
+            },
+        )
+
+        class Model:
+            async def get_llm_json(self, **_):
+                return {
+                    "answer": "向量数据库用于存储并检索向量嵌入。[C1]",
+                    "used_citation_labels": ["C1"],
+                }
+
+        class Prompts:
+            async def resolve(self, _):
+                return SimpleNamespace(
+                    content=(
+                        "{agent_instruction}\n{raw_input}\n"
+                        "{standalone_query}\n{evidence}"
+                    ),
+                    input_variables=(
+                        "agent_instruction", "raw_input",
+                        "standalone_query", "evidence",
+                    ),
+                )
+
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input="什么是 vector database",
+            policy_snapshot={},
+            config_snapshot={
+                "agent": {"models": {"composer_llm": {
+                    "served_model_name": "composer",
+                }}},
+                "route": {"asset_search_plan": plan.model_payload()},
+            },
+            input_artifacts=(
+                _artifact("QUERY_RESULT", query.model_dump(mode="json")),
+                _artifact("CITATION_PACK", retrieval.model_dump(mode="json")),
+            ),
+        )
+        result = await ResponseComposerSkill(
+            model_client=Model(), prompt_resolver=Prompts()
+        ).execute(context)
+        answer = result.artifact.payload["answer"]
+
+        self.assertTrue(answer.startswith("向量数据库用于存储"))
+        self.assertIn("相关 Asset：", answer)
+        self.assertIn("Vector Database Guide** [C1]", answer)
+        self.assertLess(answer.index("向量数据库"), answer.index("相关 Asset"))
+        self.assertEqual(["C1"], result.artifact.payload["used_citation_labels"])
+
     async def test_completed_asset_list_has_one_c_reference_per_asset(self):
         first_bundle = uuid7()
         second_bundle = uuid7()
