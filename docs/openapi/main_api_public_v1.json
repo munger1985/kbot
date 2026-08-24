@@ -4265,6 +4265,18 @@
             "title": "Parser Llm",
             "type": "string"
           },
+          "parser_vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm"
+          },
           "visual_embedding": {
             "anyOf": [
               {
@@ -4302,6 +4314,18 @@
             "format": "uuid",
             "title": "Parser Llm",
             "type": "string"
+          },
+          "parser_vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm"
           },
           "visual_embedding": {
             "anyOf": [

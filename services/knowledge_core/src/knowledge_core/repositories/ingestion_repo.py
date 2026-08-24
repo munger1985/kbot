@@ -474,6 +474,17 @@ class IngestionJobRepository:
 
 class ParseViewRepository:
     def __init__(self, session: AsyncSession): self.session = session
+    async def has_activity_for_collection(
+        self, *, collection_id: UUID
+    ) -> bool:
+        """判断 Collection 是否已经生成过解析视图。"""
+        statement = select(
+            exists().where(
+                KcParseViewEntity.collection_id == collection_id
+            )
+        )
+        return bool((await self.session.execute(statement)).scalar_one())
+
     async def get_by_input(self, *, document_version_id: UUID, view_kind: str, parse_config_fingerprint: str) -> KcParseViewEntity | None:
         statement: Select = select(KcParseViewEntity).where(KcParseViewEntity.document_version_id == document_version_id, KcParseViewEntity.view_kind == view_kind, KcParseViewEntity.parse_config_fingerprint == parse_config_fingerprint)
         return (await self.session.execute(statement)).scalar_one_or_none()

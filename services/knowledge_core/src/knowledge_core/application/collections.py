@@ -64,6 +64,15 @@ class CollectionBindingSnapshot:
     note: str | None
 
 
+@dataclass(frozen=True)
+class CollectionModelPolicySnapshot:
+    """Collection 当前模型绑定的可变更规则。"""
+
+    parse_activity_exists: bool
+    embedding_change_allowed: bool
+    visual_embedding_change_allowed: bool
+
+
 def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
     return CollectionSnapshot(
         collection_id=entity.collection_id,
@@ -206,6 +215,40 @@ class KnowledgeCoreCollectionService:
                 raise CollectionNotFoundError("Collection not found")
             return _collection_snapshot(collection)
 
+    async def get_model_policy(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+    ) -> CollectionModelPolicySnapshot:
+        """返回由 KC 数据状态判定的模型变更规则。"""
+        async with self._uow_factory() as uow:
+            if uow.collections is None or uow.parse_views is None:
+                raise RuntimeError(
+                    "Knowledge Core Unit of Work is not initialized"
+                )
+            collection = await uow.collections.get_by_id_scope(
+                domain_id=domain_id,
+                collection_id=collection_id,
+            )
+            if collection is None:
+                raise CollectionNotFoundError("Collection not found")
+            parse_activity_exists = (
+                await uow.parse_views.has_activity_for_collection(
+                    collection_id=collection_id
+                )
+            )
+            visual_embedding_exists = bool(
+                dict(collection.models_json or {}).get("visual_embedding")
+            )
+            return CollectionModelPolicySnapshot(
+                parse_activity_exists=parse_activity_exists,
+                embedding_change_allowed=not parse_activity_exists,
+                visual_embedding_change_allowed=(
+                    not parse_activity_exists or not visual_embedding_exists
+                ),
+            )
+
     async def change_status(self, command: ChangeCollectionStatusCommand) -> KcCollectionEntity:
         if command.status not in {"ACTIVE", "DISABLED"}:
             raise ValueError("status must be ACTIVE or DISABLED")
@@ -230,9 +273,13 @@ class KnowledgeCoreCollectionService:
     async def update_models(
         self, command: UpdateCollectionModelsCommand
     ) -> KcCollectionEntity:
-        """原子更新角色映射，并保护已经设定的 Embedding 身份。"""
+        """原子更新角色映射，并在解析开始后保护 Embedding 身份。"""
         models = normalize_collection_models(command.models)
         async with self._uow_factory() as uow:
+            if uow.collections is None or uow.parse_views is None:
+                raise RuntimeError(
+                    "Knowledge Core Unit of Work is not initialized"
+                )
             collection = await uow.collections.get_by_id_scope(
                 domain_id=command.domain_id,
                 collection_id=command.collection_id,
@@ -243,12 +290,22 @@ class KnowledgeCoreCollectionService:
             if int(collection.row_version) != command.expected_row_version:
                 raise CollectionVersionConflictError("Collection 已被其他请求修改")
             current = dict(collection.models_json or {})
-            for role in KC_IMMUTABLE_MODEL_ROLES:
-                existing = current.get(role)
-                requested = models.get(role)
-                if existing is not None and requested != existing:
+            changed_protected_roles = [
+                role
+                for role in KC_IMMUTABLE_MODEL_ROLES
+                if current.get(role) is not None
+                and models.get(role) != current.get(role)
+            ]
+            if changed_protected_roles:
+                parse_activity_exists = (
+                    await uow.parse_views.has_activity_for_collection(
+                        collection_id=command.collection_id
+                    )
+                )
+                if parse_activity_exists:
                     raise ValueError(
-                        f"{role} 模型一经设定禁止更换或移除"
+                        "Collection 已有 Asset 进入解析流程，禁止更换或移除："
+                        f"{', '.join(sorted(changed_protected_roles))}"
                     )
             collection.models_json = models
             collection.updated_by = command.actor_id

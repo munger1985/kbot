@@ -62,6 +62,29 @@
         "title": "BindingRequest",
         "type": "object"
       },
+      "CollectionModelPolicyResponse": {
+        "properties": {
+          "embedding_change_allowed": {
+            "title": "Embedding Change Allowed",
+            "type": "boolean"
+          },
+          "parse_activity_exists": {
+            "title": "Parse Activity Exists",
+            "type": "boolean"
+          },
+          "visual_embedding_change_allowed": {
+            "title": "Visual Embedding Change Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parse_activity_exists",
+          "embedding_change_allowed",
+          "visual_embedding_change_allowed"
+        ],
+        "title": "CollectionModelPolicyResponse",
+        "type": "object"
+      },
       "CollectionModelsRequest": {
         "properties": {
           "expected_row_version": {
@@ -3214,6 +3237,59 @@
         "summary": "Ingest User Files",
         "tags": [
           "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/model-policy": {
+      "get": {
+        "description": "返回 Collection 模型绑定的服务端变更规则。",
+        "operationId": "get_collection_model_policy_internal_v1_knowledge_domains__domain_id__collections__collection_id__model_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionModelPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Collection Model Policy",
+        "tags": [
+          "Knowledge Core Collections"
         ]
       }
     },

@@ -163,6 +163,23 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def get_collection_model_policy(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """读取 KC 判定的 Collection 模型变更规则。"""
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/model-policy"
+            ),
+            auth_context=auth_context,
+        )
+
     async def list_model_references(
         self,
         *,

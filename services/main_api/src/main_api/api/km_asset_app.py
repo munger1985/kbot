@@ -145,6 +145,7 @@ class VersionPayload(_Payload):
 
 class KmCollectionCreatePayload(_Payload):
     parser_llm: UUID
+    parser_vlm: UUID | None = None
     embedding: UUID
     visual_embedding: UUID | None = None
     description: str | None = Field(default=None, max_length=1000)
@@ -157,6 +158,7 @@ class KmCollectionStatusPayload(_Payload):
 
 class KmCollectionModelsPayload(_Payload):
     parser_llm: UUID
+    parser_vlm: UUID | None = None
     embedding: UUID
     visual_embedding: UUID | None = None
     expected_row_version: int = Field(ge=1)
@@ -482,6 +484,7 @@ async def _validated_collection_models(
     request: Request,
     *,
     parser_llm: UUID,
+    parser_vlm: UUID | None,
     embedding: UUID,
     visual_embedding: UUID | None,
 ) -> dict[str, str]:
@@ -492,6 +495,8 @@ async def _validated_collection_models(
         "parser_llm": (parser_llm, 1),
         "embedding": (embedding, 2),
     }
+    if parser_vlm is not None:
+        requested["parser_vlm"] = (parser_vlm, 5)
     if visual_embedding is not None:
         requested["visual_embedding"] = (visual_embedding, 3)
     models: dict[str, str] = {}
@@ -629,9 +634,20 @@ async def get_km_knowledge_core(request: Request):
         request,
         domain_id=domain_id,
     )
+    model_policy = None
+    if collection is not None:
+        model_policy = await cast(
+            KnowledgeCoreClient,
+            request.app.state.knowledge_core_client,
+        ).get_collection_model_policy(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            auth_context=request.state.auth_context,
+        )
     return {
         "collection_name": KM_ASSET_COLLECTION_NAME,
         "collection": collection,
+        "model_policy": model_policy,
     }
 
 
@@ -654,6 +670,7 @@ async def create_km_knowledge_core(
     models = await _validated_collection_models(
         request,
         parser_llm=payload.parser_llm,
+        parser_vlm=payload.parser_vlm,
         embedding=payload.embedding,
         visual_embedding=payload.visual_embedding,
     )
@@ -709,6 +726,7 @@ async def update_km_knowledge_core_models(
     models = await _validated_collection_models(
         request,
         parser_llm=payload.parser_llm,
+        parser_vlm=payload.parser_vlm,
         embedding=payload.embedding,
         visual_embedding=payload.visual_embedding,
     )

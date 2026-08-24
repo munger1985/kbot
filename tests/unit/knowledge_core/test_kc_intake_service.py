@@ -34,6 +34,9 @@ class Repository:
     async def get_by_external_id(self, **kwargs): return self.values.get("document")
     async def get_by_content_hash(self, **kwargs): return self.values.get("version")
     async def get_by_input(self, **kwargs): return self.values.get("parse_view")
+    async def has_activity_for_collection(self, **kwargs):
+        del kwargs
+        return self.values.get("parse_view") is not None
     async def next_revision_no(self, **kwargs): return 1
     async def next_version_no(self, **kwargs): return 1
     async def add(self, entity):

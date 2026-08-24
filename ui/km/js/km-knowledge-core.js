@@ -4,6 +4,7 @@
   const base = "/api/v1/apps/km-asset";
   const $ = (id) => document.getElementById(id);
   let collection = null;
+  let modelPolicy = null;
   let models = [];
 
   function modelId(row) {
@@ -19,7 +20,7 @@
   }
 
   function categoryName(category) {
-    return { 1: "LLM", 2: "文本 Embedding", 3: "视觉 Embedding" }[Number(category)] || String(category || "—");
+    return { 1: "LLM", 2: "文本 Embedding", 3: "视觉 Embedding", 5: "VLM" }[Number(category)] || String(category || "—");
   }
 
   function showPageError(error, fallback) {
@@ -38,7 +39,7 @@
   function populateModelSelects() {
     document.querySelectorAll("[data-model-category]").forEach((select) => {
       const category = Number(select.dataset.modelCategory);
-      const optional = category === 3;
+      const optional = category === 3 || category === 5;
       const options = models
         .filter((row) => Number(row.category) === category)
         .map((row) => `<option value="${KBotKmShell.escapeHtml(modelId(row))}">${KBotKmShell.escapeHtml(modelName(row))}</option>`)
@@ -72,9 +73,10 @@
 
   function renderModels() {
     const roles = [
-      ["parser_llm", "Parser LLM", 1, "允许更新"],
-      ["embedding", "文本 Embedding", 2, "创建后不可更换"],
-      ["visual_embedding", "视觉 Embedding", 3, "设定后不可更换或移除"],
+      ["parser_llm", "Parser LLM", 1, "预留角色；当前解析流水线未调用"],
+      ["parser_vlm", "Parser VLM", 5, "图片与视觉页面解析，可更新"],
+      ["embedding", "文本 Embedding", 2, modelPolicy?.embedding_change_allowed ? "当前允许更换" : "已有解析活动，不可更换"],
+      ["visual_embedding", "视觉 Embedding", 3, modelPolicy?.visual_embedding_change_allowed ? "当前允许配置" : "已有解析活动，不可更换或移除"],
     ];
     $("knowledge-core-model-rows").innerHTML = roles.map(([role, label, category, rule]) => {
       const id = collection.models?.[role];
@@ -88,6 +90,7 @@
     try {
       const payload = await KBotKmApi.request(`${base}/knowledge-core`);
       collection = payload.collection || null;
+      modelPolicy = payload.model_policy || null;
       renderSummary();
     } catch (error) {
       showPageError(error, "KM Knowledge Core 加载失败");
@@ -99,7 +102,10 @@
     form.reset();
     populateModelSelects();
     form.elements.embedding.disabled = false;
+    form.elements.parser_vlm.disabled = false;
     form.elements.visual_embedding.disabled = false;
+    $("knowledge-core-embedding-help").textContent = "尚无 Asset 进入解析流程时可更换。";
+    $("knowledge-core-visual-embedding-help").textContent = "尚无 Asset 进入解析流程时可更换；解析后仍可首次启用。";
     form.elements.mode.value = "create";
     form.elements.default_security_level.value = "1";
     form.elements.description.value = "KM Portal Asset 文档固定 Collection";
@@ -118,10 +124,17 @@
     form.elements.mode.value = "models";
     form.elements.expected_row_version.value = collection.row_version;
     form.elements.parser_llm.value = collection.models?.parser_llm || "";
+    form.elements.parser_vlm.value = collection.models?.parser_vlm || "";
     form.elements.embedding.value = collection.models?.embedding || "";
-    form.elements.embedding.disabled = true;
+    form.elements.embedding.disabled = !modelPolicy?.embedding_change_allowed;
+    $("knowledge-core-embedding-help").textContent = form.elements.embedding.disabled
+      ? "已有 Asset 进入解析流程，文本 Embedding 不可更换。"
+      : "尚无 Asset 进入解析流程，可以更换。";
     form.elements.visual_embedding.value = collection.models?.visual_embedding || "";
-    form.elements.visual_embedding.disabled = Boolean(collection.models?.visual_embedding);
+    form.elements.visual_embedding.disabled = !modelPolicy?.visual_embedding_change_allowed;
+    $("knowledge-core-visual-embedding-help").textContent = form.elements.visual_embedding.disabled
+      ? "已有 Asset 进入解析流程，视觉 Embedding 不可更换或移除。"
+      : "当前允许配置；解析后仍可首次启用。";
     $("knowledge-core-security-field").hidden = true;
     $("knowledge-core-description-field").hidden = true;
     $("knowledge-core-dialog-title").textContent = "配置 Knowledge Core 模型";
@@ -136,8 +149,9 @@
     const editing = values.mode === "models";
     const payload = {
       parser_llm: values.parser_llm,
-      embedding: editing ? collection.models.embedding : values.embedding,
-      visual_embedding: editing ? (collection.models.visual_embedding || values.visual_embedding || null) : (values.visual_embedding || null),
+      parser_vlm: values.parser_vlm || null,
+      embedding: editing && form.elements.embedding.disabled ? collection.models.embedding : values.embedding,
+      visual_embedding: editing && form.elements.visual_embedding.disabled ? (collection.models.visual_embedding || null) : (values.visual_embedding || null),
     };
     if (editing) payload.expected_row_version = Number(values.expected_row_version);
     else {
@@ -151,6 +165,7 @@
     try {
       await KBotKmApi.json(endpoint, editing ? "PUT" : "POST", payload);
       form.elements.embedding.disabled = false;
+      form.elements.parser_vlm.disabled = false;
       form.elements.visual_embedding.disabled = false;
       KBotKmShell.closeDialog("knowledge-core-dialog");
       KBotKmShell.toast(editing ? "Knowledge Core 模型已更新" : "Knowledge Core 已创建", "success");

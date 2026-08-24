@@ -176,10 +176,12 @@ class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
         llm_id = UUID("01900000-0000-7000-8000-000000000031")
         embedding_id = UUID("01900000-0000-7000-8000-000000000032")
         visual_id = UUID("01900000-0000-7000-8000-000000000033")
+        vlm_id = UUID("01900000-0000-7000-8000-000000000034")
         catalog = [
             {"model_id": str(llm_id), "category": 1},
             {"model_id": str(embedding_id), "category": 2},
             {"model_id": str(visual_id), "category": 3},
+            {"model_id": str(vlm_id), "category": 5},
         ]
 
         with patch(
@@ -189,11 +191,13 @@ class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
             models = await _validated_collection_models(
                 SimpleNamespace(),
                 parser_llm=llm_id,
+                parser_vlm=vlm_id,
                 embedding=embedding_id,
                 visual_embedding=visual_id,
             )
 
         self.assertEqual(str(llm_id), models["parser_llm"])
+        self.assertEqual(str(vlm_id), models["parser_vlm"])
         self.assertEqual(str(embedding_id), models["embedding"])
         self.assertEqual(str(visual_id), models["visual_embedding"])
 
@@ -212,6 +216,7 @@ class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
             await _validated_collection_models(
                 SimpleNamespace(),
                 parser_llm=llm_id,
+                parser_vlm=None,
                 embedding=embedding_id,
                 visual_embedding=None,
             )

@@ -69,10 +69,25 @@ class FakeJobRepository:
         return job
 
 
+class FakeParseViewRepository:
+    def __init__(self, *, has_activity=False):
+        self.has_activity = has_activity
+
+    async def has_activity_for_collection(self, **kwargs):
+        del kwargs
+        return self.has_activity
+
+
 class FakeUnitOfWork:
-    def __init__(self, repository, binding_repository=None):
+    def __init__(
+        self,
+        repository,
+        binding_repository=None,
+        parse_view_repository=None,
+    ):
         self.collections = repository
         self.bindings = binding_repository
+        self.parse_views = parse_view_repository or FakeParseViewRepository()
         self.session = SimpleNamespace(flush=AsyncMock())
         self.commit = AsyncMock()
         self.jobs = None
@@ -207,6 +222,92 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("future_role", updated.models_json)
         uow.commit.assert_awaited_once()
+
+    async def test_allows_embedding_change_before_parse_activity(self):
+        original_embedding = uuid7()
+        next_embedding = uuid7()
+        collection = SimpleNamespace(
+            models_json={
+                "parser_llm": str(uuid7()),
+                "embedding": str(original_embedding),
+            },
+            updated_by=None,
+            row_version=1,
+        )
+        service, uow = self._service(
+            FakeCollectionRepository(existing=collection)
+        )
+
+        updated = await service.update_models(
+            UpdateCollectionModelsCommand(
+                domain_id=8,
+                collection_id=COLLECTION_ID,
+                models={
+                    "parser_llm": uuid7(),
+                    "embedding": next_embedding,
+                },
+                expected_row_version=1,
+            )
+        )
+
+        self.assertEqual(
+            str(next_embedding), updated.models_json["embedding"]
+        )
+        uow.commit.assert_awaited_once()
+
+    async def test_rejects_embedding_change_after_parse_activity(self):
+        original_embedding = uuid7()
+        collection = SimpleNamespace(
+            models_json={
+                "parser_llm": str(uuid7()),
+                "embedding": str(original_embedding),
+            },
+            updated_by=None,
+            row_version=1,
+        )
+        uow = FakeUnitOfWork(
+            FakeCollectionRepository(existing=collection),
+            parse_view_repository=FakeParseViewRepository(has_activity=True),
+        )
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
+
+        with self.assertRaisesRegex(ValueError, "已有 Asset 进入解析流程"):
+            await service.update_models(
+                UpdateCollectionModelsCommand(
+                    domain_id=8,
+                    collection_id=COLLECTION_ID,
+                    models={
+                        "parser_llm": uuid7(),
+                        "embedding": uuid7(),
+                    },
+                    expected_row_version=1,
+                )
+            )
+
+        uow.commit.assert_not_awaited()
+
+    async def test_model_policy_reflects_parse_activity(self):
+        collection = SimpleNamespace(
+            models_json={
+                "parser_llm": str(uuid7()),
+                "embedding": str(uuid7()),
+                "visual_embedding": str(uuid7()),
+            },
+        )
+        uow = FakeUnitOfWork(
+            FakeCollectionRepository(existing=collection),
+            parse_view_repository=FakeParseViewRepository(has_activity=True),
+        )
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
+
+        policy = await service.get_model_policy(
+            domain_id=8,
+            collection_id=COLLECTION_ID,
+        )
+
+        self.assertTrue(policy.parse_activity_exists)
+        self.assertFalse(policy.embedding_change_allowed)
+        self.assertFalse(policy.visual_embedding_change_allowed)
 
     async def test_binds_agent_to_collection_without_retrieval_weights(self):
         collection = SimpleNamespace(collection_id=COLLECTION_ID)

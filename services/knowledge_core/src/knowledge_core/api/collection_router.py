@@ -41,6 +41,12 @@ class CollectionModelsRequest(BaseModel):
     expected_row_version: int = Field(ge=1)
 
 
+class CollectionModelPolicyResponse(BaseModel):
+    parse_activity_exists: bool
+    embedding_change_allowed: bool
+    visual_embedding_change_allowed: bool
+
+
 class CollectionParsingSettingsRequest(BaseModel):
     parse_policy: dict
     expected_row_version: int = Field(ge=1)
@@ -93,6 +99,36 @@ async def get_collection(domain_id: int, collection_id: UUID, request: Request):
     except CollectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
     return _collection(entity)
+
+
+@router.get(
+    "/collections/{collection_id}/model-policy",
+    response_model=CollectionModelPolicyResponse,
+)
+async def get_collection_model_policy(
+    domain_id: int,
+    collection_id: UUID,
+    request: Request,
+):
+    """返回 Collection 模型绑定的服务端变更规则。"""
+    require_domain_match(request, domain_id)
+    try:
+        policy = await request.app.state.kc_collection_service.get_model_policy(
+            domain_id=domain_id,
+            collection_id=collection_id,
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    return {
+        "parse_activity_exists": policy.parse_activity_exists,
+        "embedding_change_allowed": policy.embedding_change_allowed,
+        "visual_embedding_change_allowed": (
+            policy.visual_embedding_change_allowed
+        ),
+    }
 
 
 @router.patch("/collections/{collection_id}")

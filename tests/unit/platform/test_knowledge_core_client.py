@@ -40,6 +40,32 @@ class _Session:
 
 
 class KnowledgeCoreClientTest(unittest.IsolatedAsyncioTestCase):
+    async def test_get_collection_model_policy_uses_scoped_route(self):
+        session = _Session()
+        client = KnowledgeCoreClient(
+            base_url="http://knowledge-core.internal",
+            caller_service="main-api",
+            audience="knowledge-core",
+            session=session,
+        )
+        client._headers = lambda context: {}  # type: ignore[method-assign]
+        collection_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
+
+        await client.get_collection_model_policy(
+            domain_id=100,
+            collection_id=collection_id,
+            auth_context=object(),  # type: ignore[arg-type]
+        )
+
+        self.assertEqual("GET", session.method)
+        self.assertEqual(
+            (
+                "http://knowledge-core.internal/internal/v1/knowledge/"
+                f"domains/100/collections/{collection_id}/model-policy"
+            ),
+            session.url,
+        )
+
     async def test_list_processing_uses_scoped_catalog_route(self):
         session = _Session()
         client = KnowledgeCoreClient(

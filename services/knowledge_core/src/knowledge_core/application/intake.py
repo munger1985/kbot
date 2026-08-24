@@ -767,8 +767,16 @@ class KnowledgeCoreIntakeService:
         return version
 
     async def _enqueue_parse(self, uow, collection_id, bundle_revision_id, version, actor_id):
+        parse_activity_exists = (
+            await uow.parse_views.has_activity_for_collection(
+                collection_id=collection_id
+            )
+        )
         collection = await uow.collections.get_by_id(
-            collection_id=collection_id
+            collection_id=collection_id,
+            # 首个解析视图与模型更新共用 Collection 行锁，消除并发窗口；
+            # 后续入库无需串行化整个 Collection。
+            lock=not parse_activity_exists,
         )
         if collection is None:
             raise IntakeCollectionError("Target Collection no longer exists")
