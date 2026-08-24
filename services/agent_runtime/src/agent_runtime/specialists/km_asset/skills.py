@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from loguru import logger
+
 from agent_runtime.specialists.data_query import DataQuerySkill
 from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
@@ -58,6 +60,21 @@ class KmAssetResponseComposerSkill(
     KmAssetComposerMixin, ResponseComposerSkill
 ):
     """组合 KM Asset 问文、问数和引用结果。"""
+
+    @staticmethod
+    def _result(context, answer):
+        """内部诊断不作为 KM Agent 的用户提示展示。"""
+        if answer.warnings:
+            logger.debug(
+                "KM Asset 回答已隐藏内部提示 | run_id={} | task_id={} | "
+                "status={} | warning_count={}",
+                context.run_id,
+                context.task_id,
+                answer.status,
+                len(answer.warnings),
+            )
+            answer = answer.model_copy(update={"warnings": ()})
+        return ResponseComposerSkill._result(context, answer)
 
     async def _compose_specialized(self, context):
         query_result = self._query_result(context)

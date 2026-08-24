@@ -1620,10 +1620,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         answer = str(result.artifact.payload["answer"])
         self.assertIn("Showing the first 10 results", answer)
         self.assertIn("no full count was run", answer)
-        self.assertIn(
-            "问数结果已按服务端上限截断",
-            result.artifact.payload["warnings"],
-        )
+        self.assertEqual([], result.artifact.payload["warnings"])
 
     async def test_semantic_and_mcp_share_query_result_contract(self):
         semantic_model_id = uuid7()

@@ -1217,7 +1217,8 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], payload["used_citation_labels"])
         self.assertEqual([], payload["references"])
         self.assertEqual(1, len(payload["query_results"]))
-        self.assertIn("缺少必需", payload["warnings"][-1])
+        self.assertEqual([], payload["warnings"])
+        self.assertNotIn("缺少必需", payload["answer"])
 
 
 if __name__ == "__main__":
