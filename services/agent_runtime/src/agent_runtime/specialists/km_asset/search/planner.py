@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 import json
+import re
 from typing import Any
 
 from loguru import logger
@@ -57,10 +58,39 @@ _SYSTEM_SCOPE_CONCEPTS = frozenset({
     "사용 가능", "현재", "현재 사용 가능", "지금",
 })
 
+_UNSCOPED_ASSET_COUNT_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"how many (?:(?:available|ready|current) )?assets?"
+        r"(?: (?:are )?(?:available|ready)(?: now)?| now| currently)?",
+        r"what(?:'s| is) the (?:current )?(?:number|count) of "
+        r"(?:(?:available|ready) )?assets?",
+        r"(?:现在|目前|当前)?(?:一共|总共)?有?多少(?:个|条)?"
+        r"(?:可用|ready)?的?\s*assets?(?:了|呢)?",
+        r"(?:可用|ready)的?\s*assets?(?:现在|目前|当前)?"
+        r"(?:一共|总共)?有?多少(?:个|条)?(?:了|呢)?",
+        r"(?:現在)?(?:利用可能な)?\s*assets?(?:は)?"
+        r"(?:何件|いくつ)(?:ありますか)?",
+        r"(?:현재\s*)?(?:사용\s+가능한\s*)?assets?(?:은|는|이|가)?\s*"
+        r"(?:몇\s*개|몇개)(?:입니까|인가요|있나요)?",
+    )
+)
+
 
 def _items(value: Any) -> list[Any]:
     """只接受 JSON Array，避免把字符串拆成字段列表。"""
     return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _is_unscoped_asset_count_question(question: str) -> bool:
+    """识别没有业务筛选条件的 Asset 总数问法。"""
+    normalized = " ".join(
+        re.findall(r"[\w']+", question.casefold(), flags=re.UNICODE)
+    )
+    return any(
+        pattern.fullmatch(normalized)
+        for pattern in _UNSCOPED_ASSET_COUNT_PATTERNS
+    )
 
 
 def _canonical_metadata_field(value: Any) -> str:
@@ -460,6 +490,23 @@ class AssetSearchPlanner:
             normalized.get("operation") or ""
         ).upper()
         normalized["target"] = str(normalized.get("target") or "").upper()
+        if _is_unscoped_asset_count_question(question):
+            normalized.update({
+                "operation": "COUNT",
+                "target": "ASSET",
+                "criteria": [],
+                "preferences": [],
+                "eligibility_expression": None,
+                "measures": [{
+                    "name": "asset_count",
+                    "aggregation": "COUNT",
+                }],
+                "group_by": [],
+                "order_by": [],
+                "include_total_count": False,
+                "unsupported_requests": [],
+                "ambiguities": [],
+            })
         normalized["measures"] = [
             item for item in _items(normalized.get("measures"))
             if isinstance(item, dict)

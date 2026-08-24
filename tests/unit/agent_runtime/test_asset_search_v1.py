@@ -598,6 +598,26 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                 route_type, _, _ = KmAssetRoutePlanner._route_for_plan(plan)
                 self.assertEqual(RouteType.DATA_QUERY, route_type)
 
+    def test_semantic_fallback_keeps_unscoped_asset_count_as_data_query(self):
+        for question, language in (
+            ("how many assets now?", "en-US"),
+            ("目前有多少个可用的 Asset？", "zh-CN"),
+            ("現在利用可能なAssetは何件ありますか？", "ja-JP"),
+            ("현재 사용 가능한 Asset은 몇 개입니까?", "ko-KR"),
+        ):
+            with self.subTest(question=question):
+                plan = AssetSearchPlanner.semantic_fallback_plan(
+                    question=question,
+                    language=language,
+                )
+                self.assertEqual("COUNT", plan.operation)
+                self.assertEqual((), plan.criteria)
+                self.assertEqual((), plan.preferences)
+                self.assertIsNone(plan.eligibility_expression)
+                self.assertEqual("asset_count", plan.measures[0].name)
+                route_type, _, _ = KmAssetRoutePlanner._route_for_plan(plan)
+                self.assertEqual(RouteType.DATA_QUERY, route_type)
+
     def test_asset_answer_semantic_scope_includes_searchable_metadata(self):
         normalized = AssetSearchPlanner.normalize_response(
             question="找个 financial fraud 的 Asset",
