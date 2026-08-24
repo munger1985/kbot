@@ -13,6 +13,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, 
 from main_api.application import (
     AccessControlService,
     AccessDeniedError,
+    AppApiKeyError,
     KM_PORTAL_DOMAIN_NAME,
     UserAuthService,
     require_app_api_agent,
@@ -139,6 +140,25 @@ class SourceUpdatePayload(_Payload):
 
 
 class VersionPayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+
+
+class KmCollectionCreatePayload(_Payload):
+    parser_llm: UUID
+    embedding: UUID
+    visual_embedding: UUID | None = None
+    description: str | None = Field(default=None, max_length=1000)
+    default_security_level: int = Field(default=1, ge=0, le=999)
+
+
+class KmCollectionStatusPayload(_Payload):
+    status: Literal["ACTIVE", "DISABLED"]
+
+
+class KmCollectionModelsPayload(_Payload):
+    parser_llm: UUID
+    embedding: UUID
+    visual_embedding: UUID | None = None
     expected_row_version: int = Field(ge=1)
 
 
@@ -389,6 +409,21 @@ def _km_turn_receipt(receipt: dict) -> dict:
 
 async def _fixed_collection_id(request: Request, *, domain_id: int) -> UUID:
     """解析 KM 固定 Collection，拒绝缺失、停用或重复配置。"""
+    collection = await _fixed_collection(
+        request,
+        domain_id=domain_id,
+        require_active=True,
+    )
+    return UUID(str(collection["collection_id"]))
+
+
+async def _fixed_collection(
+    request: Request,
+    *,
+    domain_id: int,
+    require_active: bool = False,
+) -> dict[str, Any]:
+    """取得当前 Domain 唯一的 KM Portal 固定 Collection。"""
     catalog = await cast(
         KnowledgeCoreClient, request.app.state.knowledge_core_client
     ).list_collections(
@@ -399,17 +434,87 @@ async def _fixed_collection_id(request: Request, *, domain_id: int) -> UUID:
         item
         for item in catalog.get("collections", [])
         if item.get("display_name") == KM_ASSET_COLLECTION_NAME
-        and item.get("status") == "ACTIVE"
     ]
-    if len(matches) != 1:
+    if len(matches) > 1:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "code": "KM_FIXED_COLLECTION_DUPLICATED",
+                "message": "KM Portal 存在多个 assets Collection，请先清理重复数据",
+            },
+        )
+    if not matches:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             {
                 "code": "KM_FIXED_COLLECTION_UNAVAILABLE",
-                "message": "KM 固定 Collection assets 尚未初始化、未启用或存在重复记录",
+                "message": "KM 固定 Collection assets 尚未初始化",
             },
         )
-    return UUID(str(matches[0]["collection_id"]))
+    collection = matches[0]
+    if require_active and collection.get("status") != "ACTIVE":
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {
+                "code": "KM_FIXED_COLLECTION_DISABLED",
+                "message": "KM 固定 Collection assets 当前未启用",
+            },
+        )
+    return collection
+
+
+async def _optional_fixed_collection(
+    request: Request,
+    *,
+    domain_id: int,
+) -> dict[str, Any] | None:
+    """查询固定 Collection；缺失时允许管理页面进入创建态。"""
+    try:
+        return await _fixed_collection(request, domain_id=domain_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") == "KM_FIXED_COLLECTION_UNAVAILABLE":
+            return None
+        raise
+
+
+async def _validated_collection_models(
+    request: Request,
+    *,
+    parser_llm: UUID,
+    embedding: UUID,
+    visual_embedding: UUID | None,
+) -> dict[str, str]:
+    """依据启用模型目录校验 KC 模型角色与类别。"""
+    catalog = await load_model_catalog(request)
+    by_id = {str(item.get("model_id")): item for item in catalog}
+    requested = {
+        "parser_llm": (parser_llm, 1),
+        "embedding": (embedding, 2),
+    }
+    if visual_embedding is not None:
+        requested["visual_embedding"] = (visual_embedding, 3)
+    models: dict[str, str] = {}
+    for role, (model_id, expected_category) in requested.items():
+        row = by_id.get(str(model_id))
+        if row is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                {
+                    "code": "KM_COLLECTION_MODEL_UNAVAILABLE",
+                    "message": f"模型角色 {role} 绑定的模型未启用或不存在",
+                },
+            )
+        if int(row.get("category") or 0) != expected_category:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                {
+                    "code": "KM_COLLECTION_MODEL_CATEGORY_INVALID",
+                    "message": f"模型角色 {role} 的模型类别不正确",
+                },
+            )
+        models[role] = str(model_id)
+    return models
 
 
 async def _km_conversation(request: Request, conversation_id: UUID, domain_id: int):
@@ -483,9 +588,142 @@ async def get_access(request: Request):
 
 @router.get("/model-catalog", response_model=list[ModelCatalogItem])
 async def list_km_model_catalog(request: Request):
-    """在 KM Token 的访问边界内返回创建 KM Agent 所需模型。"""
-    await _require(request, "km_asset:agent_manage")
+    """在 KM Token 的访问边界内返回管理 Agent 与 KC 所需模型。"""
+    domain_id, actor_id = _domain_actor(request)
+    service = cast(
+        AccessControlService,
+        request.app.state.access_control_service,
+    )
+    permissions = (
+        "km_asset:agent_manage",
+        "km_asset:knowledge_manage",
+    )
+    for permission in permissions:
+        try:
+            require_app_api_permission(request, permission)
+            await service.require(
+                app_id="km_asset",
+                domain_id=domain_id,
+                user_id=actor_id,
+                permission_code=permission,
+            )
+            break
+        except (AccessDeniedError, AppApiKeyError):
+            continue
+    else:
+        raise HTTPException(
+            403,
+            {
+                "code": "APP_PERMISSION_DENIED",
+                "permissions_any": list(permissions),
+            },
+        )
     return await load_model_catalog(request)
+
+
+@router.get("/knowledge-core")
+async def get_km_knowledge_core(request: Request):
+    """返回当前 Domain 的 KM Portal 固定 Collection。"""
+    domain_id = await _require(request, "km_asset:knowledge_manage")
+    collection = await _optional_fixed_collection(
+        request,
+        domain_id=domain_id,
+    )
+    return {
+        "collection_name": KM_ASSET_COLLECTION_NAME,
+        "collection": collection,
+    }
+
+
+@router.post("/knowledge-core", status_code=status.HTTP_201_CREATED)
+async def create_km_knowledge_core(
+    payload: KmCollectionCreatePayload,
+    request: Request,
+):
+    """创建当前 Domain 唯一的 KM Portal 固定 Collection。"""
+    domain_id = await _require(request, "km_asset:knowledge_manage")
+    existing = await _optional_fixed_collection(request, domain_id=domain_id)
+    if existing is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "code": "KM_FIXED_COLLECTION_EXISTS",
+                "message": "KM 固定 Collection assets 已存在",
+            },
+        )
+    models = await _validated_collection_models(
+        request,
+        parser_llm=payload.parser_llm,
+        embedding=payload.embedding,
+        visual_embedding=payload.visual_embedding,
+    )
+    return await cast(
+        KnowledgeCoreClient,
+        request.app.state.knowledge_core_client,
+    ).create_collection(
+        domain_id=domain_id,
+        payload={
+            "display_name": KM_ASSET_COLLECTION_NAME,
+            "description": (
+                payload.description
+                or "KM Portal Asset 文档固定 Collection"
+            ),
+            "models": models,
+            "default_security_level": payload.default_security_level,
+            "metadata": {
+                "owner_app_id": "km_asset",
+                "fixed_resource": True,
+            },
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.patch("/knowledge-core/status")
+async def change_km_knowledge_core_status(
+    payload: KmCollectionStatusPayload,
+    request: Request,
+):
+    """启用或停用 KM Portal 固定 Collection。"""
+    domain_id = await _require(request, "km_asset:knowledge_manage")
+    collection = await _fixed_collection(request, domain_id=domain_id)
+    return await cast(
+        KnowledgeCoreClient,
+        request.app.state.knowledge_core_client,
+    ).change_collection_status(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        status=payload.status,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/knowledge-core/models")
+async def update_km_knowledge_core_models(
+    payload: KmCollectionModelsPayload,
+    request: Request,
+):
+    """更新固定 Collection 模型并遵守 KC 的不可变模型约束。"""
+    domain_id = await _require(request, "km_asset:knowledge_manage")
+    collection = await _fixed_collection(request, domain_id=domain_id)
+    models = await _validated_collection_models(
+        request,
+        parser_llm=payload.parser_llm,
+        embedding=payload.embedding,
+        visual_embedding=payload.visual_embedding,
+    )
+    return await cast(
+        KnowledgeCoreClient,
+        request.app.state.knowledge_core_client,
+    ).update_collection_models(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        payload={
+            "models": models,
+            "expected_row_version": payload.expected_row_version,
+        },
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.get("/sources")

@@ -31,6 +31,12 @@ class _PageParser(HTMLParser):
 class KmUiStaticPagesTest(unittest.TestCase):
     pages = {
         "dashboard.html": {"metric-sources", "metric-ready", "metric-failed", "dashboard-job-rows"},
+        "knowledge-core.html": {
+            "knowledge-core-form",
+            "knowledge-core-summary",
+            "knowledge-core-model-rows",
+            "create-knowledge-core",
+        },
         "metadb.html": {"metadb-form", "metadb-source", "metadb-rows", "metadb-detail-dialog"},
         "sources.html": {"source-form", "source-edit-form", "source-rows", "data-model-dialog"},
         "assets.html": {
@@ -297,6 +303,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("MERGE INTO KBOT_APP_ROLE_PERMISSION", source)
         self.assertIn("MERGE INTO KBOT_APP_MEMBER_ROLE", source)
         self.assertIn("km_asset:operations_manage", source)
+        self.assertIn("km_asset:knowledge_manage", source)
         self.assertIn("km_asset:api_key_manage", source)
         self.assertIn("member.IS_INITIAL_ADMIN = 'Y'", source)
         self.assertIn("legacy_role.ROLE_CODE = 'manager'", source)
@@ -342,6 +349,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
             self.assertIn(statement, source)
         self.assertIn("'app_admin' AS ROLE_CODE", source)
         self.assertIn("km_asset:api_key_manage", source)
+        self.assertIn("km_asset:knowledge_manage", source)
         self.assertIn("'ALL_APP_DOMAINS'", source)
         self.assertIn("'APP_INITIAL_ADMIN'", source)
         self.assertIn("WHERE domain.NAME = 'km_portal'", source)
@@ -453,6 +461,30 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('urlsplit(self.path).path != "/favicon.ico"', server)
         self.assertIn("self.send_response(204)", server)
         self.assertIn("main_api_base_url =", example)
+
+    def test_km_knowledge_core_page_manages_only_fixed_collection(self):
+        html = (KM_ROOT / "knowledge-core.html").read_text(encoding="utf-8")
+        script = (
+            KM_ROOT / "js" / "km-knowledge-core.js"
+        ).read_text(encoding="utf-8")
+        api_source = (
+            ROOT / "services" / "main_api" / "src" / "main_api" / "api"
+            / "km_asset_app.py"
+        ).read_text(encoding="utf-8")
+        shell = (UI_ROOT / "shared" / "kbot-shell.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('value="assets" disabled', html)
+        self.assertIn("/knowledge-core/models", script)
+        self.assertIn("/knowledge-core/status", script)
+        self.assertNotIn('name="display_name"', html)
+        self.assertNotIn("/api/v1/apps/knowledge-retrieval", script)
+        self.assertIn('"owner_app_id": "km_asset"', api_source)
+        self.assertIn('"fixed_resource": True', api_source)
+        self.assertIn('"km_asset:knowledge_manage"', api_source)
+        self.assertIn('"km_asset:knowledge_manage"', shell)
+        self.assertNotIn("APEX 页面", shell)
 
 
 if __name__ == "__main__":

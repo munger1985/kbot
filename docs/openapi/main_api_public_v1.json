@@ -4233,6 +4233,115 @@
         "title": "IntakeReviewRequest",
         "type": "object"
       },
+      "KmCollectionCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "default_security_level": {
+            "default": 1,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Default Security Level",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "embedding": {
+            "format": "uuid",
+            "title": "Embedding",
+            "type": "string"
+          },
+          "parser_llm": {
+            "format": "uuid",
+            "title": "Parser Llm",
+            "type": "string"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "required": [
+          "parser_llm",
+          "embedding"
+        ],
+        "title": "KmCollectionCreatePayload",
+        "type": "object"
+      },
+      "KmCollectionModelsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "embedding": {
+            "format": "uuid",
+            "title": "Embedding",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "parser_llm": {
+            "format": "uuid",
+            "title": "Parser Llm",
+            "type": "string"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "required": [
+          "parser_llm",
+          "embedding",
+          "expected_row_version"
+        ],
+        "title": "KmCollectionModelsPayload",
+        "type": "object"
+      },
+      "KmCollectionStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "KmCollectionStatusPayload",
+        "type": "object"
+      },
       "KmLoginPayload": {
         "additionalProperties": false,
         "properties": {
@@ -14282,9 +14391,147 @@
         ]
       }
     },
+    "/api/v1/apps/km-asset/knowledge-core": {
+      "get": {
+        "description": "返回当前 Domain 的 KM Portal 固定 Collection。",
+        "operationId": "get_km_knowledge_core_api_v1_apps_km_asset_knowledge_core_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Km Knowledge Core",
+        "tags": [
+          "KM Asset App"
+        ]
+      },
+      "post": {
+        "description": "创建当前 Domain 唯一的 KM Portal 固定 Collection。",
+        "operationId": "create_km_knowledge_core_api_v1_apps_km_asset_knowledge_core_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KmCollectionCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Km Knowledge Core",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/api/v1/apps/km-asset/knowledge-core/models": {
+      "put": {
+        "description": "更新固定 Collection 模型并遵守 KC 的不可变模型约束。",
+        "operationId": "update_km_knowledge_core_models_api_v1_apps_km_asset_knowledge_core_models_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KmCollectionModelsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Km Knowledge Core Models",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
+    "/api/v1/apps/km-asset/knowledge-core/status": {
+      "patch": {
+        "description": "启用或停用 KM Portal 固定 Collection。",
+        "operationId": "change_km_knowledge_core_status_api_v1_apps_km_asset_knowledge_core_status_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KmCollectionStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Km Knowledge Core Status",
+        "tags": [
+          "KM Asset App"
+        ]
+      }
+    },
     "/api/v1/apps/km-asset/model-catalog": {
       "get": {
-        "description": "在 KM Token 的访问边界内返回创建 KM Agent 所需模型。",
+        "description": "在 KM Token 的访问边界内返回管理 Agent 与 KC 所需模型。",
         "operationId": "list_km_model_catalog_api_v1_apps_km_asset_model_catalog_get",
         "responses": {
           "200": {

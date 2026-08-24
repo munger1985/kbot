@@ -37,6 +37,8 @@ USING (
     UNION ALL
     SELECT 'km_asset:source_manage', 'km_asset', '管理 KM Asset 来源' FROM DUAL
     UNION ALL
+    SELECT 'km_asset:knowledge_manage', 'km_asset', '管理 KM Portal Knowledge Core' FROM DUAL
+    UNION ALL
     SELECT 'km_asset:data_manage', 'km_asset', '管理 KM Asset 问数模型' FROM DUAL
     UNION ALL
     SELECT 'km_asset:agent_manage', 'km_asset', '管理 KM Asset Agent' FROM DUAL

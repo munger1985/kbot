@@ -4,6 +4,7 @@
 
   const pages = [
     ["dashboard", "工作台", "../km/dashboard.html"],
+    ["knowledge-core", "Knowledge Core", "../km/knowledge-core.html", "km_asset:knowledge_manage"],
     ["metadb", "MetaDB 数据", "../km/metadb.html"],
     ["sources", "数据来源", "../km/sources.html"],
     ["assets", "Asset 处理", "../km/assets.html"],
@@ -85,7 +86,7 @@
         <nav class="km-nav" aria-label="KM 工作域">
           ${pages.map(([id, label, href, permission]) => `<a href="${href}" ${permission ? `data-permission="${permission}"` : ""} ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
         </nav>
-        <div class="km-sidebar-note">Collection 创建与文件上传继续使用现有 APEX 页面。</div>
+        <div class="km-sidebar-note">KM Portal 使用独立的 assets Collection，所有知识内容均保持当前 Domain 隔离。</div>
       </aside>
       <header class="km-topbar">
         <div><span class="km-context-label">当前工作域</span><strong>KM Asset</strong></div>

@@ -2,14 +2,17 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from main_api.api.km_asset_app import (
     AgentCreatePayload,
     AssetReferencePreview,
     ConversationTurnPayload,
+    _validated_collection_models,
     _asset_attachment,
     _km_turn_receipt,
     _runtime_auth_context,
@@ -166,6 +169,58 @@ class KmAssetAppContractTest(unittest.TestCase):
 
         self.assertEqual("ASSET", preview.reference_type)
         self.assertEqual((), preview.attachments)
+
+
+class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
+    async def test_collection_models_are_validated_against_active_catalog(self):
+        llm_id = UUID("01900000-0000-7000-8000-000000000031")
+        embedding_id = UUID("01900000-0000-7000-8000-000000000032")
+        visual_id = UUID("01900000-0000-7000-8000-000000000033")
+        catalog = [
+            {"model_id": str(llm_id), "category": 1},
+            {"model_id": str(embedding_id), "category": 2},
+            {"model_id": str(visual_id), "category": 3},
+        ]
+
+        with patch(
+            "main_api.api.km_asset_app.load_model_catalog",
+            new=AsyncMock(return_value=catalog),
+        ):
+            models = await _validated_collection_models(
+                SimpleNamespace(),
+                parser_llm=llm_id,
+                embedding=embedding_id,
+                visual_embedding=visual_id,
+            )
+
+        self.assertEqual(str(llm_id), models["parser_llm"])
+        self.assertEqual(str(embedding_id), models["embedding"])
+        self.assertEqual(str(visual_id), models["visual_embedding"])
+
+    async def test_collection_model_category_mismatch_is_rejected(self):
+        llm_id = UUID("01900000-0000-7000-8000-000000000041")
+        embedding_id = UUID("01900000-0000-7000-8000-000000000042")
+        catalog = [
+            {"model_id": str(llm_id), "category": 2},
+            {"model_id": str(embedding_id), "category": 2},
+        ]
+
+        with patch(
+            "main_api.api.km_asset_app.load_model_catalog",
+            new=AsyncMock(return_value=catalog),
+        ), self.assertRaises(HTTPException) as raised:
+            await _validated_collection_models(
+                SimpleNamespace(),
+                parser_llm=llm_id,
+                embedding=embedding_id,
+                visual_embedding=None,
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(
+            "KM_COLLECTION_MODEL_CATEGORY_INVALID",
+            raised.exception.detail["code"],
+        )
 
 
 if __name__ == "__main__":

@@ -192,6 +192,7 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:operations_manage', 'knowledge_retrieval', '管理知识检索运行')
     INTO KBOT_PERMISSION VALUES ('km_asset:use', 'km_asset', '使用 KM Asset')
     INTO KBOT_PERMISSION VALUES ('km_asset:source_manage', 'km_asset', '管理 KM Asset 来源')
+    INTO KBOT_PERMISSION VALUES ('km_asset:knowledge_manage', 'km_asset', '管理 KM Portal Knowledge Core')
     INTO KBOT_PERMISSION VALUES ('km_asset:data_manage', 'km_asset', '管理 KM Asset 问数模型')
     INTO KBOT_PERMISSION VALUES ('km_asset:agent_manage', 'km_asset', '管理 KM Asset Agent')
     INTO KBOT_PERMISSION VALUES ('km_asset:operations_manage', 'km_asset', '管理 KM Asset 同步运行')
