@@ -87,6 +87,49 @@ PLATFORM_FOUNDATION_ROLES = {
     ("aiops", "app_admin"),
 }
 
+
+def _expected_foundation_role_permissions() -> dict[tuple[str, str], set[str]]:
+    """返回平台内置角色必须具备的权限映射。"""
+    permissions_by_app: dict[str, set[str]] = {}
+    for permission_code in PLATFORM_FOUNDATION_PERMISSIONS:
+        permissions_by_app.setdefault(
+            permission_code.partition(":")[0], set()
+        ).add(permission_code)
+    return {
+        ("platform", "platform_admin"): permissions_by_app["platform"],
+        ("knowledge_retrieval", "user"): {
+            "knowledge_retrieval:use"
+        },
+        ("knowledge_retrieval", "contributor"): {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:upload",
+        },
+        ("knowledge_retrieval", "reviewer"): {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:upload",
+            "knowledge_retrieval:review",
+        },
+        ("knowledge_retrieval", "app_admin"): permissions_by_app[
+            "knowledge_retrieval"
+        ],
+        ("km_asset", "user"): {"km_asset:use"},
+        ("km_asset", "app_admin"): permissions_by_app["km_asset"],
+        ("aiops", "operator"): {
+            "aiops:use",
+            "aiops:operations_manage",
+            "aiops:target_manage",
+            "aiops:monitor_source_manage",
+            "aiops:policy_manage",
+            "aiops:plan_manage",
+        },
+        ("aiops", "approver"): {
+            "aiops:use",
+            "aiops:operations_manage",
+            "aiops:proposal:approve",
+        },
+        ("aiops", "app_admin"): permissions_by_app["aiops"],
+    }
+
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
 from platform_core.identity import uuid7
@@ -475,45 +518,7 @@ async def _validate_platform_foundation(
             )
         )
 
-    permissions_by_app: dict[str, set[str]] = {}
-    for permission_code in PLATFORM_FOUNDATION_PERMISSIONS:
-        permissions_by_app.setdefault(
-            permission_code.partition(":")[0], set()
-        ).add(permission_code)
-    expected_role_permissions = {
-        ("platform", "platform_admin"): permissions_by_app["platform"],
-        ("knowledge_retrieval", "user"): {
-            "knowledge_retrieval:use"
-        },
-        ("knowledge_retrieval", "contributor"): {
-            "knowledge_retrieval:use",
-            "knowledge_retrieval:upload",
-        },
-        ("knowledge_retrieval", "reviewer"): {
-            "knowledge_retrieval:use",
-            "knowledge_retrieval:upload",
-            "knowledge_retrieval:review",
-        },
-        ("knowledge_retrieval", "app_admin"): permissions_by_app[
-            "knowledge_retrieval"
-        ],
-        ("km_asset", "user"): {"km_asset:use"},
-        ("km_asset", "app_admin"): permissions_by_app["km_asset"],
-        ("aiops", "operator"): {
-            "aiops:use",
-            "aiops:operations_manage",
-            "aiops:target_manage",
-            "aiops:monitor_source_manage",
-            "aiops:policy_manage",
-            "aiops:plan_manage",
-        },
-        ("aiops", "approver"): {
-            "aiops:use",
-            "aiops:operations_manage",
-            "aiops:proposal:approve",
-        },
-        ("aiops", "app_admin"): permissions_by_app["aiops"],
-    }
+    expected_role_permissions = _expected_foundation_role_permissions()
     actual_role_permissions: dict[tuple[str, str], set[str]] = {}
     for app_id, role_code, permission_code in (
         await connection.execute(
@@ -567,6 +572,42 @@ async def _validate_platform_foundation(
         raise FoundationValidationError(
             "ADMIN 不得拥有非显式业务 App 成员资格"
         )
+
+
+async def _repair_foundation_role_permissions(
+    connection: AsyncConnection,
+) -> None:
+    """只补齐内置角色缺失的权限，不删除现有扩展映射。"""
+    mappings = [
+        {
+            "app_id": app_id,
+            "role_code": role_code,
+            "permission_code": permission_code,
+        }
+        for (app_id, role_code), permission_codes in sorted(
+            _expected_foundation_role_permissions().items()
+        )
+        for permission_code in sorted(permission_codes)
+    ]
+    await connection.execute(
+        text(
+            "INSERT INTO KBOT_APP_ROLE_PERMISSION "
+            "(APP_ID, ROLE_CODE, PERMISSION_CODE) "
+            "SELECT :app_id, :role_code, :permission_code FROM DUAL "
+            "WHERE EXISTS ("
+            "SELECT 1 FROM KBOT_APP_ROLE "
+            "WHERE APP_ID = :app_id AND ROLE_CODE = :role_code"
+            ") AND EXISTS ("
+            "SELECT 1 FROM KBOT_PERMISSION "
+            "WHERE PERMISSION_CODE = :permission_code AND APP_ID = :app_id"
+            ") AND NOT EXISTS ("
+            "SELECT 1 FROM KBOT_APP_ROLE_PERMISSION "
+            "WHERE APP_ID = :app_id AND ROLE_CODE = :role_code "
+            "AND PERMISSION_CODE = :permission_code"
+            ")"
+        ),
+        mappings,
+    )
 
 
 async def _apply_platform_foundation(
@@ -632,6 +673,7 @@ async def _apply_platform_foundation(
     )
     for statement in statements:
         await connection.exec_driver_sql(statement)
+    await _repair_foundation_role_permissions(connection)
     await connection.commit()
 
 

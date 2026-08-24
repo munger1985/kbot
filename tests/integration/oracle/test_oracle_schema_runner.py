@@ -146,10 +146,14 @@ class _FoundationConnection:
             )
         )
         self.statements: list[str] = []
+        self.role_permission_mappings: list[dict[str, str]] = []
         self.committed = False
 
-    async def execute(self, statement):
+    async def execute(self, statement, parameters=None):
         del statement
+        if parameters is not None:
+            self.role_permission_mappings.extend(parameters)
+            return _DictionaryResult()
         return next(self._results)
 
     async def exec_driver_sql(self, statement):
@@ -174,6 +178,14 @@ class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
             if statement.startswith("ALTER TABLE KBOT_PLATFORM_USER")
         ]
         self.assertEqual([], security_alters)
+        self.assertIn(
+            {
+                "app_id": "knowledge_retrieval",
+                "role_code": "app_admin",
+                "permission_code": "knowledge_retrieval:operations_manage",
+            },
+            connection.role_permission_mappings,
+        )
         self.assertTrue(connection.committed)
 
     async def test_nullable_security_column_is_repaired_incrementally(self):
