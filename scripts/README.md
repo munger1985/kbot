@@ -6,6 +6,8 @@
 - `scripts/db/sync_prompt_catalog.py`：在现有 Oracle Schema 中幂等插入并激活仓库最新 Prompt，不执行 DDL 或修改其他基础数据。
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
+- `scripts/db/export_ai_model_inserts.sql`：在 SQL Developer 中从当前 Schema 的模型目录
+  生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到仓库或非受控位置。
 - `scripts/db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。
 - `scripts/db/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%` 表和视图，仅用于确认不保留数据的开发 Schema。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
