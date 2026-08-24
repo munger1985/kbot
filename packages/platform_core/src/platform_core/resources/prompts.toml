@@ -31,7 +31,7 @@ requires_chart。不要输出隐藏思维过程。
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_search_plan"
 owner_service = "agent_runtime"
-version = "1.1.0"
+version = "1.0.0"
 active = true
 purpose = "把 KM Asset 问文、问数和混合问题规划为统一搜索合同"
 input_variables = []
