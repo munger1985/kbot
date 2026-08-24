@@ -46,7 +46,7 @@ AES-256-GCM 密文保存在 `KBOT_MANAGED_CREDENTIAL`，查询接口不返回凭
 
 ## 首次配置
 
-1. 在 SQL Developer 中执行 `scripts/db/bootstrap_km_initial_admin.sql`，创建固定的 `km_portal/assets` 资源和 KM 管理员。
+1. 从仓库根目录执行 `python scripts/db/initialize_km.py`，创建固定的 `km_portal/assets` 资源和 KM 管理员。
 2. 使用初始化管理员登录；登录接口固定解析 `km_portal`，不接收 Domain ID。
 3. 调用 `POST /api/v1/apps/km-asset/sources` 创建来源；Main API 固定绑定 `assets`，不接收 Collection ID。
 4. 创建来源时，Data Query 自动调和固定模型 `KM Asset 元数据（系统托管）`。
@@ -56,17 +56,25 @@ AES-256-GCM 密文保存在 `KBOT_MANAGED_CREDENTIAL`，查询接口不返回凭
    Collection、语义模型和查询策略不由前端选择。DRAFT Agent 可通过激活接口重试并修复问数绑定。
 
 正式 JavaScript 页面位于 `ui/km/`，包括工作台、MetaDB、数据来源、Asset、同步任务、
-Agent 和智能问答。没有 APEX 用户管理页面时，
-首次部署在 SQL Developer 中执行 `scripts/db/bootstrap_km_initial_admin.sql`
-创建可登录用户及 KM 管理员权限。用户先在 `ui/km/login.html`
+Agent 和智能问答。没有 APEX 用户管理页面时，首次部署执行：
+
+```bash
+KBOT_CONFIG_FILE=configuration/kbot.toml \
+conda run -n kbot4 python scripts/db/initialize_km.py
+```
+
+该命令创建可登录用户及 KM 管理员权限。用户先在 `ui/km/login.html`
 使用用户名和密码换取短期 Token，再访问其余 KM 页面。页面只
 调用 Main API 公开 BFF，不能把 App API Key 或内部身份 Header 写入静态 JavaScript。
 
 既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
-`scripts/db/bootstrap_km_initial_admin.sql`，它会幂等创建用户凭据表、初始化
+`scripts/db/initialize_km.py`，它以 `scripts/db/bootstrap_km_initial_admin.sql`
+为唯一数据定义，幂等创建用户凭据表、初始化
 固定 Domain `km_portal` 和 Collection `assets`、初始化 KM 权限和角色、创建
 `kmadmin` 用户，并仅在 `km_portal` 中授予 `km_asset/app_admin`。首次创建
 Collection 时会选择最近更新的启用 LLM 和文本 Embedding 模型作为初始模型绑定。
+只读复查可执行 `python scripts/db/initialize_km.py --check-only`。如果服务器没有Python
+运行环境，仍可在SQL Developer中使用Run Script（F5）执行底层SQL文件。
 
 来源创建请求示例：
 
