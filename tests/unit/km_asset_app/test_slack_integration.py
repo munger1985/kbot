@@ -1380,12 +1380,16 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("完整回答", rendered)
         self.assertNotIn("complete and not truncated", rendered)
 
-    def test_query_truncation_is_not_inferred_when_warnings_are_hidden(self):
+    def test_query_warnings_and_truncation_do_not_render_hint_section(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
             "schema_version": "GroundedAnswer.v1",
             "payload": {
-                "answer": "当前结果",
+                "answer": (
+                    "当前结果\n\n"
+                    "## 提示\n"
+                    "• 相关 Asset 超过 3 个，回答已按请求数量截断"
+                ),
                 "status": "READY",
                 "used_citation_labels": ["Q1"],
                 "references": [{
@@ -1404,7 +1408,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                     user_id="U1",
                     thread_ts="1.001",
                     artifact=artifact,
-                    reply_config=SlackReplyConfig(show_warnings=False),
+                    reply_config=SlackReplyConfig(),
                 )
             ),
             ensure_ascii=False,
@@ -1412,8 +1416,10 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
 
         self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
         self.assertNotIn("问数结果已按服务端上限截断", rendered)
+        self.assertNotIn("相关 Asset 超过 3 个", rendered)
+        self.assertNotIn('"text": "提示"', rendered)
 
-    def test_max_references_exceeded_uses_truncation_notice(self):
+    def test_max_references_exceeded_does_not_render_hint_section(self):
         references = [
             {
                 "reference_type": "DOCUMENT",
@@ -1463,7 +1469,8 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        self.assertIn("结果超过上限，当前仅展示部分内容", exceeded)
+        self.assertNotIn("结果超过上限，当前仅展示部分内容", exceeded)
+        self.assertNotIn('"text": "提示"', exceeded)
         self.assertNotIn("结果超过上限，当前仅展示部分内容", at_limit)
 
     def test_asset_query_table_preserves_kbot_answer_without_reconstruction(self):
@@ -2243,7 +2250,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertFalse(config.debug.callback_payload_log_enabled)
         self.assertFalse(config.debug.slack_reply_dump_enabled)
         self.assertEqual("Asset问答助手", config.reply.assistant_name)
-        self.assertEqual(5, config.reply.max_references)
+        self.assertEqual(10, config.reply.max_references)
         self.assertEqual(
             "https://apex.oraclecorp.com/pls/apex/"
             "f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,",

@@ -109,7 +109,7 @@ class SlackReplyConfig(BaseModel):
         min_length=1,
         max_length=80,
     )
-    max_references: int = Field(default=5, ge=0, le=10)
+    max_references: int = Field(default=10, ge=0, le=10)
     show_warnings: bool = True
     show_query_result_summary: bool = True
     show_visualization_notice: bool = True

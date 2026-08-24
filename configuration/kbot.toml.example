@@ -98,7 +98,7 @@ username = "kbot"
 # Asset 回复使用 km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
 # [integrations.slack.reply]
 # assistant_name = "Asset问答助手"
-# max_references = 5
+# max_references = 10
 # show_warnings = true
 # show_query_result_summary = true
 # show_visualization_notice = true

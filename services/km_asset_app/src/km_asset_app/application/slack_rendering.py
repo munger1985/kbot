@@ -67,6 +67,12 @@ _QUERY_COMPLETION_LINE_PATTERN = re.compile(
     r"(?:\[[A-Za-z]\d+\])?\s*$",
     re.IGNORECASE,
 )
+_TIP_SECTION_HEADING_PATTERN = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*{1,2}|_{1,2})?"
+    r"(?:提示|注意|warnings?|tips?)"
+    r"(?:\*{1,2}|_{1,2})?\s*[:：]?\s*$",
+    re.IGNORECASE,
+)
 _OOXML_CARRIAGE_RETURN_PATTERN = re.compile(
     r"_x000d_[ \t]*(?:\r?\n)?",
     re.IGNORECASE,
@@ -202,10 +208,12 @@ def _has_used_document_reference(payload: dict[str, Any]) -> bool:
 
 
 def _without_completion_boilerplate(answer: str) -> str:
-    """只清理 Slack 可见正文中的结果完整性套话。"""
+    """清理 Slack 可见正文中的完整性套话和末尾提示区。"""
     lines = answer.replace("\r\n", "\n").replace("\r", "\n").splitlines()
     visible_lines: list[str] = []
     for line in lines:
+        if _TIP_SECTION_HEADING_PATTERN.match(line):
+            break
         if _QUERY_COMPLETION_LINE_PATTERN.match(line):
             continue
         cleaned = _QUERY_COMPLETION_SUFFIX_PATTERN.sub("", line).rstrip()
@@ -659,13 +667,8 @@ def render_slack_reply(
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
         if use_document_template:
             blocks.extend(_asset_blocks(asset_cards or [], reply_config))
-        blocks.extend(
-            _warning_blocks(
-                answer_payload,
-                reply_config,
-                truncated=_is_truncated_reply(answer_payload, reply_config),
-            )
-        )
+        # warnings/truncated 仍保留在 KBot 结构化报文中，但 Slack
+        # 最终展示不输出“提示”区，避免把内部诊断信息暴露给用户。
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
     fallback = (
         f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"
