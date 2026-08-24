@@ -244,6 +244,19 @@ class _EmptyObjectRewriteModelClient(_RewriteModelClient):
         return output
 
 
+class _ObjectReferenceRewriteModelClient(_RewriteModelClient):
+    async def get_llm_json(self, **kwargs):
+        output = await super().get_llm_json(**kwargs)
+        output["resolved_references"] = [
+            {
+                "reference": "OAC",
+                "resolved_to": "Oracle Analytics Cloud",
+                "source": "会话摘要中的明确实体",
+            }
+        ]
+        return output
+
+
 class _MalformedRewriteModelClient(_RewriteModelClient):
     def __init__(self):
         self.call_count = 0
@@ -579,6 +592,33 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             result.artifact.payload["resolved_references"], []
         )
         self.assertEqual(result.artifact.payload["memory_refs"], [])
+
+    async def test_context_rewrite_normalizes_object_reference_item(self):
+        context = _context().model_copy(
+            update={
+                "original_input": "它有什么优势？",
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "conversation": {
+                        "context": {
+                            "summary": {"active_topic": "OAC"},
+                            "recent_items": [],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=_ObjectReferenceRewriteModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            ["OAC=Oracle Analytics Cloud"],
+            result.artifact.payload["resolved_references"],
+        )
 
     async def test_context_rewrite_rejects_invalid_output_after_one_correction_attempt(self):
         context = _context().model_copy(

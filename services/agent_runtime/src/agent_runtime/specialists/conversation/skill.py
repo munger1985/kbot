@@ -115,6 +115,8 @@ class ContextRewriteSkill:
                         "content": (
                             "上一份输出未通过字段校验。请仅重新输出一个 JSON 对象："
                             "retrieval_queries 必须是包含至少一个非空字符串的数组；"
+                            "resolved_references 和 memory_refs 必须是字符串数组，"
+                            "数组元素不得是对象；"
                             "ambiguity 必须是 JSON 布尔值 true 或 false，不能是字符串。"
                         ),
                     },
