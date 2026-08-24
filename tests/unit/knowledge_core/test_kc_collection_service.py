@@ -9,6 +9,7 @@ from platform_core.identity import uuid7
 from knowledge_core.application.collections import (
     BindAgentCollectionCommand,
     CollectionNotFoundError,
+    CollectionSnapshot,
     CreateCollectionCommand,
     KnowledgeCoreBindingService,
     KnowledgeCoreCollectionService,
@@ -17,6 +18,29 @@ from knowledge_core.application.collections import (
 
 COLLECTION_ID = uuid7()
 AGENT_ID = uuid7()
+
+
+def collection_fixture(
+    *,
+    models_json=None,
+    status="ACTIVE",
+    row_version=1,
+):
+    """构造可安全转换为 CollectionSnapshot 的测试实体。"""
+    return SimpleNamespace(
+        collection_id=COLLECTION_ID,
+        domain_id=8,
+        display_name="Asset Knowledge",
+        description=None,
+        models_json=models_json or {"embedding": str(uuid7())},
+        parse_policy_json={},
+        status=status,
+        default_security_level=1,
+        metadata_json={},
+        row_version=row_version,
+        updated_at=datetime.now(timezone.utc),
+        updated_by=None,
+    )
 
 
 class FakeCollectionRepository:
@@ -29,6 +53,10 @@ class FakeCollectionRepository:
 
     async def add(self, collection):
         collection.collection_id = 101
+        if collection.row_version is None:
+            collection.row_version = 1
+        if collection.updated_at is None:
+            collection.updated_at = datetime.now(timezone.utc)
         self.added = collection
         return collection
 
@@ -184,12 +212,10 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_updates_role_map_without_changing_embedding(self):
         original_embedding = uuid7()
-        collection = SimpleNamespace(
+        collection = collection_fixture(
             models_json={
                 "embedding": str(original_embedding),
             },
-            updated_by=None,
-            row_version=1,
         )
         service, uow = self._service(
             FakeCollectionRepository(existing=collection)
@@ -210,6 +236,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(str(parser_vlm), updated.models_json["parser_vlm"])
+        self.assertIsInstance(updated, CollectionSnapshot)
         self.assertEqual(
             str(original_embedding), updated.models_json["embedding"]
         )
@@ -219,12 +246,10 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_allows_embedding_change_before_parse_activity(self):
         original_embedding = uuid7()
         next_embedding = uuid7()
-        collection = SimpleNamespace(
+        collection = collection_fixture(
             models_json={
                 "embedding": str(original_embedding),
             },
-            updated_by=None,
-            row_version=1,
         )
         service, uow = self._service(
             FakeCollectionRepository(existing=collection)
@@ -248,12 +273,10 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejects_embedding_change_after_parse_activity(self):
         original_embedding = uuid7()
-        collection = SimpleNamespace(
+        collection = collection_fixture(
             models_json={
                 "embedding": str(original_embedding),
             },
-            updated_by=None,
-            row_version=1,
         )
         uow = FakeUnitOfWork(
             FakeCollectionRepository(existing=collection),
@@ -332,7 +355,7 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
 class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
     async def test_status_change_is_explicit_and_scoped(self):
-        collection = SimpleNamespace(status="ACTIVE", updated_by=None)
+        collection = collection_fixture()
         repo = FakeCollectionRepository(existing=collection)
         uow = FakeUnitOfWork(repo)
         service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
@@ -344,7 +367,7 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
             actor_id="tester",
         ))
         self.assertEqual("DISABLED", result.status)
-        self.assertEqual("tester", result.updated_by)
+        self.assertEqual("tester", collection.updated_by)
         uow.commit.assert_awaited_once()
 
     async def test_repeated_delete_returns_existing_purge_job(self):

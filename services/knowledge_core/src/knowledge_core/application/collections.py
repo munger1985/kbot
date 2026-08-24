@@ -159,7 +159,7 @@ class KnowledgeCoreCollectionService:
     def __init__(self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
         self._uow_factory = uow_factory
 
-    async def create(self, command: CreateCollectionCommand) -> KcCollectionEntity:
+    async def create(self, command: CreateCollectionCommand) -> CollectionSnapshot:
         display_name = command.display_name.strip()
         if command.domain_id <= 0:
             raise ValueError("domain_id must be positive")
@@ -186,8 +186,9 @@ class KnowledgeCoreCollectionService:
                 updated_by=command.actor_id,
             )
             collection = await uow.collections.add(collection)
+            snapshot = _collection_snapshot(collection)
             await uow.commit()
-            return collection
+            return snapshot
 
     async def list(self, *, domain_id: int) -> list[CollectionSnapshot]:
         async with self._uow_factory() as uow:
@@ -249,7 +250,9 @@ class KnowledgeCoreCollectionService:
                 ),
             )
 
-    async def change_status(self, command: ChangeCollectionStatusCommand) -> KcCollectionEntity:
+    async def change_status(
+        self, command: ChangeCollectionStatusCommand
+    ) -> CollectionSnapshot:
         if command.status not in {"ACTIVE", "DISABLED"}:
             raise ValueError("status must be ACTIVE or DISABLED")
         async with self._uow_factory() as uow:
@@ -267,12 +270,13 @@ class KnowledgeCoreCollectionService:
             collection.status = command.status
             collection.updated_by = command.actor_id
             await uow.session.flush()
+            snapshot = _collection_snapshot(collection)
             await uow.commit()
-            return collection
+            return snapshot
 
     async def update_models(
         self, command: UpdateCollectionModelsCommand
-    ) -> KcCollectionEntity:
+    ) -> CollectionSnapshot:
         """原子更新角色映射，并在解析开始后保护 Embedding 身份。"""
         models = normalize_collection_models(command.models)
         async with self._uow_factory() as uow:
@@ -311,12 +315,13 @@ class KnowledgeCoreCollectionService:
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1
             await uow.session.flush()
+            snapshot = _collection_snapshot(collection)
             await uow.commit()
-            return collection
+            return snapshot
 
     async def update_parsing_settings(
         self, command: UpdateCollectionParsingSettingsCommand
-    ) -> KcCollectionEntity:
+    ) -> CollectionSnapshot:
         policy = normalize_collection_parse_policy(command.parse_policy)
         async with self._uow_factory() as uow:
             collection = await uow.collections.get_by_id_scope(
@@ -334,8 +339,9 @@ class KnowledgeCoreCollectionService:
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1
             await uow.flush()
+            snapshot = _collection_snapshot(collection)
             await uow.commit()
-            return collection
+            return snapshot
 
     async def request_delete(
         self,
