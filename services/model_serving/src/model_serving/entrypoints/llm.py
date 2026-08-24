@@ -30,6 +30,7 @@ from platform_core.middleware.log_middleware import log_requests
 from platform_core.database.oracle import create_database_runtime
 from platform_core.dictionary import LLMProvider
 from model_serving.llm.llm_service import LLMService
+from model_serving.llm.model.oci_client import extract_oci_text_content
 from model_serving.llm.schema import *
 from platform_core.platform.port_check import check_port_available
 from model_serving.common.management_router import create_model_management_router
@@ -235,12 +236,7 @@ async def handle_chat_completions(
                             # 2. OCI Generic/Grok format: {"index": 0, "message": {"role": "ASSISTANT", "content": [{"type": "TEXT", "text": "Hello"}]}, "pad": "..."}
                             elif 'message' in chunk and isinstance(chunk.get('message'), dict):
                                 message = chunk['message']
-                                content = message.get('content', [])
-                                if content and isinstance(content, list) and len(content) > 0:
-                                    # Extract content[0].text
-                                    first_content = content[0]
-                                    if isinstance(first_content, dict) and first_content.get('type') == 'TEXT':
-                                        text = first_content.get('text', '')
+                                text = extract_oci_text_content(message.get('content', []))
 
                             if text is not None:
                                 # Convert to OpenAI standard format
@@ -337,7 +333,9 @@ async def handle_chat_completions(
 
             # 2. Extract Content (distinguish between Generic format and Cohere format)
             if hasattr(oci_resp, 'choices'): # Generic format (Llama, Grok, etc.)
-                content = oci_resp.choices[0].message.content[0].text
+                content = extract_oci_text_content(
+                    oci_resp.choices[0].message.content
+                )
             elif hasattr(oci_resp, 'text'): # Cohere format
                 content = getattr(oci_resp, 'text', "")
             else:

@@ -1,11 +1,89 @@
 import oci
 import json
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 from pydantic import Field
 from loguru import logger
 
 from .base import LLMConfig, BaseLLM
+
+
+@dataclass(frozen=True, slots=True)
+class OCIChatProfile:
+    """描述 OCI 模型家族在原生 Chat API 中的请求差异。"""
+
+    request_format: str
+    output_token_field: str
+    supported_sampling_params: frozenset[str]
+    output_token_cap: int | None = None
+
+
+_GENERIC_SAMPLING_PARAMS = frozenset({"temperature", "top_p", "top_k"})
+_COHERE_PROFILE = OCIChatProfile(
+    request_format="cohere",
+    output_token_field="max_tokens",
+    supported_sampling_params=_GENERIC_SAMPLING_PARAMS,
+    output_token_cap=4000,
+)
+_GENERIC_PROFILE = OCIChatProfile(
+    request_format="generic",
+    output_token_field="max_tokens",
+    supported_sampling_params=_GENERIC_SAMPLING_PARAMS,
+)
+_LLAMA_PROFILE = OCIChatProfile(
+    request_format="generic",
+    output_token_field="max_tokens",
+    supported_sampling_params=_GENERIC_SAMPLING_PARAMS,
+    output_token_cap=4096,
+)
+_GROK_PROFILE = OCIChatProfile(
+    request_format="generic",
+    output_token_field="max_tokens",
+    supported_sampling_params=_GENERIC_SAMPLING_PARAMS,
+    output_token_cap=20000,
+)
+_OPENAI_GPT5_PROFILE = OCIChatProfile(
+    request_format="generic",
+    output_token_field="max_completion_tokens",
+    # OCI 上的 GPT-5 推理模型不应继承通用采样默认值。
+    supported_sampling_params=frozenset(),
+)
+
+
+def resolve_oci_chat_profile(model_name: str) -> OCIChatProfile:
+    """按 OCI Provider 模型标识解析唯一的请求能力配置。"""
+
+    normalized = model_name.strip().lower()
+    if "cohere" in normalized:
+        return _COHERE_PROFILE
+    if normalized.startswith("openai.gpt-5"):
+        return _OPENAI_GPT5_PROFILE
+    if "llama" in normalized:
+        return _LLAMA_PROFILE
+    if "grok" in normalized:
+        return _GROK_PROFILE
+    return _GENERIC_PROFILE
+
+
+def extract_oci_text_content(content_items: Any) -> str:
+    """从 OCI SDK 对象或流式字典的内容块中提取全部正文。"""
+
+    if not isinstance(content_items, list):
+        return ""
+    text_parts: list[str] = []
+    for item in content_items:
+        if isinstance(item, dict):
+            content_type = item.get("type")
+            text = item.get("text")
+        else:
+            content_type = getattr(item, "type", None)
+            text = getattr(item, "text", None)
+        if content_type and str(content_type).upper() != "TEXT":
+            continue
+        if isinstance(text, str):
+            text_parts.append(text)
+    return "".join(text_parts)
 
 class OCILLMConfig(LLMConfig):
     """Configuration class for OCI Generative AI LLM client.
@@ -140,54 +218,38 @@ class OCIClient(BaseLLM[OCILLMConfig]):
         return oci_messages
 
     def _build_chat_request(self, messages: list[dict[str, str]] | str, **kwargs) -> Any:
-        """Build model-specific chat request object for OCI API.
-        
-        Creates appropriate request object (CohereChatRequest or GenericChatRequest)
-        based on model name, with model-specific token limits and parameter handling.
-        
-        Args:
-            messages: Input messages in standard format
-            **kwargs: Additional generation parameters to override config values
-            
-        Returns:
-            OCI chat request object (CohereChatRequest or GenericChatRequest)
-        """
-        model_name = self.config.model_name.lower()
-        
-        # Base generation parameters with config defaults and kwargs overrides
-        base_params = {
-            "max_tokens": kwargs.get('max_tokens', self.config.max_tokens),
+        """根据 OCI 模型家族构造原生 Chat 请求。"""
+
+        profile = resolve_oci_chat_profile(self.config.model_name)
+        output_tokens = kwargs.get("max_tokens", self.config.max_tokens)
+        if profile.output_token_cap is not None:
+            output_tokens = min(output_tokens, profile.output_token_cap)
+
+        sampling_params = {
             "temperature": kwargs.get('temperature', self.config.temperature),
             "top_p": kwargs.get('top_p', self.config.top_p),
             "top_k": kwargs.get('top_k', self.config.top_k),
         }
 
-        # Cohere model specific request formatting
-        if "cohere" in model_name:
+        if profile.request_format == "cohere":
             request = oci.generative_ai_inference.models.CohereChatRequest()
-            # Cohere on OCI typically accepts a single message string
             request.message = messages[-1]['content'] if isinstance(messages, list) else messages
             request.frequency_penalty = kwargs.get('frequency_penalty', self.config.frequency_penalty)
-            # Enforce Cohere token limit
-            base_params["max_tokens"] = min(base_params["max_tokens"], 4000)
-            
-        # Llama/Grok/Generic model request formatting
         else:
             request = oci.generative_ai_inference.models.GenericChatRequest()
             request.api_format = oci.generative_ai_inference.models.GenericChatRequest.API_FORMAT_GENERIC
             request.messages = self._convert_to_oci_messages(messages)
-            
-            # Apply model-specific token limits
-            if "llama" in model_name:
-                base_params["max_tokens"] = min(base_params["max_tokens"], 4096)  # Llama 3 limit
-            elif "grok" in model_name:
-                base_params["max_tokens"] = min(base_params["max_tokens"], 20000)  # Grok limit
 
-        # Inject valid parameters into request object
-        for param_name, param_value in base_params.items():
+        request_params = {profile.output_token_field: output_tokens}
+        request_params.update({
+            name: value
+            for name, value in sampling_params.items()
+            if name in profile.supported_sampling_params
+        })
+        for param_name, param_value in request_params.items():
             if param_value is not None and hasattr(request, param_name):
                 setattr(request, param_name, param_value)
-        
+
         return request
 
     async def chat(
