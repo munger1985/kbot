@@ -154,13 +154,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         )
 
         self.assertIn('eventType === "answer.delta"', source)
-        self.assertIn('pending.markdown += String(payload.delta || "")', source)
-        self.assertIn(
-            "renderAssistantMarkdown(pending.markdown)", source
-        )
+        self.assertIn("enqueueAnswerDelta(pending, payload.delta)", source)
+        self.assertIn("typingUnits", source)
+        self.assertIn("typingBatchSize", source)
+        self.assertIn("pending.displayedMarkdown", source)
+        self.assertIn("await waitForTypewriter(pending)", source)
+        self.assertIn('message.classList.add("is-typing")', source)
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260821_2", html)
+        self.assertIn("km-chat-v5.js?v=20260824_1", html)
 
     def test_km_chat_uses_interactive_paper_style_citations(self):
         source = (
@@ -264,7 +266,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("purifier.sanitize", renderer)
         self.assertIn("overflow-x: auto", styles)
         self.assertIn("border-collapse: separate", styles)
-        self.assertIn("km-chat-markdown.css?v=20260821_1", chat)
+        self.assertIn("km-chat-markdown.css?v=20260824_1", chat)
 
     def test_sources_page_has_no_apex_collection_shortcut(self):
         html = (KM_ROOT / "sources.html").read_text(encoding="utf-8")

@@ -6,6 +6,10 @@
   let agents = [], conversations = [], active = null;
   const runResults = new Map();
   const citationPattern = /\[(C\d+)\]/g;
+  const typingFrameMs = 22;
+  const graphemeSegmenter = typeof Intl?.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
 
   function activeAgentId() { return $("chat-agent").value; }
   function agentName(id) { return agents.find((row) => String(row.agent_id) === String(id))?.display_name || KBotKmShell.shortId(id); }
@@ -48,6 +52,63 @@
       node.replaceWith(fragment);
     });
     return template.innerHTML;
+  }
+
+  function typingUnits(value) {
+    const text = String(value || "");
+    if (!text) return [];
+    if (!graphemeSegmenter) return Array.from(text);
+    return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
+  }
+
+  function typingBatchSize(queueLength) {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return queueLength;
+    }
+    if (queueLength > 800) return 8;
+    if (queueLength > 240) return 4;
+    if (queueLength > 80) return 2;
+    return 1;
+  }
+
+  function settleTypewriter(pending) {
+    pending.typingTimer = null;
+    pending.message.classList.remove("is-typing");
+    pending.message.setAttribute("aria-busy", "false");
+    pending.typingWaiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  function typewriterTick(pending) {
+    if (!pending.typingQueue.length) return settleTypewriter(pending);
+    const count = typingBatchSize(pending.typingQueue.length);
+    pending.displayedMarkdown += pending.typingQueue.splice(0, count).join("");
+    pending.content.innerHTML = renderAssistantMarkdown(pending.displayedMarkdown);
+    $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
+    pending.typingTimer = window.setTimeout(
+      () => typewriterTick(pending), typingFrameMs,
+    );
+  }
+
+  function enqueueAnswerDelta(pending, delta) {
+    const text = String(delta || "");
+    if (!text) return;
+    pending.markdown += text;
+    pending.typingQueue.push(...typingUnits(text));
+    pending.message.classList.add("is-typing");
+    if (pending.typingTimer === null) typewriterTick(pending);
+  }
+
+  function waitForTypewriter(pending) {
+    if (!pending.typingQueue.length && pending.typingTimer === null) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => pending.typingWaiters.push(resolve));
+  }
+
+  function cancelTypewriter(pending) {
+    if (pending.typingTimer !== null) window.clearTimeout(pending.typingTimer);
+    pending.typingQueue.length = 0;
+    settleTypewriter(pending);
   }
 
   async function initialize() {
@@ -140,17 +201,17 @@
     message.append(meta, content, references);
     stream.append(message);
     stream.scrollTop = stream.scrollHeight;
-    return { message, content, references, markdown: "" };
+    return {
+      message, content, references, markdown: "", displayedMarkdown: "",
+      typingQueue: [], typingTimer: null, typingWaiters: [],
+    };
   }
   function applyRunEvent(pending, item) {
     const data = item.json && typeof item.json === "object" ? item.json : {};
     const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
     const eventType = item.type || data.event_type || "message";
     if (eventType === "answer.delta") {
-      pending.markdown += String(payload.delta || "");
-      pending.content.innerHTML = renderAssistantMarkdown(pending.markdown);
-      pending.message.setAttribute("aria-busy", "false");
-      $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
+      enqueueAnswerDelta(pending, payload.delta);
       return;
     }
     $("chat-progress").textContent = payload.public_summary
@@ -202,16 +263,15 @@
         }
         const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
         if (!pending.markdown) {
-          pending.markdown = String(result?.payload?.answer || "");
-          pending.content.innerHTML = renderAssistantMarkdown(pending.markdown);
+          enqueueAnswerDelta(pending, result?.payload?.answer);
         }
-        pending.message.setAttribute("aria-busy", "false");
+        await waitForTypewriter(pending);
         await refreshActive();
         await loadConversations(active.conversation_id);
         renderReferences(receipt.run_id, result);
       } else { await refreshActive(); await loadTurns(); }
       if (!receipt.run_id) await loadConversations(active.conversation_id);
-    } catch (error) { pending.message.setAttribute("aria-busy", "false"); KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
+    } catch (error) { cancelTypewriter(pending); KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
     finally { $("chat-progress").hidden = true; KBotKmShell.setBusy($("send-message"), false); }
   }
   async function refreshActive() { if (active) active = await KBotKmApi.request(`${base}/conversations/${active.conversation_id}`); }

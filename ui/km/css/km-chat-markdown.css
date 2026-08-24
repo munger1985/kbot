@@ -1,4 +1,7 @@
 .km-message.assistant .content { white-space: normal; line-height: 1.7; }
+.km-message.assistant.is-typing .content::after { display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -0.12em; background: currentColor; content: ""; animation: km-typewriter-caret .8s steps(1, end) infinite; }
+@keyframes km-typewriter-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .km-message.assistant.is-typing .content::after { animation: none; } }
 .km-message.assistant .content > :first-child { margin-top: 0; }
 .km-message.assistant .content > :last-child { margin-bottom: 0; }
 .km-message.assistant .content p { margin: 0 0 10px; }
