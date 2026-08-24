@@ -70,6 +70,13 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
                 self.upper_sql,
                 rf"\bCREATE\s+UNIQUE\s+INDEX\s+{name}\b",
             )
+        for definition in self.manifest["foreign_key_indexes"]:
+            columns = r"\s*,\s*".join(definition["columns"])
+            self.assertRegex(
+                self.upper_sql,
+                rf"\bCREATE\s+INDEX\s+{definition['index']}\s+"
+                rf"ON\s+{definition['table']}\s*\(\s*{columns}\s*\)",
+            )
         self.assertIn("STATUS = 'RUNNING' AND LEASE_OWNER IS NOT NULL", self.upper_sql)
         self.assertIn(
             "STATUS = 'PUBLISHING' AND LEASE_OWNER IS NOT NULL",

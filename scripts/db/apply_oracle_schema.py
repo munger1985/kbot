@@ -791,6 +791,7 @@ async def _validate_schema(
     expected_tables: set[str],
     expected_views: set[str],
     aiops_manifest: dict | None = None,
+    repair_aiops_fk_indexes: bool = False,
 ) -> None:
     rows = (
         await connection.execute(
@@ -910,6 +911,12 @@ async def _validate_schema(
             f"{sorted(expected_function_indexes - function_indexes)}"
         )
 
+    if repair_aiops_fk_indexes:
+        await _repair_aiops_foreign_key_indexes(
+            connection,
+            aiops_manifest=aiops_manifest,
+        )
+
     unindexed_foreign_keys = (
         await connection.execute(
             text(
@@ -976,6 +983,104 @@ async def _validate_schema(
     )
     if tuple(schema_version) != expected_schema_version:
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
+
+
+async def _repair_aiops_foreign_key_indexes(
+    connection: AsyncConnection,
+    *,
+    aiops_manifest: dict,
+) -> None:
+    """按 Manifest 幂等补齐已完成建库中遗漏的 AIOps 外键索引。"""
+    definitions = aiops_manifest.get("foreign_key_indexes") or ()
+    if not definitions:
+        return
+
+    constraint_rows = (
+        await connection.execute(
+            text(
+                """
+                SELECT
+                    c.constraint_name,
+                    c.table_name,
+                    LISTAGG(cc.column_name, ',')
+                        WITHIN GROUP (ORDER BY cc.position) AS columns_csv
+                FROM user_constraints c
+                JOIN user_cons_columns cc
+                  ON cc.constraint_name = c.constraint_name
+                WHERE c.constraint_type = 'R'
+                  AND c.table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                GROUP BY c.constraint_name, c.table_name
+                """
+            )
+        )
+    ).all()
+    constraints = {
+        name: (table_name, tuple(columns_csv.split(",")))
+        for name, table_name, columns_csv in constraint_rows
+    }
+    index_rows = (
+        await connection.execute(
+            text(
+                """
+                SELECT
+                    table_name,
+                    index_name,
+                    LISTAGG(column_name, ',')
+                        WITHIN GROUP (ORDER BY column_position) AS columns_csv
+                FROM user_ind_columns
+                WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                GROUP BY table_name, index_name
+                """
+            )
+        )
+    ).all()
+    indexes_by_table: dict[str, list[tuple[str, ...]]] = {}
+    existing_index_names: set[str] = set()
+    for table_name, index_name, columns_csv in index_rows:
+        indexes_by_table.setdefault(table_name, []).append(
+            tuple(columns_csv.split(","))
+        )
+        existing_index_names.add(index_name)
+
+    repaired: list[str] = []
+    identifier_pattern = re.compile(r"^[A-Z][A-Z0-9_$#]{0,127}$")
+    for definition in definitions:
+        constraint_name = str(definition.get("constraint") or "")
+        index_name = str(definition.get("index") or "")
+        table_name = str(definition.get("table") or "")
+        columns = tuple(str(value) for value in definition.get("columns") or ())
+        identifiers = (constraint_name, index_name, table_name, *columns)
+        if not columns or any(
+            identifier_pattern.fullmatch(value) is None
+            for value in identifiers
+        ):
+            raise RuntimeError(
+                f"AIOps 外键索引 Manifest 定义无效：{definition}"
+            )
+        if constraints.get(constraint_name) != (table_name, columns):
+            raise RuntimeError(
+                "AIOps 外键索引修复目标与数据库约束不一致："
+                f"{constraint_name}"
+            )
+        if any(
+            index_columns[: len(columns)] == columns
+            for index_columns in indexes_by_table.get(table_name, ())
+        ):
+            continue
+        if index_name in existing_index_names:
+            raise RuntimeError(
+                f"AIOps 外键索引名称已被其他对象占用：{index_name}"
+            )
+        await connection.exec_driver_sql(
+            f"CREATE INDEX {index_name} ON {table_name} "
+            f"({', '.join(columns)})"
+        )
+        indexes_by_table.setdefault(table_name, []).append(columns)
+        existing_index_names.add(index_name)
+        repaired.append(index_name)
+
+    if repaired:
+        print(f"已补齐 AIOps 外键索引：{', '.join(repaired)}")
 
 
 async def apply_schema(
@@ -1074,6 +1179,7 @@ async def apply_schema(
                 expected_tables=expected_tables,
                 expected_views=expected_views,
                 aiops_manifest=aiops_manifest,
+                repair_aiops_fk_indexes=finalize_existing,
             )
             prompt_count = await sync_prompt_catalog(
                 connection,
@@ -1124,7 +1230,10 @@ def main() -> int:
     operation_group.add_argument(
         "--finalize-existing",
         action="store_true",
-        help="不重复执行 DDL，校验已建对象并完成 Prompt 与基础数据初始化",
+        help=(
+            "不重复执行建表 DDL，补齐 Manifest 索引后校验已建对象，"
+            "并完成 Prompt 与基础数据初始化"
+        ),
     )
     args = parser.parse_args()
     try:

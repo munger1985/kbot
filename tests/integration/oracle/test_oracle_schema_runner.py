@@ -9,6 +9,7 @@ from scripts.db.apply_oracle_schema import (
     FOUNDATION_VALIDATION_EXIT_CODE,
     FoundationValidationError,
     _apply_platform_foundation,
+    _repair_aiops_foreign_key_indexes,
     load_schema_statements,
     load_service_selection,
     main,
@@ -40,7 +41,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
             statements[0].sql,
         )
         self.assertIn(
-            "CREATE INDEX IX_OPS_IMG_EVID_CONV",
+            "CREATE INDEX IX_OPS_IMG_EVID_OUTPUT",
             statements[-1].sql,
         )
 
@@ -136,6 +137,9 @@ class _DictionaryResult:
     def scalar_one_or_none(self):
         return self._scalar
 
+    def all(self):
+        return self._row or []
+
 
 class _FoundationConnection:
     def __init__(self, *, column, constraint_status):
@@ -218,6 +222,79 @@ class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class _AIOpsIndexConnection:
+    def __init__(self, *, indexes):
+        self._results = iter(
+            (
+                _DictionaryResult(
+                    row=[
+                        (
+                            "FK_OPS_SAMPLE_PARENT",
+                            "KBOT_OPS_SAMPLE",
+                            "PARENT_ID,DOMAIN_ID",
+                        )
+                    ]
+                ),
+                _DictionaryResult(row=indexes),
+            )
+        )
+        self.statements: list[str] = []
+
+    async def execute(self, statement):
+        del statement
+        return next(self._results)
+
+    async def exec_driver_sql(self, statement):
+        self.statements.append(statement)
+
+
+class AIOpsIndexRepairTest(unittest.IsolatedAsyncioTestCase):
+    manifest = {
+        "foreign_key_indexes": [
+            {
+                "constraint": "FK_OPS_SAMPLE_PARENT",
+                "index": "IX_OPS_SAMPLE_PARENT",
+                "table": "KBOT_OPS_SAMPLE",
+                "columns": ["PARENT_ID", "DOMAIN_ID"],
+            }
+        ]
+    }
+
+    async def test_creates_manifest_index_when_foreign_key_is_uncovered(self):
+        connection = _AIOpsIndexConnection(indexes=[])
+
+        await _repair_aiops_foreign_key_indexes(
+            connection,
+            aiops_manifest=self.manifest,
+        )
+
+        self.assertEqual(
+            [
+                "CREATE INDEX IX_OPS_SAMPLE_PARENT ON KBOT_OPS_SAMPLE "
+                "(PARENT_ID, DOMAIN_ID)"
+            ],
+            connection.statements,
+        )
+
+    async def test_keeps_existing_prefix_covering_index(self):
+        connection = _AIOpsIndexConnection(
+            indexes=[
+                (
+                    "KBOT_OPS_SAMPLE",
+                    "IX_CUSTOM_SAMPLE_PARENT",
+                    "PARENT_ID,DOMAIN_ID,STATUS",
+                )
+            ]
+        )
+
+        await _repair_aiops_foreign_key_indexes(
+            connection,
+            aiops_manifest=self.manifest,
+        )
+
+        self.assertEqual([], connection.statements)
+
+
 class PlatformFoundationCliTest(unittest.TestCase):
     @patch(
         "sys.argv",
@@ -227,7 +304,7 @@ class PlatformFoundationCliTest(unittest.TestCase):
         "scripts.db.apply_oracle_schema.apply_schema",
         new_callable=AsyncMock,
     )
-    def test_finalize_existing_uses_non_ddl_recovery_mode(
+    def test_finalize_existing_uses_existing_schema_recovery_mode(
         self, mocked_apply
     ):
         self.assertEqual(0, main())
