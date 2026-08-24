@@ -284,7 +284,9 @@ python3 tests/acceptance/check_oracle_schema.py
 `kbot.example.com` 等示例地址时会拒绝启动。基础数据不完整时，检查命令返回专用退出码
 `3`，并输出实际 PDB、Schema 和缺失项；数据库连接、配置或脚本运行异常仍返回通用失败，
 不得误报为“系统尚未初始化”。`start_kbot.sh` 会将基础数据预检输出写入
-`main_api/runtime.log`，任何预检失败都不会继续启动服务。
+`main_api/runtime.log`。development、dev 或 debug 环境在只读检查发现基础数据漂移时，
+会自动执行一次 `--foundation-only`，幂等补齐新增的内置角色权限；production 环境只执行
+`--check-foundation`，不会在启动阶段自动修改数据库。任何修复或预检失败都不会继续启动服务。
 
 先启动 Oracle 和外部依赖，再按以下顺序启动：
 
