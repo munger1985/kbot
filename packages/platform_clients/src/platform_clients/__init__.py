@@ -21,6 +21,7 @@ from .knowledge_retrieval_app import (
     KnowledgeRetrievalAppClientError,
 )
 from .km_asset import KmAssetClient, KmAssetClientError
+from .km_portal import KmPortalClient, KmPortalClientError
 
 __all__ = [
     "AgentRuntimeClient",
@@ -43,4 +44,6 @@ __all__ = [
     "KnowledgeRetrievalAppClientError",
     "KmAssetClient",
     "KmAssetClientError",
+    "KmPortalClient",
+    "KmPortalClientError",
 ]

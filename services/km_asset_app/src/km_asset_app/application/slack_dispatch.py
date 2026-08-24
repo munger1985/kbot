@@ -25,7 +25,7 @@ from km_asset_app.application.slack_rendering import (
     waiting_message,
 )
 from km_asset_app.entities import SlackDeliveryEntity, SlackThreadEntity
-from platform_core.contracts import AuthContext, PrincipalKind
+from platform_clients import KmPortalClientError
 from platform_core.identity import uuid7
 
 
@@ -41,18 +41,14 @@ class SlackDispatchService:
         self,
         *,
         uow_factory: Callable,
-        agent_client,
-        km_asset_client,
-        knowledge_core_client,
+        main_api_client,
         slack_config,
         worker_id: str,
         http_session: aiohttp.ClientSession,
         callback_debug_log_path: Path | None = None,
     ):
         self._uow_factory = uow_factory
-        self._agent_client = agent_client
-        self._km_asset_client = km_asset_client
-        self._knowledge_core_client = knowledge_core_client
+        self._main_api_client = main_api_client
         self._config = slack_config
         self._worker_id = worker_id
         self._http_session = http_session
@@ -84,27 +80,21 @@ class SlackDispatchService:
             await self._record_inbox_error(inbox_id, exc)
         return True
 
-    def _context(self, inbox, workspace) -> AuthContext:
-        request_id = str(uuid7())
-        return AuthContext(
-            principal_kind=PrincipalKind.SERVICE,
-            client_id="slack-integration",
-            calling_service="kbot-km-asset-app-slack-worker",
-            request_id=request_id,
-            trace_id=request_id,
-            domain_id=str(workspace.domain_id),
-            asserted_user_id=(
-                f"slack:{workspace.workspace_id}:{inbox.slack_user_id}"
-            ),
-            authorized_agent_ids=(workspace.agent_id,),
-        )
-
     async def _start_run(self, inbox_id: UUID) -> None:
         async with self._uow_factory() as uow:
             inbox = await uow.slack.get_inbox(inbox_id)
             workspace = self._config.workspace(inbox.workspace_id)
             if workspace is None:
                 raise RuntimeError("Slack Workspace 配置已移除")
+            # ORM 实体只在当前 UOW 中访问，提交后仅使用标量快照，
+            # 避免 expire_on_commit 导致后台 Worker 触发 DetachedInstanceError。
+            workspace_id = inbox.workspace_id
+            channel_id = inbox.channel_id
+            slack_user_id = inbox.slack_user_id
+            root_thread_ts = inbox.root_thread_ts
+            event_id = inbox.event_id
+            message_text = inbox.message_text
+            callback_sent_at = inbox.callback_sent_at
             waiting = await uow.slack.get_delivery(
                 inbox_id=inbox_id, delivery_type="WAITING"
             )
@@ -113,17 +103,17 @@ class SlackDispatchService:
                     SlackDeliveryEntity(
                         delivery_id=uuid7(),
                         inbox_id=inbox.inbox_id,
-                        workspace_id=inbox.workspace_id,
-                        channel_id=inbox.channel_id,
-                        slack_user_id=inbox.slack_user_id,
-                        thread_ts=inbox.root_thread_ts,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                        slack_user_id=slack_user_id,
+                        thread_ts=root_thread_ts,
                         delivery_type="WAITING",
                         payload_json={
-                            "channel": inbox.channel_id,
-                            "thread_ts": inbox.root_thread_ts,
+                            "channel": channel_id,
+                            "thread_ts": root_thread_ts,
                             "text": (
-                                f"<@{inbox.slack_user_id}> "
-                                f"{waiting_message(inbox.message_text)}"
+                                f"<@{slack_user_id}> "
+                                f"{waiting_message(message_text)}"
                             ),
                         },
                         status="PENDING",
@@ -131,104 +121,128 @@ class SlackDispatchService:
                     )
                 )
             thread = await uow.slack.get_thread(
-                workspace_id=inbox.workspace_id,
-                channel_id=inbox.channel_id,
-                root_thread_ts=inbox.root_thread_ts,
-                slack_user_id=inbox.slack_user_id,
+                workspace_id=workspace_id,
+                channel_id=channel_id,
+                root_thread_ts=root_thread_ts,
+                slack_user_id=slack_user_id,
+            )
+            conversation_id = (
+                thread.conversation_id if thread is not None else None
             )
             await uow.commit()
 
-        context = self._context(inbox, workspace)
-        execution_spec = await self._km_asset_client.execution_spec(
-            agent_id=workspace.agent_id,
-            domain_id=workspace.domain_id,
-            auth_context=context,
-            scopes=("km_asset.slack.dispatch",),
-        )
-        resource_context = execution_spec.get("resource_context") or {}
-        collection_ids = list(resource_context.get("collection_ids") or ())
-        if thread is None:
-            conversation = await self._agent_client.create_conversation(
+        if conversation_id is None:
+            conversation = await self._main_api_client.create_conversation(
                 payload={
                     "agent_id": str(workspace.agent_id),
-                    "execution_spec": execution_spec,
                     "title": "Slack 对话",
                     "retention_policy": "DEFAULT",
                 },
-                auth_context=context,
             )
             conversation_id = UUID(str(conversation["conversation_id"]))
             try:
                 async with self._uow_factory() as uow:
                     existing = await uow.slack.get_thread(
-                        workspace_id=inbox.workspace_id,
-                        channel_id=inbox.channel_id,
-                        root_thread_ts=inbox.root_thread_ts,
-                        slack_user_id=inbox.slack_user_id,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                        root_thread_ts=root_thread_ts,
+                        slack_user_id=slack_user_id,
                     )
                     if existing is None:
-                        thread = SlackThreadEntity(
-                            thread_id=uuid7(),
-                            workspace_id=inbox.workspace_id,
-                            channel_id=inbox.channel_id,
-                            root_thread_ts=inbox.root_thread_ts,
-                            slack_user_id=inbox.slack_user_id,
-                            domain_id=workspace.domain_id,
-                            agent_id=workspace.agent_id,
-                            conversation_id=conversation_id,
+                        await uow.slack.add_thread(
+                            SlackThreadEntity(
+                                thread_id=uuid7(),
+                                workspace_id=workspace_id,
+                                channel_id=channel_id,
+                                root_thread_ts=root_thread_ts,
+                                slack_user_id=slack_user_id,
+                                domain_id=workspace.domain_id,
+                                agent_id=workspace.agent_id,
+                                conversation_id=conversation_id,
+                            )
                         )
-                        await uow.slack.add_thread(thread)
                         await uow.commit()
                     else:
-                        thread = existing
+                        conversation_id = existing.conversation_id
             except IntegrityError:
                 # 同一 Slack thread 的并发首消息只允许一个映射获胜。
                 async with self._uow_factory() as uow:
                     thread = await uow.slack.get_thread(
-                        workspace_id=inbox.workspace_id,
-                        channel_id=inbox.channel_id,
-                        root_thread_ts=inbox.root_thread_ts,
-                        slack_user_id=inbox.slack_user_id,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                        root_thread_ts=root_thread_ts,
+                        slack_user_id=slack_user_id,
                     )
                     if thread is None:
                         raise
-        conversation = await self._agent_client.get_conversation(
-            conversation_id=thread.conversation_id,
-            auth_context=context,
-        )
-        receipt = await self._agent_client.create_conversation_turn(
-            conversation_id=thread.conversation_id,
+                    conversation_id = thread.conversation_id
+        if conversation_id is None:
+            raise RuntimeError("Slack Thread 缺少 Conversation 映射")
+        try:
+            conversation = await self._main_api_client.get_conversation(
+                conversation_id=conversation_id,
+            )
+        except KmPortalClientError as exc:
+            # 旧版 Slack 通过内部 Runtime 创建的会话不属于当前公开
+            # API Key 用户。部署新链路后自动换成 Main API 会话，避免
+            # 要求运维人员手工清理历史线程映射。
+            if exc.status_code not in {403, 404}:
+                raise
+            conversation = await self._main_api_client.create_conversation(
+                payload={
+                    "agent_id": str(workspace.agent_id),
+                    "title": "Slack 对话",
+                    "retention_policy": "DEFAULT",
+                }
+            )
+            replacement_id = UUID(str(conversation["conversation_id"]))
+            async with self._uow_factory() as uow:
+                current_thread = await uow.slack.get_thread(
+                    workspace_id=workspace_id,
+                    channel_id=channel_id,
+                    root_thread_ts=root_thread_ts,
+                    slack_user_id=slack_user_id,
+                )
+                if current_thread is None:
+                    raise RuntimeError("Slack Thread 映射不存在")
+                current_thread.conversation_id = replacement_id
+                await uow.commit()
+            conversation_id = replacement_id
+        receipt = await self._main_api_client.create_conversation_turn(
+            conversation_id=conversation_id,
             payload={
-                "input": inbox.message_text,
+                "input": message_text,
                 "expected_conversation_version": conversation["row_version"],
-                "execution_spec": execution_spec,
-                # 与 KM Asset 前端保持同一执行边界：Collection 只能来自
-                # KBot 签发的 execution_spec，Slack 不自行选择检索范围。
-                "collection_ids": collection_ids,
-                "security_level": workspace.security_level,
+                # 与 KM Portal 前端保持一致：检索范围、执行模式与安全
+                # 等级均由 Main API 决定，Slack 不做任何路由判断。
                 "client_metadata": {
                     "source": "SLACK",
-                    "workspace_id": inbox.workspace_id,
-                    "channel_id": inbox.channel_id,
-                    "event_id": inbox.event_id,
-                    "thread_ts": inbox.root_thread_ts,
+                    "workspace_id": workspace_id,
+                    "channel_id": channel_id,
+                    "event_id": event_id,
+                    "thread_ts": root_thread_ts,
                 },
                 "images": [],
             },
-            idempotency_key=f"slack:{inbox.workspace_id}:{inbox.event_id}",
-            auth_context=context,
+            idempotency_key=f"slack:{workspace_id}:{event_id}",
         )
-        if self._config.external_callback.enabled and inbox.callback_sent_at is None:
-            await self._send_external_callback(inbox, workspace)
+        if self._config.external_callback.enabled and callback_sent_at is None:
+            await self._send_external_callback(
+                bot_token=workspace.require_bot_token(),
+                slack_user_id=slack_user_id,
+                message_text=message_text,
+                workspace_id=workspace_id,
+                event_id=event_id,
+            )
         async with self._uow_factory() as uow:
             current = await uow.slack.get_inbox(inbox_id)
             current_thread = await uow.slack.get_thread(
-                workspace_id=inbox.workspace_id,
-                channel_id=inbox.channel_id,
-                root_thread_ts=inbox.root_thread_ts,
-                slack_user_id=inbox.slack_user_id,
+                workspace_id=workspace_id,
+                channel_id=channel_id,
+                root_thread_ts=root_thread_ts,
+                slack_user_id=slack_user_id,
             )
-            current.conversation_id = thread.conversation_id
+            current.conversation_id = conversation_id
             current.turn_id = UUID(str(receipt["turn_id"]))
             current.run_id = UUID(str(receipt["run_id"]))
             current.status = "RUNNING"
@@ -250,18 +264,12 @@ class SlackDispatchService:
             workspace = self._config.workspace(inbox.workspace_id)
             if workspace is None or inbox.run_id is None:
                 raise RuntimeError("Slack Inbox 缺少 Workspace 或 Run")
-            # 只读 UoW 退出时会 rollback；SQLAlchemy 会过期并分离实体。
-            # 在 Session 内构造认证上下文并复制后续所需字段，避免在
-            # 网络调用阶段继续访问 DetachedInstance。
-            context = self._context(inbox, workspace)
             run_id = inbox.run_id
             workspace_id = inbox.workspace_id
             channel_id = inbox.channel_id
             slack_user_id = inbox.slack_user_id
             root_thread_ts = inbox.root_thread_ts
-        summary = await self._agent_client.get_run(
-            run_id=run_id, auth_context=context
-        )
+        summary = await self._main_api_client.get_run(run_id=run_id)
         status = str(summary.get("status") or "")
         if status not in _TERMINAL_RUN_STATUSES:
             async with self._uow_factory() as uow:
@@ -273,16 +281,12 @@ class SlackDispatchService:
                 await uow.commit()
             return
         if status == "COMPLETED":
-            artifact = await self._agent_client.get_result(
-                run_id=run_id, auth_context=context
-            )
+            artifact = await self._main_api_client.get_result(run_id=run_id)
             asset_cards = await assemble_slack_asset_cards(
                 artifact=artifact,
-                knowledge_core_client=self._knowledge_core_client,
-                domain_id=workspace.domain_id,
-                auth_context=context,
+                main_api_client=self._main_api_client,
+                run_id=run_id,
                 limit=self._config.reply.max_references,
-                uow_factory=self._uow_factory,
             )
             payloads = render_slack_replies(
                 channel_id=channel_id,
@@ -305,10 +309,8 @@ class SlackDispatchService:
             ]
         async with self._uow_factory() as uow:
             current = await uow.slack.get_inbox(inbox_id)
-            for index, payload in enumerate(payloads):
-                delivery_type = (
-                    "FINAL" if index == 0 else f"FINAL_{index:04d}"
-                )
+            for payload in payloads[:1]:
+                delivery_type = "FINAL"
                 existing = await uow.slack.get_delivery(
                     inbox_id=inbox_id,
                     delivery_type=delivery_type,
@@ -345,8 +347,12 @@ class SlackDispatchService:
             delivery_id = delivery.delivery_id
             inbox = await uow.slack.get_inbox(delivery.inbox_id)
             event_id = inbox.event_id if inbox is not None else str(delivery.inbox_id)
+            inbox_id = delivery.inbox_id
+            workspace_id = delivery.workspace_id
+            delivery_type = delivery.delivery_type
+            payload = dict(delivery.payload_json)
             await uow.commit()
-        workspace = self._config.workspace(delivery.workspace_id)
+        workspace = self._config.workspace(workspace_id)
         if workspace is None:
             await self._record_delivery_error(
                 delivery_id,
@@ -356,15 +362,15 @@ class SlackDispatchService:
         try:
             body = await self._post_slack(
                 bot_token=workspace.require_bot_token(),
-                payload=dict(delivery.payload_json),
-                workspace_id=delivery.workspace_id,
+                payload=payload,
+                workspace_id=workspace_id,
                 event_key=event_id,
-                delivery_type=delivery.delivery_type.lower(),
+                delivery_type=delivery_type.lower(),
             )
             async with self._uow_factory() as uow:
                 current = await uow.slack.get_delivery(
-                    inbox_id=delivery.inbox_id,
-                    delivery_type=delivery.delivery_type,
+                    inbox_id=inbox_id,
+                    delivery_type=delivery_type,
                 )
                 current.status = "DELIVERED"
                 current.slack_message_ts = str(body.get("ts") or "") or None
@@ -408,15 +414,21 @@ class SlackDispatchService:
             raise RuntimeError(f"Slack chat.postMessage 失败：{body.get('error', 'unknown')}")
         return body
 
-    async def _send_external_callback(self, inbox, workspace) -> None:
-        name, email = await self._fetch_user_info(
-            workspace.require_bot_token(), inbox.slack_user_id
-        )
+    async def _send_external_callback(
+        self,
+        *,
+        bot_token: str,
+        slack_user_id: str,
+        message_text: str,
+        workspace_id: str,
+        event_id: str,
+    ) -> None:
+        name, email = await self._fetch_user_info(bot_token, slack_user_id)
         payload = build_callback_payload(
-            user_id=inbox.slack_user_id,
+            user_id=slack_user_id,
             username=name,
             user_email=email,
-            user_question=inbox.message_text,
+            user_question=message_text,
             request_date=datetime.now(UTC).date(),
         )
         if self._config.debug.callback_payload_log_enabled:
@@ -424,8 +436,8 @@ class SlackDispatchService:
                 self._append_callback_debug(
                     {
                         "logged_at": datetime.now(UTC).isoformat(),
-                        "workspace_id": inbox.workspace_id,
-                        "event_id": inbox.event_id,
+                        "workspace_id": workspace_id,
+                        "event_id": event_id,
                         "callback_url": self._config.external_callback.url,
                         "callback_payload": payload,
                     }
@@ -433,7 +445,7 @@ class SlackDispatchService:
             except Exception:
                 logger.exception(
                     "Slack Callback 调试报文写入失败：event_id={}",
-                    inbox.event_id,
+                    event_id,
                 )
         try:
             async with self._http_session.post(
@@ -447,20 +459,20 @@ class SlackDispatchService:
                 if 200 <= response.status < 300:
                     logger.info(
                         "Slack external callback 调用成功：event_id={} status={}",
-                        inbox.event_id,
+                        event_id,
                         response.status,
                     )
                 else:
                     logger.warning(
                         "Slack external callback 调用失败：event_id={} status={}",
-                        inbox.event_id,
+                        event_id,
                         response.status,
                     )
         except Exception:
             # 与 3.3 保持旁路通知语义，Callback 故障不能中断 Slack 问答。
             logger.exception(
                 "Slack external callback 调用异常：event_id={}",
-                inbox.event_id,
+                event_id,
             )
 
     async def _fetch_user_info(self, token: str, user_id: str) -> tuple[str, str]:

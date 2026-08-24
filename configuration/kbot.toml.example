@@ -78,7 +78,6 @@ username = "kbot"
 # workspace_id = "T0123456789"
 # domain_id = 1001
 # agent_id = "019fcbe0-e46c-7d33-907b-9d1621a2998f"
-# security_level = 1
 # signing_secret_env = "KBOT_SLACK_SIGNING_SECRET"
 # bot_token_env = "KBOT_SLACK_BOT_TOKEN"
 
@@ -93,13 +92,21 @@ username = "kbot"
 # slack_reply_dump_enabled = false
 # slack_reply_dump_dir = "/tmp/slackmess"
 
-# Slack 中 Asset问答助手的最终回复展示策略。非 READY 状态始终显示；无文档问数
-# 最多展示 max_references 个 Asset，或 DOCUMENT 引用超过该值时显示统一截断提示；
+# Slack 中 Asset问答助手的最终回复展示策略。max_references 限制单条消息中最多
+# 组装 10 个 DOCUMENT Asset Template；无 DOCUMENT 时原样展示 KBot 最终回答。
 # Asset 回复使用 km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
 # [integrations.slack.reply]
 # assistant_name = "Asset问答助手"
 # max_references = 10
+# 以下三个字段仅为旧配置兼容保留；Slack 最终展示不输出内部提示或问数重组摘要。
 # show_warnings = true
 # show_query_result_summary = true
 # show_visualization_notice = true
 # km_portal_base_url = "https://apex.oraclecorp.com/pls/apex/f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,"
+
+# Slack Worker 只通过 KM Portal 的公开 Main API 提交问题和读取结果。
+# API Key 本身不得写入 TOML，只配置保存它的环境变量名称。
+# [integrations.slack.main_api]
+# base_url = "http://127.0.0.1:18099"
+# api_key_env = "KBOT_SLACK_KM_API_KEY"
+# timeout_seconds = 300

@@ -1,10 +1,13 @@
 """KM Asset App 公开 BFF API。"""
 
+import json
+import re
 from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from loguru import logger
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.application import (
@@ -17,8 +20,13 @@ from main_api.application import (
     require_app_api_scope,
 )
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
-from platform_core.contracts import ConversationQueryImage, PUBLIC_API_V1, UpdateConversationRequest
-from fastapi import Response
+from platform_core.contracts import (
+    AuthContext,
+    ConversationQueryImage,
+    PrincipalKind,
+    PUBLIC_API_V1,
+    UpdateConversationRequest,
+)
 from main_api.api.runs import (
     _DocumentReference,
     _document_locator,
@@ -35,16 +43,7 @@ from platform_core.security import get_auth_context
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/km-asset", tags=["KM Asset App"])
 KM_ASSET_COLLECTION_NAME = "assets"
 
-_ASSET_REFERENCE_FIELDS = (
-    "title",
-    "author",
-    "product",
-    "solution",
-    "industry",
-    "category",
-    "content_category",
-    "asset_date",
-)
+_MAX_MANIFEST_BYTES = 1024 * 1024
 
 
 class _Payload(BaseModel):
@@ -247,6 +246,136 @@ def _client(request: Request) -> KmAssetClient:
     return cast(KmAssetClient, request.app.state.km_asset_client)
 
 
+def _runtime_auth_context(request: Request) -> AuthContext:
+    """将 App API Key 映射为其绑定用户的 Portal 运行语义。
+
+    公开接口的权限、Scope 与 Agent 白名单仍使用原始 App API Key
+    上下文校验；这里只负责让下游运行时与 KM Portal 使用同一用户
+    身份、Domain 和会话可见性。公开 API Key 不会被转发到内部服务。
+    """
+    context = get_auth_context(request)
+    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
+        return context
+    return AuthContext(
+        principal_kind=PrincipalKind.PORTAL,
+        client_id="user-session",
+        request_id=context.request_id,
+        trace_id=context.trace_id,
+        api_key_id=context.api_key_id,
+        entry_kind=context.entry_kind,
+        app_id=context.app_id,
+        domain_id=context.domain_id,
+        tenant_id=context.tenant_id,
+        asserted_user_id=context.asserted_user_id,
+        roles=context.roles,
+        scopes=context.scopes,
+        authorized_agent_ids=context.authorized_agent_ids,
+        delegated_by=context.client_id,
+    )
+
+
+def _clean_manifest_value(value: object) -> str:
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return ""
+    return str(value).strip().strip("*_:： \t\r\n")
+
+
+def _manifest_asset_fields(content: str) -> dict[str, str]:
+    """从 manifest.md 的白名单元数据中投影 Slack 所需字段。"""
+    title_match = re.search(r"(?m)^#\s+(.+?)\s*$", content)
+    source_match = re.search(r"(?m)^Source ID:\s*(.+?)\s*$", content)
+    metadata: dict[str, Any] = {}
+    marker = re.search(r"(?m)^## Source metadata\s*$", content)
+    if marker is not None:
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(
+                content[marker.end() :].lstrip()
+            )
+        except (TypeError, ValueError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            metadata = {
+                str(key).strip().lower(): value
+                for key, value in parsed.items()
+            }
+    aliases = {
+        "external_asset_id": "asset_id",
+        "asset_id": "asset_id",
+        "asset_title": "asset_title",
+        "title": "asset_title",
+        "solution_briefing": "solution_briefing",
+        "description": "solution_briefing",
+        "asset_details": "solution_briefing",
+        "author_mail": "author_mail",
+        "author": "author_mail",
+        "create_time": "create_time",
+        "publish_date": "create_time",
+        "asset_date": "create_time",
+    }
+    fields = {
+        target: cleaned
+        for source, target in aliases.items()
+        if (cleaned := _clean_manifest_value(metadata.get(source)))
+    }
+    if "asset_id" not in fields and source_match is not None:
+        fields["asset_id"] = _clean_manifest_value(source_match.group(1))
+    if "asset_title" not in fields and title_match is not None:
+        fields["asset_title"] = _clean_manifest_value(title_match.group(1))
+    return fields
+
+
+async def _reference_manifest_fields(
+    request: Request,
+    *,
+    reference: _DocumentReference,
+    files: list[dict[str, Any]],
+) -> dict[str, str]:
+    """通过 Main API 内部可信上下文读取引用 Bundle 的 manifest。"""
+    manifest = next(
+        (
+            item
+            for item in files
+            if str(item.get("document_role") or "").upper() == "MANIFEST"
+            and str(item.get("declared_name") or "").lower() == "manifest.md"
+            and bool(item.get("preview_available"))
+            and item.get("document_version_id")
+        ),
+        None,
+    )
+    if manifest is None:
+        return {}
+    mime_type = str(
+        manifest.get("detected_mime_type")
+        or manifest.get("declared_mime_type")
+        or ""
+    ).split(";", 1)[0].strip().lower()
+    byte_size = int(manifest.get("byte_size") or 0)
+    if mime_type not in {"text/markdown", "text/plain"} or byte_size > _MAX_MANIFEST_BYTES:
+        return {}
+    response = await cast(
+        KnowledgeCoreClient, request.app.state.knowledge_core_client
+    ).stream_source_file(
+        domain_id=int(get_auth_context(request).domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        document_version_id=UUID(str(manifest["document_version_id"])),
+        range_header=None,
+        auth_context=_runtime_auth_context(request),
+    )
+    if response.status_code != 200:
+        return {}
+    body = bytearray()
+    async for chunk in response.body:
+        body.extend(chunk)
+        if len(body) > _MAX_MANIFEST_BYTES:
+            return {}
+    try:
+        return _manifest_asset_fields(bytes(body).decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        return {}
+
+
 def _km_turn_receipt(receipt: dict) -> dict:
     """将运行时收据投影为 KM App 自有的公开访问地址。"""
     projected = dict(receipt)
@@ -285,29 +414,31 @@ async def _fixed_collection_id(request: Request, *, domain_id: int) -> UUID:
 
 async def _km_conversation(request: Request, conversation_id: UUID, domain_id: int):
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
+    runtime_context = _runtime_auth_context(request)
     conversation = await runtime.get_conversation(
         conversation_id=conversation_id,
-        auth_context=request.state.auth_context,
+        auth_context=runtime_context,
     )
     agent_id = UUID(str(conversation["agent_id"]))
     require_app_api_agent(request, agent_id)
     await _client(request).get_agent(
         agent_id=agent_id,
         domain_id=domain_id,
-        auth_context=request.state.auth_context,
+        auth_context=runtime_context,
     )
     return conversation
 
 
 async def _km_run(request: Request, run_id: UUID, domain_id: int):
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
-    run = await runtime.get_run(run_id=run_id, auth_context=request.state.auth_context)
+    runtime_context = _runtime_auth_context(request)
+    run = await runtime.get_run(run_id=run_id, auth_context=runtime_context)
     agent_id = UUID(str(run["agent_id"]))
     require_app_api_agent(request, agent_id)
     await _client(request).get_agent(
         agent_id=agent_id,
         domain_id=domain_id,
-        auth_context=request.state.auth_context,
+        auth_context=runtime_context,
     )
     return run
 
@@ -539,9 +670,17 @@ async def create_conversation(payload: ConversationCreatePayload, request: Reque
     domain_id = await _require(request, "km_asset:use")
     require_app_api_scope(request, "km:chat:write")
     require_app_api_agent(request, payload.agent_id)
-    spec = await _client(request).execution_spec(agent_id=payload.agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
+    runtime_context = _runtime_auth_context(request)
+    spec = await _client(request).execution_spec(
+        agent_id=payload.agent_id,
+        domain_id=domain_id,
+        auth_context=runtime_context,
+    )
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
-    return await runtime.create_conversation(payload={**payload.model_dump(mode="json"), "execution_spec": spec}, auth_context=request.state.auth_context)
+    return await runtime.create_conversation(
+        payload={**payload.model_dump(mode="json"), "execution_spec": spec},
+        auth_context=runtime_context,
+    )
 
 
 @router.get("/conversations")
@@ -595,7 +734,9 @@ async def get_run_result(run_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
     require_app_api_scope(request, "km:run:read")
     await _km_run(request, run_id, domain_id)
-    return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).get_result(run_id=run_id, auth_context=request.state.auth_context)
+    return await cast(
+        AgentRuntimeClient, request.app.state.agent_runtime_client
+    ).get_result(run_id=run_id, auth_context=_runtime_auth_context(request))
 
 
 @router.get("/runs/{run_id}/events")
@@ -622,7 +763,9 @@ async def _document_reference(
 ) -> tuple[_DocumentReference, dict[str, Any]]:
     """读取已完成回答中的不可变引用和同一回答数据。"""
     await _km_run(request, run_id, int(request.state.auth_context.domain_id))
-    artifact = await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).get_result(run_id=run_id, auth_context=request.state.auth_context)
+    artifact = await cast(
+        AgentRuntimeClient, request.app.state.agent_runtime_client
+    ).get_result(run_id=run_id, auth_context=_runtime_auth_context(request))
     payload = artifact.get("payload")
     references = payload.get("references") if isinstance(payload, dict) else None
     raw = next((item for item in references or [] if isinstance(item, dict) and item.get("reference_type") == "DOCUMENT" and item.get("citation_label") == citation_label), None)
@@ -632,32 +775,6 @@ async def _document_reference(
         return _DocumentReference.model_validate(raw), payload
     except ValueError as exc:
         raise HTTPException(409, {"code": "DOCUMENT_REFERENCE_INVALID", "message": "Run 引用缺少不可变文档定位信息"}) from exc
-
-
-def _asset_reference_fields(
-    payload: dict[str, Any], *, bundle_id: UUID
-) -> dict[str, Any]:
-    """从同一回答的问数结果投影可展示 Asset 元数据。"""
-    bundle_key = str(bundle_id).casefold()
-    for result in payload.get("query_results") or ():
-        if not isinstance(result, dict):
-            continue
-        rows = (
-            *(result.get("rows") or ()),
-            *(result.get("supporting_rows") or ()),
-        )
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            folded = {str(key).casefold(): value for key, value in row.items()}
-            if str(folded.get("bundle_id") or "").casefold() != bundle_key:
-                continue
-            return {
-                field: folded[field]
-                for field in _ASSET_REFERENCE_FIELDS
-                if folded.get(field) not in (None, "")
-            }
-    return {}
 
 
 def _asset_attachment(
@@ -714,11 +831,38 @@ def _asset_attachment(
 async def get_reference_preview(run_id: UUID, citation_label: str, request: Request):
     await _require(request, "km_asset:use")
     require_app_api_scope(request, "km:reference:read")
-    reference, payload = await _document_reference(
+    reference, _payload = await _document_reference(
         request, run_id, citation_label
     )
-    preview = await cast(KnowledgeCoreClient, request.app.state.knowledge_core_client).get_bundle_revision_preview(domain_id=int(request.state.auth_context.domain_id), collection_id=reference.collection_id, bundle_id=reference.bundle_id, bundle_revision_id=reference.bundle_revision_id, auth_context=request.state.auth_context)
+    runtime_context = _runtime_auth_context(request)
+    preview = await cast(
+        KnowledgeCoreClient, request.app.state.knowledge_core_client
+    ).get_bundle_revision_preview(
+        domain_id=int(get_auth_context(request).domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        auth_context=runtime_context,
+    )
     files = [item for item in preview.get("files", []) if isinstance(item, dict)]
+    try:
+        manifest_fields = await _reference_manifest_fields(
+            request,
+            reference=reference,
+            files=files,
+        )
+    except Exception as exc:
+        # Manifest 是 Slack Template 唯一元数据来源。底层文件已迁移、
+        # 暂不可读或历史引用不完整时只返回基础预览；Slack 会保留
+        # KBot 原始回答，不使用 QueryResult 拼装伪 Template。
+        logger.warning(
+            "KM Asset 参考 Manifest 读取失败，返回基础预览："
+            "run_id={} citation_label={} cause={}",
+            run_id,
+            citation_label,
+            str(exc),
+        )
+        manifest_fields = {}
     locator = _document_locator(reference)
     attachments = tuple(
         attachment
@@ -740,9 +884,7 @@ async def get_reference_preview(run_id: UUID, citation_label: str, request: Requ
         status=str(preview.get("status") or "UNKNOWN"),
         approval_status=str(preview.get("approval_status") or "UNKNOWN"),
         is_current_revision=bool(preview.get("is_current_revision")),
-        asset_fields=_asset_reference_fields(
-            payload, bundle_id=reference.bundle_id
-        ),
+        asset_fields=manifest_fields,
         asset_content_available=any(
             str(item.get("document_role") or "").upper() == "MANIFEST"
             and bool(item.get("preview_available"))
@@ -803,7 +945,12 @@ async def create_conversation_turn(conversation_id: UUID, payload: ConversationT
     require_app_api_scope(request, "km:chat:write")
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await _km_conversation(request, conversation_id, domain_id)
-    spec = await _client(request).execution_spec(agent_id=UUID(str(conversation["agent_id"])), domain_id=domain_id, auth_context=request.state.auth_context)
+    runtime_context = _runtime_auth_context(request)
+    spec = await _client(request).execution_spec(
+        agent_id=UUID(str(conversation["agent_id"])),
+        domain_id=domain_id,
+        auth_context=runtime_context,
+    )
     resource_context = spec.get("resource_context", {})
     fixed_collections = tuple(resource_context.get("collection_ids") or ())
     effective_level = await _effective_security_level(request)
@@ -817,7 +964,7 @@ async def create_conversation_turn(conversation_id: UUID, payload: ConversationT
         conversation_id=conversation_id,
         payload=body,
         idempotency_key=idempotency_key,
-        auth_context=request.state.auth_context,
+        auth_context=runtime_context,
     )
     return _km_turn_receipt(receipt)
 

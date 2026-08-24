@@ -13,6 +13,14 @@ from km_asset_app.config import SlackReplyConfig
 
 WAITING_MESSAGES = {
     "zh": "您的问题 KM 助手正在搜集材料分析中，请稍等。",
+    "ja": (
+        "KM アシスタントが資料を収集して質問を分析しています。"
+        "しばらくお待ちください。"
+    ),
+    "ko": (
+        "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. "
+        "잠시만 기다려 주세요."
+    ),
     "en": "KM Assistant is gathering materials and analyzing your question, please wait.",
 }
 
@@ -83,11 +91,15 @@ _TRUNCATION_NOTICE = "结果超过上限，当前仅展示部分内容"
 
 
 def waiting_message(question: str) -> str:
-    language = (
-        "zh"
-        if any("\u4e00" <= char <= "\u9fff" for char in question)
-        else "en"
-    )
+    # 日文也会包含汉字，因此必须先判断假名，再判断 CJK 统一汉字。
+    if any("\u3040" <= char <= "\u30ff" for char in question):
+        language = "ja"
+    elif any("\uac00" <= char <= "\ud7af" for char in question):
+        language = "ko"
+    elif any("\u4e00" <= char <= "\u9fff" for char in question):
+        language = "zh"
+    else:
+        language = "en"
     return WAITING_MESSAGES[language]
 
 
@@ -666,7 +678,12 @@ def render_slack_reply(
         # 正文无 Asset 时保持为空，
         # 禁止再把 DOCUMENT 引用退化显示为“参考资料”。
         if use_document_template:
-            blocks.extend(_asset_blocks(asset_cards or [], reply_config))
+            blocks.extend(
+                _asset_blocks(
+                    (asset_cards or [])[: reply_config.max_references],
+                    reply_config,
+                )
+            )
         # warnings/truncated 仍保留在 KBot 结构化报文中，但 Slack
         # 最终展示不输出“提示”区，避免把内部诊断信息暴露给用户。
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
@@ -686,53 +703,42 @@ def split_slack_reply_payload(
     *,
     max_blocks: int = _SLACK_MAX_BLOCKS,
 ) -> list[dict[str, Any]]:
-    """按 Slack Block Kit 上限分包，并保持每个 Asset Template 原子完整。"""
+    """将回答压缩到一个 Slack 消息，不再产生 FINAL_0001 等续包。"""
     if max_blocks <= 0:
         raise ValueError("max_blocks 必须大于 0")
     blocks = payload.get("blocks")
     if not isinstance(blocks, list) or len(blocks) <= max_blocks:
         return [payload]
 
-    groups: list[list[Any]] = []
-    current: list[Any] = []
-    for block in blocks:
-        is_divider = isinstance(block, dict) and block.get("type") == "divider"
-        if is_divider and current:
-            groups.append(current)
-            current = []
-        current.append(block)
-    if current:
-        groups.append(current)
-
-    normalized_groups: list[list[Any]] = []
-    for group in groups:
-        normalized_groups.extend(
-            group[offset : offset + max_blocks]
-            for offset in range(0, len(group), max_blocks)
+    template_start: int | None = None
+    for index, block in enumerate(blocks[:-1]):
+        next_block = blocks[index + 1]
+        next_text = (
+            next_block.get("text", {}).get("text", "")
+            if isinstance(next_block, dict)
+            and isinstance(next_block.get("text"), dict)
+            else ""
         )
+        if (
+            isinstance(block, dict)
+            and block.get("type") == "divider"
+            and str(next_text).startswith(_ASSET_TITLE_BLOCK_PREFIX)
+        ):
+            template_start = index
+            break
 
-    parts: list[list[Any]] = []
-    current = []
-    for group in normalized_groups:
-        if current and len(current) + len(group) > max_blocks:
-            parts.append(current)
-            current = []
-        current.extend(group)
-    if current:
-        parts.append(current)
+    if template_start is None:
+        fitted_blocks = blocks[:max_blocks]
+    else:
+        # max_references<=10 时 Template 最多占 40 个 Block。
+        # 超限时优先保留完整 Template，再使用剩余预算展示 KBot 正文。
+        template_blocks = blocks[template_start:]
+        if len(template_blocks) > max_blocks:
+            template_blocks = template_blocks[:max_blocks]
+        answer_budget = max_blocks - len(template_blocks)
+        fitted_blocks = blocks[:answer_budget] + template_blocks
 
-    return [
-        {
-            **payload,
-            "blocks": part,
-            "text": (
-                payload.get("text", "")
-                if index == 0
-                else "Asset Templates（续）"
-            ),
-        }
-        for index, part in enumerate(parts)
-    ]
+    return [{**payload, "blocks": fitted_blocks}]
 
 
 def render_slack_replies(
@@ -744,7 +750,7 @@ def render_slack_replies(
     reply_config: SlackReplyConfig,
     asset_cards: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
-    """生成一个或多个 Slack 消息，确保所有 Asset Template 均可投递。"""
+    """生成唯一一条 Slack FINAL 消息。"""
     return split_slack_reply_payload(
         render_slack_reply(
             channel_id=channel_id,

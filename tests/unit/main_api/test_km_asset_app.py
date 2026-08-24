@@ -1,6 +1,7 @@
 """KM Asset App 公开 BFF 契约单元测试。"""
 
 import unittest
+from types import SimpleNamespace
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -10,12 +11,65 @@ from main_api.api.km_asset_app import (
     AssetReferencePreview,
     ConversationTurnPayload,
     _asset_attachment,
-    _asset_reference_fields,
     _km_turn_receipt,
+    _runtime_auth_context,
+)
+from platform_core.contracts import (
+    AuthContext,
+    IdentityEntryKind,
+    PrincipalKind,
 )
 
 
 class KmAssetAppContractTest(unittest.TestCase):
+    def test_app_api_client_uses_bound_user_portal_runtime_context(self) -> None:
+        agent_id = UUID("01900000-0000-7000-8000-000000000031")
+        source = AuthContext(
+            principal_kind=PrincipalKind.APP_API_CLIENT,
+            client_id="kmadmin-api-client",
+            request_id="request-1",
+            trace_id="trace-1",
+            api_key_id="key-1",
+            entry_kind=IdentityEntryKind.BUSINESS,
+            app_id="km_asset",
+            domain_id="43",
+            asserted_user_id="kmadmin",
+            roles=("km_user",),
+            scopes=("km:conversation:write",),
+            authorized_agent_ids=(agent_id,),
+        )
+        request = SimpleNamespace(
+            state=SimpleNamespace(auth_context=source)
+        )
+
+        projected = _runtime_auth_context(request)
+
+        self.assertEqual(PrincipalKind.PORTAL, projected.principal_kind)
+        self.assertEqual("kmadmin", projected.asserted_user_id)
+        self.assertEqual("43", projected.domain_id)
+        self.assertEqual("km_asset", projected.app_id)
+        self.assertEqual((agent_id,), projected.authorized_agent_ids)
+        self.assertEqual("kmadmin-api-client", projected.delegated_by)
+        self.assertEqual(PrincipalKind.APP_API_CLIENT, source.principal_kind)
+
+    def test_portal_runtime_context_is_not_rewritten(self) -> None:
+        source = AuthContext(
+            principal_kind=PrincipalKind.PORTAL,
+            client_id="user-session",
+            request_id="request-2",
+            trace_id="trace-2",
+            api_key_id="portal-session-1",
+            entry_kind=IdentityEntryKind.BUSINESS,
+            app_id="km_asset",
+            domain_id="43",
+            asserted_user_id="kmadmin",
+        )
+        request = SimpleNamespace(
+            state=SimpleNamespace(auth_context=source)
+        )
+
+        self.assertIs(source, _runtime_auth_context(request))
+
     def test_public_agent_create_rejects_caller_supplied_capabilities(self) -> None:
         with self.assertRaises(ValidationError) as raised:
             AgentCreatePayload(
@@ -62,31 +116,6 @@ class KmAssetAppContractTest(unittest.TestCase):
         receipt = _km_turn_receipt({"run_id": None, "events_url": None})
 
         self.assertIsNone(receipt["events_url"])
-
-    def test_asset_reference_fields_match_bundle_without_internal_ids(self) -> None:
-        bundle_id = UUID("01900000-0000-7000-8000-000000000011")
-        fields = _asset_reference_fields(
-            {
-                "query_results": [{
-                    "rows": [{
-                        "asset_id": "ASSET-1",
-                        "bundle_id": str(bundle_id),
-                        "bundle_revision_id": (
-                            "01900000-0000-7000-8000-000000000012"
-                        ),
-                        "title": "OAC Fraud Asset",
-                        "product": "OAC",
-                        "solution": "Financial Fraud",
-                    }],
-                }],
-            },
-            bundle_id=bundle_id,
-        )
-
-        self.assertEqual("OAC Fraud Asset", fields["title"])
-        self.assertEqual("OAC", fields["product"])
-        self.assertNotIn("asset_id", fields)
-        self.assertNotIn("bundle_id", fields)
 
     def test_asset_attachment_excludes_manifest_and_keeps_evidence_locator(self) -> None:
         run_id = UUID("01900000-0000-7000-8000-000000000021")

@@ -12,14 +12,15 @@ URL Verification 报文不保证携带 `team_id`。此时 KM Asset 使用已配�
 HTTP 200 原样返回 `challenge`；普通事件仍必须携带并匹配 `team_id`。
 
 Main API 仅保真转发原始正文和 Slack 验签 Header；KM Asset 完成验签并将入站事件
-写入自有 Inbox，再由 KM Asset 的独立 Slack Worker 映射为 Agent Runtime
-Conversation 与 Turn。会话按 Workspace、频道、根线程和 Slack 用户隔离。Agent
-执行仍由持久化 Run/Task/Artifact 完成。Slack 不根据问题内容判断
-DATA_QUERY、DOCUMENT 或混合路由，而是把用户问题作为 Turn `input`
-原样交给绑定的 KBot Agent，由 Agent 自行规划和执行。创建 Turn 时使用 KBot
-`execution_spec.resource_context.collection_ids` 签发的固定 Collection，不允许
-Slack 自行选择、扩展或清空检索范围。Slack Worker 读取最终
-`GROUNDED_ANSWER`，通过 Outbox 调用 `chat.postMessage` 在线程内回复。进程重启后
+写入自有 Inbox。独立 Slack Worker 不直接调用 Agent Runtime，也不导入其内部类，
+而是使用 App API Key 调用 KM Portal 浏览器相同的公开 Main API：创建 Conversation、
+提交 Turn、查询 Run、读取最终 Result 和引用预览。会话按 Workspace、频道、根线程和
+Slack 用户隔离；执行仍由 KBot 持久化 Run/Task/Artifact 完成。
+
+Slack 不根据问题内容判断 DATA_QUERY、DOCUMENT、BREADTH 或混合路由，不构造
+`execution_spec`、Collection、安全等级或检索参数。用户问题以原始文本作为 Turn
+`input` 提交，由 Main API 和绑定的 KBot Agent 自行规划。Slack Worker 只处理最终
+`GROUNDED_ANSWER`，再通过 Outbox 调用 `chat.postMessage` 在线程内回复。进程重启后
 可继续领取未完成 Inbox 和 Delivery。
 
 Slack App 至少需要接收消息与 `app_mention` 的 Event Subscription，以及发送消息、
@@ -28,14 +29,19 @@ Slack App 至少需要接收消息与 `app_mention` 的 Event Subscription，以
 
 ## Workspace 与身份
 
-每个 Workspace 在部署配置中固定绑定一个 Domain、Agent UUID 和安全等级。内部
-调用使用 `SERVICE` 类型 AuthContext，Actor ID 为
-`slack:<workspace_id>:<user_id>`，并把绑定的 Agent 放入授权 Agent 集合。Slack
-提交的 Domain、Agent 或用户身份字段不会被信任。KM Asset 正文统一使用内部安全
-级别 1，因此 Workspace 的 `security_level` 默认值为 1；如部署文件显式配置为 0，
-问数可能仍能得到候选 Asset，但正文检索无法取得级别 1 的引用，最终会被 KBot 判定
-为现有资料不足。生产环境只能根据 Workspace 的授权边界手工提高该值，Slack 不会
-冒用前端登录用户的安全级别。
+每个 Workspace 在部署配置中固定绑定一个 Domain 和 Agent UUID；Slack 报文中的
+Domain、Agent 或平台用户字段不会被信任。Slack Worker 使用的 App API Key 必须在
+Main API 中绑定真实 KM Portal 用户（当前部署为 `kmadmin`）、相同 Domain、KM Asset
+App 权限、所需 Scope 和允许访问的 Agent。Main API 完成 App API Key 鉴权后，将
+运行时身份投影为该绑定用户的 Portal 语义，并由用户主数据读取安全等级；API Key
+不会转发到内部服务。这样 Slack 与 KM Portal 在 Agent、Domain、用户、安全等级、
+Execution Spec 和 Collection 边界上保持一致，仅 Conversation 因 Slack Thread 隔离
+而不同。
+
+当前公开调用至少需要 `km_asset:use` 权限、目标 Agent 授权，以及
+`km:chat:write`、`km:conversation:read`、`km:run:read`、
+`km:reference:read` Scope。缺少任一授权时应由 Main API 拒绝请求，Slack Worker
+不得绕过鉴权或改走内部接口。
 
 ## 外部 Callback
 
@@ -56,20 +62,22 @@ Header。调试文件包含个人资料和业务问题，只能临时开启并�
 
 ## 配置边界
 
-`.env` 或生产 Secret 只保存 `KBOT_SLACK_SIGNING_SECRET` 与
-`KBOT_SLACK_BOT_TOKEN`。`configuration/kbot.toml` 保存 Slack 功能开关、
-Workspace 绑定、Callback URL、调试参数和回复展示策略。Workspace 配置中的
+`.env` 或生产 Secret 保存 `KBOT_SLACK_SIGNING_SECRET`、
+`KBOT_SLACK_BOT_TOKEN` 与 `KBOT_SLACK_KM_API_KEY`。后者只用于调用公开 Main API，
+不得写入 TOML、日志或 Callback。`configuration/kbot.toml` 保存 Slack 功能开关、
+Workspace 绑定、公开 Main API 地址、API Key 环境变量名、Callback URL、调试参数和
+回复展示策略。Workspace 配置中的
 `signing_secret_env`、`bot_token_env` 只引用环境变量名称，禁止直接保存密钥。
 
-`[integrations.slack.reply]` 支持配置 `assistant_name`、`max_references`、
-`show_warnings`、`show_query_result_summary`、`show_visualization_notice` 和
-`km_portal_base_url`。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
+`[integrations.slack.reply]` 支持配置 `assistant_name`、`max_references` 和
+`km_portal_base_url`。`show_warnings`、`show_query_result_summary`、
+`show_visualization_notice` 仅作为旧配置兼容字段保留，不会使 Slack 最终消息显示
+内部“提示”区或重新组装问数结果。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
 `km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
 编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
-`max_references` 不用于从 `query_results` 重建或截断 KBot 正文；无
-DOCUMENT 附件时，Slack 只展示 KBot 返回的 `payload.answer`。实际使用
-的 DOCUMENT 引用数超过该值时，Slack 可显示统一的 Template 展示超限
-提示。`show_query_result_summary` 仅为历史配置字段保留，不再触发问数结果重组。
+`max_references` 固定上限为 10，不用于从 `query_results` 重建或截断 KBot 正文；
+无 DOCUMENT 附件时，Slack 只展示 KBot 返回的 `payload.answer`。
+`show_query_result_summary` 仅为历史配置字段保留，不再触发问数结果重组。
 
 ## 查询 Workspace、Domain 与 Agent
 
@@ -143,9 +151,9 @@ Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。�
 仅当 `used_citation_labels` 实际命中 `reference_type=DOCUMENT` 的附件时，
 Slack 才组装 Asset Template。Template 的 `asset_id`、`asset_title`、
 `solution_briefing`、`author_mail`、`create_time` 只从该 DOCUMENT 所属 Bundle 的
-`manifest.md` 白名单元数据读取；Manifest 暂时不可读时，仅允许按同一
-Domain 和 `bundle_revision_id` 从 KM Asset 持久化元数据恢复相同字段。
-正文字段和 QueryResult 都不是 Template 元数据来源。即使同一 Artifact 中
+`manifest.md` 白名单元数据读取。Manifest 暂时不可读或必要字段不完整时不生成
+Template，仍展示 KBot 原始回答。正文字段和 QueryResult 都不是 Template 元数据
+来源。即使同一 Artifact 中
 还包含 QueryResult，它也不得覆盖文档回复或生成额外 Template。
 
 Template 时，先按原回答中的
@@ -156,7 +164,7 @@ Template 时，先按原回答中的
 和字段；其他标题无法可靠匹配的项目，也仅允许回退到该条目唯一引用的 Asset。只展示成功
 映射到正文条目的 Asset，歧义、未匹配以及正文未展示的候选均不追加，并记录诊断
 日志。完成映射和 Asset 去重后，必须保证正文每个唯一 Asset 都有且仅有一个
-Template，且顺序与正文一致；不再应用 `max_references` 截断。完整性只校验
+Template，且顺序与正文一致；最多组装 `max_references` 个 Template。完整性只校验
 `asset_id`、`asset_title`、`solution_briefing` 三个字段。任一缺失时不发送部分
 Template，也不终止 Worker；无论 Artifact 是否同时包含 QueryResult，都直接展示
 KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
@@ -165,8 +173,7 @@ KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
 Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。
 Template 展示层会将 Asset Title 和 Solution Briefing 元数据中的 OOXML
 `_x000D_` 回车标记还原为正常换行；不修改 KBot Artifact、Manifest 或调试报文。
-当实际使用的 DOCUMENT 引用数超过 `max_references` 时，Slack 显示统一的
-Template 展示超限提示，不修改原始 GroundedAnswer Artifact。无 DOCUMENT 时，
+无 DOCUMENT 时，
 `query_results.truncated`、行数和 `max_references` 都不由 Slack 重新解释；是否截断及其
 用户可见说明应由 KBot 最终回答决定。
 
@@ -179,8 +186,9 @@ KBot Artifact、Outbox 和 `/tmp/slackmess` 原始调试报文保留引用标签
 `[C1]`、`[D1]`、`[Q1]` 等标签，且不修改 URL、按钮或原始持久化报文。
 
 正文未识别到 Asset 时不生成 Template，也不显示“参考资料”；引用文档只能用于
-补齐正文 Asset 的字段，不得独立转成 Template。若完整回复超过 Slack 单条消息的
-50 个 Block 上限，Worker 按 Template 边界拆分为 `FINAL`、`FINAL_0001` 等连续
-Outbox 消息，保持 Template 完整和原有顺序。警告与可视化仅输出面向用户的摘要，
+补齐正文 Asset 的字段，不得独立转成 Template。每次回答只生成一条 `FINAL`；若
+完整回复接近 Slack 单条消息的 50 个 Block 上限，优先保留不超过 10 个完整
+Template，并压缩正文展示，不生成 `FINAL_0001` 等续传消息。Slack 展示层不输出
+“提示”区块；警告与可视化仅输出确有必要的用户可见正文，
 不传送定位框、内部 UUID、查询明细、可视化原始数据和未经授权的资源 URL。收到不
 匹配的 Artifact 类型或版本时，返回固定格式错误提示，避免泄漏内部报文。

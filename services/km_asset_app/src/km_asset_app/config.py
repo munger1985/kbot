@@ -39,10 +39,6 @@ class SlackWorkspaceConfig(BaseModel):
     workspace_id: str = Field(min_length=1, max_length=64)
     domain_id: int = Field(ge=1)
     agent_id: UUID
-    # KM Asset 正文统一按内部安全级别 1 入库。Slack 没有终端用户
-    # 鉴权上下文，因此由 Workspace 显式限定检索上限，默认只开放
-    # 该业务级别。
-    security_level: int = Field(default=1, ge=0, le=3)
     signing_secret_env: str = Field(
         default="KBOT_SLACK_SIGNING_SECRET",
         min_length=1,
@@ -129,6 +125,36 @@ class SlackReplyConfig(BaseModel):
         return self
 
 
+class SlackMainApiConfig(BaseModel):
+    """Slack Worker 访问 KM Portal 公开 Main API 的配置。"""
+
+    base_url: str = Field(
+        default="http://127.0.0.1:18099",
+        min_length=1,
+        max_length=2048,
+    )
+    api_key_env: str = Field(
+        default="KBOT_SLACK_KM_API_KEY",
+        min_length=1,
+        max_length=128,
+    )
+    timeout_seconds: int = Field(default=300, ge=10, le=900)
+
+    @model_validator(mode="after")
+    def validate_base_url(self) -> "SlackMainApiConfig":
+        if not self.base_url.startswith(("https://", "http://")):
+            raise ValueError("Slack Main API URL 必须使用 http 或 https")
+        return self
+
+    def require_api_key(self) -> str:
+        value = os.getenv(self.api_key_env)
+        if not value:
+            raise RuntimeError(
+                f"Slack KM Main API Key 环境变量 {self.api_key_env} 未设置"
+            )
+        return value
+
+
 class SlackIntegrationConfig(BaseModel):
     enabled: bool = False
     max_webhook_bytes: int = Field(
@@ -150,6 +176,7 @@ class SlackIntegrationConfig(BaseModel):
     )
     debug: SlackDebugConfig = Field(default_factory=SlackDebugConfig)
     reply: SlackReplyConfig = Field(default_factory=SlackReplyConfig)
+    main_api: SlackMainApiConfig = Field(default_factory=SlackMainApiConfig)
 
     @model_validator(mode="after")
     def validate_workspaces(self) -> "SlackIntegrationConfig":

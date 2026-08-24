@@ -36,12 +36,15 @@ Portal / APEX
       │ /internal/v1 + Service Credential + AuthContext JWT
       ├────────► Knowledge Retrieval App ──► Agent Runtime
       ├────────► Agent Runtime ─────► Knowledge Core / Data Query / AIOps
-      ├────────► KM Asset App ──────► Agent Runtime / Slack
+      ├────────► KM Asset App ──────► Slack
       ├────────► Knowledge Core ────► Model Serving
       ├────────► Data Query ────────► Oracle / PostgreSQL / MySQL
       └────────► AIOps Agent ───────► DB Executor / Monitor Provider
 
-Slack Events API ──► Main API 公共适配器 ──► KM Asset Inbox/Outbox ──► Agent Runtime
+Slack Events API ──► Main API 公共适配器 ──► KM Asset Inbox/Outbox
+                                             │ App API Key + /api/v1
+                                             ▼
+                              Main API / KM Asset App BFF ──► Agent Runtime
 ```
 
 跨服务调用只使用 HTTP、版本化 DTO 或持久化任务。Repository 不跨服务导入，

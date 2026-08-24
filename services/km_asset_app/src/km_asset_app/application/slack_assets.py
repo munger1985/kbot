@@ -11,10 +11,6 @@ from uuid import UUID
 
 from loguru import logger
 
-from platform_core.contracts import AuthContext
-
-
-_MAX_MANIFEST_BYTES = 1024 * 1024
 _CITATION_PATTERN = re.compile(r"\[([A-Za-z]\d+)\]")
 _FIELD_LINE_PATTERN = re.compile(
     r"^\s*(?:[-+•]\s*)?(?:\*{1,2}|_{1,2})?"
@@ -35,9 +31,12 @@ _FIELD_ALIASES = {
     "资产名称": "asset_title",
     "资产标题": "asset_title",
     "solutionbriefing": "solution_briefing",
+    "description": "solution_briefing",
+    "assetdetails": "solution_briefing",
     "解决方案简介": "solution_briefing",
     "方案简介": "solution_briefing",
     "contributor": "author_mail",
+    "author": "author_mail",
     "authormail": "author_mail",
     "作者邮箱": "author_mail",
     "贡献者": "author_mail",
@@ -63,6 +62,7 @@ _ASSET_FIELDS = (
 _REQUIRED_ASSET_FIELDS = (
     "asset_id",
     "asset_title",
+    "solution_briefing",
 )
 _MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
 
@@ -186,26 +186,6 @@ def parse_manifest_asset_fields(content: str) -> dict[str, str]:
         values["asset_id"] = _clean_value(source_match.group(1))
     if "asset_title" not in values and title_match is not None:
         values["asset_title"] = _clean_value(title_match.group(1))
-    return values
-
-
-def _local_asset_fields(row: object) -> dict[str, str]:
-    """将 KM Asset 持久化元数据投影为 Slack Template 字段。"""
-    metadata_value = getattr(row, "normalized_metadata_json", {})
-    metadata = metadata_value if isinstance(metadata_value, dict) else {}
-    values = _mapping_asset_fields(metadata)
-    columns = {
-        "asset_id": getattr(row, "external_asset_id", None),
-        "asset_title": getattr(row, "asset_title", None),
-        "solution_briefing": metadata.get("solution_briefing"),
-        "author_mail": getattr(row, "author_mail", None),
-        "create_time": (
-            metadata.get("create_time")
-            or metadata.get("publish_date")
-            or getattr(row, "publish_date", None)
-        ),
-    }
-    values.update(_asset_values(columns))
     return values
 
 
@@ -526,69 +506,6 @@ def _validate_complete_templates(
         )
 
 
-async def _read_manifest(
-    *,
-    client,
-    reference: dict[str, Any],
-    domain_id: int,
-    auth_context: AuthContext,
-) -> str:
-    collection_id = UUID(str(reference["collection_id"]))
-    bundle_id = UUID(str(reference["bundle_id"]))
-    revision_id = UUID(str(reference["bundle_revision_id"]))
-    preview = await client.get_bundle_revision_preview(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        bundle_id=bundle_id,
-        bundle_revision_id=revision_id,
-        auth_context=auth_context,
-    )
-    files = preview.get("files") if isinstance(preview, dict) else None
-    if not isinstance(files, list):
-        raise ValueError("Bundle Preview 缺少文件列表")
-    manifest = next(
-        (
-            item
-            for item in files
-            if isinstance(item, dict)
-            and str(item.get("document_role") or "").upper() == "MANIFEST"
-            and str(item.get("declared_name") or "").lower() == "manifest.md"
-            and bool(item.get("preview_available"))
-            and item.get("document_version_id")
-        ),
-        None,
-    )
-    if manifest is None:
-        raise ValueError("引用 Bundle 不包含可读取的 manifest.md")
-    mime_type = str(
-        manifest.get("detected_mime_type")
-        or manifest.get("declared_mime_type")
-        or ""
-    ).split(";", 1)[0].strip().lower()
-    if mime_type not in {"text/markdown", "text/plain"}:
-        raise ValueError("manifest.md MIME 类型无效")
-    byte_size = int(manifest.get("byte_size") or 0)
-    if byte_size <= 0 or byte_size > _MAX_MANIFEST_BYTES:
-        raise ValueError("manifest.md 大小无效或超过限制")
-    response = await client.stream_source_file(
-        domain_id=domain_id,
-        collection_id=collection_id,
-        bundle_id=bundle_id,
-        bundle_revision_id=revision_id,
-        document_version_id=UUID(str(manifest["document_version_id"])),
-        range_header=None,
-        auth_context=auth_context,
-    )
-    if response.status_code != 200:
-        raise ValueError(f"manifest.md 读取失败：HTTP {response.status_code}")
-    body = bytearray()
-    async for chunk in response.body:
-        body.extend(chunk)
-        if len(body) > _MAX_MANIFEST_BYTES:
-            raise ValueError("manifest.md 响应超过限制")
-    return bytes(body).decode("utf-8-sig")
-
-
 def _same_asset(answer: dict[str, str], manifest: dict[str, str]) -> bool:
     left_km_id = _clean_value(answer.get("_km_asset_id")).casefold()
     right_km_id = _clean_value(manifest.get("_km_asset_id")).casefold()
@@ -606,7 +523,7 @@ def _same_asset(answer: dict[str, str], manifest: dict[str, str]) -> bool:
 def _merge_candidate_sources(
     *sources: list[dict[str, str]],
 ) -> list[dict[str, str]]:
-    """合并附件 Manifest 和其关联的本地 Asset 元数据。"""
+    """合并并去重公开 Main API 返回的附件 Manifest 元数据。"""
     result: list[dict[str, str]] = []
     for source in sources:
         for candidate in source:
@@ -656,7 +573,7 @@ def _merge_cards(
         if match_index is not None:
             used_manifest.add(match_index)
             # 正文字段只用于定位和排序；Template 的字段值
-            # 必须来自附件 Manifest 或其稳定关联的本地 Asset。
+            # 必须来自公开 Main API 投影的附件 Manifest。
             merged.append(dict(base))
     if not answer_cards:
         merged.extend(manifest_cards)
@@ -683,15 +600,13 @@ def _merge_cards(
 async def assemble_slack_asset_cards(
     *,
     artifact: dict[str, Any],
-    knowledge_core_client,
-    domain_id: int,
-    auth_context: AuthContext,
+    main_api_client,
+    run_id: UUID,
     limit: int,
-    uow_factory=None,
 ) -> list[dict[str, str]]:
-    """仅用回答实际引用的 DOCUMENT 附件元数据组装 Template。"""
+    """仅经 Main API 获取回答引用的附件元数据并组装 Template。"""
     payload = artifact.get("payload")
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or limit <= 0:
         return []
     answer = payload.get("answer")
     references = _used_document_references(payload)
@@ -700,66 +615,40 @@ async def assemble_slack_asset_cards(
     # QueryResult 和模型正文都不得被当作 Asset 元数据补齐来源。
     if not references:
         return []
-    answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
-    local_by_revision: dict[str, dict[str, str]] = {}
-    if uow_factory is not None:
-        try:
-            async with uow_factory() as uow:
-                for reference in references:
-                    revision_id = str(
-                        reference.get("bundle_revision_id") or ""
-                    )
-                    if not revision_id or revision_id in local_by_revision:
-                        continue
-                    row = await uow.assets.get_asset_by_kc_bundle_revision(
-                        domain_id=domain_id,
-                        bundle_revision_id=UUID(revision_id),
-                    )
-                    if row is not None:
-                        local_by_revision[revision_id] = _local_asset_fields(row)
-        except Exception as exc:
-            logger.warning(
-                "Slack Asset 本地元数据读取失败：cause={}",
-                str(exc),
-            )
-
+    answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))[:limit]
     manifest_cards: list[dict[str, str]] = []
     seen_revisions: set[str] = set()
     for reference in references:
+        citation_label = str(reference.get("citation_label") or "").upper()
         revision_id = str(reference.get("bundle_revision_id") or "")
-        if not revision_id or revision_id in seen_revisions:
+        revision_key = revision_id or citation_label
+        if not citation_label or revision_key in seen_revisions:
             continue
-        seen_revisions.add(revision_id)
-        local_fields = local_by_revision.get(revision_id, {})
-        manifest_fields: dict[str, str] = {}
-        if knowledge_core_client is not None:
-            try:
-                content = await _read_manifest(
-                    client=knowledge_core_client,
-                    reference=reference,
-                    domain_id=domain_id,
-                    auth_context=auth_context,
-                )
-                manifest_fields = parse_manifest_asset_fields(content)
-            except Exception as exc:
-                log = logger.debug if local_fields else logger.warning
-                log(
-                    "Slack Asset Manifest 补齐失败："
-                    "citation_label={} cause={}",
-                    reference.get("citation_label") or "-",
-                    str(exc),
-                )
-        fields = {**manifest_fields, **local_fields}
+        seen_revisions.add(revision_key)
+        try:
+            preview = await main_api_client.get_reference_preview(
+                run_id=run_id,
+                citation_label=citation_label,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Slack Asset 公开参考预览读取失败："
+                "citation_label={} cause={}",
+                citation_label,
+                str(exc),
+            )
+            continue
+        fields = _mapping_asset_fields(preview.get("asset_fields"))
         if fields:
             manifest_cards.append(
                 {
                     **fields,
-                    "citation_label": str(
-                        reference.get("citation_label") or ""
-                    ),
+                    "citation_label": citation_label,
                     "bundle_revision_id": revision_id,
                 }
             )
+            if len(manifest_cards) >= limit:
+                break
     candidate_cards = _merge_candidate_sources(
         manifest_cards,
     )

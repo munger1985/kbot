@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 from km_asset_app.application.slack_assets import (
-    assemble_slack_asset_cards,
+    assemble_slack_asset_cards as _assemble_slack_asset_cards,
     extract_answer_asset_cards,
     parse_manifest_asset_fields,
 )
@@ -32,6 +32,7 @@ from km_asset_app.application.slack_rendering import (
     render_slack_replies,
     render_slack_reply,
     slack_visible_payload,
+    waiting_message,
 )
 from km_asset_app.config import (
     SlackExternalCallbackConfig,
@@ -79,6 +80,30 @@ class SlackSignatureTest(unittest.TestCase):
                 now=1000,
             )
         )
+
+
+class SlackWaitingMessageTest(unittest.TestCase):
+    def test_waiting_message_matches_user_language(self):
+        samples = {
+            "显示所有与 ChatBI 相关的资产": (
+                "您的问题 KM 助手正在搜集材料分析中，请稍等。"
+            ),
+            "ChatBIに関連するすべてのアセットを表示する": (
+                "KM アシスタントが資料を収集して質問を分析しています。"
+                "しばらくお待ちください。"
+            ),
+            "ChatBI 관련 자산을 모두 표시해 주세요": (
+                "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. "
+                "잠시만 기다려 주세요."
+            ),
+            "Show all assets related to ChatBI": (
+                "KM Assistant is gathering materials and analyzing your question, "
+                "please wait."
+            ),
+        }
+        for question, expected in samples.items():
+            with self.subTest(question=question):
+                self.assertEqual(expected, waiting_message(question))
 
 
 class SlackEventParsingTest(unittest.TestCase):
@@ -338,6 +363,64 @@ class _ManifestClient:
         return SimpleNamespace(status_code=200, body=stream())
 
 
+class _PublicReferencePreviewAdapter:
+    """把旧测试夹具投影为 Slack 实际使用的 Main API 预览契约。"""
+
+    def __init__(self, artifact: dict, knowledge_core_client):
+        payload = artifact.get("payload") or {}
+        self._references = {
+            str(item.get("citation_label") or "").upper(): item
+            for item in payload.get("references", [])
+            if isinstance(item, dict)
+        }
+        self._knowledge_core_client = knowledge_core_client
+
+    async def get_reference_preview(self, *, run_id, citation_label):
+        reference = self._references[citation_label.upper()]
+        client = self._knowledge_core_client
+        preview = await client.get_bundle_revision_preview(
+            bundle_revision_id=reference["bundle_revision_id"]
+        )
+        manifest = next(
+            item
+            for item in preview.get("files", [])
+            if str(item.get("document_role") or "").upper() == "MANIFEST"
+        )
+        response = await client.stream_source_file(
+            bundle_revision_id=reference["bundle_revision_id"],
+            document_version_id=manifest["document_version_id"],
+        )
+        body = bytearray()
+        async for chunk in response.body:
+            body.extend(chunk)
+        fields = parse_manifest_asset_fields(body.decode("utf-8-sig"))
+        return {
+            "title": fields.get("asset_title", ""),
+            "asset_fields": fields,
+        }
+
+
+async def assemble_slack_asset_cards(
+    *,
+    artifact,
+    limit,
+    main_api_client=None,
+    run_id=None,
+    knowledge_core_client=None,
+    **_legacy,
+):
+    """兼容旧夹具，同时始终验证生产代码的公开 Main API 契约。"""
+    client = main_api_client or _PublicReferencePreviewAdapter(
+        artifact, knowledge_core_client
+    )
+    return await _assemble_slack_asset_cards(
+        artifact=artifact,
+        main_api_client=client,
+        run_id=run_id or UUID("01900000-0000-7000-8000-000000000001"),
+        limit=limit,
+    )
+
+
 class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _manifest(asset_id: str, title: str) -> bytes:
@@ -440,7 +523,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ASSET/OAC", cards[0]["asset_id"])
         self.assertEqual(title, cards[0]["asset_title"])
 
-    async def test_template_allows_missing_solution_briefing(self):
+    async def test_template_requires_solution_briefing(self):
         reference = self._reference("C1", 103)
         title = "A K3s HA environment operations guides"
         manifest = (
@@ -477,8 +560,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             limit=10,
         )
 
-        self.assertEqual(1, len(cards))
-        self.assertNotIn("solution_briefing", cards[0])
+        self.assertEqual([], cards)
         payload = render_slack_reply(
             channel_id="C1",
             user_id="U1",
@@ -491,9 +573,9 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             asset_cards=cards,
         )
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn(f"*Asset Title:* {title}", rendered)
+        self.assertNotIn(f"*Asset Title:* {title}", rendered)
         self.assertNotIn("*Solution Briefing:*", rendered)
-        self.assertIn("https://km.example.com/assets/ASSET%2FK3S", rendered)
+        self.assertNotIn("https://km.example.com/assets/ASSET%2FK3S", rendered)
 
     async def test_query_result_without_document_does_not_build_templates(self):
         artifact = {
@@ -1193,7 +1275,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("参考资料", rendered)
         self.assertNotIn("manifest.md", rendered)
 
-    async def test_local_asset_metadata_replaces_references_when_manifest_fails(self):
+    async def test_local_asset_metadata_is_not_used_when_manifest_fails(self):
         references = [
             self._reference("C1", 41),
             self._reference("C2", 42),
@@ -1278,11 +1360,8 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             limit=10,
             uow_factory=Uow,
         )
-        self.assertEqual(
-            ["Asset B", "Asset A"],
-            [card["asset_title"] for card in cards],
-        )
-        self.assertEqual("Asset B Briefing", cards[0]["solution_briefing"])
+        # Slack 不得绕过 Main API 回退读取 km_asset_app 本地仓储。
+        self.assertEqual([], cards)
 
         payload = render_slack_reply(
             channel_id="C1",
@@ -1297,20 +1376,9 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         )
         rendered = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("参考资料", rendered)
-        self.assertIn("*Asset Title:* Asset B", rendered)
-        self.assertIn("*Solution Briefing:* Asset B Briefing", rendered)
-        self.assertIn(
-            "<mailto:b@example.com|b@example.com> | 2026-03-02",
-            rendered,
-        )
-        self.assertIn(
-            "https://km.example.com/assets/ASSET%2FB",
-            rendered,
-        )
-        self.assertLess(
-            rendered.index("*Asset Title:* Asset B"),
-            rendered.index("*Asset Title:* Asset A"),
-        )
+        self.assertNotIn("*Asset Title:* Asset B", rendered)
+        self.assertNotIn("*Solution Briefing:* Asset B Briefing", rendered)
+        self.assertNotIn("*Asset Title:* Asset A", rendered)
         self.assertNotIn("Background Asset X", rendered)
 
 
@@ -2231,14 +2299,14 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             payload["blocks"][5]["accessory"]["url"],
         )
 
-    def test_many_asset_templates_are_split_without_losing_order(self):
+    def test_max_asset_templates_fit_one_final_message_in_order(self):
         cards = [
             {
                 "asset_id": f"ASSET/{index}",
                 "asset_title": f"Asset {index}",
                 "solution_briefing": f"Briefing {index}",
             }
-            for index in range(1, 16)
+            for index in range(1, 11)
         ]
         payloads = render_slack_replies(
             channel_id="C1",
@@ -2250,7 +2318,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                 "payload": {
                     "answer": "\n\n".join(
                         f"**Asset {index}**: Briefing {index}"
-                        for index in range(1, 16)
+                        for index in range(1, 11)
                     ),
                     "status": "READY",
                     "used_citation_labels": ["C1"],
@@ -2268,7 +2336,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             asset_cards=cards,
         )
 
-        self.assertGreater(len(payloads), 1)
+        self.assertEqual(1, len(payloads))
         self.assertTrue(all(len(payload["blocks"]) <= 50 for payload in payloads))
         template_titles = [
             block["text"]["text"].removeprefix("*Asset Title:* ")
@@ -2282,11 +2350,9 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             )
         ]
         self.assertEqual(
-            [f"Asset {index}" for index in range(1, 16)],
+            [f"Asset {index}" for index in range(1, 11)],
             template_titles,
         )
-        for payload in payloads[1:]:
-            self.assertEqual("divider", payload["blocks"][0]["type"])
 
     def test_references_never_render_when_asset_cards_are_empty(self):
         payload = render_slack_reply(
@@ -2359,6 +2425,10 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             SlackReplyConfig(km_portal_base_url="apex.invalid/path")
 
+    def test_reply_rejects_more_than_ten_references(self):
+        with self.assertRaises(ValueError):
+            SlackReplyConfig(max_references=11)
+
     def test_workspace_reads_secrets_from_named_environment_variables(self):
         config = SlackWorkspaceConfig(
             workspace_id="T1",
@@ -2367,7 +2437,6 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             signing_secret_env="KBOT_SLACK_TEST_SIGNING_SECRET",
             bot_token_env="KBOT_SLACK_TEST_BOT_TOKEN",
         )
-        self.assertEqual(1, config.security_level)
         with patch.dict(
             os.environ,
             {
@@ -2390,9 +2459,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             callback_log = Path(directory) / "callback.log"
             service = SlackDispatchService(
                 uow_factory=None,
-                agent_client=None,
-                km_asset_client=None,
-                knowledge_core_client=None,
+                main_api_client=None,
                 slack_config=config,
                 worker_id="test-worker",
                 http_session=None,
@@ -2541,9 +2608,7 @@ class SlackVisibleDeliveryTest(unittest.IsolatedAsyncioTestCase):
             session = Session()
             service = SlackDispatchService(
                 uow_factory=None,
-                agent_client=None,
-                km_asset_client=None,
-                knowledge_core_client=None,
+                main_api_client=None,
                 slack_config=SlackIntegrationConfig(
                     debug={
                         "slack_reply_dump_enabled": True,
@@ -2614,9 +2679,7 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
         )
         service = SlackDispatchService(
             uow_factory=None,
-            agent_client=None,
-            km_asset_client=None,
-            knowledge_core_client=None,
+            main_api_client=None,
             slack_config=config,
             worker_id="test-worker",
             http_session=session,
@@ -2624,15 +2687,13 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
         service._fetch_user_info = AsyncMock(
             return_value=("User", "user@example.com")
         )
-        inbox = SimpleNamespace(
+        await service._send_external_callback(
+            bot_token="token",
             slack_user_id="U1",
             message_text="Question",
             workspace_id="T1",
             event_id="E1",
         )
-        workspace = SimpleNamespace(require_bot_token=lambda: "token")
-
-        await service._send_external_callback(inbox, workspace)
 
         self.assertEqual(
             "https://callback.example.com/events",
@@ -2654,12 +2715,33 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
-class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
-    async def test_new_conversation_uses_authoritative_execution_spec(self):
+class SlackDispatchMainApiTest(unittest.IsolatedAsyncioTestCase):
+    async def test_new_conversation_sends_original_question_to_main_api(self):
         agent_id = UUID("019ff999-6789-799b-97c3-500879812f7b")
         inbox_id = UUID("01a00e17-084d-7370-935e-5d8702b26ad1")
         conversation_id = UUID("01a00e17-084d-7370-935e-5d8702b26ad2")
-        inbox = SimpleNamespace(
+
+        class ExpiringInbox(SimpleNamespace):
+            _protected = {
+                "workspace_id",
+                "channel_id",
+                "slack_user_id",
+                "root_thread_ts",
+                "message_text",
+                "event_id",
+                "callback_sent_at",
+            }
+
+            def __getattribute__(self, name):
+                if name in object.__getattribute__(self, "_protected"):
+                    if not object.__getattribute__(self, "_active"):
+                        raise AssertionError(
+                            f"UoW 退出后访问了 Inbox 属性：{name}"
+                        )
+                return object.__getattribute__(self, name)
+
+        inbox = ExpiringInbox(
+            _active=False,
             inbox_id=inbox_id,
             workspace_id="T1",
             channel_id="C1",
@@ -2682,25 +2764,14 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             commit = AsyncMock()
 
             async def __aenter__(self):
+                inbox._active = True
                 return self
 
             async def __aexit__(self, exc_type, exc, traceback):
+                inbox._active = False
                 return None
 
-        execution_spec = {
-            "agent_id": str(agent_id),
-            "domain_id": 1001,
-            "model_bindings": {},
-            "resource_context": {
-                "collection_ids": [
-                    "019ff999-6789-799b-97c3-500879812f7c"
-                ]
-            },
-        }
-        km_asset_client = SimpleNamespace(
-            execution_spec=AsyncMock(return_value=execution_spec)
-        )
-        agent_client = SimpleNamespace(
+        main_api_client = SimpleNamespace(
             create_conversation=AsyncMock(
                 return_value={"conversation_id": str(conversation_id)}
             ),
@@ -2724,9 +2795,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
         )
         service = SlackDispatchService(
             uow_factory=UnitOfWork,
-            agent_client=agent_client,
-            km_asset_client=km_asset_client,
-            knowledge_core_client=None,
+            main_api_client=main_api_client,
             slack_config=config,
             worker_id="test-worker",
             http_session=None,
@@ -2734,27 +2803,20 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
 
         await service._start_run(inbox_id)
 
-        km_call = km_asset_client.execution_spec.await_args.kwargs
-        self.assertEqual(agent_id, km_call["agent_id"])
-        self.assertEqual(1001, km_call["domain_id"])
-        self.assertEqual(("km_asset.slack.dispatch",), km_call["scopes"])
-        create_payload = agent_client.create_conversation.await_args.kwargs[
+        create_payload = main_api_client.create_conversation.await_args.kwargs[
             "payload"
         ]
-        self.assertIs(execution_spec, create_payload["execution_spec"])
-        turn_payload = agent_client.create_conversation_turn.await_args.kwargs[
+        self.assertNotIn("execution_spec", create_payload)
+        turn_payload = main_api_client.create_conversation_turn.await_args.kwargs[
             "payload"
         ]
-        self.assertIs(execution_spec, turn_payload["execution_spec"])
+        self.assertNotIn("execution_spec", turn_payload)
         self.assertEqual(
             "any assets of madhumitha.k@oracle.com；",
             turn_payload["input"],
         )
-        self.assertEqual(
-            ["019ff999-6789-799b-97c3-500879812f7c"],
-            turn_payload["collection_ids"],
-        )
-        self.assertEqual(1, turn_payload["security_level"])
+        self.assertNotIn("collection_ids", turn_payload)
+        self.assertNotIn("security_level", turn_payload)
         self.assertNotIn("route_type", turn_payload)
         self.assertNotIn("task_type", turn_payload)
 
@@ -2823,7 +2885,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
                 return None
 
         units = iter((FirstUnitOfWork(), SecondUnitOfWork()))
-        agent_client = SimpleNamespace(
+        main_api_client = SimpleNamespace(
             get_run=AsyncMock(return_value={"status": "COMPLETED"}),
             get_result=AsyncMock(
                 return_value={
@@ -2840,9 +2902,7 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
         )
         service = SlackDispatchService(
             uow_factory=lambda: next(units),
-            agent_client=agent_client,
-            km_asset_client=None,
-            knowledge_core_client=None,
+            main_api_client=main_api_client,
             slack_config=SlackIntegrationConfig(
                 enabled=True,
                 workspaces=[
@@ -2877,12 +2937,12 @@ class SlackDispatchExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
             await service._check_run(inbox_id)
 
         self.assertEqual("COMPLETED", current.status)
-        self.assertEqual(2, second_repository.add_delivery.await_count)
+        self.assertEqual(1, second_repository.add_delivery.await_count)
         delivery_types = [
             call.args[0].delivery_type
             for call in second_repository.add_delivery.await_args_list
         ]
-        self.assertEqual(["FINAL", "FINAL_0001"], delivery_types)
+        self.assertEqual(["FINAL"], delivery_types)
 
 
 if __name__ == "__main__":
