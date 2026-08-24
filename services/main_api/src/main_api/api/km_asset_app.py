@@ -144,7 +144,6 @@ class VersionPayload(_Payload):
 
 
 class KmCollectionCreatePayload(_Payload):
-    parser_llm: UUID
     parser_vlm: UUID | None = None
     embedding: UUID
     visual_embedding: UUID | None = None
@@ -157,7 +156,6 @@ class KmCollectionStatusPayload(_Payload):
 
 
 class KmCollectionModelsPayload(_Payload):
-    parser_llm: UUID
     parser_vlm: UUID | None = None
     embedding: UUID
     visual_embedding: UUID | None = None
@@ -483,7 +481,6 @@ async def _optional_fixed_collection(
 async def _validated_collection_models(
     request: Request,
     *,
-    parser_llm: UUID,
     parser_vlm: UUID | None,
     embedding: UUID,
     visual_embedding: UUID | None,
@@ -492,7 +489,6 @@ async def _validated_collection_models(
     catalog = await load_model_catalog(request)
     by_id = {str(item.get("model_id")): item for item in catalog}
     requested = {
-        "parser_llm": (parser_llm, 1),
         "embedding": (embedding, 2),
     }
     if parser_vlm is not None:
@@ -669,7 +665,6 @@ async def create_km_knowledge_core(
         )
     models = await _validated_collection_models(
         request,
-        parser_llm=payload.parser_llm,
         parser_vlm=payload.parser_vlm,
         embedding=payload.embedding,
         visual_embedding=payload.visual_embedding,
@@ -725,7 +720,6 @@ async def update_km_knowledge_core_models(
     collection = await _fixed_collection(request, domain_id=domain_id)
     models = await _validated_collection_models(
         request,
-        parser_llm=payload.parser_llm,
         parser_vlm=payload.parser_vlm,
         embedding=payload.embedding,
         visual_embedding=payload.visual_embedding,

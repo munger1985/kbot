@@ -4260,11 +4260,6 @@
             "title": "Embedding",
             "type": "string"
           },
-          "parser_llm": {
-            "format": "uuid",
-            "title": "Parser Llm",
-            "type": "string"
-          },
           "parser_vlm": {
             "anyOf": [
               {
@@ -4291,7 +4286,6 @@
           }
         },
         "required": [
-          "parser_llm",
           "embedding"
         ],
         "title": "KmCollectionCreatePayload",
@@ -4310,11 +4304,6 @@
             "title": "Expected Row Version",
             "type": "integer"
           },
-          "parser_llm": {
-            "format": "uuid",
-            "title": "Parser Llm",
-            "type": "string"
-          },
           "parser_vlm": {
             "anyOf": [
               {
@@ -4341,7 +4330,6 @@
           }
         },
         "required": [
-          "parser_llm",
           "embedding",
           "expected_row_version"
         ],

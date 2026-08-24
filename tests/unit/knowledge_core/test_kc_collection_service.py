@@ -121,7 +121,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 display_name="Asset Knowledge",
                 models={
-                    "parser_llm": uuid7(),
                     "parser_vlm": uuid7(),
                     "embedding": embedding_model_id,
                 },
@@ -146,7 +145,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
             display_name="Asset Knowledge",
             description=None,
             models_json={
-                "parser_llm": str(uuid7()),
                 "embedding": str(uuid7()),
             },
             parse_policy_json={},
@@ -177,7 +175,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 display_name="Asset Knowledge",
                 models={
-                    "parser_llm": uuid7(),
                     "embedding": "not-a-uuid",
                 },
             ))
@@ -189,7 +186,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         original_embedding = uuid7()
         collection = SimpleNamespace(
             models_json={
-                "parser_llm": str(uuid7()),
                 "embedding": str(original_embedding),
             },
             updated_by=None,
@@ -198,7 +194,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         service, uow = self._service(
             FakeCollectionRepository(existing=collection)
         )
-        parser_llm = uuid7()
         parser_vlm = uuid7()
 
         updated = await service.update_models(
@@ -206,7 +201,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 collection_id=COLLECTION_ID,
                 models={
-                    "parser_llm": parser_llm,
                     "parser_vlm": parser_vlm,
                     "embedding": original_embedding,
                     "future_role": uuid7(),
@@ -215,7 +209,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.assertEqual(str(parser_llm), updated.models_json["parser_llm"])
         self.assertEqual(str(parser_vlm), updated.models_json["parser_vlm"])
         self.assertEqual(
             str(original_embedding), updated.models_json["embedding"]
@@ -228,7 +221,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         next_embedding = uuid7()
         collection = SimpleNamespace(
             models_json={
-                "parser_llm": str(uuid7()),
                 "embedding": str(original_embedding),
             },
             updated_by=None,
@@ -243,7 +235,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=8,
                 collection_id=COLLECTION_ID,
                 models={
-                    "parser_llm": uuid7(),
                     "embedding": next_embedding,
                 },
                 expected_row_version=1,
@@ -259,7 +250,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         original_embedding = uuid7()
         collection = SimpleNamespace(
             models_json={
-                "parser_llm": str(uuid7()),
                 "embedding": str(original_embedding),
             },
             updated_by=None,
@@ -277,7 +267,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=8,
                     collection_id=COLLECTION_ID,
                     models={
-                        "parser_llm": uuid7(),
                         "embedding": uuid7(),
                     },
                     expected_row_version=1,
@@ -289,7 +278,6 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_model_policy_reflects_parse_activity(self):
         collection = SimpleNamespace(
             models_json={
-                "parser_llm": str(uuid7()),
                 "embedding": str(uuid7()),
                 "visual_embedding": str(uuid7()),
             },

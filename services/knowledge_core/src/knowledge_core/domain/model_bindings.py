@@ -5,9 +5,7 @@ from collections.abc import Mapping
 from uuid import UUID
 
 
-KC_REQUIRED_MODEL_ROLES = frozenset(
-    {"parser_llm", "embedding"}
-)
+KC_REQUIRED_MODEL_ROLES = frozenset({"embedding"})
 KC_IMMUTABLE_MODEL_ROLES = frozenset(
     {"embedding", "visual_embedding"}
 )

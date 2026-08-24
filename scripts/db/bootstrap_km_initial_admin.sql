@@ -116,9 +116,7 @@ WHEN NOT MATCHED THEN
 DECLARE
     l_domain_id NUMBER(38);
     l_collection_count PLS_INTEGER;
-    l_llm_model_id RAW(16);
     l_embedding_model_id RAW(16);
-    l_llm_uuid VARCHAR2(36 CHAR);
     l_embedding_uuid VARCHAR2(36 CHAR);
     l_models_json VARCHAR2(1000 CHAR);
 
@@ -154,25 +152,6 @@ BEGIN
     IF l_collection_count = 0 THEN
         BEGIN
             SELECT MODEL_ID
-              INTO l_llm_model_id
-              FROM (
-                  SELECT MODEL_ID
-                    FROM KBOT_AI_MODEL
-                   WHERE CATEGORY = 1
-                     AND STATUS = 1
-                   ORDER BY UPDATED_AT DESC, CREATED_AT DESC
-              )
-             WHERE ROWNUM = 1;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                raise_application_error(
-                    -20003,
-                    '缺少启用的 LLM 模型，无法创建 assets Collection。'
-                );
-        END;
-
-        BEGIN
-            SELECT MODEL_ID
               INTO l_embedding_model_id
               FROM (
                   SELECT MODEL_ID
@@ -185,15 +164,13 @@ BEGIN
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 raise_application_error(
-                    -20004,
+                    -20003,
                     '缺少启用的文本 Embedding 模型，无法创建 assets Collection。'
                 );
         END;
 
-        l_llm_uuid := raw_uuid(l_llm_model_id);
         l_embedding_uuid := raw_uuid(l_embedding_model_id);
-        l_models_json := '{"parser_llm":"' || l_llm_uuid
-            || '","embedding":"' || l_embedding_uuid || '"}';
+        l_models_json := '{"embedding":"' || l_embedding_uuid || '"}';
 
         INSERT INTO KBOT_KC_COLLECTION (
             COLLECTION_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION,
@@ -226,6 +203,21 @@ BEGIN
          WHERE DOMAIN_ID = l_domain_id
            AND DISPLAY_NAME = 'assets';
         dbms_output.put_line('已复用并启用 km_portal/assets 固定 Collection。');
+    END IF;
+
+    UPDATE KBOT_KC_COLLECTION
+       SET MODELS_JSON = JSON_TRANSFORM(
+               MODELS_JSON,
+               REMOVE '$.parser_llm'
+           ),
+           ROW_VERSION = ROW_VERSION + 1,
+           UPDATED_BY = 'bootstrap:km_initial_admin',
+           UPDATED_AT = SYSTIMESTAMP
+     WHERE DOMAIN_ID = l_domain_id
+       AND DISPLAY_NAME = 'assets'
+       AND JSON_EXISTS(MODELS_JSON, '$.parser_llm');
+    IF SQL%ROWCOUNT > 0 THEN
+        dbms_output.put_line('已清理 assets Collection 的无效 parser_llm 绑定。');
     END IF;
 END;
 /

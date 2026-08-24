@@ -173,12 +173,10 @@ class KmAssetAppContractTest(unittest.TestCase):
 
 class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
     async def test_collection_models_are_validated_against_active_catalog(self):
-        llm_id = UUID("01900000-0000-7000-8000-000000000031")
         embedding_id = UUID("01900000-0000-7000-8000-000000000032")
         visual_id = UUID("01900000-0000-7000-8000-000000000033")
         vlm_id = UUID("01900000-0000-7000-8000-000000000034")
         catalog = [
-            {"model_id": str(llm_id), "category": 1},
             {"model_id": str(embedding_id), "category": 2},
             {"model_id": str(visual_id), "category": 3},
             {"model_id": str(vlm_id), "category": 5},
@@ -190,23 +188,21 @@ class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
         ):
             models = await _validated_collection_models(
                 SimpleNamespace(),
-                parser_llm=llm_id,
                 parser_vlm=vlm_id,
                 embedding=embedding_id,
                 visual_embedding=visual_id,
             )
 
-        self.assertEqual(str(llm_id), models["parser_llm"])
         self.assertEqual(str(vlm_id), models["parser_vlm"])
         self.assertEqual(str(embedding_id), models["embedding"])
         self.assertEqual(str(visual_id), models["visual_embedding"])
 
     async def test_collection_model_category_mismatch_is_rejected(self):
-        llm_id = UUID("01900000-0000-7000-8000-000000000041")
         embedding_id = UUID("01900000-0000-7000-8000-000000000042")
+        vlm_id = UUID("01900000-0000-7000-8000-000000000043")
         catalog = [
-            {"model_id": str(llm_id), "category": 2},
             {"model_id": str(embedding_id), "category": 2},
+            {"model_id": str(vlm_id), "category": 2},
         ]
 
         with patch(
@@ -215,8 +211,7 @@ class KmKnowledgeCoreContractTest(unittest.IsolatedAsyncioTestCase):
         ), self.assertRaises(HTTPException) as raised:
             await _validated_collection_models(
                 SimpleNamespace(),
-                parser_llm=llm_id,
-                parser_vlm=None,
+                parser_vlm=vlm_id,
                 embedding=embedding_id,
                 visual_embedding=None,
             )

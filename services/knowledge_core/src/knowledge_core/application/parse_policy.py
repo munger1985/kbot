@@ -52,7 +52,10 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
             dict(getattr(collection, "parse_policy_json", None) or {})
         )
     )
-    policy["models"] = dict(collection.models_json or {})
+    collection_models = dict(collection.models_json or {})
+    policy["models"] = {
+        "parser_vlm": collection_models["parser_vlm"]
+    } if collection_models.get("parser_vlm") else {}
     if overrides.get("ocr_model"):
         policy["ocr_model"] = overrides["ocr_model"]
     if policy.get("ocr_model"):

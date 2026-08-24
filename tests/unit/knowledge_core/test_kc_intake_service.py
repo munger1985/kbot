@@ -66,7 +66,6 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _collection(*, parser_vlm_model_id=None):
         models = {
-            "parser_llm": str(uuid7()),
             "embedding": str(uuid7()),
         }
         if parser_vlm_model_id:
@@ -277,6 +276,35 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "kc-deepseek-ocr-pipeline",
             uow.parse_views.added[0].parser_name,
+        )
+
+    async def test_parse_snapshot_only_contains_runtime_parser_models(self):
+        collection = self._collection(parser_vlm_model_id=uuid7())
+        collection.models_json["unused_role"] = str(uuid7())
+        values = {"collection": collection}
+        uow = Uow(values)
+        service = KnowledgeCoreIntakeService(
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+        )
+        version = SimpleNamespace(
+            document_version_id=40,
+            detected_mime_type="application/pdf",
+            content_hash="a" * 64,
+        )
+
+        await service._enqueue_parse(
+            uow,
+            collection_id=1,
+            bundle_revision_id=20,
+            version=version,
+            actor_id="svc:test",
+        )
+
+        policy_models = uow.parse_views.added[0].parse_config_json["models"]
+        self.assertEqual(
+            {"parser_vlm": collection.models_json["parser_vlm"]},
+            policy_models,
         )
 
     async def test_rejects_changed_snapshot_for_same_source_revision(self):

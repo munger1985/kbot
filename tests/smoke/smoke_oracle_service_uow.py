@@ -140,7 +140,6 @@ async def smoke() -> None:
                     domain_id=domain_id,
                     display_name="Oracle Smoke Collection",
                     models_json={
-                        "parser_llm": str(model_id),
                         "embedding": str(model_id),
                     },
                     status="ACTIVE",
@@ -161,7 +160,6 @@ async def smoke() -> None:
                     domain_id=domain_id,
                     display_name="Oracle Smoke Rollback Collection",
                     models_json={
-                        "parser_llm": str(model_id),
                         "embedding": str(model_id),
                     },
                     status="ACTIVE",

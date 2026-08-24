@@ -73,7 +73,6 @@
 
   function renderModels() {
     const roles = [
-      ["parser_llm", "Parser LLM", 1, "预留角色；当前解析流水线未调用"],
       ["parser_vlm", "Parser VLM", 5, "图片与视觉页面解析，可更新"],
       ["embedding", "文本 Embedding", 2, modelPolicy?.embedding_change_allowed ? "当前允许更换" : "已有解析活动，不可更换"],
       ["visual_embedding", "视觉 Embedding", 3, modelPolicy?.visual_embedding_change_allowed ? "当前允许配置" : "已有解析活动，不可更换或移除"],
@@ -123,7 +122,6 @@
     populateModelSelects();
     form.elements.mode.value = "models";
     form.elements.expected_row_version.value = collection.row_version;
-    form.elements.parser_llm.value = collection.models?.parser_llm || "";
     form.elements.parser_vlm.value = collection.models?.parser_vlm || "";
     form.elements.embedding.value = collection.models?.embedding || "";
     form.elements.embedding.disabled = !modelPolicy?.embedding_change_allowed;
@@ -148,7 +146,6 @@
     const values = Object.fromEntries(new FormData(form));
     const editing = values.mode === "models";
     const payload = {
-      parser_llm: values.parser_llm,
       parser_vlm: values.parser_vlm || null,
       embedding: editing && form.elements.embedding.disabled ? collection.models.embedding : values.embedding,
       visual_embedding: editing && form.elements.visual_embedding.disabled ? (collection.models.visual_embedding || null) : (values.visual_embedding || null),
