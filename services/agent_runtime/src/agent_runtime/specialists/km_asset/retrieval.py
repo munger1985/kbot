@@ -18,9 +18,6 @@ from agent_runtime.language import detect_unicode_language, response_language
 from agent_runtime.runtime import ExecutionContext
 
 
-_TOPIC_EXPANSION_LANGUAGES = frozenset({"zh-CN", "ja-JP", "ko-KR"})
-
-
 class KmAssetRetrievalMixin:
     """只为 KM Asset Skill 提供搜索计划取证实现。"""
 
@@ -470,7 +467,7 @@ class KmAssetRetrievalMixin:
         plan: AssetSearchPlanV1,
         criterion: AssetSearchCriterion,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """为中日韩语义条件补充英文检索词，原文与译词保持独立查询。"""
+        """为多语言语义条件补充英文词形，原文与扩展词合并检索。"""
         original = self._criterion_query(criterion)
         if not original:
             return (), ()
@@ -480,15 +477,13 @@ class KmAssetRetrievalMixin:
             else ()
         )
         if equivalents:
-            return tuple(dict.fromkeys((original, *equivalents))), ()
+            return self._unique_queries((original, *equivalents)), ()
         if criterion.kind != "SEMANTIC_CONCEPT" or len(criterion.values) != 1:
             return (original,), ()
         source_language = detect_unicode_language(original)
         response_language_value = response_language(
             context.config_snapshot, context.original_input
         )
-        if source_language not in _TOPIC_EXPANSION_LANGUAGES:
-            return (original,), ()
         agent = context.config_snapshot.get("agent", {})
         model_name = str(
             agent_model_name(agent, "data_planner_llm")
@@ -526,7 +521,7 @@ class KmAssetRetrievalMixin:
                     source_language=source_language,
                     original_topic=original,
                 )
-                return tuple(dict.fromkeys((original, *english_topics))), ()
+                return self._unique_queries((original, *english_topics)), ()
             except (AttributeError, TypeError, ValueError) as exc:
                 if attempt == 0:
                     messages.append({
@@ -539,6 +534,20 @@ class KmAssetRetrievalMixin:
         return (original,), (
             "主题英文补充检索失败，已仅使用原语言检索",
         )
+
+    @staticmethod
+    def _unique_queries(values: tuple[str, ...]) -> tuple[str, ...]:
+        """按大小写不敏感语义去重，同时保留第一个检索词的原始写法。"""
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = " ".join(str(value).split())
+            key = normalized.casefold()
+            if not normalized or key in seen:
+                continue
+            seen.add(key)
+            result.append(normalized)
+        return tuple(result)
 
     @staticmethod
     def _validate_topic_expansion(

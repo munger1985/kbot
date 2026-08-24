@@ -988,6 +988,65 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             skill._combined_retrieval_query(queries),
         )
 
+    async def test_english_semantic_criterion_adds_common_word_forms(self):
+        plan = _base_plan(
+            query_text="有没有跟 Finance 相关的 Asset",
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["Finance"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        )
+        model_client = SimpleNamespace(get_llm_json=AsyncMock(return_value={
+            "source_language": "en-US",
+            "original_topic": "Finance",
+            "english_topics": ["finance", "financial"],
+        }))
+        prompt_resolver = SimpleNamespace(resolve=AsyncMock(
+            return_value=SimpleNamespace(content="expand word forms")
+        ))
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=None,
+            service_name="agent_runtime",
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+        )
+        context = ExecutionContext(
+            domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
+            task_key="test", actor_id="user", request_id="request",
+            trace_id="trace", original_input=plan.query_text,
+            policy_snapshot={},
+            config_snapshot={
+                "agent": {"models": {"data_planner_llm": {
+                    "served_model_name": "planner",
+                }}},
+            },
+            input_artifacts=(),
+        )
+
+        queries, warnings = await skill._criterion_queries(
+            context=context,
+            plan=plan,
+            criterion=plan.criteria[0],
+        )
+
+        self.assertEqual(("Finance", "financial"), queries)
+        self.assertEqual((), warnings)
+        self.assertTrue(KnowledgeRetrievalSkill._group_supports_terms(
+            {
+                "items": [{"evidence": {
+                    "content_text": "Financial fraud detection and risk insights",
+                }}],
+            },
+            terms=queries,
+        ))
+
     async def test_cjk_equivalents_share_one_kc_evidence_request(self):
         plan = _base_plan(
             query_text="找几个关于金融欺诈的 Asset",
