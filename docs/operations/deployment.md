@@ -268,6 +268,16 @@ python3 scripts/db/apply_oracle_schema.py \
   --config scripts/db/init_services.ini
 ```
 
+如果全部 DDL 已执行完成，但在最终对象校验、Prompt 同步或基础数据初始化阶段失败，
+修复并更新代码后可执行以下恢复命令。该模式不会重复执行 DDL，也不接受结构不完整的
+Schema：
+
+```bash
+python3 scripts/db/apply_oracle_schema.py \
+  --config scripts/db/init_services.ini \
+  --finalize-existing
+```
+
 初始化器拒绝覆盖已有 `KBOT_%` 对象。4.0 不读取、迁移或兼容 3.x 表和数据。完整
 权限、表空间和执行顺序见 [Oracle 初始化说明](../../database/oracle/README.md)。
 

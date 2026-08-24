@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from scripts.db.apply_oracle_schema import (
     FOUNDATION_VALIDATION_EXIT_CODE,
@@ -219,6 +219,23 @@ class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
 
 
 class PlatformFoundationCliTest(unittest.TestCase):
+    @patch(
+        "sys.argv",
+        ["apply_oracle_schema.py", "--finalize-existing"],
+    )
+    @patch(
+        "scripts.db.apply_oracle_schema.apply_schema",
+        new_callable=AsyncMock,
+    )
+    def test_finalize_existing_uses_non_ddl_recovery_mode(
+        self, mocked_apply
+    ):
+        self.assertEqual(0, main())
+        mocked_apply.assert_awaited_once()
+        self.assertTrue(
+            mocked_apply.await_args.kwargs["finalize_existing"]
+        )
+
     @patch(
         "sys.argv",
         ["apply_oracle_schema.py", "--check-foundation"],

@@ -477,8 +477,23 @@ def main() -> int:
             aiops_sql,
         ):
             errors.append(f"AIOps 缺少函数唯一索引：{index_name}")
-    if aiops_sql.count("DEFERRABLE INITIALLY DEFERRED") < 5:
-        errors.append("AIOps 必须包含至少 5 个延后当前指针外键")
+    aiops_manifest = json.loads(
+        (SCHEMA_ROOT / "aiops_agent" / "schema_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected_deferred_count = len(
+        aiops_manifest.get("deferred_foreign_keys") or ()
+    )
+    actual_deferred_count = aiops_sql.count(
+        "DEFERRABLE INITIALLY DEFERRED"
+    )
+    if actual_deferred_count != expected_deferred_count:
+        errors.append(
+            "AIOps 延后外键数量与 Manifest 不一致："
+            f"DDL={actual_deferred_count}，"
+            f"Manifest={expected_deferred_count}"
+        )
     if re.search(r"\bMODE\s+VARCHAR2\b", aiops_sql):
         errors.append("AIOps 禁止使用 Oracle 26ai 保留字 MODE 作为列名")
     if not re.search(

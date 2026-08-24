@@ -62,7 +62,7 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
 
     def test_concurrency_and_history_constraints_are_present(self) -> None:
         self.assertEqual(
-            5,
+            len(self.manifest["deferred_foreign_keys"]),
             self.upper_sql.count("DEFERRABLE INITIALLY DEFERRED"),
         )
         for name in self.manifest["function_unique_indexes"]:

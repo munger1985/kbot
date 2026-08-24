@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import re
 from configparser import ConfigParser, Error as ConfigParserError
 from dataclasses import dataclass
@@ -789,6 +790,7 @@ async def _validate_schema(
     connection: AsyncConnection,
     expected_tables: set[str],
     expected_views: set[str],
+    aiops_manifest: dict | None = None,
 ) -> None:
     rows = (
         await connection.execute(
@@ -856,24 +858,33 @@ async def _validate_schema(
     if "KBOT_OPS_TARGET" not in expected_tables:
         return
 
-    deferred_artifact_fks = (
-        await connection.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM user_constraints
-                WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
-                  AND constraint_type = 'R'
-                  AND deferrable = 'DEFERRABLE'
-                  AND deferred = 'DEFERRED'
-                """
+    if aiops_manifest is None:
+        raise RuntimeError("AIOps Schema 校验缺少 Manifest 合同")
+    deferred_artifact_fks = set(
+        (
+            await connection.execute(
+                text(
+                    """
+                    SELECT constraint_name
+                    FROM user_constraints
+                    WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                      AND constraint_type = 'R'
+                      AND deferrable = 'DEFERRABLE'
+                      AND deferred = 'DEFERRED'
+                    ORDER BY constraint_name
+                    """
+                )
             )
-        )
-    ).scalar_one()
-    if deferred_artifact_fks != 5:
+        ).scalars()
+    )
+    expected_deferred_fks = set(
+        aiops_manifest.get("deferred_foreign_keys") or ()
+    )
+    if deferred_artifact_fks != expected_deferred_fks:
         raise RuntimeError(
-            "AIOps 延后 Artifact 外键数量错误："
-            f"{deferred_artifact_fks}，预期 5"
+            "AIOps 延后外键与 Manifest 不一致："
+            f"缺少={sorted(expected_deferred_fks - deferred_artifact_fks)}，"
+            f"多出={sorted(deferred_artifact_fks - expected_deferred_fks)}"
         )
 
     function_indexes = set(
@@ -883,24 +894,17 @@ async def _validate_schema(
                     """
                     SELECT index_name
                     FROM user_indexes
-                    WHERE index_name IN (
-                        'UX_OPS_POLICY_ACTIVE',
-                        'UX_OPS_ALERT_ACTIVE',
-                        'UX_OPS_HITL_PENDING',
-                        'UX_OPS_REPORT_CURRENT'
-                    )
+                    WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
+                      AND uniqueness = 'UNIQUE'
                     """
                 )
             )
         ).scalars()
     )
-    expected_function_indexes = {
-        "UX_OPS_POLICY_ACTIVE",
-        "UX_OPS_ALERT_ACTIVE",
-        "UX_OPS_HITL_PENDING",
-        "UX_OPS_REPORT_CURRENT",
-    }
-    if function_indexes != expected_function_indexes:
+    expected_function_indexes = set(
+        aiops_manifest.get("function_unique_indexes") or ()
+    )
+    if not expected_function_indexes.issubset(function_indexes):
         raise RuntimeError(
             "AIOps 函数唯一索引不完整："
             f"{sorted(expected_function_indexes - function_indexes)}"
@@ -965,11 +969,21 @@ async def _validate_schema(
             )
         )
     ).one()
-    if tuple(schema_version) != ("AIOPS", 8, "aiops-oracle-v1"):
+    expected_schema_version = (
+        "AIOPS",
+        int(aiops_manifest.get("schema_version") or 0),
+        str(aiops_manifest.get("contract_version") or ""),
+    )
+    if tuple(schema_version) != expected_schema_version:
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 
-async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
+async def apply_schema(
+    *,
+    dry_run: bool,
+    config_path: Path,
+    finalize_existing: bool = False,
+) -> None:
     """执行空库检查、DDL 和对象完整性校验。"""
     selection = load_service_selection(config_path)
     statements = load_schema_statements(selection.ordered)
@@ -1001,6 +1015,15 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
     selected_prompt_entries = prompt_catalog.for_services(
         set(selection.ordered)
     )
+    aiops_manifest = (
+        json.loads(
+            (SCHEMA_ROOT / "aiops_agent" / "schema_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        if "aiops_agent" in selection.enabled
+        else None
+    )
     print(
         f"初始化范围：必建={', '.join(selection.required)}；"
         f"已选服务={enabled_label}"
@@ -1019,31 +1042,38 @@ async def apply_schema(*, dry_run: bool, config_path: Path) -> None:
     try:
         async with runtime.engine.connect() as connection:
             pdb_name, schema_name = await _read_target(connection)
-            await _assert_empty_schema(connection)
-            await _assert_ddl_privileges(connection)
-            if "knowledge_core" in selection.enabled:
-                await _assert_kc_runtime_privileges(connection)
-            print(f"目标确认：PDB={pdb_name}，Schema={schema_name}")
-
-            for position, statement in enumerate(statements, start=1):
-                try:
-                    await connection.exec_driver_sql(statement.sql)
-                except Exception:
-                    print(
-                        "DDL 执行失败："
-                        f"{statement.script} 第 {statement.ordinal} 条，"
-                        f"{statement.label}"
-                    )
-                    raise
+            if finalize_existing:
                 print(
-                    f"[{position}/{len(statements)}] "
-                    f"{statement.script}: {statement.label}"
+                    "恢复目标确认："
+                    f"PDB={pdb_name}，Schema={schema_name}；不重复执行 DDL"
                 )
+            else:
+                await _assert_empty_schema(connection)
+                await _assert_ddl_privileges(connection)
+                if "knowledge_core" in selection.enabled:
+                    await _assert_kc_runtime_privileges(connection)
+                print(f"目标确认：PDB={pdb_name}，Schema={schema_name}")
+
+                for position, statement in enumerate(statements, start=1):
+                    try:
+                        await connection.exec_driver_sql(statement.sql)
+                    except Exception:
+                        print(
+                            "DDL 执行失败："
+                            f"{statement.script} 第 {statement.ordinal} 条，"
+                            f"{statement.label}"
+                        )
+                        raise
+                    print(
+                        f"[{position}/{len(statements)}] "
+                        f"{statement.script}: {statement.label}"
+                    )
 
             await _validate_schema(
                 connection,
                 expected_tables=expected_tables,
                 expected_views=expected_views,
+                aiops_manifest=aiops_manifest,
             )
             prompt_count = await sync_prompt_catalog(
                 connection,
@@ -1080,16 +1110,21 @@ def main() -> int:
         action="store_true",
         help="只解析并统计 DDL，不连接或修改数据库",
     )
-    foundation_group = parser.add_mutually_exclusive_group()
-    foundation_group.add_argument(
+    operation_group = parser.add_mutually_exclusive_group()
+    operation_group.add_argument(
         "--foundation-only",
         action="store_true",
         help="不执行 DDL，仅幂等修复并校验平台首次登录基础数据",
     )
-    foundation_group.add_argument(
+    operation_group.add_argument(
         "--check-foundation",
         action="store_true",
         help="只读校验平台首次登录基础数据",
+    )
+    operation_group.add_argument(
+        "--finalize-existing",
+        action="store_true",
+        help="不重复执行 DDL，校验已建对象并完成 Prompt 与基础数据初始化",
     )
     args = parser.parse_args()
     try:
@@ -1102,10 +1137,15 @@ def main() -> int:
                 maintain_platform_foundation(repair=args.foundation_only)
             )
         else:
+            if args.dry_run and args.finalize_existing:
+                raise RuntimeError(
+                    "--dry-run 不能与 --finalize-existing 同时使用"
+                )
             asyncio.run(
                 apply_schema(
                     dry_run=args.dry_run,
                     config_path=args.config.expanduser().resolve(),
+                    finalize_existing=args.finalize_existing,
                 )
             )
     except FoundationValidationError as exc:
