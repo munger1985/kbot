@@ -585,7 +585,17 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
                     schema_version="GroundedAnswer.v1",
                     producer="response-composer",
                     producer_version="1.0.0",
-                    payload={"answer": "完成"},
+                    payload={
+                        "answer": "完成",
+                        "references": [
+                            {
+                                "reference_type": "DOCUMENT",
+                                "citation_label": "C1",
+                                "title": "示例 Asset",
+                                "bundle_id": "internal-bundle-id",
+                            }
+                        ],
+                    },
                 ),
                 actor_id="worker-1",
                 trace_id="trace-1",
@@ -602,7 +612,36 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             run_id=created.run_id,
             domain_id=20,
         )
-        self.assertEqual(result.payload, {"answer": "完成"})
+        self.assertEqual(
+            result.payload,
+            {
+                "answer": "完成",
+                "references": [
+                    {
+                        "reference_type": "DOCUMENT",
+                        "citation_label": "C1",
+                        "title": "示例 Asset",
+                        "bundle_id": "internal-bundle-id",
+                    }
+                ],
+            },
+        )
+        answer_completed = next(
+            event
+            for event in self.store.events
+            if event.event_type == "answer.completed"
+        )
+        self.assertEqual(answer_completed.event_payload_json["reference_count"], 1)
+        self.assertEqual(
+            answer_completed.event_payload_json["references"],
+            [
+                {
+                    "reference_type": "DOCUMENT",
+                    "citation_label": "C1",
+                    "title": "示例 Asset",
+                }
+            ],
+        )
         self.assertEqual(
             [event.event_type for event in self.store.events],
             [

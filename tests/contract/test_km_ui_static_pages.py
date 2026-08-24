@@ -136,7 +136,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
 
     def test_km_chat_retries_turn_confirmation_with_same_idempotency_key(self):
         source = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
         ).read_text(encoding="utf-8")
         self.assertIn("createTurn(input, idempotencyKey)", source)
         self.assertIn('"Idempotency-Key": idempotencyKey', source)
@@ -147,7 +147,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
 
     def test_km_chat_streams_answer_deltas_as_accumulated_markdown(self):
         source = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
         ).read_text(encoding="utf-8")
         html = (ROOT / "ui" / "km" / "chat.html").read_text(
             encoding="utf-8"
@@ -158,15 +158,26 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("typingUnits", source)
         self.assertIn("typingBatchSize", source)
         self.assertIn("pending.displayedMarkdown", source)
-        self.assertIn("await waitForTypewriter(pending)", source)
+        self.assertIn("waitForTypewriter(pending)", source)
+        self.assertIn('eventType === "answer.completed"', source)
+        self.assertIn(
+            "renderReferences(pending.message.dataset.runId, payload.references)",
+            source,
+        )
+        self.assertIn(
+            "turn.assistant_item?.content?.references",
+            source,
+        )
+        self.assertNotIn("Promise.allSettled(runIds", source)
+        self.assertIn("updateActiveConversation()", source)
         self.assertIn('message.classList.add("is-typing")', source)
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v5.js?v=20260824_1", html)
+        self.assertIn("km-chat-v6.js?v=20260824_2", html)
 
     def test_km_chat_uses_interactive_paper_style_citations(self):
         source = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
         ).read_text(encoding="utf-8")
         styles = (
             ROOT / "ui" / "km" / "css" / "km-chat-markdown.css"
@@ -211,7 +222,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
 
     def test_km_chat_does_not_supply_user_security_level(self):
         source = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
         ).read_text(encoding="utf-8")
         self.assertNotIn("security_level:", source)
 
@@ -219,7 +230,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         renderer = ROOT / "ui" / "shared" / "kbot-markdown.js"
         source = renderer.read_text(encoding="utf-8")
         chat = (
-            ROOT / "ui" / "km" / "js" / "km-chat-v5.js"
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
         ).read_text(encoding="utf-8")
         self.assertIn("KBotMarkdown.render(value)", chat)
         self.assertIn("escapeHtml(source)", source)

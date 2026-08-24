@@ -61,10 +61,11 @@
     return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
   }
 
-  function typingBatchSize(queueLength) {
+  function typingBatchSize(queueLength, finalizing) {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
       return queueLength;
     }
+    if (finalizing) return Math.max(1, Math.ceil(queueLength / 16));
     if (queueLength > 800) return 8;
     if (queueLength > 240) return 4;
     if (queueLength > 80) return 2;
@@ -80,7 +81,10 @@
 
   function typewriterTick(pending) {
     if (!pending.typingQueue.length) return settleTypewriter(pending);
-    const count = typingBatchSize(pending.typingQueue.length);
+    const count = typingBatchSize(
+      pending.typingQueue.length,
+      pending.finalizing,
+    );
     pending.displayedMarkdown += pending.typingQueue.splice(0, count).join("");
     pending.content.innerHTML = renderAssistantMarkdown(pending.displayedMarkdown);
     $("chat-stream").scrollTop = $("chat-stream").scrollHeight;
@@ -103,6 +107,10 @@
       return Promise.resolve();
     }
     return new Promise((resolve) => pending.typingWaiters.push(resolve));
+  }
+
+  function finishTypewriterSoon(pending) {
+    pending.finalizing = true;
   }
 
   function cancelTypewriter(pending) {
@@ -167,14 +175,12 @@
       const assistant = contentText(turn.assistant_item);
       return `${user ? messageMarkup("user", "你", user) : ""}${assistant ? messageMarkup("assistant", "KM Agent", assistant, turn.run_id) : (turn.status && turn.status !== "COMPLETED" ? messageMarkup("assistant", "KM Agent", `处理状态：${turn.status}`) : "")}`;
     }).join("");
-    const runIds = turns
-      .filter((turn) => turn.status === "COMPLETED" && turn.run_id)
-      .map((turn) => turn.run_id)
-      .slice(-20);
-    await Promise.allSettled(runIds.map(async (runId) => {
-      const result = await KBotKmApi.request(`${base}/runs/${runId}/result`);
-      renderReferences(runId, result);
-    }));
+    turns.forEach((turn) => {
+      const references = turn.assistant_item?.content?.references;
+      if (turn.run_id && Array.isArray(references)) {
+        renderReferences(turn.run_id, references);
+      }
+    });
     stream.scrollTop = stream.scrollHeight;
   }
   function messageMarkup(role, label, text, runId) {
@@ -203,7 +209,8 @@
     stream.scrollTop = stream.scrollHeight;
     return {
       message, content, references, markdown: "", displayedMarkdown: "",
-      typingQueue: [], typingTimer: null, typingWaiters: [],
+      typingQueue: [], typingTimer: null, typingWaiters: [], finalizing: false,
+      referencesReceived: false,
     };
   }
   function applyRunEvent(pending, item) {
@@ -213,6 +220,13 @@
     if (eventType === "answer.delta") {
       enqueueAnswerDelta(pending, payload.delta);
       return;
+    }
+    if (eventType === "answer.completed") {
+      finishTypewriterSoon(pending);
+      if (Array.isArray(payload.references)) {
+        pending.referencesReceived = true;
+        renderReferences(pending.message.dataset.runId, payload.references);
+      }
     }
     $("chat-progress").textContent = payload.public_summary
       || payload.summary
@@ -261,23 +275,48 @@
           error.requestId = run.request_id || "";
           throw error;
         }
-        const result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
-        if (!pending.markdown) {
-          enqueueAnswerDelta(pending, result?.payload?.answer);
+        let result = null;
+        if (!pending.referencesReceived || !pending.markdown) {
+          result = await KBotKmApi.request(`${base}/runs/${receipt.run_id}/result`);
+          if (!pending.markdown) {
+            enqueueAnswerDelta(pending, result?.payload?.answer);
+          }
+          if (!pending.referencesReceived) {
+            renderReferences(receipt.run_id, result);
+          }
         }
-        await waitForTypewriter(pending);
-        await refreshActive();
-        await loadConversations(active.conversation_id);
-        renderReferences(receipt.run_id, result);
+        finishTypewriterSoon(pending);
+        await Promise.all([waitForTypewriter(pending), refreshActive()]);
+        updateActiveConversation();
       } else { await refreshActive(); await loadTurns(); }
       if (!receipt.run_id) await loadConversations(active.conversation_id);
     } catch (error) { cancelTypewriter(pending); KBotKmShell.showError(error, "对话请求失败"); await refreshActive().catch(() => {}); await loadTurns().catch(() => {}); }
     finally { $("chat-progress").hidden = true; KBotKmShell.setBusy($("send-message"), false); }
   }
   async function refreshActive() { if (active) active = await KBotKmApi.request(`${base}/conversations/${active.conversation_id}`); }
-  function renderReferences(runId, result) {
+  function updateActiveConversation() {
+    if (!active) return;
+    const index = conversations.findIndex(
+      (row) => String(row.conversation_id) === String(active.conversation_id),
+    );
+    if (index >= 0) conversations[index] = active;
+    else conversations.unshift(active);
+    renderConversationList();
+    $("conversation-title").textContent = active.title || "未命名会话";
+    $("conversation-meta").textContent = `${agentName(active.agent_id)} · ${active.status} · v${active.row_version}`;
+  }
+  function referenceRows(source) {
+    if (Array.isArray(source)) return source;
+    return Array.isArray(source?.payload?.references)
+      ? source.payload.references
+      : [];
+  }
+  function renderReferences(runId, source) {
+    if (!runId) return;
+    const rows = referenceRows(source);
+    const result = { payload: { references: rows } };
     runResults.set(String(runId), result);
-    const refs = Array.isArray(result?.payload?.references) ? result.payload.references.filter((row) => row.reference_type === "DOCUMENT") : [];
+    const refs = rows.filter((row) => row.reference_type === "DOCUMENT");
     const host = Array.from(document.querySelectorAll("[data-references-for]"))
       .find((node) => node.dataset.referencesFor === String(runId));
     if (!host || !refs.length) return;
@@ -351,8 +390,17 @@
   async function prepareCitationMarker(marker) {
     const message = marker.closest(".km-message[data-run-id]");
     const runId = String(message?.dataset.runId || "");
-    const result = runResults.get(runId);
     const label = String(marker.dataset.citationLabel || "");
+    let result = runResults.get(runId);
+    if (runId && !result) {
+      try {
+        result = await KBotKmApi.request(`${base}/runs/${runId}/result`);
+        renderReferences(runId, result);
+      } catch (error) {
+        KBotKmShell.showError(error, "引用依据读取失败");
+        return;
+      }
+    }
     const references = Array.isArray(result?.payload?.references) ? result.payload.references : [];
     const reference = references.find((row) => String(row?.citation_label || "") === label);
     if (!runId || !reference) return KBotKmShell.toast("引用依据尚未加载", "error");

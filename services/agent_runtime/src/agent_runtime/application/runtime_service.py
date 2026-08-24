@@ -72,6 +72,27 @@ def _canonical_hash(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _public_reference_summaries(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """提取可通过 SSE 直接展示的最小引用摘要。"""
+    summaries: list[dict[str, str]] = []
+    for reference in payload.get("references") or []:
+        if not isinstance(reference, dict):
+            continue
+        citation_label = str(reference.get("citation_label") or "").strip()
+        if not citation_label:
+            continue
+        summaries.append(
+            {
+                "reference_type": str(
+                    reference.get("reference_type") or ""
+                ),
+                "citation_label": citation_label,
+                "title": str(reference.get("title") or "").strip(),
+            }
+        )
+    return summaries
+
+
 class AgentRuntimeError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -1089,6 +1110,9 @@ class AgentRuntimeService:
                     if isinstance(artifact.payload_json, dict)
                     else {}
                 )
+                reference_summaries = _public_reference_summaries(
+                    answer_payload
+                )
                 await self._append_event(
                     uow,
                     run=run,
@@ -1104,9 +1128,8 @@ class AgentRuntimeService:
                     artifact=artifact,
                     payload={
                         "status": answer_payload.get("status"),
-                        "reference_count": len(
-                            answer_payload.get("references") or []
-                        ),
+                        "reference_count": len(reference_summaries),
+                        "references": reference_summaries,
                         "public_summary": "最终回答与引用已生成",
                     },
                 )
