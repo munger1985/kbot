@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from uuid import UUID
 
@@ -69,7 +70,52 @@ class _FailingTextEvidencePort(_EvidencePort):
         raise RuntimeError("全文索引不可用")
 
 
+class _ConcurrentEvidencePort(_EvidencePort):
+    def __init__(self):
+        self.active = 0
+        self.max_active = 0
+
+    async def search_text(self, **kwargs):
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0.01)
+        self.active -= 1
+        return []
+
+    async def search_vector(self, **kwargs):
+        return []
+
+    async def expand_context(self, **kwargs):
+        return []
+
+
 class EvidenceDiagnosticsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_scopes_use_configured_bounded_concurrency(self):
+        collection_id = UUID(
+            "019f8eae-2c25-7d48-b044-350ec3f5a001"
+        )
+        port = _ConcurrentEvidencePort()
+        service = KnowledgeCoreEvidenceRetrievalService(
+            search_port=port,
+            max_scope_concurrency=2,
+        )
+
+        _, diagnostics = await service.retrieve_with_diagnostics(
+            scopes=[
+                EvidenceScope(
+                    collection_id=collection_id,
+                    bundle_id=index,
+                    bundle_revision_id=index + 100,
+                )
+                for index in range(1, 5)
+            ],
+            query="数据库性能",
+        )
+
+        self.assertEqual(2, port.max_active)
+        self.assertEqual(2, diagnostics["scope_concurrency"])
+        self.assertGreaterEqual(diagnostics["duration_ms"], 0)
+
     async def test_diagnostics_record_anchor_context_and_citation_counts(self):
         collection_id = UUID(
             "019f8eae-2c25-7d48-b044-350ec3f5a001"

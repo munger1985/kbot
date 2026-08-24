@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+from time import perf_counter
 from typing import Any
 
 from loguru import logger
@@ -82,16 +83,18 @@ class KmAssetRetrievalMixin:
         ):
             queries_by_key[key] = queries
             expansion_warnings.extend(query_warnings)
-            requests.extend(
-                (key, criterion, query) for query in queries
-            )
+            combined_query = self._combined_retrieval_query(queries)
+            if combined_query:
+                requests.append((key, criterion, combined_query))
 
         semaphore = asyncio.Semaphore(4)
 
+        target_count = max(1, plan.result_assets.target_count)
         qualification_limit = min(
-            100,
-            max(retrieval_config["max_citations"], len(candidates)),
+            len(candidates),
+            max(retrieval_config["max_citations"], target_count * 3),
         )
+        retrieval_started_at = perf_counter()
 
         async def retrieve_one(key, criterion, query):
             async with semaphore:
@@ -116,6 +119,18 @@ class KmAssetRetrievalMixin:
         retrieved = await asyncio.gather(*(
             retrieve_one(*request) for request in requests
         ))
+        logger.info(
+            "Asset 条件取证请求完成 | run_id={} | task_id={} | "
+            "criterion_count={} | request_count={} | candidate_count={} | "
+            "qualification_limit={} | duration_ms={:.2f}",
+            context.run_id,
+            context.task_id,
+            len(criterion_requests),
+            len(requests),
+            len(candidates),
+            qualification_limit,
+            (perf_counter() - retrieval_started_at) * 1000,
+        )
         groups_by_key = self._merge_groups_by_criterion(retrieved)
         criteria_by_key = {
             item.criterion_id: item for item in hard_content
@@ -433,6 +448,13 @@ class KmAssetRetrievalMixin:
     @staticmethod
     def _criterion_query(criterion: AssetSearchCriterion) -> str:
         return " ".join(str(value) for value in criterion.values).strip()
+
+    @staticmethod
+    def _combined_retrieval_query(queries: tuple[str, ...]) -> str:
+        """把同一条件的多语言等价词合并为一次 KC 混合检索。"""
+        return "\n".join(dict.fromkeys(
+            query.strip() for query in queries if query.strip()
+        ))
 
     @staticmethod
     async def _content_queries(

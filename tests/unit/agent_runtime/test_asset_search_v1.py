@@ -294,16 +294,23 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             trace_id="trace",
             original_input="列出关于 OAC 的 Asset，最好还有关联 APEX",
             policy_snapshot={},
-            config_snapshot={"agent": {}},
+            config_snapshot={"agent": {"models": {"composer_llm": {
+                "served_model_name": "composer",
+            }}}},
             input_artifacts=(_artifact("DOCUMENT_SCOPE", {
                 "assets": assets,
                 "total_count": 2,
                 "truncated": False,
             }),),
         )
+        model_client = SimpleNamespace(
+            get_llm_json=AsyncMock(
+                side_effect=AssertionError("清单回答不得调用 LLM")
+            )
+        )
         skill = ResponseComposerSkill(
-            model_client=None,
-            prompt_resolver=None,
+            model_client=model_client,
+            prompt_resolver=SimpleNamespace(),
         )
 
         result = await skill._compose_km_asset_enumeration(
@@ -343,6 +350,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("[Q", payload["answer"])
         self.assertEqual(["C1", "C2"], payload["used_citation_labels"])
         self.assertEqual(2, len(payload["references"]))
+        model_client.get_llm_json.assert_not_awaited()
         self.assertEqual(
             ["C1", "C2"],
             [
@@ -958,6 +966,77 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             ("金融欺诈", "financial fraud", "fraud detection"), queries
         )
         self.assertEqual((), warnings)
+        self.assertEqual(
+            "金融欺诈\nfinancial fraud\nfraud detection",
+            skill._combined_retrieval_query(queries),
+        )
+
+    async def test_cjk_equivalents_share_one_kc_evidence_request(self):
+        plan = _base_plan(
+            query_text="找几个关于金融欺诈的 Asset",
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["金融欺诈"],
+                "resolved_concept": {
+                    "concept_id": "financial-fraud",
+                    "canonical_name": "financial fraud",
+                    "equivalents": ["financial fraud", "fraud detection"],
+                    "vocabulary_version": "test-v1",
+                },
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+            display_limit=1,
+            result_assets={
+                "mode": "PRIMARY",
+                "target_count": 1,
+                "selection": "RECENT_RELEVANT",
+            },
+        )
+        client = SimpleNamespace(
+            retrieve_evidence=AsyncMock(return_value={
+                "citations": [],
+                "warnings": [],
+            })
+        )
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent_runtime",
+            model_client=None,
+            prompt_resolver=None,
+        )
+        context = ExecutionContext(
+            domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
+            task_key="test", actor_id="user", request_id="request",
+            trace_id="trace", original_input=plan.query_text,
+            policy_snapshot={}, config_snapshot={"agent": {"config": {}}},
+            input_artifacts=(),
+        )
+
+        await skill._retrieve_asset_plan_evidence(
+            context=context,
+            plan=plan,
+            candidates=[{
+                "collection_id": str(uuid7()),
+                "bundle_id": str(uuid7()),
+                "bundle_revision_id": str(uuid7()),
+                "document_version_ids": [],
+                "display_title": "Unrelated Asset",
+            }],
+            retrieval_config={"max_citations": 12, "context_limit": 4},
+            coverage_mode="BALANCED",
+        )
+
+        self.assertEqual(1, client.retrieve_evidence.await_count)
+        self.assertEqual(
+            "金融欺诈\nfinancial fraud\nfraud detection",
+            client.retrieve_evidence.await_args.kwargs["query"],
+        )
 
     def test_multilingual_evidence_groups_merge_by_bundle(self):
         groups = KnowledgeRetrievalSkill._merge_groups_by_criterion([
@@ -1308,14 +1387,6 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             provenance={"count_exact": True},
         )
 
-        class Model:
-            async def get_llm_json(self, **_):
-                return {"answer": "共有 41 个可用 Asset。"}
-
-        class Prompts:
-            async def resolve(self, _):
-                return SimpleNamespace(content="解释问数结果")
-
         context = ExecutionContext(
             domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
             task_key="test", actor_id="user", request_id="request",
@@ -1329,8 +1400,14 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             },
             input_artifacts=(_artifact("QUERY_RESULT", query.model_dump(mode="json")),),
         )
+        model_client = SimpleNamespace(
+            get_llm_json=AsyncMock(
+                side_effect=AssertionError("精确计数不得调用 LLM")
+            )
+        )
         result = await ResponseComposerSkill(
-            model_client=Model(), prompt_resolver=Prompts()
+            model_client=model_client,
+            prompt_resolver=SimpleNamespace(),
         ).execute(context)
         payload = result.artifact.payload
         self.assertIn("41", payload["answer"])
@@ -1341,6 +1418,60 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(payload["query_results"]))
         self.assertEqual([], payload["warnings"])
         self.assertNotIn("缺少必需", payload["answer"])
+        model_client.get_llm_json.assert_not_awaited()
+
+    async def test_group_result_uses_deterministic_markdown_table(self):
+        plan = _base_plan(
+            operation="GROUP",
+            display_limit=None,
+            group_by=["product"],
+            measures=[{"name": "asset_count", "aggregation": "COUNT"}],
+            result_assets={
+                "mode": "SUPPORTING", "target_count": 3,
+                "selection": "RECENT_WITHIN_RESULT",
+            },
+        )
+        query = QueryResult(
+            query_result_id=uuid7(), provider="SEMANTIC",
+            columns=({"name": "product"}, {"name": "asset_count"}),
+            rows=(
+                {"product": "Business Analytics -> OAC", "asset_count": 6},
+                {"product": "Application Development", "asset_count": 4},
+            ),
+            row_count=2,
+            provenance={"count_exact": True},
+        )
+        model_client = SimpleNamespace(
+            get_llm_json=AsyncMock(
+                side_effect=AssertionError("分组结果不得调用 LLM")
+            )
+        )
+        context = ExecutionContext(
+            domain_id=20, agent_id=uuid7(), run_id=uuid7(), task_id=uuid7(),
+            task_key="test", actor_id="user", request_id="request",
+            trace_id="trace", original_input="show assets grouped by products",
+            policy_snapshot={},
+            config_snapshot={
+                "agent": {"models": {"composer_llm": {
+                    "served_model_name": "composer",
+                }}},
+                "route": {"asset_search_plan": plan.model_payload()},
+            },
+            input_artifacts=(
+                _artifact("QUERY_RESULT", query.model_dump(mode="json")),
+            ),
+        )
+
+        result = await ResponseComposerSkill(
+            model_client=model_client,
+            prompt_resolver=SimpleNamespace(),
+        ).execute(context)
+
+        answer = result.artifact.payload["answer"]
+        self.assertIn("| Product (Domain) | Asset Count |", answer)
+        self.assertIn("| Business Analytics -> OAC | 6 |", answer)
+        self.assertNotIn("[Q", answer)
+        model_client.get_llm_json.assert_not_awaited()
 
 
 if __name__ == "__main__":

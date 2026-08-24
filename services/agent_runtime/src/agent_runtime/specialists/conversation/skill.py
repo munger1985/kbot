@@ -27,9 +27,10 @@ class ContextRewriteSkill:
         memory_context = dict(conversation.get("context") or {})
         route = dict(context.config_snapshot.get("route") or {})
         if (
-            str(route.get("classifier_version") or "").startswith(
-                "llm-km-asset-v1:"
-            )
+            str(route.get("classifier_version") or "").startswith((
+                "llm-km-asset-v1:",
+                "asset-search-plan-v1:",
+            ))
             and route.get("context_required") is False
         ):
             output = ContextRewriteOutput(

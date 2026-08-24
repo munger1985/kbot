@@ -1,4 +1,6 @@
 """Evidence-stage retrieval, context grouping and citation pack DTOs."""
+import asyncio
+from time import perf_counter
 from uuid import UUID
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -167,9 +169,19 @@ def _dedupe(items: Sequence[EvidenceHit]) -> list[EvidenceHit]:
 
 
 class KnowledgeCoreEvidenceRetrievalService:
-    def __init__(self, *, search_port: EvidenceSearchPort, query_embedding_provider: QueryEmbeddingProvider | None = None):
+    def __init__(
+        self,
+        *,
+        search_port: EvidenceSearchPort,
+        query_embedding_provider: QueryEmbeddingProvider | None = None,
+        max_scope_concurrency: int = 8,
+    ):
         self._search_port = search_port
         self._query_embedding_provider = query_embedding_provider
+        self._max_scope_concurrency = max(1, max_scope_concurrency)
+        self._scope_semaphore = asyncio.Semaphore(
+            self._max_scope_concurrency
+        )
 
     async def retrieve(
         self, *, scopes: Sequence[EvidenceScope], query: str,
@@ -197,6 +209,7 @@ class KnowledgeCoreEvidenceRetrievalService:
     ) -> tuple[list[CitationGroup], dict[str, Any]]:
         if not query.strip() or not scopes:
             raise ValueError("query and scopes are required")
+        started_at = perf_counter()
         warnings: list[str] = []
         if self._query_embedding_provider is not None:
             try:
@@ -218,74 +231,105 @@ class KnowledgeCoreEvidenceRetrievalService:
                     "error_type={}",
                     type(exc).__name__,
                 )
-        anchors: list[EvidenceHit] = []
-        scope_reports: list[dict[str, Any]] = []
-        successful_channels = 0
-        first_failure: Exception | None = None
-        for scope in scopes:
+        async def search_scope(scope: EvidenceScope):
+            scope_anchors: list[EvidenceHit] = []
+            scope_warnings: list[str] = []
+            failures: list[Exception] = []
+            successful_channels = 0
             text_error = None
-            try:
-                text_hits = list(await self._search_port.search_text(
-                    scope=scope,
-                    query=query,
-                    limit=max_evidence,
-                    max_security_level=max_security_level,
-                ))
-                successful_channels += 1
-            except Exception as exc:
-                text_hits = []
-                text_error = type(exc).__name__
-                first_failure = first_failure or exc
-                warnings.append(
-                    f"Bundle {scope.bundle_id} 全文检索失败，"
-                    "已继续向量检索"
-                )
-                logger.exception(
-                    "KC Evidence 全文通道失败，已尝试继续 | "
-                    "bundle_id={} | error_type={}",
-                    scope.bundle_id,
-                    text_error,
-                )
-            anchors.extend(text_hits)
-            vector_hits: list[EvidenceHit] = []
-            vector_error = None
-            if query_vectors and scope.collection_id in query_vectors:
+            async with self._scope_semaphore:
                 try:
-                    vector_hits = list(await self._search_port.search_vector(
+                    text_hits = list(await self._search_port.search_text(
                         scope=scope,
-                        vector=query_vectors[scope.collection_id],
+                        query=query,
                         limit=max_evidence,
                         max_security_level=max_security_level,
                     ))
                     successful_channels += 1
                 except Exception as exc:
-                    vector_error = type(exc).__name__
-                    first_failure = first_failure or exc
-                    warnings.append(
-                        f"Bundle {scope.bundle_id} 向量检索失败，"
-                        "已保留全文结果"
+                    text_hits = []
+                    text_error = type(exc).__name__
+                    failures.append(exc)
+                    scope_warnings.append(
+                        f"Bundle {scope.bundle_id} 全文检索失败，"
+                        "已继续向量检索"
                     )
                     logger.exception(
-                        "KC Evidence 向量通道失败，已尝试继续 | "
+                        "KC Evidence 全文通道失败，已尝试继续 | "
                         "bundle_id={} | error_type={}",
                         scope.bundle_id,
-                        vector_error,
+                        text_error,
                     )
-                anchors.extend(vector_hits)
-            scope_reports.append(
-                {
-                    "collection_id": str(scope.collection_id),
-                    "bundle_id": str(scope.bundle_id),
-                    "text_hits": len(text_hits),
-                    "vector_hits": len(vector_hits),
-                    "vector_enabled": bool(
-                        query_vectors
-                        and scope.collection_id in query_vectors
-                    ),
-                    "text_error": text_error,
-                    "vector_error": vector_error,
-                }
+            scope_anchors.extend(text_hits)
+            vector_hits: list[EvidenceHit] = []
+            vector_error = None
+            if query_vectors and scope.collection_id in query_vectors:
+                async with self._scope_semaphore:
+                    try:
+                        vector_hits = list(
+                            await self._search_port.search_vector(
+                                scope=scope,
+                                vector=query_vectors[scope.collection_id],
+                                limit=max_evidence,
+                                max_security_level=max_security_level,
+                            )
+                        )
+                        successful_channels += 1
+                    except Exception as exc:
+                        vector_error = type(exc).__name__
+                        failures.append(exc)
+                        scope_warnings.append(
+                            f"Bundle {scope.bundle_id} 向量检索失败，"
+                            "已保留全文结果"
+                        )
+                        logger.exception(
+                            "KC Evidence 向量通道失败，已尝试继续 | "
+                            "bundle_id={} | error_type={}",
+                            scope.bundle_id,
+                            vector_error,
+                        )
+                scope_anchors.extend(vector_hits)
+            report = {
+                "collection_id": str(scope.collection_id),
+                "bundle_id": str(scope.bundle_id),
+                "text_hits": len(text_hits),
+                "vector_hits": len(vector_hits),
+                "vector_enabled": bool(
+                    query_vectors and scope.collection_id in query_vectors
+                ),
+                "text_error": text_error,
+                "vector_error": vector_error,
+            }
+            return (
+                scope_anchors,
+                report,
+                scope_warnings,
+                successful_channels,
+                failures,
             )
+
+        scope_results = await asyncio.gather(*(
+            search_scope(scope) for scope in scopes
+        ))
+        anchors = [
+            anchor
+            for scope_anchors, *_ in scope_results
+            for anchor in scope_anchors
+        ]
+        scope_reports = [report for _, report, *_ in scope_results]
+        warnings.extend(
+            warning
+            for _, _, scope_warnings, *_ in scope_results
+            for warning in scope_warnings
+        )
+        successful_channels = sum(
+            count for _, _, _, count, _ in scope_results
+        )
+        first_failure = next((
+            failure
+            for _, _, _, _, failures in scope_results
+            for failure in failures
+        ), None)
         if successful_channels == 0 and first_failure is not None:
             raise first_failure
         raw_anchor_count = len(anchors)
@@ -318,6 +362,8 @@ class KnowledgeCoreEvidenceRetrievalService:
             "max_evidence": max_evidence,
             "context_limit": context_limit,
             "coverage_mode": coverage_mode,
+            "scope_concurrency": self._max_scope_concurrency,
+            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "covered_bundle_count": len(
                 {item.bundle_id for item in anchors}
             ),

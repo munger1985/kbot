@@ -564,6 +564,42 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, model.call_count)
 
+    async def test_km_asset_search_plan_skips_context_model(self):
+        model = _MalformedRewriteModelClient()
+        context = _context().model_copy(
+            update={
+                "original_input": "列出关于 OAC 的 Asset",
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "route": {
+                        "route_type": "HYBRID_DATA_FIRST",
+                        "classifier_version": (
+                            "asset-search-plan-v1:2026-08-24"
+                        ),
+                        "context_required": False,
+                    },
+                    "conversation": {
+                        "context": {
+                            "summary": {"active_topic": "ChatBI"},
+                            "recent_items": [],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        self.assertEqual(
+            "列出关于 OAC 的 Asset",
+            result.artifact.payload["standalone_query"],
+        )
+        self.assertEqual(0, model.call_count)
+
     async def test_context_rewrite_normalizes_empty_object_sequences(self):
         context = _context().model_copy(
             update={

@@ -226,6 +226,9 @@ async def lifespan(app: FastAPI):
     app.state.kc_evidence_service = KnowledgeCoreEvidenceRetrievalService(
         search_port=UowEvidenceSearchPort(),
         query_embedding_provider=app.state.kc_query_embedding_provider,
+        max_scope_concurrency=(
+            settings.evidence_retrieval.max_scope_concurrency
+        ),
     )
     app.state.kc_status_service = KnowledgeCoreStatusService(
         uow_factory=kc_uow_factory,

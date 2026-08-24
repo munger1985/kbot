@@ -84,6 +84,12 @@ class EmbeddingDependencyConfig(ServiceDependencyConfig):
     health_check_timeout_seconds: int = Field(default=10, ge=1, le=120)
 
 
+class EvidenceRetrievalConfig(BaseModel):
+    """正文取证读取并发配置。"""
+
+    max_scope_concurrency: int = Field(default=8, ge=1, le=32)
+
+
 class DsocrConfig(BaseModel):
     """DeepSeek OCR 独立推理端点配置，与模型托管服务无关。"""
 
@@ -111,6 +117,9 @@ class KnowledgeCoreSettings(Settings):
             audience="kbot-model-embedding",
             timeout_seconds=300,
         )
+    )
+    evidence_retrieval: EvidenceRetrievalConfig = Field(
+        default_factory=EvidenceRetrievalConfig
     )
     vlm: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(

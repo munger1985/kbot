@@ -1,6 +1,5 @@
 """KM Asset 查询结果、正文证据与 Asset 引用组合。"""
 
-import json
 import re
 from typing import Any
 
@@ -8,9 +7,7 @@ from loguru import logger
 from platform_core.contracts import AssetSearchPlanV1
 from platform_core.prompts import StrictPromptRenderer
 
-from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
-    language_instruction,
     localized_message,
     response_language,
 )
@@ -47,6 +44,8 @@ _KM_TEXT = {
             "其中，{references} 还命中“{preference_text}”偏好，可优先参考。"
         ),
         "related_assets": "相关 Asset：",
+        "count": "当前共有 {asset_count} 个可用 Asset。",
+        "group_intro": "按条件分组的 Asset 统计如下：",
         "semantic_count": (
             "语义相关性不能用于精确统计总数；以下提供 {asset_count} 个"
             "较新且有正文证据的相关 Asset 供参考。"
@@ -78,6 +77,8 @@ _KM_TEXT = {
             "一致するため、優先的に参照できます。"
         ),
         "related_assets": "関連する Asset：",
+        "count": "現在利用可能な Asset は {asset_count} 件です。",
+        "group_intro": "条件別の Asset 集計結果は次のとおりです。",
         "semantic_count": (
             "意味的な関連性から正確な総数を算出することはできません。"
             "参考として、本文の根拠がある新しい関連 Asset を "
@@ -110,6 +111,8 @@ _KM_TEXT = {
             "충족하므로 우선 참고할 수 있습니다."
         ),
         "related_assets": "관련 Asset:",
+        "count": "현재 사용 가능한 Asset은 {asset_count}개입니다.",
+        "group_intro": "조건별 Asset 집계 결과는 다음과 같습니다.",
         "semantic_count": (
             "의미적 관련성으로는 정확한 전체 개수를 집계할 수 없습니다. "
             "참고할 수 있도록 본문 근거가 있는 최신 관련 Asset "
@@ -141,6 +144,8 @@ _KM_TEXT = {
             "preference and may be prioritized."
         ),
         "related_assets": "Related assets:",
+        "count": "There are {asset_count} available assets.",
+        "group_intro": "The grouped asset counts are as follows:",
         "semantic_count": (
             "Semantic relevance cannot produce an exact total. Here are "
             "{asset_count} recent relevant assets with content evidence."
@@ -600,76 +605,11 @@ class KmAssetComposerMixin:
                     query.provenance.get("count_exact", True)
                 ),
             )
-        body = ""
-        model_name = str(agent_model_name(
-            context.config_snapshot.get("agent", {}), "composer_llm"
-        ) or "").strip()
-        if model_name and assets:
-            prompt = await self._prompt_resolver.resolve(
-                "agent_runtime.km_asset_enumeration_compose"
-            )
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"{prompt.content}\n\n{language_instruction(language)}"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "question": context.original_input,
-                        "operation": (
-                            search_plan.operation if search_plan else "LIST"
-                        ),
-                        "answer_detail": (
-                            search_plan.answer_detail if search_plan else "BRIEF"
-                        ),
-                        "assets": assets,
-                        "citations": [
-                            {
-                                "citation_label": item.citation_label,
-                                "bundle_id": str(item.bundle_id),
-                                "title": item.title,
-                                "excerpt": item.excerpt,
-                            }
-                            for item in citations
-                        ],
-                    }, ensure_ascii=False, default=str),
-                },
-            ]
-            for attempt in range(2):
-                response = await self._model_client.get_llm_json(
-                    served_model_name=model_name,
-                    prompt=messages,
-                )
-                candidate = _normalize_citations(
-                    str(response.get("answer") or "").strip()
-                    if isinstance(response, dict) else ""
-                )
-                try:
-                    self._validate_enumeration_body(
-                        candidate,
-                        assets=assets,
-                        allowed=allowed,
-                    )
-                    body = candidate
-                    break
-                except ValueError as exc:
-                    if attempt == 0:
-                        messages.append({
-                            "role": "system",
-                            "content": (
-                                "上一份清单未通过校验，请完整重写所有 Asset。"
-                                f"错误：{exc}"
-                            ),
-                        })
-        if not body:
-            body = self._enumeration_fallback(
-                assets,
-                language=language,
-                allowed=allowed,
-            )
+        body = self._enumeration_fallback(
+            assets,
+            language=language,
+            allowed=allowed,
+        )
         preference_summary = self._preference_summary(
             search_plan=search_plan,
             retrieval=retrieval,
@@ -711,9 +651,10 @@ class KmAssetComposerMixin:
         search_plan: AssetSearchPlanV1,
     ) -> SkillResult:
         """组合精确聚合结果与只包含 Asset C 的支撑清单。"""
-        aggregate = await self._compose_query_result(context, query)
-        aggregate_answer = self._without_query_references(
-            GroundedAnswer.model_validate(aggregate.artifact.payload)
+        aggregate_answer = self._asset_aggregate_answer(
+            context,
+            query,
+            search_plan,
         )
         if not query.supporting_rows:
             return self._result(context, aggregate_answer)
@@ -787,9 +728,10 @@ class KmAssetComposerMixin:
                 warnings=("Asset 清单缺少必需的 Asset 正文引用",),
             ))
 
-        base = await self._compose_query_result(context, query)
-        payload = self._without_query_references(
-            GroundedAnswer.model_validate(base.artifact.payload)
+        payload = self._asset_aggregate_answer(
+            context,
+            query,
+            search_plan,
         )
         if not query.supporting_rows:
             return self._result(context, payload)
@@ -799,3 +741,105 @@ class KmAssetComposerMixin:
                 "支撑 Asset 缺少必需的 Asset 正文引用，未在回答中展示",
             ))),
         }))
+
+    @classmethod
+    def _asset_aggregate_answer(
+        cls,
+        context: ExecutionContext,
+        query: QueryResult,
+        search_plan: AssetSearchPlanV1,
+    ) -> GroundedAnswer:
+        """确定性组合 KM COUNT/GROUP，避免结构化结果再次调用 LLM。"""
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        if search_plan.operation == "COUNT":
+            answer = _km_text(
+                language,
+                "count",
+                asset_count=cls._query_asset_count(query),
+            )
+        elif search_plan.operation == "GROUP":
+            answer = cls._grouped_asset_table(
+                query,
+                language=language,
+            )
+        else:
+            raise ValueError("KM_ASSET_AGGREGATE_OPERATION_INVALID")
+        return GroundedAnswer(
+            answer=answer,
+            status="READY",
+            query_results=(query.model_dump(mode="json"),),
+            warnings=query.warnings,
+        )
+
+    @staticmethod
+    def _query_asset_count(query: QueryResult) -> int:
+        """从冻结 QueryResult 读取精确 Asset 数量。"""
+        if len(query.rows) != 1:
+            raise ValueError("KM_ASSET_COUNT_RESULT_INVALID")
+        value = next((
+            item
+            for key, item in query.rows[0].items()
+            if str(key).casefold() == "asset_count"
+        ), None)
+        if isinstance(value, bool):
+            raise ValueError("KM_ASSET_COUNT_RESULT_INVALID")
+        try:
+            count = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("KM_ASSET_COUNT_RESULT_INVALID") from exc
+        if count < 0:
+            raise ValueError("KM_ASSET_COUNT_RESULT_INVALID")
+        return count
+
+    @staticmethod
+    def _grouped_asset_table(
+        query: QueryResult,
+        *,
+        language: str,
+    ) -> str:
+        """把冻结的分组结果渲染为稳定 Markdown 表格。"""
+        if not query.rows:
+            return _km_text(language, "not_found")
+        fields = list(dict.fromkeys(
+            str(key)
+            for row in query.rows
+            for key in row
+        ))
+        labels = {
+            "asset_count": {
+                "zh-CN": "Asset 数量",
+                "ja-JP": "Asset 件数",
+                "ko-KR": "Asset 수",
+                "en-US": "Asset Count",
+            },
+            "product": {
+                "zh-CN": "产品（领域）",
+                "ja-JP": "製品（ドメイン）",
+                "ko-KR": "제품(도메인)",
+                "en-US": "Product (Domain)",
+            },
+        }
+
+        def label(field: str) -> str:
+            localized = labels.get(field.casefold())
+            if localized is None:
+                return field
+            return localized.get(language, localized["en-US"])
+
+        def cell(value: Any) -> str:
+            return str(value if value is not None else "-").replace(
+                "|", "\\|"
+            ).replace("\n", " ")
+
+        header = "| " + " | ".join(label(field) for field in fields) + " |"
+        divider = "| " + " | ".join("---" for _ in fields) + " |"
+        rows = [
+            "| " + " | ".join(cell(row.get(field)) for field in fields) + " |"
+            for row in query.rows
+        ]
+        return "\n\n".join((
+            _km_text(language, "group_intro"),
+            "\n".join((header, divider, *rows)),
+        ))
