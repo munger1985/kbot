@@ -348,6 +348,13 @@ def main() -> int:
                 errors.append(f"{service} 禁止出现冗余资源标识列：{column}")
         if re.search(r"\bDROP\s+(TABLE|VIEW|INDEX)\b", combined):
             errors.append(f"{service} 全量建库脚本禁止包含 DROP")
+        if re.search(
+            r"\bREFERENCES[^\n]*\)(?!,)\s*\n\s*CONSTRAINT\b",
+            combined,
+        ):
+            errors.append(f"{service} 的相邻外键约束之间缺少逗号")
+        if re.search(r",\s*\n\s*\);", combined):
+            errors.append(f"{service} 的建表末项包含多余逗号")
         for table_name, index_name in _redundant_constraint_indexes(combined):
             errors.append(
                 f"{service} 的 {index_name} 与 {table_name} 主键或唯一约束重复"
