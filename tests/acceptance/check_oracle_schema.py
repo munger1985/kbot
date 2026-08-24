@@ -289,6 +289,41 @@ def _ordered_scripts(service_dir: Path, errors: list[str]) -> list[Path]:
     return scripts
 
 
+def _redundant_constraint_indexes(sql: str) -> list[tuple[str, str]]:
+    """识别与主键或唯一约束列完全相同的普通索引。"""
+    constrained_columns: set[tuple[str, tuple[str, ...]]] = set()
+    for table_match in re.finditer(
+        r"\bCREATE\s+TABLE\s+([A-Z][A-Z0-9_]*)\s*\((.*?)\)\s*;",
+        sql,
+        flags=re.DOTALL,
+    ):
+        table_name, body = table_match.groups()
+        for constraint_match in re.finditer(
+            r"(?:CONSTRAINT\s+[A-Z][A-Z0-9_]*\s+)?"
+            r"(?:PRIMARY\s+KEY|UNIQUE)\s*\(\s*"
+            r"([A-Z][A-Z0-9_]*(?:\s*,\s*[A-Z][A-Z0-9_]*)*)\s*\)",
+            body,
+        ):
+            columns = tuple(
+                value.strip()
+                for value in constraint_match.group(1).split(",")
+            )
+            constrained_columns.add((table_name, columns))
+
+    redundant: list[tuple[str, str]] = []
+    for index_match in re.finditer(
+        r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+([A-Z][A-Z0-9_]*)\s+"
+        r"ON\s+([A-Z][A-Z0-9_]*)\s*\(\s*"
+        r"([A-Z][A-Z0-9_]*(?:\s*,\s*[A-Z][A-Z0-9_]*)*)\s*\)",
+        sql,
+    ):
+        index_name, table_name, raw_columns = index_match.groups()
+        columns = tuple(value.strip() for value in raw_columns.split(","))
+        if (table_name, columns) in constrained_columns:
+            redundant.append((table_name, index_name))
+    return redundant
+
+
 def main() -> int:
     errors: list[str] = []
     if (ROOT / "migrations").exists():
@@ -313,6 +348,10 @@ def main() -> int:
                 errors.append(f"{service} 禁止出现冗余资源标识列：{column}")
         if re.search(r"\bDROP\s+(TABLE|VIEW|INDEX)\b", combined):
             errors.append(f"{service} 全量建库脚本禁止包含 DROP")
+        for table_name, index_name in _redundant_constraint_indexes(combined):
+            errors.append(
+                f"{service} 的 {index_name} 与 {table_name} 主键或唯一约束重复"
+            )
 
         created_tables = set(
             re.findall(r"\bCREATE\s+TABLE\s+([A-Z][A-Z0-9_]*)", combined)

@@ -4,7 +4,7 @@
   "contract_version": "main-api-oracle-v3",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_access_control.sql", "statements": 28, "sha256": "d9b508eb3c6616a3d883db9064a4d872f5b3e41501f3cec6ae9966afd6baf476"},
+    {"name": "001_access_control.sql", "statements": 27, "sha256": "8143a0ec8ad9af5057d37dafef72a4acf08d916d6b986e162437338e44327971"},
     {"name": "002_app_api_clients.sql", "statements": 13, "sha256": "a45420fb23c26fc4b1e21e30ed70a8a1df6a8bfb74de2b3bc2ac2b77394edf9a"}
   ],
   "tables": [
