@@ -10,6 +10,8 @@ from typing import Any
 from loguru import logger
 from platform_core.contracts import AssetSearchPlanV1
 
+from agent_runtime.language import language_instruction
+
 
 _DEFAULT_ASSET_PROJECTION = (
     "asset_id",
@@ -271,6 +273,7 @@ class AssetSearchPlanner:
         )
         messages = [
             {"role": "system", "content": prompt.content},
+            {"role": "system", "content": language_instruction(language)},
             {
                 "role": "user",
                 "content": json.dumps(

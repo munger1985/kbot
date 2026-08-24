@@ -151,7 +151,7 @@ class _RecordingModelClient(_ModelClient):
         return await super().get_llm_json(**kwargs)
 
 
-class _LanguageRepairModelClient(_ModelClient):
+class _SinglePassLanguageModelClient(_ModelClient):
     def __init__(self):
         self.calls = 0
         self.prompts = []
@@ -506,7 +506,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             "数据库优化案例有什么优势？",
         )
         self.assertIn(
-            "language=zh-CN",
+            "response_language=zh-CN",
             model.last_json_request["prompt"][1]["content"],
         )
 
@@ -853,11 +853,11 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
                 for message in messages
             )
         )
-        self.assertIn("language=ja-JP", messages[-1]["content"])
+        self.assertIn("response_language=ja-JP", messages[-1]["content"])
 
-    async def test_stream_retries_wrong_language_and_keeps_constraint_last(self):
+    async def test_stream_relies_on_frozen_language_prompt_without_post_check(self):
         retrieval = await self._retrieval_artifact()
-        model = _LanguageRepairModelClient()
+        model = _SinglePassLanguageModelClient()
 
         outputs = [
             item
@@ -878,11 +878,12 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             for item in outputs
             if getattr(item, "event_type", None) == "answer.delta"
         )
-        self.assertEqual(model.calls, 2)
-        self.assertTrue(answer.startswith("One related asset"))
-        self.assertNotIn("根据证据", answer)
+        self.assertEqual(model.calls, 1)
+        self.assertTrue(answer.startswith("根据证据"))
         for prompt in model.prompts:
-            self.assertIn("language=en-US", prompt[-1]["content"])
+            self.assertIn(
+                "response_language=en-US", prompt[-1]["content"]
+            )
 
     async def test_insufficient_evidence_uses_frozen_response_language(self):
         result = await ResponseComposerSkill(
@@ -915,7 +916,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             result.artifact.payload["used_citation_labels"], ["C1"]
         )
 
-    async def test_wrong_language_clarification_uses_localized_fallback(self):
+    async def test_clarification_relies_on_frozen_language_prompt(self):
         rewrite = self._ambiguous_rewrite_artifact()
 
         result = await ResponseComposerSkill(
@@ -931,7 +932,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result.artifact.payload["answer"],
-            "Please specify the asset, topic, or statistical scope you mean.",
+            "请说明移动套餐的具体类型。",
         )
 
     async def test_composer_streams_real_answer_deltas(self):

@@ -13,7 +13,7 @@ from platform_core.contracts import (
 )
 
 from agent_runtime.domain.model_bindings import agent_model_name
-from agent_runtime.language import detect_unicode_language
+from agent_runtime.language import detect_unicode_language, response_language
 from agent_runtime.runtime import ExecutionContext
 
 
@@ -462,6 +462,9 @@ class KmAssetRetrievalMixin:
         if criterion.kind != "SEMANTIC_CONCEPT" or len(criterion.values) != 1:
             return (original,), ()
         source_language = detect_unicode_language(original)
+        response_language_value = response_language(
+            context.config_snapshot, context.original_input
+        )
         if source_language not in _TOPIC_EXPANSION_LANGUAGES:
             return (original,), ()
         agent = context.config_snapshot.get("agent", {})
@@ -485,6 +488,7 @@ class KmAssetRetrievalMixin:
             {"role": "system", "content": prompt.content},
             {"role": "user", "content": json.dumps({
                 "source_language": source_language,
+                "response_language": response_language_value,
                 "question": plan.query_text,
                 "original_topic": original,
             }, ensure_ascii=False)},

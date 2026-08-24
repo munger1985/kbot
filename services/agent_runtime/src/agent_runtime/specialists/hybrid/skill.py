@@ -3,6 +3,7 @@
 import json
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 
 
@@ -34,15 +35,23 @@ class _HybridExtractSkill:
             }
             for item in context.input_artifacts
         ]
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
         response = await self._model_client.get_llm_json(
             served_model_name=model_name,
             prompt=[
                 {"role": "system", "content": prompt.content},
                 {
+                    "role": "system",
+                    "content": language_instruction(language),
+                },
+                {
                     "role": "user",
                     "content": json.dumps(
                         {
                             "question": context.original_input,
+                            "response_language": language,
                             "inputs": inputs,
                         },
                         ensure_ascii=False,

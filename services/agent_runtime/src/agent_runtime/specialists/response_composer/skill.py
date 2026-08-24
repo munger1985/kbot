@@ -8,7 +8,6 @@ from loguru import logger
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
-    answer_matches_language,
     language_instruction,
     localized_message,
     response_language,
@@ -151,7 +150,6 @@ class ResponseComposerSkill:
                 validated = self._validate_model_answer(
                     response,
                     allowed,
-                    language=language,
                 )
                 break
             except ValueError as exc:
@@ -330,7 +328,6 @@ class ResponseComposerSkill:
                 used_labels = self._validate_streamed_answer(
                     answer_text,
                     allowed,
-                    language=language,
                 )
             except ValueError as exc:
                 logger.warning(
@@ -345,10 +342,8 @@ class ResponseComposerSkill:
                     yield SkillProgress(
                         event_type="thinking.delta",
                         payload={
-                            "delta": "回答未通过语言或引用校验，正在重新生成",
-                            "public_summary": (
-                                "正在修正回答语言与文档引用"
-                            ),
+                            "delta": "回答未通过引用校验，正在重新生成",
+                            "public_summary": "正在修正文档引用",
                         },
                     )
                 continue
@@ -407,8 +402,6 @@ class ResponseComposerSkill:
     def _validate_streamed_answer(
         answer: str,
         allowed: dict[str, Any],
-        *,
-        language: str = "zh-CN",
     ) -> tuple[str, ...]:
         if not answer:
             raise ValueError("模型返回的 answer 为空")
@@ -418,15 +411,6 @@ class ResponseComposerSkill:
             raise ValueError(f"模型使用了未知引用标签：{sorted(unknown)}")
         if not labels:
             raise ValueError("有文档事实的回答必须实际包含引用标签")
-        if not answer_matches_language(
-            answer,
-            language,
-            ignored_texts=(
-                str(getattr(item, "title", "") or "")
-                for item in allowed.values()
-            ),
-        ):
-            raise ValueError(f"回答语言与 language={language} 不一致")
         return labels
 
     @staticmethod
@@ -502,7 +486,7 @@ class ResponseComposerSkill:
             context.config_snapshot, context.original_input
         )
         value = str(payload.get("clarification_question") or "").strip()
-        if value and answer_matches_language(value, language):
+        if value:
             return value
         return localized_message(
             "clarify_asset_scope",
@@ -553,21 +537,10 @@ class ResponseComposerSkill:
     async def _compose_query_result(
         self, context: ExecutionContext, query: QueryResult
     ) -> SkillResult:
-        language = response_language(
-            context.config_snapshot, context.original_input
-        )
-        answer = ""
-        for attempt in range(1, 3):
-            response = await self._query_response(
-                context, query, repair=attempt == 2
-            )
-            answer = str(response.get("answer") or "").strip()
-            if answer and answer_matches_language(answer, language):
-                break
+        response = await self._query_response(context, query)
+        answer = str(response.get("answer") or "").strip()
         if not answer:
             raise ValueError("问数回答模型返回空 answer")
-        if not answer_matches_language(answer, language):
-            raise ValueError(f"问数回答语言与 language={language} 不一致")
         return self._query_result_artifact(context, query, answer)
 
 
@@ -585,33 +558,27 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        answer = ""
-        for attempt in range(1, 3):
-            attempt_prompt = [
-                *messages,
-                {
-                    "role": "system",
-                    "content": "Return only the final answer body, not JSON.",
-                },
-            ]
-            attempt_prompt = self._answer_attempt_prompt(
-                attempt_prompt, language=language, repair=attempt == 2
-            )
-            parts: list[str] = []
-            async for chunk in self._model_client.stream_llm_chunks(
-                served_model_name=model_name,
-                prompt=attempt_prompt,
-                temperature=0,
-            ):
-                if chunk.content:
-                    parts.append(chunk.content)
-            answer = "".join(parts).strip()
-            if answer and answer_matches_language(answer, language):
-                break
+        attempt_prompt = [
+            *messages,
+            {
+                "role": "system",
+                "content": "Return only the final answer body, not JSON.",
+            },
+        ]
+        attempt_prompt = self._answer_attempt_prompt(
+            attempt_prompt, language=language, repair=False
+        )
+        parts: list[str] = []
+        async for chunk in self._model_client.stream_llm_chunks(
+            served_model_name=model_name,
+            prompt=attempt_prompt,
+            temperature=0,
+        ):
+            if chunk.content:
+                parts.append(chunk.content)
+        answer = "".join(parts).strip()
         if not answer:
             raise ValueError("问数回答模型返回空回答")
-        if not answer_matches_language(answer, language):
-            raise ValueError(f"问数回答语言与 language={language} 不一致")
         result = self._query_result_artifact(context, query, answer)
         grounded_answer = str(result.artifact.payload.get("answer") or "")
         for index, delta in enumerate(
@@ -682,7 +649,7 @@ class ResponseComposerSkill:
             {
                 "role": "user",
                 "content": (
-                    f"language={language}\n"
+                    f"response_language={language}\n"
                     f"用户问题：{context.original_input}\n"
                     f"QueryResult：{query.model_dump_json()}"
                 ),
@@ -872,8 +839,6 @@ class ResponseComposerSkill:
     def _validate_model_answer(
         response: dict[str, Any],
         allowed: dict[str, Any],
-        *,
-        language: str = "zh-CN",
     ) -> tuple[str, tuple[str, ...]]:
         answer = _normalize_citations(
             str(response.get("answer") or "").strip()
@@ -892,15 +857,6 @@ class ResponseComposerSkill:
             raise ValueError("回答中的引用标签与声明的使用列表不一致")
         if not mentioned:
             raise ValueError("有文档事实的回答必须实际包含引用标签")
-        if not answer_matches_language(
-            answer,
-            language,
-            ignored_texts=(
-                str(getattr(item, "title", "") or "")
-                for item in allowed.values()
-            ),
-        ):
-            raise ValueError(f"回答语言与 language={language} 不一致")
         return answer, mentioned
 
     @staticmethod

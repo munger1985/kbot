@@ -10,6 +10,7 @@ import json
 from uuid import UUID
 
 from agent_runtime.domain.model_bindings import agent_model_name
+from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.contracts import AuthContext
 from platform_core.contracts.data_query import DataQueryPlanV1
@@ -216,13 +217,21 @@ class SemanticDataQueryExecutor:
             ),
             None,
         )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
         messages = [
             {"role": "system", "content": prompt.content},
+            {
+                "role": "system",
+                "content": language_instruction(language),
+            },
             {
                 "role": "user",
                 "content": json.dumps(
                     {
                         "question": question,
+                        "response_language": language,
                         "models": models,
                         "document_constraints": constraints,
                         "answer_basis": self._answer_basis(context),

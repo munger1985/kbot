@@ -1574,8 +1574,8 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             query,
         )
 
-        self.assertIn("language=ko-KR", messages[0]["content"])
-        self.assertIn("language=ko-KR", messages[1]["content"])
+        self.assertIn("response_language=ko-KR", messages[0]["content"])
+        self.assertIn("response_language=ko-KR", messages[1]["content"])
 
     async def test_truncated_query_cannot_claim_all_results_are_shown(self):
         query = QueryResult.model_validate({
@@ -1745,6 +1745,25 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("前 10 个", clipped)
         self.assertIn("已截断", clipped)
 
+        japanese = ResponseComposerSkill._enumeration_prefix(
+            language="ja-JP",
+            total_count=3,
+            shown_count=3,
+            truncated=False,
+            source_truncated=False,
+        )
+        korean = ResponseComposerSkill._enumeration_prefix(
+            language="ko-KR",
+            total_count=3,
+            shown_count=3,
+            truncated=False,
+            source_truncated=False,
+        )
+        self.assertIn("3 件", japanese)
+        self.assertIn("すべて表示", japanese)
+        self.assertIn("3개", korean)
+        self.assertIn("모두 표시", korean)
+
     def test_km_enumeration_rejects_serialized_rows_and_asset_ids(self):
         assets = [{
             "asset_id": "ASSET-1",
@@ -1758,14 +1777,12 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "[{'asset_id': 'ASSET-1', 'title': 'APEX Asset'}]",
                 assets=assets,
                 allowed={},
-                language="en-US",
             )
         with self.assertRaisesRegex(ValueError, "asset_id"):
             ResponseComposerSkill._validate_enumeration_body(
                 "1. **APEX Asset** — asset_id: ASSET-1 [C1]",
                 assets=assets,
                 allowed={},
-                language="en-US",
             )
 
     def test_km_enumeration_fallback_keeps_bundle_citations(self):
@@ -1798,8 +1815,31 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             answer,
             assets=assets,
             allowed=allowed,
-            language="en-US",
         )
+
+    def test_km_fallback_localizes_labels_and_preserves_asset_values(self):
+        bundle_id = uuid7()
+        assets = [{
+            "title": "Financial Fraud Detection with OAC",
+            "product": "Business Analytics -> OAC",
+            "solution": "AI / Machine Learning",
+            "bundle_id": str(bundle_id),
+        }]
+        allowed = {"C1": SimpleNamespace(bundle_id=bundle_id)}
+
+        japanese = ResponseComposerSkill._enumeration_fallback(
+            assets, language="ja-JP", allowed=allowed
+        )
+        korean = ResponseComposerSkill._enumeration_fallback(
+            assets, language="ko-KR", allowed=allowed
+        )
+
+        self.assertIn("製品: Business Analytics -> OAC", japanese)
+        self.assertIn("ソリューション: AI / Machine Learning", japanese)
+        self.assertIn("제품: Business Analytics -> OAC", korean)
+        self.assertIn("솔루션: AI / Machine Learning", korean)
+        self.assertIn("Financial Fraud Detection with OAC", japanese)
+        self.assertIn("Financial Fraud Detection with OAC", korean)
 
     def test_km_metadata_assets_each_require_query_and_asset_citations(self):
         first_bundle = uuid7()
@@ -1873,8 +1913,8 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 "2. **Second APEX Asset** [C1]",
                 assets=assets,
                 allowed=allowed,
-                language="en-US",
             )
+
     def test_km_enumeration_can_restore_assets_from_query_rows(self):
         query = QueryResult(
             query_result_id=uuid7(),

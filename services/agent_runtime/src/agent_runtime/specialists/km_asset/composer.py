@@ -10,7 +10,6 @@ from platform_core.prompts import StrictPromptRenderer
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import (
-    answer_matches_language,
     language_instruction,
     localized_message,
     response_language,
@@ -26,6 +25,138 @@ from agent_runtime.specialists.response_composer.skill import (
     _CITATION_PATTERN,
     _normalize_citations,
 )
+
+
+_KM_TEXT = {
+    "zh-CN": {
+        "complete": (
+            "问数结果共命中 {total_count} 个相关 Asset，以下全部列出。"
+        ),
+        "truncated": (
+            "问数结果共命中 {total_count} 个相关 Asset；以下列出前 "
+            "{shown_count} 个，其他结果已截断。"
+        ),
+        "source_truncated": (
+            "问数结果至少命中 {total_count} 个相关 Asset；以下列出前 "
+            "{shown_count} 个，其他结果已截断。"
+        ),
+        "not_found": "未找到匹配的 Asset。",
+        "product": "产品",
+        "solution": "解决方案",
+        "preference": (
+            "其中，{references} 还命中“{preference_text}”偏好，可优先参考。"
+        ),
+        "related_assets": "相关 Asset：",
+        "semantic_count": (
+            "语义相关性不能用于精确统计总数；以下提供 {asset_count} 个"
+            "较新且有正文证据的相关 Asset 供参考。"
+        ),
+        "semantic_matches": (
+            "以下是 {asset_count} 个满足条件的 Asset；"
+            "正文证据已用于语义条件或偏好排序。"
+        ),
+    },
+    "ja-JP": {
+        "complete": (
+            "データクエリで関連する Asset が {total_count} 件見つかりました。"
+            "以下にすべて表示します。"
+        ),
+        "truncated": (
+            "データクエリで関連する Asset が {total_count} 件見つかりました。"
+            "先頭 {shown_count} 件を表示し、残りは省略しています。"
+        ),
+        "source_truncated": (
+            "データクエリで関連する Asset が少なくとも {total_count} 件"
+            "見つかりました。先頭 {shown_count} 件を表示し、残りは"
+            "省略しています。"
+        ),
+        "not_found": "一致する Asset は見つかりませんでした。",
+        "product": "製品",
+        "solution": "ソリューション",
+        "preference": (
+            "このうち、{references} は「{preference_text}」という希望条件にも"
+            "一致するため、優先的に参照できます。"
+        ),
+        "related_assets": "関連する Asset：",
+        "semantic_count": (
+            "意味的な関連性から正確な総数を算出することはできません。"
+            "参考として、本文の根拠がある新しい関連 Asset を "
+            "{asset_count} 件示します。"
+        ),
+        "semantic_matches": (
+            "条件に一致する Asset は {asset_count} 件です。"
+            "意味条件または希望条件による順位付けには本文の根拠を"
+            "使用しています。"
+        ),
+    },
+    "ko-KR": {
+        "complete": (
+            "데이터 쿼리에서 관련 Asset {total_count}개를 찾았습니다. "
+            "아래에 모두 표시합니다."
+        ),
+        "truncated": (
+            "데이터 쿼리에서 관련 Asset {total_count}개를 찾았습니다. "
+            "처음 {shown_count}개만 표시하고 나머지는 생략했습니다."
+        ),
+        "source_truncated": (
+            "데이터 쿼리에서 관련 Asset을 최소 {total_count}개 찾았습니다. "
+            "처음 {shown_count}개만 표시하고 나머지는 생략했습니다."
+        ),
+        "not_found": "일치하는 Asset을 찾지 못했습니다.",
+        "product": "제품",
+        "solution": "솔루션",
+        "preference": (
+            "이 중 {references}은(는) ‘{preference_text}’ 선호 조건도 "
+            "충족하므로 우선 참고할 수 있습니다."
+        ),
+        "related_assets": "관련 Asset:",
+        "semantic_count": (
+            "의미적 관련성으로는 정확한 전체 개수를 집계할 수 없습니다. "
+            "참고할 수 있도록 본문 근거가 있는 최신 관련 Asset "
+            "{asset_count}개를 제공합니다."
+        ),
+        "semantic_matches": (
+            "조건을 충족하는 Asset은 {asset_count}개입니다. 의미 조건 또는 "
+            "선호 조건의 순위를 정할 때 본문 근거를 사용했습니다."
+        ),
+    },
+    "en-US": {
+        "complete": (
+            "The data query found {total_count} related assets; all are "
+            "listed below."
+        ),
+        "truncated": (
+            "The data query found {total_count} related assets. The first "
+            "{shown_count} are listed; the rest are truncated."
+        ),
+        "source_truncated": (
+            "The data query found at least {total_count} related assets. "
+            "The first {shown_count} are listed; the rest are truncated."
+        ),
+        "not_found": "No matching assets were found.",
+        "product": "Product",
+        "solution": "Solution",
+        "preference": (
+            "Among these, {references} also match the “{preference_text}” "
+            "preference and may be prioritized."
+        ),
+        "related_assets": "Related assets:",
+        "semantic_count": (
+            "Semantic relevance cannot produce an exact total. Here are "
+            "{asset_count} recent relevant assets with content evidence."
+        ),
+        "semantic_matches": (
+            "Here are {asset_count} matching assets; content evidence was "
+            "used for semantic conditions or preferences."
+        ),
+    },
+}
+
+
+def _km_text(language: str, key: str, **values: Any) -> str:
+    """集中生成 KM 用户可见文本，未知语言使用英文安全兜底。"""
+    templates = _KM_TEXT.get(language) or _KM_TEXT["en-US"]
+    return templates[key].format(**values)
 
 
 class KmAssetComposerMixin:
@@ -75,34 +206,17 @@ class KmAssetComposerMixin:
         *, language: str, total_count: int, shown_count: int,
         truncated: bool, source_truncated: bool,
     ) -> str:
-        if language.startswith("zh"):
-            if source_truncated:
-                return (
-                    f"问数结果至少命中 {total_count} 个相关 Asset；"
-                    f"以下列出前 {shown_count} 个，其他结果已截断。"
-                )
-            if truncated:
-                return (
-                    f"问数结果共命中 {total_count} 个相关 Asset；"
-                    f"以下列出前 {shown_count} 个，其他结果已截断。"
-                )
-            return (
-                f"问数结果共命中 {total_count} 个相关 Asset，"
-                f"以下全部列出。"
-            )
         if source_truncated:
-            return (
-                f"The data query found at least {total_count} related assets. "
-                f"The first {shown_count} are listed; the rest are truncated."
-            )
-        if truncated:
-            return (
-                f"The data query found {total_count} related assets. "
-                f"The first {shown_count} are listed; the rest are truncated."
-            )
-        return (
-            f"The data query found {total_count} related assets; all are "
-            "listed below."
+            key = "source_truncated"
+        elif truncated:
+            key = "truncated"
+        else:
+            key = "complete"
+        return _km_text(
+            language,
+            key,
+            total_count=total_count,
+            shown_count=shown_count,
         )
 
     @staticmethod
@@ -111,7 +225,6 @@ class KmAssetComposerMixin:
         *,
         assets: list[dict[str, Any]],
         allowed: dict[str, Any],
-        language: str,
     ) -> None:
         if not answer:
             raise ValueError("主题 Asset 清单为空")
@@ -176,16 +289,6 @@ class KmAssetComposerMixin:
                     "Asset 清单使用了其他 Bundle 的正文引用："
                     f"{item.get('title')}"
                 )
-        if not answer_matches_language(
-            answer,
-            language,
-            ignored_texts=(
-                str(item.get(field) or "")
-                for item in assets
-                for field in ("title", "product", "solution")
-            ),
-        ):
-            raise ValueError(f"主题 Asset 清单语言与 language={language} 不一致")
 
     @staticmethod
     def _enumeration_fallback(
@@ -196,28 +299,28 @@ class KmAssetComposerMixin:
             allowed or {}
         )
         if not assets:
-            return "未找到匹配的 Asset。" if language.startswith("zh") else (
-                "No matching assets were found."
-            )
+            return _km_text(language, "not_found")
         lines = []
         for index, item in enumerate(assets, start=1):
             title = str(item.get("title") or item.get("asset_id") or "Asset")
             product = str(item.get("product") or "").strip()
             solution = str(item.get("solution") or "").strip()
-            if language.startswith("zh"):
-                details = "；".join(
-                    value for value in (
-                        f"产品：{product}" if product else "",
-                        f"解决方案：{solution}" if solution else "",
-                    ) if value
+            details = "; ".join(
+                value
+                for value in (
+                    (
+                        f"{_km_text(language, 'product')}: {product}"
+                        if product
+                        else ""
+                    ),
+                    (
+                        f"{_km_text(language, 'solution')}: {solution}"
+                        if solution
+                        else ""
+                    ),
                 )
-            else:
-                details = "; ".join(
-                    value for value in (
-                        f"Product: {product}" if product else "",
-                        f"Solution: {solution}" if solution else "",
-                    ) if value
-                )
+                if value
+            )
             suffix = f" — {details}" if details else ""
             citation_labels = labels_by_bundle.get(
                 str(item.get("bundle_id") or "").casefold(), ()
@@ -322,17 +425,16 @@ class KmAssetComposerMixin:
                 str(value) for value in preference.criterion.values
             )
             references = "、".join(f"[{label}]" for label in labels)
-            if language.startswith("zh"):
-                lines.append(
-                    f"其中，{references} 还命中“{preference_text}”偏好，"
-                    "可优先参考。"
-                )
-            else:
+            if language != "zh-CN":
                 references = ", ".join(f"[{label}]" for label in labels)
-                lines.append(
-                    f"Among these, {references} also match the "
-                    f'“{preference_text}” preference and may be prioritized.'
+            lines.append(
+                _km_text(
+                    language,
+                    "preference",
+                    references=references,
+                    preference_text=preference_text,
                 )
+            )
         return "\n".join(lines)
 
     @staticmethod
@@ -405,9 +507,7 @@ class KmAssetComposerMixin:
                 break
         if not selected:
             return answer, used_labels
-        heading = "相关 Asset：" if language.startswith("zh") else (
-            "Related assets:"
-        )
+        heading = _km_text(language, "related_assets")
         lines = []
         for index, (label, citation) in enumerate(selected, start=1):
             title = str(
@@ -478,25 +578,16 @@ class KmAssetComposerMixin:
                 and "SEMANTIC_TOTAL_COUNT" in search_plan.unsupported_requests
             )
             if semantic_count_fallback:
-                prefix = (
-                    f"语义相关性不能用于精确统计总数；以下提供 {len(assets)} 个"
-                    "较新且有正文证据的相关 Asset 供参考。"
-                    if language.startswith("zh")
-                    else (
-                        "Semantic relevance cannot produce an exact total. "
-                        f"Here are {len(assets)} recent relevant assets with "
-                        "content evidence."
-                    )
+                prefix = _km_text(
+                    language,
+                    "semantic_count",
+                    asset_count=len(assets),
                 )
             else:
-                prefix = (
-                    f"以下是 {len(assets)} 个满足条件的 Asset；"
-                    "正文证据已用于语义条件或偏好排序。"
-                    if language.startswith("zh")
-                    else (
-                        f"Here are {len(assets)} matching assets; content "
-                        "evidence was used for semantic conditions or preferences."
-                    )
+                prefix = _km_text(
+                    language,
+                    "semantic_matches",
+                    asset_count=len(assets),
                 )
         else:
             total_count = int(scope.get("total_count") or query.row_count)
@@ -561,7 +652,6 @@ class KmAssetComposerMixin:
                         candidate,
                         assets=assets,
                         allowed=allowed,
-                        language=language,
                     )
                     body = candidate
                     break

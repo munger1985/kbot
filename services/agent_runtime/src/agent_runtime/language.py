@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from collections.abc import Iterable
 
@@ -129,104 +128,23 @@ def response_language(config_snapshot: dict, original_input: str) -> str:
 def language_instruction(language: str) -> str:
     """构造不依赖 Prompt Catalog 版本的显式回复语言约束。"""
     return (
-        f"language={language}\n"
-        "OUTPUT LANGUAGE REQUIREMENT: Write every user-visible explanatory "
-        "sentence and clarification in the language identified by language. "
-        "Source titles, proper nouns, code, and citation labels may remain in "
-        "their original language. Never copy the language of prompt examples "
-        "or evidence when it differs from language."
+        f"response_language={language}\n"
+        "OUTPUT LANGUAGE REQUIREMENT: Every user-visible explanation, "
+        "summary, heading, field description, and clarification must use "
+        "response_language. Asset titles, authors, products, solutions, "
+        "source excerpts, proper nouns, code, and citation labels must remain "
+        "in their original language and must not be translated merely to "
+        "match response_language. Never follow the language of prompt "
+        "examples or evidence when it differs from response_language."
     )
-
-
-_IGNORED_LANGUAGE_FRAGMENTS = (
-    re.compile(r"```.*?```", re.DOTALL),
-    re.compile(r"`[^`]*`"),
-    re.compile(r"!?(?:\[[^\]]*\])\([^)]*\)"),
-    re.compile(r"\*\*.*?\*\*", re.DOTALL),
-    re.compile(r"__.*?__", re.DOTALL),
-    re.compile(r"\[(?:[A-Z]\d+)\]", re.IGNORECASE),
-    re.compile(r"https?://\S+", re.IGNORECASE),
-)
-
-
-def _language_script_counts(
-    text: str, *, ignored_texts: Iterable[str] = ()
-) -> dict[str, int]:
-    """统计回答正文的 Unicode Script，排除引用、代码与来源标题。"""
-    visible = text
-    for pattern in _IGNORED_LANGUAGE_FRAGMENTS:
-        visible = pattern.sub(" ", visible)
-    for ignored in ignored_texts:
-        value = str(ignored).strip()
-        if value:
-            visible = re.sub(re.escape(value), " ", visible, flags=re.IGNORECASE)
-    counts = {script: 0 for script, _ in _SCRIPT_LANGUAGES}
-    counts.update({"HAN": 0, "KANA": 0, "HANGUL": 0})
-    for character in visible:
-        if not character.isalpha():
-            continue
-        codepoint = ord(character)
-        if _in_ranges(codepoint, _KANA_RANGES):
-            counts["KANA"] += 1
-            continue
-        if _in_ranges(codepoint, _HANGUL_RANGES):
-            counts["HANGUL"] += 1
-            continue
-        if _in_ranges(codepoint, _HAN_RANGES):
-            counts["HAN"] += 1
-            continue
-        name = unicodedata.name(character, "")
-        for script, _ in _SCRIPT_LANGUAGES:
-            if script in name:
-                counts[script] += 1
-                break
-    return counts
-
-
-def answer_matches_language(
-    answer: str,
-    language: str,
-    *,
-    ignored_texts: Iterable[str] = (),
-) -> bool:
-    """按主导 Unicode Script 校验用户可见回答是否符合冻结语言。"""
-    counts = _language_script_counts(answer, ignored_texts=ignored_texts)
-    total = sum(counts.values())
-    if total == 0:
-        return True
-    target = language.strip()
-    if target == "ja-JP":
-        target_count = counts["KANA"] + counts["HAN"]
-    elif target == "ko-KR":
-        target_count = counts["HANGUL"]
-    elif target == "zh-CN":
-        target_count = counts["HAN"]
-    else:
-        script = next(
-            (
-                script
-                for script, candidate in _SCRIPT_LANGUAGES
-                if candidate == target
-            ),
-            "LATIN",
-        )
-        target_count = counts[script]
-    competing = total - target_count
-    if target == "zh-CN":
-        # 中文资产清单常包含较长的英文标题、作者邮箱、产品名与主题标签。
-        # 这些来源字段无法始终从生成正文中精确剥离；存在完整中文说明
-        # （至少四个汉字）时，不应因拉丁字符数量更多而误判为英文回答。
-        return target_count > 0 and (
-            target_count >= competing or target_count >= 4
-        )
-    # 至少需要目标语言正文，且不能被其他 Script 主导；来源专名已在上方排除。
-    return target_count > 0 and target_count >= competing
 
 
 _MESSAGES = {
     "citation_validation_failed": {
         "zh-CN": "回答未能通过引用一致性校验，请重试。",
         "en-US": "The answer did not pass citation consistency validation. Please try again.",
+        "ja-JP": "回答が引用の整合性検証に合格しませんでした。もう一度お試しください。",
+        "ko-KR": "답변이 인용 일관성 검증을 통과하지 못했습니다. 다시 시도해 주세요.",
     },
     "insufficient_evidence": {
         "zh-CN": "当前授权知识范围内没有找到足够的可引用证据。",
@@ -284,7 +202,6 @@ def localized_message(key: str, language: str) -> str:
 
 __all__ = [
     "DEFAULT_LANGUAGE",
-    "answer_matches_language",
     "conversation_fallback_texts",
     "detect_unicode_language",
     "language_instruction",

@@ -366,6 +366,7 @@ class KmAssetDataQuerySupportMixin:
                 "content": json.dumps(
                     {
                         "source_language": language,
+                        "response_language": language,
                         "question": question,
                         "original_topic": original_topic,
                     },
