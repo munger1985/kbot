@@ -39,6 +39,21 @@ class IntakeContractTest(unittest.TestCase):
         with self.assertRaises(IntakeValidationError):
             manifest.validate_declarations({"attachment_0"})
 
+    def test_accepts_metadata_only_asset_with_deduplicated_failure(self):
+        payload = valid_payload()
+        payload["documents"] = []
+        payload["document_failures"] = [{
+            "external_document_id": "unavailable:stable-id",
+            "source_url": "https://example.sharepoint.com/broken.pdf",
+            "ordinal": 0,
+            "failure_code": "SOURCE_DOWNLOAD_FAILED",
+        }]
+
+        manifest = KmAssetIntakeManifest.model_validate(payload)
+        manifest.validate_declarations(set())
+
+        self.assertEqual(1, len(manifest.document_failures))
+
     def test_rejects_client_manifest(self):
         payload = valid_payload()
         payload["documents"][0]["external_document_id"] = "__manifest__"

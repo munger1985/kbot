@@ -197,6 +197,22 @@ class KmAssetCatalogTest(unittest.TestCase):
         )
         self.assertEqual(decoded, encoded)
 
+    def test_sharepoint_site_candidates_accept_full_config_and_url_fallback(self):
+        candidates = SharePointClient._site_path_candidates(
+            source_url=(
+                "https://example.sharepoint.com/:p:/r/sites/actual/"
+                "Shared%20Documents/demo.pdf"
+            ),
+            configured_site_path=SharePointClient._normalize_site_path(
+                "https://example.sharepoint.com/sites/configured/"
+            ),
+        )
+
+        self.assertEqual(
+            ("/sites/configured", "/sites/actual"),
+            candidates,
+        )
+
     def test_source_update_requires_change_and_concurrency_version(self):
         with self.assertRaises(ValidationError):
             SourceUpdateRequest(domain_id=1, expected_row_version=1)
@@ -219,6 +235,80 @@ class KmAssetCatalogTest(unittest.TestCase):
 
 
 class KmAgentBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_sharepoint_path_download_falls_back_to_url_site(self):
+        source_url = (
+            "https://example.sharepoint.com/:p:/r/sites/actual/"
+            "Shared%20Documents/demo.pdf?d=token"
+        )
+
+        class Response:
+            def __init__(self, *, status, payload=None, content=b""):
+                self.status = status
+                self._payload = payload or {}
+                self._content = content
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def json(self, **_):
+                return self._payload
+
+            async def read(self):
+                return self._content
+
+        class Session:
+            def __init__(self):
+                self.urls = []
+
+            def get(self, url, **_):
+                self.urls.append(url)
+                if url.endswith(
+                    "/sites/example.sharepoint.com:/sites/configured"
+                ):
+                    return Response(
+                        status=404,
+                        payload={"error": {"code": "itemNotFound"}},
+                    )
+                if url.endswith(
+                    "/sites/example.sharepoint.com:/sites/actual"
+                ):
+                    return Response(
+                        status=200,
+                        payload={"id": "actual-site"},
+                    )
+                if url.endswith(":/content"):
+                    return Response(status=200, content=b"demo")
+                return Response(
+                    status=200,
+                    payload={
+                        "id": "document-id",
+                        "name": "demo.pdf",
+                        "file": {"mimeType": "application/pdf"},
+                    },
+                )
+
+        client = SharePointClient(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            site_path="/sites/configured",
+        )
+        session = Session()
+
+        metadata, content = await client._download_by_path(
+            session=session,
+            headers={},
+            source_url=source_url,
+        )
+
+        self.assertEqual("document-id", metadata["id"])
+        self.assertEqual(b"demo", content)
+        self.assertTrue(any("/sites/configured" in url for url in session.urls))
+        self.assertTrue(any("/sites/actual" in url for url in session.urls))
+
     async def test_update_agent_creates_new_version_and_keeps_active_status(self):
         agent_id = UUID("01900000-0000-7000-8000-000000000061")
         source_id = UUID("01900000-0000-7000-8000-000000000062")
@@ -751,12 +841,18 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
         kc_revision_id = UUID("01900000-0000-7000-8000-000000000056")
         bad_url = "https://example.sharepoint.com/broken/ChatBI.pdf"
         good_url = "https://example.sharepoint.com/files/Overview.pdf"
+        duplicate_good_url = (
+            "https://example.sharepoint.com/shared/Overview.pdf"
+        )
         asset = SimpleNamespace(
             km_asset_id=asset_id,
             external_asset_id="ASSET-1",
             asset_title="ChatBI Asset",
             raw_metadata_json={
-                "first_sp_url": f"{bad_url}^^^{good_url}"
+                "first_sp_url": (
+                    f"{bad_url}^^^{good_url}^^^{duplicate_good_url}"
+                ),
+                "second_sp_url": bad_url,
             },
             normalized_metadata_json={"asset_title": "ChatBI Asset"},
             ingestion_status="SYNC_PENDING",
@@ -823,11 +919,14 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
                     "client_secret": "secret",
                 }
 
+        download_calls = []
+
         class SharePoint:
             def __init__(self, **_):
                 pass
 
             async def download(self, source_url):
+                download_calls.append(source_url)
                 if source_url == bad_url:
                     raise SharePointDownloadError("附件地址不存在")
                 return SharePointFile(
@@ -900,6 +999,10 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(failures))
         self.assertEqual("SOURCE_DOWNLOAD_FAILED", failures[0]["failure_code"])
         self.assertEqual(bad_url, failures[0]["source_url"])
+        self.assertEqual(
+            [bad_url, good_url, duplicate_good_url],
+            download_calls,
+        )
         failed_attachment = next(
             item
             for item in added

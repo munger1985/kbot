@@ -160,7 +160,25 @@ class KmAssetWorker:
             source_site_path = str(source.sharepoint_site_path)
             source_collection_id = source.collection_id
             raw_metadata = dict(asset.raw_metadata_json)
-            urls = [item.strip() for field in ("first_sp_url", "second_sp_url") for item in str(raw_metadata.get(field) or "").split("^^^") if item.strip()]
+            raw_urls = [
+                item.strip()
+                for field in ("first_sp_url", "second_sp_url")
+                for item in str(raw_metadata.get(field) or "").split("^^^")
+                if item.strip()
+            ]
+            urls = []
+            seen_url_keys = set()
+            for ordinal, url in enumerate(raw_urls):
+                url_key = self._attachment_url_key(url)
+                if url_key in seen_url_keys:
+                    logger.warning(
+                        "KM Asset 跳过重复附件地址：asset_id={} ordinal={}",
+                        asset.external_asset_id,
+                        ordinal,
+                    )
+                    continue
+                seen_url_keys.add(url_key)
+                urls.append((ordinal, url))
             values = (
                 await self._credentials.read(
                     uow=uow,
@@ -191,9 +209,21 @@ class KmAssetWorker:
         )
         downloaded = []
         download_failures = []
-        for ordinal, url in enumerate(urls):
+        downloaded_document_ids = set()
+        for ordinal, url in urls:
             try:
                 item = await sp.download(url)
+                document_key = item.external_document_id
+                if document_key in downloaded_document_ids:
+                    logger.warning(
+                        "KM Asset 跳过重复 SharePoint 文档："
+                        "asset_id={} ordinal={} external_document_id={}",
+                        external_asset_id,
+                        ordinal,
+                        item.external_document_id,
+                    )
+                    continue
+                downloaded_document_ids.add(document_key)
                 downloaded.append((ordinal, url, item, hashlib.sha256(item.content).hexdigest()))
             except SharePointDownloadError as exc:
                 failure = {
@@ -319,9 +349,23 @@ class KmAssetWorker:
             await uow.commit()
 
     @staticmethod
-    def _unavailable_document_id(source_url: str) -> str:
+    def _attachment_url_key(source_url: str) -> str:
+        """生成不受编码、主机大小写和 Fragment 影响的附件去重键。"""
+        decoded = unquote(source_url.strip())
+        parsed = urlparse(decoded)
+        normalized = parsed._replace(
+            scheme=parsed.scheme.casefold(),
+            netloc=parsed.netloc.casefold(),
+            fragment="",
+        ).geturl()
+        return normalized.rstrip("/")
+
+    @classmethod
+    def _unavailable_document_id(cls, source_url: str) -> str:
         """为无法取得 Graph ID 的附件生成稳定文档标识。"""
-        digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(
+            cls._attachment_url_key(source_url).encode("utf-8")
+        ).hexdigest()
         return f"unavailable:{digest}"
 
     @staticmethod
