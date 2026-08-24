@@ -62,7 +62,14 @@ async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
             detail="所有模型目录服务当前均不可用",
         )
     rows = [
-        row
+        {
+            **row,
+            "model_params": {
+                key: value
+                for key, value in (row.get("model_params") or {}).items()
+                if key != "config_file"
+            },
+        }
         for batch in batches
         for row in batch
         if row.get("status") == "ACTIVE"

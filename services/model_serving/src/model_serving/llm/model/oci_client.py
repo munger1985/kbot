@@ -1,10 +1,11 @@
 import oci
-import json
 import asyncio
 from dataclasses import dataclass
 from typing import Any
 from pydantic import Field
 from loguru import logger
+
+from model_serving.common.oci_auth import validated_oci_config
 
 from .base import LLMConfig, BaseLLM
 
@@ -167,10 +168,7 @@ class OCIClient(BaseLLM[OCILLMConfig]):
             return
 
         try:
-            # Parse OCI authentication configuration
-            oci_config = self.config.config_file
-            if isinstance(oci_config, str):
-                oci_config = json.loads(oci_config)
+            oci_config = validated_oci_config(self.config.config_file)
             
             # Initialize inference client with retry and timeout settings
             # Note: OCI SDK is synchronous but connection setup is typically fast
@@ -183,7 +181,12 @@ class OCIClient(BaseLLM[OCILLMConfig]):
             self._is_initialized = True
             logger.info(f"✅ OCI LLM client initialized successfully (Model: {self.config.model_name})")
         except Exception as e:
-            logger.error(f"❌ OCI client initialization failed: {e}")
+            logger.error(
+                "OCI LLM 客户端初始化失败：model={} error_type={} error={}",
+                self.config.model_name,
+                type(e).__name__,
+                str(e),
+            )
             raise
 
     def _convert_to_oci_messages(self, messages: list[dict[str, str]] | str) -> list[Any]:

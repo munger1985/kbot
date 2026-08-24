@@ -131,7 +131,10 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("10", published[0]["auth_context"].domain_id)
 
     async def test_update_checks_version_invalidates_and_hides_secret(self):
-        row = _model()
+        row = _model(model_params={
+            "max_tokens": 4096,
+            "config_file": {"key_content": "private-key"},
+        })
         events = []
         async def capture(event):
             events.append(event)
@@ -150,7 +153,9 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(2, result["row_version"])
         self.assertNotIn("api_key", result)
+        self.assertNotIn("config_file", result["model_params"])
         self.assertNotIn("new-secret", repr(events))
+        self.assertNotIn("private-key", repr(events))
         self.assertEqual("chat-prod", events[0]["served_model_name"])
         with self.assertRaisesRegex(ModelRegistryConflict, "版本已变化"):
             await service.update(
@@ -249,7 +254,8 @@ class ProviderCatalogS4Test(unittest.TestCase):
     def test_provider_options_do_not_contain_secret_values(self):
         options = list_provider_options(category=1)
         self.assertTrue(options)
-        self.assertTrue(all("api_key" in item.secret_fields for item in options))
+        oci_option = next(item for item in options if item.provider == "oci")
+        self.assertIn("model_params.config_file", oci_option.secret_fields)
         self.assertNotIn("top-secret", repr(options).lower())
 
     def test_unknown_model_parameter_is_rejected(self):
@@ -260,6 +266,26 @@ class ProviderCatalogS4Test(unittest.TestCase):
                 "api_endpoint": "https://example.invalid/v1",
                 "api_key": "secret",
                 "model_params": {"unexpected": True},
+            })
+
+    def test_malformed_oci_user_is_rejected_before_activation(self):
+        with self.assertRaisesRegex(ValueError, "user"):
+            validate_provider_config({
+                "category": 1,
+                "provider": "oci",
+                "api_endpoint": "https://example.invalid",
+                "model_params": {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "config_file": {
+                        "tenancy": "ocid1.tenancy.oc1..test",
+                        "user": "broken-user",
+                        "fingerprint": (
+                            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+                        ),
+                        "region": "us-chicago-1",
+                        "key_content": "not-a-private-key",
+                    },
+                },
             })
 
 

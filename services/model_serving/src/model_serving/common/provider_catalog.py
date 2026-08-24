@@ -6,6 +6,8 @@ from typing import Any
 from platform_core.contracts import ModelProviderOption
 from platform_core.dictionary import ModelCategory
 
+from model_serving.common.oci_auth import validated_oci_config
+
 
 @dataclass(frozen=True, slots=True)
 class _ProviderSchema:
@@ -13,6 +15,7 @@ class _ProviderSchema:
     allowed_model_params: tuple[str, ...]
     supports_tool_calling: bool = False
     max_context_tokens: int | None = None
+    secret_fields: tuple[str, ...] = ("api_key",)
 
 
 _COMMON_REMOTE = ("timeout", "max_retries")
@@ -38,6 +41,7 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     (ModelCategory.LLM.value, "oci"): _ProviderSchema(
         ("api_endpoint", "model_params.compartment_id", "model_params.config_file"),
         _LLM_PARAMS, supports_tool_calling=True, max_context_tokens=131072,
+        secret_fields=("model_params.config_file",),
     ),
     (ModelCategory.TXT_EMBEDDING.value, "local_bge"): _ProviderSchema(
         ("model_params.model_path", "model_params.embedding_dimension"),
@@ -60,6 +64,7 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
             "model_params.config_file", "model_params.embedding_dimension",
         ),
         _EMBEDDING_PARAMS,
+        secret_fields=("model_params.config_file",),
     ),
     (ModelCategory.IMG_EMBEDDING.value, "local_qwen"): _ProviderSchema(
         ("model_params.model_path",), _VISUAL_PARAMS,
@@ -81,7 +86,7 @@ def list_provider_options(*, category: int) -> list[ModelProviderOption]:
             category=provider_category,
             provider=provider,
             required_fields=schema.required_fields,
-            secret_fields=("api_key",),
+            secret_fields=schema.secret_fields,
             allowed_model_params=schema.allowed_model_params,
             supports_tool_calling=schema.supports_tool_calling,
             max_context_tokens=schema.max_context_tokens,
@@ -114,3 +119,5 @@ def validate_provider_config(values: dict[str, Any]) -> None:
             missing.append(path)
     if missing:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
+    if provider == "oci":
+        validated_oci_config(params.get("config_file"))

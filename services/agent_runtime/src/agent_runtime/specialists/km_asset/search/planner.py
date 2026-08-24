@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 import json
-import re
 from typing import Any
 
 from loguru import logger
@@ -51,46 +50,9 @@ _METADATA_FIELD_ALIASES = {
 
 _SYSTEM_SCOPE_FIELDS = frozenset({"ingestion_status"})
 
-_SYSTEM_SCOPE_CONCEPTS = frozenset({
-    "available", "available now", "current", "currently", "now", "ready",
-    "当前", "当前可用", "可用", "现在", "目前",
-    "利用可能", "現在", "現在利用可能",
-    "사용 가능", "현재", "현재 사용 가능", "지금",
-})
-
-_UNSCOPED_ASSET_COUNT_PATTERNS = tuple(
-    re.compile(pattern)
-    for pattern in (
-        r"how many (?:(?:available|ready|current) )?assets?"
-        r"(?: (?:are )?(?:available|ready)(?: now)?| now| currently)?",
-        r"what(?:'s| is) the (?:current )?(?:number|count) of "
-        r"(?:(?:available|ready) )?assets?",
-        r"(?:现在|目前|当前)?(?:一共|总共)?有?多少(?:个|条)?"
-        r"(?:可用|ready)?的?\s*assets?(?:了|呢)?",
-        r"(?:可用|ready)的?\s*assets?(?:现在|目前|当前)?"
-        r"(?:一共|总共)?有?多少(?:个|条)?(?:了|呢)?",
-        r"(?:現在)?(?:利用可能な)?\s*assets?(?:は)?"
-        r"(?:何件|いくつ)(?:ありますか)?",
-        r"(?:현재\s*)?(?:사용\s+가능한\s*)?assets?(?:은|는|이|가)?\s*"
-        r"(?:몇\s*개|몇개)(?:입니까|인가요|있나요)?",
-    )
-)
-
-
 def _items(value: Any) -> list[Any]:
     """只接受 JSON Array，避免把字符串拆成字段列表。"""
     return list(value) if isinstance(value, (list, tuple)) else []
-
-
-def _is_unscoped_asset_count_question(question: str) -> bool:
-    """识别没有业务筛选条件的 Asset 总数问法。"""
-    normalized = " ".join(
-        re.findall(r"[\w']+", question.casefold(), flags=re.UNICODE)
-    )
-    return any(
-        pattern.fullmatch(normalized)
-        for pattern in _UNSCOPED_ASSET_COUNT_PATTERNS
-    )
 
 
 def _canonical_metadata_field(value: Any) -> str:
@@ -138,22 +100,6 @@ def _is_ready_scope_criterion(criterion: dict[str, Any]) -> bool:
             for value in criterion.get("values") or ()
         )
     )
-
-
-def _is_system_scope_semantic_criterion(
-    criterion: dict[str, Any],
-) -> bool:
-    """识别被模型误当成主题的当前可用范围修饰语。"""
-    if criterion.get("kind") != "SEMANTIC_CONCEPT":
-        return False
-    values = {
-        " ".join(
-            str(value).strip(" ?？!！,，.;。").casefold().split()
-        )
-        for value in criterion.get("values") or ()
-        if str(value).strip()
-    }
-    return bool(values) and values.issubset(_SYSTEM_SCOPE_CONCEPTS)
 
 
 def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
@@ -374,21 +320,17 @@ class AssetSearchPlanner:
                     timeout=self._timeout_seconds,
                 )
             except Exception as exc:
-                logger.warning(
-                    "Asset Search Planner 模型调用失败，降级为合同化语义检索："
+                logger.error(
+                    "Asset Search Planner 模型调用失败："
                     "model={} timeout_seconds={} error_type={} error={}",
                     model_name,
                     self._timeout_seconds,
                     type(exc).__name__,
                     str(exc),
                 )
-                return (
-                    self.semantic_fallback_plan(
-                        question=question,
-                        language=language,
-                    ),
-                    f"{prompt.version}-semantic-fallback",
-                )
+                raise RuntimeError(
+                    "Asset Search Planner 模型调用失败"
+                ) from exc
             try:
                 normalized = self.normalize_response(
                     response=response,
@@ -416,60 +358,10 @@ class AssetSearchPlanner:
                             ),
                         },
                     ])
-        logger.warning(
-            "Asset Search Planner 连续输出无效合同，降级为合同化语义检索：{}",
-            last_error,
+        raise ValueError(
+            "Asset Search Planner 连续输出无效合同："
+            f"{last_error}"
         )
-        return (
-            self.semantic_fallback_plan(
-                question=question,
-                language=language,
-            ),
-            f"{prompt.version}-semantic-fallback",
-        )
-
-    @staticmethod
-    def semantic_fallback_plan(
-        *, question: str, language: str
-    ) -> AssetSearchPlanV1:
-        """在规划模型不可用时保留 READY Asset 候选约束与引用链路。"""
-        normalized = AssetSearchPlanner.normalize_response(
-            question=question,
-            language=language,
-            response={
-                "operation": "LIST",
-                "target": "ASSET",
-                "answer_detail": "BRIEF",
-                "criteria": [
-                    {
-                        "criterion_id": "c1",
-                        "kind": "SEMANTIC_CONCEPT",
-                        "field_scope": [
-                            "TITLE", "PRODUCT", "SOLUTION", "CONTENT"
-                        ],
-                        "operator": "RELATED_TO",
-                        "values": [question],
-                        "occurrence": "MUST",
-                        "evidence_requirement": "METADATA_OR_CONTENT",
-                    }
-                ],
-                "eligibility_expression": {
-                    "node_type": "REF",
-                    "criterion_id": "c1",
-                },
-                "projection": list(_DEFAULT_ASSET_PROJECTION),
-                "order_by": [
-                    {"field": "asset_date", "direction": "DESC"}
-                ],
-                "display_limit": 5,
-                "result_assets": {
-                    "mode": "PRIMARY",
-                    "target_count": 5,
-                    "selection": "RECENT_RELEVANT",
-                },
-            },
-        )
-        return AssetSearchPlanV1.model_validate(normalized)
 
     @staticmethod
     def normalize_response(
@@ -490,23 +382,6 @@ class AssetSearchPlanner:
             normalized.get("operation") or ""
         ).upper()
         normalized["target"] = str(normalized.get("target") or "").upper()
-        if _is_unscoped_asset_count_question(question):
-            normalized.update({
-                "operation": "COUNT",
-                "target": "ASSET",
-                "criteria": [],
-                "preferences": [],
-                "eligibility_expression": None,
-                "measures": [{
-                    "name": "asset_count",
-                    "aggregation": "COUNT",
-                }],
-                "group_by": [],
-                "order_by": [],
-                "include_total_count": False,
-                "unsupported_requests": [],
-                "ambiguities": [],
-            })
         normalized["measures"] = [
             item for item in _items(normalized.get("measures"))
             if isinstance(item, dict)
@@ -538,7 +413,6 @@ class AssetSearchPlanner:
             if (
                 criterion is None
                 or _is_ready_scope_criterion(criterion)
-                or _is_system_scope_semantic_criterion(criterion)
             ):
                 continue
             preference_signatures.add(_criterion_signature(criterion))
@@ -557,7 +431,6 @@ class AssetSearchPlanner:
             if (
                 criterion is None
                 or _is_ready_scope_criterion(criterion)
-                or _is_system_scope_semantic_criterion(criterion)
             ):
                 continue
             if _criterion_signature(criterion) in preference_signatures:

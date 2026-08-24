@@ -31,7 +31,7 @@ requires_chart。不要输出隐藏思维过程。
 [[prompts]]
 prompt_key = "agent_runtime.km_asset_search_plan"
 owner_service = "agent_runtime"
-version = "1.0.0"
+version = "1.1.0"
 active = true
 purpose = "把 KM Asset 问文、问数和混合问题规划为统一搜索合同"
 input_variables = []
@@ -62,6 +62,9 @@ LIST 的 result_assets 使用 PRIMARY；ANSWER/COUNT/GROUP/COMPARE 使用 SUPPOR
 系统会强制 Domain、READY、当前 Revision、Bundle 完整性和权限；不得把 ingestion_status 加入 criteria。
 “now/current/currently/available/ready”及其他语言中仅表示当前、目前、可用的词只描述上述系统范围，
 不是 Asset 主题，不得生成 SEMANTIC_CONCEPT；例如“how many assets now”必须是无 criteria 的 COUNT。
+不依赖关键词或固定句式判断意图。用户询问当前 Asset 数量时，使用 COUNT/ASSET、无 criteria、
+asset_count measure；用户列举 Asset 时使用 LIST/ASSET。用户给出 created since、published after 等
+日期下界时，生成 asset_date 的 GTE 元数据条件；“about OAC”等主题条件仍使用 SEMANTIC_CONCEPT。
 
 日期根据 current_date 和 time_zone 解析为明确 YYYY-MM-DD。无法确定且会改变集合时，在 ambiguities
 中给出 code 和一个简洁问题，不得猜测。完整新问题不继承旧条件；只有真实指代或省略才使用会话上下文。

@@ -411,7 +411,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], result.artifact.payload["references"])
         self.assertNotIn("Metadata-only Asset", result.artifact.payload["answer"])
 
-    async def test_planner_timeout_falls_back_to_contractual_semantic_list(self):
+    async def test_planner_timeout_exposes_model_failure(self):
         async def slow_model_call(**kwargs):
             await asyncio.sleep(1)
             return {}
@@ -431,26 +431,15 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             timeout_seconds=0.01,
         )
 
-        plan, version = await planner.plan(
-            model_name="slow-router",
-            question="找个financial fraud的asset",
-            language="zh-CN",
-            conversation_context=None,
-        )
-
-        self.assertEqual("LIST", plan.operation)
-        self.assertEqual(5, plan.display_limit)
-        self.assertEqual("SEMANTIC_CONCEPT", plan.criteria[0].kind)
-        self.assertEqual(
-            ("找个financial fraud的asset",),
-            plan.criteria[0].values,
-        )
-        self.assertIn("TITLE", plan.criteria[0].field_scope)
-        self.assertIn("CONTENT", plan.criteria[0].field_scope)
-        self.assertEqual(
-            "1.0.0-semantic-fallback",
-            version,
-        )
+        with self.assertRaisesRegex(
+            RuntimeError, "Asset Search Planner 模型调用失败"
+        ):
+            await planner.plan(
+                model_name="slow-router",
+                question="找个financial fraud的asset",
+                language="zh-CN",
+                conversation_context=None,
+            )
 
     def test_complex_metadata_expression_compiles_to_parameterized_sql(self):
         plan = _base_plan(
@@ -561,11 +550,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(plan.include_total_count)
         self.assertEqual(5, plan.display_limit)
 
-    def test_current_available_count_drops_system_scope_concept(self):
-        for question, value in (
-            ("how many assets now?", "now"),
-            ("how many available assets", "available"),
-            ("现在有多少个可用的 Asset", "现在"),
+    def test_current_available_count_uses_model_plan_without_rules(self):
+        for question in (
+            "how many assets now?",
+            "how many available assets",
+            "现在有多少个可用的 Asset",
         ):
             with self.subTest(question=question):
                 normalized = AssetSearchPlanner.normalize_response(
@@ -574,17 +563,8 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                     response={
                         "operation": "COUNT",
                         "target": "ASSET",
-                        "criteria": [{
-                            "criterion_id": "c1",
-                            "kind": "SEMANTIC_CONCEPT",
-                            "field_scope": ["CONTENT"],
-                            "operator": "RELATED_TO",
-                            "values": [value],
-                            "evidence_requirement": "CONTENT",
-                        }],
-                        "eligibility_expression": {
-                            "node_type": "REF", "criterion_id": "c1",
-                        },
+                        "criteria": [],
+                        "eligibility_expression": None,
                         "measures": [{
                             "name": "asset_count", "aggregation": "COUNT",
                         }],
@@ -595,26 +575,6 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((), plan.criteria)
                 self.assertIsNone(plan.eligibility_expression)
                 self.assertEqual((), plan.unsupported_requests)
-                route_type, _, _ = KmAssetRoutePlanner._route_for_plan(plan)
-                self.assertEqual(RouteType.DATA_QUERY, route_type)
-
-    def test_semantic_fallback_keeps_unscoped_asset_count_as_data_query(self):
-        for question, language in (
-            ("how many assets now?", "en-US"),
-            ("目前有多少个可用的 Asset？", "zh-CN"),
-            ("現在利用可能なAssetは何件ありますか？", "ja-JP"),
-            ("현재 사용 가능한 Asset은 몇 개입니까?", "ko-KR"),
-        ):
-            with self.subTest(question=question):
-                plan = AssetSearchPlanner.semantic_fallback_plan(
-                    question=question,
-                    language=language,
-                )
-                self.assertEqual("COUNT", plan.operation)
-                self.assertEqual((), plan.criteria)
-                self.assertEqual((), plan.preferences)
-                self.assertIsNone(plan.eligibility_expression)
-                self.assertEqual("asset_count", plan.measures[0].name)
                 route_type, _, _ = KmAssetRoutePlanner._route_for_plan(plan)
                 self.assertEqual(RouteType.DATA_QUERY, route_type)
 

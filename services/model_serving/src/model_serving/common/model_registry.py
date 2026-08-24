@@ -9,6 +9,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from loguru import logger
 
 from model_serving.common.entities.ai_model import AIModelEntity
+from model_serving.common.oci_auth import public_model_params
 from model_serving.common.provider_catalog import validate_provider_config
 from model_serving.config import get_model_serving_settings
 from platform_core.contracts import AuthContext, ModelReferenceSummary
@@ -73,7 +74,7 @@ class ModelRegistryService:
             "provider": entity.provider,
             "api_endpoint": entity.api_endpoint,
             "status": _STATUS_FROM_DB[int(entity.status)],
-            "model_params": entity.model_params or {},
+            "model_params": public_model_params(entity.model_params),
             "description": entity.descs,
             "row_version": int(entity.row_version),
         }
@@ -189,6 +190,14 @@ class ModelRegistryService:
                 raise ModelRegistryConflict(
                     "MODEL_ARCHIVED", "归档状态不可逆",
                 )
+            if target_status == "ACTIVE":
+                self._validate({
+                    "category": int(row.category),
+                    "provider": row.provider,
+                    "api_endpoint": row.api_endpoint,
+                    "api_key": row.api_key,
+                    "model_params": row.model_params or {},
+                })
             row.status = _STATUS_TO_DB[target_status]
             row.updated_by = actor_id
             await uow.flush()
