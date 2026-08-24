@@ -63,7 +63,6 @@ _ASSET_FIELDS = (
 _REQUIRED_ASSET_FIELDS = (
     "asset_id",
     "asset_title",
-    "solution_briefing",
 )
 _MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
 
@@ -389,34 +388,23 @@ def _best_title_card(
     return top_card, False
 
 
-def _order_manifest_cards_by_answer(
+def _manifest_cards_named_in_answer(
     answer: object,
     cards: list[dict[str, str]],
 ) -> list[dict[str, str]]:
-    """Asset Title 命中优先；未命中项按回答引用位置稳定排序。"""
+    """按正文出现顺序返回标题被明确提及的 Asset。"""
     searchable_answer = _searchable_text(answer)
-    if not searchable_answer or len(cards) < 2:
-        return cards
-
-    def position(item: tuple[int, dict[str, str]]) -> tuple[int, int, int]:
-        index, card = item
+    if not searchable_answer:
+        return []
+    matched: list[tuple[int, int, dict[str, str]]] = []
+    for index, card in enumerate(_unique_asset_cards(cards)):
         title = _searchable_text(card.get("asset_title"))
         title_position = searchable_answer.find(title) if title else -1
         if title_position >= 0:
-            return 0, title_position, index
-        citation_label = str(card.get("citation_label") or "").strip()
-        citation_position = (
-            searchable_answer.find(f"[{citation_label.casefold()}]")
-            if citation_label
-            else -1
-        )
-        if citation_position >= 0:
-            return 1, citation_position, index
-        return 2, index, index
-
+            matched.append((title_position, index, card))
     return [
         card
-        for _, card in sorted(enumerate(cards), key=position)
+        for _, _, card in sorted(matched, key=lambda item: (item[0], item[1]))
     ]
 
 
@@ -427,7 +415,10 @@ def _match_manifest_cards_to_answer(
     """逐项匹配正文 Asset，只返回正文明确展示的 Manifest。"""
     sections = _answer_asset_sections(answer)
     if not sections:
-        return _order_manifest_cards_by_answer(answer, cards)
+        # KBot 可能用自然语言段落介绍 Asset，而没有输出加粗标题或
+        # 列表结构。此时只接受正文中完整出现的 Asset Title，不能把
+        # used DOCUMENT 中仅作为背景证据的 Asset 一并展示。
+        return _manifest_cards_named_in_answer(answer, cards)
     unique_cards = _unique_asset_cards(cards)
     by_label = {
         str(card.get("citation_label") or "").strip().upper(): card
@@ -710,9 +701,6 @@ async def assemble_slack_asset_cards(
     if not references:
         return []
     answer_cards = _unique_asset_cards(extract_answer_asset_cards(answer))
-    sections = _answer_asset_sections(answer)
-    if not answer_cards and not sections:
-        return []
     local_by_revision: dict[str, dict[str, str]] = {}
     if uow_factory is not None:
         try:

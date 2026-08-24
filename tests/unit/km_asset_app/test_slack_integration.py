@@ -397,6 +397,104 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], cards)
 
+    async def test_natural_language_asset_title_builds_only_named_template(self):
+        references = [
+            self._reference("C1", 101),
+            self._reference("C2", 102),
+        ]
+        title = "Oracle Analytics Cloud March 2026 New Features"
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": (
+                    f'The asset titled "{title}" is listed as a supporting '
+                    "asset. The available excerpt does not include specific "
+                    "feature details. [C1]"
+                ),
+                "status": "READY",
+                "used_citation_labels": ["C1", "C2"],
+                "references": references,
+            },
+        }
+        client = _ManifestClient(
+            {
+                references[0]["bundle_revision_id"]: self._manifest(
+                    "ASSET/OAC", title
+                ),
+                references[1]["bundle_revision_id"]: self._manifest(
+                    "ASSET/BACKGROUND", "Background Evidence Asset"
+                ),
+            }
+        )
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=client,
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(1, len(cards))
+        self.assertEqual("ASSET/OAC", cards[0]["asset_id"])
+        self.assertEqual(title, cards[0]["asset_title"])
+
+    async def test_template_allows_missing_solution_briefing(self):
+        reference = self._reference("C1", 103)
+        title = "A K3s HA environment operations guides"
+        manifest = (
+            f"# {title}\n\n"
+            "Source ID: ASSET/K3S\n\n"
+            "## Source metadata\n"
+            + json.dumps(
+                {
+                    "asset_title": title,
+                    "author_mail": "author@example.com",
+                    "create_time": "2026-08-17T08:30:00Z",
+                }
+            )
+            + "\n"
+        ).encode("utf-8")
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": f"1. **{title}** [C1]",
+                "status": "READY",
+                "used_citation_labels": ["C1"],
+                "references": [reference],
+            },
+        }
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            knowledge_core_client=_ManifestClient(
+                {reference["bundle_revision_id"]: manifest}
+            ),
+            domain_id=1001,
+            auth_context=None,
+            limit=10,
+        )
+
+        self.assertEqual(1, len(cards))
+        self.assertNotIn("solution_briefing", cards[0])
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact=artifact,
+            reply_config=SlackReplyConfig(
+                km_portal_base_url="https://km.example.com/assets/",
+                max_references=10,
+            ),
+            asset_cards=cards,
+        )
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn(f"*Asset Title:* {title}", rendered)
+        self.assertNotIn("*Solution Briefing:*", rendered)
+        self.assertIn("https://km.example.com/assets/ASSET%2FK3S", rendered)
+
     async def test_query_result_without_document_does_not_build_templates(self):
         artifact = {
             "artifact_type": "GROUNDED_ANSWER",
