@@ -561,6 +561,43 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(plan.include_total_count)
         self.assertEqual(5, plan.display_limit)
 
+    def test_current_available_count_drops_system_scope_concept(self):
+        for question, value in (
+            ("how many assets now?", "now"),
+            ("how many available assets", "available"),
+            ("现在有多少个可用的 Asset", "现在"),
+        ):
+            with self.subTest(question=question):
+                normalized = AssetSearchPlanner.normalize_response(
+                    question=question,
+                    language="en-US",
+                    response={
+                        "operation": "COUNT",
+                        "target": "ASSET",
+                        "criteria": [{
+                            "criterion_id": "c1",
+                            "kind": "SEMANTIC_CONCEPT",
+                            "field_scope": ["CONTENT"],
+                            "operator": "RELATED_TO",
+                            "values": [value],
+                            "evidence_requirement": "CONTENT",
+                        }],
+                        "eligibility_expression": {
+                            "node_type": "REF", "criterion_id": "c1",
+                        },
+                        "measures": [{
+                            "name": "asset_count", "aggregation": "COUNT",
+                        }],
+                    },
+                )
+                plan = AssetSearchPlanV1.model_validate(normalized)
+                self.assertEqual("COUNT", plan.operation)
+                self.assertEqual((), plan.criteria)
+                self.assertIsNone(plan.eligibility_expression)
+                self.assertEqual((), plan.unsupported_requests)
+                route_type, _, _ = KmAssetRoutePlanner._route_for_plan(plan)
+                self.assertEqual(RouteType.DATA_QUERY, route_type)
+
     def test_asset_answer_semantic_scope_includes_searchable_metadata(self):
         normalized = AssetSearchPlanner.normalize_response(
             question="找个 financial fraud 的 Asset",

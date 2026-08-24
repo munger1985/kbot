@@ -60,6 +60,8 @@ LIST 的 display_limit 使用用户明确数量，未指定为 10，最多 10。
 用户明确排序必须原样保留；未指定 LIST 排序时使用 asset_date DESC。任何计划都必须返回 Asset：
 LIST 的 result_assets 使用 PRIMARY；ANSWER/COUNT/GROUP/COMPARE 使用 SUPPORTING、target_count=5。
 系统会强制 Domain、READY、当前 Revision、Bundle 完整性和权限；不得把 ingestion_status 加入 criteria。
+“now/current/currently/available/ready”及其他语言中仅表示当前、目前、可用的词只描述上述系统范围，
+不是 Asset 主题，不得生成 SEMANTIC_CONCEPT；例如“how many assets now”必须是无 criteria 的 COUNT。
 
 日期根据 current_date 和 time_zone 解析为明确 YYYY-MM-DD。无法确定且会改变集合时，在 ambiguities
 中给出 code 和一个简洁问题，不得猜测。完整新问题不继承旧条件；只有真实指代或省略才使用会话上下文。

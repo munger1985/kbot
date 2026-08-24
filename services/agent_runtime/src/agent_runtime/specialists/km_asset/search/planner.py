@@ -50,6 +50,13 @@ _METADATA_FIELD_ALIASES = {
 
 _SYSTEM_SCOPE_FIELDS = frozenset({"ingestion_status"})
 
+_SYSTEM_SCOPE_CONCEPTS = frozenset({
+    "available", "available now", "current", "currently", "now", "ready",
+    "当前", "当前可用", "可用", "现在", "目前",
+    "利用可能", "現在", "現在利用可能",
+    "사용 가능", "현재", "현재 사용 가능", "지금",
+})
+
 
 def _items(value: Any) -> list[Any]:
     """只接受 JSON Array，避免把字符串拆成字段列表。"""
@@ -101,6 +108,22 @@ def _is_ready_scope_criterion(criterion: dict[str, Any]) -> bool:
             for value in criterion.get("values") or ()
         )
     )
+
+
+def _is_system_scope_semantic_criterion(
+    criterion: dict[str, Any],
+) -> bool:
+    """识别被模型误当成主题的当前可用范围修饰语。"""
+    if criterion.get("kind") != "SEMANTIC_CONCEPT":
+        return False
+    values = {
+        " ".join(
+            str(value).strip(" ?？!！,，.;。").casefold().split()
+        )
+        for value in criterion.get("values") or ()
+        if str(value).strip()
+    }
+    return bool(values) and values.issubset(_SYSTEM_SCOPE_CONCEPTS)
 
 
 def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
@@ -465,7 +488,11 @@ class AssetSearchPlanner:
             criterion = _normalize_criterion(
                 raw.get("criterion"), sequence=position
             )
-            if criterion is None or _is_ready_scope_criterion(criterion):
+            if (
+                criterion is None
+                or _is_ready_scope_criterion(criterion)
+                or _is_system_scope_semantic_criterion(criterion)
+            ):
                 continue
             preference_signatures.add(_criterion_signature(criterion))
             preferences.append({
@@ -480,7 +507,11 @@ class AssetSearchPlanner:
         criterion_ids: dict[str, str] = {}
         for position, raw in enumerate(_items(normalized.get("criteria"))):
             criterion = _normalize_criterion(raw, sequence=len(criteria) + 1)
-            if criterion is None or _is_ready_scope_criterion(criterion):
+            if (
+                criterion is None
+                or _is_ready_scope_criterion(criterion)
+                or _is_system_scope_semantic_criterion(criterion)
+            ):
                 continue
             if _criterion_signature(criterion) in preference_signatures:
                 continue
