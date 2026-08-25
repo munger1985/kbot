@@ -84,25 +84,18 @@ class SlackSignatureTest(unittest.TestCase):
 
 
 class SlackWaitingMessageTest(unittest.TestCase):
-    def test_waiting_message_matches_user_language(self):
-        samples = {
-            "显示所有与 ChatBI 相关的资产": (
-                "您的问题 KM 助手正在搜集材料分析中，请稍等。"
-            ),
-            "ChatBIに関連するすべてのアセットを表示する": (
-                "KM アシスタントが資料を収集して質問を分析しています。"
-                "しばらくお待ちください。"
-            ),
-            "ChatBI 관련 자산을 모두 표시해 주세요": (
-                "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. "
-                "잠시만 기다려 주세요."
-            ),
-            "Show all assets related to ChatBI": (
-                "KM Assistant is gathering materials and analyzing your question, "
-                "please wait."
-            ),
-        }
-        for question, expected in samples.items():
+    def test_waiting_message_is_always_english(self):
+        questions = (
+            "显示所有与 ChatBI 相关的资产",
+            "ChatBIに関連するすべてのアセットを表示する",
+            "ChatBI 관련 자산을 모두 표시해 주세요",
+            "Show all assets related to ChatBI",
+        )
+        expected = (
+            "KM Assistant is gathering materials and analyzing your question, "
+            "please wait."
+        )
+        for question in questions:
             with self.subTest(question=question):
                 self.assertEqual(expected, waiting_message(question))
 
@@ -1684,7 +1677,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("The result limit was exceeded", rendered)
         self.assertNotIn("问数结果已按服务端上限截断", rendered)
         self.assertNotIn("相关 Asset 超过 3 个", rendered)
         self.assertNotIn('"text": "提示"', rendered)
@@ -1739,9 +1732,9 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", exceeded)
+        self.assertNotIn("The result limit was exceeded", exceeded)
         self.assertNotIn('"text": "提示"', exceeded)
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", at_limit)
+        self.assertNotIn("The result limit was exceeded", at_limit)
 
     def test_asset_query_table_preserves_kbot_answer_without_reconstruction(self):
         artifact = {
@@ -1927,7 +1920,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("*1. Asset 1*", rendered)
         self.assertNotIn("*2. Asset 2*", rendered)
         self.assertNotIn("Asset 3", rendered)
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("The result limit was exceeded", rendered)
 
     def test_document_metadata_takes_precedence_over_query_rendering(self):
         artifact = {
@@ -1990,7 +1983,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         )
         self.assertIn("KM Link", rendered)
         self.assertNotIn("Query Asset Must Not Override", rendered)
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("The result limit was exceeded", rendered)
 
     def test_document_without_template_does_not_fallback_to_query_rows(self):
         artifact = {
@@ -2047,7 +2040,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertIn("A K3s HA environment operations guides", rendered)
         self.assertNotIn("Unrelated Query Asset", rendered)
         self.assertNotIn("*Author:*", rendered)
-        self.assertNotIn("结果超过上限，当前仅展示部分内容", rendered)
+        self.assertNotIn("The result limit was exceeded", rendered)
 
     def test_template_replaces_ooxml_carriage_return_marker(self):
         artifact = {
@@ -2145,7 +2138,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertTrue(payload["text"].startswith("<@U1> 这是回答"))
         self.assertNotIn("Asset问答助手", json.dumps(payload, ensure_ascii=False))
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn(":information_source: 部分回答", rendered)
+        self.assertIn(":information_source: Partial answer", rendered)
         self.assertNotIn("回答状态：", rendered)
         self.assertIn("这是回答 [D1]。", rendered)
         self.assertNotIn("参考资料", rendered)
@@ -2153,7 +2146,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("安装手册", rendered)
         self.assertNotIn("第 3、5 页", rendered)
         self.assertIn("数据截至昨日", rendered)
-        self.assertIn("包含 1 个可视化结果", rendered)
+        self.assertIn("This answer contains 1 visualization(s)", rendered)
         for private_value in (
             "internal-document-id",
             "internal-query-id",
@@ -2166,28 +2159,38 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             self.assertNotIn(private_value, rendered)
         self.assertNotIn('"accessory"', rendered)
 
-    def test_clarification_status_is_rendered_in_english_without_prefix(self):
-        payload = render_slack_reply(
-            channel_id="C1",
-            user_id="U1",
-            thread_ts="1.001",
-            artifact={
-                "artifact_type": "GROUNDED_ANSWER",
-                "schema_version": "GroundedAnswer.v1",
-                "payload": {
-                    "answer": "Which field should be used for sorting?",
-                    "status": "CLARIFICATION_REQUIRED",
-                    "used_citation_labels": [],
-                    "references": [],
-                },
-            },
-            reply_config=SlackReplyConfig(),
-        )
+    def test_non_ready_statuses_are_rendered_in_english_without_prefix(self):
+        expected_labels = {
+            "CLARIFICATION_REQUIRED": "Additional information required",
+            "INSUFFICIENT_EVIDENCE": "Insufficient evidence",
+            "PARTIAL": "Partial answer",
+            "UNKNOWN": "Answer not fully ready",
+        }
+        for status, expected_label in expected_labels.items():
+            with self.subTest(status=status):
+                payload = render_slack_reply(
+                    channel_id="C1",
+                    user_id="U1",
+                    thread_ts="1.001",
+                    artifact={
+                        "artifact_type": "GROUNDED_ANSWER",
+                        "schema_version": "GroundedAnswer.v1",
+                        "payload": {
+                            "answer": "Which field should be used for sorting?",
+                            "status": status,
+                            "used_citation_labels": [],
+                            "references": [],
+                        },
+                    },
+                    reply_config=SlackReplyConfig(),
+                )
 
-        rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn("Additional information required", rendered)
-        self.assertNotIn("回答状态：", rendered)
-        self.assertNotIn("需要补充信息", rendered)
+                rendered = json.dumps(payload, ensure_ascii=False)
+                self.assertIn(expected_label, rendered)
+                self.assertNotIn("回答状态：", rendered)
+                self.assertNotIn("需要补充信息", rendered)
+                self.assertNotIn("现有资料不足", rendered)
+                self.assertNotIn("部分回答", rendered)
 
     def test_reply_options_limit_and_hide_optional_summaries(self):
         references = [
@@ -2239,7 +2242,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("[D1]", rendered)
         self.assertNotIn("[Q1]", rendered)
         self.assertNotIn("不显示的警告", rendered)
-        self.assertNotIn("可视化结果", rendered)
+        self.assertNotIn("visualization(s)", rendered)
         self.assertNotIn("回答状态", rendered)
 
     def test_invalid_artifact_returns_fixed_safe_message(self):
@@ -2255,7 +2258,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             reply_config=SlackReplyConfig(),
         )
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn("回答格式暂不可用", rendered)
+        self.assertIn("answer format returned by KBot is temporarily unavailable", rendered)
         self.assertNotIn("sensitive internal answer", rendered)
 
     def test_answer_does_not_create_unintended_slack_mentions(self):

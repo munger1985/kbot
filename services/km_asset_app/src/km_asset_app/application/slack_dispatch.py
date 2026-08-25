@@ -303,7 +303,8 @@ class SlackDispatchService:
                     "thread_ts": root_thread_ts,
                     "text": (
                         f"<@{slack_user_id}> "
-                        "KBot 本次处理失败，请稍后重试。"
+                        "KBot was unable to process this request. "
+                        "Please try again later."
                     ),
                 }
             ]
@@ -574,7 +575,8 @@ class SlackDispatchService:
                                 "thread_ts": inbox.root_thread_ts,
                                 "text": (
                                     f"<@{inbox.slack_user_id}> "
-                                    "KBot 本次处理失败，请稍后重试。"
+                                    "KBot was unable to process this request. "
+                                    "Please try again later."
                                 ),
                             },
                             status="PENDING",

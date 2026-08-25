@@ -11,27 +11,22 @@ from urllib.parse import quote, urlsplit
 from km_asset_app.config import SlackReplyConfig
 
 
-WAITING_MESSAGES = {
-    "zh": "您的问题 KM 助手正在搜集材料分析中，请稍等。",
-    "ja": (
-        "KM アシスタントが資料を収集して質問を分析しています。"
-        "しばらくお待ちください。"
-    ),
-    "ko": (
-        "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. "
-        "잠시만 기다려 주세요."
-    ),
-    "en": "KM Assistant is gathering materials and analyzing your question, please wait.",
-}
+_WAITING_MESSAGE = (
+    "KM Assistant is gathering materials and analyzing your question, "
+    "please wait."
+)
 
 _ARTIFACT_TYPE = "GROUNDED_ANSWER"
 _SCHEMA_VERSION = "GroundedAnswer.v1"
-_EMPTY_ANSWER = "KBot 未生成可用回答，请稍后重试。"
-_INVALID_ARTIFACT = "KBot 返回的回答格式暂不可用，请稍后重试。"
+_EMPTY_ANSWER = "KBot did not generate a usable answer. Please try again later."
+_INVALID_ARTIFACT = (
+    "The answer format returned by KBot is temporarily unavailable. "
+    "Please try again later."
+)
 _STATUS_LABELS = {
     "CLARIFICATION_REQUIRED": "Additional information required",
-    "INSUFFICIENT_EVIDENCE": "现有资料不足",
-    "PARTIAL": "部分回答",
+    "INSUFFICIENT_EVIDENCE": "Insufficient evidence",
+    "PARTIAL": "Partial answer",
 }
 
 _HTML_ANCHOR_PATTERN = re.compile(
@@ -87,20 +82,14 @@ _OOXML_CARRIAGE_RETURN_PATTERN = re.compile(
 )
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
-_TRUNCATION_NOTICE = "结果超过上限，当前仅展示部分内容"
+_TRUNCATION_NOTICE = (
+    "The result limit was exceeded. Only part of the content is shown."
+)
 
 
-def waiting_message(question: str) -> str:
-    # 日文也会包含汉字，因此必须先判断假名，再判断 CJK 统一汉字。
-    if any("\u3040" <= char <= "\u30ff" for char in question):
-        language = "ja"
-    elif any("\uac00" <= char <= "\ud7af" for char in question):
-        language = "ko"
-    elif any("\u4e00" <= char <= "\u9fff" for char in question):
-        language = "zh"
-    else:
-        language = "en"
-    return WAITING_MESSAGES[language]
+def waiting_message(_question: str) -> str:
+    """Return the English-only Slack processing notice."""
+    return _WAITING_MESSAGE
 
 
 def _escape_mrkdwn(value: object) -> str:
@@ -546,7 +535,7 @@ def _status_blocks(status: str) -> list[dict[str, Any]]:
     normalized = status.strip().upper()
     if not normalized or normalized == "READY":
         return []
-    label = _STATUS_LABELS.get(normalized, "回答尚未完全就绪")
+    label = _STATUS_LABELS.get(normalized, "Answer not fully ready")
     return [
         {
             "type": "section",
@@ -593,7 +582,7 @@ def _warning_blocks(
         {"type": "divider"},
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "提示"},
+            "text": {"type": "plain_text", "text": "Notice"},
         },
         {
             "type": "section",
@@ -619,8 +608,8 @@ def _visualization_blocks(
                 {
                     "type": "mrkdwn",
                     "text": (
-                        f":bar_chart: 本次回答包含 {len(visualizations)} 个"
-                        "可视化结果，请前往 Asset 问答页面查看。"
+                        f":bar_chart: This answer contains {len(visualizations)} "
+                        "visualization(s). View them on the Asset Q&A page."
                     ),
                 }
             ],

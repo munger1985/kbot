@@ -145,8 +145,11 @@ SELECT T.WORKSPACE_ID,
 
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
 来自 `payload.answer`，并只执行安全的 Slack `mrkdwn` 转换、引用标签隐藏和
-用户可见安全处理；非 `READY` 状态显示中文状态提示。Slack 不根据
+用户可见安全处理；非 `READY` 状态显示英文状态提示。Slack 不根据
 `query_results` 补充 Asset、不重建列表，也不重新决定回答应当走问数或问文展示。
+
+Slack 自有的等待、状态、失败、截断、格式异常和可视化提醒统一使用英文；模型生成的
+回答正文保持原始语言。
 
 仅当 `used_citation_labels` 实际命中 `reference_type=DOCUMENT` 的附件时，
 Slack 才组装 Asset Template。Template 的 `asset_id`、`asset_title`、
