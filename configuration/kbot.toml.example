@@ -83,7 +83,7 @@ username = "kbot"
 
 # [integrations.slack.external_callback]
 # enabled = true
-# url = "https://callback.example.com/events"
+# url = "http://141.148.83.133:8080/ords/kbot_ui/km/g"
 # timeout_seconds = 10
 
 # 两项调试功能会落盘完整业务报文，只能临时开启。
