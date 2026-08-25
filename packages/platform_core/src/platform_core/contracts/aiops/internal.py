@@ -34,8 +34,8 @@ class CreateOpsRunCommand(AIOpsContract):
     session_id: str | None = Field(default=None, max_length=256)
     parent_agent_run_id: UUIDv7 | None = None
     parent_delegation_id: UUIDv7 | None = None
-    trigger_event_id: UUIDv7 | None = None
-    trigger_alert_id: UUIDv7 | None = None
+    trigger_signal_event_id: UUIDv7 | None = None
+    situation_id: UUIDv7 | None = None
     inspection_fire_id: UUIDv7 | None = None
     deadline: UtcDatetime | None = None
     blueprint_id: str = Field(
@@ -123,7 +123,7 @@ class OpsCommand(AIOpsContract):
     command: TypedOpsCommand
 
 
-class MonitorWebhookEnvelope(AIOpsContract):
+class SignalEventEnvelope(AIOpsContract):
     schema_version: str = INTERNAL_SCHEMA_VERSION
     request_id: str = Field(min_length=1, max_length=128)
     webhook_key_hash: Sha256Digest
@@ -135,7 +135,7 @@ class MonitorWebhookEnvelope(AIOpsContract):
     received_at: UtcDatetime
 
     @model_validator(mode="after")
-    def validate_raw_body(self) -> "MonitorWebhookEnvelope":
+    def validate_raw_body(self) -> "SignalEventEnvelope":
         if bool(self.raw_body_base64) == bool(self.raw_body_uri):
             raise ValueError("Webhook 正文必须且只能使用 inline 或 URI")
         return self
@@ -148,13 +148,13 @@ class EventReceipt(AIOpsContract):
     duplicate: bool = False
 
 
-class MonitorWebhookReceipt(AIOpsContract):
+class SignalEventIntakeReceipt(AIOpsContract):
     schema_version: str = INTERNAL_SCHEMA_VERSION
     inbox_id: UUIDv7
     accepted: bool
     duplicate: bool = False
-    event_ids: tuple[UUIDv7, ...] = ()
-    alert_ids: tuple[UUIDv7, ...] = ()
+    signal_event_ids: tuple[UUIDv7, ...] = ()
+    situation_ids: tuple[UUIDv7, ...] = ()
 
 
 class FinalDiagnosisRef(AIOpsContract):

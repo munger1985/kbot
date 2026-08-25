@@ -32,13 +32,16 @@ from platform_core.contracts.aiops import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
+    NotificationSubscriptionList,
+    NotificationSubscriptionUpsert,
+    NotificationSubscriptionView,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -77,6 +80,57 @@ Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 def _etag(response: Response, row_version: int) -> None:
     response.headers["ETag"] = format_etag(row_version)
+
+
+@router.get(
+    "/notification-subscriptions",
+    response_model=NotificationSubscriptionList,
+)
+async def list_notification_subscriptions(
+    service: Service,
+    scope: Scope,
+) -> NotificationSubscriptionList:
+    return await service.list_notification_subscriptions(scope=scope)
+
+
+@router.put(
+    "/notification-subscriptions/targets/{target_id}",
+    response_model=NotificationSubscriptionView,
+)
+async def upsert_notification_subscription(
+    target_id: UUID,
+    body: NotificationSubscriptionUpsert,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    if_match: IfMatch = None,
+) -> NotificationSubscriptionView:
+    result = await service.upsert_notification_subscription(
+        scope=scope,
+        target_id=target_id,
+        request=body,
+        expected_version=(parse_etag(if_match) if if_match else None),
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.delete(
+    "/notification-subscriptions/targets/{target_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def disable_notification_subscription(
+    target_id: UUID,
+    service: Service,
+    scope: Scope,
+    if_match: IfMatch = None,
+) -> Response:
+    await service.disable_notification_subscription(
+        scope=scope,
+        target_id=target_id,
+        expected_version=parse_etag(if_match),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/targets", response_model=TargetDetail, status_code=201)
@@ -335,18 +389,18 @@ async def command_agent_binding(
 
 
 @router.post(
-    "/monitor-sources",
-    response_model=MonitorSourceDetail,
+    "/diagnostic-sources",
+    response_model=DiagnosticSourceDetail,
     status_code=201,
 )
-async def create_monitor_source(
-    body: MonitorSourceCreate,
+async def create_diagnostic_source(
+    body: DiagnosticSourceCreate,
     response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
-) -> MonitorSourceDetail:
-    result = await service.create_monitor_source(
+) -> DiagnosticSourceDetail:
+    result = await service.create_diagnostic_source(
         scope=scope,
         request=body,
         idempotency_key=idempotency_key,
@@ -355,15 +409,15 @@ async def create_monitor_source(
     return result
 
 
-@router.get("/monitor-sources", response_model=MonitorSourcePage)
-async def list_monitor_sources(
+@router.get("/diagnostic-sources", response_model=DiagnosticSourcePage)
+async def list_diagnostic_sources(
     service: Service,
     scope: Scope,
     resource_status: str | None = Query(default=None, alias="status"),
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
-) -> MonitorSourcePage:
-    return await service.list_monitor_sources(
+) -> DiagnosticSourcePage:
+    return await service.list_diagnostic_sources(
         scope=scope,
         status=resource_status,
         cursor=cursor,
@@ -372,15 +426,15 @@ async def list_monitor_sources(
 
 
 @router.get(
-    "/monitor-sources/{source_id}", response_model=MonitorSourceDetail
+    "/diagnostic-sources/{source_id}", response_model=DiagnosticSourceDetail
 )
-async def get_monitor_source(
+async def get_diagnostic_source(
     source_id: UUID,
     response: Response,
     service: Service,
     scope: Scope,
-) -> MonitorSourceDetail:
-    result = await service.get_monitor_source(
+) -> DiagnosticSourceDetail:
+    result = await service.get_diagnostic_source(
         scope=scope, source_id=source_id
     )
     _etag(response, result.row_version)
@@ -388,17 +442,17 @@ async def get_monitor_source(
 
 
 @router.patch(
-    "/monitor-sources/{source_id}", response_model=MonitorSourceDetail
+    "/diagnostic-sources/{source_id}", response_model=DiagnosticSourceDetail
 )
-async def patch_monitor_source(
+async def patch_diagnostic_source(
     source_id: UUID,
-    body: MonitorSourcePatch,
+    body: DiagnosticSourcePatch,
     response: Response,
     service: Service,
     scope: Scope,
     if_match: IfMatch = None,
-) -> MonitorSourceDetail:
-    result = await service.patch_monitor_source(
+) -> DiagnosticSourceDetail:
+    result = await service.patch_diagnostic_source(
         scope=scope,
         source_id=source_id,
         request=body,
@@ -409,17 +463,17 @@ async def patch_monitor_source(
 
 
 @router.delete(
-    "/monitor-sources/{source_id}",
+    "/diagnostic-sources/{source_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_monitor_source(
+async def delete_diagnostic_source(
     source_id: UUID,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
 ) -> Response:
-    await service.delete_monitor_source(
+    await service.delete_diagnostic_source(
         scope=scope,
         source_id=source_id,
         expected_version=parse_etag(if_match),
@@ -429,18 +483,18 @@ async def delete_monitor_source(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/health-checks",
+    "/diagnostic-sources/{source_id}/health-checks",
     response_model=HealthCheckReceipt,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def request_monitor_health_check(
+async def request_diagnostic_source_health_check(
     source_id: UUID,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
 ) -> HealthCheckReceipt:
-    return await service.request_monitor_health_check(
+    return await service.request_diagnostic_source_health_check(
         scope=scope,
         source_id=source_id,
         expected_version=parse_etag(if_match),
@@ -449,7 +503,7 @@ async def request_monitor_health_check(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/webhook-key:rotate",
+    "/diagnostic-sources/{source_id}/webhook-key:rotate",
     response_model=WebhookKeyRotation,
 )
 async def rotate_webhook_key(
@@ -468,10 +522,10 @@ async def rotate_webhook_key(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/{command}",
-    response_model=MonitorSourceDetail,
+    "/diagnostic-sources/{source_id}/{command}",
+    response_model=DiagnosticSourceDetail,
 )
-async def command_monitor_source(
+async def command_diagnostic_source(
     source_id: UUID,
     command: str,
     response: Response,
@@ -479,8 +533,8 @@ async def command_monitor_source(
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
-) -> MonitorSourceDetail:
-    result = await service.command_monitor_source(
+) -> DiagnosticSourceDetail:
+    result = await service.command_diagnostic_source(
         scope=scope,
         source_id=source_id,
         command=command,
@@ -492,29 +546,29 @@ async def command_monitor_source(
 
 
 @router.get(
-    "/targets/{target_id}/monitor-bindings",
-    response_model=tuple[MonitorBindingView, ...],
+    "/targets/{target_id}/source-bindings",
+    response_model=tuple[SourceBindingView, ...],
 )
-async def list_monitor_bindings(
+async def list_source_bindings(
     target_id: UUID, service: Service, scope: Scope
-) -> tuple[MonitorBindingView, ...]:
-    return await service.list_monitor_bindings(scope=scope, target_id=target_id)
+) -> tuple[SourceBindingView, ...]:
+    return await service.list_source_bindings(scope=scope, target_id=target_id)
 
 
 @router.post(
-    "/targets/{target_id}/monitor-bindings",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings",
+    response_model=SourceBindingView,
     status_code=201,
 )
-async def create_monitor_binding(
+async def create_source_binding(
     target_id: UUID,
-    body: MonitorBindingCreate,
+    body: SourceBindingCreate,
     response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
-) -> MonitorBindingView:
-    result = await service.create_monitor_binding(
+) -> SourceBindingView:
+    result = await service.create_source_binding(
         scope=scope,
         target_id=target_id,
         request=body,
@@ -525,19 +579,19 @@ async def create_monitor_binding(
 
 
 @router.patch(
-    "/targets/{target_id}/monitor-bindings/{binding_id}",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings/{binding_id}",
+    response_model=SourceBindingView,
 )
-async def patch_monitor_binding(
+async def patch_source_binding(
     target_id: UUID,
     binding_id: UUID,
-    body: MonitorBindingPatch,
+    body: SourceBindingPatch,
     response: Response,
     service: Service,
     scope: Scope,
     if_match: IfMatch = None,
-) -> MonitorBindingView:
-    result = await service.patch_monitor_binding(
+) -> SourceBindingView:
+    result = await service.patch_source_binding(
         scope=scope,
         target_id=target_id,
         binding_id=binding_id,
@@ -549,10 +603,10 @@ async def patch_monitor_binding(
 
 
 @router.post(
-    "/targets/{target_id}/monitor-bindings/{binding_id}/{command}",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings/{binding_id}/{command}",
+    response_model=SourceBindingView,
 )
-async def command_monitor_binding(
+async def command_source_binding(
     target_id: UUID,
     binding_id: UUID,
     command: str,
@@ -561,8 +615,8 @@ async def command_monitor_binding(
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
-) -> MonitorBindingView:
-    result = await service.command_monitor_binding(
+) -> SourceBindingView:
+    result = await service.command_source_binding(
         scope=scope,
         target_id=target_id,
         binding_id=binding_id,

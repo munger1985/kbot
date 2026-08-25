@@ -12,7 +12,7 @@ import aiohttp
 from platform_core.contracts import AuthContext, INTERNAL_API_V1
 from platform_core.contracts.aiops import (
     CreateOpsRunCommand,
-    MonitorWebhookEnvelope,
+    SignalEventEnvelope,
     OpsCommand,
     RootDelegationRequest,
 )
@@ -186,6 +186,45 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
 
+    async def list_notification_subscriptions(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/notification-subscriptions",
+            auth_context=auth_context,
+        )
+
+    async def upsert_notification_subscription(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            f"{self._CONFIG}/notification-subscriptions/targets/{target_id}",
+            payload=payload,
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
+    async def disable_notification_subscription(
+        self,
+        target_id: UUID,
+        *,
+        if_match: str,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{self._CONFIG}/notification-subscriptions/targets/{target_id}",
+            if_match=if_match,
+            auth_context=auth_context,
+        )
+
     @staticmethod
     def _list_path(
         path: str,
@@ -357,7 +396,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def create_monitor_source(
+    async def create_diagnostic_source(
         self,
         payload: dict[str, Any],
         *,
@@ -366,13 +405,13 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/monitor-sources",
+            f"{self._CONFIG}/diagnostic-sources",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def list_monitor_sources(
+    async def list_diagnostic_sources(
         self,
         *,
         status: str | None,
@@ -383,7 +422,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "GET",
             self._list_path(
-                f"{self._CONFIG}/monitor-sources",
+                f"{self._CONFIG}/diagnostic-sources",
                 status=status,
                 cursor=cursor,
                 limit=limit,
@@ -391,16 +430,16 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def get_monitor_source(
+    async def get_diagnostic_source(
         self, source_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/monitor-sources/{source_id}",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}",
             auth_context=auth_context,
         )
 
-    async def patch_monitor_source(
+    async def patch_diagnostic_source(
         self,
         source_id: UUID,
         payload: dict[str, Any],
@@ -410,13 +449,13 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "PATCH",
-            f"{self._CONFIG}/monitor-sources/{source_id}",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}",
             payload=payload,
             if_match=if_match,
             auth_context=auth_context,
         )
 
-    async def delete_monitor_source(
+    async def delete_diagnostic_source(
         self,
         source_id: UUID,
         *,
@@ -426,13 +465,13 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> None:
         await self._json(
             "DELETE",
-            f"{self._CONFIG}/monitor-sources/{source_id}",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}",
             if_match=if_match,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def command_monitor_source(
+    async def command_diagnostic_source(
         self,
         source_id: UUID,
         command: str,
@@ -443,14 +482,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/monitor-sources/{source_id}/{command}",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/{command}",
             payload={},
             if_match=if_match,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def request_monitor_health_check(
+    async def request_diagnostic_source_health_check(
         self,
         source_id: UUID,
         *,
@@ -460,14 +499,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/monitor-sources/{source_id}/health-checks",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/health-checks",
             payload={},
             if_match=if_match,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def rotate_monitor_webhook_key(
+    async def rotate_diagnostic_source_webhook_key(
         self,
         source_id: UUID,
         *,
@@ -477,23 +516,23 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/monitor-sources/{source_id}/webhook-key:rotate",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/webhook-key:rotate",
             payload={},
             if_match=if_match,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def list_monitor_bindings(
+    async def list_source_bindings(
         self, target_id: UUID, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/targets/{target_id}/monitor-bindings",
+            f"{self._CONFIG}/targets/{target_id}/source-bindings",
             auth_context=auth_context,
         )
 
-    async def create_monitor_binding(
+    async def create_source_binding(
         self,
         target_id: UUID,
         payload: dict[str, Any],
@@ -503,13 +542,13 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/targets/{target_id}/monitor-bindings",
+            f"{self._CONFIG}/targets/{target_id}/source-bindings",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
-    async def patch_monitor_binding(
+    async def patch_source_binding(
         self,
         target_id: UUID,
         binding_id: UUID,
@@ -522,14 +561,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             "PATCH",
             (
                 f"{self._CONFIG}/targets/{target_id}"
-                f"/monitor-bindings/{binding_id}"
+                f"/source-bindings/{binding_id}"
             ),
             payload=payload,
             if_match=if_match,
             auth_context=auth_context,
         )
 
-    async def command_monitor_binding(
+    async def command_source_binding(
         self,
         target_id: UUID,
         binding_id: UUID,
@@ -543,7 +582,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             "POST",
             (
                 f"{self._CONFIG}/targets/{target_id}"
-                f"/monitor-bindings/{binding_id}/{command}"
+                f"/source-bindings/{binding_id}/{command}"
             ),
             payload={},
             if_match=if_match,
@@ -750,15 +789,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             idempotency_key=command.idempotency_key,
         )
 
-    async def intake_monitor_event(
+    async def intake_signal_event(
         self,
-        envelope: MonitorWebhookEnvelope,
+        envelope: SignalEventEnvelope,
         *,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{INTERNAL_API_V1}/aiops/intake/monitor-events",
+            f"{INTERNAL_API_V1}/aiops/intake/signal-events",
             auth_context=auth_context,
             payload=envelope.model_dump(mode="json"),
         )
@@ -775,6 +814,35 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def list_runs(self, *, target_id: UUID | None, status: str | None,
+                        cursor: str | None, limit: int,
+                        auth_context: AuthContext) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if target_id is not None:
+            query["target_id"] = str(target_id)
+        if status is not None:
+            query["status"] = status
+        if cursor is not None:
+            query["cursor"] = cursor
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs?{urlencode(query)}",
+                                auth_context=auth_context)
+
+    async def list_situations(self, *, target_id: UUID | None, status: str | None,
+                              severity: str | None, cursor: str | None,
+                              limit: int, auth_context: AuthContext) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        for key, value in (("target_id", target_id), ("status", status),
+                           ("severity", severity), ("cursor", cursor)):
+            if value is not None:
+                query[key] = str(value)
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/situations?{urlencode(query)}",
+                                auth_context=auth_context)
+
+    async def get_situation(self, situation_id: UUID, *,
+                            auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/situations/{situation_id}",
+                                auth_context=auth_context)
+
     async def get_run_result(
         self,
         run_id: UUID,
@@ -784,6 +852,21 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "GET",
             f"{INTERNAL_API_V1}/aiops/runs/{run_id}/result",
+            auth_context=auth_context,
+        )
+
+    async def list_proposals(self, *, target_id: UUID | None,
+                             status: str | None, cursor: str | None,
+                             limit: int, auth_context: AuthContext) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if target_id is not None:
+            query["target_id"] = str(target_id)
+        if status is not None:
+            query["status"] = status
+        if cursor is not None:
+            query["cursor"] = cursor
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/proposals?{urlencode(query)}",
             auth_context=auth_context,
         )
 

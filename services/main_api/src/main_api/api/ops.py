@@ -44,23 +44,30 @@ from platform_core.contracts.aiops import (
     InspectionTargetView,
     ManualResultCommand,
     ManualResultReceipt,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
+    NotificationSubscriptionList,
+    NotificationSubscriptionUpsert,
+    NotificationSubscriptionView,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
     OpsCommand,
     OpsRunCreate,
     OpsRunReceipt,
     OpsRunResult,
+    OpsRunPage,
     OpsRunSummary,
     PendingInputView,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
     ProposalView,
+    ProposalPage,
+    SituationPage,
+    SituationView,
     RejectionCommand,
     ReportPage,
     ReportVersionPage,
@@ -90,8 +97,8 @@ async def _require_route_access(request: Request) -> None:
     permission = "aiops:use"
     if relative.startswith("/targets"):
         permission = "aiops:target_manage"
-    elif relative.startswith("/monitor-sources"):
-        permission = "aiops:monitor_source_manage"
+    elif relative.startswith("/diagnostic-sources"):
+        permission = "aiops:diagnostic_source_manage"
     elif relative.startswith("/policies"):
         permission = "aiops:policy_manage"
     elif relative.startswith("/inspection-plans"):
@@ -153,6 +160,56 @@ def _validated(
     if response is not None and row_version is not None:
         response.headers["ETag"] = f'"rv-{int(row_version)}"'
     return result
+
+
+@router.get(
+    "/notification-subscriptions",
+    response_model=NotificationSubscriptionList,
+)
+async def list_notification_subscriptions(
+    request: Request,
+) -> NotificationSubscriptionList:
+    payload = await _client(request).list_notification_subscriptions(
+        auth_context=request.state.auth_context
+    )
+    return NotificationSubscriptionList.model_validate(payload)
+
+
+@router.put(
+    "/notification-subscriptions/targets/{target_id}",
+    response_model=NotificationSubscriptionView,
+)
+async def upsert_notification_subscription(
+    target_id: UUID,
+    body: NotificationSubscriptionUpsert,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+) -> NotificationSubscriptionView:
+    payload = await _client(request).upsert_notification_subscription(
+        target_id,
+        body.model_dump(mode="json"),
+        if_match=if_match,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(NotificationSubscriptionView, payload, response)
+
+
+@router.delete(
+    "/notification-subscriptions/targets/{target_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def disable_notification_subscription(
+    target_id: UUID,
+    request: Request,
+    if_match: IfMatch,
+) -> Response:
+    await _client(request).disable_notification_subscription(
+        target_id,
+        if_match=if_match,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/reports/{report_id}", response_model=ReportView)
@@ -292,6 +349,42 @@ async def create_ops_run(
     return result
 
 
+@router.get("/runs", response_model=OpsRunPage)
+async def list_ops_runs(
+    request: Request, target_id: UUID | None = None,
+    status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> OpsRunPage:
+    payload = await _client(request).list_runs(
+        target_id=target_id, status=status, cursor=cursor, limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return OpsRunPage.model_validate(payload)
+
+
+@router.get("/situations", response_model=SituationPage)
+async def list_situations(
+    request: Request, target_id: UUID | None = None,
+    status: str | None = None, severity: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> SituationPage:
+    payload = await _client(request).list_situations(
+        target_id=target_id, status=status, severity=severity,
+        cursor=cursor, limit=limit, auth_context=request.state.auth_context,
+    )
+    return SituationPage.model_validate(payload)
+
+
+@router.get("/situations/{situation_id}", response_model=SituationView)
+async def get_situation(situation_id: UUID, request: Request) -> SituationView:
+    payload = await _client(request).get_situation(
+        situation_id, auth_context=request.state.auth_context
+    )
+    return SituationView.model_validate(payload)
+
+
 @router.get("/runs/{run_id}", response_model=OpsRunSummary)
 async def get_ops_run(
     run_id: UUID, request: Request, response: Response
@@ -388,6 +481,20 @@ async def skip_hitl(
         auth_context=request.state.auth_context,
     )
     return _validated(HitlResult, payload, response)
+
+
+@router.get("/proposals", response_model=ProposalPage)
+async def list_proposals(
+    request: Request, target_id: UUID | None = None,
+    status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ProposalPage:
+    payload = await _client(request).list_proposals(
+        target_id=target_id, status=status, cursor=cursor, limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return ProposalPage.model_validate(payload)
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalView)
@@ -799,80 +906,80 @@ async def command_agent_binding(
 
 
 @router.post(
-    "/monitor-sources",
-    response_model=MonitorSourceDetail,
+    "/diagnostic-sources",
+    response_model=DiagnosticSourceDetail,
     status_code=201,
 )
-async def create_monitor_source(
-    body: MonitorSourceCreate,
+async def create_diagnostic_source(
+    body: DiagnosticSourceCreate,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
-) -> MonitorSourceDetail:
-    payload = await _client(request).create_monitor_source(
+) -> DiagnosticSourceDetail:
+    payload = await _client(request).create_diagnostic_source(
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorSourceDetail, payload, response)
+    return _validated(DiagnosticSourceDetail, payload, response)
 
 
-@router.get("/monitor-sources", response_model=MonitorSourcePage)
-async def list_monitor_sources(
+@router.get("/diagnostic-sources", response_model=DiagnosticSourcePage)
+async def list_diagnostic_sources(
     request: Request,
     resource_status: str | None = Query(default=None, alias="status"),
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
-) -> MonitorSourcePage:
-    payload = await _client(request).list_monitor_sources(
+) -> DiagnosticSourcePage:
+    payload = await _client(request).list_diagnostic_sources(
         status=resource_status,
         cursor=cursor,
         limit=limit,
         auth_context=request.state.auth_context,
     )
-    return MonitorSourcePage.model_validate(payload)
+    return DiagnosticSourcePage.model_validate(payload)
 
 
-@router.get("/monitor-sources/{source_id}", response_model=MonitorSourceDetail)
-async def get_monitor_source(
+@router.get("/diagnostic-sources/{source_id}", response_model=DiagnosticSourceDetail)
+async def get_diagnostic_source(
     source_id: UUID, request: Request, response: Response
-) -> MonitorSourceDetail:
-    payload = await _client(request).get_monitor_source(
+) -> DiagnosticSourceDetail:
+    payload = await _client(request).get_diagnostic_source(
         source_id, auth_context=request.state.auth_context
     )
-    return _validated(MonitorSourceDetail, payload, response)
+    return _validated(DiagnosticSourceDetail, payload, response)
 
 
 @router.patch(
-    "/monitor-sources/{source_id}", response_model=MonitorSourceDetail
+    "/diagnostic-sources/{source_id}", response_model=DiagnosticSourceDetail
 )
-async def patch_monitor_source(
+async def patch_diagnostic_source(
     source_id: UUID,
-    body: MonitorSourcePatch,
+    body: DiagnosticSourcePatch,
     request: Request,
     response: Response,
     if_match: IfMatch,
-) -> MonitorSourceDetail:
-    payload = await _client(request).patch_monitor_source(
+) -> DiagnosticSourceDetail:
+    payload = await _client(request).patch_diagnostic_source(
         source_id,
         body.model_dump(mode="json", exclude_unset=True),
         if_match=if_match,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorSourceDetail, payload, response)
+    return _validated(DiagnosticSourceDetail, payload, response)
 
 
 @router.delete(
-    "/monitor-sources/{source_id}",
+    "/diagnostic-sources/{source_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_monitor_source(
+async def delete_diagnostic_source(
     source_id: UUID,
     request: Request,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
 ) -> Response:
-    await _client(request).delete_monitor_source(
+    await _client(request).delete_diagnostic_source(
         source_id,
         if_match=if_match,
         idempotency_key=idempotency_key,
@@ -882,17 +989,17 @@ async def delete_monitor_source(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/health-checks",
+    "/diagnostic-sources/{source_id}/health-checks",
     response_model=HealthCheckReceipt,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def request_monitor_health_check(
+async def request_diagnostic_source_health_check(
     source_id: UUID,
     request: Request,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
 ) -> HealthCheckReceipt:
-    payload = await _client(request).request_monitor_health_check(
+    payload = await _client(request).request_diagnostic_source_health_check(
         source_id,
         if_match=if_match,
         idempotency_key=idempotency_key,
@@ -902,16 +1009,16 @@ async def request_monitor_health_check(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/webhook-key:rotate",
+    "/diagnostic-sources/{source_id}/webhook-key:rotate",
     response_model=WebhookKeyRotation,
 )
-async def rotate_monitor_webhook_key(
+async def rotate_diagnostic_source_webhook_key(
     source_id: UUID,
     request: Request,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
 ) -> WebhookKeyRotation:
-    payload = await _client(request).rotate_monitor_webhook_key(
+    payload = await _client(request).rotate_diagnostic_source_webhook_key(
         source_id,
         if_match=if_match,
         idempotency_key=idempotency_key,
@@ -921,88 +1028,88 @@ async def rotate_monitor_webhook_key(
 
 
 @router.post(
-    "/monitor-sources/{source_id}/{command}",
-    response_model=MonitorSourceDetail,
+    "/diagnostic-sources/{source_id}/{command}",
+    response_model=DiagnosticSourceDetail,
 )
-async def command_monitor_source(
+async def command_diagnostic_source(
     source_id: UUID,
     command: Literal["enable", "disable"],
     request: Request,
     response: Response,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
-) -> MonitorSourceDetail:
-    payload = await _client(request).command_monitor_source(
+) -> DiagnosticSourceDetail:
+    payload = await _client(request).command_diagnostic_source(
         source_id,
         command,
         if_match=if_match,
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorSourceDetail, payload, response)
+    return _validated(DiagnosticSourceDetail, payload, response)
 
 
 @router.get(
-    "/targets/{target_id}/monitor-bindings",
-    response_model=tuple[MonitorBindingView, ...],
+    "/targets/{target_id}/source-bindings",
+    response_model=tuple[SourceBindingView, ...],
 )
-async def list_monitor_bindings(
+async def list_source_bindings(
     target_id: UUID, request: Request
-) -> tuple[MonitorBindingView, ...]:
-    payload = await _client(request).list_monitor_bindings(
+) -> tuple[SourceBindingView, ...]:
+    payload = await _client(request).list_source_bindings(
         target_id, auth_context=request.state.auth_context
     )
-    return tuple(MonitorBindingView.model_validate(item) for item in payload)
+    return tuple(SourceBindingView.model_validate(item) for item in payload)
 
 
 @router.post(
-    "/targets/{target_id}/monitor-bindings",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings",
+    response_model=SourceBindingView,
     status_code=201,
 )
-async def create_monitor_binding(
+async def create_source_binding(
     target_id: UUID,
-    body: MonitorBindingCreate,
+    body: SourceBindingCreate,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
-) -> MonitorBindingView:
-    payload = await _client(request).create_monitor_binding(
+) -> SourceBindingView:
+    payload = await _client(request).create_source_binding(
         target_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorBindingView, payload, response)
+    return _validated(SourceBindingView, payload, response)
 
 
 @router.patch(
-    "/targets/{target_id}/monitor-bindings/{binding_id}",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings/{binding_id}",
+    response_model=SourceBindingView,
 )
-async def patch_monitor_binding(
+async def patch_source_binding(
     target_id: UUID,
     binding_id: UUID,
-    body: MonitorBindingPatch,
+    body: SourceBindingPatch,
     request: Request,
     response: Response,
     if_match: IfMatch,
-) -> MonitorBindingView:
-    payload = await _client(request).patch_monitor_binding(
+) -> SourceBindingView:
+    payload = await _client(request).patch_source_binding(
         target_id,
         binding_id,
         body.model_dump(mode="json", exclude_unset=True),
         if_match=if_match,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorBindingView, payload, response)
+    return _validated(SourceBindingView, payload, response)
 
 
 @router.post(
-    "/targets/{target_id}/monitor-bindings/{binding_id}/{command}",
-    response_model=MonitorBindingView,
+    "/targets/{target_id}/source-bindings/{binding_id}/{command}",
+    response_model=SourceBindingView,
 )
-async def command_monitor_binding(
+async def command_source_binding(
     target_id: UUID,
     binding_id: UUID,
     command: Literal["enable", "disable"],
@@ -1010,8 +1117,8 @@ async def command_monitor_binding(
     response: Response,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
-) -> MonitorBindingView:
-    payload = await _client(request).command_monitor_binding(
+) -> SourceBindingView:
+    payload = await _client(request).command_source_binding(
         target_id,
         binding_id,
         command,
@@ -1019,7 +1126,7 @@ async def command_monitor_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(MonitorBindingView, payload, response)
+    return _validated(SourceBindingView, payload, response)
 
 
 @router.post("/policies", response_model=PolicyDetail, status_code=201)

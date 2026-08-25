@@ -20,21 +20,16 @@ from .types import (
 TargetStatus = Literal["ACTIVE", "MAINTENANCE", "DISABLED"]
 HealthStatus = Literal["UNKNOWN", "HEALTHY", "DEGRADED", "UNREACHABLE"]
 BindingStatus = Literal["ACTIVE", "REVOKED"]
-MonitorStatus = Literal["ACTIVE", "DISABLED"]
+SourceStatus = Literal["ACTIVE", "DISABLED"]
 PolicyStatus = Literal["DRAFT", "ACTIVE", "RETIRED"]
 InspectionPlanStatus = Literal["ACTIVE", "PAUSED", "DISABLED"]
 InspectionTargetStatus = Literal["ACTIVE", "DISABLED"]
-
-
-def _validate_monitor_capabilities(capabilities: JsonObject | None) -> None:
-    if capabilities is None:
-        return
-    reserved = {
-        "external_target_label",
-        "prometheus_instance",
-    } & capabilities.keys()
-    if reserved:
-        raise ValueError("Prometheus instance 必须使用 prometheus_instance 字段配置")
+NotificationStage = Literal[
+    "SITUATION_DETECTED",
+    "DIAGNOSIS_STARTED",
+    "REPORT_READY",
+    "SITUATION_RECOVERED",
+]
 
 
 class SecretRefStatus(AIOpsContract):
@@ -89,8 +84,10 @@ class TargetCreate(AIOpsContract):
         if self.db_type == DatabaseType.ORACLE:
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
-        elif not self.endpoint.database or self.endpoint.service:
-            raise ValueError("MySQL Endpoint 必须只设置 database")
+        elif self.db_type in {DatabaseType.MYSQL, DatabaseType.POSTGRESQL} and (
+            not self.endpoint.database or self.endpoint.service
+        ):
+            raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
         return self
 
 
@@ -138,6 +135,44 @@ class TargetPage(CursorPage):
     items: tuple[TargetSummary, ...] = ()
 
 
+class NotificationSubscriptionUpsert(AIOpsContract):
+    """当前用户针对一个 Target 的站内主动分享订阅。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    minimum_severity: Literal["INFO", "WARNING", "HIGH", "CRITICAL"] = "HIGH"
+    stages: tuple[NotificationStage, ...] = (
+        "SITUATION_DETECTED",
+        "DIAGNOSIS_STARTED",
+        "REPORT_READY",
+        "SITUATION_RECOVERED",
+    )
+
+    @model_validator(mode="after")
+    def validate_stages(self) -> "NotificationSubscriptionUpsert":
+        if not self.stages or len(set(self.stages)) != len(self.stages):
+            raise ValueError("主动分享阶段不能为空或重复")
+        return self
+
+
+class NotificationSubscriptionView(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    subscription_id: UUIDv7
+    target_id: UUIDv7
+    recipient_actor_id: str
+    channel: Literal["IN_APP"] = "IN_APP"
+    minimum_severity: Literal["INFO", "WARNING", "HIGH", "CRITICAL"]
+    stages: tuple[NotificationStage, ...]
+    status: Literal["ACTIVE", "DISABLED"]
+    row_version: int = Field(ge=1)
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class NotificationSubscriptionList(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[NotificationSubscriptionView, ...] = ()
+
+
 class AgentBindingCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     agent_id: UUIDv7
@@ -173,101 +208,84 @@ class AgentBindingView(AIOpsContract):
     updated_at: UtcDatetime
 
 
-class MonitorSourceCreate(AIOpsContract):
+class DiagnosticSourceCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
-    source_type: Literal["PROMETHEUS", "ZABBIX", "OEM"]
-    endpoint: HttpUrl
-    prometheus_instance: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    credentials: dict[str, str] | None = Field(
-        default=None, json_schema_extra={"writeOnly": True}
-    )
-    webhook_credentials: dict[str, str] | None = Field(
-        default=None, json_schema_extra={"writeOnly": True}
-    )
-    capabilities: JsonObject = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_endpoint(self) -> "MonitorSourceCreate":
-        if (
-            self.endpoint.username
-            or self.endpoint.password
-            or self.endpoint.query
-            or self.endpoint.fragment
-        ):
-            raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
-        if (
-            self.source_type == "PROMETHEUS"
-            and self.prometheus_instance is None
-        ):
-            raise ValueError(
-                "Prometheus Monitor Source 必须设置 prometheus_instance"
-            )
-        if (
-            self.source_type != "PROMETHEUS"
-            and self.prometheus_instance is not None
-        ):
-            raise ValueError(
-                "只有 Prometheus Monitor Source 可以设置 prometheus_instance"
-            )
-        _validate_monitor_capabilities(self.capabilities)
-        return self
-
-
-class MonitorSourcePatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    source_type: str = Field(pattern=r"^[A-Z][A-Z0-9_.-]{1,63}$")
+    adapter_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")
+    adapter_version: str = Field(min_length=1, max_length=64)
     endpoint: HttpUrl | None = None
-    prometheus_instance: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
     credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
     webhook_credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
-    capabilities: JsonObject | None = None
+    declared_capabilities: JsonObject = Field(default_factory=dict)
+    config: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_endpoint(self) -> "MonitorSourcePatch":
+    def validate_endpoint(self) -> "DiagnosticSourceCreate":
         if self.endpoint is not None and (
             self.endpoint.username
             or self.endpoint.password
             or self.endpoint.query
             or self.endpoint.fragment
         ):
-            raise ValueError("Monitor Endpoint 不允许凭证、Query 或 Fragment")
-        if (
-            "prometheus_instance" in self.model_fields_set
-            and self.prometheus_instance is None
-        ):
-            raise ValueError("prometheus_instance 不能为空")
-        _validate_monitor_capabilities(self.capabilities)
+            raise ValueError("Diagnostic Source Endpoint 不允许凭证、Query 或 Fragment")
+        if self.endpoint is None and self.webhook_credentials is None:
+            raise ValueError("Diagnostic Source 必须配置 Endpoint 或 Webhook 凭据")
         return self
 
 
-class MonitorSourceSummary(AIOpsContract):
+class DiagnosticSourcePatch(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    adapter_version: str | None = Field(default=None, min_length=1, max_length=64)
+    endpoint: HttpUrl | None = None
+    credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
+    webhook_credentials: dict[str, str] | None = Field(
+        default=None, json_schema_extra={"writeOnly": True}
+    )
+    declared_capabilities: JsonObject | None = None
+    config: JsonObject | None = None
+
+    @model_validator(mode="after")
+    def validate_endpoint(self) -> "DiagnosticSourcePatch":
+        if self.endpoint is not None and (
+            self.endpoint.username
+            or self.endpoint.password
+            or self.endpoint.query
+            or self.endpoint.fragment
+        ):
+            raise ValueError("Diagnostic Source Endpoint 不允许凭证、Query 或 Fragment")
+        return self
+
+
+class DiagnosticSourceSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7
     display_name: str
     source_type: str
-    status: MonitorStatus
+    adapter_id: str
+    adapter_version: str
+    status: SourceStatus
     health_status: HealthStatus
     health_check_pending: bool
     row_version: int = Field(ge=1)
     updated_at: UtcDatetime
 
 
-class MonitorSourceDetail(MonitorSourceSummary):
-    endpoint: str
-    prometheus_instance: str | None = None
+class DiagnosticSourceDetail(DiagnosticSourceSummary):
+    endpoint: str | None = None
     secret: SecretRefStatus
     webhook_secret: SecretRefStatus
     tls_profile: SecretRefStatus
-    capabilities: JsonObject
+    declared_capabilities: JsonObject
+    discovered_capabilities: JsonObject
+    config: JsonObject
     webhook_configured: bool
     health_version: int = Field(ge=1)
     last_health_check_at: UtcDatetime | None = None
@@ -277,43 +295,47 @@ class MonitorSourceDetail(MonitorSourceSummary):
     updated_by: str
 
 
-class MonitorSourcePage(CursorPage):
+class DiagnosticSourcePage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    items: tuple[MonitorSourceSummary, ...] = ()
+    items: tuple[DiagnosticSourceSummary, ...] = ()
 
 
-class MonitorBindingCreate(AIOpsContract):
+class SourceBindingCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7
-    external_target_key: str = Field(min_length=1, max_length=256)
-    role: Literal["PRIMARY", "SUPPLEMENTARY"] = "PRIMARY"
+    source_locator_key: str = Field(min_length=1, max_length=512)
+    source_locator: JsonObject
+    role: Literal["PRIMARY", "SUPPLEMENTARY", "FALLBACK"] = "PRIMARY"
     priority: int = Field(default=100, ge=0)
-    metric_scope: JsonObject | None = None
+    capability_scope: JsonObject | None = None
     mapping_overrides: JsonObject | None = None
+    query_budget: JsonObject | None = None
 
 
-class MonitorBindingPatch(AIOpsContract):
+class SourceBindingPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    external_target_key: str | None = Field(
-        default=None, min_length=1, max_length=256
-    )
-    role: Literal["PRIMARY", "SUPPLEMENTARY"] | None = None
+    source_locator_key: str | None = Field(default=None, min_length=1, max_length=512)
+    source_locator: JsonObject | None = None
+    role: Literal["PRIMARY", "SUPPLEMENTARY", "FALLBACK"] | None = None
     priority: int | None = Field(default=None, ge=0)
-    metric_scope: JsonObject | None = None
+    capability_scope: JsonObject | None = None
     mapping_overrides: JsonObject | None = None
+    query_budget: JsonObject | None = None
 
 
-class MonitorBindingView(AIOpsContract):
+class SourceBindingView(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     binding_id: UUIDv7
     target_id: UUIDv7
     source_id: UUIDv7
-    external_target_key: str
+    source_locator_key: str
+    source_locator: JsonObject
     role: str
     priority: int
-    metric_scope: JsonObject | None = None
+    capability_scope: JsonObject | None = None
     mapping_overrides: JsonObject | None = None
-    status: MonitorStatus
+    query_budget: JsonObject | None = None
+    status: SourceStatus
     health_status: HealthStatus
     row_version: int = Field(ge=1)
     created_at: UtcDatetime

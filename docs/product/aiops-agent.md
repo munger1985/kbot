@@ -1,5 +1,177 @@
 # KBot 4.0 AIOps Agent 产品能力与完整流程
 
+## 总体设计定位
+
+KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建设一个以数据库为
+中心的主动诊断与性能优化系统。系统首先接入 Oracle、MySQL、PostgreSQL，并通过
+数据库能力包继续扩展其他数据库；Prometheus、Zabbix、OEM、日志平台、主机与
+云平台只是诊断证据来源，不构成诊断内核的强制依赖。
+
+目标态覆盖三个业务入口：
+
+1. **故障主动诊断与分享**：外部事件或 KBot 自身检测到异常后，主动创建故障情境、
+   开展调查并按阶段分享事实、诊断进展和最终结论；
+2. **用户发起的问题诊断**：根据用户描述确定目标、问题和时间窗口，通过多轮取证
+   回答故障、性能、容量、高可用、配置等问题；
+3. **日常巡检与优化**：按计划执行健康检查、风险发现、趋势分析、容量预测和性能
+   优化，发现异常时复用同一条深度诊断链路。
+
+三个入口只决定为什么启动诊断，后续统一进入：
+
+```text
+触发 → Situation → Diagnostic Run → 自适应调查计划
+     → 多源取证 → 假设与反证 → 根因/风险/优化机会
+     → 建议或受控执行 → 效果验证 → 报告与主动分享
+```
+
+本文同时描述已经交付的 4.0 能力和后续目标态。PostgreSQL 公开只读诊断、分能力
+Diagnostic Source SPI、显式规则驱动的跨来源 Situation 关联和受控 Loki 日志查询
+已经进入后台实现；可选 Compose 轻量观测栈和 Oracle Alert Log Collector也已提供
+代码与静态验收，但尚未在真实数据库环境部署验证。变更与拓扑数据、托管 Zabbix、
+生产级分布式观测栈及外部主动分享渠道仍是待交付能力。Portal 站内主动分享基线已
+进入后台实现，但尚未完成产品界面和真实环境验证，不得提前宣称 IM、Email、ITSM、
+静默、升级或值班路由已经交付。
+
+## 目标态能力边界
+
+### 数据库是核心托管对象
+
+`ManagedTarget` 代表被管理的数据库实例、集群或数据库服务。每种数据库由独立的
+Database Diagnostic Pack 提供版本化能力：
+
+```text
+Database Diagnostic Pack
+├── Oracle
+├── MySQL
+├── PostgreSQL
+└── 后续数据库类型
+```
+
+能力包负责元数据发现、权限探测、健康检查、实时与历史诊断、SQL 和执行计划分析、
+锁与等待分析、存储和容量、高可用与复制、参数配置以及受控操作。上层使用会话、
+等待、锁、SQL、执行计划、存储、复制、可用性、资源、配置、容量和变更等公共语义，
+同时在原始 Evidence 中保留数据库专有字段，不能为了统一模型丢失数据库特性。
+
+深度诊断必须把数据库直连查询作为一等能力。监控指标可以说明某项数值异常，但
+根因判断通常还需要会话、等待、阻塞链、执行计划、诊断仓库、复制状态、参数变化
+等数据库内部事实。数据库不可直连时，系统可以退化为监控、日志、历史证据和 Chat
+人工补证，但必须显式记录数据缺口并限制结论等级。
+
+### Diagnostic Source 而不是 Monitor Source
+
+目标态使用 `DiagnosticSource` 表达所有诊断数据源。数据源通过 Capability 声明
+能力，而不是由产品类型硬编码行为：
+
+| Capability | 含义 | 示例来源 |
+| --- | --- | --- |
+| `event.receive` | 接收故障、恢复或风险事件 | Alertmanager、Zabbix、OEM、日志告警 |
+| `metric.query_range` | 查询指定时间窗口的时序指标 | Prometheus、Zabbix、OEM、云监控 |
+| `log.query` | 检索结构化或原始日志 | Loki、OpenSearch、OCI Logging |
+| `database.query_live` | 查询数据库实时状态 | Oracle、MySQL、PostgreSQL Executor |
+| `database.query_history` | 查询数据库历史诊断数据 | AWR/ASH、Performance Schema、pg_stat |
+| `host.inspect` | 获取主机、进程、磁盘和网络事实 | Node Agent、Zabbix、云平台 |
+| `topology.resolve` | 获取数据库与业务依赖关系 | OEM、CMDB、服务目录 |
+| `change.query` | 获取发布、DDL、参数和基础设施变更 | 审计库、发布平台、云平台 |
+| `workload.query` | 获取负载、SQL 和执行计划 | 数据库、APM、SQL 采集平台 |
+| `action.execute` | 执行经过策略和审批的操作 | DB Executor、受控自动化平台 |
+
+Prometheus 因此是可选的 Metrics/Event Provider，而不是 KBot 的必需组件。已经使用
+Zabbix 或 OEM 的环境可以直接查询其事件和指标；需要高分辨率自定义指标、Exporter
+生态或 KBot 自监控时仍可使用 Prometheus。同一 Target 可以按能力绑定多个来源，
+并设置范围、优先级、凭据、时间窗口和数据质量策略。
+
+### 事件与证据分离
+
+事件入口只负责告诉 KBot“可能发生了什么”，不能直接充当根因证据。各来源事件先
+转换为统一 `SignalEvent`，保留来源事件 ID、状态、严重级别、时间、原始 Payload
+和证据定位信息。来源内通过稳定事件 ID 保证幂等，跨来源按照 Target、事件类别、
+时间窗口和拓扑关系关联为 `Situation`，但不删除 OEM、Zabbix 或 Prometheus 的
+原始事件语义。
+
+例如同一数据库不可用可以形成：
+
+```text
+Situation: oracle-dev-01 数据库不可用
+├── OEM Incident
+├── Prometheus Alert
+├── Zabbix Problem
+└── Loki 中的 ORA-01034 日志事件
+```
+
+Situation 启动一个主要 Diagnostic Run，各事件随后成为调查线索。Agent 再通过
+Metrics、Log、Database、Host、Topology、Change、Workload 等 Evidence Provider
+按时间窗口主动拉取证据。Alertmanager 只服务 Prometheus 告警链路，不作为 Zabbix、
+OEM 和其他来源的通用事件总线。
+
+### 证据驱动的深度诊断
+
+诊断不是把告警文本交给 LLM 的一次调用，而是一个有预算和安全边界的调查循环：
+
+1. 解析问题，冻结 Target、触发来源和时间窗口；
+2. 收集基础指标、日志、数据库状态、主机、拓扑和变更事实；
+3. 基于证据生成可验证的候选假设；
+4. 为每个假设选择有类型的诊断工具和最小补证计划；
+5. 采集支持证据和反证，排除替代假设；
+6. 判断根因、诱因、影响范围、风险或优化机会；
+7. 生成恢复、长期修复、性能优化、回滚和验证建议；
+8. 执行后使用相同口径重新取证并比较效果。
+
+LLM 负责问题理解、假设、因果机制和证据综合；确定性代码负责 Target、权限、时间
+窗口、Tool Allowlist、查询预算、脱敏、引用完整性、根因等级上限和执行策略。每项
+Finding 必须引用不可变 Evidence Artifact，标明来源、采集时间、查询范围、新鲜度、
+数据质量、支持证据、反证和未解决的数据缺口。
+
+### 主动分享不是告警转发
+
+主动分享使用独立的订阅、路由、静默、升级和脱敏策略，不等同于把监控系统原文
+转发给用户。故障流程可以按阶段产生：
+
+- 初始通知：只分享已确认的异常、影响目标和诊断已启动的事实；
+- 诊断进展：分享已排除方向、当前假设和仍在采集的证据；
+- 最终报告：分享根因等级、时间线、影响、证据、建议和当前恢复状态；
+- 验证结果：分享处理前后对比、副作用检查和最终判级。
+
+日常巡检则主动分享按影响和紧迫度排序的 Finding，不把每项检查结果制造成告警。
+通知渠道可以扩展为 Portal、IM、Email、ITSM 或其他系统，但不能改变 Run、Evidence、
+Finding、Report 和审批模型。
+
+当前后台实现提供按 Target、当前可信用户、最低严重级别和阶段配置的 Portal 站内
+订阅。订阅只投递 `Situation` 首次建立、告警触发的自动诊断启动、最终报告生成和
+相关信号全部恢复四类事实，复用平台 Notification Outbox/Inbox 保证业务事务内写入
+和幂等投影。通知只包含 Target、Situation/Run/Report 标识和安全摘要，不复制监控
+原始 Payload、日志正文、SQL、凭据或模型消息。诊断中间假设、静默窗口、升级规则、
+值班表、IM、Email 和 ITSM Adapter 仍属于后续能力。
+
+### 目标态核心领域对象
+
+| 对象 | 职责 |
+| --- | --- |
+| `ManagedTarget` | 被管理的数据库、集群、主机或服务 |
+| `DiagnosticSource` | 可以提供一种或多种诊断能力的数据源 |
+| `TargetSourceBinding` | Target 与数据源的范围、优先级、凭据和策略绑定 |
+| `SignalEvent` | 保留来源语义的规范化故障、恢复或风险事件 |
+| `Situation` | 多个相关事件组成的一次真实故障或风险情境 |
+| `DiagnosticRun` | Alert、User Request 或 Scheduled Inspection 发起的诊断运行 |
+| `InvestigationPlanSnapshot` | 本次运行冻结的工具、预算和取证 DAG |
+| `EvidenceArtifact` | 指标、日志、查询结果、配置、拓扑和变更等不可变证据 |
+| `Hypothesis` | 候选原因、支持证据、反证、缺口和置信等级 |
+| `Finding` | 已确认的事实、根因、风险或优化机会 |
+| `Recommendation` | 缓解、修复、优化、预防、回滚和验证建议 |
+| `ActionExecution` | 经过策略校验和审批的受控操作 |
+| `Verification` | 处理前后使用同一口径形成的效果判断 |
+| `DiagnosisReport` | 故障、性能、巡检或对比报告 |
+| `NotificationSubscription` | Target、订阅者、最低严重级别和站内分享阶段 |
+| `NotificationDelivery` | 主动分享对象、渠道、内容版本和投递状态 |
+
+后续详细设计应依次确定数据库能力包、Diagnostic Source 契约、事件与 Situation、
+证据模型和调查规划、三类触发流程、主动分享、部署拓扑、安全治理、代码改造和迁移
+边界；每一项都必须区分目标态、现有实现、配置影响和验证方式。
+
+观测工具的选型、可选 Compose Profile、Central/Collector 拓扑以及 OEM 独立部署
+边界，按已确认的
+[AIOps 观测工具选型与 Docker Compose 部署基线](../proposals/aiops-observability-tooling-and-compose.md)
+继续细化。
+
 ## 一页产品概述
 
 AIOps Agent 是独立部署、独立入口、拥有自己领域状态机的运维 Agent。它接入
@@ -15,23 +187,25 @@ Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL 的性�
 
 | 能力域 | 4.0 能力 |
 | --- | --- |
-| 目标管理 | Oracle/MySQL Target、环境、版本、能力和托管凭据引用 |
+| 目标管理 | Oracle/MySQL/PostgreSQL Target、环境、版本、能力和托管凭据引用 |
 | 监控接入 | Prometheus、Zabbix、OEM；同一 Target 可绑定多个来源 |
 | 触发入口 | Chat、Critical Alert Webhook、定时巡检、内部 API |
-| 诊断数据 | 指标、告警、只读数据库诊断、用户回贴结果、KC SOP |
+| 诊断数据 | 指标、告警、Loki 日志、只读数据库诊断、用户回贴结果、KC SOP |
 | 根因分析 | 假设、支持证据、反证、数据缺口和根因等级 |
 | 人机协作 | Chat 中请求用户执行只读 SQL 并回贴，可多轮恢复 |
 | 解决方案 | 缓解建议、长期修复、验证和回滚方案 |
 | 受控执行 | 动态能力判定；允许变更时仍须每条命令单独审批 |
 | 报告 | Incident、Performance、Daily、Weekly、Comparison |
+| 主动分享 | 按 Target 订阅 Portal 站内异常、诊断启动、报告和恢复通知 |
 | 审计 | Run、Task、Artifact、Policy、审批、执行和验证全链路 |
 
-IM/Email 当前只保留扩展端口，没有实现实际 Adapter。Shell、OEM Job 和
+IM/Email 当前没有实现实际 Adapter；站内通知也尚未提供静默、升级和值班路由。
+Shell、OEM Job 和
 Zabbix Remote Command 只作为人工建议，不由系统执行。
 
 Oracle/MySQL 均提供版本化只读诊断目录，并支持受控人工 SQL 和审批后变更。
-PostgreSQL 已有内部只读诊断驱动与目录，但当前公开产品契约未开放 PostgreSQL
-Target，产品界面不能将其展示为当前可用的托管目标。
+PostgreSQL 已开放公开 Target 契约和版本化只读诊断；当前不把 Oracle/MySQL 专属的
+人工 SQL 与变更能力扩大宣称为 PostgreSQL 能力。
 
 ## 服务边界
 

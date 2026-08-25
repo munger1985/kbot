@@ -1,10 +1,10 @@
 {
   "component": "main_api",
-  "schema_version": 3,
-  "contract_version": "main-api-oracle-v3",
+  "schema_version": 4,
+  "contract_version": "main-api-oracle-v4",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_access_control.sql", "statements": 27, "sha256": "b188d71ae40c15a65a93b53597a668e982042550ea918602e22c105e3cdef8fb"},
+    {"name": "001_access_control.sql", "statements": 27, "sha256": "d532a87b86f3e1caf706754eec966cf8c0601825a966a4e5788a45281bb8d6ed"},
     {"name": "002_app_api_clients.sql", "statements": 13, "sha256": "a45420fb23c26fc4b1e21e30ed70a8a1df6a8bfb74de2b3bc2ac2b77394edf9a"}
   ],
   "tables": [

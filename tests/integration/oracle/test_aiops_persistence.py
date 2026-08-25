@@ -11,11 +11,11 @@ from aiops_agent.application.errors import UnitOfWorkStateError
 from aiops_agent.entities import TargetEntity
 from aiops_agent.persistence import AIOpsUnitOfWork, UnitOfWorkState
 from aiops_agent.repositories import (
-    AlertRepository,
+    SituationRepository,
     ChangeRepository,
     InboxRepository,
     InspectionRepository,
-    MonitorSourceRepository,
+    DiagnosticSourceRepository,
     OpsRunRepository,
     OutboxRepository,
     PolicyRepository,
@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_DIR = ROOT / "database" / "oracle" / "aiops_agent"
 REPOSITORIES = (
     TargetRepository,
-    MonitorSourceRepository,
+    DiagnosticSourceRepository,
     PolicyRepository,
-    AlertRepository,
+    SituationRepository,
     OpsRunRepository,
     ChangeRepository,
     InspectionRepository,

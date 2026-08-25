@@ -11,10 +11,7 @@ from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
-    InspectionPlanEntity,
-    MonitorSourceEntity,
     PolicyEntity,
-    TargetEntity,
 )
 
 
@@ -76,19 +73,8 @@ class AIOpsAgentRepository:
         self,
         *,
         domain_id: int,
-        monitor_source_id: UUID,
         policy_id: UUID,
-        target_id: UUID | None,
-        inspection_plan_id: UUID | None,
     ) -> dict[str, str | None]:
-        monitor = (
-            await self._session.execute(
-                select(MonitorSourceEntity.status).where(
-                    MonitorSourceEntity.domain_id == domain_id,
-                    MonitorSourceEntity.monitor_source_id == monitor_source_id,
-                )
-            )
-        ).scalar_one_or_none()
         policy = (
             await self._session.execute(
                 select(PolicyEntity.status).where(
@@ -97,33 +83,7 @@ class AIOpsAgentRepository:
                 )
             )
         ).scalar_one_or_none()
-        target = None
-        if target_id is not None:
-            target = (
-                await self._session.execute(
-                    select(TargetEntity.status).where(
-                        TargetEntity.domain_id == domain_id,
-                        TargetEntity.target_id == target_id,
-                    )
-                )
-            ).scalar_one_or_none()
-        plan = None
-        if inspection_plan_id is not None:
-            plan = (
-                await self._session.execute(
-                    select(InspectionPlanEntity.status).where(
-                        InspectionPlanEntity.domain_id == domain_id,
-                        InspectionPlanEntity.inspection_plan_id
-                        == inspection_plan_id,
-                    )
-                )
-            ).scalar_one_or_none()
-        return {
-            "monitor": monitor,
-            "policy": policy,
-            "target": target,
-            "plan": plan,
-        }
+        return {"policy": policy}
 
     async def model_references(self, *, model_id: UUID):
         rows = await self._session.execute(
@@ -249,9 +209,6 @@ class AIOpsAgentRepository:
 class AIOpsAgentExecutionBinding:
     binding_id: UUID
     agent_id: UUID
-    target_id: UUID | None
-    monitor_source_id: UUID
-    inspection_plan_id: UUID | None
     policy_id: UUID
     status: str
     row_version: int
@@ -265,9 +222,6 @@ def _execution_binding(agent: AIOpsAgentEntity, version: AIOpsAgentVersionEntity
     return AIOpsAgentExecutionBinding(
         binding_id=version.agent_version_id,
         agent_id=agent.agent_id,
-        target_id=version.target_id,
-        monitor_source_id=version.monitor_source_id,
-        inspection_plan_id=version.inspection_plan_id,
         policy_id=version.policy_id,
         status=agent.status,
         row_version=int(agent.row_version),

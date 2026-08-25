@@ -18,6 +18,7 @@ from aiops_agent.application.errors import (
     resource_not_found,
     state_conflict,
 )
+from aiops_agent.application.configuration.common import ConfigurationScope, SignedCursorCodec
 from aiops_agent.contracts.change import (
     ApprovalDecision,
     AdvisoryActionResult,
@@ -38,6 +39,7 @@ from platform_core.contracts.aiops.public import (
     ManualResultCommand,
     ManualResultReceipt,
     ProposalView,
+    ProposalPage,
     RejectionCommand,
 )
 from platform_core.contracts.aiops.executor import (
@@ -79,6 +81,7 @@ class AIOpsChangeService:
         mutation_grant_audience: str = "kbot-aiops-db-executor",
         mutation_grant_ttl_seconds: int = 30,
         mutation_statement_timeout_seconds: int = 60,
+        cursor_codec: SignedCursorCodec | None = None,
     ):
         self._uow_factory = uow_factory
         self._action_registry = action_registry
@@ -95,6 +98,42 @@ class AIOpsChangeService:
         self._mutation_statement_timeout_seconds = (
             mutation_statement_timeout_seconds
         )
+        self._cursor_codec = cursor_codec
+
+    async def list_proposals(
+        self, *, scope: ConfigurationScope, target_id: UUID | None,
+        status: str | None, agent_ids: tuple[UUID, ...],
+        cursor: str | None, limit: int,
+    ) -> ProposalPage:
+        filters = {"target_id": str(target_id) if target_id else None, "status": status}
+        before_at = before_id = None
+        if cursor:
+            if self._cursor_codec is None:
+                raise RuntimeError("AIOps 查询 Cursor Codec 尚未配置")
+            before_at, before_id = self._cursor_codec.decode(
+                token=cursor, scope=scope, filters=filters
+            )
+        async with self._uow_factory() as uow:
+            entities = await uow.changes.page_proposals(
+                domain_id=scope.domain_id, target_id=target_id, status=status,
+                agent_ids=agent_ids, before_created_at=before_at,
+                before_id=before_id, limit=limit + 1,
+            )
+            page = entities[:limit]
+            items = []
+            for proposal in page:
+                items.append(self._view(proposal, await self._snapshot(uow, proposal)))
+            next_cursor = None
+            if len(entities) > limit and page:
+                if self._cursor_codec is None:
+                    raise RuntimeError("AIOps 查询 Cursor Codec 尚未配置")
+                last = page[-1]
+                next_cursor = self._cursor_codec.encode(
+                    scope=scope, updated_at=last.created_at,
+                    resource_id=last.proposal_id, filters=filters,
+                )
+            return ProposalPage(items=tuple(items), next_cursor=next_cursor,
+                                has_more=len(entities) > limit)
 
     async def get_proposal(
         self,

@@ -33,7 +33,7 @@ class _Payload(BaseModel):
 class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    monitor_source_id: UUID
+    diagnostic_source_id: UUID
     policy_id: UUID
     target_id: UUID | None = None
     inspection_plan_id: UUID | None = None
@@ -48,7 +48,7 @@ class AIOpsAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    monitor_source_id: UUID | None = None
+    diagnostic_source_id: UUID | None = None
     policy_id: UUID | None = None
     target_id: UUID | None = None
     inspection_plan_id: UUID | None = None

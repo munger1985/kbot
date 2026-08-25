@@ -11,6 +11,9 @@ from pydantic import ValidationError
 
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
+from aiops_agent.adapters.diagnostic_sources import (
+    DiagnosticSourceAdapterCatalog,
+)
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
@@ -30,8 +33,12 @@ from aiops_agent.application.configuration.service import (
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
-from aiops_agent.entities import MonitorSourceEntity
-from platform_core.contracts.aiops import MonitorSourceCreate, TargetCreate
+from aiops_agent.entities import DiagnosticSourceEntity
+from platform_core.contracts.aiops import (
+    DiagnosticSourceCreate,
+    DiagnosticSourcePatch,
+    TargetCreate,
+)
 from platform_core.identity import uuid7
 
 
@@ -217,7 +224,7 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("plain-secret-value", repr(metadata))
 
 
-class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
+class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.scope = ConfigurationScope(
             domain_id=100,
@@ -230,19 +237,23 @@ class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
         self.source_credential_id = uuid7()
         self.webhook_credential_id = uuid7()
         now = datetime.now(UTC)
-        self.entity = MonitorSourceEntity(
-            monitor_source_id=self.source_id,
+        self.entity = DiagnosticSourceEntity(
+            diagnostic_source_id=self.source_id,
             domain_id=self.scope.domain_id,
             display_name="OEM",
             source_type="OEM",
+            adapter_id="oem",
+            adapter_version="1.0.0",
             endpoint="https://oem.example.com/em",
-            secret_ref="source-secret",
-            webhook_secret_ref="webhook-secret",
+            auth_credential_id=self.source_credential_id,
+            webhook_credential_id=self.webhook_credential_id,
             tls_profile_ref=None,
             webhook_key_hash=None,
             previous_webhook_key_hash=None,
             previous_webhook_key_expires_at=None,
-            capabilities_json={},
+            declared_capabilities_json={"metric.query_range": {}},
+            discovered_capabilities_json=None,
+            config_json={},
             status="DISABLED",
             health_status="UNKNOWN",
             health_check_request_id=None,
@@ -259,38 +270,43 @@ class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
         self.repository = AsyncMock()
         self.repository.get_scoped.return_value = self.entity
         self.uow = SimpleNamespace(
-            monitor_sources=self.repository,
+            diagnostic_sources=self.repository,
             managed_credentials=object(),
+            session=AsyncMock(),
+            commit=AsyncMock(),
         )
-        self.managed_credentials = SimpleNamespace(
-            parse_reference=Mock(
-                side_effect=(
-                    (
-                        "monitor_source",
-                        self.scope.domain_id,
-                        self.source_id,
-                        self.source_credential_id,
-                    ),
-                    (
-                        "monitor_webhook",
-                        self.scope.domain_id,
-                        self.source_id,
-                        self.webhook_credential_id,
-                    ),
-                )
-            ),
-            revoke=AsyncMock(),
-        )
+        self.managed_credentials = SimpleNamespace(revoke=AsyncMock())
         self.service = object.__new__(AIOpsConfigurationService)
         self.service._managed_credentials = self.managed_credentials
+        self.service._diagnostic_source_catalog = None
 
         async def execute_handler(**kwargs):
             return await kwargs["handler"](self.uow, datetime.now(UTC))
 
         self.service._idempotent = AsyncMock(side_effect=execute_handler)
 
+    async def test_patch_rejects_removing_the_last_access_route(self) -> None:
+        self.entity.endpoint = None
+
+        class UowContext:
+            async def __aenter__(inner_self):
+                return self.uow
+
+            async def __aexit__(inner_self, exc_type, exc, traceback):
+                return False
+
+        self.service._uow_factory = UowContext
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await self.service.patch_diagnostic_source(
+                scope=self.scope,
+                source_id=self.source_id,
+                request=DiagnosticSourcePatch(webhook_credentials=None),
+                expected_version=3,
+            )
+        self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
+
     async def test_deletes_disabled_source_and_revokes_credentials(self) -> None:
-        result = await self.service.delete_monitor_source(
+        result = await self.service.delete_diagnostic_source(
             scope=self.scope,
             source_id=self.source_id,
             expected_version=3,
@@ -299,7 +315,7 @@ class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.source_id, result.source_id)
         self.repository.get_scoped.assert_awaited_once_with(
-            monitor_source_id=self.source_id,
+            diagnostic_source_id=self.source_id,
             domain_id=self.scope.domain_id,
             lock=True,
         )
@@ -310,7 +326,7 @@ class MonitorSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
         self.entity.status = "ACTIVE"
 
         with self.assertRaises(AIOpsApplicationError) as caught:
-            await self.service.delete_monitor_source(
+            await self.service.delete_diagnostic_source(
                 scope=self.scope,
                 source_id=self.source_id,
                 expected_version=3,
@@ -356,36 +372,62 @@ class ConfigurationContractTest(unittest.TestCase):
                 {**payload, "domain_id": 100, "password": "secret"}
             )
 
-    def test_monitor_endpoint_rejects_embedded_credentials(self) -> None:
+    def test_diagnostic_source_endpoint_rejects_embedded_credentials(self) -> None:
         with self.assertRaises(ValidationError):
-            MonitorSourceCreate.model_validate(
+            DiagnosticSourceCreate.model_validate(
                 {
                     "display_name": "Prometheus",
                     "source_type": "PROMETHEUS",
+                    "adapter_id": "prometheus",
+                    "adapter_version": "1.0.0",
                     "endpoint": "https://user:pass@prom.example.com",
-                    "prometheus_instance": "oracle-dev-01",
+                    "declared_capabilities": {"metric.query": {}},
                 }
             )
 
-    def test_prometheus_source_accepts_instance_label_value(self) -> None:
-        source = MonitorSourceCreate.model_validate(
+    def test_diagnostic_source_accepts_adapter_config(self) -> None:
+        source = DiagnosticSourceCreate.model_validate(
             {
                 "display_name": "Prometheus",
                 "source_type": "PROMETHEUS",
+                "adapter_id": "prometheus",
+                "adapter_version": "1.0.0",
                 "endpoint": "https://prom.example.com",
-                "prometheus_instance": "oracle-dev-01",
+                "declared_capabilities": {"metric.query_range": {}},
+                "config": {"scrape_timeout_seconds": 15},
             }
         )
-        self.assertEqual("oracle-dev-01", source.prometheus_instance)
+        self.assertEqual(15, source.config["scrape_timeout_seconds"])
 
-    def test_prometheus_source_rejects_configurable_label_name(self) -> None:
+    def test_application_rejects_adapter_capability_mismatch(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._diagnostic_source_catalog = (
+            DiagnosticSourceAdapterCatalog()
+        )
+
+        service._validate_diagnostic_source_adapter(
+            source_type="PROMETHEUS",
+            adapter_id="prometheus",
+            adapter_version="1.0.0",
+            declared_capabilities={"metric.query_range": {}},
+        )
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            service._validate_diagnostic_source_adapter(
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                declared_capabilities={"log.query": {}},
+            )
+        self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
+
+    def test_diagnostic_source_requires_endpoint_or_webhook_credential(self) -> None:
         with self.assertRaises(ValidationError):
-            MonitorSourceCreate.model_validate(
+            DiagnosticSourceCreate.model_validate(
                 {
                     "display_name": "Prometheus",
-                    "source_type": "PROMETHEUS",
-                    "endpoint": "https://prom.example.com",
-                    "prometheus_instance": "oracle-dev-01",
-                    "capabilities": {"external_target_label": "instance"},
+                    "source_type": "LOKI",
+                    "adapter_id": "loki",
+                    "adapter_version": "1.0.0",
+                    "declared_capabilities": {"log.query": {}},
                 }
             )

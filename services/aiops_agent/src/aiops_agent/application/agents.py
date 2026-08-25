@@ -42,10 +42,7 @@ class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    monitor_source_id: UUID
     policy_id: UUID
-    target_id: UUID | None = None
-    inspection_plan_id: UUID | None = None
     models: dict[str, UUID] = Field(default_factory=dict)
     image_capabilities: AgentImageCapabilities = Field(
         default_factory=AgentImageCapabilities
@@ -62,10 +59,7 @@ class UpdateAIOpsAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    monitor_source_id: UUID | None = None
     policy_id: UUID | None = None
-    target_id: UUID | None = None
-    inspection_plan_id: UUID | None = None
     models: dict[str, UUID] | None = None
     image_capabilities: AgentImageCapabilities | None = None
     instruction: str | None = Field(default=None, max_length=32000)
@@ -96,28 +90,14 @@ class AIOpsAgentService:
         self._uow_factory = uow_factory
 
     async def create(self, command: CreateAIOpsAgentCommand) -> dict[str, Any]:
-        self._validate_shape(
-            target_id=command.target_id,
-            inspection_plan_id=command.inspection_plan_id,
-        )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
             states = await uow.agents.resource_states(
                 domain_id=command.domain_id,
-                monitor_source_id=command.monitor_source_id,
                 policy_id=command.policy_id,
-                target_id=command.target_id,
-                inspection_plan_id=command.inspection_plan_id,
             )
             self._validate_resources(
                 states, command.status, command.model_dump()
-            )
-            await self._validate_monitor_binding(
-                uow=uow,
-                domain_id=command.domain_id,
-                target_id=command.target_id,
-                monitor_source_id=command.monitor_source_id,
-                status=command.status,
             )
             agent = AIOpsAgentEntity(
                 agent_id=agent_id,
@@ -181,14 +161,7 @@ class AIOpsAgentService:
                 exclude_unset=True,
             )
             effective = {
-                "monitor_source_id": changes.get(
-                    "monitor_source_id", current.monitor_source_id
-                ),
                 "policy_id": changes.get("policy_id", current.policy_id),
-                "target_id": changes.get("target_id", current.target_id),
-                "inspection_plan_id": changes.get(
-                    "inspection_plan_id", current.inspection_plan_id
-                ),
                 "models": changes.get("models", current.models_json),
                 "image_capabilities": changes.get(
                     "image_capabilities", current.image_capabilities_json
@@ -196,32 +169,15 @@ class AIOpsAgentService:
                 "instruction": changes.get("instruction", current.instruction),
                 "config": changes.get("config", current.config_json),
             }
-            self._validate_shape(
-                target_id=effective["target_id"],
-                inspection_plan_id=effective["inspection_plan_id"],
-            )
             states = await uow.agents.resource_states(
                 domain_id=command.domain_id,
-                monitor_source_id=effective["monitor_source_id"],
                 policy_id=effective["policy_id"],
-                target_id=effective["target_id"],
-                inspection_plan_id=effective["inspection_plan_id"],
             )
             self._validate_resources(
                 states, str(changes.get("status", agent.status)), effective
             )
-            await self._validate_monitor_binding(
-                uow=uow,
-                domain_id=command.domain_id,
-                target_id=effective["target_id"],
-                monitor_source_id=effective["monitor_source_id"],
-                status=str(changes.get("status", agent.status)),
-            )
             version_fields = {
-                "monitor_source_id",
                 "policy_id",
-                "target_id",
-                "inspection_plan_id",
                 "models",
                 "image_capabilities",
                 "instruction",
@@ -267,10 +223,7 @@ class AIOpsAgentService:
             "models": row["models"],
             "instruction": row["instruction"],
             "resource_context": {
-                "monitor_source_id": row["monitor_source_id"],
                 "policy_id": row["policy_id"],
-                "target_id": row["target_id"],
-                "inspection_plan_id": row["inspection_plan_id"],
                 "image_capabilities": row["image_capabilities"],
                 **row["config"],
             },
@@ -391,33 +344,15 @@ class AIOpsAgentService:
             return self._grant_view(row)
 
     @staticmethod
-    def _validate_shape(*, target_id, inspection_plan_id):
-        if inspection_plan_id is not None and target_id is None:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_TARGET_REQUIRED", "巡检计划必须绑定诊断目标"
-            )
-
-    @staticmethod
     def _validate_resources(states, status: str, values) -> None:
-        required = ("monitor", "policy")
+        required = ("policy",)
         if any(states[item] is None for item in required):
             raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的监控源或策略不存在"
-            )
-        if values.get("target_id") is not None and states["target"] is None:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的诊断目标不存在"
-            )
-        if values.get("inspection_plan_id") is not None and states["plan"] is None:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的巡检计划不存在"
+                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的策略不存在"
             )
         if status == "ACTIVE":
             expected = {
-                "monitor": "ACTIVE",
                 "policy": "ACTIVE",
-                "target": "ACTIVE",
-                "plan": "ACTIVE",
             }
             for key, active in expected.items():
                 if states[key] is not None and states[key] != active:
@@ -428,43 +363,12 @@ class AIOpsAgentService:
                     )
 
     @staticmethod
-    async def _validate_monitor_binding(
-        *,
-        uow,
-        domain_id: int,
-        target_id: UUID | None,
-        monitor_source_id: UUID,
-        status: str,
-    ) -> None:
-        """启用 Agent 前确认运行时能够冻结到显式监控绑定。"""
-        if status != "ACTIVE" or target_id is None:
-            return
-        monitors = await uow.targets.list_monitors(
-            target_id=target_id,
-            domain_id=domain_id,
-            active_only=True,
-        )
-        if any(
-            item.monitor_source_id == monitor_source_id
-            for item in monitors
-        ):
-            return
-        raise AIOpsAgentError(
-            "AIOPS_AGENT_MONITOR_BINDING_REQUIRED",
-            "启用 Agent 前必须将所选监控源绑定到诊断目标",
-            status_code=422,
-        )
-
-    @staticmethod
     def _new_version(*, agent_id, version_id, version_no, values, actor_id):
         return AIOpsAgentVersionEntity(
             agent_version_id=version_id,
             agent_id=agent_id,
             version_no=version_no,
-            monitor_source_id=values["monitor_source_id"],
             policy_id=values["policy_id"],
-            target_id=values.get("target_id"),
-            inspection_plan_id=values.get("inspection_plan_id"),
             models_json={
                 key: str(value)
                 for key, value in dict(values.get("models") or {}).items()
@@ -501,14 +405,7 @@ class AIOpsAgentService:
             "status": agent.status,
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),
-            "monitor_source_id": str(version.monitor_source_id),
             "policy_id": str(version.policy_id),
-            "target_id": str(version.target_id) if version.target_id else None,
-            "inspection_plan_id": (
-                str(version.inspection_plan_id)
-                if version.inspection_plan_id
-                else None
-            ),
             "models": dict(version.models_json or {}),
             "instruction": version.instruction,
             "image_capabilities": dict(version.image_capabilities_json or {}),

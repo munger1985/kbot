@@ -1,0 +1,51 @@
+local.file "loki_authorization" {
+  filename  = "/run/secrets/kbot/loki_authorization"
+  is_secret = true
+}
+
+loki.source.file "oracle_alert" {
+  targets = [{
+    __path__   = "/var/lib/kbot/oracle-alert/*.jsonl",
+    job        = "oracle_alert",
+    target_key = sys.env("AIOPS_TARGET_KEY"),
+    source     = "V$DIAG_ALERT_EXT",
+  }]
+  forward_to = [loki.process.oracle_alert.receiver]
+  tail_from_end = false
+  file_match {
+    enabled = true
+    sync_period = "5s"
+  }
+}
+
+loki.process "oracle_alert" {
+  stage.json {
+    expressions = {
+      level          = "message_level",
+      message_type   = "message_type",
+      problem_key    = "problem_key",
+      container_name = "container_name",
+      database_id    = "database_id",
+    }
+  }
+  stage.labels {
+    values = {
+      level          = "",
+      message_type   = "",
+      container_name = "",
+      database_id    = "",
+    }
+  }
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url       = sys.env("AIOPS_LOKI_PUSH_URL")
+    tenant_id = sys.env("AIOPS_LOKI_TENANT")
+    authorization {
+      type        = "Bearer"
+      credentials = local.file.loki_authorization.content
+    }
+  }
+}

@@ -58,7 +58,7 @@ class DiagnosticExecutionGrant(AIOpsContract):
     target_id: UUIDv7
     domain_id: int = Field(ge=1)
     target_row_version: int = Field(ge=1)
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     connection_profile: DiagnosticConnectionProfile
     diagnostic_credential_id: UUIDv7
     tool_id: str = Field(pattern=r"^db\.[a-z0-9_.-]{1,124}$")
@@ -99,7 +99,7 @@ class DatabaseObservation(AIOpsContract):
     tool_version: str
     variant: str
     template_sha256: Sha256Digest
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     db_version: str = Field(min_length=1, max_length=128)
     capability_snapshot_hash: Sha256Digest
     captured_at: UtcDatetime
@@ -152,7 +152,7 @@ class MutationExecutionGrant(AIOpsContract):
     target_id: UUIDv7
     domain_id: int = Field(ge=1)
     target_version: int = Field(ge=1)
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     connection_profile: JsonObject
     execution_credential_id: UUIDv7
     action_template_id: str = Field(min_length=1, max_length=128)

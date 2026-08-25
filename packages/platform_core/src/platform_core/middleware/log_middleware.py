@@ -25,8 +25,8 @@ _QUIET_PATHS = {
 
 def _safe_url(request: Request) -> str:
     path = request.url.path
-    if path.startswith("/api/v1/integrations/monitoring/"):
-        return "/api/v1/integrations/monitoring/{redacted}/events"
+    if path.startswith("/api/v1/integrations/aiops/signals/"):
+        return "/api/v1/integrations/aiops/signals/{redacted}"
     query = request.url.query
     return f"{path}?{query}" if query else path
 

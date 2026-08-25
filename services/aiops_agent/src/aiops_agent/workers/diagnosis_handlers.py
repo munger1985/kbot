@@ -136,6 +136,7 @@ class BuildEvidenceIndexHandler:
     async def execute(self, context: TaskExecutionContext) -> EvidenceIndex:
         source_schemas = {
             "OBSERVATION_SET.v1",
+            "LOG_EVIDENCE_SET.v1",
             "DATABASE_DIAGNOSTIC_RESULT.v1",
             "DIAGNOSIS_EVIDENCE_COLLECTION.v1",
             "EVIDENCE_INDEX.v1",
@@ -1171,7 +1172,7 @@ class DiagnosisReportHandler:
         series_facts = tuple(
             item
             for item in evidence.facts
-            if item.source_type == "MONITOR_METRIC"
+            if item.source_type == "METRIC_OBSERVATION"
             and item.metric_or_fact_type
             in {
                 "db.storage.utilization.series.last",
@@ -1260,7 +1261,7 @@ class DiagnosisReportHandler:
                     else ()
                 )
                 return DirectQuestionAnswer(
-                    answer_kind="MONITOR_FACT",
+                    answer_kind="EVIDENCE_FACT",
                     status=status,
                     question_summary=question or normalized,
                     answer_text=(
@@ -1285,7 +1286,7 @@ class DiagnosisReportHandler:
         candidates = {
             item.metric_or_fact_type: item
             for item in evidence.facts
-            if item.source_type == "MONITOR_METRIC"
+            if item.source_type == "METRIC_OBSERVATION"
             and item.metric_or_fact_type
             in {
                 "db.storage.utilization.last",
@@ -1315,7 +1316,7 @@ class DiagnosisReportHandler:
             "tablespace 标签，无法列出具体表空间名称。"
         )
         return DirectQuestionAnswer(
-            answer_kind="MONITOR_FACT",
+            answer_kind="EVIDENCE_FACT",
             status="PARTIAL",
             question_summary=question or normalized,
             answer_text=(

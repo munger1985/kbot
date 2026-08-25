@@ -92,10 +92,12 @@ SERVICE_TABLES = {
         "KBOT_OPS_TARGET",
         "KBOT_OPS_POLICY",
         "KBOT_OPS_TARGET_BINDING",
-        "KBOT_OPS_MONITOR_SOURCE",
-        "KBOT_OPS_TARGET_MONITOR",
-        "KBOT_OPS_EVENT",
-        "KBOT_OPS_ALERT",
+        "KBOT_OPS_NOTIFICATION_SUBSCRIPTION",
+        "KBOT_OPS_DIAGNOSTIC_SOURCE",
+        "KBOT_OPS_TARGET_SOURCE_BINDING",
+        "KBOT_OPS_SIGNAL_EVENT",
+        "KBOT_OPS_SITUATION",
+        "KBOT_OPS_SITUATION_EVENT",
         "KBOT_OPS_RUN",
         "KBOT_OPS_TASK",
         "KBOT_OPS_ARTIFACT",
@@ -153,7 +155,7 @@ SERVICE_VIEWS = {
     },
     "aiops_agent": {
         "KBOT_V_OPS_TARGET",
-        "KBOT_V_OPS_MONITOR_SOURCE",
+        "KBOT_V_OPS_DIAGNOSTIC_SOURCE",
         "KBOT_V_OPS_POLICY",
         "KBOT_V_OPS_INSPECTION_PLAN",
         "KBOT_V_OPS_INSPECTION_FIRE",
@@ -229,10 +231,11 @@ AIOPS_UUID_COLUMNS = (
     "POLICY_ID",
     "BINDING_ID",
     "AGENT_ID",
-    "MONITOR_SOURCE_ID",
-    "TARGET_MONITOR_ID",
-    "EVENT_ID",
-    "ALERT_ID",
+    "DIAGNOSTIC_SOURCE_ID",
+    "TARGET_SOURCE_BINDING_ID",
+    "SIGNAL_EVENT_ID",
+    "SITUATION_ID",
+    "SITUATION_EVENT_ID",
     "OPS_RUN_ID",
     "OPS_TASK_ID",
     "ARTIFACT_ID",
@@ -467,7 +470,7 @@ def main() -> int:
             errors.append(f"AIOps 的 {column} 禁止声明为 NUMBER")
     for index_name in (
         "UX_OPS_POLICY_ACTIVE",
-        "UX_OPS_ALERT_ACTIVE",
+        "UX_OPS_SITUATION_ACTIVE",
         "UX_OPS_HITL_PENDING",
         "UX_OPS_REPORT_CURRENT",
         "UX_OPS_RUN_EVENT_KEY",
@@ -505,7 +508,7 @@ def main() -> int:
         errors.append("AIOps 缺少巡检时点 UTC 唯一键虚拟列")
     for forbidden_projection in (
         "KBOT_V_OPS_TARGET AS\nSELECT\n    T.ENDPOINT_JSON",
-        "KBOT_V_OPS_MONITOR_SOURCE AS\nSELECT\n    M.ENDPOINT",
+        "KBOT_V_OPS_DIAGNOSTIC_SOURCE AS\nSELECT\n    M.ENDPOINT",
         "KBOT_V_OPS_PENDING_APPROVAL AS\nSELECT\n    P.PARAMETERS_JSON",
     ):
         if forbidden_projection in aiops_sql:

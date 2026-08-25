@@ -22,6 +22,7 @@ from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
 )
+from aiops_agent.application.managed_credentials import AIOpsManagedCredentialService
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
     TASK_TYPE_TO_RUN_PHASE,
@@ -29,11 +30,16 @@ from aiops_agent.domain.operations import (
     ensure_run_transition,
     ensure_task_transition,
 )
-from aiops_agent.adapters.monitoring.catalog import (
+from aiops_agent.adapters.diagnostic_sources.catalog import (
     MetricCatalog,
     load_metric_catalog,
 )
-from aiops_agent.domain.monitoring import DEFAULT_BASELINE_METRICS
+from aiops_agent.domain.evidence import DEFAULT_BASELINE_METRICS
+from aiops_agent.ports.diagnostic_source import (
+    CAPABILITY_EVENT_QUERY,
+    CAPABILITY_LOG_QUERY,
+    CAPABILITY_METRIC_QUERY_RANGE,
+)
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
     DomainOpsTaskStatus,
@@ -103,6 +109,7 @@ from platform_core.contracts.aiops.public import (
     InspectionFireSummary,
     InspectionFireView,
     OpsRunResult,
+    OpsRunPage,
     OpsRunSummary,
     PendingInputView,
     ReportPage,
@@ -110,6 +117,10 @@ from platform_core.contracts.aiops.public import (
     ReportVersionPage,
     ReportVersionSummary,
     ReportView,
+    SignalEventSummary,
+    SituationPage,
+    SituationSummary,
+    SituationView,
 )
 from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
@@ -206,10 +217,6 @@ class AIOpsRuntimeService:
                     domain_id=command.domain_id,
                 )
             )
-            if private_agent_binding.target_id != command.target_id:
-                raise validation_failed(
-                    "Run Target 与 AIOps Agent 当前版本不一致"
-                )
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             deadline = command.deadline or (
@@ -373,8 +380,10 @@ class AIOpsRuntimeService:
                     raise validation_failed("诊断编排尚未配置")
                 blueprint = build_multi_round_diagnosis_blueprint(
                     binding_ids=tuple(
-                        item["binding_id"]
-                        for item in monitoring_snapshot["bindings"]
+                        monitoring_snapshot["observation_binding_ids"]
+                    ),
+                    log_binding_ids=tuple(
+                        monitoring_snapshot["log_binding_ids"]
                     ),
                     tool_ids=tuple(
                         item["tool_id"]
@@ -636,8 +645,17 @@ class AIOpsRuntimeService:
                         parent_agent_run_id=command.parent_agent_run_id,
                         parent_delegation_id=command.parent_delegation_id,
                         trigger_type=str(command.trigger_type),
-                        trigger_event_id=command.trigger_event_id,
-                        trigger_alert_id=command.trigger_alert_id,
+                        trigger_signal_event_id=command.trigger_signal_event_id,
+                        situation_id=command.situation_id,
+                        interaction_mode=(
+                            "INTERACTIVE"
+                            if str(command.trigger_type) == "CHAT"
+                            else "AUTONOMOUS"
+                        ),
+                        investigation_mode={
+                            "ALERT": "INCIDENT",
+                            "SCHEDULE": "INSPECTION",
+                        }.get(str(command.trigger_type), "ON_DEMAND"),
                         inspection_fire_id=command.inspection_fire_id,
                         source_proposal_id=(
                             UUID(verification["proposal_id"])
@@ -719,6 +737,12 @@ class AIOpsRuntimeService:
                 trace_id=trace_id,
                 now=now,
             )
+            if str(command.trigger_type) == "ALERT":
+                assert uow.platform_notifications is not None
+                await uow.platform_notifications.emit_run_started(
+                    run=run,
+                    target_name=target.display_name,
+                )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
@@ -1151,30 +1175,31 @@ class AIOpsRuntimeService:
             seconds=5
         ):
             raise validation_failed("观测窗口无效或结束时间位于未来")
-        monitors = await uow.targets.list_monitors(
+        monitors = await uow.targets.list_source_bindings(
             target_id=target.target_id,
             domain_id=command.domain_id,
             active_only=True,
         )
         snapshots = []
         initial_gaps = []
-        active_binding_ids = []
+        observation_binding_ids = []
+        log_binding_ids = []
         for monitor in monitors:
-            source = await uow.monitor_sources.get_scoped(
-                monitor_source_id=monitor.monitor_source_id,
+            source = await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=monitor.diagnostic_source_id,
                 domain_id=command.domain_id,
             )
             if source is None or source.status != "ACTIVE":
                 initial_gaps.append(
                     {
-                        "binding_id": str(monitor.target_monitor_id),
-                        "source_id": str(monitor.monitor_source_id),
-                        "code": "MONITOR_SOURCE_INACTIVE",
+                        "binding_id": str(monitor.target_source_binding_id),
+                        "source_id": str(monitor.diagnostic_source_id),
+                        "code": "DIAGNOSTIC_SOURCE_INACTIVE",
                         "detail": "监控源不存在或未激活",
                     }
                 )
                 continue
-            requested = (monitor.metric_scope_json or {}).get(
+            requested = (monitor.capability_scope_json or {}).get(
                 "metric_codes", DEFAULT_BASELINE_METRICS
             )
             if (
@@ -1198,41 +1223,95 @@ class AIOpsRuntimeService:
                 for item in selected
                 if source.source_type in item.providers
             )
-            active_binding_ids.append(str(monitor.target_monitor_id))
+            declared_capabilities = set(
+                (source.declared_capabilities_json or {}).keys()
+            )
+            requested_capabilities = (
+                monitor.capability_scope_json or {}
+            ).get("capabilities")
+            if requested_capabilities is not None:
+                if (
+                    not isinstance(requested_capabilities, (list, tuple))
+                    or not requested_capabilities
+                    or not all(
+                        isinstance(item, str) and item
+                        for item in requested_capabilities
+                    )
+                ):
+                    raise validation_failed(
+                        "Source Binding capabilities 格式无效"
+                    )
+                effective_capabilities = declared_capabilities.intersection(
+                    requested_capabilities
+                )
+            else:
+                effective_capabilities = declared_capabilities
+            binding_id = str(monitor.target_source_binding_id)
+            if effective_capabilities.intersection(
+                {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_EVENT_QUERY}
+            ):
+                observation_binding_ids.append(binding_id)
+            if CAPABILITY_LOG_QUERY in effective_capabilities:
+                log_binding_ids.append(binding_id)
             snapshots.append(
                 {
-                    "binding_id": str(monitor.target_monitor_id),
+                    "binding_id": binding_id,
                     "binding_version": int(monitor.row_version),
                     "role": monitor.role,
                     "priority": int(monitor.priority),
-                    "external_target_key": monitor.external_target_key,
-                    "external_target_fingerprint": hashlib.sha256(
-                        monitor.external_target_key.encode("utf-8")
+                    "source_locator_key": monitor.source_locator_key,
+                    "source_locator": dict(monitor.source_locator_json),
+                    "source_locator_fingerprint": hashlib.sha256(
+                        monitor.source_locator_key.encode("utf-8")
                     ).hexdigest(),
                     "mapping_overrides": dict(
                         monitor.mapping_overrides_json or {}
                     ),
+                    "query_budget": dict(monitor.query_budget_json or {}),
+                    "effective_capabilities": sorted(
+                        effective_capabilities
+                    ),
                     "source": {
-                        "source_id": str(source.monitor_source_id),
+                        "source_id": str(source.diagnostic_source_id),
                         "source_type": source.source_type,
-                        "source_version": int(source.row_version),
+                        "adapter_id": source.adapter_id,
+                        "adapter_version": source.adapter_version,
+                        "config_version": int(source.row_version),
                         "endpoint": source.endpoint,
-                        "secret_ref": source.secret_ref,
-                        "capabilities": dict(
-                            source.capabilities_json or {}
+                        "secret_ref": (
+                            AIOpsManagedCredentialService.reference(
+                                domain_id=int(source.domain_id),
+                                external_key=source.diagnostic_source_id,
+                                credential_kind="diagnostic_source",
+                                credential_id=source.auth_credential_id,
+                            )
+                            if source.auth_credential_id
+                            else None
                         ),
+                        "declared_capabilities": dict(
+                            source.declared_capabilities_json or {}
+                        ),
+                        "config": dict(source.config_json or {}),
                     },
                     "metrics": [
-                        item.model_dump(mode="json") for item in supported
+                        item.model_dump(mode="json")
+                        for item in supported
+                        if CAPABILITY_METRIC_QUERY_RANGE
+                        in effective_capabilities
                     ],
                     "unsupported_metrics": sorted(
-                        set(requested_codes)
-                        - {item.metric_code for item in supported}
+                        (
+                            set(requested_codes)
+                            - {item.metric_code for item in supported}
+                        )
+                        if CAPABILITY_METRIC_QUERY_RANGE
+                        in effective_capabilities
+                        else ()
                     ),
                 }
             )
         blueprint = build_monitor_observe_blueprint(
-            tuple(active_binding_ids)
+            tuple(observation_binding_ids)
         )
         return blueprint, {
             "window": {
@@ -1243,6 +1322,8 @@ class AIOpsRuntimeService:
             "catalog_hash": self._metric_catalog.manifest_hash,
             "max_response_bytes": self._max_monitor_response_bytes,
             "bindings": snapshots,
+            "observation_binding_ids": sorted(observation_binding_ids),
+            "log_binding_ids": sorted(log_binding_ids),
             "initial_gaps": initial_gaps,
         }
 
@@ -2732,8 +2813,8 @@ class AIOpsRuntimeService:
         if snapshot is None:
             return
         source_snapshot = snapshot["source"]
-        source = await uow.monitor_sources.get_scoped(
-            monitor_source_id=UUID(source_snapshot["source_id"]),
+        source = await uow.diagnostic_sources.get_scoped(
+            diagnostic_source_id=UUID(source_snapshot["source_id"]),
             domain_id=int(
                 (run.plan_snapshot_json or {})["target"]["domain_id"]
             ),
@@ -2743,15 +2824,15 @@ class AIOpsRuntimeService:
         gaps = list(payload.get("gaps", []))
         has_observations = bool(payload.get("observations"))
         gap_codes = {str(item.get("code")) for item in gaps}
-        if "MONITOR_AUTH_FAILED" in gap_codes:
+        if "SOURCE_AUTH_FAILED" in gap_codes:
             source_status, source_error = (
                 "DEGRADED",
-                "MONITOR_AUTH_FAILED",
+                "SOURCE_AUTH_FAILED",
             )
-        elif "MONITOR_UNREACHABLE" in gap_codes:
+        elif "SOURCE_UNREACHABLE" in gap_codes:
             source_status, source_error = (
                 "DEGRADED" if has_observations else "UNREACHABLE",
-                "MONITOR_UNREACHABLE",
+                "SOURCE_UNREACHABLE",
             )
         else:
             source_status, source_error = (
@@ -2762,16 +2843,16 @@ class AIOpsRuntimeService:
                 ),
                 None,
             )
-        await uow.monitor_sources.reduce_health(
-            monitor_source_id=source.monitor_source_id,
-            expected_config_version=int(source_snapshot["source_version"]),
+        await uow.diagnostic_sources.reduce_health(
+            diagnostic_source_id=source.diagnostic_source_id,
+            expected_config_version=int(source_snapshot["config_version"]),
             expected_health_version=int(source.health_version),
             health_status=source_status,
             checked_at=now,
             last_error_code=source_error,
         )
-        monitor = await uow.targets.get_monitor_scoped(
-            target_monitor_id=UUID(binding_id),
+        monitor = await uow.targets.get_source_binding_scoped(
+            target_source_binding_id=UUID(binding_id),
             target_id=run.target_id,
             domain_id=int(source.domain_id),
         )
@@ -2784,8 +2865,8 @@ class AIOpsRuntimeService:
             if payload.get("observations")
             else "UNREACHABLE"
         )
-        await uow.targets.reduce_monitor_health(
-            target_monitor_id=monitor.target_monitor_id,
+        await uow.targets.reduce_source_binding_health(
+            target_source_binding_id=monitor.target_source_binding_id,
             expected_config_version=int(snapshot["binding_version"]),
             expected_health_version=int(monitor.health_version),
             health_status=binding_status,
@@ -3579,6 +3660,77 @@ class AIOpsRuntimeService:
                 return True
             return False
 
+    async def list_runs(
+        self, *, scope: ConfigurationScope, target_id: UUID | None,
+        status: str | None, agent_ids: tuple[UUID, ...],
+        cursor: str | None, limit: int,
+    ) -> OpsRunPage:
+        filters = {"target_id": str(target_id) if target_id else None, "status": status}
+        before_at = before_id = None
+        if cursor:
+            before_at, before_id = self._decode_cursor(token=cursor, scope=scope, filters=filters)
+        async with self._uow_factory() as uow:
+            entities = await uow.runs.page_runs(
+                domain_id=scope.domain_id, target_id=target_id, status=status,
+                agent_ids=agent_ids, before_created_at=before_at,
+                before_id=before_id, limit=limit + 1,
+            )
+            page = entities[:limit]
+            return OpsRunPage(
+                items=tuple(self._run_summary(item) for item in page),
+                next_cursor=self._next_cursor(scope=scope, filters=filters,
+                    entities=entities, page_entities=page, limit=limit,
+                    id_attribute="ops_run_id"),
+                has_more=len(entities) > limit,
+            )
+
+    async def list_situations(
+        self, *, scope: ConfigurationScope, target_id: UUID | None,
+        status: str | None, severity: str | None,
+        cursor: str | None, limit: int,
+    ) -> SituationPage:
+        filters = {"target_id": str(target_id) if target_id else None,
+                   "status": status, "severity": severity}
+        before_at = before_id = None
+        if cursor:
+            before_at, before_id = self._decode_cursor(token=cursor, scope=scope, filters=filters)
+        async with self._uow_factory() as uow:
+            entities = await uow.situations.page_situations(
+                domain_id=scope.domain_id, target_id=target_id, status=status,
+                severity=severity, before_created_at=before_at,
+                before_id=before_id, limit=limit + 1,
+            )
+            page = entities[:limit]
+            return SituationPage(
+                items=tuple(self._situation_summary(item) for item in page),
+                next_cursor=self._next_cursor(scope=scope, filters=filters,
+                    entities=entities, page_entities=page, limit=limit,
+                    id_attribute="situation_id"),
+                has_more=len(entities) > limit,
+            )
+
+    async def get_situation(self, *, situation_id: UUID, domain_id: int) -> SituationView:
+        async with self._uow_factory() as uow:
+            situation = await uow.situations.get_situation_scoped(
+                situation_id=situation_id, domain_id=domain_id
+            )
+            if situation is None:
+                raise resource_not_found("Situation")
+            events = await uow.situations.list_events_for_situation(situation_id=situation_id)
+            runs = await uow.runs.list_by_situation(situation_id=situation_id)
+            return SituationView(
+                **self._situation_summary(situation).model_dump(),
+                signal_events=tuple(SignalEventSummary(
+                    signal_event_id=item.signal_event_id,
+                    diagnostic_source_id=item.diagnostic_source_id,
+                    source_event_key=item.source_event_key,
+                    signal_kind=item.signal_kind, event_class=item.event_class,
+                    severity=item.severity, normalized_status=item.normalized_status,
+                    summary=item.summary, occurred_at=item.occurred_at,
+                ) for item in events),
+                run_ids=tuple(item.ops_run_id for item in runs),
+            )
+
     async def get_run(
         self, *, ops_run_id: UUID, domain_id: int
     ) -> OpsRunSummary:
@@ -3609,24 +3761,7 @@ class AIOpsRuntimeService:
                         schema_version=artifact.schema_version,
                         content_hash=artifact.content_hash,
                     )
-            return OpsRunSummary(
-                ops_run_id=run.ops_run_id,
-                agent_id=run.agent_id,
-                target_id=run.target_id,
-                trigger_type=run.trigger_type,
-                status=run.status,
-                root_cause_grade=run.root_cause_level,
-                source_proposal_id=getattr(
-                    run, "source_proposal_id", None
-                ),
-                source_result_artifact_id=(
-                    getattr(run, "source_result_artifact_id", None)
-                ),
-                final_artifact=final,
-                row_version=int(run.row_version),
-                created_at=run.created_at,
-                completed_at=run.completed_at,
-            )
+            return self._run_summary(run, final_artifact=final)
 
     async def get_run_result(
         self, *, ops_run_id: UUID, domain_id: int
@@ -4041,6 +4176,31 @@ class AIOpsRuntimeService:
             updated_at=last.created_at,
             resource_id=getattr(last, id_attribute),
             filters=filters,
+        )
+
+    @staticmethod
+    def _run_summary(run, *, final_artifact=None) -> OpsRunSummary:
+        return OpsRunSummary(
+            ops_run_id=run.ops_run_id, agent_id=run.agent_id,
+            target_id=run.target_id, trigger_type=run.trigger_type,
+            interaction_mode=run.interaction_mode,
+            investigation_mode=run.investigation_mode, status=run.status,
+            root_cause_grade=run.root_cause_level,
+            source_proposal_id=getattr(run, "source_proposal_id", None),
+            source_result_artifact_id=getattr(run, "source_result_artifact_id", None),
+            final_artifact=final_artifact, row_version=int(run.row_version),
+            created_at=run.created_at, completed_at=run.completed_at,
+        )
+
+    @staticmethod
+    def _situation_summary(item) -> SituationSummary:
+        return SituationSummary(
+            situation_id=item.situation_id, target_id=item.target_id,
+            situation_type=item.situation_type, title=item.title,
+            summary=item.summary, status=item.status, severity=item.severity,
+            event_count=int(item.event_count), row_version=int(item.row_version),
+            first_observed_at=item.first_observed_at,
+            last_observed_at=item.last_observed_at, resolved_at=item.resolved_at,
         )
 
     @staticmethod

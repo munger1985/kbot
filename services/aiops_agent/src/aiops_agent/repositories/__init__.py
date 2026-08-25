@@ -5,7 +5,8 @@ from .change import ChangeRepository
 from .conversation import ConversationRepository
 from .inspection import InspectionRepository
 from .messaging import InboxRepository, OutboxRepository
-from .monitoring import AlertRepository, MonitorSourceRepository
+from .monitoring import SituationRepository, DiagnosticSourceRepository
+from .notification import NotificationSubscriptionRepository
 from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
 
@@ -13,13 +14,14 @@ __all__ = [
     "ConversationRepository",
     "AIOpsAgentExecutionBinding",
     "AIOpsAgentRepository",
-    "AlertRepository",
+    "SituationRepository",
     "ChangeRepository",
     "InboxRepository",
     "InspectionRepository",
-    "MonitorSourceRepository",
+    "DiagnosticSourceRepository",
     "OpsRunRepository",
     "OutboxRepository",
+    "NotificationSubscriptionRepository",
     "PolicyRepository",
     "TargetRepository",
 ]

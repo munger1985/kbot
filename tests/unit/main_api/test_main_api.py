@@ -576,7 +576,7 @@ class _FakeAccessControlService:
             "aiops:use",
             "aiops:agent_manage",
             "aiops:target_manage",
-            "aiops:monitor_source_manage",
+            "aiops:diagnostic_source_manage",
             "aiops:policy_manage",
             "aiops:plan_manage",
             "aiops:operations_manage",

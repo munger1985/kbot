@@ -1,0 +1,10 @@
+# 仅用于本机维护。远程访问应由带 TLS 和认证的反向代理提供。
+services:
+  prometheus:
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
+  alertmanager:
+    ports: ["127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"]
+  loki:
+    ports: ["127.0.0.1:${LOKI_PORT:-3100}:3100"]
+  grafana:
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]

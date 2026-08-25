@@ -19,14 +19,17 @@ from .configuration import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
-    MonitorSourceSummary,
+    NotificationSubscriptionList,
+    NotificationSubscriptionUpsert,
+    NotificationSubscriptionView,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
+    DiagnosticSourceSummary,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -126,6 +129,10 @@ class OpsRunSummary(AIOpsContract):
     agent_id: UUIDv7
     target_id: UUIDv7
     trigger_type: TriggerType
+    interaction_mode: Literal["INTERACTIVE", "AUTONOMOUS"]
+    investigation_mode: Literal[
+        "INCIDENT", "ON_DEMAND", "INSPECTION", "VERIFICATION"
+    ]
     status: OpsRunStatus
     root_cause_grade: RootCauseGrade | None = None
     source_proposal_id: UUIDv7 | None = None
@@ -134,6 +141,50 @@ class OpsRunSummary(AIOpsContract):
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = None
+
+
+class OpsRunPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[OpsRunSummary, ...] = ()
+
+
+class SignalEventSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    signal_event_id: UUIDv7
+    diagnostic_source_id: UUIDv7
+    source_event_key: str
+    signal_kind: str
+    event_class: str
+    severity: str
+    normalized_status: str
+    summary: str | None = None
+    occurred_at: UtcDatetime
+
+
+class SituationSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    situation_id: UUIDv7
+    target_id: UUIDv7
+    situation_type: str
+    title: str
+    summary: str | None = None
+    status: str
+    severity: str
+    event_count: int = Field(ge=0)
+    row_version: int = Field(ge=1)
+    first_observed_at: UtcDatetime
+    last_observed_at: UtcDatetime
+    resolved_at: UtcDatetime | None = None
+
+
+class SituationView(SituationSummary):
+    signal_events: tuple[SignalEventSummary, ...] = ()
+    run_ids: tuple[UUIDv7, ...] = ()
+
+
+class SituationPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[SituationSummary, ...] = ()
 
 
 class OpsRunResult(AIOpsContract):
@@ -148,7 +199,7 @@ class OpsRunResult(AIOpsContract):
     completed_at: UtcDatetime | None = None
 
 
-class MonitoringEventReceipt(AIOpsContract):
+class SignalEventReceipt(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     receipt_id: UUIDv7
     accepted: bool
@@ -227,6 +278,11 @@ class ProposalView(AIOpsContract):
     status: ProposalStatus
     expires_at: UtcDatetime | None = None
     row_version: int = Field(ge=1)
+
+
+class ProposalPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[ProposalView, ...] = ()
 
 
 class ApprovalCommand(AIOpsContract):

@@ -13,14 +13,14 @@ from fastapi import APIRouter, HTTPException, Request
 
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
-    MonitorWebhookEnvelope,
-    MonitoringEventReceipt,
+    SignalEventEnvelope,
+    SignalEventReceipt,
 )
 
 
 router = APIRouter(
-    prefix="/api/v1/integrations/monitoring",
-    tags=["Monitoring Integrations"],
+    prefix="/api/v1/integrations/aiops/signals",
+    tags=["AIOps Signal Integrations"],
 )
 
 _SIGNATURE_HEADERS = {
@@ -63,13 +63,13 @@ _RATE_LIMITER = _WebhookRateLimiter()
 
 
 @router.post(
-    "/{webhook_key}/events",
-    response_model=MonitoringEventReceipt,
+    "/{webhook_key}",
+    response_model=SignalEventReceipt,
     status_code=202,
 )
-async def receive_monitor_event(
+async def receive_signal_event(
     webhook_key: str, request: Request
-) -> MonitoringEventReceipt:
+) -> SignalEventReceipt:
     settings = request.app.state.main_api_settings
     content_type = request.headers.get("content-type", "").lower()
     if content_type not in _CONTENT_TYPES:
@@ -126,7 +126,7 @@ async def receive_monitor_event(
         request_id=request_id,
         trace_id=trace_id,
     )
-    envelope = MonitorWebhookEnvelope(
+    envelope = SignalEventEnvelope(
         request_id=request_id,
         webhook_key_hash=webhook_key_hash,
         raw_body_base64=base64.b64encode(body).decode("ascii"),
@@ -139,12 +139,12 @@ async def receive_monitor_event(
         },
         received_at=datetime.now(UTC),
     )
-    payload = await request.app.state.aiops_client.intake_monitor_event(
+    payload = await request.app.state.aiops_client.intake_signal_event(
         envelope, auth_context=context
     )
-    return MonitoringEventReceipt(
+    return SignalEventReceipt(
         receipt_id=payload["inbox_id"],
         accepted=payload["accepted"],
         duplicate=payload["duplicate"],
-        event_count=len(payload["event_ids"]),
+        event_count=len(payload["signal_event_ids"]),
     )

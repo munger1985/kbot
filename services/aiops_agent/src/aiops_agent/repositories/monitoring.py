@@ -1,21 +1,22 @@
-"""监控源、外部 Event 与 Alert 聚合的 Repository。"""
+"""诊断源、信号事件与故障情境的 Repository。"""
 
 from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select, update
+from sqlalchemy import Select, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
-    MonitorSourceEntity,
-    OpsAlertEntity,
-    OpsEventEntity,
+    DiagnosticSourceEntity,
+    SituationEntity,
+    SituationEventEntity,
+    SignalEventEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
 
-class MonitorSourceRepository(AIOpsRepository):
+class DiagnosticSourceRepository(AIOpsRepository):
     def __init__(
         self,
         session: AsyncSession,
@@ -24,11 +25,11 @@ class MonitorSourceRepository(AIOpsRepository):
         super().__init__(session, assert_active)
 
     async def add(
-        self, entity: MonitorSourceEntity
-    ) -> MonitorSourceEntity:
+        self, entity: DiagnosticSourceEntity
+    ) -> DiagnosticSourceEntity:
         return await self._add(entity)
 
-    async def delete_source(self, entity: MonitorSourceEntity) -> None:
+    async def delete_source(self, entity: DiagnosticSourceEntity) -> None:
         """仅由用例层在确认停用后删除无关联监控源。"""
         self._check_active()
         await self._session.delete(entity)
@@ -37,14 +38,14 @@ class MonitorSourceRepository(AIOpsRepository):
     async def get_scoped(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         domain_id: int,
         lock: bool = False,
-    ) -> MonitorSourceEntity | None:
+    ) -> DiagnosticSourceEntity | None:
         self._check_active()
-        statement: Select = select(MonitorSourceEntity).where(
-            MonitorSourceEntity.monitor_source_id == monitor_source_id,
-            MonitorSourceEntity.domain_id == domain_id,
+        statement: Select = select(DiagnosticSourceEntity).where(
+            DiagnosticSourceEntity.diagnostic_source_id == diagnostic_source_id,
+            DiagnosticSourceEntity.domain_id == domain_id,
         )
         if lock:
             statement = statement.with_for_update()
@@ -58,35 +59,35 @@ class MonitorSourceRepository(AIOpsRepository):
         before_updated_at: datetime | None,
         before_id: UUID | None,
         limit: int,
-    ) -> list[MonitorSourceEntity]:
+    ) -> list[DiagnosticSourceEntity]:
         self._check_active()
-        statement = select(MonitorSourceEntity).where(
-            MonitorSourceEntity.domain_id == domain_id,
+        statement = select(DiagnosticSourceEntity).where(
+            DiagnosticSourceEntity.domain_id == domain_id,
         )
         if statuses:
             statement = statement.where(
-                MonitorSourceEntity.status.in_(statuses)
+                DiagnosticSourceEntity.status.in_(statuses)
             )
         if before_updated_at is not None and before_id is not None:
             statement = statement.where(
                 or_(
-                    MonitorSourceEntity.updated_at < before_updated_at,
+                    DiagnosticSourceEntity.updated_at < before_updated_at,
                     and_(
-                        MonitorSourceEntity.updated_at == before_updated_at,
-                        MonitorSourceEntity.monitor_source_id < before_id,
+                        DiagnosticSourceEntity.updated_at == before_updated_at,
+                        DiagnosticSourceEntity.diagnostic_source_id < before_id,
                     ),
                 )
             )
         statement = statement.order_by(
-            MonitorSourceEntity.updated_at.desc(),
-            MonitorSourceEntity.monitor_source_id.desc(),
+            DiagnosticSourceEntity.updated_at.desc(),
+            DiagnosticSourceEntity.diagnostic_source_id.desc(),
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
     async def update_config(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         domain_id: int,
         expected_version: int,
         values: dict,
@@ -95,16 +96,16 @@ class MonitorSourceRepository(AIOpsRepository):
         update_values = dict(values)
         update_values.update(
             {
-                "row_version": MonitorSourceEntity.row_version + 1,
+                "row_version": DiagnosticSourceEntity.row_version + 1,
                 "updated_at": datetime.now(UTC),
             }
         )
         statement = (
-            update(MonitorSourceEntity)
+            update(DiagnosticSourceEntity)
             .where(
-                MonitorSourceEntity.monitor_source_id == monitor_source_id,
-                MonitorSourceEntity.domain_id == domain_id,
-                MonitorSourceEntity.row_version == expected_version,
+                DiagnosticSourceEntity.diagnostic_source_id == diagnostic_source_id,
+                DiagnosticSourceEntity.domain_id == domain_id,
+                DiagnosticSourceEntity.row_version == expected_version,
             )
             .values(**update_values)
             .execution_options(synchronize_session=False)
@@ -115,7 +116,7 @@ class MonitorSourceRepository(AIOpsRepository):
     async def request_health_check(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         domain_id: int,
         expected_version: int,
         request_id: UUID,
@@ -123,7 +124,7 @@ class MonitorSourceRepository(AIOpsRepository):
         updated_by: str,
     ) -> bool:
         return await self.update_config(
-            monitor_source_id=monitor_source_id,
+            diagnostic_source_id=diagnostic_source_id,
             domain_id=domain_id,
             expected_version=expected_version,
             values={
@@ -138,19 +139,19 @@ class MonitorSourceRepository(AIOpsRepository):
         *,
         webhook_key_hash: str,
         now: datetime,
-    ) -> MonitorSourceEntity | None:
+    ) -> DiagnosticSourceEntity | None:
         self._check_active()
-        statement = select(MonitorSourceEntity).where(
-            MonitorSourceEntity.status == "ACTIVE",
+        statement = select(DiagnosticSourceEntity).where(
+            DiagnosticSourceEntity.status == "ACTIVE",
             or_(
-                MonitorSourceEntity.webhook_key_hash == webhook_key_hash,
+                DiagnosticSourceEntity.webhook_key_hash == webhook_key_hash,
                 (
                     (
-                        MonitorSourceEntity.previous_webhook_key_hash
+                        DiagnosticSourceEntity.previous_webhook_key_hash
                         == webhook_key_hash
                     )
                     & (
-                        MonitorSourceEntity.previous_webhook_key_expires_at
+                        DiagnosticSourceEntity.previous_webhook_key_expires_at
                         > now
                     )
                 ),
@@ -161,30 +162,37 @@ class MonitorSourceRepository(AIOpsRepository):
     async def update_health(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         health_check_request_id: UUID,
         expected_config_version: int,
         expected_health_version: int,
         health_status: str,
         checked_at: datetime,
         last_error_code: str | None,
+        discovered_capabilities: dict | None = None,
     ) -> bool:
         self._check_active()
         statement = (
-            update(MonitorSourceEntity)
+            update(DiagnosticSourceEntity)
             .where(
-                MonitorSourceEntity.monitor_source_id == monitor_source_id,
-                MonitorSourceEntity.health_check_request_id
+                DiagnosticSourceEntity.diagnostic_source_id == diagnostic_source_id,
+                DiagnosticSourceEntity.health_check_request_id
                 == health_check_request_id,
-                MonitorSourceEntity.row_version == expected_config_version,
-                MonitorSourceEntity.health_version
+                DiagnosticSourceEntity.row_version == expected_config_version,
+                DiagnosticSourceEntity.health_version
                 == expected_health_version,
             )
             .values(
                 health_status=health_status,
                 last_health_check_at=checked_at,
+                last_success_at=(
+                    checked_at
+                    if health_status == "HEALTHY"
+                    else DiagnosticSourceEntity.last_success_at
+                ),
                 last_error_code=last_error_code,
-                health_version=MonitorSourceEntity.health_version + 1,
+                discovered_capabilities_json=discovered_capabilities,
+                health_version=DiagnosticSourceEntity.health_version + 1,
             )
             .execution_options(synchronize_session=False)
         )
@@ -194,7 +202,7 @@ class MonitorSourceRepository(AIOpsRepository):
     async def reduce_health(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         expected_config_version: int,
         expected_health_version: int,
         health_status: str,
@@ -204,20 +212,20 @@ class MonitorSourceRepository(AIOpsRepository):
         """归并普通采集健康，不消费显式 Health Check Request。"""
         self._check_active()
         statement = (
-            update(MonitorSourceEntity)
+            update(DiagnosticSourceEntity)
             .where(
-                MonitorSourceEntity.monitor_source_id
-                == monitor_source_id,
-                MonitorSourceEntity.row_version
+                DiagnosticSourceEntity.diagnostic_source_id
+                == diagnostic_source_id,
+                DiagnosticSourceEntity.row_version
                 == expected_config_version,
-                MonitorSourceEntity.health_version
+                DiagnosticSourceEntity.health_version
                 == expected_health_version,
             )
             .values(
                 health_status=health_status,
                 last_health_check_at=checked_at,
                 last_error_code=last_error_code,
-                health_version=MonitorSourceEntity.health_version + 1,
+                health_version=DiagnosticSourceEntity.health_version + 1,
             )
             .execution_options(synchronize_session=False)
         )
@@ -225,90 +233,195 @@ class MonitorSourceRepository(AIOpsRepository):
         return result.rowcount == 1
 
 
-class AlertRepository(AIOpsRepository):
-    async def add_event(self, entity: OpsEventEntity) -> OpsEventEntity:
+class SituationRepository(AIOpsRepository):
+    async def add_event(self, entity: SignalEventEntity) -> SignalEventEntity:
         return await self._add(entity)
 
-    async def add_alert(self, entity: OpsAlertEntity) -> OpsAlertEntity:
+    async def add_situation(self, entity: SituationEntity) -> SituationEntity:
         return await self._add(entity)
+
+    async def add_situation_event(
+        self, entity: SituationEventEntity
+    ) -> SituationEventEntity:
+        return await self._add(entity)
+
+    async def get_situation(
+        self, *, situation_id: UUID
+    ) -> SituationEntity | None:
+        self._check_active()
+        return (
+            await self._session.execute(
+                select(SituationEntity).where(
+                    SituationEntity.situation_id == situation_id
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def get_situation_scoped(
+        self, *, situation_id: UUID, domain_id: int
+    ) -> SituationEntity | None:
+        self._check_active()
+        return (await self._session.execute(select(SituationEntity).where(
+            SituationEntity.situation_id == situation_id,
+            SituationEntity.domain_id == domain_id,
+        ))).scalar_one_or_none()
+
+    async def page_situations(
+        self, *, domain_id: int, target_id: UUID | None = None,
+        status: str | None = None, severity: str | None = None,
+        before_created_at: datetime | None = None,
+        before_id: UUID | None = None, limit: int = 51,
+    ) -> list[SituationEntity]:
+        self._check_active()
+        statement = select(SituationEntity).where(SituationEntity.domain_id == domain_id)
+        if target_id is not None:
+            statement = statement.where(SituationEntity.target_id == target_id)
+        if status is not None:
+            statement = statement.where(SituationEntity.status == status)
+        if severity is not None:
+            statement = statement.where(SituationEntity.severity == severity)
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(or_(
+                SituationEntity.created_at < before_created_at,
+                (SituationEntity.created_at == before_created_at)
+                & (SituationEntity.situation_id < before_id),
+            ))
+        statement = statement.order_by(
+            SituationEntity.created_at.desc(), SituationEntity.situation_id.desc()
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
+    async def list_events_for_situation(
+        self, *, situation_id: UUID, limit: int = 200
+    ) -> list[SignalEventEntity]:
+        self._check_active()
+        statement = select(SignalEventEntity).join(
+            SituationEventEntity,
+            SituationEventEntity.signal_event_id == SignalEventEntity.signal_event_id,
+        ).where(SituationEventEntity.situation_id == situation_id).order_by(
+            SignalEventEntity.occurred_at.desc(), SignalEventEntity.signal_event_id.desc()
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
 
     async def get_event_by_source(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         source_event_key: str,
-    ) -> OpsEventEntity | None:
+    ) -> SignalEventEntity | None:
         self._check_active()
-        statement = select(OpsEventEntity).where(
-            OpsEventEntity.monitor_source_id == monitor_source_id,
-            OpsEventEntity.source_event_key == source_event_key,
+        statement = select(SignalEventEntity).where(
+            SignalEventEntity.diagnostic_source_id == diagnostic_source_id,
+            SignalEventEntity.source_event_key == source_event_key,
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def list_event_ids_by_inbox(
+    async def list_signal_event_ids_by_inbox(
         self, *, inbox_id: UUID
     ) -> list[UUID]:
         self._check_active()
         statement = (
-            select(OpsEventEntity.event_id)
-            .where(OpsEventEntity.source_inbox_id == inbox_id)
-            .order_by(OpsEventEntity.created_at, OpsEventEntity.event_id)
+            select(SignalEventEntity.signal_event_id)
+            .where(SignalEventEntity.source_inbox_id == inbox_id)
+            .order_by(
+                SignalEventEntity.created_at,
+                SignalEventEntity.signal_event_id,
+            )
         )
         return list((await self._session.execute(statement)).scalars())
 
-    async def get_active_alert(
+    async def get_active_situation(
         self,
         *,
         target_id: UUID,
-        fingerprint: str,
+        correlation_hash: str,
         lock: bool = False,
-    ) -> OpsAlertEntity | None:
+    ) -> SituationEntity | None:
         self._check_active()
-        statement: Select = select(OpsAlertEntity).where(
-            OpsAlertEntity.target_id == target_id,
-            OpsAlertEntity.fingerprint == fingerprint,
-            OpsAlertEntity.status.in_(
-                ("OPEN", "ACKNOWLEDGED", "SUPPRESSED")
+        statement: Select = select(SituationEntity).where(
+            SituationEntity.target_id == target_id,
+            SituationEntity.correlation_hash == correlation_hash,
+            SituationEntity.status.in_(
+                (
+                    "OPEN",
+                    "ACKNOWLEDGED",
+                    "INVESTIGATING",
+                    "DIAGNOSED",
+                    "MITIGATING",
+                    "OBSERVING",
+                    "SUPPRESSED",
+                )
             ),
         )
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def correlate_event(
+    async def has_open_signal_state(self, *, situation_id: UUID) -> bool:
+        """按来源内关联键的最新事件判断 Situation 是否仍有未恢复信号。"""
+        self._check_active()
+        ranked = (
+            select(
+                SignalEventEntity.normalized_status.label("signal_status"),
+                func.row_number()
+                .over(
+                    partition_by=SignalEventEntity.dedup_hash,
+                    order_by=(
+                        SignalEventEntity.occurred_at.desc(),
+                        SignalEventEntity.signal_event_id.desc(),
+                    ),
+                )
+                .label("signal_rank"),
+            )
+            .join(
+                SituationEventEntity,
+                SituationEventEntity.signal_event_id
+                == SignalEventEntity.signal_event_id,
+            )
+            .where(SituationEventEntity.situation_id == situation_id)
+            .subquery()
+        )
+        statement = (
+            select(ranked.c.signal_status)
+            .where(
+                ranked.c.signal_rank == 1,
+                ranked.c.signal_status.in_(("OPEN", "UPDATED")),
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none() is not None
+
+    async def attach_event(
         self,
         *,
-        event_id: UUID,
-        alert_id: UUID | None,
+        signal_event_id: UUID,
+        situation_id: UUID,
         expected_statuses: Collection[str] = ("RECEIVED",),
         processing_status: str = "CORRELATED",
     ) -> bool:
         self._check_active()
         statement = (
-            update(OpsEventEntity)
+            update(SignalEventEntity)
             .where(
-                OpsEventEntity.event_id == event_id,
-                OpsEventEntity.processing_status.in_(expected_statuses),
+                SignalEventEntity.signal_event_id == signal_event_id,
+                SignalEventEntity.processing_status.in_(expected_statuses),
             )
-            .values(
-                alert_id=alert_id,
-                processing_status=processing_status,
-            )
+            .values(processing_status=processing_status)
             .execution_options(synchronize_session=False)
         )
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def update_alert(
+    async def update_situation(
         self,
         *,
-        alert_id: UUID,
+        situation_id: UUID,
         expected_version: int,
         allowed_statuses: Collection[str],
         status: str,
         severity: str,
-        summary: str,
-        last_seen_at: datetime,
+        title: str,
+        last_observed_at: datetime,
         correlation_json: dict | None,
         resolved_at: datetime | None = None,
         increment_event_count: bool = True,
@@ -317,21 +430,21 @@ class AlertRepository(AIOpsRepository):
         values = {
             "status": status,
             "severity": severity,
-            "summary": summary,
-            "last_seen_at": last_seen_at,
+            "title": title,
+            "last_observed_at": last_observed_at,
             "correlation_json": correlation_json,
             "resolved_at": resolved_at,
-            "row_version": OpsAlertEntity.row_version + 1,
+            "row_version": SituationEntity.row_version + 1,
             "updated_at": datetime.now(UTC),
         }
         if increment_event_count:
-            values["event_count"] = OpsAlertEntity.event_count + 1
+            values["event_count"] = SituationEntity.event_count + 1
         statement = (
-            update(OpsAlertEntity)
+            update(SituationEntity)
             .where(
-                OpsAlertEntity.alert_id == alert_id,
-                OpsAlertEntity.row_version == expected_version,
-                OpsAlertEntity.status.in_(allowed_statuses),
+                SituationEntity.situation_id == situation_id,
+                SituationEntity.row_version == expected_version,
+                SituationEntity.status.in_(allowed_statuses),
             )
             .values(**values)
             .execution_options(synchronize_session=False)

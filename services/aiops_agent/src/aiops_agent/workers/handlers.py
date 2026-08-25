@@ -140,7 +140,7 @@ def create_kernel_handler_registry() -> HandlerRegistry:
 
 def create_runtime_handler_registry(
     *,
-    monitor_provider_registry=None,
+    diagnostic_source_registry=None,
     secret_store=None,
     db_executor_client=None,
     diagnostic_grant_codec=None,
@@ -159,29 +159,40 @@ def create_runtime_handler_registry(
     kernel = create_kernel_handler_registry()
     manifests = list(kernel.manifests)
     database_diagnostic_handler = None
-    if monitor_provider_registry is not None and secret_store is not None:
-        from .monitoring_handlers import (
-            MonitorObserveHandler,
-            MonitorReportHandler,
-            MonitorScopeHandler,
+    if diagnostic_source_registry is not None and secret_store is not None:
+        from .evidence_handlers import (
+            EvidenceObserveHandler,
+            EvidenceReportHandler,
+            EvidenceScopeHandler,
+            LogEvidenceHandler,
         )
 
         manifests.extend(
             (
                 HandlerManifest(
+                    handler_id="evidence.log-query",
+                    version="1",
+                    output_schema_version="LOG_EVIDENCE_SET.v1",
+                    idempotent=True,
+                    implementation=LogEvidenceHandler(
+                        diagnostic_source_registry=diagnostic_source_registry,
+                        secret_store=secret_store,
+                    ),
+                ),
+                HandlerManifest(
                     handler_id="monitor.scope",
                     version="1",
                     output_schema_version="MONITOR_SCOPE_RESULT.v1",
                     idempotent=True,
-                    implementation=MonitorScopeHandler(),
+                    implementation=EvidenceScopeHandler(),
                 ),
                 HandlerManifest(
                     handler_id="monitor.observe",
                     version="1",
                     output_schema_version="OBSERVATION_SET.v1",
                     idempotent=True,
-                    implementation=MonitorObserveHandler(
-                        provider_registry=monitor_provider_registry,
+                    implementation=EvidenceObserveHandler(
+                        diagnostic_source_registry=diagnostic_source_registry,
                         secret_store=secret_store,
                     ),
                 ),
@@ -190,7 +201,7 @@ def create_runtime_handler_registry(
                     version="1",
                     output_schema_version="OBSERVE_REPORT.v1",
                     idempotent=True,
-                    implementation=MonitorReportHandler(),
+                    implementation=EvidenceReportHandler(),
                 ),
             )
         )

@@ -1,8 +1,6 @@
 """AIOps 私有 Agent 创建顺序测试。"""
 
 import unittest
-from types import SimpleNamespace
-
 from aiops_agent.application.agents import (
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
@@ -17,12 +15,8 @@ class _AgentRepository:
         self.current_version_at_agent_insert = "NOT_CAPTURED"
 
     async def resource_states(self, **kwargs):
-        return {
-            "monitor": "ACTIVE",
-            "policy": "ACTIVE",
-            "target": "ACTIVE" if kwargs["target_id"] else None,
-            "plan": None,
-        }
+        del kwargs
+        return {"policy": "ACTIVE"}
 
     async def add_agent(self, row):
         self.current_version_at_agent_insert = row.current_version_id
@@ -45,19 +39,9 @@ class _AgentRepository:
         return row if row is not None and row.agent_id == agent_id else None
 
 
-class _TargetRepository:
-    def __init__(self, monitors=()):
-        self.monitors = list(monitors)
-
-    async def list_monitors(self, **kwargs):
-        del kwargs
-        return self.monitors
-
-
 class _UnitOfWork:
-    def __init__(self, repository, monitors=()):
+    def __init__(self, repository):
         self.agents = repository
-        self.targets = _TargetRepository(monitors)
         self.commit_count = 0
 
     async def __aenter__(self):
@@ -80,7 +64,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
-                monitor_source_id=uuid7(),
                 policy_id=uuid7(),
                 actor_id="kbotui_dev",
             )
@@ -93,29 +76,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             str(repository.agents[next(iter(repository.agents))].current_version_id),
         )
 
-    async def test_active_agent_requires_selected_monitor_bound_to_target(self):
-        repository = _AgentRepository()
-        monitor_source_id = uuid7()
-        service = AIOpsAgentService(
-            uow_factory=lambda: _UnitOfWork(repository)
-        )
-
-        with self.assertRaisesRegex(
-            ValueError, "必须将所选监控源绑定到诊断目标"
-        ):
-            await service.create(
-                CreateAIOpsAgentCommand(
-                    domain_id=100,
-                    display_name="数据库诊断助手",
-                    monitor_source_id=monitor_source_id,
-                    policy_id=uuid7(),
-                    target_id=uuid7(),
-                    status="ACTIVE",
-                    actor_id="kbotui_dev",
-                )
-            )
-
-    async def test_active_agent_allows_optional_target(self):
+    async def test_active_agent_does_not_embed_target_or_source(self):
         unit_of_work = _UnitOfWork(_AgentRepository())
         service = AIOpsAgentService(
             uow_factory=lambda: unit_of_work
@@ -125,7 +86,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
-                monitor_source_id=uuid7(),
                 policy_id=uuid7(),
                 status="ACTIVE",
                 actor_id="kbotui_dev",
@@ -133,32 +93,8 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual("ACTIVE", result["status"])
-        self.assertIsNone(result["target_id"])
-
-    async def test_active_agent_accepts_matching_monitor_binding(self):
-        repository = _AgentRepository()
-        monitor_source_id = uuid7()
-        unit_of_work = _UnitOfWork(
-            repository,
-            monitors=(
-                SimpleNamespace(monitor_source_id=monitor_source_id),
-            ),
-        )
-        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
-
-        result = await service.create(
-            CreateAIOpsAgentCommand(
-                domain_id=100,
-                display_name="数据库诊断助手",
-                monitor_source_id=monitor_source_id,
-                policy_id=uuid7(),
-                target_id=uuid7(),
-                status="ACTIVE",
-                actor_id="kbotui_dev",
-            )
-        )
-
-        self.assertEqual("ACTIVE", result["status"])
+        self.assertNotIn("target_id", result)
+        self.assertNotIn("diagnostic_source_id", result)
 
 
 if __name__ == "__main__":

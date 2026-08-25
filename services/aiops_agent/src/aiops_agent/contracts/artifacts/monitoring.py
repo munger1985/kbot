@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from aiops_agent.contracts.monitoring import ObservationSet
+from aiops_agent.contracts.evidence import ObservationSet
 from platform_core.contracts.aiops.types import UtcDatetime
 
 

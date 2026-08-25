@@ -97,7 +97,7 @@ class EvidenceIndexTest(unittest.TestCase):
         self.assertEqual(64, len(index.index_hash))
         self.assertEqual(
             {
-                "MONITOR_METRIC",
+                "METRIC_OBSERVATION",
                 "DATABASE_OBSERVATION",
             },
             {item.source_type for item in index.facts},

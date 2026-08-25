@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
-    OpsAlertEntity,
+    SituationEntity,
     OpsArtifactEntity,
     OpsRunEntity,
     OpsRunEventEntity,
@@ -78,6 +78,34 @@ class OpsRunRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def page_runs(
+        self, *, domain_id: int, target_id: UUID | None = None,
+        status: str | None = None, agent_ids: Collection[UUID] = (),
+        before_created_at: datetime | None = None,
+        before_id: UUID | None = None, limit: int = 51,
+    ) -> list[OpsRunEntity]:
+        """按 Domain 与可授权 Agent 分页读取 Run。"""
+        self._check_active()
+        statement = select(OpsRunEntity).join(
+            TargetEntity, TargetEntity.target_id == OpsRunEntity.target_id
+        ).where(TargetEntity.domain_id == domain_id)
+        if target_id is not None:
+            statement = statement.where(OpsRunEntity.target_id == target_id)
+        if status is not None:
+            statement = statement.where(OpsRunEntity.status == status)
+        if agent_ids:
+            statement = statement.where(OpsRunEntity.agent_id.in_(tuple(agent_ids)))
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(or_(
+                OpsRunEntity.created_at < before_created_at,
+                (OpsRunEntity.created_at == before_created_at)
+                & (OpsRunEntity.ops_run_id < before_id),
+            ))
+        statement = statement.order_by(
+            OpsRunEntity.created_at.desc(), OpsRunEntity.ops_run_id.desc()
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
+
     async def get_by_idempotency(
         self,
         *,
@@ -145,14 +173,14 @@ class OpsRunRepository(AIOpsRepository):
             statement = statement.with_for_update(skip_locked=skip_locked)
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_active_by_alert(
-        self, *, alert_id: UUID
+    async def get_active_by_situation(
+        self, *, situation_id: UUID
     ) -> OpsRunEntity | None:
         self._check_active()
         statement = (
             select(OpsRunEntity)
             .where(
-                OpsRunEntity.trigger_alert_id == alert_id,
+                OpsRunEntity.situation_id == situation_id,
                 OpsRunEntity.status.notin_(
                     (
                         "COMPLETED",
@@ -168,19 +196,26 @@ class OpsRunRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
-    async def get_latest_by_alert_fingerprint(
+    async def list_by_situation(self, *, situation_id: UUID) -> list[OpsRunEntity]:
+        self._check_active()
+        statement = select(OpsRunEntity).where(
+            OpsRunEntity.situation_id == situation_id
+        ).order_by(OpsRunEntity.created_at.desc(), OpsRunEntity.ops_run_id.desc())
+        return list((await self._session.execute(statement)).scalars())
+
+    async def get_latest_by_situation_correlation(
         self, *, target_id: UUID, fingerprint: str
     ) -> OpsRunEntity | None:
         self._check_active()
         statement = (
             select(OpsRunEntity)
             .join(
-                OpsAlertEntity,
-                OpsAlertEntity.alert_id == OpsRunEntity.trigger_alert_id,
+                SituationEntity,
+                SituationEntity.situation_id == OpsRunEntity.situation_id,
             )
             .where(
                 OpsRunEntity.target_id == target_id,
-                OpsAlertEntity.fingerprint == fingerprint,
+                SituationEntity.correlation_hash == fingerprint,
             )
             .order_by(
                 OpsRunEntity.created_at.desc(),

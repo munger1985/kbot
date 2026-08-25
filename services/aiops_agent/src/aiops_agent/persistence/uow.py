@@ -12,14 +12,15 @@ from sqlalchemy.ext.asyncio import (
 from aiops_agent.application.errors import UnitOfWorkStateError
 from aiops_agent.repositories import (
     AIOpsAgentRepository,
-    AlertRepository,
+    SituationRepository,
     ChangeRepository,
     ConversationRepository,
     InboxRepository,
     InspectionRepository,
-    MonitorSourceRepository,
+    DiagnosticSourceRepository,
     OpsRunRepository,
     OutboxRepository,
+    NotificationSubscriptionRepository,
     PolicyRepository,
     TargetRepository,
 )
@@ -47,9 +48,9 @@ class AIOpsUnitOfWork:
 
         self.targets: TargetRepository | None = None
         self.managed_credentials: ManagedCredentialRepository | None = None
-        self.monitor_sources: MonitorSourceRepository | None = None
+        self.diagnostic_sources: DiagnosticSourceRepository | None = None
         self.policies: PolicyRepository | None = None
-        self.alerts: AlertRepository | None = None
+        self.situations: SituationRepository | None = None
         self.runs: OpsRunRepository | None = None
         self.changes: ChangeRepository | None = None
         self.inspections: InspectionRepository | None = None
@@ -59,6 +60,7 @@ class AIOpsUnitOfWork:
         self.conversations: ConversationRepository | None = None
         self.notification_outbox: NotificationOutboxRepository | None = None
         self.platform_notifications: PlatformNotificationRepository | None = None
+        self.notification_subscriptions: NotificationSubscriptionRepository | None = None
 
     def _require_active(self) -> None:
         if self.state != UnitOfWorkState.ACTIVE:
@@ -75,9 +77,9 @@ class AIOpsUnitOfWork:
         guard = self._require_active
         self.targets = TargetRepository(self.session, guard)
         self.managed_credentials = ManagedCredentialRepository(self.session)
-        self.monitor_sources = MonitorSourceRepository(self.session, guard)
+        self.diagnostic_sources = DiagnosticSourceRepository(self.session, guard)
         self.policies = PolicyRepository(self.session, guard)
-        self.alerts = AlertRepository(self.session, guard)
+        self.situations = SituationRepository(self.session, guard)
         self.runs = OpsRunRepository(self.session, guard)
         self.changes = ChangeRepository(self.session, guard)
         self.inspections = InspectionRepository(self.session, guard)
@@ -87,6 +89,9 @@ class AIOpsUnitOfWork:
         self.conversations = ConversationRepository(self.session, guard)
         self.notification_outbox = NotificationOutboxRepository(self.session)
         self.platform_notifications = PlatformNotificationRepository(self)
+        self.notification_subscriptions = NotificationSubscriptionRepository(
+            self.session, guard
+        )
         return self
 
     async def commit(self) -> None:
@@ -120,9 +125,9 @@ class AIOpsUnitOfWork:
             self.session = None
             self.targets = None
             self.managed_credentials = None
-            self.monitor_sources = None
+            self.diagnostic_sources = None
             self.policies = None
-            self.alerts = None
+            self.situations = None
             self.runs = None
             self.changes = None
             self.inspections = None
@@ -132,6 +137,7 @@ class AIOpsUnitOfWork:
             self.conversations = None
             self.notification_outbox = None
             self.platform_notifications = None
+            self.notification_subscriptions = None
             self.state = UnitOfWorkState.CLOSED
 
 

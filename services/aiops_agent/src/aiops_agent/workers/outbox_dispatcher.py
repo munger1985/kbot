@@ -38,20 +38,22 @@ class AIOpsDomainOutboxSink:
         *,
         runtime_service,
         fallback: OutboxSink,
-        monitor_health_service=None,
+        diagnostic_source_health_service=None,
         db_executor_client=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
-        self._monitor_health_service = monitor_health_service
+        self._diagnostic_source_health_service = (
+            diagnostic_source_health_service
+        )
         self._db_executor_client = db_executor_client
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if (
-            event_type == "MONITOR_HEALTH_CHECK_REQUESTED"
-            and self._monitor_health_service is not None
+            event_type == "SOURCE_HEALTH_CHECK_REQUESTED"
+            and self._diagnostic_source_health_service is not None
         ):
-            await self._monitor_health_service.execute(payload)
+            await self._diagnostic_source_health_service.execute(payload)
             return
         if event_type == "OPS_ADVISORY_RESULT_RECORDED":
             await self._create_verification_run(
@@ -148,32 +150,32 @@ class AIOpsDomainOutboxSink:
                 target_id,
             )
             return
-        if event_type != "OPS_ALERT_AUTO_RUN_REQUESTED":
+        if event_type != "OPS_SITUATION_AUTO_RUN_REQUESTED":
             await self._fallback.publish(event_type, payload)
             return
-        alert_id = payload["alert_id"]
+        situation_id = payload["situation_id"]
         await self._runtime_service.create_run(
             CreateOpsRunCommand(
                 command_id=uuid7(),
-                idempotency_key=f"alert:{alert_id}:observe",
+                idempotency_key=f"situation:{situation_id}:observe",
                 domain_id=payload["domain_id"],
-                actor_id="system:monitor-intake",
+                actor_id="system:signal-intake",
                 agent_id=payload["agent_id"],
                 target_id=payload["target_id"],
                 trigger_type="ALERT",
-                trigger_event_id=payload["event_id"],
-                trigger_alert_id=alert_id,
-                input="监控告警触发只观测报告",
-                blueprint_id="monitor.observe-report",
+                trigger_signal_event_id=payload["signal_event_id"],
+                situation_id=situation_id,
+                input="已验证故障信号触发主动根因诊断",
+                blueprint_id="diagnosis.root-cause",
                 blueprint_version="1",
                 client_metadata={
                     "trace_id": payload["trace_id"],
-                    "trigger": "verified_monitor_alert",
+                    "trigger": "verified_signal_event",
                 },
             )
         )
         logger.info(
-            "严重告警只观测 Run 已创建：alert_id={}", alert_id
+            "严重故障情境诊断 Run 已创建：situation_id={}", situation_id
         )
 
     async def _create_verification_run(

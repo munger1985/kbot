@@ -262,7 +262,7 @@ def create_main_api_app(
             domainless_prefixes=domainless_prefixes,
             public_prefixes={
                 "/api/v1/auth/apps/",
-                "/api/v1/integrations/monitoring/",
+                "/api/v1/integrations/aiops/signals/",
                 "/api/v1/integrations/slack/",
                 "/static-offline-docs/",
             },

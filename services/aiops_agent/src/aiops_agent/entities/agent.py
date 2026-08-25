@@ -51,10 +51,7 @@ class AIOpsAgentVersionEntity(BaseEntity):
     )
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
-    monitor_source_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     policy_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    target_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    inspection_plan_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     models_json: Mapped[dict[str, str]] = mapped_column(OracleNativeJSON, nullable=False)
     image_capabilities_json: Mapped[dict[str, Any]] = mapped_column(
         OracleNativeJSON, nullable=False, default=dict

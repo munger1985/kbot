@@ -1,38 +1,38 @@
-"""经 Main API 转发的原始监控事件入口。"""
+"""经 Main API 转发的原始信号事件入口。"""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
 from aiops_agent.api.dependencies import require_service_scope
-from aiops_agent.application.monitoring import MonitorWebhookIntakeService
+from aiops_agent.application.diagnostic_sources import SignalEventIntakeService
 from platform_core.contracts.aiops import (
-    MonitorWebhookEnvelope,
-    MonitorWebhookReceipt,
+    SignalEventEnvelope,
+    SignalEventIntakeReceipt,
 )
 
 
 router = APIRouter(
-    prefix="/internal/v1/aiops/intake", tags=["AIOps Monitor Intake"]
+    prefix="/internal/v1/aiops/intake", tags=["AIOps Signal Intake"]
 )
 
 
-def get_service(request: Request) -> MonitorWebhookIntakeService:
-    return request.app.state.monitor_intake_service
+def get_service(request: Request) -> SignalEventIntakeService:
+    return request.app.state.signal_intake_service
 
 
-Service = Annotated[MonitorWebhookIntakeService, Depends(get_service)]
+Service = Annotated[SignalEventIntakeService, Depends(get_service)]
 
 
 @router.post(
-    "/monitor-events",
-    response_model=MonitorWebhookReceipt,
+    "/signal-events",
+    response_model=SignalEventIntakeReceipt,
     status_code=202,
 )
-async def intake_monitor_event(
-    body: MonitorWebhookEnvelope,
+async def intake_signal_event(
+    body: SignalEventEnvelope,
     request: Request,
     service: Service,
-) -> MonitorWebhookReceipt:
+) -> SignalEventIntakeReceipt:
     require_service_scope(request, "aiops.monitor.intake")
     return await service.intake(body)

@@ -11,7 +11,7 @@ from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetMonitorEntity,
+    TargetSourceBindingEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
@@ -38,9 +38,9 @@ class TargetRepository(AIOpsRepository):
     ) -> TargetBindingEntity:
         return await self._add(entity)
 
-    async def add_monitor(
-        self, entity: TargetMonitorEntity
-    ) -> TargetMonitorEntity:
+    async def add_source_binding(
+        self, entity: TargetSourceBindingEntity
+    ) -> TargetSourceBindingEntity:
         return await self._add(entity)
 
     async def get_scoped(
@@ -240,55 +240,55 @@ class TargetRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def list_monitors(
+    async def list_source_bindings(
         self,
         *,
         target_id: UUID,
         domain_id: int,
         active_only: bool = True,
-    ) -> list[TargetMonitorEntity]:
+    ) -> list[TargetSourceBindingEntity]:
         self._check_active()
         statement = (
-            select(TargetMonitorEntity)
+            select(TargetSourceBindingEntity)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetMonitorEntity.target_id,
+                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
             )
             .where(
-                TargetMonitorEntity.target_id == target_id,
+                TargetSourceBindingEntity.target_id == target_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
         if active_only:
-            statement = statement.where(TargetMonitorEntity.status == "ACTIVE")
+            statement = statement.where(TargetSourceBindingEntity.status == "ACTIVE")
         statement = statement.order_by(
             case(
-                (TargetMonitorEntity.role == "PRIMARY", 0),
+                (TargetSourceBindingEntity.role == "PRIMARY", 0),
                 else_=1,
             ),
-            TargetMonitorEntity.priority,
-            TargetMonitorEntity.target_monitor_id,
+            TargetSourceBindingEntity.priority,
+            TargetSourceBindingEntity.target_source_binding_id,
         )
         return list((await self._session.execute(statement)).scalars())
 
-    async def get_monitor_scoped(
+    async def get_source_binding_scoped(
         self,
         *,
-        target_monitor_id: UUID,
+        target_source_binding_id: UUID,
         target_id: UUID,
         domain_id: int,
         lock: bool = False,
-    ) -> TargetMonitorEntity | None:
+    ) -> TargetSourceBindingEntity | None:
         self._check_active()
         statement: Select = (
-            select(TargetMonitorEntity)
+            select(TargetSourceBindingEntity)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == TargetMonitorEntity.target_id,
+                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
             )
             .where(
-                TargetMonitorEntity.target_monitor_id == target_monitor_id,
-                TargetMonitorEntity.target_id == target_id,
+                TargetSourceBindingEntity.target_source_binding_id == target_source_binding_id,
+                TargetSourceBindingEntity.target_id == target_id,
                 TargetEntity.domain_id == domain_id,
             )
         )
@@ -296,19 +296,19 @@ class TargetRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_monitor_by_external(
+    async def get_source_binding_by_locator(
         self,
         *,
-        monitor_source_id: UUID,
-        external_target_key: str,
+        diagnostic_source_id: UUID,
+        source_locator_key: str,
         lock: bool = False,
-    ) -> TargetMonitorEntity | None:
+    ) -> TargetSourceBindingEntity | None:
         """同一 Source 下只允许精确外部目标映射。"""
         self._check_active()
-        statement: Select = select(TargetMonitorEntity).where(
-            TargetMonitorEntity.monitor_source_id == monitor_source_id,
-            TargetMonitorEntity.external_target_key == external_target_key,
-            TargetMonitorEntity.status == "ACTIVE",
+        statement: Select = select(TargetSourceBindingEntity).where(
+            TargetSourceBindingEntity.diagnostic_source_id == diagnostic_source_id,
+            TargetSourceBindingEntity.source_locator_key == source_locator_key,
+            TargetSourceBindingEntity.status == "ACTIVE",
         )
         if lock:
             statement = statement.with_for_update()
@@ -317,7 +317,7 @@ class TargetRepository(AIOpsRepository):
     async def update_monitor(
         self,
         *,
-        target_monitor_id: UUID,
+        target_source_binding_id: UUID,
         target_id: UUID,
         expected_version: int,
         values: dict,
@@ -326,16 +326,16 @@ class TargetRepository(AIOpsRepository):
         update_values = dict(values)
         update_values.update(
             {
-                "row_version": TargetMonitorEntity.row_version + 1,
+                "row_version": TargetSourceBindingEntity.row_version + 1,
                 "updated_at": datetime.now(UTC),
             }
         )
         statement = (
-            update(TargetMonitorEntity)
+            update(TargetSourceBindingEntity)
             .where(
-                TargetMonitorEntity.target_monitor_id == target_monitor_id,
-                TargetMonitorEntity.target_id == target_id,
-                TargetMonitorEntity.row_version == expected_version,
+                TargetSourceBindingEntity.target_source_binding_id == target_source_binding_id,
+                TargetSourceBindingEntity.target_id == target_id,
+                TargetSourceBindingEntity.row_version == expected_version,
             )
             .values(**update_values)
             .execution_options(synchronize_session=False)
@@ -343,10 +343,10 @@ class TargetRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def reduce_monitor_health(
+    async def reduce_source_binding_health(
         self,
         *,
-        target_monitor_id: UUID,
+        target_source_binding_id: UUID,
         expected_config_version: int,
         expected_health_version: int,
         health_status: str,
@@ -355,20 +355,20 @@ class TargetRepository(AIOpsRepository):
     ) -> bool:
         self._check_active()
         statement = (
-            update(TargetMonitorEntity)
+            update(TargetSourceBindingEntity)
             .where(
-                TargetMonitorEntity.target_monitor_id
-                == target_monitor_id,
-                TargetMonitorEntity.row_version
+                TargetSourceBindingEntity.target_source_binding_id
+                == target_source_binding_id,
+                TargetSourceBindingEntity.row_version
                 == expected_config_version,
-                TargetMonitorEntity.health_version
+                TargetSourceBindingEntity.health_version
                 == expected_health_version,
             )
             .values(
                 health_status=health_status,
                 last_health_check_at=checked_at,
                 last_error_code=last_error_code,
-                health_version=TargetMonitorEntity.health_version + 1,
+                health_version=TargetSourceBindingEntity.health_version + 1,
             )
             .execution_options(synchronize_session=False)
         )

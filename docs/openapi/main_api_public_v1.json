@@ -21,6 +21,11 @@
             ],
             "title": "Description"
           },
+          "diagnostic_source_id": {
+            "format": "uuid",
+            "title": "Diagnostic Source Id",
+            "type": "string"
+          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -64,11 +69,6 @@
             "title": "Models",
             "type": "object"
           },
-          "monitor_source_id": {
-            "format": "uuid",
-            "title": "Monitor Source Id",
-            "type": "string"
-          },
           "policy_id": {
             "format": "uuid",
             "title": "Policy Id",
@@ -98,7 +98,7 @@
         },
         "required": [
           "display_name",
-          "monitor_source_id",
+          "diagnostic_source_id",
           "policy_id"
         ],
         "title": "AIOpsAgentCreatePayload",
@@ -195,6 +195,18 @@
             ],
             "title": "Description"
           },
+          "diagnostic_source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Source Id"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -263,18 +275,6 @@
               }
             ],
             "title": "Models"
-          },
-          "monitor_source_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Monitor Source Id"
           },
           "policy_id": {
             "anyOf": [
@@ -2890,10 +2890,493 @@
       "DatabaseType": {
         "enum": [
           "ORACLE",
-          "MYSQL"
+          "MYSQL",
+          "POSTGRESQL"
         ],
         "title": "DatabaseType",
         "type": "string"
+      },
+      "DiagnosticSourceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_id": {
+            "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+            "title": "Adapter Id",
+            "type": "string"
+          },
+          "adapter_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
+          "declared_capabilities": {
+            "additionalProperties": true,
+            "title": "Declared Capabilities",
+            "type": "object"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_type": {
+            "pattern": "^[A-Z][A-Z0-9_.-]{1,63}$",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "webhook_credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Credentials",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "display_name",
+          "source_type",
+          "adapter_id",
+          "adapter_version"
+        ],
+        "title": "DiagnosticSourceCreate",
+        "type": "object"
+      },
+      "DiagnosticSourceDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_id": {
+            "title": "Adapter Id",
+            "type": "string"
+          },
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "declared_capabilities": {
+            "additionalProperties": true,
+            "title": "Declared Capabilities",
+            "type": "object"
+          },
+          "discovered_capabilities": {
+            "additionalProperties": true,
+            "title": "Discovered Capabilities",
+            "type": "object"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "health_check_pending": {
+            "title": "Health Check Pending",
+            "type": "boolean"
+          },
+          "health_status": {
+            "enum": [
+              "UNKNOWN",
+              "HEALTHY",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Health Status",
+            "type": "string"
+          },
+          "health_version": {
+            "minimum": 1.0,
+            "title": "Health Version",
+            "type": "integer"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_health_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Health Check At"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretRefStatus"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tls_profile": {
+            "$ref": "#/components/schemas/SecretRefStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          },
+          "webhook_configured": {
+            "title": "Webhook Configured",
+            "type": "boolean"
+          },
+          "webhook_secret": {
+            "$ref": "#/components/schemas/SecretRefStatus"
+          }
+        },
+        "required": [
+          "source_id",
+          "display_name",
+          "source_type",
+          "adapter_id",
+          "adapter_version",
+          "status",
+          "health_status",
+          "health_check_pending",
+          "row_version",
+          "updated_at",
+          "secret",
+          "webhook_secret",
+          "tls_profile",
+          "declared_capabilities",
+          "discovered_capabilities",
+          "config",
+          "webhook_configured",
+          "health_version",
+          "created_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "DiagnosticSourceDetail",
+        "type": "object"
+      },
+      "DiagnosticSourcePage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticSourceSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "DiagnosticSourcePage",
+        "type": "object"
+      },
+      "DiagnosticSourcePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapter Version"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
+          "declared_capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Capabilities"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "webhook_credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Credentials",
+            "writeOnly": true
+          }
+        },
+        "title": "DiagnosticSourcePatch",
+        "type": "object"
+      },
+      "DiagnosticSourceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter_id": {
+            "title": "Adapter Id",
+            "type": "string"
+          },
+          "adapter_version": {
+            "title": "Adapter Version",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "health_check_pending": {
+            "title": "Health Check Pending",
+            "type": "boolean"
+          },
+          "health_status": {
+            "enum": [
+              "UNKNOWN",
+              "HEALTHY",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Health Status",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "display_name",
+          "source_type",
+          "adapter_id",
+          "adapter_version",
+          "status",
+          "health_status",
+          "health_check_pending",
+          "row_version",
+          "updated_at"
+        ],
+        "title": "DiagnosticSourceSummary",
+        "type": "object"
       },
       "DifyRetrievalRequest": {
         "additionalProperties": false,
@@ -4954,729 +5437,6 @@
         "title": "ModelCatalogItem",
         "type": "object"
       },
-      "MonitorBindingCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "external_target_key": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "External Target Key",
-            "type": "string"
-          },
-          "mapping_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mapping Overrides"
-          },
-          "metric_scope": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metric Scope"
-          },
-          "priority": {
-            "default": 100,
-            "minimum": 0.0,
-            "title": "Priority",
-            "type": "integer"
-          },
-          "role": {
-            "default": "PRIMARY",
-            "enum": [
-              "PRIMARY",
-              "SUPPLEMENTARY"
-            ],
-            "title": "Role",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_id",
-          "external_target_key"
-        ],
-        "title": "MonitorBindingCreate",
-        "type": "object"
-      },
-      "MonitorBindingPatch": {
-        "additionalProperties": false,
-        "properties": {
-          "external_target_key": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Target Key"
-          },
-          "mapping_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mapping Overrides"
-          },
-          "metric_scope": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metric Scope"
-          },
-          "priority": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Priority"
-          },
-          "role": {
-            "anyOf": [
-              {
-                "enum": [
-                  "PRIMARY",
-                  "SUPPLEMENTARY"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Role"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "MonitorBindingPatch",
-        "type": "object"
-      },
-      "MonitorBindingView": {
-        "additionalProperties": false,
-        "properties": {
-          "binding_id": {
-            "format": "uuid",
-            "title": "Binding Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "external_target_key": {
-            "title": "External Target Key",
-            "type": "string"
-          },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
-            ],
-            "title": "Health Status",
-            "type": "string"
-          },
-          "mapping_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mapping Overrides"
-          },
-          "metric_scope": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metric Scope"
-          },
-          "priority": {
-            "title": "Priority",
-            "type": "integer"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "binding_id",
-          "target_id",
-          "source_id",
-          "external_target_key",
-          "role",
-          "priority",
-          "status",
-          "health_status",
-          "row_version",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "MonitorBindingView",
-        "type": "object"
-      },
-      "MonitorSourceCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "additionalProperties": true,
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "credentials": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credentials",
-            "writeOnly": true
-          },
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "endpoint": {
-            "format": "uri",
-            "maxLength": 2083,
-            "minLength": 1,
-            "title": "Endpoint",
-            "type": "string"
-          },
-          "prometheus_instance": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prometheus Instance"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_type": {
-            "enum": [
-              "PROMETHEUS",
-              "ZABBIX",
-              "OEM"
-            ],
-            "title": "Source Type",
-            "type": "string"
-          },
-          "webhook_credentials": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Credentials",
-            "writeOnly": true
-          }
-        },
-        "required": [
-          "display_name",
-          "source_type",
-          "endpoint"
-        ],
-        "title": "MonitorSourceCreate",
-        "type": "object"
-      },
-      "MonitorSourceDetail": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "additionalProperties": true,
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
-            "title": "Created By",
-            "type": "string"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "endpoint": {
-            "title": "Endpoint",
-            "type": "string"
-          },
-          "health_check_pending": {
-            "title": "Health Check Pending",
-            "type": "boolean"
-          },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
-            ],
-            "title": "Health Status",
-            "type": "string"
-          },
-          "health_version": {
-            "minimum": 1.0,
-            "title": "Health Version",
-            "type": "integer"
-          },
-          "last_error_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error Code"
-          },
-          "last_health_check_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Health Check At"
-          },
-          "prometheus_instance": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prometheus Instance"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          },
-          "source_type": {
-            "title": "Source Type",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "tls_profile": {
-            "$ref": "#/components/schemas/SecretRefStatus"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "updated_by": {
-            "title": "Updated By",
-            "type": "string"
-          },
-          "webhook_configured": {
-            "title": "Webhook Configured",
-            "type": "boolean"
-          },
-          "webhook_secret": {
-            "$ref": "#/components/schemas/SecretRefStatus"
-          }
-        },
-        "required": [
-          "source_id",
-          "display_name",
-          "source_type",
-          "status",
-          "health_status",
-          "health_check_pending",
-          "row_version",
-          "updated_at",
-          "endpoint",
-          "secret",
-          "webhook_secret",
-          "tls_profile",
-          "capabilities",
-          "webhook_configured",
-          "health_version",
-          "created_at",
-          "created_by",
-          "updated_by"
-        ],
-        "title": "MonitorSourceDetail",
-        "type": "object"
-      },
-      "MonitorSourcePage": {
-        "additionalProperties": false,
-        "properties": {
-          "has_more": {
-            "default": false,
-            "title": "Has More",
-            "type": "boolean"
-          },
-          "items": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/MonitorSourceSummary"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "MonitorSourcePage",
-        "type": "object"
-      },
-      "MonitorSourcePatch": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capabilities"
-          },
-          "credentials": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credentials",
-            "writeOnly": true
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "endpoint": {
-            "anyOf": [
-              {
-                "format": "uri",
-                "maxLength": 2083,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint"
-          },
-          "prometheus_instance": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prometheus Instance"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "webhook_credentials": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Webhook Credentials",
-            "writeOnly": true
-          }
-        },
-        "title": "MonitorSourcePatch",
-        "type": "object"
-      },
-      "MonitorSourceSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "health_check_pending": {
-            "title": "Health Check Pending",
-            "type": "boolean"
-          },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
-            ],
-            "title": "Health Status",
-            "type": "string"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          },
-          "source_type": {
-            "title": "Source Type",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_id",
-          "display_name",
-          "source_type",
-          "status",
-          "health_status",
-          "health_check_pending",
-          "row_version",
-          "updated_at"
-        ],
-        "title": "MonitorSourceSummary",
-        "type": "object"
-      },
-      "MonitoringEventReceipt": {
-        "additionalProperties": false,
-        "properties": {
-          "accepted": {
-            "title": "Accepted",
-            "type": "boolean"
-          },
-          "duplicate": {
-            "default": false,
-            "title": "Duplicate",
-            "type": "boolean"
-          },
-          "event_count": {
-            "minimum": 0.0,
-            "title": "Event Count",
-            "type": "integer"
-          },
-          "receipt_id": {
-            "format": "uuid",
-            "title": "Receipt Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "receipt_id",
-          "accepted",
-          "event_count"
-        ],
-        "title": "MonitoringEventReceipt",
-        "type": "object"
-      },
       "NotificationPreferenceUpdate": {
         "properties": {
           "enabled": {
@@ -5733,6 +5493,158 @@
           "expected_row_version"
         ],
         "title": "NotificationReadUpdate",
+        "type": "object"
+      },
+      "NotificationSubscriptionList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/NotificationSubscriptionView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "NotificationSubscriptionList",
+        "type": "object"
+      },
+      "NotificationSubscriptionUpsert": {
+        "additionalProperties": false,
+        "description": "当前用户针对一个 Target 的站内主动分享订阅。",
+        "properties": {
+          "minimum_severity": {
+            "default": "HIGH",
+            "enum": [
+              "INFO",
+              "WARNING",
+              "HIGH",
+              "CRITICAL"
+            ],
+            "title": "Minimum Severity",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "stages": {
+            "default": [
+              "SITUATION_DETECTED",
+              "DIAGNOSIS_STARTED",
+              "REPORT_READY",
+              "SITUATION_RECOVERED"
+            ],
+            "items": {
+              "enum": [
+                "SITUATION_DETECTED",
+                "DIAGNOSIS_STARTED",
+                "REPORT_READY",
+                "SITUATION_RECOVERED"
+              ],
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "title": "NotificationSubscriptionUpsert",
+        "type": "object"
+      },
+      "NotificationSubscriptionView": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "const": "IN_APP",
+            "default": "IN_APP",
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "minimum_severity": {
+            "enum": [
+              "INFO",
+              "WARNING",
+              "HIGH",
+              "CRITICAL"
+            ],
+            "title": "Minimum Severity",
+            "type": "string"
+          },
+          "recipient_actor_id": {
+            "title": "Recipient Actor Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "enum": [
+                "SITUATION_DETECTED",
+                "DIAGNOSIS_STARTED",
+                "REPORT_READY",
+                "SITUATION_RECOVERED"
+              ],
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subscription_id": {
+            "format": "uuid",
+            "title": "Subscription Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id",
+          "target_id",
+          "recipient_actor_id",
+          "minimum_severity",
+          "stages",
+          "status",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "NotificationSubscriptionView",
         "type": "object"
       },
       "OperationWatchUpdate": {
@@ -5985,6 +5897,24 @@
               }
             ]
           },
+          "interaction_mode": {
+            "enum": [
+              "INTERACTIVE",
+              "AUTONOMOUS"
+            ],
+            "title": "Interaction Mode",
+            "type": "string"
+          },
+          "investigation_mode": {
+            "enum": [
+              "INCIDENT",
+              "ON_DEMAND",
+              "INSPECTION",
+              "VERIFICATION"
+            ],
+            "title": "Investigation Mode",
+            "type": "string"
+          },
           "ops_run_id": {
             "format": "uuid",
             "title": "Ops Run Id",
@@ -6051,6 +5981,8 @@
           "agent_id",
           "target_id",
           "trigger_type",
+          "interaction_mode",
+          "investigation_mode",
           "status",
           "row_version",
           "created_at"
@@ -7779,6 +7711,42 @@
         "title": "SemanticModelValidationRequest",
         "type": "object"
       },
+      "SignalEventReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "duplicate": {
+            "default": false,
+            "title": "Duplicate",
+            "type": "boolean"
+          },
+          "event_count": {
+            "minimum": 0.0,
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "receipt_id": {
+            "format": "uuid",
+            "title": "Receipt Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "accepted",
+          "event_count"
+        ],
+        "title": "SignalEventReceipt",
+        "type": "object"
+      },
       "SlackEventReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -7814,6 +7782,319 @@
           "duplicate"
         ],
         "title": "SlackEventReceipt",
+        "type": "object"
+      },
+      "SourceBindingCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Scope"
+          },
+          "mapping_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Overrides"
+          },
+          "priority": {
+            "default": 100,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "query_budget": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Budget"
+          },
+          "role": {
+            "default": "PRIMARY",
+            "enum": [
+              "PRIMARY",
+              "SUPPLEMENTARY",
+              "FALLBACK"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_locator": {
+            "additionalProperties": true,
+            "title": "Source Locator",
+            "type": "object"
+          },
+          "source_locator_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Source Locator Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_locator_key",
+          "source_locator"
+        ],
+        "title": "SourceBindingCreate",
+        "type": "object"
+      },
+      "SourceBindingPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Scope"
+          },
+          "mapping_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Overrides"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "query_budget": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Budget"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PRIMARY",
+                  "SUPPLEMENTARY",
+                  "FALLBACK"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_locator": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Locator"
+          },
+          "source_locator_key": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Locator Key"
+          }
+        },
+        "title": "SourceBindingPatch",
+        "type": "object"
+      },
+      "SourceBindingView": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "capability_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Scope"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "health_status": {
+            "enum": [
+              "UNKNOWN",
+              "HEALTHY",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Health Status",
+            "type": "string"
+          },
+          "mapping_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Overrides"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "query_budget": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Budget"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_locator": {
+            "additionalProperties": true,
+            "title": "Source Locator",
+            "type": "object"
+          },
+          "source_locator_key": {
+            "title": "Source Locator Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "target_id",
+          "source_id",
+          "source_locator_key",
+          "source_locator",
+          "role",
+          "priority",
+          "status",
+          "health_status",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SourceBindingView",
         "type": "object"
       },
       "SourceCreatePayload": {
@@ -9421,6 +9702,520 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/diagnostic-sources": {
+      "get": {
+        "operationId": "list_diagnostic_sources_api_v1_apps_aiops_diagnostic_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourcePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Diagnostic Sources",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "post": {
+        "operationId": "create_diagnostic_source_api_v1_apps_aiops_diagnostic_sources_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosticSourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}": {
+      "delete": {
+        "operationId": "delete_diagnostic_source_api_v1_apps_aiops_diagnostic_sources__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "get": {
+        "operationId": "get_diagnostic_source_api_v1_apps_aiops_diagnostic_sources__source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_diagnostic_source_api_v1_apps_aiops_diagnostic_sources__source_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosticSourcePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/health-checks": {
+      "post": {
+        "operationId": "request_diagnostic_source_health_check_api_v1_apps_aiops_diagnostic_sources__source_id__health_checks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Diagnostic Source Health Check",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/webhook-key:rotate": {
+      "post": {
+        "operationId": "rotate_diagnostic_source_webhook_key_api_v1_apps_aiops_diagnostic_sources__source_id__webhook_key_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookKeyRotation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Diagnostic Source Webhook Key",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/{command}": {
+      "post": {
+        "operationId": "command_diagnostic_source_api_v1_apps_aiops_diagnostic_sources__source_id___command__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "command",
+            "required": true,
+            "schema": {
+              "enum": [
+                "enable",
+                "disable"
+              ],
+              "title": "Command",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Command Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/hitl/{hitl_id}": {
       "get": {
         "operationId": "get_hitl_input_api_v1_apps_aiops_hitl__hitl_id__get",
@@ -10376,154 +11171,38 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/monitor-sources": {
+    "/api/v1/apps/aiops/notification-subscriptions": {
       "get": {
-        "operationId": "list_monitor_sources_api_v1_apps_aiops_monitor_sources_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
+        "operationId": "list_notification_subscriptions_api_v1_apps_aiops_notification_subscriptions_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorSourcePage"
+                  "$ref": "#/components/schemas/NotificationSubscriptionList"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
-        "summary": "List Monitor Sources",
-        "tags": [
-          "AIOps"
-        ]
-      },
-      "post": {
-        "operationId": "create_monitor_source_api_v1_apps_aiops_monitor_sources_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MonitorSourceCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MonitorSourceDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Monitor Source",
+        "summary": "List Notification Subscriptions",
         "tags": [
           "AIOps"
         ]
       }
     },
-    "/api/v1/apps/aiops/monitor-sources/{source_id}": {
+    "/api/v1/apps/aiops/notification-subscriptions/targets/{target_id}": {
       "delete": {
-        "operationId": "delete_monitor_source_api_v1_apps_aiops_monitor_sources__source_id__delete",
+        "operationId": "disable_notification_subscription_api_v1_apps_aiops_notification_subscriptions_targets__target_id__delete",
         "parameters": [
           {
             "in": "path",
-            "name": "source_id",
+            "name": "target_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
+              "title": "Target Id",
               "type": "string"
             }
           },
@@ -10559,62 +11238,21 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Monitor Source",
+        "summary": "Disable Notification Subscription",
         "tags": [
           "AIOps"
         ]
       },
-      "get": {
-        "operationId": "get_monitor_source_api_v1_apps_aiops_monitor_sources__source_id__get",
+      "put": {
+        "operationId": "upsert_notification_subscription_api_v1_apps_aiops_notification_subscriptions_targets__target_id__put",
         "parameters": [
           {
             "in": "path",
-            "name": "source_id",
+            "name": "target_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MonitorSourceDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Monitor Source",
-        "tags": [
-          "AIOps"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_monitor_source_api_v1_apps_aiops_monitor_sources__source_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
+              "title": "Target Id",
               "type": "string"
             }
           },
@@ -10639,7 +11277,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MonitorSourcePatch"
+                "$ref": "#/components/schemas/NotificationSubscriptionUpsert"
               }
             }
           },
@@ -10650,7 +11288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorSourceDetail"
+                  "$ref": "#/components/schemas/NotificationSubscriptionView"
                 }
               }
             },
@@ -10667,224 +11305,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Patch Monitor Source",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/monitor-sources/{source_id}/health-checks": {
-      "post": {
-        "operationId": "request_monitor_health_check_api_v1_apps_aiops_monitor_sources__source_id__health_checks_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthCheckReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Request Monitor Health Check",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/monitor-sources/{source_id}/webhook-key:rotate": {
-      "post": {
-        "operationId": "rotate_monitor_webhook_key_api_v1_apps_aiops_monitor_sources__source_id__webhook_key_rotate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookKeyRotation"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Rotate Monitor Webhook Key",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/monitor-sources/{source_id}/{command}": {
-      "post": {
-        "operationId": "command_monitor_source_api_v1_apps_aiops_monitor_sources__source_id___command__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "command",
-            "required": true,
-            "schema": {
-              "enum": [
-                "enable",
-                "disable"
-              ],
-              "title": "Command",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MonitorSourceDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Command Monitor Source",
+        "summary": "Upsert Notification Subscription",
         "tags": [
           "AIOps"
         ]
@@ -13105,9 +13526,9 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings": {
+    "/api/v1/apps/aiops/targets/{target_id}/source-bindings": {
       "get": {
-        "operationId": "list_monitor_bindings_api_v1_apps_aiops_targets__target_id__monitor_bindings_get",
+        "operationId": "list_source_bindings_api_v1_apps_aiops_targets__target_id__source_bindings_get",
         "parameters": [
           {
             "in": "path",
@@ -13126,9 +13547,9 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/MonitorBindingView"
+                    "$ref": "#/components/schemas/SourceBindingView"
                   },
-                  "title": "Response List Monitor Bindings Api V1 Apps Aiops Targets  Target Id  Monitor Bindings Get",
+                  "title": "Response List Source Bindings Api V1 Apps Aiops Targets  Target Id  Source Bindings Get",
                   "type": "array"
                 }
               }
@@ -13146,13 +13567,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Monitor Bindings",
+        "summary": "List Source Bindings",
         "tags": [
           "AIOps"
         ]
       },
       "post": {
-        "operationId": "create_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings_post",
+        "operationId": "create_source_binding_api_v1_apps_aiops_targets__target_id__source_bindings_post",
         "parameters": [
           {
             "in": "path",
@@ -13178,7 +13599,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MonitorBindingCreate"
+                "$ref": "#/components/schemas/SourceBindingCreate"
               }
             }
           },
@@ -13189,7 +13610,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorBindingView"
+                  "$ref": "#/components/schemas/SourceBindingView"
                 }
               }
             },
@@ -13206,15 +13627,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Monitor Binding",
+        "summary": "Create Source Binding",
         "tags": [
           "AIOps"
         ]
       }
     },
-    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings/{binding_id}": {
+    "/api/v1/apps/aiops/targets/{target_id}/source-bindings/{binding_id}": {
       "patch": {
-        "operationId": "patch_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings__binding_id__patch",
+        "operationId": "patch_source_binding_api_v1_apps_aiops_targets__target_id__source_bindings__binding_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -13257,7 +13678,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MonitorBindingPatch"
+                "$ref": "#/components/schemas/SourceBindingPatch"
               }
             }
           },
@@ -13268,7 +13689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorBindingView"
+                  "$ref": "#/components/schemas/SourceBindingView"
                 }
               }
             },
@@ -13285,15 +13706,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Patch Monitor Binding",
+        "summary": "Patch Source Binding",
         "tags": [
           "AIOps"
         ]
       }
     },
-    "/api/v1/apps/aiops/targets/{target_id}/monitor-bindings/{binding_id}/{command}": {
+    "/api/v1/apps/aiops/targets/{target_id}/source-bindings/{binding_id}/{command}": {
       "post": {
-        "operationId": "command_monitor_binding_api_v1_apps_aiops_targets__target_id__monitor_bindings__binding_id___command__post",
+        "operationId": "command_source_binding_api_v1_apps_aiops_targets__target_id__source_bindings__binding_id___command__post",
         "parameters": [
           {
             "in": "path",
@@ -13359,7 +13780,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorBindingView"
+                  "$ref": "#/components/schemas/SourceBindingView"
                 }
               }
             },
@@ -13376,7 +13797,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Command Monitor Binding",
+        "summary": "Command Source Binding",
         "tags": [
           "AIOps"
         ]
@@ -21146,6 +21567,48 @@
         ]
       }
     },
+    "/api/v1/integrations/aiops/signals/{webhook_key}": {
+      "post": {
+        "operationId": "receive_signal_event_api_v1_integrations_aiops_signals__webhook_key__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_key",
+            "required": true,
+            "schema": {
+              "title": "Webhook Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalEventReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Signal Event",
+        "tags": [
+          "AIOps Signal Integrations"
+        ]
+      }
+    },
     "/api/v1/integrations/dify/retrieval": {
       "post": {
         "operationId": "retrieve_for_dify_api_v1_integrations_dify_retrieval_post",
@@ -21192,48 +21655,6 @@
         "summary": "Retrieve For Dify",
         "tags": [
           "Dify Integration"
-        ]
-      }
-    },
-    "/api/v1/integrations/monitoring/{webhook_key}/events": {
-      "post": {
-        "operationId": "receive_monitor_event_api_v1_integrations_monitoring__webhook_key__events_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "webhook_key",
-            "required": true,
-            "schema": {
-              "title": "Webhook Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MonitoringEventReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Receive Monitor Event",
-        "tags": [
-          "Monitoring Integrations"
         ]
       }
     },

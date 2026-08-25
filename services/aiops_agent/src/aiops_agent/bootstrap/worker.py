@@ -7,7 +7,7 @@ from pathlib import Path
 import aiohttp
 from loguru import logger
 
-from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.adapters.diagnostic_sources import DiagnosticSourceAdapterRegistry
 from aiops_agent.actions import ActionRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
@@ -25,8 +25,8 @@ from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
-from aiops_agent.application.monitoring import MonitorHealthCheckService
-from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
+from aiops_agent.application.diagnostic_sources import DiagnosticSourceHealthCheckService
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
@@ -101,7 +101,7 @@ def create_aiops_worker_probe(
         )
         # 本地资源校验失败时不应提前创建网络会话。
         client_session = aiohttp.ClientSession()
-        provider_registry = MonitorProviderRegistry(
+        diagnostic_source_registry = DiagnosticSourceAdapterRegistry(
             session=client_session,
             request_timeout_seconds=(
                 resolved.monitoring.provider_timeout_seconds
@@ -133,7 +133,7 @@ def create_aiops_worker_probe(
             session=client_session,
         )
         handler_registry = create_runtime_handler_registry(
-            monitor_provider_registry=provider_registry,
+            diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
             db_executor_client=db_executor_client,
             diagnostic_grant_codec=diagnostic_grant_codec,
@@ -192,9 +192,9 @@ def create_aiops_worker_probe(
             sink=AIOpsDomainOutboxSink(
                 runtime_service=runtime_service,
                 fallback=LoggingOutboxSink(),
-                monitor_health_service=MonitorHealthCheckService(
+                diagnostic_source_health_service=DiagnosticSourceHealthCheckService(
                     uow_factory=runtime.uow_factory,
-                    provider_registry=provider_registry,
+                    diagnostic_source_registry=diagnostic_source_registry,
                     secret_store=secret_store,
                 ),
                 db_executor_client=db_executor_client,

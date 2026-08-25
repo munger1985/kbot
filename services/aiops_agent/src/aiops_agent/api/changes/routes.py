@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -19,6 +19,7 @@ from platform_core.contracts.aiops import (
     ManualResultCommand,
     ManualResultReceipt,
     ProposalView,
+    ProposalPage,
     RejectionCommand,
 )
 
@@ -41,6 +42,22 @@ def _scope(request: Request, context: AuthContext) -> int:
     if context.domain_id is None:
         raise RuntimeError("AIOps 请求缺少 Domain")
     return int(context.domain_id)
+
+
+@router.get("", response_model=ProposalPage)
+async def list_proposals(
+    request: Request, service: Service, context: Auth,
+    target_id: UUID | None = None, status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ProposalPage:
+    require_service_scope(request, "aiops.approve")
+    from aiops_agent.application.configuration.common import ConfigurationScope
+    return await service.list_proposals(
+        scope=ConfigurationScope.from_auth(auth_context=context),
+        target_id=target_id, status=status,
+        agent_ids=tuple(context.authorized_agent_ids), cursor=cursor, limit=limit,
+    )
 
 
 @router.get("/{proposal_id}", response_model=ProposalView)

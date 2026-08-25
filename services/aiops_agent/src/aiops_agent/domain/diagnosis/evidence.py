@@ -1,4 +1,4 @@
-"""把监控和数据库 Artifact 归一为可引用事实。"""
+"""把指标、事件、日志、数据库和人工 Artifact 归一为可引用事实。"""
 
 from __future__ import annotations
 
@@ -215,7 +215,7 @@ def normalize_evidence_artifacts(
                         _fact(
                             artifact_id=artifact_id,
                             pointer=pointer,
-                            source_type="MONITOR_METRIC",
+                            source_type="METRIC_OBSERVATION",
                             source_group_id=source_group,
                             target_id=target_id,
                             fact_type=f"{metric['metric_code']}.{name}",
@@ -277,7 +277,7 @@ def normalize_evidence_artifacts(
                                     f"/observations/{metric_index}/series/"
                                     f"{series_index}/points/-1"
                                 ),
-                                source_type="MONITOR_METRIC",
+                                source_type="METRIC_OBSERVATION",
                                 source_group_id=source_group,
                                 target_id=target_id,
                                 fact_type=(
@@ -306,7 +306,7 @@ def normalize_evidence_artifacts(
                     _fact(
                         artifact_id=artifact_id,
                         pointer=f"/active_alerts/{alert_index}",
-                        source_type="MONITOR_ALERT",
+                        source_type="EVENT_OBSERVATION",
                         source_group_id=source_group,
                         target_id=target_id,
                         fact_type="monitor.alert.active",
@@ -318,6 +318,44 @@ def normalize_evidence_artifacts(
                                 or alert.get("name")
                                 or "未命名告警"
                             )
+                        ),
+                    )
+                )
+            gaps.extend(payload.get("gaps", []))
+        elif schema == "LOG_EVIDENCE_SET.v1":
+            source_group = f"log:{artifact_id}"
+            flags = ("TRUNCATED",) if payload.get("truncated") else ()
+            for entry_index, entry in enumerate(payload.get("entries", [])):
+                labels = {
+                    str(key): str(value)
+                    for key, value in entry.get("labels", {}).items()
+                }
+                facts.append(
+                    _fact(
+                        artifact_id=artifact_id,
+                        pointer=f"/entries/{entry_index}",
+                        source_type="LOG_ENTRY",
+                        source_group_id=source_group,
+                        target_id=target_id,
+                        fact_type="log.entry",
+                        value={
+                            "line": entry["line"],
+                            "labels": labels,
+                            "structured_fields": entry.get(
+                                "structured_fields", {}
+                            ),
+                        },
+                        dimensions={
+                            **labels,
+                            "source_id": str(payload["source_id"]),
+                            "binding_id": str(payload["binding_id"]),
+                        },
+                        window_start=payload.get("window_start"),
+                        window_end=payload.get("window_end"),
+                        captured_at=entry.get("observed_at"),
+                        quality_flags=flags,
+                        summary=(
+                            "日志记录：" + str(entry["line"])
                         ),
                     )
                 )

@@ -39,8 +39,9 @@ class EvidenceFact(_DiagnosisContract):
     source_artifact_id: str
     source_json_pointer: str
     source_type: Literal[
-        "MONITOR_METRIC",
-        "MONITOR_ALERT",
+        "METRIC_OBSERVATION",
+        "EVENT_OBSERVATION",
+        "LOG_ENTRY",
         "DATABASE_OBSERVATION",
         "USER_RESULT",
         "KNOWLEDGE_CITATION",
@@ -268,9 +269,9 @@ class SolutionDraft(_DiagnosisContract):
 
 
 class DirectQuestionAnswer(_DiagnosisContract):
-    """针对监控事实查询生成的可追溯直接答案。"""
+    """针对已验证证据生成的可追溯直接答案。"""
 
-    answer_kind: Literal["MONITOR_FACT"]
+    answer_kind: Literal["EVIDENCE_FACT"]
     status: Literal["ANSWERED", "PARTIAL"]
     question_summary: str = Field(min_length=1, max_length=2000)
     answer_text: str = Field(min_length=1, max_length=3000)

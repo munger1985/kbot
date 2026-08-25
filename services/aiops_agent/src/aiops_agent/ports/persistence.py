@@ -11,10 +11,10 @@ if TYPE_CHECKING:
         ChangeProposalEntity,
         InboxEntity,
         InspectionPlanEntity,
-        MonitorSourceEntity,
-        OpsAlertEntity,
+        DiagnosticSourceEntity,
+        SituationEntity,
         OpsArtifactEntity,
-        OpsEventEntity,
+        SignalEventEntity,
         OpsRunEntity,
         OpsRunEventEntity,
         OpsTaskEntity,
@@ -36,20 +36,20 @@ class TargetRepositoryPort(Protocol):
     ) -> TargetEntity | None: ...
 
 
-class MonitorSourceRepositoryPort(Protocol):
+class DiagnosticSourceRepositoryPort(Protocol):
     async def add(
-        self, entity: MonitorSourceEntity
-    ) -> MonitorSourceEntity: ...
+        self, entity: DiagnosticSourceEntity
+    ) -> DiagnosticSourceEntity: ...
 
     async def get_scoped(
         self,
         *,
-        monitor_source_id: UUID,
+        diagnostic_source_id: UUID,
         domain_id: int,
         lock: bool = False,
-    ) -> MonitorSourceEntity | None: ...
+    ) -> DiagnosticSourceEntity | None: ...
 
-    async def delete_source(self, entity: MonitorSourceEntity) -> None: ...
+    async def delete_source(self, entity: DiagnosticSourceEntity) -> None: ...
 
 
 class PolicyRepositoryPort(Protocol):
@@ -64,10 +64,10 @@ class PolicyRepositoryPort(Protocol):
     ) -> PolicyEntity | None: ...
 
 
-class AlertRepositoryPort(Protocol):
-    async def add_event(self, entity: OpsEventEntity) -> OpsEventEntity: ...
+class SituationRepositoryPort(Protocol):
+    async def add_event(self, entity: SignalEventEntity) -> SignalEventEntity: ...
 
-    async def add_alert(self, entity: OpsAlertEntity) -> OpsAlertEntity: ...
+    async def add_situation(self, entity: SituationEntity) -> SituationEntity: ...
 
 
 class OpsRunRepositoryPort(Protocol):
@@ -148,9 +148,9 @@ class OutboxRepositoryPort(Protocol):
 
 class AIOpsUnitOfWorkPort(Protocol):
     targets: TargetRepositoryPort
-    monitor_sources: MonitorSourceRepositoryPort
+    diagnostic_sources: DiagnosticSourceRepositoryPort
     policies: PolicyRepositoryPort
-    alerts: AlertRepositoryPort
+    situations: SituationRepositoryPort
     runs: OpsRunRepositoryPort
     changes: ChangeRepositoryPort
     inspections: InspectionRepositoryPort

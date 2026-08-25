@@ -41,7 +41,7 @@ class ManualSqlRequest(_HitlContract):
     round_no: int = Field(ge=1, le=10)
     target_id: str
     target_display_name: str
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     db_version: str
     expected_instance_identity: dict[str, str]
     evidence_gap_refs: tuple[str, ...] = ()
@@ -95,7 +95,7 @@ class ManualSqlCandidate(_HitlContract):
     schema_version: Literal["MANUAL_SQL_CANDIDATE.v1"] = (
         "MANUAL_SQL_CANDIDATE.v1"
     )
-    db_type: Literal["ORACLE", "MYSQL"]
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     purpose: str = Field(min_length=1, max_length=1000)
     sql_text: str = Field(min_length=1, max_length=20000)
     expected_columns: tuple[str, ...] = Field(min_length=1, max_length=64)

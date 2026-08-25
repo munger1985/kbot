@@ -19,7 +19,7 @@ class OpsConversationEntity(BaseEntity):
     agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     source_type: Mapped[str] = mapped_column(String(24), nullable=False, default="CHAT")
-    source_alert_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    source_situation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_report_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)

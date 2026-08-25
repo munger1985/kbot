@@ -340,6 +340,7 @@ def build_diagnosis_blueprint(
     *,
     binding_ids: tuple[str, ...],
     tool_ids: tuple[str, ...],
+    log_binding_ids: tuple[str, ...] = (),
 ) -> Blueprint:
     """组合监控、数据库基线和受约束模型诊断的一轮可恢复 DAG。"""
     observe_tasks = tuple(
@@ -357,6 +358,22 @@ def build_diagnosis_blueprint(
             priority=40,
         )
         for binding_id in sorted(binding_ids)
+    )
+    log_tasks = tuple(
+        TaskSpec(
+            task_key=f"log:{binding_id}",
+            task_type="OBSERVE",
+            handler_id="evidence.log-query",
+            handler_version="1",
+            input_schema_version="DIAGNOSIS_SCOPE.v1",
+            output_schema_version="LOG_EVIDENCE_SET.v1",
+            depends_on=("scope",),
+            input_artifact_keys=("scope",),
+            timeout_seconds=120,
+            max_attempts=3,
+            priority=45,
+        )
+        for binding_id in sorted(log_binding_ids)
     )
     ordered_tools = tuple(dict.fromkeys(tool_ids))
     diagnostic_tasks = []
@@ -386,7 +403,8 @@ def build_diagnosis_blueprint(
             )
         )
     source_keys = tuple(
-        item.task_key for item in (*observe_tasks, *diagnostic_tasks)
+        item.task_key
+        for item in (*observe_tasks, *log_tasks, *diagnostic_tasks)
     )
     evidence_dependencies = ("scope", *source_keys)
     return Blueprint(
@@ -404,6 +422,7 @@ def build_diagnosis_blueprint(
                 timeout_seconds=30,
             ),
             *observe_tasks,
+            *log_tasks,
             *diagnostic_tasks,
             TaskSpec(
                 task_key="diagnosis:evidence:r0",
@@ -619,12 +638,15 @@ def build_multi_round_diagnosis_blueprint(
     binding_ids: tuple[str, ...],
     tool_ids: tuple[str, ...],
     max_rounds: int,
+    log_binding_ids: tuple[str, ...] = (),
 ) -> Blueprint:
     """创建最多三轮的固定上限 DAG，未使用轮次由 Handler 安全短路。"""
     if not 1 <= max_rounds <= 3:
         raise BlueprintValidationError("诊断轮次上限必须位于 1 到 3")
     first = build_diagnosis_blueprint(
-        binding_ids=binding_ids, tool_ids=tool_ids
+        binding_ids=binding_ids,
+        log_binding_ids=log_binding_ids,
+        tool_ids=tool_ids,
     )
     baseline = []
     for task in first.tasks:
@@ -670,7 +692,11 @@ def build_multi_round_diagnosis_blueprint(
         task.task_key
         for task in baseline
         if task.output_schema_version
-        in {"OBSERVATION_SET.v1", "DATABASE_DIAGNOSTIC_RESULT.v1"}
+        in {
+            "OBSERVATION_SET.v1",
+            "LOG_EVIDENCE_SET.v1",
+            "DATABASE_DIAGNOSTIC_RESULT.v1",
+        }
     )
     identity_key = (
         ("diagnostic:db.instance.identity",)

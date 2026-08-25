@@ -204,7 +204,7 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('aiops:role_manage', 'aiops', '管理 AIOps 角色')
     INTO KBOT_PERMISSION VALUES ('aiops:operations_manage', 'aiops', '管理 AIOps 运行')
     INTO KBOT_PERMISSION VALUES ('aiops:target_manage', 'aiops', '管理诊断目标')
-    INTO KBOT_PERMISSION VALUES ('aiops:monitor_source_manage', 'aiops', '管理监控源')
+    INTO KBOT_PERMISSION VALUES ('aiops:diagnostic_source_manage', 'aiops', '管理诊断源')
     INTO KBOT_PERMISSION VALUES ('aiops:policy_manage', 'aiops', '管理诊断策略')
     INTO KBOT_PERMISSION VALUES ('aiops:plan_manage', 'aiops', '管理变更计划')
     INTO KBOT_PERMISSION VALUES ('aiops:agent_manage', 'aiops', '管理 AIOps Agent')
@@ -252,7 +252,7 @@ SELECT 'aiops', 'app_admin', PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID =
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'operator', PERMISSION_CODE FROM KBOT_PERMISSION
-WHERE PERMISSION_CODE IN ('aiops:use', 'aiops:operations_manage', 'aiops:target_manage', 'aiops:monitor_source_manage', 'aiops:policy_manage', 'aiops:plan_manage');
+WHERE PERMISSION_CODE IN ('aiops:use', 'aiops:operations_manage', 'aiops:target_manage', 'aiops:diagnostic_source_manage', 'aiops:policy_manage', 'aiops:plan_manage');
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'approver', PERMISSION_CODE FROM KBOT_PERMISSION

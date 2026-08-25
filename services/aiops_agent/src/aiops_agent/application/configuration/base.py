@@ -41,14 +41,17 @@ from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
     InspectionTargetEntity,
-    MonitorSourceEntity,
+    DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetMonitorEntity,
+    TargetSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.agent_catalog import AgentCatalogPort
+from aiops_agent.ports.diagnostic_source import (
+    DiagnosticSourceAdapterCatalogPort,
+)
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
@@ -64,14 +67,14 @@ from platform_core.contracts.aiops import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
-    MonitorSourceSummary,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
+    DiagnosticSourceSummary,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -109,6 +112,7 @@ class ConfigurationServiceBase:
         max_inspection_targets: int,
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
+        diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
     ):
         self._uow_factory = uow_factory
         self._cursor_codec = cursor_codec
@@ -120,6 +124,7 @@ class ConfigurationServiceBase:
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher
         self._managed_credentials = managed_credential_service
+        self._diagnostic_source_catalog = diagnostic_source_catalog
 
     async def _validate_secret_refs(self, *references: str | None) -> None:
         for reference in references:

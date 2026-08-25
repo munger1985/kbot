@@ -28,8 +28,10 @@ class OpsRunEntity(BaseEntity):
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     parent_delegation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     trigger_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    trigger_event_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    trigger_alert_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    trigger_signal_event_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    situation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    interaction_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    investigation_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     inspection_fire_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_proposal_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_result_artifact_id: Mapped[UUID | None] = mapped_column(

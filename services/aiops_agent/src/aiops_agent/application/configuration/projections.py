@@ -38,11 +38,11 @@ from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
     InspectionTargetEntity,
-    MonitorSourceEntity,
+    DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetMonitorEntity,
+    TargetSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.secret_store import SecretStorePort
@@ -60,14 +60,14 @@ from platform_core.contracts.aiops import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
-    MonitorSourceSummary,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
+    DiagnosticSourceSummary,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -92,6 +92,17 @@ def _secret_status(reference: str | None) -> SecretRefStatus:
         configured=True,
         provider=urlparse(reference).scheme,
         fingerprint=hashlib.sha256(reference.encode("utf-8")).hexdigest()[:16],
+    )
+
+
+def _managed_credential_status(credential_id: UUID | None) -> SecretRefStatus:
+    """只暴露托管凭据是否配置及不可逆指纹。"""
+    if credential_id is None:
+        return SecretRefStatus(configured=False)
+    return SecretRefStatus(
+        configured=True,
+        provider="managed",
+        fingerprint=hashlib.sha256(credential_id.bytes).hexdigest()[:16],
     )
 
 
@@ -157,7 +168,7 @@ def _agent_binding_view(entity: TargetBindingEntity) -> AgentBindingView:
         updated_at=entity.updated_at.astimezone(UTC),
     )
 
-def _monitor_summary(entity: MonitorSourceEntity) -> MonitorSourceSummary:
+def _diagnostic_source_summary(entity: DiagnosticSourceEntity) -> DiagnosticSourceSummary:
     pending = bool(
         entity.health_check_request_id
         and entity.health_check_requested_at
@@ -166,10 +177,12 @@ def _monitor_summary(entity: MonitorSourceEntity) -> MonitorSourceSummary:
             or entity.last_health_check_at < entity.health_check_requested_at
         )
     )
-    return MonitorSourceSummary(
-        source_id=entity.monitor_source_id,
+    return DiagnosticSourceSummary(
+        source_id=entity.diagnostic_source_id,
         display_name=entity.display_name,
         source_type=entity.source_type,
+        adapter_id=entity.adapter_id,
+        adapter_version=entity.adapter_version,
         status=entity.status,
         health_status=entity.health_status,
         health_check_pending=pending,
@@ -177,17 +190,16 @@ def _monitor_summary(entity: MonitorSourceEntity) -> MonitorSourceSummary:
         updated_at=entity.updated_at.astimezone(UTC),
     )
 
-def _monitor_detail(entity: MonitorSourceEntity) -> MonitorSourceDetail:
-    capabilities = dict(entity.capabilities_json or {})
-    prometheus_instance = capabilities.pop("prometheus_instance", None)
-    return MonitorSourceDetail(
-        **_monitor_summary(entity).model_dump(),
-        endpoint=entity.endpoint or "",
-        prometheus_instance=prometheus_instance,
-        secret=_secret_status(entity.secret_ref),
-        webhook_secret=_secret_status(entity.webhook_secret_ref),
+def _diagnostic_source_detail(entity: DiagnosticSourceEntity) -> DiagnosticSourceDetail:
+    return DiagnosticSourceDetail(
+        **_diagnostic_source_summary(entity).model_dump(),
+        endpoint=entity.endpoint,
+        secret=_managed_credential_status(entity.auth_credential_id),
+        webhook_secret=_managed_credential_status(entity.webhook_credential_id),
         tls_profile=_secret_status(entity.tls_profile_ref),
-        capabilities=capabilities,
+        declared_capabilities=dict(entity.declared_capabilities_json or {}),
+        discovered_capabilities=dict(entity.discovered_capabilities_json or {}),
+        config=dict(entity.config_json or {}),
         webhook_configured=entity.webhook_key_hash is not None,
         health_version=int(entity.health_version),
         last_health_check_at=(
@@ -201,16 +213,18 @@ def _monitor_detail(entity: MonitorSourceEntity) -> MonitorSourceDetail:
         updated_by=entity.updated_by,
     )
 
-def _monitor_binding_view(entity: TargetMonitorEntity) -> MonitorBindingView:
-    return MonitorBindingView(
-        binding_id=entity.target_monitor_id,
+def _source_binding_view(entity: TargetSourceBindingEntity) -> SourceBindingView:
+    return SourceBindingView(
+        binding_id=entity.target_source_binding_id,
         target_id=entity.target_id,
-        source_id=entity.monitor_source_id,
-        external_target_key=entity.external_target_key,
+        source_id=entity.diagnostic_source_id,
+        source_locator_key=entity.source_locator_key,
+        source_locator=dict(entity.source_locator_json or {}),
         role=entity.role,
         priority=int(entity.priority),
-        metric_scope=entity.metric_scope_json,
+        capability_scope=entity.capability_scope_json,
         mapping_overrides=entity.mapping_overrides_json,
+        query_budget=entity.query_budget_json,
         status=entity.status,
         health_status=entity.health_status,
         row_version=int(entity.row_version),

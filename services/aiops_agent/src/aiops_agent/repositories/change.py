@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, literal_column, select, update
+from sqlalchemy import Select, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -107,6 +107,36 @@ class ChangeRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def page_proposals(
+        self, *, domain_id: int, target_id: UUID | None = None,
+        status: str | None = None, agent_ids: Collection[UUID] = (),
+        before_created_at: datetime | None = None,
+        before_id: UUID | None = None, limit: int = 51,
+    ) -> list[ChangeProposalEntity]:
+        """分页读取 Domain 内变更建议，并执行 Agent 授权过滤。"""
+        self._check_active()
+        statement = select(ChangeProposalEntity).join(
+            TargetEntity, TargetEntity.target_id == ChangeProposalEntity.target_id
+        ).join(OpsRunEntity, OpsRunEntity.ops_run_id == ChangeProposalEntity.ops_run_id).where(
+            TargetEntity.domain_id == domain_id
+        )
+        if target_id is not None:
+            statement = statement.where(ChangeProposalEntity.target_id == target_id)
+        if status is not None:
+            statement = statement.where(ChangeProposalEntity.status == status)
+        if agent_ids:
+            statement = statement.where(OpsRunEntity.agent_id.in_(tuple(agent_ids)))
+        if before_created_at is not None and before_id is not None:
+            statement = statement.where(or_(
+                ChangeProposalEntity.created_at < before_created_at,
+                (ChangeProposalEntity.created_at == before_created_at)
+                & (ChangeProposalEntity.proposal_id < before_id),
+            ))
+        statement = statement.order_by(
+            ChangeProposalEntity.created_at.desc(), ChangeProposalEntity.proposal_id.desc()
+        ).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
 
     async def get_proposal(
         self, *, proposal_id: UUID, lock: bool = False

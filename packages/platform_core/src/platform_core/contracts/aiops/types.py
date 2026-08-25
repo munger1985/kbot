@@ -52,6 +52,7 @@ class AIOpsContract(BaseModel):
 class DatabaseType(StrEnum):
     ORACLE = "ORACLE"
     MYSQL = "MYSQL"
+    POSTGRESQL = "POSTGRESQL"
 
 
 class ResourceStatus(StrEnum):

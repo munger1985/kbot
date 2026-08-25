@@ -18,40 +18,40 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from aiops_agent.adapters.monitoring import MonitorProviderRegistry
-from aiops_agent.adapters.monitoring.payload_store import (
-    LocalMonitorPayloadStore,
+from aiops_agent.adapters.diagnostic_sources import DiagnosticSourceAdapterRegistry
+from aiops_agent.adapters.diagnostic_sources.payload_store import (
+    LocalSignalPayloadStore,
 )
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
-from aiops_agent.application.monitoring import MonitorWebhookIntakeService
+from aiops_agent.application.diagnostic_sources import SignalEventIntakeService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.config import get_aiops_settings
-from aiops_agent.contracts.monitoring import (
+from aiops_agent.contracts.evidence import (
     MetricObservation,
     MetricPoint,
     MetricSeries,
 )
-from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.entities import (
     InboxEntity,
-    MonitorSourceEntity,
-    OpsAlertEntity,
+    DiagnosticSourceEntity,
+    SituationEntity,
     OpsArtifactEntity,
-    OpsEventEntity,
+    SignalEventEntity,
     OpsRunEntity,
     OpsRunEventEntity,
     OpsTaskEntity,
     OutboxEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetMonitorEntity,
+    TargetSourceBindingEntity,
 )
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.persistence import create_aiops_uow_factory
-from aiops_agent.ports.monitor import AlertQueryResult, MetricQueryResult
+from aiops_agent.ports.diagnostic_source import EventEvidenceResult, MetricsEvidenceResult
 from aiops_agent.workers import (
     AIOpsDomainOutboxSink,
     AIOpsOutboxDispatcher,
@@ -60,7 +60,7 @@ from aiops_agent.workers import (
     create_runtime_handler_registry,
 )
 from main_api.entities import PlatformDomainEntity
-from platform_core.contracts.aiops import MonitorWebhookEnvelope
+from platform_core.contracts.aiops import SignalEventEnvelope
 from platform_core.database.oracle import create_database_runtime
 from platform_core.identity import uuid7
 from platform_core.managed_credentials import (
@@ -69,7 +69,7 @@ from platform_core.managed_credentials import (
 )
 
 
-class FixtureMonitorAdapter:
+class FixtureDiagnosticSourceAdapter:
     """实库 Smoke 只替换外部网络，不替换领域和持久化链路。"""
 
     async def query_metrics(self, request):
@@ -102,7 +102,7 @@ class FixtureMonitorAdapter:
                     target_id=request.target_id,
                     binding_id=request.binding_id,
                     external_target_fingerprint=hashlib.sha256(
-                        request.external_target_key.encode()
+                        request.source_locator_key.encode()
                     ).hexdigest(),
                     series=series,
                     summary={
@@ -122,15 +122,15 @@ class FixtureMonitorAdapter:
                     },
                 )
             )
-        return MetricQueryResult(observations=tuple(observations))
+        return MetricsEvidenceResult(observations=tuple(observations))
 
-    async def query_alerts(self, request):
-        return AlertQueryResult()
+    async def query_events(self, request):
+        return EventEvidenceResult()
 
 
-class FixtureMonitorRegistry:
-    def create(self, context):
-        return FixtureMonitorAdapter()
+class FixtureDiagnosticSourceRegistry:
+    def create(self, context, *, capability=None):
+        return FixtureDiagnosticSourceAdapter()
 
 
 async def main() -> None:
@@ -140,7 +140,7 @@ async def main() -> None:
     target_id = uuid7()
     source_id = uuid7()
     monitor_id = uuid7()
-    inbox_id = alert_id = run_id = None
+    inbox_id = situation_id = run_id = None
     created_domain_id = None
     trace_id = str(uuid7())
     webhook_key = f"whk-{uuid7()}-{uuid7()}"
@@ -186,15 +186,9 @@ async def main() -> None:
                 uow=uow,
                 domain_id=domain_id,
                 external_key=source_id,
-                credential_kind="monitor_webhook",
+                credential_kind="source_webhook",
                 values={"webhook_secret": webhook_secret},
                 actor_id="monitor-smoke",
-            )
-            webhook_secret_ref = managed_credentials.reference(
-                domain_id=domain_id,
-                external_key=source_id,
-                credential_kind="monitor_webhook",
-                credential_id=credential.credential_id,
             )
             await uow.targets.add_target(
                 TargetEntity(
@@ -221,32 +215,35 @@ async def main() -> None:
                     updated_by="monitor-smoke",
                 )
             )
-            await uow.monitor_sources.add(
-                MonitorSourceEntity(
-                    monitor_source_id=source_id,
+            await uow.diagnostic_sources.add(
+                DiagnosticSourceEntity(
+                    diagnostic_source_id=source_id,
                     domain_id=domain_id,
-                    display_name="监控闭环 Smoke Prometheus",
-                    source_type="PROMETHEUS",
-                    endpoint="https://prometheus.invalid",
-                    webhook_secret_ref=webhook_secret_ref,
+                    display_name="监控闭环 Smoke Alertmanager",
+                    source_type="ALERTMANAGER",
+                    adapter_id="alertmanager",
+                    adapter_version="1.0.0",
+                    endpoint=None,
+                    webhook_credential_id=credential.credential_id,
                     webhook_key_hash=hashlib.sha256(
                         webhook_key.encode()
                     ).hexdigest(),
-                    capabilities_json={
-                        "prometheus_instance": "db-smoke-1"
-                    },
+                    declared_capabilities_json={"event.receive": {}},
+                    discovered_capabilities_json=None,
+                    config_json={"target_label": "instance"},
                     status="ACTIVE",
                     health_status="HEALTHY",
                     created_by="monitor-smoke",
                     updated_by="monitor-smoke",
                 )
             )
-            await uow.targets.add_monitor(
-                TargetMonitorEntity(
-                    target_monitor_id=monitor_id,
+            await uow.targets.add_source_binding(
+                TargetSourceBindingEntity(
+                    target_source_binding_id=monitor_id,
                     target_id=target_id,
-                    monitor_source_id=source_id,
-                    external_target_key="db-smoke-1",
+                    diagnostic_source_id=source_id,
+                    source_locator_key="db-smoke-1",
+                    source_locator_json={"instance": "db-smoke-1"},
                     role="PRIMARY",
                     priority=10,
                     status="ACTIVE",
@@ -285,19 +282,19 @@ async def main() -> None:
         secret_store = ConfiguredSecretStore(
             managed_credentials=managed_credentials,
         )
-        intake = MonitorWebhookIntakeService(
+        intake = SignalEventIntakeService(
             uow_factory=uow_factory,
-            provider_registry=MonitorProviderRegistry(
+            diagnostic_source_registry=DiagnosticSourceAdapterRegistry(
                 session=client_session
             ),
             secret_store=secret_store,
             system_agent_id=settings.runtime.system_aiops_agent_id,
             max_webhook_bytes=settings.monitoring.max_webhook_bytes,
-            payload_store=LocalMonitorPayloadStore(
+            payload_store=LocalSignalPayloadStore(
                 Path(payload_directory.name)
             ),
         )
-        envelope = MonitorWebhookEnvelope(
+        envelope = SignalEventEnvelope(
             request_id=trace_id,
             webhook_key_hash=hashlib.sha256(
                 webhook_key.encode()
@@ -316,10 +313,10 @@ async def main() -> None:
         if not receipt.accepted or not duplicate.duplicate:
             raise RuntimeError("Webhook Inbox 未保持幂等")
         inbox_id = receipt.inbox_id
-        alert_id = receipt.alert_ids[0]
+        situation_id = receipt.situation_ids[0]
 
         handlers = create_runtime_handler_registry(
-            monitor_provider_registry=FixtureMonitorRegistry(),
+            diagnostic_source_registry=FixtureDiagnosticSourceRegistry(),
             secret_store=secret_store,
         )
         runtime_service = AIOpsRuntimeService(
@@ -344,7 +341,7 @@ async def main() -> None:
                 run = (
                     await session.execute(
                         select(OpsRunEntity).where(
-                            OpsRunEntity.trigger_alert_id == alert_id
+                            OpsRunEntity.trigger_situation_id == situation_id
                         )
                     )
                 ).scalar_one_or_none()
@@ -382,7 +379,7 @@ async def main() -> None:
             raise RuntimeError("只观测报告未按契约完成")
         print(
             "AIOps 监控闭环 Smoke 成功："
-            f"inbox={inbox_id} alert={alert_id} run={run_id}"
+            f"inbox={inbox_id} situation={situation_id} run={run_id}"
         )
     finally:
         async with database.session_factory() as session:
@@ -414,14 +411,14 @@ async def main() -> None:
                 )
             if inbox_id is not None:
                 await session.execute(
-                    delete(OpsEventEntity).where(
-                        OpsEventEntity.source_inbox_id == inbox_id
+                    delete(SignalEventEntity).where(
+                        SignalEventEntity.source_inbox_id == inbox_id
                     )
                 )
-            if alert_id is not None:
+            if situation_id is not None:
                 await session.execute(
-                    delete(OpsAlertEntity).where(
-                        OpsAlertEntity.alert_id == alert_id
+                    delete(SituationEntity).where(
+                        SituationEntity.situation_id == situation_id
                     )
                 )
             if inbox_id is not None:
@@ -431,13 +428,13 @@ async def main() -> None:
                     )
                 )
             await session.execute(
-                delete(TargetMonitorEntity).where(
-                    TargetMonitorEntity.target_monitor_id == monitor_id
+                delete(TargetSourceBindingEntity).where(
+                    TargetSourceBindingEntity.target_source_binding_id == monitor_id
                 )
             )
             await session.execute(
-                delete(MonitorSourceEntity).where(
-                    MonitorSourceEntity.monitor_source_id == source_id
+                delete(DiagnosticSourceEntity).where(
+                    DiagnosticSourceEntity.diagnostic_source_id == source_id
                 )
             )
             await session.execute(

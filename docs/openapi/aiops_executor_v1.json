@@ -62,6 +62,7 @@
           },
           "db_type": {
             "enum": [
+              "POSTGRESQL",
               "ORACLE",
               "MYSQL"
             ],

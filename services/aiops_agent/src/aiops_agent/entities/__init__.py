@@ -15,11 +15,13 @@ from .inspection import (
     ReportEntity,
 )
 from .messaging import InboxEntity, OutboxEntity
+from .notification import NotificationSubscriptionEntity
 from .monitoring import (
-    MonitorSourceEntity,
-    OpsAlertEntity,
-    OpsEventEntity,
-    TargetMonitorEntity,
+    DiagnosticSourceEntity,
+    SituationEntity,
+    SituationEventEntity,
+    SignalEventEntity,
+    TargetSourceBindingEntity,
 )
 from .runtime import (
     OpsArtifactEntity,
@@ -54,18 +56,20 @@ __all__ = [
     "InspectionReportTemplateEntity",
     "InspectionReportTemplateVersionEntity",
     "InspectionTargetEntity",
-    "MonitorSourceEntity",
-    "OpsAlertEntity",
+    "DiagnosticSourceEntity",
+    "SituationEntity",
+    "SituationEventEntity",
     "OpsArtifactEntity",
-    "OpsEventEntity",
+    "SignalEventEntity",
     "OpsRunEntity",
     "OpsRunEventEntity",
     "OpsTaskEntity",
     "OutboxEntity",
+    "NotificationSubscriptionEntity",
     "PolicyEntity",
     "ReportEntity",
     "TargetBindingEntity",
     "TargetEntity",
-    "TargetMonitorEntity",
+    "TargetSourceBindingEntity",
 ]
 from .agent import AIOpsAgentEntity, AIOpsAgentGrantEntity, AIOpsAgentVersionEntity

@@ -5,15 +5,15 @@ from typing import Protocol
 
 
 @dataclass(frozen=True)
-class StoredMonitorPayload:
+class StoredSignalPayload:
     uri: str
     content_hash: str
     byte_size: int
 
 
-class MonitorPayloadStorePort(Protocol):
+class SignalPayloadStorePort(Protocol):
     async def store_verified(
         self, *, source_id: str, body: bytes, content_hash: str
-    ) -> StoredMonitorPayload: ...
+    ) -> StoredSignalPayload: ...
 
     async def delete(self, uri: str) -> None: ...

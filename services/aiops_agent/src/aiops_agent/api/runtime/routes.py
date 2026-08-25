@@ -40,10 +40,13 @@ from platform_core.contracts.aiops.public import (
     InspectionFirePage,
     InspectionFireView,
     OpsRunResult,
+    OpsRunPage,
     OpsRunSummary,
     ReportPage,
     ReportVersionPage,
     ReportView,
+    SituationPage,
+    SituationView,
 )
 
 
@@ -191,6 +194,46 @@ async def cancel_delegation(
         actor_id=context.asserted_user_id or context.client_id,
         idempotency_key=idempotency_key,
         trace_id=context.trace_id,
+    )
+
+
+@router.get("/runs", response_model=OpsRunPage)
+async def list_runs(
+    request: Request, service: Service, context: Auth,
+    target_id: UUID | None = None, status: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> OpsRunPage:
+    require_service_scope(request, "aiops.run")
+    return await service.list_runs(
+        scope=_query_scope(request, context), target_id=target_id,
+        status=status, agent_ids=tuple(context.authorized_agent_ids),
+        cursor=cursor, limit=limit,
+    )
+
+
+@router.get("/situations", response_model=SituationPage)
+async def list_situations(
+    request: Request, service: Service, context: Auth,
+    target_id: UUID | None = None, status: str | None = None,
+    severity: str | None = None,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> SituationPage:
+    require_service_scope(request, "aiops.run")
+    return await service.list_situations(
+        scope=_query_scope(request, context), target_id=target_id,
+        status=status, severity=severity, cursor=cursor, limit=limit,
+    )
+
+
+@router.get("/situations/{situation_id}", response_model=SituationView)
+async def get_situation(
+    situation_id: UUID, request: Request, service: Service, context: Auth,
+) -> SituationView:
+    require_service_scope(request, "aiops.run")
+    return await service.get_situation(
+        situation_id=situation_id, domain_id=_scope(request, context)
     )
 
 

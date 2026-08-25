@@ -82,6 +82,8 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
             "STATUS = 'PUBLISHING' AND LEASE_OWNER IS NOT NULL",
             self.upper_sql,
         )
+        self.assertIn("THEN CORRELATION_HASH", self.upper_sql)
+        self.assertNotIn("THEN FINGERPRINT", self.upper_sql)
 
     def test_oracle_26ai_physical_adaptations_are_explicit(self) -> None:
         self.assertNotRegex(self.upper_sql, r"\bMODE\s+VARCHAR2\b")
@@ -108,7 +110,9 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
             "EVIDENCE_ARTIFACTS_JSON",
             "RULES_JSON",
         )
-        view_script = self.scripts[-1].read_text(encoding="utf-8").upper()
+        view_script = (
+            SCHEMA_DIR / "006_ops_fks_views.sql"
+        ).read_text(encoding="utf-8").upper()
         view_area = view_script[
             view_script.index("CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET") :
         ]

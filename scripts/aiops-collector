@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+
+# Collector沿用同一份受控配置，仅限定启动数据库侧采集组件。
+exec "$(dirname "$0")/aiops-stack" up --role collector "$@"

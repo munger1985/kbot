@@ -38,11 +38,11 @@ from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
     InspectionTargetEntity,
-    MonitorSourceEntity,
+    DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
-    TargetMonitorEntity,
+    TargetSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.secret_store import SecretStorePort
@@ -60,14 +60,14 @@ from platform_core.contracts.aiops import (
     InspectionTargetCreate,
     InspectionTargetPatch,
     InspectionTargetView,
-    MonitorBindingCreate,
-    MonitorBindingPatch,
-    MonitorBindingView,
-    MonitorSourceCreate,
-    MonitorSourceDetail,
-    MonitorSourcePage,
-    MonitorSourcePatch,
-    MonitorSourceSummary,
+    SourceBindingCreate,
+    SourceBindingPatch,
+    SourceBindingView,
+    DiagnosticSourceCreate,
+    DiagnosticSourceDetail,
+    DiagnosticSourcePage,
+    DiagnosticSourcePatch,
+    DiagnosticSourceSummary,
     PolicyCreate,
     PolicyDetail,
     PolicyPage,
@@ -86,9 +86,9 @@ from .projections import (
     _target_detail,
     _target_summary,
     _agent_binding_view,
-    _monitor_detail,
-    _monitor_summary,
-    _monitor_binding_view,
+    _diagnostic_source_detail,
+    _diagnostic_source_summary,
+    _source_binding_view,
     _policy_detail,
     _policy_summary,
     _inspection_detail,
@@ -267,10 +267,12 @@ class TargetConfigurationMixin:
                     not endpoint.service or endpoint.database
                 ):
                     raise validation_failed("Oracle Endpoint 必须只设置 service")
-                if entity.db_type == "MYSQL" and (
+                if entity.db_type in {"MYSQL", "POSTGRESQL"} and (
                     not endpoint.database or endpoint.service
                 ):
-                    raise validation_failed("MySQL Endpoint 必须只设置 database")
+                    raise validation_failed(
+                        "MySQL/PostgreSQL Endpoint 必须只设置 database"
+                    )
                 fields["endpoint_json"] = fields.pop("endpoint")
             for name, value in fields.items():
                 setattr(entity, name, value)

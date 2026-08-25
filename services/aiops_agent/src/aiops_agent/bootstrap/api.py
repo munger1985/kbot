@@ -20,11 +20,14 @@ from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
-from aiops_agent.adapters.monitoring import MonitorProviderRegistry
+from aiops_agent.adapters.diagnostic_sources import (
+    DiagnosticSourceAdapterCatalog,
+    DiagnosticSourceAdapterRegistry,
+)
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
-from aiops_agent.adapters.monitoring.payload_store import (
-    LocalMonitorPayloadStore,
+from aiops_agent.adapters.diagnostic_sources.payload_store import (
+    LocalSignalPayloadStore,
 )
 from aiops_agent.api.management import router as management_router
 from aiops_agent.api.agents import router as agent_router
@@ -41,7 +44,7 @@ from aiops_agent.api.executions import (
 )
 from aiops_agent.application.changes import AIOpsChangeService
 from aiops_agent.application.agents import AIOpsAgentService
-from aiops_agent.application.monitoring import MonitorWebhookIntakeService
+from aiops_agent.application.diagnostic_sources import SignalEventIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.configuration.common import SignedCursorCodec
@@ -59,7 +62,7 @@ from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.workers import create_runtime_handler_registry
-from aiops_agent.adapters.monitoring.catalog import load_metric_catalog
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
@@ -147,6 +150,7 @@ def create_aiops_api(
             secret=cursor_secret,
             ttl_seconds=resolved.management.cursor_ttl_seconds,
         )
+        diagnostic_source_catalog = DiagnosticSourceAdapterCatalog()
         app.state.configuration_service = AIOpsConfigurationService(
             uow_factory=runtime.uow_factory,
             cursor_codec=cursor_codec,
@@ -161,6 +165,7 @@ def create_aiops_api(
             ),
             credential_cipher=credential_cipher,
             managed_credential_service=managed_credential_service,
+            diagnostic_source_catalog=diagnostic_source_catalog,
         )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)
@@ -171,6 +176,7 @@ def create_aiops_api(
         action_registry = ActionRegistry.load()
         app.state.change_service = AIOpsChangeService(
             uow_factory=runtime.uow_factory,
+            cursor_codec=cursor_codec,
             action_registry=action_registry,
             approval_enabled=(
                 resolved.management.agent_execution_enabled
@@ -199,8 +205,9 @@ def create_aiops_api(
         )
         # 资源目录和签名配置完成校验后再创建网络会话。
         client_session = aiohttp.ClientSession()
-        provider_registry = MonitorProviderRegistry(
+        diagnostic_source_registry = DiagnosticSourceAdapterRegistry(
             session=client_session,
+            catalog=diagnostic_source_catalog,
             request_timeout_seconds=(
                 resolved.monitoring.provider_timeout_seconds
             ),
@@ -234,7 +241,7 @@ def create_aiops_api(
             session=client_session,
         )
         handler_registry = create_runtime_handler_registry(
-            monitor_provider_registry=provider_registry,
+            diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
             db_executor_client=db_executor_client,
             diagnostic_grant_codec=diagnostic_grant_codec,
@@ -253,8 +260,8 @@ def create_aiops_api(
                 resolved.management.agent_execution_enabled
             ),
         )
-        app.state.monitor_provider_registry = provider_registry
-        app.state.monitor_secret_store = secret_store
+        app.state.diagnostic_source_registry = diagnostic_source_registry
+        app.state.diagnostic_source_secret_store = secret_store
         app.state.metric_catalog = metric_catalog
         app.state.aiops_runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
@@ -277,13 +284,13 @@ def create_aiops_api(
             agent_catalog=agent_catalog,
             cursor_codec=cursor_codec,
         )
-        app.state.monitor_intake_service = MonitorWebhookIntakeService(
+        app.state.signal_intake_service = SignalEventIntakeService(
             uow_factory=runtime.uow_factory,
-            provider_registry=provider_registry,
+            diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
             system_agent_id=resolved.runtime.system_aiops_agent_id,
             max_webhook_bytes=resolved.monitoring.max_webhook_bytes,
-            payload_store=LocalMonitorPayloadStore(
+            payload_store=LocalSignalPayloadStore(
                 Path(resolved.monitoring.payload_store_root)
             ),
         )
