@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIOps Knowledge Core</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops-kc.css">
+</head>
+<body data-page="knowledge-core">
+  <main class="ops-main">
+    <header class="ops-head">
+      <div>
+        <h1>Knowledge Core</h1>
+        <p>管理 AIOps 固定运维知识库、模型绑定和正式运维手册。</p>
+      </div>
+      <button id="open-model-dialog" class="primary" type="button">编辑模型配置</button>
+    </header>
+
+    <section class="ops-panel">
+      <header class="ops-panel-head"><h2>固定 Collection</h2><span id="collection-status" class="ops-badge">加载中</span></header>
+      <div class="ops-panel-body">
+        <div id="collection-summary" class="kc-summary-grid"><p>正在读取 Knowledge Core…</p></div>
+        <div id="model-list" class="kc-model-list"></div>
+        <p id="model-policy-note" class="kc-policy-note" hidden></p>
+      </div>
+    </section>
+
+    <section class="ops-panel">
+      <header class="ops-panel-head"><h2>上传运维手册</h2></header>
+      <div class="ops-panel-body">
+        <form id="manual-form" class="ops-form">
+          <div class="ops-field span-8">
+            <label for="manual-file">文件</label>
+            <input id="manual-file" name="manual" type="file" accept=".md,.txt,.pdf,.doc,.docx" required>
+          </div>
+          <div class="ops-field span-4">
+            <label for="manual-name">显示名称</label>
+            <input id="manual-name" name="display_name" maxlength="256" placeholder="默认使用文件名">
+          </div>
+          <div class="ops-filter-actions"><button class="primary" type="submit">上传并批准</button></div>
+        </form>
+        <p class="kc-upload-status">文件通过 Main API 流式进入 KC，完成解析、切片和索引；页面不会把文件写入 Main API 本地目录。</p>
+        <div id="manual-result" class="kc-upload-status" role="status"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="model-dialog" class="kc-dialog">
+    <form id="model-form" method="dialog">
+      <header><h2>编辑 KC 模型配置</h2><button id="close-model-dialog" type="button">关闭</button></header>
+      <div class="kc-dialog-body">
+        <div class="ops-field"><label for="parser-vlm">解析 VLM</label><select id="parser-vlm" name="parser_vlm"><option value="">不启用</option></select></div>
+        <div class="ops-field"><label for="embedding-model">文本向量模型</label><select id="embedding-model" name="embedding" required></select></div>
+        <div class="ops-field"><label for="visual-embedding">视觉向量模型</label><select id="visual-embedding" name="visual_embedding"><option value="">不启用</option></select></div>
+        <p id="dialog-policy-note" class="kc-policy-note"></p>
+      </div>
+      <footer><button id="cancel-model-dialog" type="button">取消</button><button class="primary" type="submit">保存模型配置</button></footer>
+    </form>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-knowledge-core.js"></script>
+</body>
+</html>

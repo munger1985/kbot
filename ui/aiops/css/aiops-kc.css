@@ -1,0 +1,18 @@
+.kc-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kc-summary-item{padding:14px;border:1px solid var(--line);background:#f8f9fc}
+.kc-summary-item small{display:block;margin-bottom:6px;color:var(--muted)}
+.kc-summary-item strong,.kc-summary-item code{overflow-wrap:anywhere}
+.kc-model-list{display:grid;gap:10px;margin-top:14px}
+.kc-model-row{display:grid;grid-template-columns:160px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.kc-model-row:last-child{border-bottom:0}
+.kc-policy-note{margin:14px 0 0;padding:12px 14px;border-left:3px solid #d39b33;background:#fff8e8;color:#5f4b22}
+.kc-upload-status{margin-top:12px;color:var(--muted)}
+.kc-dialog{width:min(680px,calc(100vw - 32px));padding:0;border:0;box-shadow:0 24px 80px rgba(18,25,40,.32)}
+.kc-dialog::backdrop{background:rgba(18,25,40,.55)}
+.kc-dialog header,.kc-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.kc-dialog footer{justify-content:flex-end;border-top:1px solid var(--line);border-bottom:0}
+.kc-dialog h2{margin:0;font:650 22px Georgia,"Songti SC",serif}
+.kc-dialog-body{padding:22px}
+.kc-dialog-body .ops-field+.ops-field{margin-top:16px}
+@media(max-width:1000px){.kc-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.kc-summary-grid{grid-template-columns:1fr}.kc-model-row{grid-template-columns:1fr}.kc-model-row .ops-badge{justify-self:start}}

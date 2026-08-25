@@ -5,18 +5,21 @@ from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from main_api.api.models import ModelCatalogItem, load_model_catalog
 from main_api.application import (
     AccessControlService,
     AccessDeniedError,
+    UserAuthService,
     require_app_api_agent,
     require_app_api_permission,
     require_app_api_scope,
 )
-from platform_core.contracts import PrincipalKind
+from platform_clients import KnowledgeCoreClient
 from platform_clients.aiops import AIOpsManagementClient
-from platform_core.contracts import PUBLIC_API_V1
+from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.security import get_auth_context
 
 
@@ -24,10 +27,49 @@ router = APIRouter(
     prefix=f"{PUBLIC_API_V1}/apps/aiops",
     tags=["AIOps App"],
 )
+AIOPS_PORTAL_DOMAIN_NAME = "aiops_portal"
+AIOPS_MANUAL_COLLECTION_NAME = "operations-manuals"
 
 
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class AIOpsLoginPayload(_Payload):
+    user_id: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AIOpsPasswordChangePayload(_Payload):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        if not (
+            any(char.islower() for char in value)
+            and any(char.isupper() for char in value)
+            and any(char.isdigit() for char in value)
+            and any(not char.isalnum() for char in value)
+        ):
+            raise ValueError("新密码必须同时包含大小写字母、数字和特殊字符")
+        return value
+
+
+class AIOpsCollectionModelsPayload(_Payload):
+    parser_vlm: UUID | None = None
+    embedding: UUID
+    visual_embedding: UUID | None = None
+    expected_row_version: int = Field(ge=1)
+
+
+class AIOpsCollectionStatusPayload(_Payload):
+    status: Literal["ACTIVE", "DISABLED"]
+
+
+class AIOpsManualApprovalPayload(_Payload):
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 class AIOpsAgentCreatePayload(_Payload):
@@ -125,6 +167,78 @@ def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
 
+def _knowledge_client(request: Request) -> KnowledgeCoreClient:
+    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
+
+
+async def _fixed_manual_collection(
+    request: Request, *, require_active: bool = False
+) -> tuple[int, dict[str, Any]]:
+    """取得当前 AIOps Domain 唯一的固定运维手册 Collection。"""
+    domain_id, _ = _domain_actor(request)
+    catalog = await _knowledge_client(request).list_collections(
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    matches = [
+        item for item in catalog.get("collections", [])
+        if item.get("display_name") == AIOPS_MANUAL_COLLECTION_NAME
+    ]
+    if len(matches) != 1:
+        code = "AIOPS_KC_DUPLICATED" if matches else "AIOPS_KC_UNAVAILABLE"
+        message = (
+            "AIOps 固定运维手册 Collection 存在重复"
+            if matches else "AIOps 固定运维手册 Collection 尚未初始化"
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT if matches else status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": code, "message": message},
+        )
+    collection = matches[0]
+    metadata = collection.get("metadata") or {}
+    if (
+        metadata.get("owner_app_id") != "aiops"
+        or metadata.get("fixed_resource") is not True
+    ):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {
+                "code": "AIOPS_KC_SCOPE_INVALID",
+                "message": "AIOps 运维手册 Collection 的固定资源标识无效",
+            },
+        )
+    if require_active and collection.get("status") != "ACTIVE":
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": "AIOPS_KC_DISABLED", "message": "AIOps 固定运维手册 Collection 未启用"},
+        )
+    return domain_id, collection
+
+
+async def _validated_aiops_models(
+    request: Request, *, parser_vlm: UUID | None,
+    embedding: UUID, visual_embedding: UUID | None,
+) -> dict[str, str]:
+    """按平台模型目录校验 AIOps KC 模型类别。"""
+    rows = await load_model_catalog(request)
+    by_id = {str(item.get("model_id")): item for item in rows}
+    requested = {"embedding": (embedding, 2)}
+    if parser_vlm is not None:
+        requested["parser_vlm"] = (parser_vlm, 5)
+    if visual_embedding is not None:
+        requested["visual_embedding"] = (visual_embedding, 3)
+    result: dict[str, str] = {}
+    for role, (model_id, category) in requested.items():
+        row = by_id.get(str(model_id))
+        if row is None or int(row.get("category") or 0) != category:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                {"code": "AIOPS_KC_MODEL_INVALID", "message": f"模型角色 {role} 不可用或类别不正确"},
+            )
+        result[role] = str(model_id)
+    return result
+
+
 async def _require(request: Request, permission: str):
     require_app_api_permission(request, permission)
     domain_id, actor_id = _domain_actor(request)
@@ -152,6 +266,124 @@ async def _authorize_agent(request: Request, agent_id: UUID, snapshot, actor_id:
             "user_id": actor_id,
             "role_codes": list(snapshot.roles),
         },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/auth/login")
+async def login(payload: AIOpsLoginPayload, request: Request):
+    """使用平台用户凭据进入固定的 AIOps Portal Domain。"""
+    service = cast(UserAuthService, request.app.state.user_auth_service)
+    return await service.login_for_domain_name(
+        user_id=payload.user_id.strip(), password=payload.password,
+        domain_name=AIOPS_PORTAL_DOMAIN_NAME, app_id="aiops",
+    )
+
+
+@router.post("/auth/password")
+async def change_password(payload: AIOpsPasswordChangePayload, request: Request):
+    """修改 AIOps 本地用户密码。"""
+    service = cast(UserAuthService, request.app.state.user_auth_service)
+    return await service.change_password(
+        claims=request.state.user_token_claims,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
+
+
+@router.get("/model-catalog", response_model=list[ModelCatalogItem])
+async def list_aiops_model_catalog(request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await load_model_catalog(request)
+
+
+@router.get("/knowledge-core")
+async def get_aiops_knowledge_core(request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(request)
+    policy = await _knowledge_client(request).get_collection_model_policy(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        auth_context=request.state.auth_context,
+    )
+    return {
+        "collection_name": AIOPS_MANUAL_COLLECTION_NAME,
+        "collection": collection,
+        "model_policy": policy,
+    }
+
+
+@router.put("/knowledge-core/models")
+async def update_aiops_knowledge_core_models(
+    payload: AIOpsCollectionModelsPayload, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(request)
+    models = await _validated_aiops_models(
+        request, parser_vlm=payload.parser_vlm,
+        embedding=payload.embedding,
+        visual_embedding=payload.visual_embedding,
+    )
+    return await _knowledge_client(request).update_collection_models(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        payload={"models": models, "expected_row_version": payload.expected_row_version},
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.patch("/knowledge-core/status")
+async def change_aiops_knowledge_core_status(
+    payload: AIOpsCollectionStatusPayload, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(request)
+    return await _knowledge_client(request).change_collection_status(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        status=payload.status,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/knowledge-core/manuals", status_code=status.HTTP_202_ACCEPTED)
+async def upload_aiops_manual(request: Request):
+    """把运维手册流式送入固定 KC，不在 Main API 落盘。"""
+    await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(request, require_active=True)
+    content_type = request.headers.get("Content-Type", "")
+    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+    if not content_type.lower().startswith("multipart/form-data") or not idempotency_key:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            {
+                "code": "AIOPS_KC_UPLOAD_HEADERS_REQUIRED",
+                "message": "缺少 multipart Content-Type 或 Idempotency-Key",
+            },
+        )
+    upstream = await _knowledge_client(request).ingest_multipart(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        intake_kind="user-files", content_type=content_type,
+        body=request.stream(), idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return JSONResponse(status_code=upstream.status_code, content=upstream.payload)
+
+
+@router.post("/knowledge-core/manuals/{bundle_revision_id}/approve")
+async def approve_aiops_manual(
+    bundle_revision_id: UUID,
+    payload: AIOpsManualApprovalPayload,
+    request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(request)
+    return await _knowledge_client(request).review_user_intake(
+        domain_id=domain_id,
+        collection_id=UUID(str(collection["collection_id"])),
+        bundle_revision_id=bundle_revision_id,
+        decision="APPROVE", comment=payload.comment,
         auth_context=request.state.auth_context,
     )
 

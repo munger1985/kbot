@@ -28,7 +28,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "dashboard", "chat", "situations", "runs", "run-detail",
         "reports", "report-detail", "inspections", "changes",
         "notifications", "targets", "target-detail",
-        "diagnostic-sources", "diagnostic-source-detail", "agents",
+        "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
+        "agents",
         "policies", "inspection-plans", "inspection-plan-detail",
         "report-templates", "notification-subscriptions", "api-clients",
         "login",
@@ -49,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(3, len(scripts))
+        self.assertEqual(4, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -68,6 +69,28 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("140.238.44.208", source)
         self.assertNotIn("kbot_ak_", source)
         self.assertNotIn("/metrics", source)
+
+    def test_knowledge_core_page_uses_fixed_public_bff(self):
+        page = (AIOPS_ROOT / "knowledge-core.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-knowledge-core.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="model-form"', page)
+        self.assertIn('id="manual-form"', page)
+        self.assertIn("/knowledge-core/models", script)
+        self.assertIn("/knowledge-core/manuals", script)
+        self.assertIn("embedding_change_allowed", script)
+        self.assertIn("visual_embedding_change_allowed", script)
+        self.assertNotIn("/api/v1/knowledge", script)
+
+    def test_login_uses_fixed_aiops_domain_contract(self):
+        login = (AIOPS_ROOT / "login.html").read_text(encoding="utf-8")
+        auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("aiops_portal", login)
+        self.assertNotIn('name="domain_id"', login)
+        self.assertIn("/api/v1/apps/aiops/auth/login", auth)
 
 
 if __name__ == "__main__":

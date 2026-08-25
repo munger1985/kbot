@@ -6,6 +6,9 @@
 - `scripts/db/sync_prompt_catalog.py`：在现有 Oracle Schema 中幂等插入并激活仓库最新 Prompt，不执行 DDL 或修改其他基础数据。
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
+- `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
+  `operations-manuals` KC Collection，并通过 Main API 上传和批准仓库内置数据库运维手册；
+  `--check-only` 可只读复查，`--skip-manual-upload` 仅初始化数据库资源。
 - `scripts/db/export_ai_model_inserts.sql`：在 SQL Developer 中从当前 Schema 的模型目录
   生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到仓库或非受控位置。
 - `scripts/db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。

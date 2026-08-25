@@ -257,6 +257,15 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "bundle_revision_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Bundle Revision Ids",
+            "type": "array"
+          },
           "collection_ids": {
             "items": {
               "format": "uuid",

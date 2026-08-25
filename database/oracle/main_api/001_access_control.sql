@@ -208,6 +208,8 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('aiops:policy_manage', 'aiops', '管理诊断策略')
     INTO KBOT_PERMISSION VALUES ('aiops:plan_manage', 'aiops', '管理变更计划')
     INTO KBOT_PERMISSION VALUES ('aiops:agent_manage', 'aiops', '管理 AIOps Agent')
+    INTO KBOT_PERMISSION VALUES ('aiops:knowledge_manage', 'aiops', '管理 AIOps Knowledge Core')
+    INTO KBOT_PERMISSION VALUES ('aiops:api_key_manage', 'aiops', '管理 AIOps API Client')
     INTO KBOT_PERMISSION VALUES ('aiops:proposal:approve', 'aiops', '审批执行提案')
 SELECT 1 FROM DUAL;
 

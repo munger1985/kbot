@@ -214,9 +214,10 @@ def create_main_api_app(
         except UserAuthenticationError as exc:
             raise PortalApiKeyError(exc.code, str(exc)) from exc
         if claims.must_change_password and request.url.path not in {
-                "/api/v1/auth/me",
-                "/api/v1/auth/password",
+            "/api/v1/auth/me",
+            "/api/v1/auth/password",
             "/api/v1/apps/km-asset/auth/password",
+            "/api/v1/apps/aiops/auth/password",
         }:
             raise PortalApiKeyError(
                 "PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码"
@@ -257,6 +258,7 @@ def create_main_api_app(
                 "/api/v1/auth/platform/login",
                 "/api/v1/auth/apps",
                 "/api/v1/apps/km-asset/auth/login",
+                "/api/v1/apps/aiops/auth/login",
             },
             domainless_paths=domainless_paths,
             domainless_prefixes=domainless_prefixes,

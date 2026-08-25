@@ -2,7 +2,7 @@
 
 `ui/km/` 提供 KM Asset 的正式无框架 JavaScript 页面：工作台、MetaDB、数据来源、Asset、同步任务、Agent 和智能问答。KM 文档固定使用初始化脚本创建的 `km_portal/assets` Collection。
 
-`ui/aiops/` 提供 AIOps 的 22 个正式页面，覆盖诊断工作区、故障情境、运行与报告，以及目标、诊断源、Agent、策略、巡检和主动分享配置。页面仅调用 Main API 的 `/api/v1/apps/aiops` 公共 BFF，不直接访问内部服务。
+`ui/aiops/` 提供 AIOps 的 23 个正式页面，覆盖诊断工作区、故障情境、运行与报告，以及目标、诊断源、Knowledge Core、Agent、策略、巡检和主动分享配置。页面仅调用 Main API 的 `/api/v1/apps/aiops` 公共 BFF，不直接访问内部服务。
 
 智能问答使用本地锁定的 Marked GFM 和 DOMPurify 渲染流式 Markdown。第三方浏览器构建产物位于 `ui/vendor/`，页面不从 CDN 下载运行时代码。
 
