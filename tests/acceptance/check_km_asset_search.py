@@ -46,6 +46,25 @@ def main() -> int:
         errors.append("缺少 AssetSearchPlan.v1 Prompt")
     if "不得把 ingestion_status 加入 criteria" not in prompts:
         errors.append("Prompt 未冻结 READY 系统边界")
+    for text in (
+        'output_schema = "KmPortalRequestPlan.v1"',
+        "PORTAL_HELP",
+        "ASSET_SEARCH",
+        "顶层字段必须且只能是 request_kind、asset_search_plan",
+    ):
+        if text not in prompts:
+            errors.append(f"Prompt 缺少 KM Portal 请求路由约束：{text}")
+
+    help_root = (
+        ROOT
+        / "services/agent_runtime/src/agent_runtime/specialists/km_asset/resources"
+    )
+    for language in ("zh-CN", "en-US", "ja-JP", "ko-KR"):
+        resource = help_root / f"portal_help.{language}.md"
+        if not resource.is_file() or not resource.read_text(
+            encoding="utf-8"
+        ).strip():
+            errors.append(f"缺少 KM Portal 帮助资源：{resource.name}")
 
     if errors:
         print("KM Asset 统一搜索部署检查失败：")

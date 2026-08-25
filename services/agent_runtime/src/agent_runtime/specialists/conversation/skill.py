@@ -30,6 +30,7 @@ class ContextRewriteSkill:
             str(route.get("classifier_version") or "").startswith((
                 "llm-km-asset-v1:",
                 "asset-search-plan-v1:",
+                "km-portal-help-v1:",
             ))
             and route.get("context_required") is False
         ):

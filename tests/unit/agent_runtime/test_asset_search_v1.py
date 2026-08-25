@@ -10,6 +10,7 @@ from agent_runtime.runtime import ExecutionContext
 from agent_runtime.specialists.km_asset.search import (
     AssetSearchDataQueryCompiler,
     AssetSearchPlanner,
+    KmPortalRequestPlan,
 )
 from agent_runtime.specialists.data_query import QueryResult
 from agent_runtime.specialists.document import (
@@ -649,6 +650,24 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                 language="zh-CN",
                 conversation_context=None,
             )
+
+    def test_portal_request_contract_rejects_incomplete_routes(self):
+        with self.assertRaisesRegex(ValueError, "ASSET_SEARCH"):
+            KmPortalRequestPlan.model_validate({
+                "request_kind": "ASSET_SEARCH",
+                "asset_search_plan": None,
+            })
+        normalized = AssetSearchPlanner.normalize_request_response(
+            response={
+                "request_kind": "PORTAL_HELP",
+                "asset_search_plan": None,
+            },
+            question="你有什么功能？",
+            language="zh-CN",
+        )
+
+        self.assertEqual("PORTAL_HELP", normalized["request_kind"])
+        self.assertIsNone(normalized["asset_search_plan"])
 
     def test_complex_metadata_expression_compiles_to_parameterized_sql(self):
         plan = _base_plan(

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
+from enum import StrEnum
 import json
 from typing import Any
 
 from loguru import logger
 from platform_core.contracts import AssetSearchPlanV1
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from agent_runtime.language import language_instruction
 
@@ -53,6 +55,36 @@ _SYSTEM_SCOPE_FIELDS = frozenset({"ingestion_status"})
 _CONTENT_SEARCHABLE_METADATA_FIELDS = frozenset({
     "title", "product", "solution", "industry", "category",
 })
+
+
+class KmPortalRequestKind(StrEnum):
+    """KM Portal 当前输入的顶层请求类型。"""
+
+    PORTAL_HELP = "PORTAL_HELP"
+    ASSET_SEARCH = "ASSET_SEARCH"
+
+
+class KmPortalRequestPlan(BaseModel):
+    """让一次 Router 调用同时完成帮助路由和 Asset 搜索规划。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    request_kind: KmPortalRequestKind
+    asset_search_plan: AssetSearchPlanV1 | None = None
+
+    @model_validator(mode="after")
+    def validate_request_payload(self) -> "KmPortalRequestPlan":
+        if (
+            self.request_kind == KmPortalRequestKind.PORTAL_HELP
+            and self.asset_search_plan is not None
+        ):
+            raise ValueError("PORTAL_HELP 不得携带 Asset Search Plan")
+        if (
+            self.request_kind == KmPortalRequestKind.ASSET_SEARCH
+            and self.asset_search_plan is None
+        ):
+            raise ValueError("ASSET_SEARCH 必须携带 Asset Search Plan")
+        return self
 
 
 def _items(value: Any) -> list[Any]:
@@ -292,7 +324,7 @@ class AssetSearchPlanner:
         question: str,
         language: str,
         conversation_context: dict[str, Any] | None,
-    ) -> tuple[AssetSearchPlanV1, str]:
+    ) -> tuple[KmPortalRequestPlan, str]:
         if not model_name or self._model_client is None or self._prompt_resolver is None:
             raise ValueError("KM Agent 未配置可用的 Asset Search Planner 模型")
         prompt = await self._prompt_resolver.resolve(
@@ -317,7 +349,9 @@ class AssetSearchPlanner:
                             ],
                             "measures": ["asset_count", "author_count"],
                         },
-                        "contract_schema": AssetSearchPlanV1.model_json_schema(),
+                        "contract_schema": (
+                            KmPortalRequestPlan.model_json_schema()
+                        ),
                         "planning_rules": {
                             "broad_semantic_asset_scope": [
                                 "TITLE", "PRODUCT", "SOLUTION", "CONTENT"
@@ -360,12 +394,12 @@ class AssetSearchPlanner:
                     "Asset Search Planner 模型调用失败"
                 ) from exc
             try:
-                normalized = self.normalize_response(
-                    response=response,
-                    question=question,
-                    language=language,
+                normalized = self.normalize_request_response(
+                    response=response, question=question, language=language
                 )
-                return AssetSearchPlanV1.model_validate(normalized), prompt.version
+                return KmPortalRequestPlan.model_validate(
+                    normalized
+                ), prompt.version
             except (TypeError, ValueError) as exc:
                 last_error = str(exc)
                 if attempt == 0:
@@ -381,15 +415,39 @@ class AssetSearchPlanner:
                         {
                             "role": "system",
                             "content": (
-                                "上一份输出不符合 AssetSearchPlan.v1："
+                                "上一份输出不符合 KmPortalRequestPlan.v1："
                                 f"{last_error}。请仅输出修正后的 JSON。"
                             ),
                         },
                     ])
         raise ValueError(
-            "Asset Search Planner 连续输出无效合同："
+            "KM Portal Router 连续输出无效合同："
             f"{last_error}"
         )
+
+    @classmethod
+    def normalize_request_response(
+        cls, *, response: Any, question: str, language: str
+    ) -> dict[str, Any]:
+        """校验顶层请求类型，并只为搜索请求规范化搜索计划。"""
+        if not isinstance(response, dict):
+            raise TypeError("KM Portal Router 输出必须是 JSON Object")
+        normalized = dict(response)
+        request_kind = str(
+            normalized.get("request_kind") or ""
+        ).strip().upper()
+        normalized["request_kind"] = request_kind
+        if request_kind == KmPortalRequestKind.PORTAL_HELP:
+            normalized.setdefault("asset_search_plan", None)
+            return normalized
+        if request_kind != KmPortalRequestKind.ASSET_SEARCH:
+            raise ValueError("request_kind 必须是 PORTAL_HELP 或 ASSET_SEARCH")
+        normalized["asset_search_plan"] = cls.normalize_response(
+            response=normalized.get("asset_search_plan"),
+            question=question,
+            language=language,
+        )
+        return normalized
 
     @staticmethod
     def normalize_response(

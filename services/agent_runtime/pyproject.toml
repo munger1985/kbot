@@ -22,3 +22,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["agent_runtime*"]
+
+[tool.setuptools.package-data]
+"agent_runtime.specialists.km_asset" = ["resources/*.md"]

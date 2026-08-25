@@ -12,9 +12,11 @@ from .planner import (
     KmAssetRoutePlanner,
 )
 from .data_query import KmAssetSemanticDataQueryExecutor
+from .portal_help import KmAssetConversationResponseSkill
 
 __all__ = [
     "KmAssetDataQuerySkill",
+    "KmAssetConversationResponseSkill",
     "KmAssetDocumentScopeExtractSkill",
     "KmAssetKnowledgeRetrievalSkill",
     "KmAssetResponseComposerSkill",

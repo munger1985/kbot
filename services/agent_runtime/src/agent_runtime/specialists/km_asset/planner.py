@@ -8,7 +8,7 @@ from platform_core.contracts import AssetSearchPlanV1
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.specialists.root import RouteDecision, RouteType
 
-from .search import AssetSearchPlanner
+from .search import AssetSearchPlanner, KmPortalRequestKind
 
 
 class KmAssetAnswerBasis(StrEnum):
@@ -24,12 +24,13 @@ class KmAssetAnswerBasis(StrEnum):
     EXACT_METADATA = "EXACT_METADATA"
     UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
     AMBIGUOUS = "AMBIGUOUS"
+    PORTAL_HELP = "PORTAL_HELP"
 
 
 class KmAssetRouteDecision(RouteDecision):
     """KM Asset 路由携带已校验的统一搜索计划。"""
 
-    asset_search_plan: AssetSearchPlanV1
+    asset_search_plan: AssetSearchPlanV1 | None = None
 
 
 class KmAssetRoutePlanner:
@@ -71,12 +72,30 @@ class KmAssetRoutePlanner:
             or self._prompt_resolver is None
         ):
             raise ValueError("KM Agent 未配置可用的 Router 模型")
-        plan, prompt_version = await self._search_planner.plan(
+        request_plan, prompt_version = await self._search_planner.plan(
             model_name=model_name,
             question=objective,
             language=language,
             conversation_context=conversation_context,
         )
+        if request_plan.request_kind == KmPortalRequestKind.PORTAL_HELP:
+            return KmAssetRouteDecision(
+                route_type=RouteType.CONVERSATION,
+                confidence=1,
+                reason="用户正在了解 KM Portal 或其使用方法",
+                clarification_question=None,
+                requires_chart=False,
+                context_required=False,
+                coverage_mode="BALANCED",
+                answer_basis=KmAssetAnswerBasis.PORTAL_HELP,
+                asset_search_plan=None,
+                classifier_version=(
+                    f"km-portal-help-v1:{prompt_version}"
+                ),
+            )
+        plan = request_plan.asset_search_plan
+        if plan is None:
+            raise ValueError("ASSET_SEARCH 路由缺少 Asset Search Plan")
         if plan.ambiguities:
             return KmAssetRouteDecision(
                 route_type=RouteType.CLARIFY,

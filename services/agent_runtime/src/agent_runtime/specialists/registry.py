@@ -21,6 +21,7 @@ from .visualization import EChartsSkill
 from .hybrid import DataConstraintExtractSkill, DocumentScopeExtractSkill
 from .response_composer import ResponseComposerSkill
 from .km_asset import (
+    KmAssetConversationResponseSkill,
     KmAssetDataQuerySkill,
     KmAssetDocumentScopeExtractSkill,
     KmAssetKnowledgeRetrievalSkill,
@@ -272,9 +273,17 @@ def register_builtin_skills(
     )
     registry.register(
         CONVERSATION_RESPONSE_MANIFEST,
-        ConversationResponseSkill(
-            model_client=model_client,
-            prompt_resolver=prompt_resolver,
+        AppScopedSkill(
+            default=ConversationResponseSkill(
+                model_client=model_client,
+                prompt_resolver=prompt_resolver,
+            ),
+            implementations={
+                "km_asset": KmAssetConversationResponseSkill(
+                    model_client=model_client,
+                    prompt_resolver=prompt_resolver,
+                ),
+            },
         ),
     )
     registry.register(

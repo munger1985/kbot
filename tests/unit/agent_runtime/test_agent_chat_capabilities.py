@@ -18,6 +18,7 @@ from agent_runtime.specialists.data_query import (
 from agent_runtime.specialists.hybrid import DocumentScopeExtractSkill
 from agent_runtime.specialists.km_asset import (
     KmAssetAnswerBasis,
+    KmAssetConversationResponseSkill,
     KmAssetDocumentScopeExtractSkill,
     KmAssetRoutePlanner,
     KmAssetResponseComposerSkill as ResponseComposerSkill,
@@ -168,20 +169,35 @@ def _asset_plan_response(
         expression = {"node_type": "REF", "criterion_id": "c1"}
     is_list = operation == "LIST"
     return {
-        "operation": operation,
-        "target": "ASSET",
-        "criteria": criteria,
-        "eligibility_expression": expression,
-        "measures": (
-            [] if is_list else [{"name": "asset_count", "aggregation": "COUNT"}]
-        ),
-        "display_limit": 10 if is_list else None,
-        "result_assets": {
-            "mode": "PRIMARY" if is_list else "SUPPORTING",
-            "target_count": 10 if is_list else 5,
-            "selection": "REQUESTED_ORDER" if is_list else "RECENT_WITHIN_RESULT",
+        "request_kind": "ASSET_SEARCH",
+        "asset_search_plan": {
+            "operation": operation,
+            "target": "ASSET",
+            "criteria": criteria,
+            "eligibility_expression": expression,
+            "measures": (
+                [] if is_list else [{
+                    "name": "asset_count", "aggregation": "COUNT"
+                }]
+            ),
+            "display_limit": 10 if is_list else None,
+            "result_assets": {
+                "mode": "PRIMARY" if is_list else "SUPPORTING",
+                "target_count": 10 if is_list else 5,
+                "selection": (
+                    "REQUESTED_ORDER"
+                    if is_list else "RECENT_WITHIN_RESULT"
+                ),
+            },
+            "ambiguities": list(ambiguities),
         },
-        "ambiguities": list(ambiguities),
+    }
+
+
+def _portal_help_response():
+    return {
+        "request_kind": "PORTAL_HELP",
+        "asset_search_plan": None,
     }
 
 
@@ -1133,6 +1149,73 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(model.last_json_request)
 
+    async def test_km_portal_help_uses_conversation_route_in_four_languages(self):
+        cases = (
+            ("你是谁？", "zh-CN"),
+            ("What can you do?", "en-US"),
+            ("どのような機能がありますか？", "ja-JP"),
+            ("어떻게 질문하면 되나요?", "ko-KR"),
+        )
+        agent = {
+            "owner_app_id": "km_asset",
+            "enabled_capabilities": ["document", "data_query"],
+            "models": {
+                "router_llm": {"served_model_name": "router-model"}
+            },
+        }
+        for objective, expected_language in cases:
+            with self.subTest(objective=objective):
+                model = _ModelClient(response=_portal_help_response())
+                planner = _root_planner(
+                    model_client=model,
+                    prompt_resolver=_PromptResolver(),
+                )
+
+                decision = await planner.decide_for_input(
+                    agent_snapshot=agent,
+                    objective=objective,
+                )
+                plan = planner.build_plan(
+                    objective=objective, decision=decision
+                )
+
+                self.assertEqual(RouteType.CONVERSATION, decision.route_type)
+                self.assertEqual(
+                    KMAnswerBasis.PORTAL_HELP, decision.answer_basis
+                )
+                self.assertIsNone(decision.asset_search_plan)
+                self.assertEqual(1, len(model.json_requests))
+                request = json.loads(
+                    model.last_json_request["prompt"][-1]["content"]
+                )
+                self.assertEqual(expected_language, request["language"])
+                self.assertEqual(
+                    "conversation-response",
+                    plan.tasks[-1].skill_id,
+                )
+
+    async def test_km_asset_request_keeps_search_plan_route(self):
+        model = _ModelClient(response=_asset_plan_response(semantic=True))
+        planner = _root_planner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "owner_app_id": "km_asset",
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {"served_model_name": "router-model"}
+                },
+            },
+            objective="介绍一下 OCI Load Balancer",
+        )
+
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, decision.route_type)
+        self.assertIsNotNone(decision.asset_search_plan)
+        self.assertEqual(1, len(model.json_requests))
+
     async def test_km_aggregate_question_uses_data_query(self):
         planner = _root_planner(
             model_client=_ModelClient(response=_asset_plan_response(
@@ -2011,6 +2094,51 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.artifact.payload["answer"], "你好")
         self.assertEqual(result.artifact.payload["references"], [])
+
+    async def test_km_portal_help_returns_static_markdown_in_four_languages(self):
+        cases = (
+            ("zh-CN", "# 关于 KM Portal", "金融欺诈"),
+            ("en-US", "# About KM Portal", "financial fraud"),
+            ("ja-JP", "# KM Portal について", "金融詐欺"),
+            ("ko-KR", "# KM Portal 소개", "금융 사기"),
+        )
+        skill = KmAssetConversationResponseSkill(
+            model_client=_ModelClient(),
+            prompt_resolver=None,
+        )
+        for language, heading, example in cases:
+            with self.subTest(language=language):
+                items = [
+                    item
+                    async for item in skill.execute_stream(_context(
+                        route={
+                            "route_type": "CONVERSATION",
+                            "answer_basis": "PORTAL_HELP",
+                        },
+                        original_input="test",
+                        language=language,
+                    ))
+                ]
+                result = next(
+                    item for item in items if isinstance(item, SkillResult)
+                )
+
+                self.assertIn(heading, result.artifact.payload["answer"])
+                self.assertIn(example, result.artifact.payload["answer"])
+                self.assertEqual("READY", result.artifact.payload["status"])
+                self.assertEqual([], result.artifact.payload["references"])
+                self.assertEqual([], result.artifact.payload["warnings"])
+                self.assertEqual(
+                    "KM_PORTAL_HELP",
+                    result.artifact.provenance["answer_mode"],
+                )
+                self.assertGreater(
+                    len([
+                        item for item in items
+                        if isinstance(item, SkillProgress)
+                    ]),
+                    1,
+                )
 
     async def test_route_clarification_is_returned_as_chat_answer(self):
         skill = ConversationResponseSkill(
