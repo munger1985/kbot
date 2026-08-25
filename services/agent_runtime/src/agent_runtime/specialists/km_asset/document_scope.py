@@ -35,7 +35,7 @@ class KmAssetDocumentScopeExtractSkill(DocumentScopeExtractSkill):
 
     @classmethod
     def _enumeration_scope(cls, context: ExecutionContext) -> SkillResult:
-        """保留全部候选供 KC 取证，展示数量由最终组合阶段决定。"""
+        """保留问数资格范围，语义召回和展示数量由后续阶段收敛。"""
         artifact = next(
             (
                 item for item in reversed(context.input_artifacts)

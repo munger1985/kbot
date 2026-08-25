@@ -5,12 +5,14 @@ import json
 import re
 from time import perf_counter
 from typing import Any
+from uuid import UUID
 
 from loguru import logger
 from platform_core.contracts import (
     AssetBooleanExpression,
     AssetSearchCriterion,
     AssetSearchPlanV1,
+    KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
 )
 
 from agent_runtime.domain.model_bindings import agent_model_name
@@ -338,6 +340,150 @@ class KmAssetRetrievalMixin:
                 "requirements": matrix,
             },
         }, eligible
+
+    async def _prepare_scoped_targets(
+        self,
+        *,
+        context: ExecutionContext,
+        allowed_collection_ids: tuple[UUID, ...],
+        raw_targets: list[dict[str, Any]],
+        retrieval_config: dict[str, int],
+        warnings: list[str],
+    ) -> list[dict[str, Any]]:
+        """在解析 Bundle 状态前，把大范围问数资格集收敛为语义候选。"""
+        scoped_targets = raw_targets[:retrieval_config["candidate_scope_limit"]]
+        plan = self._asset_search_plan(context)
+        if (
+            plan is None
+            or len(scoped_targets) <= KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT
+        ):
+            return scoped_targets
+
+        hard_content = [
+            item for item in plan.criteria
+            if item.kind not in {"METADATA", "IDENTIFIER"}
+        ]
+        preference_content = [
+            item for item in plan.preferences
+            if item.criterion.kind not in {"METADATA", "IDENTIFIER"}
+        ]
+        semantic_criteria: list[AssetSearchCriterion | None] = [
+            *hard_content,
+            *(item.criterion for item in preference_content),
+        ]
+        content_support_required = bool(
+            not hard_content
+            and plan.target == "CONTENT"
+            and plan.operation in {"ANSWER", "COMPARE"}
+        )
+        if content_support_required:
+            semantic_criteria.append(None)
+        if not semantic_criteria:
+            return scoped_targets
+
+        queries: list[str] = []
+        for criterion in semantic_criteria:
+            if criterion is None:
+                topics = (plan.query_text,)
+            else:
+                original = self._criterion_query(criterion)
+                equivalents = (
+                    tuple(criterion.resolved_concept.equivalents)
+                    if criterion.resolved_concept is not None
+                    else ()
+                )
+                topics = self._unique_queries((original, *equivalents))
+            query = self._combined_retrieval_query(topics)
+            if query:
+                queries.append(query)
+        if not queries:
+            return scoped_targets
+
+        shortlist_limit = min(
+            KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
+            max(
+                plan.result_assets.target_count * 4,
+                int(retrieval_config.get("max_bundles", 10)) * 2,
+                int(retrieval_config.get("max_citations", 12)) * 2,
+            ),
+        )
+        revision_ids: list[UUID] = []
+        seen_revision_ids: set[UUID] = set()
+        for item in scoped_targets:
+            try:
+                revision_id = UUID(str(item["bundle_revision_id"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if revision_id not in seen_revision_ids:
+                seen_revision_ids.add(revision_id)
+                revision_ids.append(revision_id)
+        if not revision_ids:
+            return []
+        semaphore = asyncio.Semaphore(4)
+
+        async def discover(query):
+            async with semaphore:
+                return await self._client.discover(
+                    query=query,
+                    collection_ids=allowed_collection_ids,
+                    bundle_revision_ids=tuple(revision_ids),
+                    domain_id=context.domain_id,
+                    agent_id=str(context.agent_id),
+                    auth_context=self._auth_context(context),
+                    max_security_level=self._security_level(context),
+                    per_collection_limit=shortlist_limit,
+                    coverage_mode=str(
+                        (context.config_snapshot.get("route") or {}).get(
+                            "coverage_mode", "BALANCED"
+                        )
+                    ).upper(),
+                    run_id=context.run_id,
+                    task_id=context.task_id,
+                )
+
+        discovered = await asyncio.gather(*(discover(query) for query in queries))
+        by_revision = {
+            str(item.get("bundle_revision_id") or ""): item
+            for item in scoped_targets
+        }
+        selected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for response in discovered:
+            response_candidates = list(response.get("candidates") or ())
+            warnings.extend(response.get("warnings") or ())
+            for item in response_candidates:
+                revision_id = str(item.get("bundle_revision_id") or "")
+                candidate = by_revision.get(revision_id)
+                if candidate is None or revision_id in seen:
+                    continue
+                seen.add(revision_id)
+                selected.append(candidate)
+                if len(selected) >= shortlist_limit:
+                    break
+            if len(selected) >= shortlist_limit:
+                break
+        required = bool(hard_content or content_support_required)
+        if not required and len(selected) < shortlist_limit:
+            for candidate in scoped_targets:
+                revision_id = str(candidate.get("bundle_revision_id") or "")
+                if revision_id in seen:
+                    continue
+                seen.add(revision_id)
+                selected.append(candidate)
+                if len(selected) >= shortlist_limit:
+                    break
+        logger.info(
+            "Asset 语义候选已收敛 | run_id={} | task_id={} | "
+            "scope_count={} | candidate_count={} | candidate_limit={} | "
+            "request_count={}",
+            context.run_id,
+            context.task_id,
+            len(scoped_targets),
+            len(selected),
+            shortlist_limit,
+            len(queries),
+        )
+        return selected
 
     @staticmethod
     def _missing_identity_candidates(

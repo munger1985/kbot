@@ -281,7 +281,13 @@ class KnowledgeRetrievalSkill:
         candidates: list[dict[str, Any]] = []
         retrieval_config = self._retrieval_config(context)
         raw_targets = list(scope.get("bundle_targets") or [])
-        scoped_targets = raw_targets[:retrieval_config["candidate_scope_limit"]]
+        scoped_targets = await self._prepare_scoped_targets(
+            context=context,
+            allowed_collection_ids=allowed_collection_ids,
+            raw_targets=raw_targets,
+            retrieval_config=retrieval_config,
+            warnings=warnings,
+        )
         semaphore = asyncio.Semaphore(16)
 
         async def resolve_target(target):
@@ -330,6 +336,19 @@ class KnowledgeRetrievalSkill:
             if warning:
                 warnings.append(warning)
         return candidates
+
+    async def _prepare_scoped_targets(
+        self,
+        *,
+        context: ExecutionContext,
+        allowed_collection_ids: tuple[UUID, ...],
+        raw_targets: list[dict[str, Any]],
+        retrieval_config: dict[str, int],
+        warnings: list[str],
+    ) -> list[dict[str, Any]]:
+        """通用路径只应用受控范围上限，专属 Agent 可覆盖候选召回。"""
+        del context, allowed_collection_ids, warnings
+        return raw_targets[:retrieval_config["candidate_scope_limit"]]
 
     async def _visual_hits(
         self,

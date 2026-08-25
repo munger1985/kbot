@@ -197,13 +197,41 @@ async def lifespan(app: FastAPI):
     app.state.kc_index_service.visual_service = app.state.kc_visual_service
 
     class UowDiscoverySearchPort:
-        async def search_text(self, *, collection_id: UUID, query: str, limit: int, max_security_level: int):
+        async def search_text(
+            self,
+            *,
+            collection_id: UUID,
+            query: str,
+            limit: int,
+            max_security_level: int,
+            bundle_revision_ids=(),
+        ):
             async with kc_uow_factory() as uow:
-                return await uow.discovery.search_text(collection_id=collection_id, query=query, limit=limit, max_security_level=max_security_level)
+                return await uow.discovery.search_text(
+                    collection_id=collection_id,
+                    query=query,
+                    limit=limit,
+                    max_security_level=max_security_level,
+                    bundle_revision_ids=bundle_revision_ids,
+                )
 
-        async def search_vector(self, *, collection_id: UUID, vector: list[float], limit: int, max_security_level: int):
+        async def search_vector(
+            self,
+            *,
+            collection_id: UUID,
+            vector: list[float],
+            limit: int,
+            max_security_level: int,
+            bundle_revision_ids=(),
+        ):
             async with kc_uow_factory() as uow:
-                return await uow.discovery.search_vector(collection_id=collection_id, vector=vector, limit=limit, max_security_level=max_security_level)
+                return await uow.discovery.search_vector(
+                    collection_id=collection_id,
+                    vector=vector,
+                    limit=limit,
+                    max_security_level=max_security_level,
+                    bundle_revision_ids=bundle_revision_ids,
+                )
 
     app.state.kc_discovery_service = KnowledgeCoreDiscoveryService(
         search_port=UowDiscoverySearchPort(),

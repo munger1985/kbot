@@ -42,8 +42,25 @@ class BundleCandidate:
 
 
 class DiscoverySearchPort(Protocol):
-    async def search_text(self, *, collection_id: UUID, query: str, limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
-    async def search_vector(self, *, collection_id: UUID, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[DiscoveryHit]: ...
+    async def search_text(
+        self,
+        *,
+        collection_id: UUID,
+        query: str,
+        limit: int,
+        max_security_level: int,
+        bundle_revision_ids: Sequence[UUID] = (),
+    ) -> Sequence[DiscoveryHit]: ...
+
+    async def search_vector(
+        self,
+        *,
+        collection_id: UUID,
+        vector: Sequence[float],
+        limit: int,
+        max_security_level: int,
+        bundle_revision_ids: Sequence[UUID] = (),
+    ) -> Sequence[DiscoveryHit]: ...
 
 
 def aggregate_candidates(
@@ -107,12 +124,14 @@ class KnowledgeCoreDiscoveryService:
 
     async def discover(
         self, *, collection_ids: Sequence[UUID], query: str,
+        bundle_revision_ids: Sequence[UUID] = (),
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         per_channel_limit: int = 20, per_collection_limit: int = 20,
         max_security_level: int = 3,
     ) -> list[BundleCandidate]:
         candidates, _ = await self.discover_with_diagnostics(
             collection_ids=collection_ids,
+            bundle_revision_ids=bundle_revision_ids,
             query=query,
             query_vectors=query_vectors,
             per_channel_limit=per_channel_limit,
@@ -123,6 +142,7 @@ class KnowledgeCoreDiscoveryService:
 
     async def discover_with_diagnostics(
         self, *, collection_ids: Sequence[UUID], query: str,
+        bundle_revision_ids: Sequence[UUID] = (),
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         per_channel_limit: int = 20, per_collection_limit: int = 20,
         max_security_level: int = 3,
@@ -160,6 +180,7 @@ class KnowledgeCoreDiscoveryService:
                     query=query,
                     limit=per_channel_limit,
                     max_security_level=max_security_level,
+                    bundle_revision_ids=bundle_revision_ids,
                 ))
                 successful_channels += 1
             except Exception as exc:
@@ -186,6 +207,7 @@ class KnowledgeCoreDiscoveryService:
                         vector=query_vectors[collection_id],
                         limit=per_channel_limit,
                         max_security_level=max_security_level,
+                        bundle_revision_ids=bundle_revision_ids,
                     ))
                     successful_channels += 1
                 except Exception as exc:
@@ -233,5 +255,6 @@ class KnowledgeCoreDiscoveryService:
             "bundle_candidates": len(candidates),
             "per_channel_limit": per_channel_limit,
             "per_collection_limit": per_collection_limit,
+            "revision_scope_count": len(bundle_revision_ids),
             "warnings": warnings,
         }

@@ -14,7 +14,11 @@ REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a003")
 
 
 class _DiscoveryPort:
+    def __init__(self):
+        self.bundle_revision_ids = ()
+
     async def search_text(self, **kwargs):
+        self.bundle_revision_ids = kwargs.get("bundle_revision_ids") or ()
         return [
             DiscoveryHit(
                 COLLECTION_ID,
@@ -75,19 +79,21 @@ class DiscoveryCandidateAggregationTest(unittest.TestCase):
 
 class DiscoveryDiagnosticsTest(unittest.IsolatedAsyncioTestCase):
     async def test_diagnostics_separate_text_vector_and_bundle_counts(self):
-        service = KnowledgeCoreDiscoveryService(
-            search_port=_DiscoveryPort()
-        )
+        port = _DiscoveryPort()
+        service = KnowledgeCoreDiscoveryService(search_port=port)
         candidates, diagnostics = await service.discover_with_diagnostics(
             collection_ids=[COLLECTION_ID],
             query="数据库性能",
             query_vectors={COLLECTION_ID: [0.1, 0.2]},
+            bundle_revision_ids=[REVISION_ID],
         )
         self.assertEqual(1, len(candidates))
         self.assertEqual(1, diagnostics["text_hits"])
         self.assertEqual(1, diagnostics["vector_hits"])
         self.assertEqual(2, diagnostics["raw_hits"])
         self.assertEqual(1, diagnostics["bundle_candidates"])
+        self.assertEqual((REVISION_ID,), tuple(port.bundle_revision_ids))
+        self.assertEqual(1, diagnostics["revision_scope_count"])
 
     async def test_vector_channel_survives_text_channel_failure(self):
         service = KnowledgeCoreDiscoveryService(

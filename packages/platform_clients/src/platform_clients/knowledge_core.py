@@ -514,6 +514,7 @@ class KnowledgeCoreClient:
         *,
         query: str,
         collection_ids: Sequence[UUID],
+        bundle_revision_ids: Sequence[UUID] = (),
         domain_id: int,
         agent_id: str,
         auth_context: AuthContext,
@@ -530,6 +531,9 @@ class KnowledgeCoreClient:
             payload={
                 "query": query,
                 "collection_ids": [str(value) for value in collection_ids],
+                "bundle_revision_ids": [
+                    str(value) for value in bundle_revision_ids
+                ],
                 "domain_id": domain_id,
                 "agent_id": agent_id,
                 "query_vectors": (

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 from sqlalchemy import (
     Float,
@@ -95,7 +96,15 @@ class DiscoveryRepository:
             KcDiscoveryObjectEntity.discovery_status == "ACTIVE",
         ).values(discovery_status="DELETING"))
 
-    async def search_text(self, *, collection_id: UUID, query: str, limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
+    async def search_text(
+        self,
+        *,
+        collection_id: UUID,
+        query: str,
+        limit: int = 20,
+        max_security_level: int = 3,
+        bundle_revision_ids: Sequence[UUID] = (),
+    ) -> list[DiscoveryHit]:
         """Oracle Text candidate search scoped to current published revisions."""
         oracle_query = build_oracle_text_query(query)
         if not oracle_query:
@@ -125,6 +134,12 @@ class DiscoveryRepository:
             .order_by(text_score.desc(), KcDiscoveryObjectEntity.discovery_object_id)
             .limit(limit)
         ).params(discovery_query=oracle_query)
+        if bundle_revision_ids:
+            statement = statement.where(
+                KcDiscoveryObjectEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                )
+            )
         rows = (await self.session.execute(statement)).all()
         if rows:
             return [self._to_hit(entity, rank, "TEXT", float(score or 0)) for rank, (entity, score) in enumerate(rows, 1)]
@@ -133,6 +148,7 @@ class DiscoveryRepository:
             oracle_query=oracle_query,
             limit=limit,
             max_security_level=max_security_level,
+            bundle_revision_ids=bundle_revision_ids,
         )
 
     async def _search_evidence_text(
@@ -142,6 +158,7 @@ class DiscoveryRepository:
         oracle_query: str,
         limit: int,
         max_security_level: int,
+        bundle_revision_ids: Sequence[UUID] = (),
     ) -> list[DiscoveryHit]:
         """Profile 未命中时，以 Evidence 全文索引桥接到所属 Bundle。"""
         oracle_text_label = literal_column("1")
@@ -202,6 +219,12 @@ class DiscoveryRepository:
             .order_by(text_score.desc(), KcEvidenceEntity.evidence_id)
             .limit(limit)
         ).params(evidence_discovery_query=oracle_query)
+        if bundle_revision_ids:
+            statement = statement.where(
+                KcEvidenceEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                )
+            )
         rows = (await self.session.execute(statement)).all()
         hits: list[DiscoveryHit] = []
         seen_documents: set[UUID] = set()
@@ -238,7 +261,15 @@ class DiscoveryRepository:
             )
         return hits
 
-    async def search_vector(self, *, collection_id: UUID, vector: list[float], limit: int = 20, max_security_level: int = 3) -> list[DiscoveryHit]:
+    async def search_vector(
+        self,
+        *,
+        collection_id: UUID,
+        vector: list[float],
+        limit: int = 20,
+        max_security_level: int = 3,
+        bundle_revision_ids: Sequence[UUID] = (),
+    ) -> list[DiscoveryHit]:
         """Oracle VECTOR distance search; query vectors are model-grouped upstream."""
         distance = KcDiscoveryObjectEntity.embedding.op(
             "<=>",
@@ -261,6 +292,12 @@ class DiscoveryRepository:
             .order_by(distance, KcDiscoveryObjectEntity.discovery_object_id)
             .limit(limit)
         ).params(query_vector=vector)
+        if bundle_revision_ids:
+            statement = statement.where(
+                KcDiscoveryObjectEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                )
+            )
         rows = (await self.session.execute(statement)).all()
         return [
             self._to_hit(

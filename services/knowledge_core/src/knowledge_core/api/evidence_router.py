@@ -8,7 +8,10 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from platform_core.contracts import INTERNAL_API_V1
+from platform_core.contracts import (
+    INTERNAL_API_V1,
+    KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
+)
 from platform_core.security import require_domain_match
 from knowledge_core.application.evidence_retrieval import EvidenceScope
 
@@ -29,7 +32,10 @@ class EvidenceSearchRequest(BaseModel):
     domain_id: int = Field(gt=0)
     agent_id: UUID
     query: str = Field(min_length=1, max_length=8000)
-    candidates: list[EvidenceCandidateRequest] = Field(min_length=1, max_length=128)
+    candidates: list[EvidenceCandidateRequest] = Field(
+        min_length=1,
+        max_length=KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
+    )
     query_vectors: dict[UUID, list[float]] | None = None
     max_evidence: int = Field(default=12, ge=1, le=100)
     context_limit: int = Field(default=4, ge=0, le=20)

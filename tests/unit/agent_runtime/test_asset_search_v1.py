@@ -1265,6 +1265,111 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             client.retrieve_evidence.await_args.kwargs["max_evidence"],
         )
 
+    async def test_large_semantic_scope_is_narrowed_before_evidence(self):
+        collection_id = uuid7()
+        targets = [{
+            "bundle_id": str(uuid7()),
+            "bundle_revision_id": str(uuid7()),
+            "title": f"Asset {index}",
+        } for index in range(129)]
+        discovered = [
+            {
+                "collection_id": str(collection_id),
+                "bundle_id": item["bundle_id"],
+                "bundle_revision_id": item["bundle_revision_id"],
+                "display_title": item["title"],
+            }
+            for item in targets[:5]
+        ]
+        revisions_by_bundle = {
+            item["bundle_id"]: item["bundle_revision_id"]
+            for item in targets
+        }
+
+        async def bundle_status(*, bundle_id, **_kwargs):
+            return {
+                "availability_status": "READY",
+                "current_revision_id": revisions_by_bundle[str(bundle_id)],
+                "collection_id": str(collection_id),
+            }
+
+        client = SimpleNamespace(
+            discover=AsyncMock(return_value={
+                "candidates": discovered,
+                "warnings": [],
+                "diagnostics": {"bundle_candidates": 5},
+            }),
+            get_bundle_status=AsyncMock(side_effect=bundle_status),
+        )
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent_runtime",
+            model_client=None,
+            prompt_resolver=None,
+        )
+        plan = _base_plan(
+            query_text="Top 5 most relevant Financial assets",
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["Financial"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+            display_limit=5,
+            result_assets={
+                "mode": "PRIMARY",
+                "target_count": 5,
+                "selection": "RECENT_RELEVANT",
+            },
+        )
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input=plan.query_text,
+            policy_snapshot={},
+            config_snapshot={
+                "agent": {"config": {"retrieval": {}}},
+                "route": {
+                    "asset_search_plan": plan.model_payload(),
+                    "coverage_mode": "BALANCED",
+                },
+            },
+            input_artifacts=(_artifact("DOCUMENT_SCOPE", {
+                "bundle_targets": targets,
+            }),),
+        )
+
+        warnings = []
+        candidates = await skill._scoped_candidates(
+            context=context,
+            allowed_collection_ids=(collection_id,),
+            warnings=warnings,
+        )
+
+        self.assertEqual(1, client.discover.await_count)
+        discovery_request = client.discover.await_args.kwargs
+        self.assertEqual(
+            129, len(discovery_request["bundle_revision_ids"])
+        )
+        self.assertEqual(5, client.get_bundle_status.await_count)
+        self.assertEqual(5, len(candidates))
+        self.assertEqual(
+            [item["bundle_revision_id"] for item in discovered],
+            [item["bundle_revision_id"] for item in candidates],
+        )
+        self.assertEqual([], warnings)
+
     async def test_asset_without_attachments_gets_manifest_citation(self):
         collection_id = uuid7()
         bundle_id = uuid7()
