@@ -324,7 +324,7 @@
     host._references = refs;
   }
   function appendAssetFields(host, fields) {
-    const labels = { title: "标题", author: "作者", product: "产品", solution: "解决方案", industry: "行业", category: "类别", content_category: "内容类别", asset_date: "发布日期" };
+    const labels = { asset_id: "Asset ID", asset_title: "标题", author_email: "作者邮箱", briefing: "简介", publish_time: "发布时间", last_update_time: "最后更新时间", product: "产品", solution: "解决方案", industry: "行业", content_category: "内容类别" };
     const entries = Object.entries(fields || {}).filter(([, value]) => value != null && String(value).trim());
     if (!entries.length) return;
     const details = document.createElement("dl");

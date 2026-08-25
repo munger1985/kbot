@@ -1,7 +1,5 @@
 """KM Asset App 公开 BFF API。"""
 
-import json
-import re
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -44,7 +42,20 @@ from platform_core.security import get_auth_context
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/km-asset", tags=["KM Asset App"])
 KM_ASSET_COLLECTION_NAME = "assets"
 
-_MAX_MANIFEST_BYTES = 1024 * 1024
+_ASSET_PREVIEW_FIELDS = frozenset(
+    {
+        "asset_id",
+        "asset_title",
+        "author_email",
+        "briefing",
+        "publish_time",
+        "last_update_time",
+        "product",
+        "solution",
+        "industry",
+        "content_category",
+    }
+)
 
 
 class _Payload(BaseModel):
@@ -294,105 +305,18 @@ def _runtime_auth_context(request: Request) -> AuthContext:
     )
 
 
-def _clean_manifest_value(value: object) -> str:
-    if value is None or isinstance(value, (dict, list, tuple, set)):
-        return ""
-    return str(value).strip().strip("*_:： \t\r\n")
-
-
-def _manifest_asset_fields(content: str) -> dict[str, str]:
-    """从 manifest.md 的白名单元数据中投影 Slack 所需字段。"""
-    title_match = re.search(r"(?m)^#\s+(.+?)\s*$", content)
-    source_match = re.search(r"(?m)^Source ID:\s*(.+?)\s*$", content)
-    metadata: dict[str, Any] = {}
-    marker = re.search(r"(?m)^## Source metadata\s*$", content)
-    if marker is not None:
-        try:
-            parsed, _ = json.JSONDecoder().raw_decode(
-                content[marker.end() :].lstrip()
-            )
-        except (TypeError, ValueError):
-            parsed = {}
-        if isinstance(parsed, dict):
-            metadata = {
-                str(key).strip().lower(): value
-                for key, value in parsed.items()
-            }
-    aliases = {
-        "asset_id": ("external_asset_id", "asset_id"),
-        "asset_title": ("asset_title", "title"),
-        "solution_briefing": (
-            "solution_briefing",
-            "description",
-            "asset_details",
-        ),
-        "author_mail": ("author_mail", "author"),
-        "create_time": ("create_time", "publish_date", "asset_date"),
+def _preview_asset_fields(payload: object) -> dict[str, str]:
+    """防御性收窄 KC 返回的结构化 Asset 展示字段。"""
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(key): str(value).strip()
+        for key, value in payload.items()
+        if key in _ASSET_PREVIEW_FIELDS
+        and value is not None
+        and not isinstance(value, (dict, list, tuple, set))
+        and str(value).strip()
     }
-    fields: dict[str, str] = {}
-    for target, sources in aliases.items():
-        for source in sources:
-            cleaned = _clean_manifest_value(metadata.get(source))
-            if cleaned:
-                fields[target] = cleaned
-                break
-    if "asset_id" not in fields and source_match is not None:
-        fields["asset_id"] = _clean_manifest_value(source_match.group(1))
-    if "asset_title" not in fields and title_match is not None:
-        fields["asset_title"] = _clean_manifest_value(title_match.group(1))
-    return fields
-
-
-async def _reference_manifest_fields(
-    request: Request,
-    *,
-    reference: _DocumentReference,
-    files: list[dict[str, Any]],
-) -> dict[str, str]:
-    """通过 Main API 内部可信上下文读取引用 Bundle 的 manifest。"""
-    manifest = next(
-        (
-            item
-            for item in files
-            if str(item.get("document_role") or "").upper() == "MANIFEST"
-            and str(item.get("declared_name") or "").lower() == "manifest.md"
-            and bool(item.get("preview_available"))
-            and item.get("document_version_id")
-        ),
-        None,
-    )
-    if manifest is None:
-        return {}
-    mime_type = str(
-        manifest.get("detected_mime_type")
-        or manifest.get("declared_mime_type")
-        or ""
-    ).split(";", 1)[0].strip().lower()
-    byte_size = int(manifest.get("byte_size") or 0)
-    if mime_type not in {"text/markdown", "text/plain"} or byte_size > _MAX_MANIFEST_BYTES:
-        return {}
-    response = await cast(
-        KnowledgeCoreClient, request.app.state.knowledge_core_client
-    ).stream_source_file(
-        domain_id=int(get_auth_context(request).domain_id or "0"),
-        collection_id=reference.collection_id,
-        bundle_id=reference.bundle_id,
-        bundle_revision_id=reference.bundle_revision_id,
-        document_version_id=UUID(str(manifest["document_version_id"])),
-        range_header=None,
-        auth_context=_runtime_auth_context(request),
-    )
-    if response.status_code != 200:
-        return {}
-    body = bytearray()
-    async for chunk in response.body:
-        body.extend(chunk)
-        if len(body) > _MAX_MANIFEST_BYTES:
-            return {}
-    try:
-        return _manifest_asset_fields(bytes(body).decode("utf-8-sig"))
-    except UnicodeDecodeError:
-        return {}
 
 
 def _km_turn_receipt(receipt: dict) -> dict:
@@ -1094,24 +1018,7 @@ async def get_reference_preview(run_id: UUID, citation_label: str, request: Requ
         auth_context=runtime_context,
     )
     files = [item for item in preview.get("files", []) if isinstance(item, dict)]
-    try:
-        manifest_fields = await _reference_manifest_fields(
-            request,
-            reference=reference,
-            files=files,
-        )
-    except Exception as exc:
-        # Manifest 是 Slack Template 唯一元数据来源。底层文件已迁移、
-        # 暂不可读或历史引用不完整时只返回基础预览；Slack 会保留
-        # KBot 原始回答，不使用 QueryResult 拼装伪 Template。
-        logger.warning(
-            "KM Asset 参考 Manifest 读取失败，返回基础预览："
-            "run_id={} citation_label={} cause={}",
-            run_id,
-            citation_label,
-            str(exc),
-        )
-        manifest_fields = {}
+    manifest_fields = _preview_asset_fields(preview.get("asset_fields"))
     locator = _document_locator(reference)
     attachments = tuple(
         attachment

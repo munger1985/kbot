@@ -167,6 +167,15 @@ class _FakeKnowledgeCoreClient:
             "status": "READY",
             "approval_status": "APPROVED",
             "is_current_revision": True,
+            "asset_fields": {
+                "asset_id": "ASSET-1",
+                "asset_title": "员工移动套餐",
+                "author_email": "owner@example.com",
+                "briefing": "员工移动服务方案。",
+                "publish_time": "2026-08-01",
+                "last_update_time": "2026-08-20T12:30:00Z",
+                "product": "Mobile Services",
+            },
             "files": [
                 {
                     "document_version_id": str(TEST_MANIFEST_VERSION_ID),
@@ -1482,6 +1491,17 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("员工移动套餐", payload["title"])
         self.assertTrue(payload["asset_content_available"])
         self.assertEqual("Mobile Services", payload["asset_fields"]["product"])
+        self.assertEqual("ASSET-1", payload["asset_fields"]["asset_id"])
+        self.assertEqual(
+            "owner@example.com", payload["asset_fields"]["author_email"]
+        )
+        self.assertEqual(
+            "员工移动服务方案。", payload["asset_fields"]["briefing"]
+        )
+        self.assertEqual(
+            "2026-08-20T12:30:00Z",
+            payload["asset_fields"]["last_update_time"],
+        )
         self.assertEqual(1, len(payload["attachments"]))
         attachment = payload["attachments"][0]
         self.assertEqual("员工移动套餐.pdf", attachment["name"])

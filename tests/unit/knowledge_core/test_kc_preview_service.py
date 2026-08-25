@@ -92,6 +92,18 @@ class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
             revision_no=2,
             status="READY",
             approval_status="APPROVED",
+            manifest_json={
+                "source_id": "ASSET-100",
+                "metadata": {
+                    "metadata_schema": "km_asset/v1",
+                    "asset_title": "产品说明资料",
+                    "author_mail": "owner@example.com",
+                    "solution_briefing": "用于说明结构化预览字段。",
+                    "publish_date": "2026-08-01",
+                    "last_update_time": "2026-08-20T12:30:00Z",
+                    "asset_product": "OAC",
+                },
+            },
         )
         self.member = SimpleNamespace(
             bundle_revision_id=self.revision_id,
@@ -140,6 +152,34 @@ class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.version_id, result.files[0].document_version_id)
         self.assertTrue(result.files[0].preview_available)
         self.assertTrue(result.is_current_revision)
+        self.assertEqual("ASSET-100", result.asset_fields["asset_id"])
+        self.assertEqual(
+            "owner@example.com", result.asset_fields["author_email"]
+        )
+        self.assertEqual(
+            "用于说明结构化预览字段。", result.asset_fields["briefing"]
+        )
+        self.assertEqual("2026-08-01", result.asset_fields["publish_time"])
+        self.assertEqual(
+            "2026-08-20T12:30:00Z",
+            result.asset_fields["last_update_time"],
+        )
+        self.assertEqual("OAC", result.asset_fields["product"])
+
+    async def test_non_km_manifest_does_not_expose_source_metadata(self):
+        self.revision.manifest_json = {
+            "source_id": "DOCUMENT-100",
+            "metadata": {"author_mail": "private@example.com"},
+        }
+
+        result = await self.service().get_bundle_revision(
+            domain_id=self.domain_id,
+            collection_id=self.collection_id,
+            bundle_id=self.bundle_id,
+            bundle_revision_id=self.revision_id,
+        )
+
+        self.assertEqual({}, result.asset_fields)
 
     async def test_source_file_requires_exact_revision_membership(self):
         result = await self.service().get_source_file(

@@ -7,6 +7,79 @@ from uuid import UUID
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
 
+_KM_ASSET_METADATA_SCHEMA = "km_asset/v1"
+_KM_ASSET_FIELD_ALIASES = {
+    "asset_id": ("asset_id", "external_asset_id"),
+    "asset_title": ("asset_title", "title"),
+    "author_email": ("author_email", "author_mail", "author"),
+    "briefing": (
+        "briefing",
+        "solution_briefing",
+        "description",
+        "asset_details",
+    ),
+    "publish_time": (
+        "publish_time",
+        "create_time",
+        "publish_date",
+        "asset_date",
+    ),
+    "last_update_time": (
+        "last_update_time",
+        "update_time",
+        "updated_at",
+    ),
+    "product": ("asset_product", "product"),
+    "solution": ("asset_solution", "solution"),
+    "industry": ("industry_id", "industry"),
+    "content_category": ("content_category", "category"),
+}
+
+
+def _clean_asset_field(value: object) -> str:
+    """只允许可直接展示的单值进入 Asset 预览。"""
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return ""
+    return str(value).strip()
+
+
+def _asset_fields(manifest_json: object, *, title: str) -> dict[str, str]:
+    """从不可变 Bundle Manifest 投影 KM Asset 展示白名单。"""
+    if not isinstance(manifest_json, dict):
+        return {}
+    metadata = manifest_json.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    normalized = {
+        str(key).strip().lower(): value for key, value in metadata.items()
+    }
+    if normalized.get("metadata_schema") != _KM_ASSET_METADATA_SCHEMA:
+        return {}
+
+    fields: dict[str, str] = {}
+    for target, aliases in _KM_ASSET_FIELD_ALIASES.items():
+        value = next(
+            (
+                cleaned
+                for alias in aliases
+                if (cleaned := _clean_asset_field(normalized.get(alias)))
+            ),
+            "",
+        )
+        if value:
+            fields[target] = value
+
+    if "asset_id" not in fields:
+        source_id = _clean_asset_field(manifest_json.get("source_id"))
+        if source_id:
+            fields["asset_id"] = source_id
+    if "asset_title" not in fields:
+        cleaned_title = _clean_asset_field(title)
+        if cleaned_title:
+            fields["asset_title"] = cleaned_title
+    return fields
+
+
 class KnowledgePreviewNotFoundError(LookupError):
     """预览对象不存在或不属于受信 Domain 范围。"""
 
@@ -35,6 +108,7 @@ class BundleRevisionPreview:
     status: str
     approval_status: str
     is_current_revision: bool
+    asset_fields: dict[str, str]
     files: list[BundleFilePreview]
 
 
@@ -126,6 +200,10 @@ class KnowledgeCorePreviewService:
                 approval_status=revision.approval_status,
                 is_current_revision=(
                     bundle.current_revision_id == revision.bundle_revision_id
+                ),
+                asset_fields=_asset_fields(
+                    getattr(revision, "manifest_json", None),
+                    title=revision.title,
                 ),
                 files=files,
             )
