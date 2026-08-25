@@ -96,7 +96,7 @@ username = "kbot"
 # 组装 10 个 DOCUMENT Asset Template；无 DOCUMENT 时原样展示 KBot 最终回答。
 # Asset 回复使用 km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
 # [integrations.slack.reply]
-# assistant_name = "Asset问答助手"
+# assistant_name = "Asset问答助手" # 旧配置兼容字段，最终 Slack 回复不显示
 # max_references = 10
 # 以下三个字段仅为旧配置兼容保留；Slack 最终展示不输出内部提示或问数重组摘要。
 # show_warnings = true

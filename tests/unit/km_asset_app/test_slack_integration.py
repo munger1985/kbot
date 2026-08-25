@@ -2142,7 +2142,8 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         )
         self.assertEqual("C1", payload["channel"])
         self.assertEqual("1.001", payload["thread_ts"])
-        self.assertTrue(payload["text"].startswith("<@U1> Asset问答助手："))
+        self.assertTrue(payload["text"].startswith("<@U1> 这是回答"))
+        self.assertNotIn("Asset问答助手", json.dumps(payload, ensure_ascii=False))
         rendered = json.dumps(payload, ensure_ascii=False)
         self.assertIn("回答状态：部分回答", rendered)
         self.assertIn("这是回答 [D1]。", rendered)
@@ -2207,7 +2208,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             ),
         )
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn("定制助手", rendered)
+        self.assertNotIn("定制助手", rendered)
         self.assertNotIn("参考资料", rendered)
         self.assertNotIn("文档 3", rendered)
         self.assertNotIn("文档 2", rendered)

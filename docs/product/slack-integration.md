@@ -69,10 +69,10 @@ Workspace 绑定、公开 Main API 地址、API Key 环境变量名、Callback U
 回复展示策略。Workspace 配置中的
 `signing_secret_env`、`bot_token_env` 只引用环境变量名称，禁止直接保存密钥。
 
-`[integrations.slack.reply]` 支持配置 `assistant_name`、`max_references` 和
-`km_portal_base_url`。`show_warnings`、`show_query_result_summary`、
+`[integrations.slack.reply]` 支持配置 `max_references` 和
+`km_portal_base_url`。`assistant_name`、`show_warnings`、`show_query_result_summary`、
 `show_visualization_notice` 仅作为旧配置兼容字段保留，不会使 Slack 最终消息显示
-内部“提示”区或重新组装问数结果。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
+助手名称、内部“提示”区或重新组装问数结果。非 `READY` 状态为防止误用始终展示，不提供关闭开关。
 `km_portal_base_url` 只保存非敏感 Portal 地址；Asset 回复使用该地址与经过 URL
 编码的 `asset_id` 拼接 KM Link，目标 Portal 的访问控制仍由 Portal 自身负责。
 `max_references` 固定上限为 10，不用于从 `query_results` 重建或截断 KBot 正文；

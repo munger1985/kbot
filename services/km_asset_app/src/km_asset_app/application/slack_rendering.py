@@ -661,10 +661,6 @@ def render_slack_reply(
         {
             "type": "context",
             "elements": [
-                {
-                    "type": "plain_text",
-                    "text": reply_config.assistant_name,
-                },
                 {"type": "mrkdwn", "text": f"<@{user_id}>"},
             ],
         }
@@ -687,9 +683,7 @@ def render_slack_reply(
         # warnings/truncated 仍保留在 KBot 结构化报文中，但 Slack
         # 最终展示不输出“提示”区，避免把内部诊断信息暴露给用户。
         blocks.extend(_visualization_blocks(answer_payload, reply_config))
-    fallback = (
-        f"<@{user_id}> {reply_config.assistant_name}：{safe_answer}"
-    )
+    fallback = f"<@{user_id}> {safe_answer}"
     return {
         "channel": channel_id,
         "thread_ts": thread_ts,
