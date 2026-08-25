@@ -769,6 +769,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         )
 
         plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("CONTENT", plan.target)
         criterion = plan.criteria[0]
         self.assertEqual(
             ("CONTENT", "TITLE", "PRODUCT", "SOLUTION"),
@@ -785,6 +786,58 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             hit_sets={"c1": set()},
             semantic_terms=("financial fraud",),
         ))
+
+    def test_metadata_asset_detail_follow_up_uses_content_retrieval(self):
+        """回归第二次序号追问被误编译为 asset_count 的生产问题。"""
+        normalized = AssetSearchPlanner.normalize_response(
+            question="What are the details of the second asset?",
+            language="en-US",
+            response={
+                "operation": "ANSWER",
+                "target": "ASSET",
+                "answer_detail": "DETAILED",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["title"],
+                    "operator": "EQ",
+                    "values": [
+                        "Context-Aware AI Report Demo Powered by ADB "
+                        "SelectAI and AI Vector Search (ChatBI)"
+                    ],
+                    "evidence_requirement": "QUERY_RESULT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF",
+                    "criterion_id": "c1",
+                },
+                "result_assets": {
+                    "mode": "SUPPORTING",
+                    "target_count": 5,
+                    "selection": "EVIDENCE_COVERAGE_THEN_RECENT",
+                },
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("ANSWER", plan.operation)
+        self.assertEqual("CONTENT", plan.target)
+        route_type, answer_basis, _ = KmAssetRoutePlanner._route_for_plan(plan)
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, route_type)
+        self.assertEqual(
+            KmAssetAnswerBasis.EXACT_METADATA_ANSWER,
+            answer_basis,
+        )
+
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan,
+            models=_catalog(),
+        )
+        self.assertEqual("title", query_plan.filters[0].field)
+        self.assertTrue({
+            "asset_id", "title", "bundle_id", "bundle_revision_id",
+        }.issubset(query_plan.dimensions))
+        self.assertEqual(1000, query_plan.limit)
 
     def test_list_normalizes_string_result_assets_without_crashing(self):
         normalized = AssetSearchPlanner.normalize_response(

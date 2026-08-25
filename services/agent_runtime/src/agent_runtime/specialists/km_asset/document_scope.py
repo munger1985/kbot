@@ -19,6 +19,7 @@ class KmAssetDocumentScopeExtractSkill(DocumentScopeExtractSkill):
         if self._answer_basis(context) in {
             "SEMANTIC_RELEVANCE_ENUMERATION",
             "EXACT_METADATA_ENUMERATION",
+            "EXACT_METADATA_ANSWER",
         }:
             return self._enumeration_scope(context)
         return await super().execute(context)

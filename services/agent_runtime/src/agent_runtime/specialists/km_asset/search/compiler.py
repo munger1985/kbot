@@ -111,8 +111,11 @@ class AssetSearchDataQueryCompiler:
             search_plan.preferences
         )
         retrieval_scope = (
-            operation in {"ANSWER", "COMPARE"}
-            and search_plan.target == "CONTENT"
+            operation == "ANSWER"
+            or (
+                operation == "COMPARE"
+                and search_plan.target == "CONTENT"
+            )
         )
         max_rows = selected.get("max_rows")
         if not isinstance(max_rows, int) or max_rows < 1:

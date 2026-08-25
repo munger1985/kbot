@@ -493,6 +493,10 @@ class AssetSearchPlanner:
                 preference["evidence_requirement"] = preference[
                     "criterion"
                 ]["evidence_requirement"]
+        # ANSWER 表示需要阅读 Asset 正文后作答；即使模型误写 ASSET，
+        # 也不能退化为仅返回聚合度量的纯问数计划。
+        if requested_operation == "ANSWER":
+            normalized["target"] = "CONTENT"
         if semantic and (
             requested_operation == "COUNT"
             or bool(normalized.get("include_total_count"))

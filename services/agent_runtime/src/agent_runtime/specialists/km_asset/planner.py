@@ -20,6 +20,7 @@ class KmAssetAnswerBasis(StrEnum):
     SEMANTIC_RELEVANCE_ENUMERATION = "SEMANTIC_RELEVANCE_ENUMERATION"
     SEMANTIC_RELEVANCE_AGGREGATE = "SEMANTIC_RELEVANCE_AGGREGATE"
     EXACT_METADATA_ENUMERATION = "EXACT_METADATA_ENUMERATION"
+    EXACT_METADATA_ANSWER = "EXACT_METADATA_ANSWER"
     EXACT_METADATA = "EXACT_METADATA"
     UNSCOPED_AGGREGATE = "UNSCOPED_AGGREGATE"
     AMBIGUOUS = "AMBIGUOUS"
@@ -120,6 +121,16 @@ class KmAssetRoutePlanner:
             }
             for item in plan.preferences
         )
+        if plan.operation == "ANSWER":
+            return (
+                RouteType.HYBRID_DATA_FIRST,
+                (
+                    KmAssetAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION
+                    if semantic
+                    else KmAssetAnswerBasis.EXACT_METADATA_ANSWER
+                ),
+                "BALANCED",
+            )
         if semantic or plan.target == "CONTENT":
             return (
                 RouteType.HYBRID_DATA_FIRST,
