@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(5, len(scripts))
+        self.assertEqual(6, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -129,8 +129,30 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("Idempotency-Key", script)
         self.assertIn("/targets/test-connection", script)
         self.assertIn('oracle ? "service" : "database"', script)
+        self.assertIn('method: "PATCH"', script)
+        self.assertIn("diagnostic-credential:rotate", script)
+        self.assertIn("openEdit", script)
         self.assertIn("db_type", script)
         self.assertNotIn("engine_type", script)
+
+    def test_configuration_pages_open_real_create_and_edit_dialogs(self):
+        pages = {
+            "diagnostic-sources.html": "diagnostic-source-dialog",
+            "policies.html": "policy-dialog",
+            "inspection-plans.html": "inspection-plan-dialog",
+        }
+        for filename, dialog_id in pages.items():
+            source = (AIOPS_ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn(f'id="{dialog_id}"', source)
+            self.assertIn("aiops-configurations.js", source)
+        script = (AIOPS_ROOT / "js" / "aiops-configurations.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("/diagnostic-sources/test-connection", script)
+        self.assertIn('method: editing ? "PATCH" : "POST"', script)
+        self.assertIn("基于当前策略创建新版本", script)
+        self.assertIn('"If-Match"', script)
+        self.assertIn("openEdit", script)
 
 
 if __name__ == "__main__":

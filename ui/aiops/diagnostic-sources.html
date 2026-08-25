@@ -1,1 +1,40 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>诊断源</title><link rel="stylesheet" href="./css/aiops.css"></head><body data-page="diagnostic-sources"><main class="ops-main"><header class="ops-head"><div><h1>诊断源</h1><p>管理 Prometheus、Alertmanager、Loki、OEM 与其他可查询观测数据源。</p></div><button class="primary">新增诊断源</button></header><section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section></main><script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>诊断源</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops-forms.css">
+</head>
+<body data-page="diagnostic-sources">
+  <main class="ops-main">
+    <header class="ops-head">
+      <div><h1>诊断源</h1><p>管理 Prometheus、Alertmanager、Loki、OEM 与其他可查询观测数据源。</p></div>
+      <button id="create-diagnostic-source" class="primary" type="button" data-write-ready>新增诊断源</button>
+    </header>
+    <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
+  </main>
+  <dialog id="diagnostic-source-dialog" class="ops-dialog">
+    <form id="diagnostic-source-form">
+      <header><h2 id="diagnostic-source-dialog-title">新增诊断源</h2><button data-close-dialog type="button">关闭</button></header>
+      <div class="ops-dialog-body">
+        <div class="ops-form">
+          <div class="ops-field span-6"><label for="source-display-name">名称</label><input id="source-display-name" name="display_name" maxlength="256" required></div>
+          <div class="ops-field span-3"><label for="source-type">类型</label><select id="source-type" name="source_type" required><option value="PROMETHEUS">Prometheus</option><option value="ALERTMANAGER">Alertmanager</option><option value="LOKI">Loki</option><option value="ZABBIX">Zabbix</option><option value="OEM">Oracle OEM</option></select></div>
+          <div class="ops-field span-3"><label for="source-adapter-version">Adapter 版本</label><input id="source-adapter-version" name="adapter_version" value="1.0.0" required></div>
+          <div class="ops-field span-12"><label for="source-endpoint">访问地址</label><input id="source-endpoint" name="endpoint" type="url" placeholder="http://monitor.internal:9090" required></div>
+          <div class="ops-field span-6"><label for="source-token">API Token（可选）</label><input id="source-token" name="token" type="password" autocomplete="new-password"></div>
+          <div class="ops-field span-6"><label for="source-webhook-secret">Webhook Secret（可选）</label><input id="source-webhook-secret" name="webhook_secret" type="password" autocomplete="new-password"></div>
+          <div class="ops-field span-12"><label for="source-capabilities">声明能力（JSON 对象）</label><textarea id="source-capabilities" name="declared_capabilities" spellcheck="false">{}</textarea></div>
+          <div class="ops-field span-12"><label for="source-config">Adapter 配置（JSON 对象）</label><textarea id="source-config" name="config" spellcheck="false">{}</textarea></div>
+        </div>
+        <p class="ops-dialog-note">编辑保存时凭据留空表示保持现有密钥不变；测试连接始终使用当前表单配置，需要认证时请重新输入临时凭据。</p>
+        <p id="source-test-result" class="ops-connection-result" role="status"></p>
+      </div>
+      <footer><button id="test-diagnostic-source" class="secondary-action" type="button">测试连接</button><button data-close-dialog type="button">取消</button><button id="save-diagnostic-source" class="primary" type="submit">创建诊断源</button></footer>
+    </form>
+  </dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script><script src="./js/aiops-configurations.js"></script>
+</body>
+</html>

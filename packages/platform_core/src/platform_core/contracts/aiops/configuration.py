@@ -285,6 +285,13 @@ class DiagnosticSourcePatch(AIOpsContract):
         return self
 
 
+class DiagnosticSourceConnectionTestResult(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    ok: bool
+    error_code: str | None = None
+    discovered_capabilities: tuple[str, ...] = ()
+
+
 class DiagnosticSourceSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7

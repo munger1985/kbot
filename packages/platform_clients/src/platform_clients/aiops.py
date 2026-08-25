@@ -424,6 +424,19 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def test_diagnostic_source_connection(
+        self,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/diagnostic-sources/test-connection",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
     async def list_diagnostic_sources(
         self,
         *,

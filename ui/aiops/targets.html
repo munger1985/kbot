@@ -29,7 +29,7 @@
   <dialog id="target-dialog" class="ops-dialog">
     <form id="target-form">
       <header>
-        <h2>新增运维目标</h2>
+        <h2 id="target-dialog-title">新增运维目标</h2>
         <button id="close-target-dialog" type="button">关闭</button>
       </header>
       <div class="ops-dialog-body">
@@ -98,13 +98,13 @@
             <label><input name="tls_enabled" type="checkbox" checked> 数据库连接启用 TLS</label>
           </div>
         </div>
-        <p class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
+        <p id="target-credential-note" class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
         <p id="target-connection-result" class="ops-connection-result" role="status"></p>
       </div>
       <footer>
         <button id="test-target-connection" class="secondary-action" type="button">测试连接</button>
         <button id="cancel-target-dialog" type="button">取消</button>
-        <button class="primary" type="submit">创建目标</button>
+        <button id="save-target" class="primary" type="submit">创建目标</button>
       </footer>
     </form>
   </dialog>

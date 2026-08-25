@@ -26,6 +26,7 @@ from .configuration import (
     SourceBindingPatch,
     SourceBindingView,
     DiagnosticSourceCreate,
+    DiagnosticSourceConnectionTestResult,
     DiagnosticSourceDetail,
     DiagnosticSourcePage,
     DiagnosticSourcePatch,

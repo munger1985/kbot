@@ -19,6 +19,9 @@ from aiops_agent.application.configuration.common import (
     format_etag,
     parse_etag,
 )
+from aiops_agent.application.configuration.source_connection_test import (
+    test_diagnostic_source_connection as run_source_connection_test,
+)
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
     AgentBindingCreate,
@@ -39,6 +42,7 @@ from platform_core.contracts.aiops import (
     SourceBindingPatch,
     SourceBindingView,
     DiagnosticSourceCreate,
+    DiagnosticSourceConnectionTestResult,
     DiagnosticSourceDetail,
     DiagnosticSourcePage,
     DiagnosticSourcePatch,
@@ -421,6 +425,24 @@ async def create_diagnostic_source(
     )
     _etag(response, result.row_version)
     return result
+
+
+@router.post(
+    "/diagnostic-sources/test-connection",
+    response_model=DiagnosticSourceConnectionTestResult,
+)
+async def test_diagnostic_source_connection(
+    body: DiagnosticSourceCreate,
+    request: Request,
+    scope: Scope,
+) -> DiagnosticSourceConnectionTestResult:
+    del scope
+    return await run_source_connection_test(
+        body,
+        diagnostic_source_registry=(
+            request.app.state.diagnostic_source_registry
+        ),
+    )
 
 
 @router.get("/diagnostic-sources", response_model=DiagnosticSourcePage)

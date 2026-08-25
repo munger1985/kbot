@@ -3024,6 +3024,44 @@
         "title": "DatabaseType",
         "type": "string"
       },
+      "DiagnosticSourceConnectionTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "discovered_capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Discovered Capabilities",
+            "type": "array"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "DiagnosticSourceConnectionTestResult",
+        "type": "object"
+      },
       "DiagnosticSourceCreate": {
         "additionalProperties": false,
         "properties": {
@@ -10473,6 +10511,47 @@
           }
         },
         "summary": "Create Diagnostic Source",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/test-connection": {
+      "post": {
+        "operationId": "test_diagnostic_source_connection_api_v1_apps_aiops_diagnostic_sources_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosticSourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Diagnostic Source Connection",
         "tags": [
           "AIOps"
         ]

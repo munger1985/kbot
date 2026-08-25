@@ -1,1 +1,31 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>执行策略</title><link rel="stylesheet" href="./css/aiops.css"></head><body data-page="policies"><main class="ops-main"><header class="ops-head"><div><h1>执行策略</h1><p>定义读取边界、诊断预算、人工审批和安全执行规则。</p></div><button class="primary">新增策略</button></header><section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section></main><script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>执行策略</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
+<body data-page="policies">
+  <main class="ops-main">
+    <header class="ops-head"><div><h1>执行策略</h1><p>定义读取边界、诊断预算、人工审批和安全执行规则。</p></div><button id="create-policy" class="primary" type="button" data-write-ready>新增策略</button></header>
+    <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
+  </main>
+  <dialog id="policy-dialog" class="ops-dialog">
+    <form id="policy-form">
+      <header><h2 id="policy-dialog-title">新增执行策略</h2><button data-close-dialog type="button">关闭</button></header>
+      <div class="ops-dialog-body">
+        <div class="ops-form">
+          <div class="ops-field span-6"><label for="policy-key">稳定策略标识</label><input id="policy-key" name="policy_key" pattern="[a-z][a-z0-9._-]{0,127}" required></div>
+          <div class="ops-field span-6"><label for="policy-display-name">策略名称</label><input id="policy-display-name" name="display_name" maxlength="256" required></div>
+          <div class="ops-field span-4"><label><input name="readonly_database_enabled" type="checkbox" checked>允许只读数据库诊断</label></div>
+          <div class="ops-field span-4"><label><input name="allow_agent_execution" type="checkbox">允许 Agent 执行变更</label></div>
+          <div class="ops-field span-4"><label for="policy-max-risk">最大风险级别</label><select id="policy-max-risk" name="max_risk_level"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
+          <div class="ops-field span-6"><label for="policy-min-severity">自动观察最低级别</label><select id="policy-min-severity" name="auto_observe_min_severity"><option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option></select></div>
+          <div class="ops-field span-6"><label for="policy-cooldown">告警冷却秒数</label><input id="policy-cooldown" name="alert_cooldown_seconds" type="number" min="0" max="86400" value="900" required></div>
+          <div class="ops-field span-12"><label for="policy-actions">允许动作类型（每行一个）</label><textarea id="policy-actions" name="allowed_action_types" placeholder="session.kill"></textarea></div>
+        </div>
+        <p id="policy-version-note" class="ops-dialog-note">创建后生成 DRAFT 版本，激活需在后续状态操作中明确执行。</p>
+        <p id="policy-result" class="ops-connection-result" role="status"></p>
+      </div>
+      <footer><button data-close-dialog type="button">取消</button><button id="save-policy" class="primary" type="submit">创建策略</button></footer>
+    </form>
+  </dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script><script src="./js/aiops-configurations.js"></script>
+</body>
+</html>

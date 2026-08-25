@@ -9,12 +9,12 @@
     inspections: { path: "/inspection-fires", cols: [["fire_id", "执行 ID", "id"], ["scheduled_at", "计划时间", "date"], ["status", "状态", "badge"], ["target_count", "目标数"], ["failed_count", "失败数"]] },
     changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["environment", "环境"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "target-detail.html?id=" },
-    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["provider_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "diagnostic-source-detail.html?id=" },
-    policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_type", "类型"], ["status", "状态", "badge"], ["row_version", "版本"]] },
-    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_expression", "调度"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
+    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "diagnostic-source-detail.html?id=" },
+    policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_key", "策略标识"], ["status", "状态", "badge"], ["version_no", "规则版本"]], detail: "#" },
+    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
     "notification-subscriptions": { path: "/notification-subscriptions", cols: [["target_id", "目标", "id"], ["channel_type", "渠道"], ["minimum_severity", "最低级别", "badge"], ["enabled", "启用"]] },
   };
-  const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.diagnostic_source_id || item.inspection_plan_id;
+  const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.policy_id || item.plan_id;
   function cell(item, [key, , type]) {
     const value = item?.[key];
     if (type === "badge") return shell.badge(value);
@@ -34,10 +34,23 @@
         body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">当前范围内暂无数据</td></tr>`;
         return;
       }
-      body.innerHTML = items.map((item) => `<tr ${cfg.detail ? `data-href="${cfg.detail}${encodeURIComponent(resourceId(item))}"` : ""}>${cfg.cols.map((col) => `<td>${cell(item, col)}</td>`).join("")}</tr>`).join("");
+      body.innerHTML = items.map((item) => `<tr ${cfg.detail ? `data-href="${cfg.detail}${encodeURIComponent(resourceId(item))}" data-resource-id="${shell.escape(resourceId(item))}"` : ""}>${cfg.cols.map((col) => `<td>${cell(item, col)}</td>`).join("")}</tr>`).join("");
       body.querySelectorAll("[data-href]").forEach((row) => {
         row.style.cursor = "pointer";
-        row.addEventListener("click", () => { location.href = row.dataset.href; });
+        row.addEventListener("click", () => {
+          const editors = {
+            targets: globalThis.KBotAIOpsTargets,
+            "diagnostic-sources": globalThis.KBotAIOpsConfigurations,
+            policies: globalThis.KBotAIOpsConfigurations,
+            "inspection-plans": globalThis.KBotAIOpsConfigurations,
+          };
+          if (editors[page]?.openEdit) {
+            if (page === "targets") editors[page].openEdit(row.dataset.resourceId);
+            else editors[page].openEdit(page, row.dataset.resourceId);
+            return;
+          }
+          location.href = row.dataset.href;
+        });
       });
     } catch (error) {
       body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">${shell.escape(error.message)}</td></tr>`;

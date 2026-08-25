@@ -51,6 +51,7 @@ from platform_core.contracts.aiops import (
     SourceBindingPatch,
     SourceBindingView,
     DiagnosticSourceCreate,
+    DiagnosticSourceConnectionTestResult,
     DiagnosticSourceDetail,
     DiagnosticSourcePage,
     DiagnosticSourcePatch,
@@ -939,6 +940,21 @@ async def create_diagnostic_source(
         auth_context=request.state.auth_context,
     )
     return _validated(DiagnosticSourceDetail, payload, response)
+
+
+@router.post(
+    "/diagnostic-sources/test-connection",
+    response_model=DiagnosticSourceConnectionTestResult,
+)
+async def test_diagnostic_source_connection(
+    body: DiagnosticSourceCreate,
+    request: Request,
+) -> DiagnosticSourceConnectionTestResult:
+    payload = await _client(request).test_diagnostic_source_connection(
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return DiagnosticSourceConnectionTestResult.model_validate(payload)
 
 
 @router.get("/diagnostic-sources", response_model=DiagnosticSourcePage)
