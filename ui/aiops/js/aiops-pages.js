@@ -8,7 +8,7 @@
     reports: { path: "/reports", cols: [["report_key", "报告"], ["report_type", "类型"], ["status", "状态", "badge"], ["summary", "摘要"], ["period_end", "周期结束", "date"]], detail: "report-detail.html?id=" },
     inspections: { path: "/inspection-fires", cols: [["fire_id", "执行 ID", "id"], ["scheduled_at", "计划时间", "date"], ["status", "状态", "badge"], ["target_count", "目标数"], ["failed_count", "失败数"]] },
     changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
-    targets: { path: "/targets", cols: [["display_name", "目标"], ["engine_type", "数据库"], ["environment", "环境"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "target-detail.html?id=" },
+    targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["environment", "环境"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["provider_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "diagnostic-source-detail.html?id=" },
     policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_type", "类型"], ["status", "状态", "badge"], ["row_version", "版本"]] },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_expression", "调度"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
@@ -68,7 +68,7 @@
     catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
   shell.ready.then(() => {
-    document.querySelectorAll("header.ops-head button:not([onclick])").forEach((button) => {
+    document.querySelectorAll("header.ops-head button:not([onclick]):not([data-write-ready])").forEach((button) => {
       button.disabled = true;
       button.title = "该写操作将在对应配置表单接入后开放";
     });
@@ -78,4 +78,10 @@
     else if (page === "dashboard") renderDashboard();
     else renderSimple(page);
   });
+  globalThis.KBotAIOpsPages = {
+    reload() {
+      const page = document.body.dataset.page;
+      return configs[page] ? renderList(page) : Promise.resolve();
+    },
+  };
 })();

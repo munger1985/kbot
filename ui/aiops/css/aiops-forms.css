@@ -1,0 +1,9 @@
+.ops-dialog{width:min(780px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:0;box-shadow:0 24px 80px rgba(18,25,40,.32)}
+.ops-dialog::backdrop{background:rgba(18,25,40,.55)}
+.ops-dialog header,.ops-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.ops-dialog footer{justify-content:flex-end;border-top:1px solid var(--line);border-bottom:0}
+.ops-dialog h2{margin:0;font:650 22px Georgia,"Songti SC",serif}
+.ops-dialog-body{padding:22px;overflow:auto}
+.ops-dialog-note{margin:14px 0 0;color:var(--muted)}
+.ops-dialog .ops-field input[type="checkbox"]{width:auto;min-height:0;margin:0 8px 0 0;vertical-align:middle}
+@media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}

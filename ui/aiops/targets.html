@@ -1,1 +1,116 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>运维目标</title><link rel="stylesheet" href="./css/aiops.css"></head><body data-page="targets"><main class="ops-main"><header class="ops-head"><div><h1>运维目标</h1><p>管理 Oracle、MySQL、PostgreSQL 等数据库目标及只读诊断凭据。</p></div><button class="primary">新增目标</button></header><section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section></main><script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>运维目标</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops-forms.css">
+</head>
+<body data-page="targets">
+  <main class="ops-main">
+    <header class="ops-head">
+      <div>
+        <h1>运维目标</h1>
+        <p>管理 Oracle、MySQL、PostgreSQL 等数据库目标及只读诊断凭据。</p>
+      </div>
+      <button id="create-target" class="primary" type="button" data-write-ready>新增目标</button>
+    </header>
+    <section class="ops-panel">
+      <div class="ops-table-wrap">
+        <table class="ops-table">
+          <thead id="ops-table-head"></thead>
+          <tbody id="ops-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="target-dialog" class="ops-dialog">
+    <form id="target-form">
+      <header>
+        <h2>新增运维目标</h2>
+        <button id="close-target-dialog" type="button">关闭</button>
+      </header>
+      <div class="ops-dialog-body">
+        <div class="ops-form">
+          <div class="ops-field span-6">
+            <label for="target-display-name">目标名称</label>
+            <input id="target-display-name" name="display_name" maxlength="256" required>
+          </div>
+          <div class="ops-field span-3">
+            <label for="target-db-type">数据库类型</label>
+            <select id="target-db-type" name="db_type" required>
+              <option value="ORACLE">Oracle</option>
+              <option value="MYSQL">MySQL</option>
+              <option value="POSTGRESQL">PostgreSQL</option>
+            </select>
+          </div>
+          <div class="ops-field span-3">
+            <label for="target-version">数据库版本</label>
+            <input id="target-version" name="version_code" maxlength="64" placeholder="例如 19c">
+          </div>
+          <div class="ops-field span-4">
+            <label for="target-environment">环境</label>
+            <select id="target-environment" name="environment" required>
+              <option value="PROD">生产</option>
+              <option value="STG">测试 / 预发布</option>
+              <option value="DEV">开发</option>
+            </select>
+          </div>
+          <div class="ops-field span-4">
+            <label for="target-role">数据库角色</label>
+            <select id="target-role" name="db_role" required>
+              <option value="PRIMARY">主库</option>
+              <option value="STANDBY">备库</option>
+              <option value="UNKNOWN">未知</option>
+            </select>
+          </div>
+          <div class="ops-field span-4">
+            <label for="target-security-level">安全级别</label>
+            <input id="target-security-level" name="security_level" type="number" min="0" max="999" value="1" required>
+          </div>
+          <div class="ops-field span-8">
+            <label for="target-host">数据库主机名或 IP</label>
+            <input id="target-host" name="host" maxlength="253" required placeholder="db.example.internal">
+          </div>
+          <div class="ops-field span-4">
+            <label for="target-port">端口</label>
+            <input id="target-port" name="port" type="number" min="1" max="65535" value="1521" required>
+          </div>
+          <div id="target-service-field" class="ops-field span-6">
+            <label for="target-service">Oracle Service Name</label>
+            <input id="target-service" name="service" maxlength="256" required placeholder="ORCLPDB1">
+          </div>
+          <div id="target-database-field" class="ops-field span-6" hidden>
+            <label for="target-database">Database</label>
+            <input id="target-database" name="database" maxlength="256" placeholder="postgres">
+          </div>
+          <div class="ops-field span-6">
+            <label for="target-diagnostic-username">只读诊断用户名</label>
+            <input id="target-diagnostic-username" name="diagnostic_username" maxlength="256" required autocomplete="off">
+          </div>
+          <div class="ops-field span-6">
+            <label for="target-diagnostic-password">只读诊断密码</label>
+            <input id="target-diagnostic-password" name="diagnostic_password" type="password" maxlength="4096" required autocomplete="new-password">
+          </div>
+          <div class="ops-field span-12">
+            <label><input name="tls_enabled" type="checkbox" checked> 数据库连接启用 TLS</label>
+          </div>
+        </div>
+        <p class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
+      </div>
+      <footer>
+        <button id="cancel-target-dialog" type="button">取消</button>
+        <button class="primary" type="submit">创建目标</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-pages.js"></script>
+  <script src="./js/aiops-targets.js"></script>
+</body>
+</html>

@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(4, len(scripts))
+        self.assertEqual(5, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -116,6 +116,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             text=True,
         )
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_target_create_form_uses_public_contract_fields(self):
+        page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="target-dialog"', page)
+        self.assertIn('id="target-form"', page)
+        self.assertIn("diagnostic_credential", script)
+        self.assertIn("Idempotency-Key", script)
+        self.assertIn("db_type", script)
+        self.assertNotIn("engine_type", script)
 
 
 if __name__ == "__main__":
