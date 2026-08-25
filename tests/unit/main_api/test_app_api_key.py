@@ -108,6 +108,46 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("km-service", context.asserted_user_id)
         self.assertEqual((AGENT_ID,), context.authorized_agent_ids)
 
+    async def test_long_term_key_can_be_created_and_authenticated(self):
+        now = datetime.now(timezone.utc)
+        long_term_expiry = now.replace(year=now.year + 100)
+        created = await self.service.create_client(
+            app_id="km_asset",
+            domain_id=100,
+            subject_user_id="km-service",
+            display_name="长期 KM 集成",
+            scopes=("km:chat:write",),
+            agent_ids=(AGENT_ID,),
+            expires_at=long_term_expiry,
+            rate_limit_per_minute=60,
+            actor_id="kmadmin",
+        )
+
+        self.assertEqual(
+            long_term_expiry, created["credentials"][0]["expires_at"]
+        )
+        context = await self.service.authenticate_request(
+            authorization=f"Bearer {created['api_key']}",
+            path="/api/v1/apps/km-asset/conversations",
+            headers={":method": "POST"},
+        )
+        self.assertEqual("APP_API_CLIENT", context.principal_kind)
+
+    async def test_expiration_cannot_be_null(self):
+        with self.assertRaises(AppApiKeyError) as rejected:
+            await self.service.create_client(
+                app_id="km_asset",
+                domain_id=100,
+                subject_user_id="km-service",
+                display_name="无到期时间的 KM 集成",
+                scopes=("km:chat:write",),
+                agent_ids=(AGENT_ID,),
+                expires_at=None,
+                rate_limit_per_minute=60,
+                actor_id="kmadmin",
+            )
+        self.assertEqual("APP_API_KEY_EXPIRY_INVALID", rejected.exception.code)
+
     async def test_cross_app_and_identity_header_are_rejected(self):
         with self.assertRaises(AppApiKeyError) as cross_app:
             await self.service.authenticate_request(

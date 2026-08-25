@@ -30,7 +30,7 @@ BUSINESS Token，并要求 `{app_id}:api_key_manage`。API Key 本身不能创�
 1. 当前 App 的有效服务账号；
 2. 至少一个 App 支持的机器 Scope；
 3. 至少一个 Agent；
-4. 5 分钟至 365 天的有效期；
+4. 设置 5 分钟至 100 年的有效期；Portal 的“永不过期”选项实际写入约 100 年后的到期时间；
 5. 每分钟请求上限。
 
 轮换会在同一事务中撤销现有 Credential 并生成新 Key。停用或调用 `revoke` 会立即撤销

@@ -326,11 +326,24 @@ class KmUiStaticPagesTest(unittest.TestCase):
         script = (KM_ROOT / "js" / "km-api-clients.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("km-api-clients.js?v=20260818_2", html)
+        self.assertIn("km-api-clients.js?v=20260825_1", html)
         self.assertIn("navigator.clipboard?.writeText", script)
         self.assertIn("window.isSecureContext", script)
         self.assertIn('document.execCommand("copy")', script)
         self.assertIn("自动复制失败，请手动选择并复制密钥", script)
+
+    def test_api_client_can_choose_a_non_expiring_key(self):
+        html = (KM_ROOT / "api-clients.html").read_text(encoding="utf-8")
+        script = (KM_ROOT / "js" / "km-api-clients.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(2, html.count('name="never_expires"'))
+        self.assertIn("永不过期", html)
+        self.assertIn("value.setFullYear(value.getFullYear() + 100)", script)
+        self.assertIn(
+            "if (form.elements.never_expires.checked) return longTermExpiry()",
+            script,
+        )
 
     def test_initial_admin_script_bootstraps_full_km_access(self):
         source = (

@@ -10,6 +10,12 @@
     return value.toISOString().slice(0, 16);
   }
 
+  function longTermExpiry() {
+    const value = new Date();
+    value.setFullYear(value.getFullYear() + 100);
+    return value.toISOString();
+  }
+
   function showError(error, fallback) {
     const element = $("api-client-error");
     const request = error?.requestId ? `；request_id: ${error.requestId}` : "";
@@ -22,6 +28,30 @@
     const active = (row.credentials || []).find((item) => item.status === "ACTIVE");
     if (!active) return "没有有效密钥";
     return `到期 ${KBotKmShell.formatDate(active.expires_at)} · 最近使用 ${KBotKmShell.formatDate(active.last_used_at)}`;
+  }
+
+  function expiryValue(form) {
+    if (form.elements.never_expires.checked) return longTermExpiry();
+    return new Date(form.elements.expires_at.value).toISOString();
+  }
+
+  function bindExpiryChoice(form) {
+    const checkbox = form.elements.never_expires;
+    const input = form.elements.expires_at;
+    const sync = () => {
+      input.disabled = checkbox.checked;
+      input.required = !checkbox.checked;
+    };
+    checkbox.addEventListener("change", sync);
+    sync();
+  }
+
+  function resetExpiryChoice(form) {
+    form.reset();
+    form.elements.never_expires.checked = false;
+    form.elements.expires_at.disabled = false;
+    form.elements.expires_at.required = true;
+    form.elements.expires_at.value = defaultExpiry();
   }
 
   function render() {
@@ -87,7 +117,7 @@
       subject_user_id: String(values.get("subject_user_id") || ""),
       scopes: values.getAll("scopes"),
       agent_ids: Array.from(form.elements.agent_ids.selectedOptions, (item) => item.value),
-      expires_at: new Date(String(values.get("expires_at"))).toISOString(),
+      expires_at: expiryValue(form),
       rate_limit_per_minute: Number(values.get("rate_limit_per_minute")),
     };
     KBotKmShell.setBusy($("save-api-client"), true, "生成中…");
@@ -106,9 +136,8 @@
   }
 
   function openRotate(index) {
-    const form = $("rotate-api-key-form"); form.reset();
+    const form = $("rotate-api-key-form"); resetExpiryChoice(form);
     form.elements.client_id.value = clients[index].client_id;
-    form.elements.expires_at.value = defaultExpiry();
     KBotKmShell.openDialog("rotate-api-key-dialog");
   }
 
@@ -116,14 +145,16 @@
     event.preventDefault(); const form = event.currentTarget;
     KBotKmShell.setBusy($("rotate-api-key"), true, "轮换中…");
     try {
-      const result = await KBotKmApi.json(`${base}/api-clients/${form.elements.client_id.value}/rotate`, "POST", { expires_at: new Date(form.elements.expires_at.value).toISOString() });
+      const result = await KBotKmApi.json(`${base}/api-clients/${form.elements.client_id.value}/rotate`, "POST", { expires_at: expiryValue(form) });
       KBotKmShell.closeDialog("rotate-api-key-dialog"); revealKey(result); await load();
     } catch (error) { KBotKmShell.showError(error, "API Key 轮换失败"); }
     finally { KBotKmShell.setBusy($("rotate-api-key"), false); }
   }
 
   window.addEventListener("DOMContentLoaded", () => {
-    $("new-api-client").addEventListener("click", () => { $("api-client-form").reset(); $("api-client-form").elements.expires_at.value = defaultExpiry(); KBotKmShell.openDialog("api-client-dialog"); });
+    bindExpiryChoice($("api-client-form"));
+    bindExpiryChoice($("rotate-api-key-form"));
+    $("new-api-client").addEventListener("click", () => { resetExpiryChoice($("api-client-form")); KBotKmShell.openDialog("api-client-dialog"); });
     $("refresh-api-clients").addEventListener("click", load);
     $("api-client-form").addEventListener("submit", create);
     $("rotate-api-key-form").addEventListener("submit", rotate);

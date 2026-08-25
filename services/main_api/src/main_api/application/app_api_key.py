@@ -528,16 +528,25 @@ class AppApiKeyService:
 
     @staticmethod
     def _validate_expiration(expires_at: datetime) -> None:
+        if not isinstance(expires_at, datetime):
+            raise AppApiKeyError(
+                "APP_API_KEY_EXPIRY_INVALID", "密钥过期时间不能为空", status_code=422
+            )
         value = expires_at
         if value.tzinfo is None:
             raise AppApiKeyError(
                 "APP_API_KEY_EXPIRY_INVALID", "密钥过期时间必须包含时区", status_code=422
             )
         now = datetime.now(timezone.utc)
-        if value <= now + timedelta(minutes=5) or value > now + timedelta(days=365):
+        try:
+            maximum = now.replace(year=now.year + 100)
+        except ValueError:
+            maximum = now.replace(year=now.year + 100, day=28)
+        maximum += timedelta(days=1)
+        if value <= now + timedelta(minutes=5) or value > maximum:
             raise AppApiKeyError(
                 "APP_API_KEY_EXPIRY_INVALID",
-                "密钥有效期必须在 5 分钟至 365 天之间",
+                "密钥有效期必须在 5 分钟至 100 年之间",
                 status_code=422,
             )
 
