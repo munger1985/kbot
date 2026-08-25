@@ -117,12 +117,43 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
             "aiops_agent.application.configuration.connection_test."
             "oracledb.connect_async",
             AsyncMock(side_effect=TimeoutError),
-        ):
+        ), patch(
+            "aiops_agent.application.configuration.connection_test."
+            "logger.warning"
+        ) as warning:
             result = await run_connection_test(_request("ORACLE"))
 
         self.assertFalse(result.ok)
         self.assertEqual("TIMEOUT", result.error_code)
         self.assertNotIn("secret", result.model_dump_json())
+        logged = " ".join(str(item) for item in warning.call_args.args)
+        self.assertIn("TIMEOUT", logged)
+        self.assertIn("操作超时", logged)
+        self.assertNotIn("secret", logged)
+        self.assertNotIn("diag", logged)
+
+    async def test_connection_failure_logs_safe_driver_reason(self):
+        failure = ConnectionRefusedError(
+            111, "diag secret listener refused"
+        )
+        with patch(
+            "aiops_agent.application.configuration.connection_test."
+            "oracledb.connect_async",
+            AsyncMock(side_effect=failure),
+        ), patch(
+            "aiops_agent.application.configuration.connection_test."
+            "logger.warning"
+        ) as warning:
+            result = await run_connection_test(_request("ORACLE"))
+
+        self.assertFalse(result.ok)
+        self.assertEqual("TARGET_UNREACHABLE", result.error_code)
+        logged = " ".join(str(item) for item in warning.call_args.args)
+        self.assertIn("ConnectionRefusedError", logged)
+        self.assertIn("111", logged)
+        self.assertIn("listener refused", logged)
+        self.assertNotIn("secret", logged)
+        self.assertNotIn("diag", logged)
 
     def test_oracle_rejects_database_name(self):
         payload = _request("ORACLE").model_dump(mode="json")

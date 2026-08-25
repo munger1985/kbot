@@ -9,6 +9,7 @@ import ssl
 import aiomysql
 import asyncpg
 import oracledb
+from loguru import logger
 
 from platform_core.contracts.aiops import (
     TargetConnectionTest,
@@ -28,16 +29,12 @@ async def test_target_connection(
         else:
             version = await _test_postgresql(request)
         return TargetConnectionTestResult(ok=True, database_version=version)
-    except TimeoutError:
-        return TargetConnectionTestResult(ok=False, error_code="TIMEOUT")
-    except (OSError, ssl.SSLError):
-        return TargetConnectionTestResult(
-            ok=False, error_code="TARGET_UNREACHABLE"
-        )
     except Exception as exc:
+        error_code = _stable_error_code(request.db_type, exc)
+        _log_connection_failure(request, exc, error_code)
         return TargetConnectionTestResult(
             ok=False,
-            error_code=_stable_error_code(request.db_type, exc),
+            error_code=error_code,
         )
 
 
@@ -128,6 +125,10 @@ async def _test_postgresql(request: TargetConnectionTest) -> str:
 
 
 def _stable_error_code(db_type: str, exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "TIMEOUT"
+    if isinstance(exc, (OSError, ssl.SSLError)):
+        return "TARGET_UNREACHABLE"
     if db_type == "ORACLE" and isinstance(exc, oracledb.Error):
         code = getattr(getattr(exc, "args", [None])[0], "code", None)
         if code in {1017, 28000, 28001}:
@@ -163,3 +164,53 @@ def _stable_error_code(db_type: str, exc: Exception) -> str:
     if isinstance(exc, socket.gaierror):
         return "TARGET_UNREACHABLE"
     return "CONNECTION_FAILED"
+
+
+def _log_connection_failure(
+    request: TargetConnectionTest,
+    exc: Exception,
+    error_code: str,
+) -> None:
+    """记录可诊断原因，同时保证认证信息不会进入日志。"""
+
+    endpoint = request.endpoint
+    locator = endpoint.service or endpoint.database or "-"
+    logger.warning(
+        "Target 数据库连接测试失败：db_type={} host={} port={} "
+        "service_or_database={} tls_enabled={} error_code={} "
+        "exception_type={} driver_code={} reason={}",
+        request.db_type,
+        endpoint.host,
+        endpoint.port,
+        locator,
+        endpoint.tls_enabled,
+        error_code,
+        type(exc).__name__,
+        _driver_error_code(exc),
+        _safe_error_reason(request, exc),
+    )
+
+
+def _driver_error_code(exc: Exception) -> str:
+    if isinstance(exc, oracledb.Error):
+        code = getattr(getattr(exc, "args", [None])[0], "code", None)
+        return str(code) if code is not None else "-"
+    if isinstance(exc, aiomysql.Error) and exc.args:
+        return str(exc.args[0])
+    if isinstance(exc, asyncpg.PostgresError):
+        return str(getattr(exc, "sqlstate", None) or "-")
+    if isinstance(exc, OSError):
+        return str(exc.errno) if exc.errno is not None else "-"
+    return "-"
+
+
+def _safe_error_reason(
+    request: TargetConnectionTest,
+    exc: Exception,
+) -> str:
+    reason = str(exc).strip() or "操作超时"
+    credential = request.diagnostic_credential
+    for secret in (credential.username, credential.password):
+        if secret:
+            reason = reason.replace(secret, "***")
+    return " ".join(reason.split())[:1000]
