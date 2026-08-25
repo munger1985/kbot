@@ -50,6 +50,11 @@ _METADATA_FIELD_ALIASES = {
 
 _SYSTEM_SCOPE_FIELDS = frozenset({"ingestion_status"})
 
+_CONTENT_SEARCHABLE_METADATA_FIELDS = frozenset({
+    "title", "product", "solution", "industry", "category",
+})
+
+
 def _items(value: Any) -> list[Any]:
     """只接受 JSON Array，避免把字符串拆成字段列表。"""
     return list(value) if isinstance(value, (list, tuple)) else []
@@ -158,6 +163,29 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
             if key in concept
         }
     return result
+
+
+def _promote_content_backed_metadata_criterion(
+    criterion: dict[str, Any],
+) -> None:
+    """把需要正文证明的文本元数据条件纠正为语义条件。"""
+    if (
+        criterion.get("kind") != "METADATA"
+        or criterion.get("evidence_requirement") != "METADATA_OR_CONTENT"
+    ):
+        return
+    scopes = {
+        str(field).strip().casefold()
+        for field in criterion.get("field_scope") or ()
+    }
+    if not scopes or not scopes.issubset(_CONTENT_SEARCHABLE_METADATA_FIELDS):
+        return
+    criterion.update({
+        "kind": "SEMANTIC_CONCEPT",
+        "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+        "operator": "RELATED_TO",
+        "evidence_requirement": "METADATA_OR_CONTENT",
+    })
 
 
 def _criterion_signature(item: dict[str, Any]) -> str:
@@ -415,6 +443,7 @@ class AssetSearchPlanner:
                 or _is_ready_scope_criterion(criterion)
             ):
                 continue
+            _promote_content_backed_metadata_criterion(criterion)
             preference_signatures.add(_criterion_signature(criterion))
             preferences.append({
                 "preference_id": f"p{position}",
@@ -433,6 +462,7 @@ class AssetSearchPlanner:
                 or _is_ready_scope_criterion(criterion)
             ):
                 continue
+            _promote_content_backed_metadata_criterion(criterion)
             if _criterion_signature(criterion) in preference_signatures:
                 continue
             criteria.append(criterion)
@@ -513,6 +543,15 @@ class AssetSearchPlanner:
                     else "RECENT_WITHIN_RESULT"
                 ),
             }
+        selection = str(
+            (normalized.get("result_assets") or {}).get("selection") or ""
+        ).upper()
+        if selection == "RECENT_RELEVANT" and not (
+            semantic or preferences
+        ):
+            raise ValueError(
+                "RECENT_RELEVANT 选择策略必须包含语义条件或语义偏好"
+            )
         if str(normalized.get("operation") or "").upper() in {
             "LIST", "COUNT", "GROUP", "COMPARE"
         }:

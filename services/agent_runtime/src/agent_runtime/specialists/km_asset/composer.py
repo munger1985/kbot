@@ -543,6 +543,14 @@ class KmAssetComposerMixin:
         ]
         if not candidate_assets:
             candidate_assets = self._enumeration_assets_from_query(query)
+        if query.row_count == 0 and not candidate_assets:
+            language = response_language(
+                context.config_snapshot, context.original_input
+            )
+            return self._result(context, GroundedAnswer(
+                answer=_km_text(language, "not_found"),
+                status="READY",
+            ))
         citations = retrieval.citation_pack.citations
         allowed = {item.citation_label: item for item in citations}
         semantic = bool(

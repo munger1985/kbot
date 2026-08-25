@@ -368,6 +368,64 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_empty_asset_list_does_not_claim_complete_results(self):
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=(),
+            row_count=0,
+            provenance={"count_exact": True},
+        )
+        retrieval = DocumentRetrievalResult(
+            status="READY",
+            citation_pack=CitationPack(
+                question="Top 5 most relevant Financial assets",
+                query_plan={},
+                bundle_candidates=(),
+                citations=(),
+                coverage=RetrievalCoverage(
+                    candidate_bundle_count=0,
+                    selected_document_count=0,
+                    selected_evidence_count=0,
+                ),
+            ),
+            retrieval_report={},
+        )
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input="Top 5 most relevant Financial assets",
+            policy_snapshot={},
+            config_snapshot={"language": "en-US"},
+            input_artifacts=(),
+        )
+        skill = ResponseComposerSkill(
+            model_client=SimpleNamespace(),
+            prompt_resolver=SimpleNamespace(),
+        )
+
+        result = await skill._compose_km_asset_enumeration(
+            context,
+            query,
+            retrieval,
+            search_plan=_base_plan(display_limit=5, result_assets={
+                "mode": "PRIMARY",
+                "target_count": 5,
+                "selection": "REQUESTED_ORDER",
+            }),
+        )
+
+        answer = result.artifact.payload["answer"]
+        self.assertEqual("No matching assets were found.", answer)
+        self.assertNotIn("all are listed below", answer)
+
     async def test_asset_list_never_falls_back_to_query_only_references(self):
         query = QueryResult(
             query_result_id=uuid7(),
@@ -549,6 +607,112 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(("SEMANTIC_TOTAL_COUNT",), plan.unsupported_requests)
         self.assertFalse(plan.include_total_count)
         self.assertEqual(5, plan.display_limit)
+
+    def test_content_backed_financial_category_is_promoted_to_semantic(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="Top 5 most relevant Financial assets",
+            language="en-US",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["category"],
+                    "operator": "EQ",
+                    "values": ["Financial"],
+                    "occurrence": "MUST",
+                    "evidence_requirement": "METADATA_OR_CONTENT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1",
+                },
+                "projection": ["asset_id", "title"],
+                "order_by": [{
+                    "field": "asset_date", "direction": "DESC",
+                }],
+                "display_limit": 5,
+                "result_assets": {
+                    "mode": "PRIMARY",
+                    "target_count": 5,
+                    "selection": "RECENT_RELEVANT",
+                },
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        criterion = plan.criteria[0]
+        self.assertEqual("SEMANTIC_CONCEPT", criterion.kind)
+        self.assertEqual("RELATED_TO", criterion.operator)
+        self.assertEqual(
+            ("TITLE", "PRODUCT", "SOLUTION", "CONTENT"),
+            criterion.field_scope,
+        )
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan, models=_catalog()
+        )
+        self.assertEqual((), query_plan.filters)
+        self.assertIsNone(query_plan.filter_expression)
+        self.assertEqual(1000, query_plan.limit)
+
+    def test_query_result_metadata_condition_remains_exact(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="List assets whose category equals Financial",
+            language="en-US",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["category"],
+                    "operator": "EQ",
+                    "values": ["Financial"],
+                    "evidence_requirement": "QUERY_RESULT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1",
+                },
+                "display_limit": 5,
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("METADATA", plan.criteria[0].kind)
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan, models=_catalog()
+        )
+        self.assertEqual("category", query_plan.filters[0].field)
+
+    def test_relevance_selection_rejects_metadata_only_plan(self):
+        with self.assertRaisesRegex(
+            ValueError, "RECENT_RELEVANT 选择策略必须包含语义条件"
+        ):
+            AssetSearchPlanner.normalize_response(
+                question="Top 5 most relevant Financial assets",
+                language="en-US",
+                response={
+                    "operation": "LIST",
+                    "target": "ASSET",
+                    "criteria": [{
+                        "criterion_id": "c1",
+                        "kind": "METADATA",
+                        "field_scope": ["category"],
+                        "operator": "EQ",
+                        "values": ["Financial"],
+                        "evidence_requirement": "QUERY_RESULT",
+                    }],
+                    "eligibility_expression": {
+                        "node_type": "REF", "criterion_id": "c1",
+                    },
+                    "display_limit": 5,
+                    "result_assets": {
+                        "mode": "PRIMARY",
+                        "target_count": 5,
+                        "selection": "RECENT_RELEVANT",
+                    },
+                },
+            )
 
     def test_current_available_count_uses_model_plan_without_rules(self):
         for question in (

@@ -42,7 +42,7 @@ AssetSearchPlan.v1 的 JSON Object，不输出 Markdown、SQL、物理表名、�
 
 operation 只能是 ANSWER、LIST、COUNT、GROUP、COMPARE。一个问题可包含多个条件：
 - 可由 managed_metadata 精确执行的作者、日期、产品精确值、方案精确值、行业、分类和业务状态，
-  使用 kind=METADATA；field_scope 只能使用输入给出的逻辑字段；
+  使用 kind=METADATA、evidence_requirement=QUERY_RESULT；field_scope 只能使用输入给出的逻辑字段；
 - 需要理解标题、方案、Discovery Profile 或正文含义的主题，使用 kind=SEMANTIC_CONCEPT、
   operator=RELATED_TO；field_scope 可使用 TITLE、PRODUCT、SOLUTION、CONTENT；
 - 精确正文短语使用 EXACT_PHRASE/CONTAINS；内容类型可使用 CONTENT_TYPE/EQ_OR_RELATED。
@@ -51,6 +51,10 @@ operation 只能是 ANSWER、LIST、COUNT、GROUP、COMPARE。一个问题可包
 REF、ALL、ANY、NOT 完整表示。MUST 条件在正极性位置，MUST_NOT 条件必须位于 NOT 下。
 “最好、优先、preferably”是 preferences，不得升级为硬条件；多个偏好按用户顺序使用连续 priority。
 不得把“关于 OAC”自行改写成 product=OAC；只有用户明确说“产品字段等于 OAC”时才是元数据条件。
+“most relevant X assets”“与 X 相关的 Asset”等相关性请求中的 X 是语义主题，不是 category、industry、
+product 或 solution 的精确值。未明确说字段、等于、分组或筛选时，裸露的技术名、业务领域、行业概念和
+应用场景均使用 SEMANTIC_CONCEPT。METADATA 与 METADATA_OR_CONTENT 不能同时出现；需要正文参与
+证明的条件必须使用 SEMANTIC_CONCEPT。
 
 纯解释、总结和比较正文使用 ANSWER/CONTENT。列举 Asset 使用 LIST/ASSET。只有全部资格条件都能
 由精确 METADATA 谓词表达时才可使用 COUNT 或 GROUP。禁止对语义主题生成总数；如果用户询问
