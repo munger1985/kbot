@@ -69,6 +69,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("140.238.44.208", source)
         self.assertNotIn("kbot_ak_", source)
         self.assertNotIn("/metrics", source)
+        self.assertNotIn("Idempotency-Key':crypto.randomUUID()", source)
+        self.assertNotIn("client_file_id: crypto.randomUUID()", source)
+        self.assertIn("KBotAIOpsAuth.uuid()", source)
 
     def test_knowledge_core_page_uses_fixed_public_bff(self):
         page = (AIOPS_ROOT / "knowledge-core.html").read_text(encoding="utf-8")
@@ -91,6 +94,28 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("aiops_portal", login)
         self.assertNotIn('name="domain_id"', login)
         self.assertIn("/api/v1/apps/aiops/auth/login", auth)
+
+    def test_request_id_falls_back_without_crypto_random_uuid(self):
+        script = """
+const fs = require("node:fs");
+const vm = require("node:vm");
+const sandbox = {
+  crypto: {},
+  sessionStorage: {getItem: () => null, setItem: () => {}, removeItem: () => {}},
+  location: {replace: () => {}},
+  FormData: class {},
+};
+vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
+const value = sandbox.KBotAIOpsAuth.uuid();
+if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
+"""
+        result = subprocess.run(
+            ["node", "-e", script, str(AIOPS_ROOT / "js" / "aiops-auth.js")],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
 
 
 if __name__ == "__main__":

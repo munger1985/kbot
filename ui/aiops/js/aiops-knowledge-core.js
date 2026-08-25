@@ -99,7 +99,7 @@
       const partName = "manual";
       const declaration = [{
         part_name: partName,
-        client_file_id: crypto.randomUUID(),
+        client_file_id: KBotAIOpsAuth.uuid(),
         display_name: document.getElementById("manual-name").value.trim() || file.name,
         declared_mime_type: file.type || "application/octet-stream",
         byte_size: file.size,
