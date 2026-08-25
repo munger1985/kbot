@@ -103,9 +103,11 @@ class KmAssetEntity(BaseEntity):
     asset_date_value: Mapped[date | None] = mapped_column(
         Date,
         Computed(
-            "COALESCE(TO_DATE(SUBSTR(TRIM(PUBLISH_DATE), 1, 10) DEFAULT NULL "
+            "COALESCE("
+            "TO_DATE(SUBSTR(TRIM(PUBLISH_DATE), 1, 10) DEFAULT NULL "
             "ON CONVERSION ERROR, 'FXYYYY-MM-DD'), "
-            "TRUNC(CAST(SYS_EXTRACT_UTC(CREATED_AT) AS DATE)))"
+            "TO_DATE(SUBSTR(TRIM(LAST_UPDATE_TIME), 1, 10) DEFAULT NULL "
+            "ON CONVERSION ERROR, 'FXYYYY-MM-DD'))"
         ),
         nullable=True,
     )

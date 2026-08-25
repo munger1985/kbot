@@ -616,8 +616,38 @@ class KmAssetService:
 
     @staticmethod
     def _columns(data: dict[str, Any]) -> dict[str, Any]:
-        mapping = {"asset_title": "asset_title", "author_mail": "author_mail", "asset_product": "asset_product", "asset_solution": "asset_solution", "industry_id": "industry_id", "content_category": "content_category", "asset_status": "asset_status", "publish_date": "publish_date", "last_update_time": "last_update_time"}
-        return {target: None if data.get(source) is None else str(data.get(source)) for source, target in mapping.items()}
+        mapping = {
+            "asset_title": "asset_title",
+            "author_mail": "author_mail",
+            "asset_product": "asset_product",
+            "asset_solution": "asset_solution",
+            "industry_id": "industry_id",
+            "content_category": "content_category",
+            "asset_status": "asset_status",
+            "last_update_time": "last_update_time",
+        }
+        columns = {
+            target: None if data.get(source) is None else str(data.get(source))
+            for source, target in mapping.items()
+        }
+        # 必须与 manifest.md 的 Asset 日期提取优先级保持一致，避免引用展示
+        # 源日期、受管问数却使用本地同步日期。
+        columns["publish_date"] = next(
+            (
+                str(data[field]).strip()
+                for field in (
+                    "publish_time",
+                    "last_update_time",
+                    "create_time",
+                    "publish_date",
+                    "asset_date",
+                )
+                if data.get(field) is not None
+                and str(data[field]).strip()
+            ),
+            None,
+        )
+        return columns
 
     @staticmethod
     def _source(row):

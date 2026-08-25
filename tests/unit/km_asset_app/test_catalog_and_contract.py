@@ -156,7 +156,10 @@ class KmAssetCatalogTest(unittest.TestCase):
         self.assertIn("AUTHOR_MAIL_NORM GENERATED ALWAYS AS", schema)
         self.assertIn("AUTHOR_LOCAL_PART GENERATED ALWAYS AS", schema)
         self.assertIn("ASSET_DATE_VALUE GENERATED ALWAYS AS", schema)
-        self.assertIn("TRUNC(CAST(SYS_EXTRACT_UTC(CREATED_AT) AS DATE))", schema)
+        self.assertIn("SUBSTR(TRIM(LAST_UPDATE_TIME), 1, 10)", schema)
+        self.assertNotIn(
+            "TRUNC(CAST(SYS_EXTRACT_UTC(CREATED_AT) AS DATE))", schema
+        )
         self.assertIn("IX_KM_ASSET_AUTHOR_LOCAL", schema)
         self.assertIn("IX_KM_ASSET_DATE", schema)
 
@@ -165,6 +168,49 @@ class KmAssetCatalogTest(unittest.TestCase):
         columns = KmAssetService._columns(normalized)
         self.assertEqual("AI Asset", columns["asset_title"])
         self.assertEqual("u@example.com", columns["author_mail"])
+
+    def test_source_date_uses_same_priority_as_manifest(self):
+        normalized = KmAssetService._normalize({
+            "PUBLISH_TIME": "2025-03-04T08:00:00Z",
+            "LAST_UPDATE_TIME": "2025-04-05T09:00:00Z",
+            "PUBLISH_DATE": "2025-02-03",
+        })
+
+        columns = KmAssetService._columns(normalized)
+
+        self.assertEqual(
+            "2025-03-04T08:00:00Z", columns["publish_date"]
+        )
+        self.assertEqual(
+            "2025-04-05T09:00:00Z", columns["last_update_time"]
+        )
+
+    def test_source_date_falls_back_without_using_ingestion_time(self):
+        columns = KmAssetService._columns(
+            KmAssetService._normalize({
+                "LAST_UPDATE_TIME": "2025-04-05T09:00:00Z",
+            })
+        )
+        missing = KmAssetService._columns({})
+
+        self.assertEqual(
+            "2025-04-05T09:00:00Z", columns["publish_date"]
+        )
+        self.assertIsNone(missing["publish_date"])
+
+    def test_existing_asset_date_repair_uses_manifest_priority(self):
+        script = (
+            Path(__file__).resolve().parents[3]
+            / "scripts/db/repair_km_asset_dates.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            script.index("$.publish_time"),
+            script.index("$.last_update_time"),
+        )
+        self.assertNotIn("SYS_EXTRACT_UTC(CREATED_AT)", script)
+        self.assertIn("DROP COLUMN ASSET_DATE_VALUE", script)
+        self.assertIn("CREATE INDEX IX_KM_ASSET_DATE", script)
 
     def test_km_asset_owns_knowledge_execution_spec(self):
         spec = AgentExecutionSpec(

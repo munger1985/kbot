@@ -54,7 +54,7 @@ def km_asset_definition(*, schema_name: str) -> dict[str, Any]:
         {"name": "category", "display_name": "内容分类", "physical_column": "CONTENT_CATEGORY"},
         {
             "name": "asset_date",
-            "display_name": "Asset 日期（优先发布日期，缺失时使用创建日期）",
+            "display_name": "Asset 源日期（与引用 manifest 日期口径一致）",
             "physical_column": "ASSET_DATE_VALUE",
             "value_type": "DATE",
             "allowed_filter_operators": ["EQ", "BETWEEN", "GT", "GTE", "LT", "LTE"],

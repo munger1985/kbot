@@ -4,7 +4,7 @@
   "contract_version": "km-asset-app-oracle-v2",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_km_asset.sql", "statements": 33, "sha256": "7976f0b7075fbe01d484e62cf8b7c9c775b4c0869aa24d525fa45e4028f63d61"},
+    {"name": "001_km_asset.sql", "statements": 33, "sha256": "c7c7e35f66c4e67957f5eecf88b6ff91c6089178b28793d7a4b6f37885f6a0df"},
     {"name": "002_slack_integration.sql", "statements": 7, "sha256": "83b29fea29d2d959e67867f99d91aced58094175ae22b0cb3b62dbe389a850fd"}
   ],
   "tables": [
