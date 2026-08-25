@@ -30,6 +30,7 @@ from km_asset_app.application.slack_intake import (
 )
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
+    processing_failure_message,
     render_slack_replies,
     render_slack_reply,
     slack_visible_payload,
@@ -84,20 +85,29 @@ class SlackSignatureTest(unittest.TestCase):
 
 
 class SlackWaitingMessageTest(unittest.TestCase):
-    def test_waiting_message_is_always_english(self):
-        questions = (
-            "显示所有与 ChatBI 相关的资产",
-            "ChatBIに関連するすべてのアセットを表示する",
-            "ChatBI 관련 자산을 모두 표시해 주세요",
-            "Show all assets related to ChatBI",
-        )
-        expected = (
-            "KM Assistant is gathering materials and analyzing your question, "
-            "please wait."
-        )
-        for question in questions:
+    def test_waiting_and_failure_messages_match_current_message_language(self):
+        samples = {
+            "显示所有与 ChatBI 相关的资产": (
+                "KM 助手正在搜集材料并分析您的问题，请稍候。",
+                "KBot 无法处理此请求，请稍后重试。",
+            ),
+            "ChatBIに関連するすべてのアセットを表示する": (
+                "KM アシスタントが資料を収集して質問を分析しています。しばらくお待ちください。",
+                "KBot はこのリクエストを処理できませんでした。後でもう一度お試しください。",
+            ),
+            "ChatBI 관련 자산을 모두 표시해 주세요": (
+                "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. 잠시만 기다려 주세요.",
+                "KBot이 이 요청을 처리하지 못했습니다. 나중에 다시 시도해 주세요.",
+            ),
+            "Show all assets related to ChatBI": (
+                "KM Assistant is gathering materials and analyzing your question, please wait.",
+                "KBot was unable to process this request. Please try again later.",
+            ),
+        }
+        for question, (waiting, failure) in samples.items():
             with self.subTest(question=question):
-                self.assertEqual(expected, waiting_message(question))
+                self.assertEqual(waiting, waiting_message(question))
+                self.assertEqual(failure, processing_failure_message(question))
 
 
 class SlackEventParsingTest(unittest.TestCase):
@@ -2138,7 +2148,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertTrue(payload["text"].startswith("<@U1> 这是回答"))
         self.assertNotIn("Asset问答助手", json.dumps(payload, ensure_ascii=False))
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn(":information_source: Partial answer", rendered)
+        self.assertIn(":information_source: 部分回答", rendered)
         self.assertNotIn("回答状态：", rendered)
         self.assertIn("这是回答 [D1]。", rendered)
         self.assertNotIn("参考资料", rendered)
@@ -2146,7 +2156,7 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertNotIn("安装手册", rendered)
         self.assertNotIn("第 3、5 页", rendered)
         self.assertIn("数据截至昨日", rendered)
-        self.assertIn("This answer contains 1 visualization(s)", rendered)
+        self.assertIn("本次回答包含 1 个可视化结果", rendered)
         for private_value in (
             "internal-document-id",
             "internal-query-id",
@@ -2191,6 +2201,29 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
                 self.assertNotIn("需要补充信息", rendered)
                 self.assertNotIn("现有资料不足", rendered)
                 self.assertNotIn("部分回答", rendered)
+
+    def test_status_uses_current_follow_up_language(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": "No sufficient citable evidence was found.",
+                    "status": "INSUFFICIENT_EVIDENCE",
+                    "used_citation_labels": [],
+                    "references": [],
+                },
+            },
+            reply_config=SlackReplyConfig(),
+            message_text="只需要过去一年发布的资产。",
+        )
+
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn(":information_source: 现有资料不足", rendered)
+        self.assertNotIn("Insufficient evidence", rendered)
 
     def test_reply_options_limit_and_hide_optional_summaries(self):
         references = [
@@ -2384,7 +2417,10 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
             "https://km.example.com/assets/ASSET%2F100",
             blocks[5]["accessory"]["url"],
         )
-        self.assertEqual("KM Link", blocks[5]["accessory"]["text"]["text"])
+        self.assertEqual(
+            "KM Link (VPN)",
+            blocks[5]["accessory"]["text"]["text"],
+        )
         self.assertEqual("open_km_resource", blocks[5]["accessory"]["action_id"])
         rendered = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("参考资料", rendered)

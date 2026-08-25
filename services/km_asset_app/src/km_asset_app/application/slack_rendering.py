@@ -11,22 +11,66 @@ from urllib.parse import quote, urlsplit
 from km_asset_app.config import SlackReplyConfig
 
 
-_WAITING_MESSAGE = (
-    "KM Assistant is gathering materials and analyzing your question, "
-    "please wait."
-)
+_SYSTEM_MESSAGES = {
+    "waiting": {
+        "zh": "KM 助手正在搜集材料并分析您的问题，请稍候。",
+        "ja": "KM アシスタントが資料を収集して質問を分析しています。しばらくお待ちください。",
+        "ko": "KM 어시스턴트가 자료를 수집하고 질문을 분석하고 있습니다. 잠시만 기다려 주세요.",
+        "en": "KM Assistant is gathering materials and analyzing your question, please wait.",
+    },
+    "empty_answer": {
+        "zh": "KBot 未能生成可用回答，请稍后重试。",
+        "ja": "KBot は利用可能な回答を生成できませんでした。後でもう一度お試しください。",
+        "ko": "KBot이 사용 가능한 답변을 생성하지 못했습니다. 나중에 다시 시도해 주세요.",
+        "en": "KBot did not generate a usable answer. Please try again later.",
+    },
+    "invalid_artifact": {
+        "zh": "KBot 返回的回答格式暂时不可用，请稍后重试。",
+        "ja": "KBot が返した回答形式は現在利用できません。後でもう一度お試しください。",
+        "ko": "KBot이 반환한 답변 형식은 현재 사용할 수 없습니다. 나중에 다시 시도해 주세요.",
+        "en": "The answer format returned by KBot is temporarily unavailable. Please try again later.",
+    },
+    "processing_failed": {
+        "zh": "KBot 无法处理此请求，请稍后重试。",
+        "ja": "KBot はこのリクエストを処理できませんでした。後でもう一度お試しください。",
+        "ko": "KBot이 이 요청을 처리하지 못했습니다. 나중에 다시 시도해 주세요.",
+        "en": "KBot was unable to process this request. Please try again later.",
+    },
+    "truncated": {
+        "zh": "结果超过上限，当前仅显示部分内容。",
+        "ja": "結果が上限を超えたため、一部のみ表示しています。",
+        "ko": "결과가 제한을 초과하여 일부 내용만 표시됩니다.",
+        "en": "The result limit was exceeded. Only part of the content is shown.",
+    },
+    "visualization": {
+        "zh": "本次回答包含 {count} 个可视化结果，请前往 Asset 问答页面查看。",
+        "ja": "この回答には {count} 件の可視化結果が含まれています。Asset Q&A ページで確認してください。",
+        "ko": "이 답변에는 {count}개의 시각화 결과가 포함되어 있습니다. Asset Q&A 페이지에서 확인해 주세요.",
+        "en": "This answer contains {count} visualization(s). View them on the Asset Q&A page.",
+    },
+}
 
 _ARTIFACT_TYPE = "GROUNDED_ANSWER"
 _SCHEMA_VERSION = "GroundedAnswer.v1"
-_EMPTY_ANSWER = "KBot did not generate a usable answer. Please try again later."
-_INVALID_ARTIFACT = (
-    "The answer format returned by KBot is temporarily unavailable. "
-    "Please try again later."
-)
 _STATUS_LABELS = {
-    "CLARIFICATION_REQUIRED": "Additional information required",
-    "INSUFFICIENT_EVIDENCE": "Insufficient evidence",
-    "PARTIAL": "Partial answer",
+    "CLARIFICATION_REQUIRED": {
+        "zh": "需要补充信息", "ja": "追加情報が必要です",
+        "ko": "추가 정보가 필요합니다", "en": "Additional information required",
+    },
+    "INSUFFICIENT_EVIDENCE": {
+        "zh": "现有资料不足", "ja": "根拠が不足しています",
+        "ko": "근거가 부족합니다", "en": "Insufficient evidence",
+    },
+    "PARTIAL": {
+        "zh": "部分回答", "ja": "部分的な回答",
+        "ko": "부분 답변", "en": "Partial answer",
+    },
+}
+_DEFAULT_STATUS_LABELS = {
+    "zh": "回答尚未完全就绪",
+    "ja": "回答の準備が完了していません",
+    "ko": "답변이 아직 완전히 준비되지 않았습니다",
+    "en": "Answer not fully ready",
 }
 
 _HTML_ANCHOR_PATTERN = re.compile(
@@ -82,14 +126,33 @@ _OOXML_CARRIAGE_RETURN_PATTERN = re.compile(
 )
 _ASSET_TITLE_BLOCK_PREFIX = "*Asset Title:* "
 _SLACK_MAX_BLOCKS = 50
-_TRUNCATION_NOTICE = (
-    "The result limit was exceeded. Only part of the content is shown."
-)
 
 
-def waiting_message(_question: str) -> str:
-    """Return the English-only Slack processing notice."""
-    return _WAITING_MESSAGE
+def detect_message_language(value: object) -> str:
+    """Detect the language of the current Slack message for UI notices."""
+    text = str(value or "")
+    if any("\u3040" <= char <= "\u30ff" for char in text):
+        return "ja"
+    if any("\uac00" <= char <= "\ud7af" for char in text):
+        return "ko"
+    if any("\u4e00" <= char <= "\u9fff" for char in text):
+        return "zh"
+    return "en"
+
+
+def _system_message(key: str, language: str, **values: object) -> str:
+    template = _SYSTEM_MESSAGES[key].get(language, _SYSTEM_MESSAGES[key]["en"])
+    return template.format(**values)
+
+
+def waiting_message(question: str) -> str:
+    return _system_message("waiting", detect_message_language(question))
+
+
+def processing_failure_message(message_text: str) -> str:
+    return _system_message(
+        "processing_failed", detect_message_language(message_text)
+    )
 
 
 def _escape_mrkdwn(value: object) -> str:
@@ -523,7 +586,7 @@ def _asset_blocks(
             asset_url = config.km_portal_base_url + quote(asset_id, safe="")
             section["accessory"] = {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "KM Link"},
+                "text": {"type": "plain_text", "text": "KM Link (VPN)"},
                 "url": asset_url[:3000],
                 "action_id": "open_km_resource",
             }
@@ -531,11 +594,12 @@ def _asset_blocks(
     return blocks
 
 
-def _status_blocks(status: str) -> list[dict[str, Any]]:
+def _status_blocks(status: str, language: str) -> list[dict[str, Any]]:
     normalized = status.strip().upper()
     if not normalized or normalized == "READY":
         return []
-    label = _STATUS_LABELS.get(normalized, "Answer not fully ready")
+    labels = _STATUS_LABELS.get(normalized, _DEFAULT_STATUS_LABELS)
+    label = labels.get(language, labels["en"])
     return [
         {
             "type": "section",
@@ -563,15 +627,17 @@ def _warning_blocks(
     config: SlackReplyConfig,
     *,
     truncated: bool = False,
+    language: str = "en",
 ) -> list[dict[str, Any]]:
     warnings = answer_payload.get("warnings")
-    values = [_TRUNCATION_NOTICE] if truncated else []
+    truncation_notice = _system_message("truncated", language)
+    values = [truncation_notice] if truncated else []
     if config.show_warnings and isinstance(warnings, (list, tuple)):
         values.extend(
             _escape_mrkdwn(value)
             for value in warnings
             if not _is_internal_retrieval_warning(value)
-            and _TRUNCATION_NOTICE not in str(value)
+            and truncation_notice not in str(value)
             and (not truncated or not _is_truncation_warning(value))
         )
     values = [value for value in values if value][:5]
@@ -592,7 +658,7 @@ def _warning_blocks(
 
 
 def _visualization_blocks(
-    answer_payload: dict[str, Any], config: SlackReplyConfig
+    answer_payload: dict[str, Any], config: SlackReplyConfig, language: str
 ) -> list[dict[str, Any]]:
     visualizations = answer_payload.get("visualizations")
     if (
@@ -607,9 +673,10 @@ def _visualization_blocks(
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": (
-                        f":bar_chart: This answer contains {len(visualizations)} "
-                        "visualization(s). View them on the Asset Q&A page."
+                    "text": ":bar_chart: " + _system_message(
+                        "visualization",
+                        language,
+                        count=len(visualizations),
                     ),
                 }
             ],
@@ -625,6 +692,7 @@ def render_slack_reply(
     artifact: dict[str, Any],
     reply_config: SlackReplyConfig,
     asset_cards: list[dict[str, str]] | None = None,
+    message_text: str | None = None,
 ) -> dict[str, Any]:
     valid_envelope = (
         artifact.get("artifact_type") == _ARTIFACT_TYPE
@@ -633,13 +701,15 @@ def render_slack_reply(
     )
     answer_payload = artifact["payload"] if valid_envelope else {}
     answer_value = answer_payload.get("answer") if valid_envelope else None
-    answer = (
-        answer_value.strip()
-        if isinstance(answer_value, str)
-        else (_EMPTY_ANSWER if valid_envelope else _INVALID_ARTIFACT)
+    language = detect_message_language(
+        message_text if message_text is not None else answer_value
     )
+    answer = answer_value.strip() if isinstance(answer_value, str) else ""
     if not answer:
-        answer = _EMPTY_ANSWER
+        answer = _system_message(
+            "empty_answer" if valid_envelope else "invalid_artifact",
+            language,
+        )
     has_used_document = (
         valid_envelope and _has_used_document_reference(answer_payload)
     )
@@ -656,7 +726,12 @@ def render_slack_reply(
     ]
     if valid_envelope:
         status = answer_payload.get("status")
-        blocks.extend(_status_blocks(status if isinstance(status, str) else ""))
+        blocks.extend(
+            _status_blocks(
+                status if isinstance(status, str) else "",
+                language,
+            )
+        )
     blocks.extend(_text_sections(safe_answer))
     if valid_envelope:
         # Template 只由正文中已确认的 Asset 产生。
@@ -671,7 +746,9 @@ def render_slack_reply(
             )
         # warnings/truncated 仍保留在 KBot 结构化报文中，但 Slack
         # 最终展示不输出“提示”区，避免把内部诊断信息暴露给用户。
-        blocks.extend(_visualization_blocks(answer_payload, reply_config))
+        blocks.extend(
+            _visualization_blocks(answer_payload, reply_config, language)
+        )
     fallback = f"<@{user_id}> {safe_answer}"
     return {
         "channel": channel_id,
@@ -732,6 +809,7 @@ def render_slack_replies(
     artifact: dict[str, Any],
     reply_config: SlackReplyConfig,
     asset_cards: list[dict[str, str]] | None = None,
+    message_text: str | None = None,
 ) -> list[dict[str, Any]]:
     """生成唯一一条 Slack FINAL 消息。"""
     return split_slack_reply_payload(
@@ -742,6 +820,7 @@ def render_slack_replies(
             artifact=artifact,
             reply_config=reply_config,
             asset_cards=asset_cards,
+            message_text=message_text,
         )
     )
 

@@ -145,11 +145,12 @@ SELECT T.WORKSPACE_ID,
 
 Slack Worker 只接受 `GROUNDED_ANSWER` / `GroundedAnswer.v1` 最终报文。回复正文
 来自 `payload.answer`，并只执行安全的 Slack `mrkdwn` 转换、引用标签隐藏和
-用户可见安全处理；非 `READY` 状态显示英文状态提示。Slack 不根据
+用户可见安全处理；非 `READY` 状态按当前 Slack 消息的语言显示状态提示。Slack 不根据
 `query_results` 补充 Asset、不重建列表，也不重新决定回答应当走问数或问文展示。
 
-Slack 自有的等待、状态、失败、截断、格式异常和可视化提醒统一使用英文；模型生成的
-回答正文保持原始语言。
+Slack 自有的等待、状态、失败、截断、格式异常和可视化提醒根据当前消息在中文、日文、
+韩文和英文间选择；每次追问单独判断，不继承线程首条消息的语言。模型生成的回答正文
+保持原始语言。
 
 仅当 `used_citation_labels` 实际命中 `reference_type=DOCUMENT` 的附件时，
 Slack 才组装 Asset Template。Template 的 `asset_id`、`asset_title`、
@@ -171,9 +172,9 @@ Template，且顺序与正文一致；最多组装 `max_references` 个 Template
 `asset_id`、`asset_title`、`solution_briefing` 三个字段。任一缺失时不发送部分
 Template，也不终止 Worker；无论 Artifact 是否同时包含 QueryResult，都直接展示
 KBot 原始回答正文。`author_mail`、`create_time` 为可选字段，
-缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 KM Link。整个过程不修改
+缺失时模板尾行保持可见内容为空，但仍通过 `asset_id` 展示 `KM Link (VPN)`。整个过程不修改
 `payload.answer`。回答原文保留，每个 Template 由分隔线、Asset Title、Solution
-Briefing，以及可选“Contributor 邮箱 | 发布日期”与 KM Link 按钮组成。
+Briefing，以及可选“Contributor 邮箱 | 发布日期”与 `KM Link (VPN)` 按钮组成。
 Template 展示层会将 Asset Title 和 Solution Briefing 元数据中的 OOXML
 `_x000D_` 回车标记还原为正常换行；不修改 KBot Artifact、Manifest 或调试报文。
 无 DOCUMENT 时，

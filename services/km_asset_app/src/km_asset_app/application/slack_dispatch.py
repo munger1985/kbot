@@ -20,6 +20,7 @@ from km_asset_app.application.slack_assets import (
 )
 from km_asset_app.application.slack_rendering import (
     build_callback_payload,
+    processing_failure_message,
     render_slack_replies,
     slack_visible_payload,
     waiting_message,
@@ -269,6 +270,7 @@ class SlackDispatchService:
             channel_id = inbox.channel_id
             slack_user_id = inbox.slack_user_id
             root_thread_ts = inbox.root_thread_ts
+            message_text = inbox.message_text
         summary = await self._main_api_client.get_run(run_id=run_id)
         status = str(summary.get("status") or "")
         if status not in _TERMINAL_RUN_STATUSES:
@@ -295,6 +297,7 @@ class SlackDispatchService:
                 artifact=artifact,
                 reply_config=self._config.reply,
                 asset_cards=asset_cards,
+                message_text=message_text,
             )
         else:
             payloads = [
@@ -303,8 +306,7 @@ class SlackDispatchService:
                     "thread_ts": root_thread_ts,
                     "text": (
                         f"<@{slack_user_id}> "
-                        "KBot was unable to process this request. "
-                        "Please try again later."
+                        f"{processing_failure_message(message_text)}"
                     ),
                 }
             ]
@@ -575,8 +577,7 @@ class SlackDispatchService:
                                 "thread_ts": inbox.root_thread_ts,
                                 "text": (
                                     f"<@{inbox.slack_user_id}> "
-                                    "KBot was unable to process this request. "
-                                    "Please try again later."
+                                    f"{processing_failure_message(inbox.message_text)}"
                                 ),
                             },
                             status="PENDING",
