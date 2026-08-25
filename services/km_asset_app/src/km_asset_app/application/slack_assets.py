@@ -62,7 +62,6 @@ _ASSET_FIELDS = (
 _REQUIRED_ASSET_FIELDS = (
     "asset_id",
     "asset_title",
-    "solution_briefing",
 )
 _MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
 
@@ -181,7 +180,24 @@ def parse_manifest_asset_fields(content: str) -> dict[str, str]:
                 str(key).strip().lower(): value
                 for key, value in parsed.items()
             }
-    values = _asset_values(metadata)
+    aliases = {
+        "asset_id": ("external_asset_id", "asset_id"),
+        "asset_title": ("asset_title", "title"),
+        "solution_briefing": (
+            "solution_briefing",
+            "description",
+            "asset_details",
+        ),
+        "author_mail": ("author_mail", "author"),
+        "create_time": ("create_time", "publish_date", "asset_date"),
+    }
+    values: dict[str, str] = {}
+    for target, sources in aliases.items():
+        for source in sources:
+            cleaned = _clean_value(metadata.get(source))
+            if cleaned:
+                values[target] = cleaned
+                break
     if "asset_id" not in values and source_match is not None:
         values["asset_id"] = _clean_value(source_match.group(1))
     if "asset_title" not in values and title_match is not None:

@@ -12,6 +12,7 @@ from main_api.api.km_asset_app import (
     AgentCreatePayload,
     AssetReferencePreview,
     ConversationTurnPayload,
+    _manifest_asset_fields,
     _validated_collection_models,
     _asset_attachment,
     _km_turn_receipt,
@@ -25,6 +26,36 @@ from platform_core.contracts import (
 
 
 class KmAssetAppContractTest(unittest.TestCase):
+    def test_manifest_source_metadata_has_priority_over_legacy_headers(
+        self,
+    ) -> None:
+        fields = _manifest_asset_fields(
+            "# Legacy Title\n\n"
+            "Source ID: LEGACY/100\n\n"
+            "## Source metadata\n"
+            '{"external_asset_id":"METADATA/100",'
+            '"asset_id":"LOWER-PRIORITY/100",'
+            '"asset_title":"Metadata Title",'
+            '"title":"Lower-priority Title"}\n'
+        )
+
+        self.assertEqual("METADATA/100", fields["asset_id"])
+        self.assertEqual("Metadata Title", fields["asset_title"])
+
+    def test_manifest_legacy_headers_are_missing_metadata_fallbacks(
+        self,
+    ) -> None:
+        fields = _manifest_asset_fields(
+            "# Legacy Title\n\n"
+            "Source ID: LEGACY/100\n\n"
+            "## Source metadata\n"
+            '{"author_mail":"author@example.com"}\n'
+        )
+
+        self.assertEqual("LEGACY/100", fields["asset_id"])
+        self.assertEqual("Legacy Title", fields["asset_title"])
+        self.assertEqual("author@example.com", fields["author_mail"])
+
     def test_app_api_client_uses_bound_user_portal_runtime_context(self) -> None:
         agent_id = UUID("01900000-0000-7000-8000-000000000031")
         source = AuthContext(

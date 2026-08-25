@@ -319,24 +319,23 @@ def _manifest_asset_fields(content: str) -> dict[str, str]:
                 for key, value in parsed.items()
             }
     aliases = {
-        "external_asset_id": "asset_id",
-        "asset_id": "asset_id",
-        "asset_title": "asset_title",
-        "title": "asset_title",
-        "solution_briefing": "solution_briefing",
-        "description": "solution_briefing",
-        "asset_details": "solution_briefing",
-        "author_mail": "author_mail",
-        "author": "author_mail",
-        "create_time": "create_time",
-        "publish_date": "create_time",
-        "asset_date": "create_time",
+        "asset_id": ("external_asset_id", "asset_id"),
+        "asset_title": ("asset_title", "title"),
+        "solution_briefing": (
+            "solution_briefing",
+            "description",
+            "asset_details",
+        ),
+        "author_mail": ("author_mail", "author"),
+        "create_time": ("create_time", "publish_date", "asset_date"),
     }
-    fields = {
-        target: cleaned
-        for source, target in aliases.items()
-        if (cleaned := _clean_manifest_value(metadata.get(source)))
-    }
+    fields: dict[str, str] = {}
+    for target, sources in aliases.items():
+        for source in sources:
+            cleaned = _clean_manifest_value(metadata.get(source))
+            if cleaned:
+                fields[target] = cleaned
+                break
     if "asset_id" not in fields and source_match is not None:
         fields["asset_id"] = _clean_manifest_value(source_match.group(1))
     if "asset_title" not in fields and title_match is not None:

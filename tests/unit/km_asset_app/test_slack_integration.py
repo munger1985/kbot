@@ -317,14 +317,17 @@ class SlackAssetExtractionTest(unittest.TestCase):
             "Source revision: R1\n\n"
             "## Facets\n{}\n\n"
             "## Source metadata\n"
-            '{"asset_title":"Metadata Title",'
+            '{"external_asset_id":"METADATA/100",'
+            '"asset_id":"LOWER-PRIORITY/100",'
+            '"asset_title":"Metadata Title",'
+            '"title":"Lower-priority Title",'
             '"solution_briefing":"Metadata Briefing",'
             '"author_mail":"author@example.com",'
             '"create_time":"2026-08-17",'
             '"secret":"must-not-leak"}\n'
         )
 
-        self.assertEqual("ASSET/100", fields["asset_id"])
+        self.assertEqual("METADATA/100", fields["asset_id"])
         self.assertEqual("Metadata Title", fields["asset_title"])
         self.assertEqual("Metadata Briefing", fields["solution_briefing"])
         self.assertEqual("author@example.com", fields["author_mail"])
@@ -523,7 +526,7 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ASSET/OAC", cards[0]["asset_id"])
         self.assertEqual(title, cards[0]["asset_title"])
 
-    async def test_template_requires_solution_briefing(self):
+    async def test_template_allows_missing_solution_briefing(self):
         reference = self._reference("C1", 103)
         title = "A K3s HA environment operations guides"
         manifest = (
@@ -560,7 +563,10 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             limit=10,
         )
 
-        self.assertEqual([], cards)
+        self.assertEqual(1, len(cards))
+        self.assertEqual("ASSET/K3S", cards[0]["asset_id"])
+        self.assertEqual(title, cards[0]["asset_title"])
+        self.assertNotIn("solution_briefing", cards[0])
         payload = render_slack_reply(
             channel_id="C1",
             user_id="U1",
@@ -573,9 +579,9 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             asset_cards=cards,
         )
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertNotIn(f"*Asset Title:* {title}", rendered)
+        self.assertIn(f"*Asset Title:* {title}", rendered)
         self.assertNotIn("*Solution Briefing:*", rendered)
-        self.assertNotIn("https://km.example.com/assets/ASSET%2FK3S", rendered)
+        self.assertIn("https://km.example.com/assets/ASSET%2FK3S", rendered)
 
     async def test_query_result_without_document_does_not_build_templates(self):
         artifact = {
@@ -750,7 +756,6 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
         reference = self._reference("C1", 98)
         manifest = (
             "# Asset A\n\n"
-            "Source ID: ASSET/A\n\n"
             "## Source metadata\n"
             '{"asset_title":"Asset A"}\n'
         ).encode("utf-8")
