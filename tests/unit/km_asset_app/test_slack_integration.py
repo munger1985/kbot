@@ -2145,7 +2145,8 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         self.assertTrue(payload["text"].startswith("<@U1> 这是回答"))
         self.assertNotIn("Asset问答助手", json.dumps(payload, ensure_ascii=False))
         rendered = json.dumps(payload, ensure_ascii=False)
-        self.assertIn("回答状态：部分回答", rendered)
+        self.assertIn(":information_source: 部分回答", rendered)
+        self.assertNotIn("回答状态：", rendered)
         self.assertIn("这是回答 [D1]。", rendered)
         self.assertNotIn("参考资料", rendered)
         self.assertNotIn("来源：MCP · 12 行", rendered)
@@ -2164,6 +2165,29 @@ class SlackRenderingAndConfigurationTest(unittest.TestCase):
         ):
             self.assertNotIn(private_value, rendered)
         self.assertNotIn('"accessory"', rendered)
+
+    def test_clarification_status_is_rendered_in_english_without_prefix(self):
+        payload = render_slack_reply(
+            channel_id="C1",
+            user_id="U1",
+            thread_ts="1.001",
+            artifact={
+                "artifact_type": "GROUNDED_ANSWER",
+                "schema_version": "GroundedAnswer.v1",
+                "payload": {
+                    "answer": "Which field should be used for sorting?",
+                    "status": "CLARIFICATION_REQUIRED",
+                    "used_citation_labels": [],
+                    "references": [],
+                },
+            },
+            reply_config=SlackReplyConfig(),
+        )
+
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertIn("Additional information required", rendered)
+        self.assertNotIn("回答状态：", rendered)
+        self.assertNotIn("需要补充信息", rendered)
 
     def test_reply_options_limit_and_hide_optional_summaries(self):
         references = [

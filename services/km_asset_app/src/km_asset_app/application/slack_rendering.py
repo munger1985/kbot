@@ -29,7 +29,7 @@ _SCHEMA_VERSION = "GroundedAnswer.v1"
 _EMPTY_ANSWER = "KBot 未生成可用回答，请稍后重试。"
 _INVALID_ARTIFACT = "KBot 返回的回答格式暂不可用，请稍后重试。"
 _STATUS_LABELS = {
-    "CLARIFICATION_REQUIRED": "需要补充信息",
+    "CLARIFICATION_REQUIRED": "Additional information required",
     "INSUFFICIENT_EVIDENCE": "现有资料不足",
     "PARTIAL": "部分回答",
 }
@@ -552,7 +552,7 @@ def _status_blocks(status: str) -> list[dict[str, Any]]:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*:information_source: 回答状态：{label}*",
+                "text": f"*:information_source: {label}*",
             },
         }
     ]
