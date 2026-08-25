@@ -124,8 +124,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertIn('id="target-dialog"', page)
         self.assertIn('id="target-form"', page)
+        self.assertIn('id="test-target-connection"', page)
         self.assertIn("diagnostic_credential", script)
         self.assertIn("Idempotency-Key", script)
+        self.assertIn("/targets/test-connection", script)
+        self.assertIn('oracle ? "service" : "database"', script)
         self.assertIn("db_type", script)
         self.assertNotIn("engine_type", script)
 

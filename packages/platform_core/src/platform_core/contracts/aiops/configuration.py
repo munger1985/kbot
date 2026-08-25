@@ -91,6 +91,27 @@ class TargetCreate(AIOpsContract):
         return self
 
 
+class TargetConnectionTest(AIOpsContract):
+    db_type: DatabaseType
+    endpoint: TargetEndpoint
+    diagnostic_credential: DatabaseCredentialInput
+
+    @model_validator(mode="after")
+    def validate_database_endpoint(self) -> "TargetConnectionTest":
+        if self.db_type == DatabaseType.ORACLE:
+            if not self.endpoint.service or self.endpoint.database:
+                raise ValueError("Oracle Endpoint 必须只设置 service")
+        elif not self.endpoint.database or self.endpoint.service:
+            raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+        return self
+
+
+class TargetConnectionTestResult(AIOpsContract):
+    ok: bool
+    database_version: str | None = None
+    error_code: str | None = Field(default=None, max_length=128)
+
+
 class TargetPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)

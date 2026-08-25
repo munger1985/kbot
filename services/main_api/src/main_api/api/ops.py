@@ -73,6 +73,8 @@ from platform_core.contracts.aiops import (
     ReportVersionPage,
     ReportView,
     TargetCreate,
+    TargetConnectionTest,
+    TargetConnectionTestResult,
     DatabaseCredentialInput,
     TargetDetail,
     TargetPage,
@@ -677,6 +679,21 @@ async def create_target(
         auth_context=request.state.auth_context,
     )
     return _validated(TargetDetail, payload, response)
+
+
+@router.post(
+    "/targets/test-connection",
+    response_model=TargetConnectionTestResult,
+)
+async def test_target_connection(
+    body: TargetConnectionTest,
+    request: Request,
+) -> TargetConnectionTestResult:
+    payload = await _client(request).test_target_connection(
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return TargetConnectionTestResult.model_validate(payload)
 
 
 @router.get("/targets", response_model=TargetPage)

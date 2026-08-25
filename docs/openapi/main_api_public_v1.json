@@ -8837,6 +8837,64 @@
         "title": "SwitchDomainPayload",
         "type": "object"
       },
+      "TargetConnectionTest": {
+        "additionalProperties": false,
+        "properties": {
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "diagnostic_credential": {
+            "$ref": "#/components/schemas/DatabaseCredentialInput"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/TargetEndpoint"
+          }
+        },
+        "required": [
+          "db_type",
+          "endpoint",
+          "diagnostic_credential"
+        ],
+        "title": "TargetConnectionTest",
+        "type": "object"
+      },
+      "TargetConnectionTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "database_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Version"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "TargetConnectionTestResult",
+        "type": "object"
+      },
       "TargetCreate": {
         "additionalProperties": false,
         "properties": {
@@ -13704,6 +13762,47 @@
           }
         },
         "summary": "Create Target",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/targets/test-connection": {
+      "post": {
+        "operationId": "test_target_connection_api_v1_apps_aiops_targets_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetConnectionTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Target Connection",
         "tags": [
           "AIOps"
         ]

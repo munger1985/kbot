@@ -99,8 +99,10 @@
           </div>
         </div>
         <p class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
+        <p id="target-connection-result" class="ops-connection-result" role="status"></p>
       </div>
       <footer>
+        <button id="test-target-connection" class="secondary-action" type="button">测试连接</button>
         <button id="cancel-target-dialog" type="button">取消</button>
         <button class="primary" type="submit">创建目标</button>
       </footer>

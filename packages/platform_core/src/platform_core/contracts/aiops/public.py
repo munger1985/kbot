@@ -38,6 +38,8 @@ from .configuration import (
     DatabaseCredentialInput,
     DatabaseCredentialStatus,
     TargetCreate,
+    TargetConnectionTest,
+    TargetConnectionTestResult,
     TargetDetail,
     TargetEndpoint,
     TargetPage,

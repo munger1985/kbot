@@ -46,6 +46,8 @@ from platform_core.contracts.aiops import (
     PolicyDetail,
     PolicyPage,
     TargetCreate,
+    TargetConnectionTest,
+    TargetConnectionTestResult,
     DatabaseCredentialInput,
     TargetDetail,
     TargetPage,
@@ -148,6 +150,18 @@ async def create_target(
     )
     _etag(response, result.row_version)
     return result
+
+
+@router.post(
+    "/targets/test-connection",
+    response_model=TargetConnectionTestResult,
+)
+async def test_target_connection(
+    body: TargetConnectionTest,
+    service: Service,
+    scope: Scope,
+) -> TargetConnectionTestResult:
+    return await service.test_target_connection(scope=scope, request=body)
 
 
 @router.get("/targets", response_model=TargetPage)

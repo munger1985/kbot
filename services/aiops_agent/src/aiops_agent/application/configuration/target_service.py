@@ -23,6 +23,9 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
+from aiops_agent.application.configuration.connection_test import (
+    test_target_connection as run_target_connection_test,
+)
 from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
@@ -74,6 +77,8 @@ from platform_core.contracts.aiops import (
     PolicySummary,
     SecretRefStatus,
     TargetCreate,
+    TargetConnectionTest,
+    TargetConnectionTestResult,
     TargetDetail,
     TargetPage,
     TargetPatch,
@@ -98,6 +103,16 @@ from .projections import (
 
 
 class TargetConfigurationMixin:
+    async def test_target_connection(
+        self,
+        *,
+        scope: ConfigurationScope,
+        request: TargetConnectionTest,
+    ) -> TargetConnectionTestResult:
+        """验证数据库连通性；Domain Scope 仅用于授权，不持久化测试数据。"""
+        del scope
+        return await run_target_connection_test(request)
+
     async def create_target(
         self,
         *,
