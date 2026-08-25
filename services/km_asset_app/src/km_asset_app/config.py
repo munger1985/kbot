@@ -71,6 +71,11 @@ class SlackExternalCallbackConfig(BaseModel):
     enabled: bool = False
     url: str = Field(default="", max_length=2048)
     timeout_seconds: int = Field(default=10, ge=1, le=120)
+    authorization_env: str = Field(
+        default="KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION",
+        min_length=1,
+        max_length=128,
+    )
 
     @model_validator(mode="after")
     def validate_enabled_url(self) -> "SlackExternalCallbackConfig":
@@ -79,6 +84,19 @@ class SlackExternalCallbackConfig(BaseModel):
         if self.url and not self.url.startswith(("https://", "http://")):
             raise ValueError("Slack external callback url 必须使用 http 或 https")
         return self
+
+    def require_authorization(self) -> str:
+        value = os.getenv(self.authorization_env)
+        if not value:
+            raise RuntimeError(
+                "Slack external callback Authorization 环境变量 "
+                f"{self.authorization_env} 未设置"
+            )
+        if "\r" in value or "\n" in value:
+            raise RuntimeError(
+                "Slack external callback Authorization 不能包含换行符"
+            )
+        return value
 
 
 class SlackDebugConfig(BaseModel):

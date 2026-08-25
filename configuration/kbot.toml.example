@@ -85,6 +85,7 @@ username = "kbot"
 # enabled = true
 # url = "http://141.148.83.133:8080/ords/kbot_ui/km/g"
 # timeout_seconds = 10
+# authorization_env = "KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION"
 
 # 两项调试功能会落盘完整业务报文，只能临时开启。
 # [integrations.slack.debug]

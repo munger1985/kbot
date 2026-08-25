@@ -35,6 +35,8 @@ async def main() -> None:
     ).setup()
     if slack_config.enabled:
         slack_config.main_api.require_api_key()
+        if slack_config.external_callback.enabled:
+            slack_config.external_callback.require_authorization()
         for workspace in slack_config.workspaces:
             workspace.require_signing_secret()
             workspace.require_bot_token()

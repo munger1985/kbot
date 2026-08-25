@@ -46,8 +46,9 @@ Execution Spec 和 Collection 边界上保持一致，仅 Conversation 因 Slack
 ## 外部 Callback
 
 可选 Callback 保持 3.3 字段：`user_id`、`username`、`user_email`、
-`user_question` 和 `request_time`。请求仅设置 `Content-Type: application/json`，
-不附加鉴权信息。它沿用 3.3 的旁路通知语义；用户资料读取、Callback 调用或其
+`user_question` 和 `request_time`。请求设置 `Content-Type: application/json`，并从
+`KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION` 注入完整的 `Authorization` Header。
+凭据不写入 TOML、日志或调试文件。它沿用 3.3 的旁路通知语义；用户资料读取、Callback 调用或其
 调试日志写入失败只记录运行日志，不中断 Slack 问答与最终回复。
 
 ## 临时调试输出
@@ -63,7 +64,8 @@ Header。调试文件包含个人资料和业务问题，只能临时开启并�
 ## 配置边界
 
 `.env` 或生产 Secret 保存 `KBOT_SLACK_SIGNING_SECRET`、
-`KBOT_SLACK_BOT_TOKEN` 与 `KBOT_SLACK_KM_API_KEY`。后者只用于调用公开 Main API，
+`KBOT_SLACK_BOT_TOKEN`、`KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION` 与
+`KBOT_SLACK_KM_API_KEY`。后者只用于调用公开 Main API，
 不得写入 TOML、日志或 Callback。`configuration/kbot.toml` 保存 Slack 功能开关、
 Workspace 绑定、公开 Main API 地址、API Key 环境变量名、Callback URL、调试参数和
 回复展示策略。Workspace 配置中的

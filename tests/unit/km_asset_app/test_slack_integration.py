@@ -2818,7 +2818,7 @@ class SlackVisibleDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
-    async def test_callback_uses_exact_payload_without_auth_header(self):
+    async def test_callback_uses_exact_payload_with_auth_header(self):
         class Response:
             status = 204
 
@@ -2855,20 +2855,31 @@ class SlackCallbackTest(unittest.IsolatedAsyncioTestCase):
         service._fetch_user_info = AsyncMock(
             return_value=("User", "user@example.com")
         )
-        await service._send_external_callback(
-            bot_token="token",
-            slack_user_id="U1",
-            message_text="Question",
-            workspace_id="T1",
-            event_id="E1",
-        )
+        with patch.dict(
+            os.environ,
+            {
+                "KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION": (
+                    "Basic test-credential"
+                )
+            },
+        ):
+            await service._send_external_callback(
+                bot_token="token",
+                slack_user_id="U1",
+                message_text="Question",
+                workspace_id="T1",
+                event_id="E1",
+            )
 
         self.assertEqual(
             "https://callback.example.com/events",
             session.url,
         )
         self.assertEqual(
-            {"Content-Type": "application/json"},
+            {
+                "Content-Type": "application/json",
+                "Authorization": "Basic test-credential",
+            },
             session.kwargs["headers"],
         )
         self.assertEqual(

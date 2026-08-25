@@ -453,7 +453,12 @@ class SlackDispatchService:
         try:
             async with self._http_session.post(
                 self._config.external_callback.url,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": (
+                        self._config.external_callback.require_authorization()
+                    ),
+                },
                 json=payload,
                 timeout=aiohttp.ClientTimeout(
                     total=self._config.external_callback.timeout_seconds
