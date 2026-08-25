@@ -1537,6 +1537,71 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual({"fraud-bundle"}, hit_sets["c1"])
 
+    def test_semantic_topic_accepts_noncontiguous_inflectional_support(self):
+        supported = KnowledgeRetrievalSkill._group_supports_terms(
+            {
+                "items": [{"evidence": {
+                    "content_text": (
+                        "OCI networking reference architecture with "
+                        "Load Balancing for public applications"
+                    ),
+                }}],
+            },
+            terms=("OCI Load Balancer",),
+        )
+        missing_product = KnowledgeRetrievalSkill._group_supports_terms(
+            {
+                "items": [{"evidence": {
+                    "content_text": "OCI Generative AI reference architecture",
+                }}],
+            },
+            terms=("OCI Load Balancer",),
+        )
+        missing_platform = KnowledgeRetrievalSkill._group_supports_terms(
+            {
+                "items": [{"evidence": {
+                    "content_text": "AWS application Load Balancing guide",
+                }}],
+            },
+            terms=("OCI Load Balancer",),
+        )
+
+        self.assertTrue(supported)
+        self.assertFalse(missing_product)
+        self.assertFalse(missing_platform)
+
+    def test_semantic_metadata_combines_declared_asset_fields(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["OCI Load Balancer"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+
+        self.assertTrue(KnowledgeRetrievalSkill._semantic_metadata_matches(
+            criterion,
+            asset={
+                "title": "OCI networking deployment guide",
+                "product": "Load Balancing",
+                "solution": "Infrastructure",
+            },
+        ))
+        self.assertFalse(KnowledgeRetrievalSkill._semantic_metadata_matches(
+            criterion,
+            asset={
+                "title": "AWS networking deployment guide",
+                "product": "Load Balancing",
+                "solution": "Infrastructure",
+            },
+        ))
+
     async def test_semantic_qualification_covers_scope_and_rejects_noise(self):
         collection_id = uuid7()
         fraud_bundle = uuid7()

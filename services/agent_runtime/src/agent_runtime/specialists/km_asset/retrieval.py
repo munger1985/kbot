@@ -546,9 +546,9 @@ class KmAssetRetrievalMixin:
             }
         return result
 
-    @staticmethod
+    @classmethod
     def _group_supports_terms(
-        group: dict[str, Any], *, terms: tuple[str, ...]
+        cls, group: dict[str, Any], *, terms: tuple[str, ...]
     ) -> bool:
         """在 KC 返回的 Asset 正文中确定性核对原主题或扩展主题。"""
         searchable = "\n".join(
@@ -565,18 +565,48 @@ class KmAssetRetrievalMixin:
         ).casefold()
         if not searchable:
             return False
-        for term in terms:
-            normalized = " ".join(str(term).casefold().split())
-            if not normalized:
-                continue
-            if re.search(r"[a-z0-9]", normalized):
-                pattern = r"(?<![a-z0-9])" + re.escape(normalized)
-                pattern += r"(?![a-z0-9])"
-                if re.search(pattern, searchable):
-                    return True
-            elif normalized in searchable:
-                return True
-        return False
+        return any(
+            cls._text_supports_semantic_term(searchable, term=term)
+            for term in terms
+        )
+
+    @classmethod
+    def _text_supports_semantic_term(
+        cls, searchable: str, *, term: str
+    ) -> bool:
+        """核对完整短语，或核对同一 Asset 内全部拉丁概念词。"""
+        normalized = " ".join(str(term).casefold().split())
+        if not normalized:
+            return False
+        if not re.search(r"[a-z0-9]", normalized):
+            return normalized in searchable
+
+        phrase_pattern = r"(?<![a-z0-9])" + re.escape(normalized)
+        phrase_pattern += r"(?![a-z0-9])"
+        if re.search(phrase_pattern, searchable):
+            return True
+
+        concept_tokens = re.findall(r"[a-z0-9]+", normalized)
+        if len(concept_tokens) < 2:
+            return False
+        searchable_tokens = re.findall(r"[a-z0-9]+", searchable)
+        searchable_stems = {
+            cls._semantic_token_stem(token) for token in searchable_tokens
+        }
+        concept_stems = {
+            cls._semantic_token_stem(token) for token in concept_tokens
+        }
+        return concept_stems.issubset(searchable_stems)
+
+    @staticmethod
+    def _semantic_token_stem(token: str) -> str:
+        """仅归一化常见英文词尾，避免把语义条件退化为子串匹配。"""
+        if len(token) <= 4 or token.isdigit():
+            return token
+        for suffix in ("ing", "ers", "er", "ed", "es", "s"):
+            if token.endswith(suffix) and len(token) - len(suffix) >= 4:
+                return token[:-len(suffix)]
+        return token
 
     @staticmethod
     def _document_scope_assets(context: ExecutionContext) -> list[dict[str, Any]]:
@@ -827,8 +857,9 @@ class KmAssetRetrievalMixin:
         }
         return comparisons.get(operator, False)
 
-    @staticmethod
+    @classmethod
     def _semantic_metadata_matches(
+        cls,
         criterion: AssetSearchCriterion,
         *,
         asset: dict[str, Any],
@@ -849,19 +880,23 @@ class KmAssetRetrievalMixin:
             for field in searchable_fields
         )
         expected = [
-            str(value).strip().casefold()
+            str(value).strip()
             for value in criterion.values
             if str(value).strip()
         ]
-        if expected and all(value in searchable_text for value in expected):
+        if expected and all(
+            cls._text_supports_semantic_term(searchable_text, term=value)
+            for value in expected
+        ):
             return True
         alternatives = [
-            str(value).strip().casefold()
+            str(value).strip()
             for value in semantic_terms
             if str(value).strip()
         ]
         return any(
-            value in searchable_text for value in alternatives
+            cls._text_supports_semantic_term(searchable_text, term=value)
+            for value in alternatives
         )
 
     @classmethod
