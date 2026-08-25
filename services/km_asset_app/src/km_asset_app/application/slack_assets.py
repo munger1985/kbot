@@ -1,4 +1,4 @@
-"""从 KBot 4.0 回答及其引用 Manifest 组装 Slack Asset 字段。"""
+"""从 KBot 4.0 回答及 Main API 引用预览组装 Slack Asset 字段。"""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ _FIELD_ALIASES = {
     "资产名称": "asset_title",
     "资产标题": "asset_title",
     "solutionbriefing": "solution_briefing",
+    "briefing": "solution_briefing",
     "description": "solution_briefing",
     "assetdetails": "solution_briefing",
     "解决方案简介": "solution_briefing",
@@ -38,9 +39,12 @@ _FIELD_ALIASES = {
     "contributor": "author_mail",
     "author": "author_mail",
     "authormail": "author_mail",
+    "authoremail": "author_mail",
     "作者邮箱": "author_mail",
     "贡献者": "author_mail",
     "publishdate": "create_time",
+    "publishtime": "create_time",
+    "lastupdatetime": "create_time",
     "createtime": "create_time",
     "assetdate": "create_time",
     "assetdatevalue": "create_time",
@@ -64,6 +68,17 @@ _REQUIRED_ASSET_FIELDS = (
     "asset_title",
 )
 _MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~])")
+_TIME_FIELD_PRIORITY = (
+    "publishtime",
+    "lastupdatetime",
+    "publishdate",
+    "createtime",
+    "assetdate",
+    "assetdatevalue",
+    "发布时间",
+    "创建时间",
+    "发布日期",
+)
 
 
 class SlackAssetTemplateIncompleteError(RuntimeError):
@@ -117,8 +132,18 @@ def _mapping_asset_fields(value: object) -> dict[str, str]:
         label = _normalized_label(str(key))
         field = _FIELD_ALIASES.get(label) or canonical.get(label)
         cleaned = _clean_value(raw_value)
-        if field and cleaned:
+        # 时间字段必须按 publish_time -> last_update_time -> 旧字段顺序
+        # 单独选择，不能依赖 Main API JSON 的键顺序。
+        if field and field != "create_time" and cleaned:
             result[field] = cleaned
+    normalized_values = {
+        _normalized_label(str(key)): raw_value for key, raw_value in value.items()
+    }
+    for label in _TIME_FIELD_PRIORITY:
+        cleaned = _clean_value(normalized_values.get(label))
+        if cleaned:
+            result["create_time"] = cleaned
+            break
     return result
 
 
@@ -185,11 +210,18 @@ def parse_manifest_asset_fields(content: str) -> dict[str, str]:
         "asset_title": ("asset_title", "title"),
         "solution_briefing": (
             "solution_briefing",
+            "briefing",
             "description",
             "asset_details",
         ),
-        "author_mail": ("author_mail", "author"),
-        "create_time": ("create_time", "publish_date", "asset_date"),
+        "author_mail": ("author_mail", "author_email", "author"),
+        "create_time": (
+            "publish_time",
+            "last_update_time",
+            "create_time",
+            "publish_date",
+            "asset_date",
+        ),
     }
     values: dict[str, str] = {}
     for target, sources in aliases.items():

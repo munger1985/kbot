@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 from km_asset_app.application.slack_assets import (
+    _mapping_asset_fields,
     assemble_slack_asset_cards as _assemble_slack_asset_cards,
     extract_answer_asset_cards,
     parse_manifest_asset_fields,
@@ -293,6 +294,41 @@ class SlackUrlVerificationTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SlackAssetExtractionTest(unittest.TestCase):
+    def test_maps_main_api_preview_asset_fields(self):
+        fields = _mapping_asset_fields(
+            {
+                "asset_id": "593C6847F5EE8D1DE0630B427364FE2F",
+                "asset_title": "Deep Data Security",
+                "author_email": "HYSUN.HE@ORACLE.COM",
+                "briefing": "An end-to-end demo.",
+                # 故意把更新时间放在发布时间前，验证优先级不受 JSON 键顺序影响。
+                "last_update_time": "2026-08-18T10:46:00Z",
+                "publish_time": "2026-08-17T10:46:33Z",
+                "product": "Database Security,Database -> SelectAI",
+                "solution": "ChatBI,AI / Machine Learning,RAG",
+            }
+        )
+
+        self.assertEqual(
+            "593C6847F5EE8D1DE0630B427364FE2F", fields["asset_id"]
+        )
+        self.assertEqual("Deep Data Security", fields["asset_title"])
+        self.assertEqual("HYSUN.HE@ORACLE.COM", fields["author_mail"])
+        self.assertEqual("An end-to-end demo.", fields["solution_briefing"])
+        self.assertEqual("2026-08-17T10:46:33Z", fields["create_time"])
+        self.assertNotIn("product", fields)
+        self.assertNotIn("solution", fields)
+
+    def test_preview_time_falls_back_to_last_update_time(self):
+        fields = _mapping_asset_fields(
+            {
+                "publish_time": "",
+                "last_update_time": "2026-08-17T10:46:00Z",
+            }
+        )
+
+        self.assertEqual("2026-08-17T10:46:00Z", fields["create_time"])
+
     def test_extracts_4_0_answer_fields_without_citations(self):
         cards = extract_answer_asset_cards(
             "**资产名称**：Conversational Banking [C1]\n"
@@ -324,6 +360,8 @@ class SlackAssetExtractionTest(unittest.TestCase):
             '"solution_briefing":"Metadata Briefing",'
             '"author_mail":"author@example.com",'
             '"create_time":"2026-08-17",'
+            '"product":"Database -> SelectAI",'
+            '"solution":"ChatBI,RAG",'
             '"secret":"must-not-leak"}\n'
         )
 
@@ -332,6 +370,8 @@ class SlackAssetExtractionTest(unittest.TestCase):
         self.assertEqual("Metadata Briefing", fields["solution_briefing"])
         self.assertEqual("author@example.com", fields["author_mail"])
         self.assertEqual("2026-08-17", fields["create_time"])
+        self.assertNotIn("product", fields)
+        self.assertNotIn("solution", fields)
         self.assertNotIn("secret", fields)
 
 
@@ -453,6 +493,65 @@ class SlackAssetManifestFallbackTest(unittest.IsolatedAsyncioTestCase):
             "bundle_revision_id": f"01920000-0000-7000-8000-{suffix}",
             "document_version_id": f"01930000-0000-7000-8000-{suffix}",
         }
+
+    async def test_main_api_preview_populates_complete_slack_template_fields(self):
+        reference = self._reference("C1", 104)
+        title = (
+            "Deep Data Security with IAM in Agentic Application Demo "
+            "(OCI Database Tools MCP Server / Agent Skill)"
+        )
+        artifact = {
+            "artifact_type": "GROUNDED_ANSWER",
+            "schema_version": "GroundedAnswer.v1",
+            "payload": {
+                "answer": f"1. **{title}** [C1]",
+                "status": "READY",
+                "used_citation_labels": ["C1"],
+                "references": [reference],
+            },
+        }
+        preview = {
+            "reference_type": "ASSET",
+            "citation_label": "C1",
+            "title": title,
+            "asset_fields": {
+                "asset_id": "593C6847F5EE8D1DE0630B427364FE2F",
+                "asset_title": title,
+                "author_email": "HYSUN.HE@ORACLE.COM",
+                "briefing": "An end-to-end demo.",
+                "publish_time": "2026-08-17T10:46:33Z",
+                "last_update_time": "2026-08-18T10:46:00Z",
+                "product": "Database Security,Database -> SelectAI",
+                "solution": "ChatBI,AI / Machine Learning,RAG",
+            },
+        }
+        main_api_client = SimpleNamespace(
+            get_reference_preview=AsyncMock(return_value=preview)
+        )
+
+        cards = await assemble_slack_asset_cards(
+            artifact=artifact,
+            main_api_client=main_api_client,
+            run_id=UUID("01a036ad-bc1c-76da-862f-33027466d09a"),
+            limit=10,
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "asset_id": "593C6847F5EE8D1DE0630B427364FE2F",
+                    "asset_title": title,
+                    "solution_briefing": "An end-to-end demo.",
+                    "author_mail": "HYSUN.HE@ORACLE.COM",
+                    "create_time": "2026-08-17T10:46:33Z",
+                }
+            ],
+            cards,
+        )
+        main_api_client.get_reference_preview.assert_awaited_once_with(
+            run_id=UUID("01a036ad-bc1c-76da-862f-33027466d09a"),
+            citation_label="C1",
+        )
 
     async def test_answer_without_asset_does_not_create_reference_templates(self):
         reference = self._reference("C1", 99)
