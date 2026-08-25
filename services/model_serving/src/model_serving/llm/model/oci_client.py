@@ -242,6 +242,15 @@ class OCIClient(BaseLLM[OCILLMConfig]):
             request = oci.generative_ai_inference.models.GenericChatRequest()
             request.api_format = oci.generative_ai_inference.models.GenericChatRequest.API_FORMAT_GENERIC
             request.messages = self._convert_to_oci_messages(messages)
+            response_format = kwargs.get("response_format")
+            if (
+                isinstance(response_format, dict)
+                and str(response_format.get("type") or "").lower()
+                == "json_object"
+            ):
+                request.response_format = (
+                    oci.generative_ai_inference.models.JsonObjectResponseFormat()
+                )
 
         request_params = {profile.output_token_field: output_tokens}
         request_params.update({

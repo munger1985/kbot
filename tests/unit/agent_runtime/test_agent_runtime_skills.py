@@ -200,6 +200,25 @@ class _MissingCitationModelClient(_ModelClient):
         yield LLMChunk(content="1+1=2。")
 
 
+class _RepairingJsonCitationModelClient(_ModelClient):
+    def __init__(self):
+        self.calls = 0
+        self.prompts = []
+
+    async def get_llm_json(self, **kwargs):
+        self.calls += 1
+        self.prompts.append(kwargs["prompt"])
+        if self.calls == 1:
+            return {
+                "answer": "证据支持的回答。",
+                "used_citation_labels": [],
+            }
+        return {
+            "answer": "证据支持的回答。[C1]",
+            "used_citation_labels": ["C1"],
+        }
+
+
 class _QueryCitationModelClient(_ModelClient):
     def __init__(self):
         self.prompts = []
@@ -1177,6 +1196,35 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.calls, 2)
         self.assertEqual(deltas, ["证据支持的回答。[C1]"])
         self.assertNotIn("1+1=2", "".join(deltas))
+
+    async def test_non_stream_composer_repairs_with_exact_validation_context(self):
+        artifact = await self._retrieval_artifact()
+        model = _RepairingJsonCitationModelClient()
+
+        result = await ResponseComposerSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(_context(input_artifacts=(artifact,)))
+
+        payload = result.artifact.payload
+        self.assertEqual(2, model.calls)
+        self.assertEqual("READY", payload["status"])
+        self.assertEqual("证据支持的回答。[C1]", payload["answer"])
+        repair_prompt = model.prompts[1]
+        self.assertTrue(any(
+            item["role"] == "assistant"
+            and "证据支持的回答" in item["content"]
+            for item in repair_prompt
+        ))
+        self.assertTrue(any(
+            item["role"] == "system"
+            and "有文档事实的回答必须实际包含引用标签" in item["content"]
+            for item in repair_prompt
+        ))
+        self.assertTrue(any(
+            item["role"] == "system" and "[C1]" in item["content"]
+            for item in repair_prompt
+        ))
 
     async def test_query_composer_replaces_model_citations_with_query_label(self):
         model = _QueryCitationModelClient()

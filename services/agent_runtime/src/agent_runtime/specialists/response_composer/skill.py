@@ -138,9 +138,14 @@ class ResponseComposerSkill:
         )
         validated: tuple[str, tuple[str, ...]] | None = None
         last_error: ValueError | None = None
+        previous_response: dict[str, Any] | None = None
         for attempt in range(1, 3):
             attempt_prompt = self._answer_attempt_prompt(
-                prompt, language=language, repair=attempt == 2
+                prompt,
+                language=language,
+                allowed_labels=tuple(allowed),
+                previous_response=previous_response,
+                validation_error=last_error,
             )
             response = await self._model_client.get_llm_json(
                 served_model_name=model_name,
@@ -154,6 +159,7 @@ class ResponseComposerSkill:
                 break
             except ValueError as exc:
                 last_error = exc
+                previous_response = response
                 logger.warning(
                     "文档回答未通过最终校验 "
                     "| run_id={} | task_id={} | attempt={} | error={}",
@@ -309,9 +315,15 @@ class ResponseComposerSkill:
             },
         )
         validated: tuple[str, tuple[str, ...]] | None = None
+        previous_answer: str | None = None
+        last_error: ValueError | None = None
         for attempt in range(1, 3):
             attempt_prompt = self._answer_attempt_prompt(
-                prompt, language=language, repair=attempt == 2
+                prompt,
+                language=language,
+                allowed_labels=tuple(allowed),
+                previous_response=previous_answer,
+                validation_error=last_error,
             )
             answer_parts: list[str] = []
             async for chunk in self._model_client.stream_llm_chunks(
@@ -330,6 +342,8 @@ class ResponseComposerSkill:
                     allowed,
                 )
             except ValueError as exc:
+                previous_answer = answer_text
+                last_error = exc
                 logger.warning(
                     "文档回答未通过最终校验 "
                     "| run_id={} | task_id={} | attempt={} | error={}",
@@ -450,18 +464,42 @@ class ResponseComposerSkill:
         prompt: list[dict[str, str]],
         *,
         language: str,
-        repair: bool,
+        allowed_labels: tuple[str, ...],
+        previous_response: dict[str, Any] | str | None = None,
+        validation_error: ValueError | None = None,
     ) -> list[dict[str, str]]:
-        """确保冻结语言约束始终是模型看到的最后一条系统指令。"""
+        """提供精确引用约束，并让修复轮看到原输出和实际错误。"""
         messages = list(prompt)
-        if repair:
+        rendered_labels = ", ".join(
+            f"[{label}]" for label in allowed_labels
+        )
+        if allowed_labels:
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"本次唯一允许使用的引用标签为：{rendered_labels}。"
+                    "answer 正文必须实际包含至少一个上述标签，且 "
+                    "used_citation_labels 必须与正文标签完全一致。"
+                ),
+            })
+        if previous_response is not None and validation_error is not None:
+            previous_text = (
+                json.dumps(previous_response, ensure_ascii=False, default=str)
+                if isinstance(previous_response, dict)
+                else previous_response
+            )
+            messages.append({
+                "role": "assistant",
+                "content": previous_text,
+            })
             messages.append(
                 {
                     "role": "system",
                     "content": (
-                        "The previous answer failed final validation. Generate "
-                        "the complete answer again using only supported facts "
-                        "and the supplied ASCII citation labels such as [C1]."
+                        "上一份回答未通过最终校验，具体错误为："
+                        f"{validation_error}。必须针对该错误重新生成完整回答，"
+                        "不能重复上一份输出；只使用受支持事实和上面列出的 "
+                        "ASCII 引用标签。"
                     ),
                 }
             )
@@ -566,7 +604,9 @@ class ResponseComposerSkill:
             },
         ]
         attempt_prompt = self._answer_attempt_prompt(
-            attempt_prompt, language=language, repair=False
+            attempt_prompt,
+            language=language,
+            allowed_labels=(),
         )
         parts: list[str] = []
         async for chunk in self._model_client.stream_llm_chunks(
@@ -594,8 +634,6 @@ class ResponseComposerSkill:
         self,
         context: ExecutionContext,
         query: QueryResult,
-        *,
-        repair: bool = False,
     ) -> dict[str, Any]:
         model_name, messages = await self._query_prompt(context, query)
         language = response_language(
@@ -604,7 +642,9 @@ class ResponseComposerSkill:
         return await self._model_client.get_llm_json(
             served_model_name=model_name,
             prompt=self._answer_attempt_prompt(
-                messages, language=language, repair=repair
+                messages,
+                language=language,
+                allowed_labels=(),
             ),
         )
 

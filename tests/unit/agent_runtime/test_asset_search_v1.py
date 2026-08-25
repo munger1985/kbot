@@ -203,6 +203,157 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertLess(answer.index("向量数据库"), answer.index("相关 Asset"))
         self.assertEqual(["C1"], result.artifact.payload["used_citation_labels"])
 
+    async def test_exact_asset_answer_falls_back_to_verified_source(self):
+        """Composer 漏写引用时，单项详情仍返回唯一 Asset 的已验证正文。"""
+        bundle_id = uuid7()
+        revision_id = uuid7()
+        citation = Citation(
+            citation_label="C1",
+            collection_id=uuid7(),
+            bundle_id=bundle_id,
+            bundle_revision_id=revision_id,
+            document_id=uuid7(),
+            document_version_id=uuid7(),
+            evidence_ids=(uuid7(),),
+            title="Context-Aware AI Report Demo",
+            bundle_title="Context-Aware AI Report Demo",
+            document_role="MANIFEST",
+            excerpt="The Asset uses SelectAI and AI Vector Search for ChatBI.",
+            locator={},
+            locator_schema_version="document/v1",
+            relevance_reason="Asset manifest",
+        )
+        retrieval = DocumentRetrievalResult(
+            status="READY",
+            citation_pack=CitationPack(
+                question="What are the details of the second asset?",
+                query_plan={},
+                bundle_candidates=(),
+                citations=(citation,),
+                coverage=RetrievalCoverage(
+                    candidate_bundle_count=1,
+                    selected_document_count=1,
+                    selected_evidence_count=1,
+                ),
+            ),
+            retrieval_report={},
+        )
+        query = QueryResult(
+            query_result_id=uuid7(),
+            provider="SEMANTIC",
+            columns=(),
+            rows=({
+                "asset_id": "ASSET-2",
+                "title": "Context-Aware AI Report Demo",
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+            },),
+            row_count=1,
+            provenance={"count_exact": True},
+        )
+        plan = _base_plan(
+            query_text="What are the details of the second asset?",
+            operation="ANSWER",
+            target="CONTENT",
+            display_limit=None,
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "IDENTIFIER",
+                "field_scope": ["title"],
+                "operator": "EQ",
+                "values": ["Context-Aware AI Report Demo"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1",
+            },
+            result_assets={
+                "mode": "SUPPORTING",
+                "target_count": 5,
+                "selection": "EVIDENCE_COVERAGE_THEN_RECENT",
+            },
+        )
+
+        class Model:
+            def __init__(self):
+                self.prompts = []
+
+            async def get_llm_json(self, **_):
+                self.prompts.append(_["prompt"])
+                return {
+                    "answer": "This Asset provides a context-aware report.",
+                    "used_citation_labels": [],
+                }
+
+        class Prompts:
+            async def resolve(self, _):
+                return SimpleNamespace(
+                    content=(
+                        "{agent_instruction}\n{raw_input}\n"
+                        "{standalone_query}\n{evidence}"
+                    ),
+                    input_variables=(
+                        "agent_instruction", "raw_input",
+                        "standalone_query", "evidence",
+                    ),
+                )
+
+        context = ExecutionContext(
+            domain_id=20,
+            agent_id=uuid7(),
+            run_id=uuid7(),
+            task_id=uuid7(),
+            task_key="test",
+            actor_id="user",
+            request_id="request",
+            trace_id="trace",
+            original_input=plan.query_text,
+            policy_snapshot={},
+            config_snapshot={
+                "language": "en-US",
+                "agent": {"models": {"composer_llm": {
+                    "served_model_name": "composer",
+                }}},
+                "route": {
+                    "answer_basis": "EXACT_METADATA_ANSWER",
+                    "asset_search_plan": plan.model_payload(),
+                },
+            },
+            input_artifacts=(
+                _artifact("QUERY_RESULT", query.model_dump(mode="json")),
+                _artifact("CITATION_PACK", retrieval.model_dump(mode="json")),
+            ),
+        )
+
+        result = await ResponseComposerSkill(
+            model_client=(model := Model()), prompt_resolver=Prompts()
+        ).execute(context)
+        payload = result.artifact.payload
+
+        self.assertEqual("READY", payload["status"])
+        self.assertIn("Context-Aware AI Report Demo", payload["answer"])
+        self.assertIn("SelectAI and AI Vector Search", payload["answer"])
+        self.assertTrue(payload["answer"].endswith("[C1]"))
+        self.assertEqual(["C1"], payload["used_citation_labels"])
+        self.assertEqual("C1", payload["references"][0]["citation_label"])
+        self.assertEqual(2, len(model.prompts))
+        repair_prompt = model.prompts[1]
+        self.assertTrue(any(
+            item["role"] == "assistant"
+            and "This Asset provides a context-aware report" in item["content"]
+            for item in repair_prompt
+        ))
+        self.assertTrue(any(
+            item["role"] == "system"
+            and "[C1]" in item["content"]
+            for item in repair_prompt
+        ))
+        self.assertTrue(any(
+            item["role"] == "system"
+            and "有文档事实的回答必须实际包含引用标签" in item["content"]
+            for item in repair_prompt
+        ))
+
     async def test_completed_asset_list_has_one_c_reference_per_asset(self):
         first_bundle = uuid7()
         second_bundle = uuid7()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from loguru import logger
 
 from agent_runtime.specialists.data_query import DataQuerySkill
@@ -12,6 +14,9 @@ from agent_runtime.specialists.response_composer.contracts import GroundedAnswer
 from .document_scope import KmAssetDocumentScopeExtractSkill
 from .composer import KmAssetComposerMixin
 from .retrieval import KmAssetRetrievalMixin
+
+
+_CITATION_LABEL_PATTERN = re.compile(r"\[[A-Z]\d+\]")
 
 
 class KmAssetKnowledgeRetrievalSkill(
@@ -119,6 +124,14 @@ class KmAssetResponseComposerSkill(
             document_result.artifact.payload
         )
         if grounded.status != "READY":
+            fallback = self._exact_answer_source_fallback(
+                context=context,
+                retrieval=retrieval,
+                search_plan=search_plan,
+                grounded=grounded,
+            )
+            if fallback is not None:
+                return self._result(context, fallback)
             return self._result(context, grounded)
         allowed = {
             item.citation_label: item
@@ -141,6 +154,57 @@ class KmAssetResponseComposerSkill(
             "used_citation_labels": used_labels,
             "references": references,
         }))
+
+    @classmethod
+    def _exact_answer_source_fallback(
+        cls,
+        *,
+        context,
+        retrieval,
+        search_plan,
+        grounded,
+    ):
+        """单 Asset 详情生成失败时直接展示唯一的已验证正文证据。"""
+        route = context.config_snapshot.get("route") or {}
+        answer_basis = (
+            route.get("answer_basis") if isinstance(route, dict) else None
+        )
+        citations = retrieval.citation_pack.citations
+        if (
+            grounded.status != "ANSWER_VALIDATION_FAILED"
+            or search_plan.operation != "ANSWER"
+            or answer_basis != "EXACT_METADATA_ANSWER"
+            or len(citations) != 1
+        ):
+            return None
+        citation = citations[0]
+        excerpt = _CITATION_LABEL_PATTERN.sub(
+            "", str(citation.excerpt or "")
+        ).strip()
+        if not excerpt:
+            return None
+        title = _CITATION_LABEL_PATTERN.sub(
+            "", str(citation.bundle_title or citation.title or "")
+        ).strip()
+        answer = (
+            f"**{title}**\n\n{excerpt} [{citation.citation_label}]"
+            if title
+            else f"{excerpt} [{citation.citation_label}]"
+        )
+        logger.warning(
+            "KM Asset 单项详情改用已验证正文兜底 "
+            "| run_id={} | task_id={} | citation_label={}",
+            context.run_id,
+            context.task_id,
+            citation.citation_label,
+        )
+        return GroundedAnswer(
+            answer=answer,
+            status="READY",
+            used_citation_labels=(citation.citation_label,),
+            references=(cls._reference_card(citation),),
+            warnings=grounded.warnings,
+        )
 
 
 class KmAssetDataQuerySkill(DataQuerySkill):

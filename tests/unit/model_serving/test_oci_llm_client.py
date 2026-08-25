@@ -45,6 +45,14 @@ class OCILLMClientTest(unittest.TestCase):
 
         self.assertEqual(2048, request.max_completion_tokens)
 
+    def test_gpt5_propagates_json_object_response_format(self):
+        request = _client("openai.gpt-5.6-sol")._build_chat_request(
+            [{"role": "user", "content": "只输出 JSON"}],
+            response_format={"type": "json_object"},
+        )
+
+        self.assertEqual("JSON_OBJECT", request.response_format.type)
+
     def test_grok_keeps_existing_max_tokens_contract(self):
         request = _client("xai.grok-4", max_tokens=24000)._build_chat_request(
             [{"role": "user", "content": "hello"}],
