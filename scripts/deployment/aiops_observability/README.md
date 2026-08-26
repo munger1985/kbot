@@ -22,3 +22,8 @@ OEM不属于此安装包，部署完成后在AIOps App内配置。
 `127.0.0.1:3000`。需要从管理网直接访问时，通过唯一INI中的
 `grafana_bind_address`填写本机管理网IPv4地址；不要手工修改Compose文件，也不建议
 在客户生产环境使用`0.0.0.0`。
+
+Grafana启用后会自动配置固定UID的Prometheus、Loki和Alertmanager数据源，并从
+`configuration/grafana/dashboards`加载KBot AIOps只读看板。看板以`target_key`作为
+数据库或主机切换变量；不要在Grafana UI中复制一套客户私有版本，通用修改应回写仓库
+中的JSON并通过部署脚本发布。

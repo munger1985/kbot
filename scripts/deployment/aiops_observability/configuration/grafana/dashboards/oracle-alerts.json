@@ -1,0 +1,79 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(ALERTS{alertstate=\"firing\",target_key=~\"$target_key\"}) or vector(0)", "instant": true, "legendFormat": "活动告警", "range": false, "refId": "A"}],
+      "title": "活动告警",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(ALERTS{alertstate=\"pending\",target_key=~\"$target_key\"}) or vector(0)", "instant": true, "legendFormat": "等待触发", "range": false, "refId": "A"}],
+      "title": "等待触发",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "oracledb_exporter_last_scrape_error{job=\"oracle\",target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "最近抓取错误",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 3, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.001}]}, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "rate(kbot_db_errors_total{target_key=~\"$target_key\"}[5m])", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "SQL解析错误速率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 5},
+      "id": 5,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": []},
+      "targets": [{"editorMode": "code", "expr": "ALERTS{alertstate=~\"firing|pending\",target_key=~\"$target_key\"}", "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+      "title": "当前Oracle告警明细",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 25, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "stepAfter", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}, "thresholdsStyle": {"mode": "off"}}, "noValue": "无数据", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 15},
+      "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "ALERTS{alertstate=\"firing\",target_key=~\"$target_key\"}", "legendFormat": "{{alertname}} / {{target_key}}", "range": true, "refId": "A"}],
+      "title": "活动告警时间线",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["kbot", "aiops", "oracle", "alerts"],
+  "templating": {"list": [{"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "kbot-prometheus"}, "definition": "label_values(oracledb_up{job=\"oracle\"}, target_key)", "includeAll": true, "label": "Oracle目标", "multi": true, "name": "target_key", "options": [], "query": {"query": "label_values(oracledb_up{job=\"oracle\"}, target_key)", "refId": "StandardVariableQuery"}, "refresh": 1, "type": "query"}]},
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Oracle · 异常与告警",
+  "uid": "kbot-oracle-alerts",
+  "version": 1
+}

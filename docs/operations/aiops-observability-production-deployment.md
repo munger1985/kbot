@@ -81,6 +81,9 @@ grafana_port = 3000
 grafana_admin_user = kbot-admin
 grafana_admin_password = 填写实际强密码
 
+# 启用后自动加载Oracle总览、存储、异常、Alert Log和主机资源看板，
+# 无需在Grafana中手工创建Dashboard。
+
 [oracle:oracle-prod-01]
 enabled = true
 host = 10.10.1.21

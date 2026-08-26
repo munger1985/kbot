@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: kbot-aiops
+    orgId: 1
+    folder: KBot AIOps
+    folderUid: kbot-aiops
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

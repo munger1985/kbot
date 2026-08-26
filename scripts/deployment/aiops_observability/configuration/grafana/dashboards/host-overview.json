@@ -1,0 +1,89 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "max": 100, "min": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 80}, {"color": "red", "value": 90}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto"},
+      "targets": [{"editorMode": "code", "expr": "100 - (avg by (target_key) (rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=~\"$target_key\"}[5m])) * 100)", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "主机CPU使用率",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "max": 100, "min": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 80}, {"color": "red", "value": 90}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto"},
+      "targets": [{"editorMode": "code", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=~\"$target_key\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=~\"$target_key\"})", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "主机内存使用率",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 4}, {"color": "red", "value": 8}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "node_load1{job=\"node\",target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "1分钟负载",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "time() - node_boot_time_seconds{job=\"node\",target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "主机运行时间",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "noValue": "无数据", "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "100 - (avg by (target_key) (rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=~\"$target_key\"}[5m])) * 100)", "legendFormat": "CPU / {{target_key}}", "range": true, "refId": "A"}, {"editorMode": "code", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=~\"$target_key\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=~\"$target_key\"})", "legendFormat": "内存 / {{target_key}}", "range": true, "refId": "B"}],
+      "title": "CPU与内存趋势",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "noValue": "无数据", "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (rate(node_network_receive_bytes_total{job=\"node\",device!~\"lo\",target_key=~\"$target_key\"}[5m]))", "legendFormat": "接收 / {{target_key}}", "range": true, "refId": "A"}, {"editorMode": "code", "expr": "sum by (target_key) (rate(node_network_transmit_bytes_total{job=\"node\",device!~\"lo\",target_key=~\"$target_key\"}[5m]))", "legendFormat": "发送 / {{target_key}}", "range": true, "refId": "B"}],
+      "title": "网络吞吐量",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "max": 100, "min": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 80}, {"color": "red", "value": 90}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 15},
+      "id": 7,
+      "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "targets": [{"editorMode": "code", "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=~\"$target_key\"} / node_filesystem_size_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=~\"$target_key\"})", "legendFormat": "{{target_key}} / {{mountpoint}}", "range": true, "refId": "A"}],
+      "title": "文件系统使用率",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["kbot", "aiops", "host", "node-exporter"],
+  "templating": {"list": [{"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "kbot-prometheus"}, "definition": "label_values(up{job=\"node\"}, target_key)", "includeAll": true, "label": "主机目标", "multi": true, "name": "target_key", "options": [], "query": {"query": "label_values(up{job=\"node\"}, target_key)", "refId": "StandardVariableQuery"}, "refresh": 1, "type": "query"}]},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "主机 · 资源总览",
+  "uid": "kbot-host-overview",
+  "version": 1
+}

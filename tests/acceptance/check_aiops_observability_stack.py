@@ -89,6 +89,17 @@ def main() -> int:
             service_networks = rendered_compose["services"][service_name]["networks"]
             if "management" not in service_networks:
                 raise RuntimeError(f"{service_name}只连接内部网络，维护端口无法发布")
+        grafana_mount_targets = {
+            item["target"]
+            for item in rendered_compose["services"]["grafana"]["volumes"]
+        }
+        if "/var/lib/grafana/dashboards" not in grafana_mount_targets:
+            raise RuntimeError("Grafana没有挂载受控Dashboard目录")
+        grafana_environment = rendered_compose["services"]["grafana"]["environment"]
+        if grafana_environment.get("GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH") != (
+            "/var/lib/grafana/dashboards/oracle-overview.json"
+        ):
+            raise RuntimeError("Grafana没有把Oracle总览设置为默认首页")
         loki_healthcheck = rendered_compose["services"]["loki"]["healthcheck"][
             "test"
         ]
@@ -190,7 +201,89 @@ environment = production
     ):
         if forbidden_text in oracle_user_script:
             raise RuntimeError(f"Oracle监控用户脚本包含过宽授权：{forbidden_text}")
-    print("AIOps观测栈检查通过：角色、Compose、Secret、多数据库目标和签名桥配置有效")
+    datasource_config = (
+        STACK / "configuration/grafana/provisioning/datasources/aiops.yml"
+    ).read_text(encoding="utf-8")
+    for datasource_uid in (
+        "kbot-prometheus",
+        "kbot-loki",
+        "kbot-alertmanager",
+    ):
+        if f"uid: {datasource_uid}" not in datasource_config:
+            raise RuntimeError(f"Grafana数据源缺少固定UID：{datasource_uid}")
+    if "implementation: prometheus" not in datasource_config:
+        raise RuntimeError("Grafana没有按Prometheus实现配置Alertmanager数据源")
+    dashboard_provider = (
+        STACK / "configuration/grafana/provisioning/dashboards/aiops.yml"
+    ).read_text(encoding="utf-8")
+    for required_text in (
+        "folderUid: kbot-aiops",
+        "editable: false",
+        "path: /var/lib/grafana/dashboards",
+    ):
+        if required_text not in dashboard_provider:
+            raise RuntimeError(f"Grafana Dashboard Provider缺少约束：{required_text}")
+
+    dashboard_dir = STACK / "configuration/grafana/dashboards"
+    expected_dashboards = {
+        "oracle-overview.json": ("kbot-oracle-overview", "kbot-prometheus"),
+        "oracle-storage.json": ("kbot-oracle-storage", "kbot-prometheus"),
+        "oracle-alerts.json": ("kbot-oracle-alerts", "kbot-prometheus"),
+        "oracle-alert-log.json": ("kbot-oracle-alert-log", "kbot-loki"),
+        "host-overview.json": ("kbot-host-overview", "kbot-prometheus"),
+    }
+    actual_dashboards = {path.name for path in dashboard_dir.glob("*.json")}
+    if actual_dashboards != set(expected_dashboards):
+        raise RuntimeError("Grafana受控Dashboard清单与交付契约不一致")
+    dashboard_uids: set[str] = set()
+    dashboard_promql: list[str] = []
+    for file_name, (expected_uid, datasource_uid) in expected_dashboards.items():
+        dashboard_path = dashboard_dir / file_name
+        raw_dashboard = dashboard_path.read_text(encoding="utf-8")
+        dashboard = json.loads(raw_dashboard)
+        if dashboard.get("uid") != expected_uid:
+            raise RuntimeError(f"Dashboard UID不稳定：{file_name}")
+        if expected_uid in dashboard_uids:
+            raise RuntimeError(f"Dashboard UID重复：{expected_uid}")
+        dashboard_uids.add(expected_uid)
+        if not dashboard.get("panels") or len(dashboard["panels"]) < 4:
+            raise RuntimeError(f"Dashboard缺少可用面板：{file_name}")
+        variables = {
+            item.get("name") for item in dashboard.get("templating", {}).get("list", [])
+        }
+        if "target_key" not in variables:
+            raise RuntimeError(f"Dashboard缺少target_key目标切换：{file_name}")
+        if datasource_uid not in raw_dashboard:
+            raise RuntimeError(f"Dashboard没有引用固定数据源：{file_name}")
+        for panel in dashboard["panels"]:
+            panel_datasource = panel.get("datasource", {}).get("uid")
+            for target in panel.get("targets", []):
+                target_datasource = target.get("datasource", {}).get(
+                    "uid", panel_datasource
+                )
+                expression = target.get("expr")
+                if target_datasource == "kbot-prometheus" and expression:
+                    dashboard_promql.append(expression.replace("$target_key", ".*"))
+        for forbidden_text in ("CHANGE_ME", "140.238.44.208", "welcome1"):
+            if forbidden_text in raw_dashboard:
+                raise RuntimeError(f"Dashboard包含环境专属或敏感内容：{file_name}")
+    if shutil.which("promtool"):
+        with tempfile.TemporaryDirectory(prefix="kbot-dashboard-promql-") as temporary:
+            rule_file = Path(temporary) / "dashboard-promql.yml"
+            rule_lines = ["groups:", "  - name: kbot-dashboard-promql", "    rules:"]
+            for index, expression in enumerate(dashboard_promql, start=1):
+                rule_lines.extend(
+                    [
+                        f"      - record: kbot_dashboard_query_{index}",
+                        f"        expr: {json.dumps(expression)}",
+                    ]
+                )
+            rule_file.write_text("\n".join(rule_lines) + "\n", encoding="utf-8")
+            subprocess.run(["promtool", "check", "rules", str(rule_file)], check=True)
+    print(
+        "AIOps观测栈检查通过：角色、Compose、Secret、多数据库目标、"
+        "签名桥和Grafana看板配置有效"
+    )
     return 0
 
 

@@ -1,0 +1,90 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 0, "text": "离线"}, "1": {"color": "green", "index": 1, "text": "在线"}}, "type": "value"}], "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "oracledb_up{job=\"oracle\",target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "数据库状态",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "max": 100, "min": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 80}, {"color": "red", "value": 90}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 5, "x": 4, "y": 0},
+      "id": 2,
+      "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto"},
+      "targets": [{"editorMode": "code", "expr": "kbot_db_cpu_utilization_percent{target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "Oracle CPU使用率",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 100}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 5, "x": 9, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "kbot_db_active_connections{target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "活动用户连接",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "max": 100, "min": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 5, "x": 14, "y": 0},
+      "id": 4,
+      "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto"},
+      "targets": [{"editorMode": "code", "expr": "kbot_db_connection_utilization_percent{target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "连接使用率",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "无数据", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1000}, {"color": "red", "value": 5000}]}, "unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 5, "x": 19, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "kbot_db_response_latency_milliseconds{target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "Exporter抓取延迟",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "noValue": "无数据", "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+      "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "kbot_db_cpu_utilization_percent{target_key=~\"$target_key\"}", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "Oracle CPU趋势",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "noValue": "无数据", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+      "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "rate(kbot_db_transactions_total{target_key=~\"$target_key\"}[5m])", "legendFormat": "{{target_key}}", "range": true, "refId": "A"}],
+      "title": "事务吞吐量（5分钟速率）",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["kbot", "aiops", "oracle"],
+  "templating": {"list": [{"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "kbot-prometheus"}, "definition": "label_values(oracledb_up{job=\"oracle\"}, target_key)", "includeAll": true, "label": "Oracle目标", "multi": true, "name": "target_key", "options": [], "query": {"query": "label_values(oracledb_up{job=\"oracle\"}, target_key)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "type": "query"}]},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Oracle · 运行总览",
+  "uid": "kbot-oracle-overview",
+  "version": 1
+}
