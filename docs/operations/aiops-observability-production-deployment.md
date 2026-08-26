@@ -206,12 +206,12 @@ Webhook必须先在AIOps App中建立接收身份，再写入唯一部署配置�
 1. 进入“诊断源”，新增`ALERTMANAGER`类型诊断源；只接收Webhook时访问地址可以留空。
 2. 系统固定从告警的`target_key`标签读取目标标识，页面无需配置标签名称。该标签值与
    本文件中的数据库Target Key一致。
-3. 点击“生成 Secret”，立即复制页面生成的256位随机Secret，然后保存诊断源。
-4. 再次编辑该诊断源，点击“生成 Webhook Key”，立即复制只显示一次的Key。已有Key时
-   按钮显示为“轮换 Webhook Key”；轮换后必须在页面提示的旧Key失效时间前完成部署。
-5. 启用该诊断源。在Agent编辑页选择它并与数据库Target绑定；Locator填写对应的
+3. 点击“创建并生成接入凭据”。页面会一次完成诊断源创建、Webhook Secret生成和
+   Webhook Key生成，并在同一弹窗集中显示只显示一次的Secret、Key和INI配置片段。
+   复制配置后再关闭弹窗，不需要保存后重新进入编辑页面。
+4. 启用该诊断源。在Agent编辑页选择它并与数据库Target绑定；Locator填写对应的
    Target Key，例如`oracle-prod-01`。
-6. 将刚才得到的Key和Secret写入`var/aiops-stack/aiops-stack.ini`的`[metrics]`：
+5. 将刚才得到的Key和Secret写入`var/aiops-stack/aiops-stack.ini`的`[metrics]`：
 
 页面生成Webhook Key依赖KBot标准部署必选项`KBOT_MASTER_KEY`。KBot会按用途自动派生
 签名密钥，不需要额外执行`openssl`，也不需要单独配置
@@ -229,9 +229,9 @@ kbot_webhook_secret = 填写页面生成并已保存到诊断源的Webhook Secre
 `/api/v1/integrations/aiops/signals/...`。同机`all-in-one`测试环境可以填写KBot主机内网
 地址，例如`http://10.0.0.190:18099`；`central`生产角色必须使用客户HTTPS入口。
 
-7. 不带参数重新执行`./scripts/aiops-stack`。脚本会保留现有数据卷，增加或重建
+6. 不带参数重新执行`./scripts/aiops-stack`。脚本会保留现有数据卷，增加或重建
    `kbot-webhook-signer`，并把Alertmanager Receiver从`discard`切换为`kbot`。
-8. 验证签名桥和Alertmanager均健康：
+7. 验证签名桥和Alertmanager均健康：
 
 ```bash
 docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'alertmanager|webhook-signer'

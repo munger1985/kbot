@@ -27,9 +27,17 @@
 .source-webhook-key-result input{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 .source-webhook-key-result small{display:block;margin-top:7px;color:var(--muted)}
 .source-webhook-secret-input{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
+.source-webhook-onboarding{padding:18px;border:1px solid #86bfa3;background:#f2fbf6}
+.source-webhook-onboarding>strong{display:block;font-size:16px;color:#12613d}
+.source-webhook-onboarding>p{margin:6px 0 16px;color:var(--muted)}
+.source-webhook-onboarding>label{display:block;margin:11px 0 6px;font-size:12px;font-weight:650}
+.source-webhook-onboarding>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
+.source-webhook-onboarding input,.source-webhook-onboarding textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.source-webhook-onboarding textarea{resize:none}
+.source-webhook-onboarding small{display:block;margin-top:12px;color:var(--muted)}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
 @media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}
-@media(max-width:600px){.source-webhook-key{grid-template-columns:1fr}.source-webhook-key>button{justify-self:start}.source-webhook-key-result>div,.source-webhook-secret-input{grid-template-columns:1fr}}
+@media(max-width:600px){.source-webhook-key{grid-template-columns:1fr}.source-webhook-key>button{justify-self:start}.source-webhook-key-result>div,.source-webhook-secret-input,.source-webhook-onboarding>div{grid-template-columns:1fr}}
 
 /* Agent 页面：把生命周期、证据访问与自动诊断拆成连续的配置叙事。 */
 .agent-page{max-width:1600px}

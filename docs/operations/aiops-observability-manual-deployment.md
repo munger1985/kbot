@@ -362,10 +362,10 @@ curl -fsS http://127.0.0.1:19090/api/v1/alertmanagers
 
 1. 在“诊断源”新增`ALERTMANAGER`诊断源；Webhook-only场景可以不填访问地址。系统
    固定使用告警中的`target_key`标签，无需配置标签名称。
-2. 点击“生成 Secret”，复制页面生成的256位随机Secret并保存诊断源。该Secret既保存
-   在KBot托管凭据中，也必须写入签名桥的`kbot_webhook_secret` Secret文件。
-3. 再次编辑诊断源，点击“生成 Webhook Key”，复制只显示一次的Key并写入签名桥的
-   `kbot_webhook_key` Secret文件。遗失时只能在同一页面轮换，不能查询历史明文。
+2. 点击“创建并生成接入凭据”。页面会一次完成创建并集中显示只显示一次的Webhook
+   Secret、Webhook Key和INI配置片段，不需要保存后再次进入编辑页面。
+3. 复制Secret和Key，分别写入签名桥的`kbot_webhook_secret`和
+   `kbot_webhook_key` Secret文件；遗失时只能在编辑页面轮换，不能查询历史明文。
 4. 启用诊断源，并建立数据库Target到该诊断源的绑定；Locator必须等于告警中的
    `target_key`。
 
