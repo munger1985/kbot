@@ -2,10 +2,8 @@
   "use strict";
   const sections = [
     ["业务工作区", [
-      ["dashboard", "工作台"], ["chat", "智能诊断"],
-      ["situations", "故障情境"], ["runs", "诊断运行"],
-      ["reports", "报告中心"], ["inspections", "巡检执行"],
-      ["changes", "变更待办"], ["notifications", "通知中心"],
+      ["chat", "智能诊断"], ["situations", "告警诊断"],
+      ["inspections", "日常巡检"],
     ]],
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],
@@ -45,7 +43,7 @@
   }
   function shellMarkup() {
     const current = document.body.dataset.page;
-    return `<aside class="ops-sidebar"><a class="ops-brand" href="./dashboard.html"><span class="ops-brand-mark">AI</span><span><strong>Operations Desk</strong><small>KBot AIOps 4.0</small></span></a>${sections.map(([name, pages]) => `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${pages.map(([id, label]) => `<a href="./${id}.html" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`).join("")}</aside><header class="ops-topbar"><div><small>当前工作域</small> <strong>KBot AIOps</strong></div><div class="ops-session"><span id="ops-domain">Domain —</span><span id="ops-user">验证用户中…</span><button id="ops-logout">退出登录</button></div></header>`;
+    return `<aside class="ops-sidebar"><a class="ops-brand" href="./chat.html"><span class="ops-brand-mark">AI</span><span><strong>Operations Desk</strong><small>KBot AIOps 4.0</small></span></a>${sections.map(([name, pages]) => `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${pages.map(([id, label]) => `<a href="./${id}.html" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`).join("")}</aside><header class="ops-topbar"><div><small>当前工作域</small> <strong>KBot AIOps</strong></div><div class="ops-session"><span id="ops-domain">Domain —</span><span id="ops-user">验证用户中…</span><button id="ops-logout">退出登录</button></div></header>`;
   }
   async function initialize() {
     if (document.body.classList.contains("ops-login")) return null;

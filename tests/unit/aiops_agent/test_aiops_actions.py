@@ -104,6 +104,20 @@ class ActionPlanHandlerTest(unittest.TestCase):
             plan.decision_reasons,
         )
 
+    def test_automatic_diagnosis_never_creates_executable_action(self) -> None:
+        context = self._context()
+        context = context.__class__(
+            **{**context.__dict__, "trigger_type": "ALERT"}
+        )
+        plan = asyncio.run(
+            ActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(context)
+        )
+        self.assertEqual("ADVISORY", plan.decision)
+        self.assertEqual("ADVISORY", plan.actions[0].mode)
+
     def _context(self, *, user_only: bool = False) -> TaskExecutionContext:
         trust = "USER_PROVIDED" if user_only else "SOURCE_VERIFIED"
         blocker = EvidenceFact(

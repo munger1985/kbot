@@ -95,5 +95,48 @@
     }
   }
 
-  globalThis.KBotAIOpsAuth = { clear, load, login, request, uuid };
+  async function stream(path, onEvent, options = {}) {
+    const session = load();
+    if (!session?.access_token) {
+      location.replace("./login.html");
+      throw new Error("请先登录 AIOps");
+    }
+    const response = await fetch(`${baseUrl()}${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: {
+        Accept: "text/event-stream",
+        Authorization: `Bearer ${session.access_token}`,
+        "X-Request-ID": uuid(),
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok || !response.body) {
+      const payload = await response.text();
+      throw new Error(payload || `事件流连接失败（HTTP ${response.status}）`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() || "";
+      for (const block of blocks) {
+        let event = "message";
+        let data = "";
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        let payload = data;
+        try { payload = data ? JSON.parse(data) : null; } catch (_) { /* 保留文本事件。 */ }
+        await onEvent({ event, data: payload });
+      }
+      if (done) break;
+    }
+  }
+
+  globalThis.KBotAIOpsAuth = { clear, load, login, request, stream, uuid };
 })();

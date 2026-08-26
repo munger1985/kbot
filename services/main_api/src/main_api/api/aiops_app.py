@@ -127,6 +127,7 @@ class ConversationMessagePayload(_Payload):
     agent_id: UUID
     message: str = Field(min_length=1, max_length=32000)
     conversation_id: UUID | None = None
+    source_run_id: UUID | None = None
     request_report: bool = False
 
 

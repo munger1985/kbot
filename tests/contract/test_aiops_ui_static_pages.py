@@ -25,9 +25,8 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "dashboard", "chat", "situations", "runs", "run-detail",
-        "reports", "report-detail", "inspections", "changes",
-        "notifications", "targets", "target-detail",
+        "chat", "situations", "run-detail", "report-detail", "inspections",
+        "targets", "target-detail",
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
         "inspection-plans", "inspection-plan-detail",
@@ -50,7 +49,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(7, len(scripts))
+        self.assertEqual(8, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -243,6 +242,28 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="policy_id"', page)
         self.assertNotIn("max_risk_level", page)
         self.assertNotIn("allowed_action_types", page)
+
+    def test_business_workspace_has_exact_three_entry_points(self):
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('["chat", "智能诊断"]', shell)
+        self.assertIn('["situations", "告警诊断"]', shell)
+        self.assertIn('["inspections", "日常巡检"]', shell)
+        self.assertNotIn('["runs", "诊断运行"]', shell)
+        self.assertNotIn('["reports", "报告中心"]', shell)
+        self.assertIn("source_run_id", workspace)
+        self.assertIn("KBotAIOpsAuth.stream", workspace)
+        self.assertIn("EVIDENCE_REQUEST", workspace)
+        self.assertIn("upload", workspace.lower())
+        for obsolete in (
+            "dashboard.html", "runs.html", "reports.html",
+            "changes.html", "notifications.html",
+        ):
+            self.assertFalse((AIOPS_ROOT / obsolete).exists())
 
 
 if __name__ == "__main__":

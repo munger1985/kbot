@@ -5,11 +5,6 @@
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   const configs = {
-    situations: { path: "/situations", cols: [["title", "情境"], ["severity", "严重度", "badge"], ["status", "状态", "badge"], ["event_count", "事件数"], ["last_observed_at", "最近观测", "date"]] },
-    runs: { path: "/runs", cols: [["ops_run_id", "运行 ID", "id"], ["trigger_type", "触发方式"], ["investigation_mode", "模式"], ["status", "状态", "badge"], ["created_at", "创建时间", "date"]], detail: "run-detail.html?id=" },
-    reports: { path: "/reports", cols: [["report_key", "报告"], ["report_type", "类型"], ["status", "状态", "badge"], ["summary", "摘要"], ["period_end", "周期结束", "date"]], detail: "report-detail.html?id=" },
-    inspections: { path: "/inspection-fires", cols: [["fire_id", "执行 ID", "id"], ["scheduled_at", "计划时间", "date"], ["status", "状态", "badge"], ["target_count", "目标数"], ["failed_count", "失败数"]] },
-    changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
@@ -333,15 +328,8 @@
       if (page === "target-detail") await initializeTargetSubscription(id, data);
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
-  async function renderDashboard() {
-    const paths = ["/situations?status=OPEN&limit=5", "/runs?limit=5", "/proposals?status=PENDING_APPROVAL&limit=5", "/reports?limit=5"];
-    const results = await Promise.allSettled(paths.map((path) => KBotAIOpsAuth.request(appApi + path)));
-    results.forEach((result, index) => { document.querySelector(`[data-metric="${index}"]`).textContent = result.status === "fulfilled" ? result.value?.items?.length ?? 0 : "—"; });
-    const rows = results.flatMap((result, index) => result.status === "fulfilled" ? (result.value?.items || []).map((value) => ({ type: ["故障情境", "诊断运行", "变更待办", "报告"][index], value })) : []);
-    document.getElementById("dashboard-stream").innerHTML = rows.length ? rows.slice(0, 12).map(({ type, value }) => `<tr><td>${type}</td><td>${shell.escape(value.title || value.summary || value.status || "—")}</td><td>${shell.fmt(value.last_observed_at || value.created_at || value.period_end)}</td></tr>`).join("") : '<tr><td class="ops-empty" colspan="3">当前范围内暂无活动</td></tr>';
-  }
   async function renderSimple(page) {
-    const paths = { "report-templates": `${appApi}/report-templates`, "api-clients": `${appApi}/api-clients`, notifications: "/api/v1/notifications" };
+    const paths = { "report-templates": `${appApi}/report-templates`, "api-clients": `${appApi}/api-clients` };
     const panel = document.getElementById("ops-simple");
     if (!paths[page] || !panel) return;
     try { panel.innerHTML = `<pre class="ops-code">${shell.escape(JSON.stringify(await KBotAIOpsAuth.request(paths[page]), null, 2))}</pre>`; }
@@ -355,7 +343,6 @@
     const page = document.body.dataset.page;
     if (configs[page]) renderList(page);
     else if (page.endsWith("-detail")) renderDetail(page);
-    else if (page === "dashboard") renderDashboard();
     else if (page !== "agents") renderSimple(page);
   });
   globalThis.KBotAIOpsPages = {

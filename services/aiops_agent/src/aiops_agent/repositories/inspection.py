@@ -580,6 +580,21 @@ class InspectionRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_current_report_for_run(
+        self, *, ops_run_id: UUID
+    ) -> ReportEntity | None:
+        """读取一个 Run 当前发布的报告版本。"""
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .where(
+                ReportEntity.ops_run_id == ops_run_id,
+                ReportEntity.is_current == 1,
+            )
+            .order_by(ReportEntity.report_version.desc())
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
     async def get_report_scoped(
         self,
         *,

@@ -144,11 +144,9 @@ APEX 中以 Navigation Menu 实现；AIOps 与平台配置按授权方案隐藏�
 | 知识中心 | 41 | Collection 详情 | 查看配置、启停、模型绑定、入库记录及处理状态 | 已有详情/状态/模型/Bundle API |
 | 知识中心 | 42 | 文件入库向导 | 上传普通文件或 KM Asset，选择目标集合，提交后跟踪 Bundle | 已有 user-files、km-assets、Bundle API |
 | 知识中心 | 43 | 入库审批 | 对需要人工确认的 Revision 批准/驳回 | 已有 approvals/review API |
-| AIOps | 50 | 运维总览 | 查看 Target 健康、进行中诊断、待处理审批、巡检异常 | 组合页；部分汇总需补充 API/View |
-| AIOps | 51 | 诊断工作台 | 选 Target、Agent，描述问题，启动/取消 AIOps Run | 已有 Ops Run API |
-| AIOps | 52 | 诊断详情 | 时间线、事实、根因、建议、数据缺口、报告入口 | 已有 Ops Run、Events、Result/Pending-input |
-| AIOps | 53 | 人工补证 | 按 HITL 要求回贴查询结果或跳过请求 | 已有 HITL get/respond/skip；暂无附件上传契约 |
-| AIOps | 54 | 变更审批 | 查看 Proposal 详情，明确确认后批准、拒绝或录入人工结果 | 已有 Proposal API |
+| AIOps | 50 | 智能诊断 | 选 Agent 发起持续对话，在同一时间线中查看流式结论、引用、补证和审批 | 已有 Conversation、Ops Run、SSE、HITL 与 Proposal API，需统一投影 |
+| AIOps | 51 | 告警诊断 | 查看告警自动诊断结果，并从该证据上下文继续人工对话 | 已有 Situation 与 Alert Run API，需建立 Conversation 来源关联 |
+| AIOps | 52 | 日常巡检 | 查看 Inspection Fire 与报告，并从异常 Finding 继续人工对话 | 已有 Inspection Fire、Report API，需建立 Conversation 来源关联 |
 | AIOps | 55 | Target 管理 | 创建、编辑、启用、维护、停用 Target；管理 Agent/监控绑定 | 已有 Target 与 Binding API |
 | AIOps | 56 | 监控源管理 | 创建/编辑监控源、健康检查、轮换 Webhook Key、启停 | 已有 Monitor Source API |
 | AIOps | 57 | Policy 管理 | 查看、创建、激活和退休不可变 Policy 版本 | 已有 Policy API；无 PATCH 编辑契约 |
@@ -232,15 +230,33 @@ Collection 状态和模型接口未暴露 `row_version`/ETag 条件，页面保�
 
 失败时只显示可行动的安全原因与 `request_id`；解析器内部日志、对象存储路径和模型目录不对业务用户暴露。**P43 入库审批**首期仅在指定 Collection 中处理 API 返回的待审 Revision，审批后刷新 Bundle/Member 状态；“我的全部入库审批”需要新增聚合 API 或安全视图后才能进入 P10 待办卡。
 
-### 3.4 AIOps 运营闭环（P50–P59）
+### 3.4 AIOps 三入口工作区（P50–P52）
 
-**P51 诊断工作台**是 AIOps 的起点：选择已启用 Target 与可绑定 Agent，填写问题描述/事件上下文，提交后获得 Ops Run 并跳转 P52。禁止提供“任意 SQL 输入框”或“直接执行命令”入口。
+**P50 智能诊断**先选择已启用 Agent，再进入持续 Conversation。Target 和监控源来自
+Agent 的有效绑定，页面不要求用户填写 Target ID、Source ID 或 JSON。消息时间线统一
+展示用户输入、Agent 进度、流式 Markdown 结论、引用、报告和待审批动作；刷新页面后以
+Conversation 和 Run Result 恢复权威内容，不能只依赖浏览器中收到的 SSE 片段。
 
-**P52 诊断详情**按顺序展示：当前状态、公开进度、已验证事实、诊断结论、数据缺口、建议、关联报告。`WAITING_INPUT` 显示进入 P53 的按钮，`WAITING_APPROVAL` 显示进入 P54 的按钮；最终状态显示结果与报告链接。自动刷新只读取当前 Run，离开页面后停止。
+当证据不足时，Agent 在普通消息中解释缺口并给出补证办法或经过校验的只读 SQL。
+用户继续使用同一个输入框粘贴文字、SQL 客户端输出或上传截图，系统将其登记为
+`USER_PROVIDED` Evidence 并恢复原 Run。页面不显示“补证卡片”、内部 HITL 表单或
+`hitl_id`；也不能把聊天中的“同意”解释为变更批准。
 
-**P53 人工补证**严格按 `GET /ops/hitl/{hitl_id}` 返回的表单/说明生成。对于人工 SQL 诊断，页面可展示经授权的只读语句、目标身份、行数/超时限制；用户在目标环境执行后，按每个 `query_id` 回贴成功/失败/跳过状态及原始文本结果。普通聊天的“同意”或文件上传不能替代 HITL 回复。当前 `HitlResponse` 契约不支持附件上传，页面不提供附件控件；后续若需附件，必须先扩展 API/Artifact 契约。提交使用 `hitl_id`、`expected_row_version` 和幂等键，冲突时保留用户输入。
+**P51 告警诊断**以 Situation 为主线，展示信号时间线、自动只读诊断、根因等级、证据、
+建议和恢复状态。自动诊断不执行变更。用户点击“继续深入诊断”后创建带
+`source_situation_id/source_run_id` 的 Conversation，首轮上下文由服务端从原 Run 的
+不可变证据和结果中构造，浏览器不得复制或伪造隐藏 Prompt。此后的人工 Chat Run 才能
+按 Agent 权限生成逐条审批的变更提案。
 
-**P54 变更审批**采用四步确认页：
+**P52 日常巡检**以 Inspection Fire 和报告为主线，展示计划、Target、异常 Finding、
+趋势、建议和执行状态。点击“继续分析”创建带 `source_run_id/source_report_id` 的
+Conversation，并复用巡检的时间窗口、证据和报告结论。后续对话、补证、审批和验证与
+智能诊断共用同一组件和契约。
+
+Run、Report、Proposal 不再设置面向业务用户的一级列表入口。它们作为三个工作区中的
+详情、结果和待办出现；运维目标、诊断源、Agent、巡检计划等管理对象仍保留在资源配置。
+
+内嵌的**变更审批**采用四步确认：
 
 1. 目标、环境、影响对象与风险；
 2. 前置条件、已验证证据、回滚与验证计划；
@@ -253,7 +269,7 @@ Collection 状态和模型接口未暴露 `row_version`/ETag 条件，页面保�
 提交当前版本，并使用独立幂等键。批准成功仅表示服务端已创建执行授权与 Execution，页面
 不得显示或保存返回的 Approval Token，也不得将“已批准”等同于“已执行”。
 
-**P55–P58 配置与巡检**使用“列表 → 详情抽屉/表单 → 受控 API 保存”模式：
+**资源配置页面**使用“列表 → 详情抽屉/表单 → 受控 API 保存”模式：
 
 - Target 只允许启用、维护、停用，不提供物理删除；
 - 监控源健康检查异步进行，页面显示最近检查结果；Webhook Key 轮换后只显示一次，并且不写入 APEX 页面项、调试日志或报表；
@@ -264,7 +280,8 @@ Policy 没有 `PATCH` 编辑接口，是不可变的版本资源：修改规则�
 新版本，并在需要时更新 Target Agent Binding 的 `policy_id`；旧版本通过 `retire` 命令
 退出使用。所有上述状态命令均要求 ETag 与幂等键。
 
-**P59 报告中心**提供报告类型、Target、时间范围、状态筛选与版本比较。列表显示安全摘要；报告正文、证据和下载链接必须按 Main API 的 Domain 授权后再展示。
+报告正文和版本比较由告警诊断或日常巡检的上下文入口打开，证据和下载链接必须按
+Main API 的 Domain 授权后再展示，不再提供脱离业务上下文的一级“报告中心”。
 
 ### 3.5 平台与开发支持（P60、P61、P62、P90）
 

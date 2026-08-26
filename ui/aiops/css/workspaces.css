@@ -1,0 +1,47 @@
+.ops-workspace { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 680px; background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.ops-workspace-list { border-right: 1px solid var(--line); background: #f8f9fb; }
+.ops-workspace-list-head { padding: 18px; border-bottom: 1px solid var(--line); }
+.ops-workspace-list-head h2 { margin: 0 0 12px; font: 650 17px Georgia, "Songti SC", serif; }
+.ops-workspace-list-head select { width: 100%; min-height: 38px; padding: 7px; }
+.ops-workspace-items { display: grid; max-height: 610px; overflow: auto; }
+.ops-workspace-item { display: block; width: 100%; padding: 13px 16px; border: 0; border-bottom: 1px solid #e6e9ef; border-radius: 0; background: transparent; text-align: left; }
+.ops-workspace-item:hover, .ops-workspace-item[aria-current="true"] { background: #fff; box-shadow: inset 3px 0 var(--accent); }
+.ops-workspace-item strong, .ops-workspace-item small { display: block; }
+.ops-workspace-item small { margin-top: 4px; color: var(--muted); }
+.ops-conversation { display: grid; grid-template-rows: auto minmax(420px, 1fr) auto; min-width: 0; }
+.ops-conversation-head { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.ops-conversation-head h2 { margin: 0; font: 650 18px Georgia, "Songti SC", serif; }
+.ops-conversation-head p { margin: 4px 0 0; color: var(--muted); }
+.ops-messages { padding: 24px; overflow: auto; background: linear-gradient(#fff, #fbfcfe); }
+.ops-message { display: grid; grid-template-columns: 34px minmax(0, 760px); gap: 11px; margin: 0 0 22px; }
+.ops-message.user { grid-template-columns: minmax(0, 760px) 34px; justify-content: end; }
+.ops-message.user .ops-avatar { grid-column: 2; }
+.ops-message.user .ops-message-body { grid-column: 1; grid-row: 1; background: #e8edf9; border-radius: 12px 3px 12px 12px; }
+.ops-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--side); color: #fff; font-size: 11px; font-weight: 700; }
+.ops-message.user .ops-avatar { background: var(--accent); }
+.ops-message-body { padding: 13px 15px; border: 1px solid var(--line); border-radius: 3px 12px 12px 12px; background: #fff; overflow-wrap: anywhere; }
+.ops-message-body > :first-child { margin-top: 0; }
+.ops-message-body > :last-child { margin-bottom: 0; }
+.ops-message-meta { margin-top: 7px; color: var(--muted); font-size: 11px; }
+.ops-composer { padding: 16px 20px; border-top: 1px solid var(--line); background: #fff; }
+.ops-composer textarea { width: 100%; min-height: 92px; padding: 12px; border: 1px solid #aeb7c6; resize: vertical; }
+.ops-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
+.ops-composer-hint { color: var(--muted); font-size: 11px; }
+.ops-context-banner { padding: 11px 14px; border-left: 3px solid var(--accent); background: #eef2fa; color: #47536a; }
+.ops-progress { color: var(--muted); font-style: italic; }
+.ops-master-detail { display: grid; grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); gap: 16px; }
+.ops-case-list, .ops-case-detail { min-height: 620px; }
+.ops-case-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: #fff; text-align: left; }
+.ops-case-row:hover, .ops-case-row[aria-current="true"] { background: #f3f6fc; }
+.ops-case-row p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.ops-case-content { padding: 20px; }
+.ops-result-markdown { line-height: 1.72; }
+.ops-result-markdown table { width: 100%; border-collapse: collapse; }
+.ops-result-markdown th, .ops-result-markdown td { padding: 7px; border: 1px solid var(--line); text-align: left; }
+.ops-inline-dialog { margin-top: 18px; padding: 16px; border: 1px solid var(--line); background: #f8f9fb; }
+.agent-code-block { margin: 12px 0; border: 1px solid #39445a; background: #20283a; color: #eef2fa; }
+.agent-code-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #2b3549; font-size: 11px; }
+.agent-code-toolbar button { min-height: 28px; padding: 3px 8px; }
+.agent-code-block pre { margin: 0; padding: 13px; overflow: auto; }
+.agent-code-block code { font: 12px/1.6 ui-monospace, monospace; }
+@media (max-width: 1000px) { .ops-workspace, .ops-master-detail { grid-template-columns: 1fr; } .ops-workspace-list { border-right: 0; border-bottom: 1px solid var(--line); } .ops-workspace-items { max-height: 240px; } }

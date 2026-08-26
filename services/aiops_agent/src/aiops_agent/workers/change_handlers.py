@@ -72,6 +72,7 @@ class ActionPlanHandler:
             "target": context.plan_snapshot["target"],
             "binding": context.plan_snapshot["binding"],
             "policy": context.policy_snapshot,
+            "trigger_type": context.trigger_type,
             "root_cause_level": root.effective_level,
             "execution_enabled": self._execution_enabled,
         }
@@ -132,6 +133,7 @@ class ActionPlanHandler:
             )
         can_execute = (
             self._execution_enabled
+            and context.trigger_type == "CHAT"
             and binding.get("allow_mutation") is True
             and bool(target.get("execution_secret_configured"))
             and policy.get("allow_agent_execution") is True

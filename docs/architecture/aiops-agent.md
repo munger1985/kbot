@@ -91,6 +91,18 @@ Trigger → Observe → Diagnose → Evidence Assessment → Advisory
 Agent 给出受控只读 SQL，用户手工执行并粘贴结果，系统持续补证直到形成根因判断
 或达到预算。
 
+Portal 将上述触发方式投影为智能诊断、告警诊断、日常巡检三个业务工作区。告警或
+巡检续聊创建 `OpsConversation` 时，服务端校验 `source_run_id` 属于同一 Domain、
+同一 Target、触发类型为 `ALERT/SCHEDULE` 且已经形成最终 Artifact；随后冻结
+`source_situation_id/source_run_id/source_report_id`，并把公开诊断摘要加入新的 Chat
+Run Snapshot。前端只能提交来源 ID，不能提交来源证据或隐藏 Prompt。
+
+自动 Run 的有效执行能力固定为 Advisory，即使绑定允许变更也不能创建可执行动作；
+只有用户进入 Conversation 后创建的 Chat Run 才能依据 Agent 绑定生成逐条 Proposal。
+HITL 挂起时，Runtime 同事务写入 `EvidenceRequest` 和一条普通 Agent 消息。文本、SQL
+输出或截图通过会话输入区提交并恢复原 Run；图片先形成不可变 Artifact，再由 Agent
+配置的 OCR/VLM 提取可引用文本。HITL ID 和响应 Schema 不作为独立业务卡片暴露。
+
 日志 Binding 使用统一定位结构，不允许传入任意 LogQL：
 
 ```json

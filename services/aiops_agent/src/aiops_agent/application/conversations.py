@@ -17,7 +17,16 @@ class AIOpsConversationService:
         self._uow_factory = uow_factory
         self._image_model_client = image_model_client
 
-    async def create_or_append(self, *, domain_id: int, agent_id: UUID, actor_id: str, message: str, conversation_id: UUID | None = None) -> dict[str, Any]:
+    async def create_or_append(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        actor_id: str,
+        message: str,
+        conversation_id: UUID | None = None,
+        source_run_id: UUID | None = None,
+    ) -> dict[str, Any]:
         message = message.strip()
         if not message: raise validation_failed("诊断消息不能为空")
         async with self._uow_factory() as uow:
@@ -25,9 +34,73 @@ class AIOpsConversationService:
                 agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
                 if agent is None or agent.status != "ACTIVE" or agent.current_version_id is None:
                     raise resource_not_found("Active AIOps Agent")
-                conversation = OpsConversationEntity(domain_id=domain_id, agent_id=agent_id, agent_version_id=agent.current_version_id, status="ACTIVE", source_type="CHAT", created_by=actor_id)
+                version = await uow.agents.version(
+                    agent_id=agent_id,
+                    agent_version_id=agent.current_version_id,
+                )
+                if version is None or version.target_id is None:
+                    raise validation_failed("AIOps Agent 必须绑定诊断目标")
+                source_run = None
+                if source_run_id is not None:
+                    source_run = await uow.runs.get_run_scoped(
+                        ops_run_id=source_run_id,
+                        domain_id=domain_id,
+                    )
+                    if (
+                        source_run is None
+                        or source_run.trigger_type not in {"ALERT", "SCHEDULE"}
+                        or source_run.target_id != version.target_id
+                        or source_run.final_artifact_id is None
+                    ):
+                        raise validation_failed(
+                            "续聊来源必须是同一 Target 已完成的告警或巡检诊断"
+                        )
+                source_report = (
+                    await uow.inspections.get_current_report_for_run(
+                        ops_run_id=source_run.ops_run_id
+                    )
+                    if source_run is not None
+                    and getattr(uow, "inspections", None) is not None
+                    else None
+                )
+                conversation = OpsConversationEntity(
+                    domain_id=domain_id,
+                    agent_id=agent_id,
+                    agent_version_id=agent.current_version_id,
+                    status="ACTIVE",
+                    source_type=(
+                        "ALERT"
+                        if source_run and source_run.trigger_type == "ALERT"
+                        else "INSPECTION"
+                        if source_run
+                        else "CHAT"
+                    ),
+                    source_situation_id=(
+                        source_run.situation_id if source_run else None
+                    ),
+                    source_run_id=source_run_id,
+                    source_report_id=(
+                        source_report.report_id if source_report else None
+                    ),
+                    created_by=actor_id,
+                )
                 await uow.conversations.add_conversation(conversation)
+                if source_run is not None:
+                    await uow.conversations.add_run(
+                        OpsConversationRunEntity(
+                            conversation_id=conversation.conversation_id,
+                            ops_run_id=source_run.ops_run_id,
+                            purpose=(
+                                "AUTO_DIAGNOSIS_SEED"
+                                if source_run.trigger_type == "ALERT"
+                                else "INSPECTION_SEED"
+                            ),
+                            sequence_no=1,
+                        )
+                    )
             else:
+                if source_run_id is not None:
+                    raise validation_failed("续聊来源只能在创建 Conversation 时指定")
                 conversation = await uow.conversations.get_conversation(domain_id=domain_id, conversation_id=conversation_id, lock=True)
                 if conversation is None or conversation.created_by != actor_id: raise resource_not_found("Conversation")
                 if conversation.agent_id != agent_id: raise state_conflict("Conversation Agent 不可变")
@@ -278,4 +351,4 @@ class AIOpsConversationService:
 
     @staticmethod
     def _view(row, messages, runs, action_steps=()):
-        return {"conversation_id": str(row.conversation_id), "agent_id": str(row.agent_id), "agent_version_id": str(row.agent_version_id), "status": row.status, "row_version": int(row.row_version), "messages": [{"message_id": str(item.message_id), "sequence_no": int(item.sequence_no), "role": item.role, "message_type": item.message_type, "payload": dict(item.payload_json), "artifact_id": str(item.artifact_id) if item.artifact_id else None, "created_at": item.created_at.isoformat() if item.created_at else None} for item in messages], "runs": [{"ops_run_id": str(item.ops_run_id), "purpose": item.purpose, "sequence_no": int(item.sequence_no)} for item in runs], "action_steps": [{"action_step_id": str(item.action_step_id), "proposal_id": str(item.proposal_id) if item.proposal_id else None, "ordinal": int(item.ordinal), "sql_hash": item.sql_hash, "status": item.status, "row_version": int(item.row_version)} for item in action_steps]}
+        return {"conversation_id": str(row.conversation_id), "agent_id": str(row.agent_id), "agent_version_id": str(row.agent_version_id), "status": row.status, "source_type": row.source_type, "source_situation_id": str(row.source_situation_id) if row.source_situation_id else None, "source_run_id": str(row.source_run_id) if row.source_run_id else None, "source_report_id": str(row.source_report_id) if row.source_report_id else None, "row_version": int(row.row_version), "messages": [{"message_id": str(item.message_id), "sequence_no": int(item.sequence_no), "role": item.role, "message_type": item.message_type, "payload": dict(item.payload_json), "artifact_id": str(item.artifact_id) if item.artifact_id else None, "created_at": item.created_at.isoformat() if item.created_at else None} for item in messages], "runs": [{"ops_run_id": str(item.ops_run_id), "purpose": item.purpose, "sequence_no": int(item.sequence_no)} for item in runs], "action_steps": [{"action_step_id": str(item.action_step_id), "proposal_id": str(item.proposal_id) if item.proposal_id else None, "ordinal": int(item.ordinal), "sql_hash": item.sql_hash, "status": item.status, "row_version": int(item.row_version)} for item in action_steps]}

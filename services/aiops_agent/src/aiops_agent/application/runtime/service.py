@@ -46,8 +46,10 @@ from aiops_agent.domain.states import (
 )
 from aiops_agent.entities import (
     ChangeProposalEntity,
+    EvidenceRequestEntity,
     HitlEntity,
     OpsArtifactEntity,
+    OpsConversationMessageEntity,
     OpsRunEntity,
     OpsTaskEntity,
     OutboxEntity,
@@ -251,6 +253,62 @@ class AIOpsRuntimeService:
             )
             if target is None or target.status != "ENABLED":
                 raise resource_not_found("可用 Target")
+            source_context = None
+            requested_source_run_id = command.client_metadata.get(
+                "source_run_id"
+            )
+            if requested_source_run_id:
+                try:
+                    source_run_id = UUID(str(requested_source_run_id))
+                except (TypeError, ValueError):
+                    raise validation_failed("续聊来源 Run ID 无效") from None
+                source_run = await uow.runs.get_run_scoped(
+                    ops_run_id=source_run_id,
+                    domain_id=command.domain_id,
+                )
+                source_artifact = (
+                    await uow.runs.get_artifact(
+                        artifact_id=source_run.final_artifact_id
+                    )
+                    if source_run is not None
+                    and source_run.final_artifact_id is not None
+                    else None
+                )
+                if (
+                    str(command.trigger_type) != "CHAT"
+                    or source_run is None
+                    or source_run.trigger_type not in {"ALERT", "SCHEDULE"}
+                    or source_run.target_id != target.target_id
+                    or source_artifact is None
+                ):
+                    raise validation_failed("告警或巡检续聊来源关系无效")
+                public_keys = (
+                    "summary",
+                    "root_cause",
+                    "root_cause_grade",
+                    "diagnosis_rationale",
+                    "facts",
+                    "findings",
+                    "solution",
+                    "recommendations",
+                    "gaps",
+                )
+                public_result = {
+                    key: source_artifact.payload_json[key]
+                    for key in public_keys
+                    if key in (source_artifact.payload_json or {})
+                }
+                source_context = {
+                    "source_run_id": str(source_run.ops_run_id),
+                    "source_trigger_type": source_run.trigger_type,
+                    "source_root_cause_grade": source_run.root_cause_level,
+                    "source_artifact_schema": source_artifact.schema_version,
+                    "source_result": json.dumps(
+                        public_result,
+                        ensure_ascii=False,
+                        default=str,
+                    )[:1000],
+                }
             binding = private_agent_binding
             if binding is None:
                 binding = await uow.targets.get_agent_binding(
@@ -557,6 +615,10 @@ class AIOpsRuntimeService:
                     reason
                     for unavailable, reason in (
                         (
+                            str(command.trigger_type) != "CHAT",
+                            "AUTONOMOUS_RUN_ADVISORY_ONLY",
+                        ),
+                        (
                             not self._management.agent_execution_enabled,
                             "DEPLOYMENT_MUTATION_DISABLED",
                         ),
@@ -640,6 +702,7 @@ class AIOpsRuntimeService:
                     policy_snapshot=policy_snapshot,
                     monitoring_snapshot=monitoring_snapshot,
                     model_snapshot=diagnosis_model,
+                    source_context=source_context,
                 )
             if command.blueprint_id == "change.advisory-verify":
                 plan_snapshot["database_diagnostics"] = (
@@ -927,6 +990,7 @@ class AIOpsRuntimeService:
         policy_snapshot: dict[str, Any],
         monitoring_snapshot: dict[str, Any],
         model_snapshot: dict[str, str] | None,
+        source_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """冻结诊断模型、Prompt、窗口、权限范围和预算。"""
         if self._diagnosis_config is None or self._diagnosis_prompts is None:
@@ -952,6 +1016,12 @@ class AIOpsRuntimeService:
                 "策略中的 AIOps Collection ID 无效"
             ) from None
         question = command.input.strip()
+        if source_context is not None:
+            question = (
+                f"{question}\n\n"
+                "以下是同一 Target 已完成的自动诊断上下文，仅作为历史证据继续核验：\n"
+                f"{source_context['source_result']}"
+            )
         return {
             "window": dict(window),
             "symptom_codes": tuple(
@@ -962,6 +1032,7 @@ class AIOpsRuntimeService:
                 if isinstance(item, str) and item
             )[:32],
             "question_summary": question[:2000],
+            "source_context": dict(source_context or {}),
             "target_capabilities": capability_names,
             "allowed_collection_ids": tuple(
                 normalized_collection_ids
@@ -2556,6 +2627,67 @@ class AIOpsRuntimeService:
                     expires_at=command.expires_at,
                 )
             )
+            conversation_id = (run.plan_snapshot_json or {}).get(
+                "client_metadata", {}
+            ).get("conversation_id")
+            conversations = getattr(uow, "conversations", None)
+            if conversation_id and conversations is not None:
+                try:
+                    parsed_conversation_id = UUID(str(conversation_id))
+                except (TypeError, ValueError):
+                    raise state_conflict("Run 的 Conversation 关联无效") from None
+                conversation = await conversations.get_conversation(
+                    domain_id=int(run.domain_id),
+                    conversation_id=parsed_conversation_id,
+                    lock=True,
+                )
+                if (
+                    conversation is None
+                    or conversation.agent_id != run.agent_id
+                    or conversation.created_by != run.actor_id
+                ):
+                    raise state_conflict("Run 的 Conversation 关联不可信")
+                queries = list(content.get("queries") or [])
+                sql_blocks = [
+                    f"-- [{item.get('query_id', 'query')}]\n{item.get('sql_text', '')}"
+                    for item in queries
+                    if item.get("sql_text")
+                ]
+                await conversations.add_evidence_request(
+                    EvidenceRequestEntity(
+                        request_id=command.hitl_id,
+                        conversation_id=parsed_conversation_id,
+                        purpose=command.prompt_text,
+                        suggested_sql="\n\n".join(sql_blocks) or None,
+                        sql_hash=(
+                            hashlib.sha256(
+                                "\n\n".join(sql_blocks).encode()
+                            ).hexdigest()
+                            if sql_blocks
+                            else None
+                        ),
+                        requested_by=command.request_artifact.producer,
+                    )
+                )
+                conversation.status = "WAITING_EVIDENCE"
+                await conversations.add_message(
+                    OpsConversationMessageEntity(
+                        conversation_id=parsed_conversation_id,
+                        sequence_no=await conversations.next_message_sequence(
+                            conversation_id=parsed_conversation_id
+                        ),
+                        role="AGENT",
+                        message_type="EVIDENCE_REQUEST",
+                        payload_json={
+                            "request_id": str(command.hitl_id),
+                            "purpose": command.prompt_text,
+                            "suggested_sql": "\n\n".join(sql_blocks) or None,
+                            "query_ids": [
+                                str(item.get("query_id")) for item in queries
+                            ],
+                        },
+                    )
+                )
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status),
                 DomainOpsTaskStatus.WAITING_INPUT,

@@ -2329,6 +2329,18 @@
             "default": false,
             "title": "Request Report",
             "type": "boolean"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
           }
         },
         "required": [
