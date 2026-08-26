@@ -195,9 +195,9 @@
     document.getElementById("dashboard-stream").innerHTML = rows.length ? rows.slice(0, 12).map(({ type, value }) => `<tr><td>${type}</td><td>${shell.escape(value.title || value.summary || value.status || "—")}</td><td>${shell.fmt(value.last_observed_at || value.created_at || value.period_end)}</td></tr>`).join("") : '<tr><td class="ops-empty" colspan="3">当前范围内暂无活动</td></tr>';
   }
   async function renderSimple(page) {
-    const paths = { agents: `${appApi}/agents`, "report-templates": `${appApi}/report-templates`, "api-clients": `${appApi}/api-clients`, notifications: "/api/v1/notifications" };
+    const paths = { "report-templates": `${appApi}/report-templates`, "api-clients": `${appApi}/api-clients`, notifications: "/api/v1/notifications" };
     const panel = document.getElementById("ops-simple");
-    if (!paths[page]) return;
+    if (!paths[page] || !panel) return;
     try { panel.innerHTML = `<pre class="ops-code">${shell.escape(JSON.stringify(await KBotAIOpsAuth.request(paths[page]), null, 2))}</pre>`; }
     catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
@@ -210,7 +210,7 @@
     if (configs[page]) renderList(page);
     else if (page.endsWith("-detail")) renderDetail(page);
     else if (page === "dashboard") renderDashboard();
-    else renderSimple(page);
+    else if (page !== "agents") renderSimple(page);
   });
   globalThis.KBotAIOpsPages = {
     reload() {

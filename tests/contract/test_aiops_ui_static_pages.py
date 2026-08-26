@@ -128,6 +128,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('button.textContent = editing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('page !== "agents"', pages)
+        self.assertIn("!paths[page] || !panel", pages)
 
     def test_target_create_form_uses_public_contract_fields(self):
         page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
