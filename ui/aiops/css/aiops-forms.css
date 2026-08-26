@@ -20,3 +20,96 @@
 .ops-choice-list label small{display:inline;margin:0 0 0 auto}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
 @media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}
+
+/* Agent 页面：把生命周期、证据访问与自动诊断拆成连续的配置叙事。 */
+.agent-page{max-width:1600px}
+.agent-eyebrow,.agent-step-label{margin:0 0 8px!important;color:var(--accent)!important;font:700 10px/1.2 ui-monospace,monospace!important;letter-spacing:.16em}
+.agent-page-head{align-items:center;margin-bottom:28px}
+.agent-page-head>div{padding-left:17px;border-left:3px solid var(--accent)}
+.agent-page-head .primary{min-width:112px;justify-content:center}
+.agent-roster{box-shadow:0 18px 46px rgba(31,43,72,.07)}
+.agent-roster-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;padding:20px 22px;border-bottom:1px solid var(--line)}
+.agent-roster-head h2{margin:0;font:650 20px Georgia,"Songti SC",serif}
+.agent-roster-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.agent-summary{display:flex;align-items:center;gap:18px;color:var(--muted);font-size:11px;white-space:nowrap}
+.agent-summary span{display:flex;align-items:baseline;gap:5px}
+.agent-summary strong{color:var(--ink);font:650 22px/1 Georgia,serif}
+.agent-table th{padding:12px 16px;background:#f7f8fb;letter-spacing:.04em}
+.agent-table td{padding:16px;vertical-align:middle}
+.agent-table td:first-child{min-width:190px}
+.agent-table td:nth-child(3){min-width:220px}
+.agent-row-description{display:block;max-width:310px;margin-top:3px;color:var(--muted);font-weight:400;line-height:1.45}
+
+.agent-dialog{width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 32px);border-top:4px solid var(--accent)}
+.agent-dialog form{display:flex;max-height:calc(100vh - 36px);flex-direction:column}
+.agent-dialog-head{flex:0 0 auto;padding:17px 26px!important}
+.agent-dialog-head>div{display:block}
+.agent-dialog-head .agent-step-label{margin-bottom:4px!important}
+.agent-dialog-body{display:grid;gap:0;padding:0!important}
+.agent-form-section{display:grid;grid-template-columns:58px minmax(0,1fr);border-bottom:1px solid var(--line)}
+.agent-section-index{padding:28px 0 0;text-align:center;color:#8e98aa;font:700 11px/1 ui-monospace,monospace;letter-spacing:.08em;background:#f7f8fb;border-right:1px solid var(--line)}
+.agent-section-content{padding:25px 28px 27px}
+.agent-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:28px;margin-bottom:19px}
+.agent-section-heading h3{margin:0;font:650 18px/1.25 Georgia,"Songti SC",serif}
+.agent-section-heading p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.agent-status-field{width:170px;flex:0 0 170px}
+.agent-inline-note{margin:10px 0 0;color:var(--muted);font-size:11px}
+.agent-target-field{display:grid;grid-template-columns:180px minmax(0,1fr);align-items:center;gap:6px 14px;padding:14px 16px;background:#f7f8fb;border:1px solid var(--line)}
+.agent-target-field label{grid-column:1;font-size:12px;color:var(--ink)}
+.agent-target-field select{grid-column:2;grid-row:1}
+.agent-target-field small{grid-column:2;margin:0}
+.agent-source-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:22px 0 10px}
+.agent-source-heading>div{display:flex;align-items:center;gap:9px}
+.agent-source-heading strong{font-size:13px}
+.agent-source-heading span{padding:2px 6px;background:#edf0f6;color:var(--muted);font-size:10px}
+.agent-source-heading p{margin:0;color:var(--muted);font-size:11px;text-align:right}
+.agent-source-list{display:grid;gap:8px}
+.agent-source-card{border:1px solid var(--line);background:#fff;transition:border-color .16s ease,box-shadow .16s ease}
+.agent-source-card.selected{border-color:#9eabc8;box-shadow:0 5px 18px rgba(52,72,121,.06)}
+.agent-source-choice{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 14px;cursor:pointer}
+.agent-source-choice input{width:16px!important;height:16px;margin:0!important;accent-color:var(--accent)}
+.agent-source-identity strong,.agent-source-identity small{display:block}
+.agent-source-identity small{margin:2px 0 0;color:var(--muted);font:10px/1.2 ui-monospace,monospace;letter-spacing:.05em}
+.agent-source-health{color:var(--good);font:650 10px ui-monospace,monospace}
+.agent-source-mapping{padding:16px 16px 18px 46px;background:#f7f8fb;border-top:1px solid var(--line)}
+.agent-mapping-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.agent-mapping-head strong{font-size:11px;letter-spacing:.04em}
+.agent-mapping-head span{color:var(--muted);font-size:10px}
+.agent-loki-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:11px}
+.agent-loki-fields .ops-field{grid-column:auto}
+.agent-permission-row{margin-top:15px;padding:15px 16px;border:1px solid #cfd6e4;background:#fbfcfe}
+.agent-switch-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+.agent-switch-row input,.agent-compact-switch input{margin:3px 0 0!important;accent-color:var(--accent)}
+.agent-switch-row strong,.agent-switch-row small{display:block}
+.agent-switch-row small{margin-top:4px;color:var(--muted);font-weight:400}
+.agent-compact-switch{display:flex;align-items:center;gap:8px;min-height:36px;padding:7px 10px;border:1px solid var(--line);color:var(--ink);font-size:12px;cursor:pointer;white-space:nowrap}
+.agent-settings-disabled{opacity:.42}
+.agent-advanced{margin:18px 28px;border:1px solid var(--line)}
+.agent-advanced summary{padding:13px 15px;background:#f7f8fb;color:var(--ink);font-weight:650;cursor:pointer}
+.agent-advanced .ops-form{padding:17px}
+.agent-result{margin:0 28px 18px;padding:0}
+.agent-result:not(:empty){padding:10px 12px;background:#f7f8fb;border:1px solid var(--line)}
+.agent-result[data-tone="bad"]{background:#fae9ea;border-color:#ebc7ca}
+.agent-dialog footer{flex:0 0 auto;padding:15px 26px}
+
+@media(max-width:800px){
+  .agent-roster-head,.agent-section-heading,.agent-source-heading{align-items:flex-start;flex-direction:column}
+  .agent-summary{white-space:normal;flex-wrap:wrap}
+  .agent-form-section{grid-template-columns:42px minmax(0,1fr)}
+  .agent-section-content{padding:21px 18px 23px}
+  .agent-status-field{width:100%;flex-basis:auto}
+  .agent-target-field{grid-template-columns:1fr}
+  .agent-target-field label,.agent-target-field select,.agent-target-field small{grid-column:1;grid-row:auto}
+  .agent-source-heading p{text-align:left}
+  .agent-source-mapping{padding-left:16px}
+  .agent-loki-fields{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  .agent-dialog{width:calc(100vw - 12px);max-height:calc(100vh - 12px)}
+  .agent-dialog form{max-height:calc(100vh - 16px)}
+  .agent-form-section{grid-template-columns:1fr}
+  .agent-section-index{display:none}
+  .agent-section-content{padding:19px 15px 21px}
+  .agent-advanced{margin:14px}
+  .agent-result{margin:0 14px 14px}
+}
