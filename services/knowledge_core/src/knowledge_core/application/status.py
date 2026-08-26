@@ -37,6 +37,9 @@ class RevisionStatus:
     review_comment: str | None
     accepted_at: datetime | None
     completed_at: datetime | None
+    publication_status: str
+    publication_failure_code: str | None
+    publication_failure_message: str | None
     members: list[MemberStatus] | None = None
 
 
@@ -146,6 +149,9 @@ class KnowledgeCoreStatusService:
             if collection is None:
                 raise KnowledgeObjectNotFoundError("Bundle not found")
             revisions = await uow.revisions.list_by_bundle(bundle_id=bundle_id)
+            revisions_by_id = {
+                item.bundle_revision_id: item for item in revisions
+            }
             return BundleStatus(
                 bundle_id=bundle.bundle_id,
                 collection_id=bundle.collection_id,
@@ -153,14 +159,24 @@ class KnowledgeCoreStatusService:
                 availability_status=bundle.availability_status,
                 current_revision_id=bundle.current_revision_id,
                 row_version=int(bundle.row_version),
-                revisions=[self._revision(item) for item in revisions],
+                revisions=[
+                    self._revision(
+                        item,
+                        publication_status=self._bundle_publication_status(
+                            bundle=bundle,
+                            revision=item,
+                            revisions_by_id=revisions_by_id,
+                        ),
+                    )
+                    for item in revisions
+                ],
             )
 
     async def get_revision(
         self, *, domain_id: int, bundle_id: UUID, bundle_revision_id: UUID, include_members: bool = False
     ) -> RevisionStatus:
         async with self._uow_factory() as uow:
-            if not all((uow.collections, uow.bundles, uow.revisions, uow.members)):
+            if not all((uow.collections, uow.bundles, uow.revisions, uow.members, uow.jobs)):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             bundle = await uow.bundles.get_by_id(bundle_id=bundle_id)
             if bundle is None or await uow.collections.get_by_id_scope(
@@ -185,7 +201,26 @@ class KnowledgeCoreStatusService:
                     received_at=item.received_at,
                     completed_at=item.completed_at,
                 ) for item in entities]
-            result = self._revision(revision)
+            revisions = await uow.revisions.list_by_bundle(bundle_id=bundle_id)
+            jobs = await uow.jobs.list_by_revisions(
+                bundle_revision_ids=[bundle_revision_id]
+            )
+            publication_status, failure_code, failure_message = (
+                self._revision_publication_status(
+                    bundle=bundle,
+                    revision=revision,
+                    revisions_by_id={
+                        item.bundle_revision_id: item for item in revisions
+                    },
+                    jobs=jobs,
+                )
+            )
+            result = self._revision(
+                revision,
+                publication_status=publication_status,
+                publication_failure_code=failure_code,
+                publication_failure_message=failure_message,
+            )
             return RevisionStatus(**{**result.__dict__, "members": members})
 
     async def get_discovery_reindex_operation(
@@ -547,7 +582,48 @@ class KnowledgeCoreStatusService:
         }.get(status, "QUEUED")
 
     @staticmethod
-    def _revision(entity) -> RevisionStatus:
+    def _bundle_publication_status(*, bundle, revision, revisions_by_id) -> str:
+        if (
+            bundle.current_revision_id == revision.bundle_revision_id
+            and str(bundle.availability_status).upper() in {"READY", "PARTIAL"}
+        ):
+            return "PUBLISHED"
+        current = revisions_by_id.get(bundle.current_revision_id)
+        if current is not None and int(current.revision_no) > int(revision.revision_no):
+            return "SUPERSEDED"
+        return "PUBLISHING"
+
+    @classmethod
+    def _revision_publication_status(
+        cls, *, bundle, revision, revisions_by_id, jobs,
+    ) -> tuple[str, str | None, str | None]:
+        status = cls._bundle_publication_status(
+            bundle=bundle,
+            revision=revision,
+            revisions_by_id=revisions_by_id,
+        )
+        if status != "PUBLISHING":
+            return status, None, None
+        discovery_jobs = [
+            job for job in jobs
+            if job.job_type == "INDEX"
+            and str((job.payload_json or {}).get("target") or "").upper()
+            == "DISCOVERY"
+            and not (job.payload_json or {}).get("reindex_generation")
+        ]
+        if discovery_jobs and discovery_jobs[-1].job_status == "FAILED":
+            failed = discovery_jobs[-1]
+            return "FAILED", failed.failure_code, failed.failure_message
+        return "PUBLISHING", None, None
+
+    @staticmethod
+    def _revision(
+        entity,
+        *,
+        publication_status: str = "PUBLISHING",
+        publication_failure_code: str | None = None,
+        publication_failure_message: str | None = None,
+    ) -> RevisionStatus:
         return RevisionStatus(
             bundle_revision_id=entity.bundle_revision_id,
             revision_no=entity.revision_no,
@@ -559,4 +635,7 @@ class KnowledgeCoreStatusService:
             review_comment=entity.review_comment,
             accepted_at=entity.accepted_at,
             completed_at=entity.completed_at,
+            publication_status=publication_status,
+            publication_failure_code=publication_failure_code,
+            publication_failure_message=publication_failure_message,
         )

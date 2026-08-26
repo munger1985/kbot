@@ -15,6 +15,7 @@ from km_asset_app.application.agents import KM_AGENT_CAPABILITIES
 from km_asset_app.application.worker import (
     KmAssetWorker,
     _JobSnapshot,
+    _KcPublicationFailed,
     _KcRevisionPending,
     _SourceSnapshot,
 )
@@ -1103,14 +1104,9 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
 
             async def get_revision_status(self, **values):
                 self.request = values
-                return {"status": "PARTIAL"}
-
-            async def get_bundle_status(self, **_):
                 return {
-                    "availability_status": "PARTIAL",
-                    "current_revision_id": (
-                        "01900000-0000-7000-8000-000000000046"
-                    ),
+                    "status": "PARTIAL",
+                    "publication_status": "PUBLISHED",
                 }
 
         kc = KnowledgeCore()
@@ -1134,12 +1130,9 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
     async def test_kc_status_sync_waits_for_discovery_publication(self):
         class KnowledgeCore:
             async def get_revision_status(self, **_):
-                return {"status": "READY"}
-
-            async def get_bundle_status(self, **_):
                 return {
-                    "availability_status": "PROCESSING",
-                    "current_revision_id": None,
+                    "status": "READY",
+                    "publication_status": "PUBLISHING",
                 }
 
         worker = KmAssetWorker(
@@ -1153,6 +1146,67 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
             _KcRevisionPending, "DISCOVERY_PUBLISHING"
         ):
             await worker._kc_status_sync(self._kc_job())
+
+    async def test_kc_status_sync_stops_on_discovery_publication_failure(self):
+        class KnowledgeCore:
+            async def get_revision_status(self, **_):
+                return {
+                    "status": "PARTIAL",
+                    "publication_status": "FAILED",
+                    "publication_failure_code": "WORKER_RUN_FAILED",
+                    "publication_failure_message": "Embedding 输入过长",
+                }
+
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=KnowledgeCore(),
+        )
+
+        with self.assertRaisesRegex(
+            _KcPublicationFailed, "WORKER_RUN_FAILED",
+        ):
+            await worker._kc_status_sync(self._kc_job())
+
+    async def test_kc_status_sync_completes_superseded_revision_without_write(self):
+        class KnowledgeCore:
+            async def get_revision_status(self, **_):
+                return {
+                    "status": "READY",
+                    "publication_status": "SUPERSEDED",
+                }
+
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=KnowledgeCore(),
+        )
+
+        await worker._kc_status_sync(self._kc_job())
+
+    def test_pending_revision_log_is_limited_until_five_minutes(self):
+        worker = KmAssetWorker(
+            uow_factory=SimpleNamespace(),
+            credential_service=SimpleNamespace(),
+            asset_service=SimpleNamespace(),
+            knowledge_core_client=SimpleNamespace(),
+        )
+        job_id = UUID("01900000-0000-7000-8000-000000000041")
+
+        with (
+            patch(
+                "km_asset_app.application.worker.time.monotonic",
+                side_effect=[100.0, 101.0, 401.0],
+            ),
+            patch("km_asset_app.application.worker.logger.debug") as debug,
+        ):
+            worker._log_pending(job_id, "DISCOVERY_PUBLISHING")
+            worker._log_pending(job_id, "DISCOVERY_PUBLISHING")
+            worker._log_pending(job_id, "DISCOVERY_PUBLISHING")
+
+        self.assertEqual(2, debug.call_count)
 
     async def test_processing_kc_revision_is_deferred_without_failure(self):
         class KnowledgeCore:

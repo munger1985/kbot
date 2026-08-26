@@ -70,6 +70,31 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
                 logger.error(f"❌ OpenAI API exception: {e}")
                 raise
 
+    def _bounded_inputs(self, texts: list[str]) -> list[str]:
+        """按当前模型配置收敛远程 Provider 的单条输入。"""
+        byte_limit = int(self.config.max_tokens)
+        if byte_limit <= 0:
+            raise ValueError("Embedding 模型 max_tokens 必须为正整数")
+        bounded: list[str] = []
+        truncated_count = 0
+        for text in texts:
+            value = str(text)
+            if not value.strip():
+                raise ValueError("Embedding 输入不能为空")
+            encoded = value.encode("utf-8")
+            if len(encoded) > byte_limit:
+                value = encoded[:byte_limit].decode("utf-8", errors="ignore")
+                truncated_count += 1
+            bounded.append(value)
+        if truncated_count:
+            logger.info(
+                "Embedding 输入已按模型配置收敛：模型={} 条数={} max_tokens={}",
+                self.model_name,
+                truncated_count,
+                byte_limit,
+            )
+        return bounded
+
     async def embed(
         self, 
         texts: list[str], 
@@ -87,6 +112,8 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
 
         if not texts:
             return self._build_empty_response(self.model_name)
+
+        texts = self._bounded_inputs(texts)
 
         # 1. Prepare request parameters
         eff_batch_size = batch_size if batch_size is not None and 0 < batch_size <= 96 else self.batch_size

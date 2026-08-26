@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -55,6 +56,10 @@ class _KcReindexFailed(Exception):
     """KC Discovery 重新索引已经进入失败终态。"""
 
 
+class _KcPublicationFailed(Exception):
+    """KC Revision 的 Discovery 发布已经进入失败终态。"""
+
+
 class KmAssetWorker:
     def __init__(self, *, uow_factory, credential_service: KmCredentialService, asset_service: KmAssetService, knowledge_core_client: KnowledgeCoreClient, poll_seconds: float = 5, lease_seconds: int = 120):
         self._uow_factory = uow_factory
@@ -64,6 +69,7 @@ class KmAssetWorker:
         self._poll_seconds = poll_seconds
         self._lease_seconds = lease_seconds
         self._worker_id = f"{socket.gethostname()}:{uuid4()}"
+        self._pending_log_state: dict[UUID, tuple[str, float]] = {}
 
     async def run_forever(self) -> None:
         logger.info("KM Asset Worker 开始运行：{}", self._worker_id)
@@ -76,12 +82,23 @@ class KmAssetWorker:
             try:
                 await self._dispatch(job)
                 await self._complete_safely(job.job_id, succeeded=True)
+                self._pending_log_state.pop(job.job_id, None)
             except asyncio.CancelledError:
                 raise
             except _KcRevisionPending as exc:
-                logger.debug("KC Revision 尚未完成：job_id={} status={}", job.job_id, exc)
+                self._log_pending(job.job_id, str(exc))
                 await self._defer_kc_status_sync(job.job_id)
+            except _KcPublicationFailed as exc:
+                self._pending_log_state.pop(job.job_id, None)
+                logger.warning("KC Revision 发布失败：job_id={} error={}", job.job_id, exc)
+                await self._complete_safely(
+                    job.job_id,
+                    succeeded=False,
+                    error=exc,
+                    terminal=True,
+                )
             except _KcReindexFailed as exc:
+                self._pending_log_state.pop(job.job_id, None)
                 logger.warning("KC 重新索引失败：job_id={} error={}", job.job_id, exc)
                 await self._complete_safely(
                     job.job_id,
@@ -90,6 +107,7 @@ class KmAssetWorker:
                     terminal=True,
                 )
             except Exception as exc:
+                self._pending_log_state.pop(job.job_id, None)
                 logger.exception("KM Asset 任务失败：job_id={} type={}", job.job_id, job.job_type)
                 await self._complete_safely(
                     job.job_id,
@@ -447,28 +465,32 @@ class KmAssetWorker:
         if value not in {"READY", "PARTIAL", "FAILED", "REJECTED"}:
             raise RuntimeError(f"KC Revision 返回未知状态：{value}")
         if value in {"READY", "PARTIAL"}:
-            bundle = await self._kc.get_bundle_status(
-                domain_id=int(job.domain_id),
-                bundle_id=bundle_id,
-                auth_context=self._auth_context(domain_id=int(job.domain_id)),
-            )
-            published_revision_id = bundle.get("current_revision_id")
-            availability = str(
-                bundle.get("availability_status") or ""
+            publication_status = str(
+                status.get("publication_status") or ""
             ).upper()
-            expected_bundle_row_version = job.payload_json.get(
-                "expected_bundle_row_version"
-            )
-            if (
-                str(published_revision_id or "") != str(bundle_revision_id)
-                or availability not in {"READY", "PARTIAL"}
-                or (
-                    expected_bundle_row_version is not None
-                    and int(bundle.get("row_version") or 0)
-                    < int(expected_bundle_row_version)
+            if publication_status == "FAILED":
+                code = str(
+                    status.get("publication_failure_code")
+                    or "KC_DISCOVERY_PUBLISH_FAILED"
                 )
-            ):
+                message = str(
+                    status.get("publication_failure_message")
+                    or "KC Discovery 发布失败"
+                )
+                raise _KcPublicationFailed(f"{code}: {message}")
+            if publication_status == "SUPERSEDED":
+                logger.info(
+                    "KC Revision 已被后续版本取代：job_id={} revision_id={}",
+                    job.job_id,
+                    bundle_revision_id,
+                )
+                return
+            if publication_status == "PUBLISHING":
                 raise _KcRevisionPending("DISCOVERY_PUBLISHING")
+            if publication_status != "PUBLISHED":
+                raise RuntimeError(
+                    "KC Revision 状态响应缺少有效 publication_status"
+                )
         async with self._uow_factory() as uow:
             asset = await uow.assets.get_asset(domain_id=int(job.domain_id), km_asset_id=job.km_asset_id, lock=True)
             if value in {"READY", "PARTIAL"}:
@@ -635,6 +657,18 @@ class KmAssetWorker:
             job.lease_owner = None
             job.lease_until = None
             await uow.commit()
+
+    def _log_pending(self, job_id: UUID, status: str) -> None:
+        """只在状态变化或等待满五分钟时记录一次正常轮询。"""
+        now = time.monotonic()
+        previous = self._pending_log_state.get(job_id)
+        if previous is None or previous[0] != status or now - previous[1] >= 300:
+            logger.debug(
+                "KC Revision 尚未完成：job_id={} status={}",
+                job_id,
+                status,
+            )
+            self._pending_log_state[job_id] = (status, now)
 
     @staticmethod
     def _auth_context(*, domain_id: int) -> AuthContext:

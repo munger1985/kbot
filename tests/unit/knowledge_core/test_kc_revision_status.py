@@ -130,5 +130,65 @@ class DiscoveryReindexStatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["PROFILE", "INDEX"], [item["job_type"] for item in result.jobs])
 
 
+class RevisionPublicationStatusTest(unittest.TestCase):
+    def test_failed_discovery_job_exposes_terminal_publication_failure(self):
+        revision_id = uuid7()
+        revision = SimpleNamespace(
+            bundle_revision_id=revision_id,
+            revision_no=1,
+        )
+        bundle = SimpleNamespace(
+            current_revision_id=None,
+            availability_status="EMPTY",
+        )
+        jobs = [SimpleNamespace(
+            job_type="INDEX",
+            job_status="FAILED",
+            payload_json={"target": "DISCOVERY"},
+            failure_code="WORKER_RUN_FAILED",
+            failure_message="Embedding 输入过长",
+        )]
+
+        result = KnowledgeCoreStatusService._revision_publication_status(
+            bundle=bundle,
+            revision=revision,
+            revisions_by_id={revision_id: revision},
+            jobs=jobs,
+        )
+
+        self.assertEqual(
+            ("FAILED", "WORKER_RUN_FAILED", "Embedding 输入过长"),
+            result,
+        )
+
+    def test_later_published_revision_marks_old_revision_superseded(self):
+        old_id = uuid7()
+        current_id = uuid7()
+        old_revision = SimpleNamespace(
+            bundle_revision_id=old_id,
+            revision_no=1,
+        )
+        current_revision = SimpleNamespace(
+            bundle_revision_id=current_id,
+            revision_no=2,
+        )
+        bundle = SimpleNamespace(
+            current_revision_id=current_id,
+            availability_status="READY",
+        )
+
+        result = KnowledgeCoreStatusService._revision_publication_status(
+            bundle=bundle,
+            revision=old_revision,
+            revisions_by_id={
+                old_id: old_revision,
+                current_id: current_revision,
+            },
+            jobs=[],
+        )
+
+        self.assertEqual(("SUPERSEDED", None, None), result)
+
+
 if __name__ == "__main__":
     unittest.main()
