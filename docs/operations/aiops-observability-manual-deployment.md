@@ -360,8 +360,8 @@ curl -fsS http://127.0.0.1:19090/api/v1/alertmanagers
 
 先在AIOps App完成接收身份配置：
 
-1. 在“诊断源”新增`ALERTMANAGER`诊断源，目标标签填写`target_key`；Webhook-only场景
-   可以不填访问地址。
+1. 在“诊断源”新增`ALERTMANAGER`诊断源；Webhook-only场景可以不填访问地址。系统
+   固定使用告警中的`target_key`标签，无需配置标签名称。
 2. 点击“生成 Secret”，复制页面生成的256位随机Secret并保存诊断源。该Secret既保存
    在KBot托管凭据中，也必须写入签名桥的`kbot_webhook_secret` Secret文件。
 3. 再次编辑诊断源，点击“生成 Webhook Key”，复制只显示一次的Key并写入签名桥的

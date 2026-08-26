@@ -204,7 +204,8 @@ Collector的`exporter_bind_address:exporter_port`必须与Central的`address`一
 Webhook必须先在AIOps App中建立接收身份，再写入唯一部署配置。完整步骤如下。
 
 1. 进入“诊断源”，新增`ALERTMANAGER`类型诊断源；只接收Webhook时访问地址可以留空。
-2. 目标标签填写`target_key`。它与本文件中的数据库Target Key以及Prometheus告警标签一致。
+2. 系统固定从告警的`target_key`标签读取目标标识，页面无需配置标签名称。该标签值与
+   本文件中的数据库Target Key一致。
 3. 点击“生成 Secret”，立即复制页面生成的256位随机Secret，然后保存诊断源。
 4. 再次编辑该诊断源，点击“生成 Webhook Key”，立即复制只显示一次的Key。已有Key时
    按钮显示为“轮换 Webhook Key”；轮换后必须在页面提示的旧Key失效时间前完成部署。

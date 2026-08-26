@@ -25,7 +25,6 @@
           <div class="ops-field span-12"><label for="source-endpoint">访问地址</label><input id="source-endpoint" name="endpoint" type="url" placeholder="http://monitor.internal:9090"><small id="source-endpoint-help">请输入 KBot 服务可以访问的地址。</small></div>
           <div id="source-token-field" class="ops-field span-12"><label for="source-token">API Token（可选）</label><input id="source-token" name="token" type="password" autocomplete="new-password"><small>留空表示该诊断源不需要 Bearer Token；编辑时留空表示保持原凭据。</small></div>
           <div id="source-webhook-field" class="ops-field span-12" hidden><label for="source-webhook-secret">Webhook Secret</label><div class="source-webhook-secret-input"><input id="source-webhook-secret" name="webhook_secret" type="password" autocomplete="new-password"><button id="generate-source-webhook-secret" type="button">生成 Secret</button><button id="copy-source-webhook-secret" type="button">复制</button></div><small>页面生成256位安全随机Secret；保存诊断源前请复制到监控部署配置。编辑时留空表示保持原凭据。</small></div>
-          <div id="source-target-label-field" class="ops-field span-6" hidden><label for="source-target-label">目标标签</label><input id="source-target-label" name="target_label" value="target_key" maxlength="256"><small>Docker观测栈使用 target_key 将告警关联到数据库 Target。</small></div>
           <section id="source-webhook-key-section" class="source-webhook-key span-12" hidden>
             <div>
               <strong>Webhook Key</strong>

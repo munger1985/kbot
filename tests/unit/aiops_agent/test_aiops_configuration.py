@@ -547,11 +547,16 @@ class ConfigurationContractTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            {"target_label": "instance"},
+            {"target_label": "target_key"},
             service._normalize_source_config(
                 source_type="ALERTMANAGER", config={}
             ),
         )
+        with self.assertRaises(AIOpsApplicationError):
+            service._normalize_source_config(
+                source_type="ALERTMANAGER",
+                config={"target_label": "instance"},
+            )
         self.assertEqual(
             {"tenant_id": "ops"},
             service._normalize_source_config(

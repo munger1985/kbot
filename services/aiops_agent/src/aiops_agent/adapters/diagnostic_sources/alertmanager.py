@@ -28,6 +28,7 @@ _SEVERITY = {
     "warn": SignalSeverity.WARNING,
     "info": SignalSeverity.INFO,
 }
+_TARGET_LABEL = "target_key"
 
 
 class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
@@ -83,24 +84,16 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
                 "SOURCE_RESPONSE_INVALID",
                 "Alertmanager Webhook 格式无效",
             )
-        target_label = str(
-            self.context.config.get("target_label", "instance")
-        ).strip()
-        if not target_label:
-            raise DiagnosticSourceAdapterError(
-                "SOURCE_CONFIGURATION_INVALID",
-                "Alertmanager target_label 不能为空",
-            )
         batch_status = str(payload.get("status", "firing")).lower()
         events = []
         for item in payload["alerts"]:
             labels = item.get("labels") or {}
             annotations = item.get("annotations") or {}
-            source_locator_key = str(labels.get(target_label, "")).strip()
+            source_locator_key = str(labels.get(_TARGET_LABEL, "")).strip()
             if not source_locator_key:
                 raise DiagnosticSourceAdapterError(
                     "SOURCE_TARGET_NOT_FOUND",
-                    f"Alertmanager 告警缺少 {target_label} 标签",
+                    f"Alertmanager 告警缺少 {_TARGET_LABEL} 标签",
                 )
             starts_at = str(item.get("startsAt", ""))
             try:
@@ -151,7 +144,7 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
                     provider_attributes={
                         "alertname": event_class,
                         "status": status_text,
-                        "target_label": target_label,
+                        "target_label": _TARGET_LABEL,
                     },
                     normalizer_version="alertmanager.v1",
                 )

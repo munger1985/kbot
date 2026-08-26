@@ -229,7 +229,7 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
                 config_version=1,
                 credentials={"webhook_secret": secret},
                 declared_capabilities={CAPABILITY_EVENT_RECEIVE: {}},
-                config={"target_label": "instance"},
+                config={"target_label": "target_key"},
             ),
             capability=CAPABILITY_EVENT_RECEIVE,
         )
@@ -259,7 +259,7 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
                 {
                     "status": "firing",
                     "labels": {
-                        "instance": "db-prod-1",
+                        "target_key": "db-prod-1",
                         "alertname": "DatabaseDown",
                         "severity": "critical",
                         "target_id": "untrusted",

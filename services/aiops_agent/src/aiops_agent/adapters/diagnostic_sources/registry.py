@@ -157,7 +157,6 @@ class DiagnosticSourceAdapterCatalog:
         *, source_type: str, config: dict[str, object]
     ) -> dict[str, object]:
         allowed_fields = {
-            "ALERTMANAGER": {"target_label"},
             "LOKI": {"tenant_id"},
         }.get(source_type, set())
         unsupported = sorted(set(config) - allowed_fields)
@@ -179,7 +178,7 @@ class DiagnosticSourceAdapterCatalog:
                 raise ValueError(f"{name} 格式无效")
             normalized[name] = value
         if source_type == "ALERTMANAGER":
-            normalized.setdefault("target_label", "instance")
+            normalized["target_label"] = "target_key"
         return normalized
 
 

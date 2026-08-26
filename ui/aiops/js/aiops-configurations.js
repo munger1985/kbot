@@ -57,7 +57,6 @@
     document.getElementById("source-endpoint-help").textContent = presentation.help;
     document.getElementById("source-token-field").hidden = false;
     document.getElementById("source-webhook-field").hidden = !receivesWebhook;
-    document.getElementById("source-target-label-field").hidden = !isAlertmanager;
     document.getElementById("source-webhook-key-section").hidden = !(receivesWebhook && editing);
     document.getElementById("source-tenant-field").hidden = type !== "LOKI";
     const list = document.getElementById("source-capability-list");
@@ -90,9 +89,6 @@
       endpoint: endpoint || null,
       config: {},
     };
-    if (type === "ALERTMANAGER") {
-      payload.config.target_label = form.elements.target_label.value.trim() || "target_key";
-    }
     if (type === "LOKI" && form.elements.tenant_id.value.trim()) {
       payload.config.tenant_id = form.elements.tenant_id.value.trim();
     }
@@ -110,7 +106,6 @@
     form.reset();
     resetWebhookSecretControl(form);
     form.elements.source_type.disabled = false;
-    form.elements.target_label.value = "target_key";
     resetWebhookKeyResult();
     renderSourceType(form);
     document.getElementById("diagnostic-source-dialog-title").textContent = "新增诊断源";
@@ -132,7 +127,6 @@
       form.elements.source_type.value = source.source_type;
       form.elements.source_type.disabled = true;
       form.elements.endpoint.value = source.endpoint || "";
-      form.elements.target_label.value = source.config?.target_label || "target_key";
       form.elements.tenant_id.value = source.config?.tenant_id || "";
       renderSourceType(form);
       resetWebhookKeyResult();
