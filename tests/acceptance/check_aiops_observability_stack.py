@@ -76,10 +76,15 @@ def main() -> int:
         stack_env = (state / "stack.env").read_text(encoding="utf-8")
         if "GRAFANA_BIND_ADDRESS=10.0.0.190" not in stack_env:
             raise RuntimeError("Grafana管理网监听地址没有写入Compose环境")
-        subprocess.run(
-            [*stack._compose_command(settings), "config", "--quiet"],
-            check=True,
+        rendered_compose = json.loads(
+            subprocess.check_output(
+                [*stack._compose_command(settings), "config", "--format", "json"],
+                text=True,
+            )
         )
+        for service_name in ("prometheus", "alertmanager", "loki"):
+            if not rendered_compose["services"][service_name].get("group_add"):
+                raise RuntimeError(f"{service_name}没有获得运行配置文件所属组")
         if os.stat(state / "secrets/oracle-oracle-prod-01_password").st_mode & 0o037:
             raise RuntimeError("Oracle Secret权限过宽")
         generated = json.loads((state / "compose.generated.yaml").read_text())
