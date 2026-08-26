@@ -26,6 +26,23 @@
 
   const clear = () => sessionStorage.removeItem(storageKey);
 
+  function errorMessage(payload, status) {
+    const detail = payload?.detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map((item) => {
+        const location = Array.isArray(item?.loc)
+          ? item.loc.filter((value) => value !== "body").join(".")
+          : "";
+        return `${location ? `${location}：` : ""}${item?.msg || "请求内容无效"}`;
+      });
+      return messages.join("；");
+    }
+    if (detail && typeof detail === "object") {
+      return detail.message || detail.detail || detail.code || `请求失败（HTTP ${status}）`;
+    }
+    return detail || payload?.message || payload?.code || `请求失败（HTTP ${status}）`;
+  }
+
   async function raw(path, options = {}, token = "") {
     const headers = {
       Accept: "application/json",
@@ -49,12 +66,7 @@
       payload = text;
     }
     if (!response.ok) {
-      const error = new Error(
-        payload?.detail?.message
-        || payload?.detail
-        || payload?.message
-        || `请求失败（HTTP ${response.status}）`,
-      );
+      const error = new Error(errorMessage(payload, response.status));
       error.status = response.status;
       error.payload = payload;
       throw error;

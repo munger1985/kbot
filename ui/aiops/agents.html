@@ -10,7 +10,7 @@
     <header><h2 id="agent-dialog-title">新增 Agent</h2><button data-close-dialog type="button">关闭</button></header>
     <div class="ops-dialog-body"><div class="ops-form">
       <div class="ops-field span-8"><label for="agent-display-name">Agent 名称</label><input id="agent-display-name" name="display_name" maxlength="256" required></div>
-      <div class="ops-field span-4"><label for="agent-status">启用状态</label><select id="agent-status" name="status"><option value="DRAFT">草稿</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select></div>
+      <div class="ops-field span-4"><label for="agent-status">启用状态</label><select id="agent-status" name="status"><option value="DRAFT">草稿</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select><small id="agent-status-help">新增后先保存为草稿，再由管理员检查资源并启用。</small></div>
       <div class="ops-field span-12"><label for="agent-description">说明</label><input id="agent-description" name="description" maxlength="1000"></div>
       <div class="ops-field span-12"><label>监控源（必选，可多选）</label><div id="agent-sources" class="ops-choice-list"></div><small>Agent 只会消费这里选择的 Prometheus、Loki 等监控证据。</small></div>
       <div class="ops-field span-12"><label for="agent-target">数据库直连 Target（可选）</label><select id="agent-target" name="target_id"><option value="">不允许数据库直连诊断</option></select><small>选择后表示允许使用该 Target 的只读诊断凭据；不选择仍可使用监控源。</small></div>

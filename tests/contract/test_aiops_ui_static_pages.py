@@ -117,6 +117,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_api_validation_error_is_human_readable(self):
+        auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
+            encoding="utf-8"
+        )
+        agent = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Array.isArray(detail)", auth)
+        self.assertIn('button.textContent = editing ? "保存中…" : "创建中…"', agent)
+        self.assertIn("shell.toast(error.message)", agent)
+        self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
+
     def test_target_create_form_uses_public_contract_fields(self):
         page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(

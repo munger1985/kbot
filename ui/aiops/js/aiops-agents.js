@@ -7,7 +7,11 @@
   const sourceName = (id) => sources.find((item) => item.source_id === id)?.display_name || shell.short(id);
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
 
-  function showResult(message = "") { document.getElementById("agent-result").textContent = message; }
+  function showResult(message = "", tone = "") {
+    const result = document.getElementById("agent-result");
+    result.textContent = message;
+    result.dataset.tone = tone;
+  }
   function renderRows() {
     const body = document.getElementById("agent-rows");
     if (!agents.length) { body.innerHTML = '<tr><td class="ops-empty" colspan="7">当前范围内暂无 Agent</td></tr>'; return; }
@@ -27,6 +31,8 @@
     editing = null;
     const form = document.getElementById("agent-form"); form.reset();
     form.elements.status.value = "DRAFT"; form.elements.alert_cooldown_minutes.value = 15; form.elements.auto_alert_enabled.checked = true;
+    form.elements.status.disabled = true;
+    document.getElementById("agent-status-help").textContent = "新增 Agent 固定保存为草稿；创建成功后可在编辑时启用。";
     toggleTargetFields(); showResult();
     document.getElementById("agent-dialog-title").textContent = "新增 Agent";
     document.getElementById("save-agent").textContent = "创建 Agent";
@@ -35,11 +41,13 @@
   function openEdit(agentId) {
     editing = agents.find((item) => item.agent_id === agentId); if (!editing) return;
     const form = document.getElementById("agent-form"); form.reset();
+    form.elements.status.disabled = false;
     form.elements.display_name.value = editing.display_name; form.elements.description.value = editing.description || ""; form.elements.status.value = editing.status;
     form.elements.target_id.value = editing.target_id || ""; form.elements.allow_change_execution.checked = Boolean(editing.allow_change_execution);
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled); form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15; form.elements.diagnosis_model_id.value = editing.models?.diagnosis || ""; form.elements.instruction.value = editing.instruction || "";
     form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => { input.checked = (editing.diagnostic_source_ids || []).includes(input.value); });
+    document.getElementById("agent-status-help").textContent = "启用时会检查监控源、Target 连通性以及两者之间的有效映射。";
     toggleTargetFields(); showResult();
     document.getElementById("agent-dialog-title").textContent = "修改 Agent"; document.getElementById("save-agent").textContent = "保存修改"; document.getElementById("agent-dialog").showModal();
   }
@@ -47,15 +55,26 @@
     const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
     if (!selectedSources.length) throw new Error("至少选择一个监控源。");
     const modelId = form.elements.diagnosis_model_id.value.trim();
-    return { display_name: form.elements.display_name.value.trim(), description: form.elements.description.value.trim() || null, status: form.elements.status.value, diagnostic_source_ids: selectedSources, target_id: form.elements.target_id.value || null, allow_change_execution: form.elements.allow_change_execution.checked, auto_alert_enabled: form.elements.auto_alert_enabled.checked, auto_observe_min_severity: form.elements.auto_observe_min_severity.value, alert_cooldown_minutes: Number(form.elements.alert_cooldown_minutes.value), models: modelId ? { diagnosis: modelId } : {}, instruction: form.elements.instruction.value.trim() || null, image_capabilities: {}, config: {} };
+    return { display_name: form.elements.display_name.value.trim(), description: form.elements.description.value.trim() || null, status: editing ? form.elements.status.value : "DRAFT", diagnostic_source_ids: selectedSources, target_id: form.elements.target_id.value || null, allow_change_execution: form.elements.allow_change_execution.checked, auto_alert_enabled: form.elements.auto_alert_enabled.checked, auto_observe_min_severity: form.elements.auto_observe_min_severity.value, alert_cooldown_minutes: Number(form.elements.alert_cooldown_minutes.value), models: modelId ? { diagnosis: modelId } : {}, instruction: form.elements.instruction.value.trim() || null, image_capabilities: {}, config: {} };
   }
   async function save(event) {
-    event.preventDefault(); const button = document.getElementById("save-agent"); button.disabled = true;
+    event.preventDefault(); const button = document.getElementById("save-agent");
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = editing ? "保存中…" : "创建中…";
+    showResult(editing ? "正在保存 Agent 新版本…" : "正在创建 Agent…");
     try {
       const body = payload(event.currentTarget); if (editing) body.expected_row_version = editing.row_version;
       await KBotAIOpsAuth.request(editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`, { method: editing ? "PATCH" : "POST", body: JSON.stringify(body) });
       document.getElementById("agent-dialog").close(); shell.toast(editing ? "Agent 已更新并生成新版本" : "Agent 已创建"); await load();
-    } catch (error) { showResult(error.message); } finally { button.disabled = false; }
+    } catch (error) {
+      showResult(error.message, "bad");
+      shell.toast(error.message);
+      document.getElementById("agent-result").scrollIntoView({ block: "nearest" });
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
   }
   async function load() {
     const [agentRows, sourcePage, targetPage] = await Promise.all([KBotAIOpsAuth.request(`${api}/agents`), KBotAIOpsAuth.request(`${api}/diagnostic-sources?status=ENABLED&limit=200`), KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`)]);
