@@ -358,6 +358,21 @@ curl -fsS http://127.0.0.1:19090/api/v1/alertmanagers
 
 ### 9.1 安装KBot Webhook签名桥
 
+先在AIOps App完成接收身份配置：
+
+1. 在“诊断源”新增`ALERTMANAGER`诊断源，目标标签填写`target_key`；Webhook-only场景
+   可以不填访问地址。
+2. 点击“生成 Secret”，复制页面生成的256位随机Secret并保存诊断源。该Secret既保存
+   在KBot托管凭据中，也必须写入签名桥的`kbot_webhook_secret` Secret文件。
+3. 再次编辑诊断源，点击“生成 Webhook Key”，复制只显示一次的Key并写入签名桥的
+   `kbot_webhook_key` Secret文件。遗失时只能在同一页面轮换，不能查询历史明文。
+4. 启用诊断源，并建立数据库Target到该诊断源的绑定；Locator必须等于告警中的
+   `target_key`。
+
+Webhook Key使用KBot标准必选的`KBOT_MASTER_KEY`按用途派生，不需要执行`openssl`或
+增加独立环境变量。若页面提示“Webhook Key 派生密钥未配置”，应先修复KBot主密钥
+配置并重启Main API，而不是在监控主机临时生成另一套Key。
+
 KBot公开接收地址是：
 
 ```text
@@ -371,7 +386,7 @@ Alertmanager原生Generic Webhook不能按请求正文动态计算这两个Heade
 Webhook URL、Key和Secret自动构建并启动。人工部署时也必须使用这个桥接器，不得用
 静态Bearer Token代替HMAC，也不得关闭KBot验签。
 
-手工部署时，分别创建只包含Webhook Key和验签Secret的只读文件，将它们挂载为
+手工部署时，分别使用页面生成的Webhook Key和Secret创建只读文件，将它们挂载为
 `/run/secrets/kbot_webhook_key`和`/run/secrets/kbot_webhook_secret`，然后构建并运行：
 
 ```bash
@@ -691,8 +706,8 @@ Oracle在测试时间窗没有 Alert Log时，可以得到成功但空结果；�
 6. 将 Loki Source绑定到同一 Target，绑定标签使用
    `target_key="oracle-dev-01"`；
 7. 分别执行 Prometheus、Loki和 Oracle Target的“测试连接”；
-8. 创建Alertmanager Diagnostic Source、Webhook Key和验签Secret，配置签名桥后
-   启用事件推送。
+8. 创建Alertmanager Diagnostic Source，在页面生成Webhook Secret和Webhook Key，
+   绑定Target并配置签名桥后启用事件推送；目标标签统一使用`target_key`。
 
 连接测试 HTTP为 `200` 时仍需检查响应正文中的 `ok`；`ok=false` 仍表示测试失败。
 

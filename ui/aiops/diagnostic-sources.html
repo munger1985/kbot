@@ -24,8 +24,20 @@
           <div class="ops-field span-6"><label for="source-type">类型</label><select id="source-type" name="source_type" required><option value="PROMETHEUS">Prometheus</option><option value="ALERTMANAGER">Alertmanager</option><option value="LOKI">Loki</option><option value="ZABBIX">Zabbix</option><option value="OEM">Oracle OEM</option></select></div>
           <div class="ops-field span-12"><label for="source-endpoint">访问地址</label><input id="source-endpoint" name="endpoint" type="url" placeholder="http://monitor.internal:9090"><small id="source-endpoint-help">请输入 KBot 服务可以访问的地址。</small></div>
           <div id="source-token-field" class="ops-field span-12"><label for="source-token">API Token（可选）</label><input id="source-token" name="token" type="password" autocomplete="new-password"><small>留空表示该诊断源不需要 Bearer Token；编辑时留空表示保持原凭据。</small></div>
-          <div id="source-webhook-field" class="ops-field span-12" hidden><label for="source-webhook-secret">Webhook Secret</label><input id="source-webhook-secret" name="webhook_secret" type="password" autocomplete="new-password"><small>用于校验推送到 KBot 的告警请求；编辑时留空表示保持原凭据。</small></div>
-          <div id="source-target-label-field" class="ops-field span-6" hidden><label for="source-target-label">目标标签</label><input id="source-target-label" name="target_label" value="instance" maxlength="256"><small>从 Alertmanager 告警标签中定位监控目标。</small></div>
+          <div id="source-webhook-field" class="ops-field span-12" hidden><label for="source-webhook-secret">Webhook Secret</label><div class="source-webhook-secret-input"><input id="source-webhook-secret" name="webhook_secret" type="password" autocomplete="new-password"><button id="generate-source-webhook-secret" type="button">生成 Secret</button><button id="copy-source-webhook-secret" type="button">复制</button></div><small>页面生成256位安全随机Secret；保存诊断源前请复制到监控部署配置。编辑时留空表示保持原凭据。</small></div>
+          <div id="source-target-label-field" class="ops-field span-6" hidden><label for="source-target-label">目标标签</label><input id="source-target-label" name="target_label" value="target_key" maxlength="256"><small>Docker观测栈使用 target_key 将告警关联到数据库 Target。</small></div>
+          <section id="source-webhook-key-section" class="source-webhook-key span-12" hidden>
+            <div>
+              <strong>Webhook Key</strong>
+              <p>签名桥使用它定位当前诊断源。Key只在生成或轮换后显示一次。</p>
+            </div>
+            <button id="rotate-source-webhook-key" type="button">生成 Webhook Key</button>
+            <div id="source-webhook-key-result" class="source-webhook-key-result" hidden>
+              <label for="source-webhook-key-value">请立即复制到监控部署配置</label>
+              <div><input id="source-webhook-key-value" readonly autocomplete="off"><button id="copy-source-webhook-key" type="button">复制</button></div>
+              <small id="source-webhook-key-note">关闭弹窗后无法再次查看；遗失时需要重新轮换。</small>
+            </div>
+          </section>
           <div id="source-tenant-field" class="ops-field span-12" hidden><label for="source-tenant-id">Loki Tenant ID（可选）</label><input id="source-tenant-id" name="tenant_id" maxlength="256"><small>仅多租户 Loki 需要，对应 X-Scope-OrgID。</small></div>
           <div class="ops-field span-12"><span class="ops-field-label">系统声明能力</span><div id="source-capability-list" class="ops-capability-list" aria-live="polite"></div><small>能力由诊断源类型和内置 Adapter 自动确定，无需手工配置。</small></div>
         </div>

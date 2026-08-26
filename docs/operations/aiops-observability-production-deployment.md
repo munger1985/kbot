@@ -201,16 +201,45 @@ Collector的`exporter_bind_address:exporter_port`必须与Central的`address`一
 
 ## 6. Alertmanager到KBot
 
-AIOps App创建Alertmanager Diagnostic Source后会提供Webhook Key和验签Secret。
-启用以下三项：
+Webhook必须先在AIOps App中建立接收身份，再写入唯一部署配置。完整步骤如下。
+
+1. 进入“诊断源”，新增`ALERTMANAGER`类型诊断源；只接收Webhook时访问地址可以留空。
+2. 目标标签填写`target_key`。它与本文件中的数据库Target Key以及Prometheus告警标签一致。
+3. 点击“生成 Secret”，立即复制页面生成的256位随机Secret，然后保存诊断源。
+4. 再次编辑该诊断源，点击“生成 Webhook Key”，立即复制只显示一次的Key。已有Key时
+   按钮显示为“轮换 Webhook Key”；轮换后必须在页面提示的旧Key失效时间前完成部署。
+5. 启用该诊断源。在Agent编辑页选择它并与数据库Target绑定；Locator填写对应的
+   Target Key，例如`oracle-prod-01`。
+6. 将刚才得到的Key和Secret写入`var/aiops-stack/aiops-stack.ini`的`[metrics]`：
+
+页面生成Webhook Key依赖KBot标准部署必选项`KBOT_MASTER_KEY`。KBot会按用途自动派生
+签名密钥，不需要额外执行`openssl`，也不需要单独配置
+`KBOT_AIOPS_WEBHOOK_KEY_SECRET`。
 
 ```ini
 [metrics]
 enabled = true
 kbot_webhook_url = https://kbot.customer.example
-kbot_webhook_key = 填写App生成的Webhook Key
-kbot_webhook_secret = 填写App生成的验签Secret
+kbot_webhook_key = 填写页面生成的Webhook Key
+kbot_webhook_secret = 填写页面生成并已保存到诊断源的Webhook Secret
 ```
+
+`kbot_webhook_url`只填写Main API根地址，不得追加
+`/api/v1/integrations/aiops/signals/...`。同机`all-in-one`测试环境可以填写KBot主机内网
+地址，例如`http://10.0.0.190:18099`；`central`生产角色必须使用客户HTTPS入口。
+
+7. 不带参数重新执行`./scripts/aiops-stack`。脚本会保留现有数据卷，增加或重建
+   `kbot-webhook-signer`，并把Alertmanager Receiver从`discard`切换为`kbot`。
+8. 验证签名桥和Alertmanager均健康：
+
+```bash
+docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'alertmanager|webhook-signer'
+sed -n '1,80p' var/aiops-stack/generated/alertmanager/alertmanager.yml
+```
+
+生成配置必须包含`receiver: kbot`和
+`url: "http://kbot-webhook-signer:8080/alertmanager"`。随后发送一条带正确
+`target_key`的受控测试告警，并在“告警诊断”确认事件已经关联到对应Target。
 
 安装包会启动内部`kbot-webhook-signer`。Alertmanager把原始JSON发送给它；签名桥按
 `timestamp + "." + raw_body`计算HMAC-SHA256，添加`X-KBot-Timestamp`和

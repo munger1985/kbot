@@ -18,8 +18,18 @@
 .ops-choice-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border:1px solid var(--line);background:#f8fafc}
 .ops-choice-list label{display:flex;align-items:center;gap:6px;padding:7px 8px;background:#fff;border:1px solid var(--line);font-weight:500}
 .ops-choice-list label small{display:inline;margin:0 0 0 auto}
+.source-webhook-key{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 15px;border:1px solid var(--line);background:#f8fafc}
+.source-webhook-key strong{display:block;font-size:13px}
+.source-webhook-key p{margin:3px 0 0;color:var(--muted);font-size:11px}
+.source-webhook-key-result{grid-column:1/-1;padding-top:12px;border-top:1px solid var(--line)}
+.source-webhook-key-result label{display:block;margin-bottom:7px;font-size:12px;font-weight:650}
+.source-webhook-key-result>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.source-webhook-key-result input{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.source-webhook-key-result small{display:block;margin-top:7px;color:var(--muted)}
+.source-webhook-secret-input{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
 @media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}
+@media(max-width:600px){.source-webhook-key{grid-template-columns:1fr}.source-webhook-key>button{justify-self:start}.source-webhook-key-result>div,.source-webhook-secret-input{grid-template-columns:1fr}}
 
 /* Agent 页面：把生命周期、证据访问与自动诊断拆成连续的配置叙事。 */
 .agent-page{max-width:1600px}

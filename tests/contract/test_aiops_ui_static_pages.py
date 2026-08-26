@@ -199,7 +199,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("Adapter 配置（JSON 对象）", diagnostic_page)
         self.assertNotIn('name="adapter_version"', diagnostic_page)
         self.assertIn('name="target_label"', diagnostic_page)
+        self.assertIn('value="target_key"', diagnostic_page)
         self.assertIn('name="tenant_id"', diagnostic_page)
+        self.assertIn('id="generate-source-webhook-secret"', diagnostic_page)
+        self.assertIn('id="rotate-source-webhook-key"', diagnostic_page)
+        self.assertIn("crypto.getRandomValues", script)
+        self.assertIn("webhook-key:rotate", script)
+        self.assertIn('"If-Match": `"rv-${editing.row_version}"`', script)
+        self.assertIn("copyWebhookSecret", script)
+        self.assertIn("copyWebhookKey", script)
         self.assertIn("renderSourceType", script)
         pages_script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"

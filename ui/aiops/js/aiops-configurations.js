@@ -58,6 +58,7 @@
     document.getElementById("source-token-field").hidden = false;
     document.getElementById("source-webhook-field").hidden = !receivesWebhook;
     document.getElementById("source-target-label-field").hidden = !isAlertmanager;
+    document.getElementById("source-webhook-key-section").hidden = !(receivesWebhook && editing);
     document.getElementById("source-tenant-field").hidden = type !== "LOKI";
     const list = document.getElementById("source-capability-list");
     list.replaceChildren(...presentation.capabilities.map((label) => {
@@ -90,7 +91,7 @@
       config: {},
     };
     if (type === "ALERTMANAGER") {
-      payload.config.target_label = form.elements.target_label.value.trim() || "instance";
+      payload.config.target_label = form.elements.target_label.value.trim() || "target_key";
     }
     if (type === "LOKI" && form.elements.tenant_id.value.trim()) {
       payload.config.tenant_id = form.elements.tenant_id.value.trim();
@@ -107,8 +108,10 @@
     editing = null;
     const form = document.getElementById("diagnostic-source-form");
     form.reset();
+    resetWebhookSecretControl(form);
     form.elements.source_type.disabled = false;
-    form.elements.target_label.value = "instance";
+    form.elements.target_label.value = "target_key";
+    resetWebhookKeyResult();
     renderSourceType(form);
     document.getElementById("diagnostic-source-dialog-title").textContent = "新增诊断源";
     document.getElementById("save-diagnostic-source").textContent = "创建诊断源";
@@ -123,14 +126,19 @@
       editing = source;
       const form = document.getElementById("diagnostic-source-form");
       form.reset();
+      resetWebhookSecretControl(form);
       form.elements.display_name.value = source.display_name;
       form.elements.source_type.disabled = false;
       form.elements.source_type.value = source.source_type;
       form.elements.source_type.disabled = true;
       form.elements.endpoint.value = source.endpoint || "";
-      form.elements.target_label.value = source.config?.target_label || "instance";
+      form.elements.target_label.value = source.config?.target_label || "target_key";
       form.elements.tenant_id.value = source.config?.tenant_id || "";
       renderSourceType(form);
+      resetWebhookKeyResult();
+      document.getElementById("rotate-source-webhook-key").textContent = source.webhook_configured
+        ? "轮换 Webhook Key"
+        : "生成 Webhook Key";
       document.getElementById("diagnostic-source-dialog-title").textContent = "编辑诊断源";
       document.getElementById("save-diagnostic-source").textContent = "保存修改";
       showResult("source-test-result", "", "");
@@ -195,6 +203,100 @@
       button.disabled = false;
       button.textContent = "测试连接";
     }
+  }
+
+  function generateWebhookSecret() {
+    if (!globalThis.crypto?.getRandomValues) {
+      showResult("source-test-result", "当前浏览器不支持安全随机数生成，请更换现代浏览器。", "bad");
+      return;
+    }
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    const secret = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    const input = document.getElementById("source-webhook-secret");
+    input.value = secret;
+    input.type = "text";
+    document.getElementById("copy-source-webhook-secret").textContent = "复制";
+    showResult("source-test-result", "Webhook Secret 已生成。请先复制并保存诊断源，再生成 Webhook Key。", "good");
+  }
+
+  function resetWebhookSecretControl(form) {
+    form.elements.webhook_secret.type = "password";
+    document.getElementById("copy-source-webhook-secret").textContent = "复制";
+  }
+
+  async function copyWebhookSecret() {
+    const input = document.getElementById("source-webhook-secret");
+    if (!input.value) {
+      showResult("source-test-result", "请先生成或填写 Webhook Secret。", "bad");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(input.value);
+    } catch (_) {
+      input.select();
+      document.execCommand("copy");
+      input.setSelectionRange(0, 0);
+    }
+    document.getElementById("copy-source-webhook-secret").textContent = "已复制";
+    shell.toast("Webhook Secret 已复制");
+  }
+
+  function resetWebhookKeyResult() {
+    const result = document.getElementById("source-webhook-key-result");
+    result.hidden = true;
+    document.getElementById("source-webhook-key-value").value = "";
+    document.getElementById("source-webhook-key-note").textContent = "关闭弹窗后无法再次查看；遗失时需要重新轮换。";
+    document.getElementById("copy-source-webhook-key").textContent = "复制";
+  }
+
+  async function rotateWebhookKey() {
+    if (!editing || !["ALERTMANAGER", "ZABBIX"].includes(editing.source_type)) return;
+    const form = document.getElementById("diagnostic-source-form");
+    if (form.elements.webhook_secret.value) {
+      showResult("source-test-result", "请先保存新的 Webhook Secret，再生成 Webhook Key。", "bad");
+      return;
+    }
+    if (editing.webhook_configured && !confirm("轮换后必须及时更新监控部署配置。确认继续吗？")) return;
+    const button = document.getElementById("rotate-source-webhook-key");
+    button.disabled = true;
+    button.textContent = editing.webhook_configured ? "轮换中…" : "生成中…";
+    try {
+      const result = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/${encodeURIComponent(editing.source_id)}/webhook-key:rotate`, {
+        method: "POST",
+        headers: {
+          "If-Match": `"rv-${editing.row_version}"`,
+          "Idempotency-Key": KBotAIOpsAuth.uuid(),
+        },
+      });
+      document.getElementById("source-webhook-key-value").value = result.webhook_key;
+      document.getElementById("source-webhook-key-result").hidden = false;
+      document.getElementById("source-webhook-key-note").textContent = result.previous_key_expires_at
+        ? `旧Key可使用到 ${shell.fmt(result.previous_key_expires_at)}；请在此前重新执行部署脚本。`
+        : "关闭弹窗后无法再次查看；请立即复制到aiops-stack.ini。";
+      editing = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/${encodeURIComponent(editing.source_id)}`);
+      button.textContent = "再次轮换 Webhook Key";
+      shell.toast("Webhook Key 已生成，请立即复制");
+    } catch (error) {
+      showResult("source-test-result", error.message, "bad");
+      button.textContent = editing.webhook_configured ? "轮换 Webhook Key" : "生成 Webhook Key";
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function copyWebhookKey() {
+    const input = document.getElementById("source-webhook-key-value");
+    if (!input.value) return;
+    try {
+      await navigator.clipboard.writeText(input.value);
+    } catch (_) {
+      input.select();
+      document.execCommand("copy");
+      input.setSelectionRange(0, 0);
+    }
+    document.getElementById("copy-source-webhook-key").textContent = "已复制";
+    shell.toast("Webhook Key 已复制");
   }
 
   function planPayload(form, create) {
@@ -306,6 +408,10 @@
       document.getElementById("create-diagnostic-source").addEventListener("click", openSourceCreate);
       document.getElementById("diagnostic-source-form").addEventListener("submit", saveSource);
       document.getElementById("test-diagnostic-source").addEventListener("click", testSource);
+      document.getElementById("generate-source-webhook-secret").addEventListener("click", generateWebhookSecret);
+      document.getElementById("copy-source-webhook-secret").addEventListener("click", copyWebhookSecret);
+      document.getElementById("rotate-source-webhook-key").addEventListener("click", rotateWebhookKey);
+      document.getElementById("copy-source-webhook-key").addEventListener("click", copyWebhookKey);
       document.getElementById("source-type").addEventListener("change", (event) => {
         renderSourceType(event.target.form);
       });
