@@ -449,7 +449,8 @@ class KmAssetWorker:
                 raise RuntimeError(
                     f"KC 重新索引返回未知状态：{operation_status or 'EMPTY'}"
                 )
-            return
+            if not job.payload_json.get("recover_asset"):
+                return
         status = await self._kc.get_revision_status(
             domain_id=int(job.domain_id),
             bundle_id=bundle_id,
@@ -496,9 +497,35 @@ class KmAssetWorker:
             if value in {"READY", "PARTIAL"}:
                 asset.ingestion_status = "READY"
                 asset.completed_at = datetime.now(timezone.utc)
+                asset.failure_stage = None
+                asset.error_code = None
+                asset.error_message = None
                 revision = await uow.assets.get_revision(asset_revision_id=job.asset_revision_id)
                 revision.status = "READY"
-                await uow.assets.add(KmJobEntity(domain_id=job.domain_id, source_id=job.source_id, km_asset_id=job.km_asset_id, asset_revision_id=job.asset_revision_id, job_type="SOURCE_STATUS_UPDATE", idempotency_key=f"source-ready:{job.asset_revision_id}", payload_json={"asset_id": asset.external_asset_id, "processed": "Y", "next_job_type": None}, status="PENDING", created_by=self._worker_id))
+                ready_key = f"source-ready:{job.asset_revision_id}"
+                if job.payload_json.get("recover_asset"):
+                    generation = job.payload_json["reindex_generation"]
+                    ready_key = f"{ready_key}:reindex:{generation}"
+                existing_ready_job = await uow.assets.find_job_by_key(
+                    domain_id=int(job.domain_id),
+                    idempotency_key=ready_key,
+                )
+                if asset.source_status != "Y" and existing_ready_job is None:
+                    await uow.assets.add(KmJobEntity(
+                        domain_id=job.domain_id,
+                        source_id=job.source_id,
+                        km_asset_id=job.km_asset_id,
+                        asset_revision_id=job.asset_revision_id,
+                        job_type="SOURCE_STATUS_UPDATE",
+                        idempotency_key=ready_key,
+                        payload_json={
+                            "asset_id": asset.external_asset_id,
+                            "processed": "Y",
+                            "next_job_type": None,
+                        },
+                        status="PENDING",
+                        created_by=self._worker_id,
+                    ))
             else:
                 asset.ingestion_status = "FAILED"
                 asset.failure_stage = "KC_PARSE"

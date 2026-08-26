@@ -819,8 +819,19 @@ class KmAssetReindexTest(unittest.IsolatedAsyncioTestCase):
             "DISCOVERY_REINDEX",
             added_jobs[0].payload_json["operation_type"],
         )
+        self.assertFalse(added_jobs[0].payload_json["recover_asset"])
         self.assertEqual("READY", result["asset"]["ingestion_status"])
         knowledge_core.reindex_discovery.assert_awaited_once()
+
+    def test_kc_accepted_asset_requires_reindex_recovery(self):
+        self.assertTrue(KmAssetService._requires_reindex_recovery({
+            "ingestion_status": "KC_ACCEPTED",
+            "source_status": "N",
+        }))
+        self.assertFalse(KmAssetService._requires_reindex_recovery({
+            "ingestion_status": "READY",
+            "source_status": "Y",
+        }))
 
     async def test_batch_reindex_keeps_partial_success_results(self):
         first_id = UUID("01900000-0000-7000-8000-000000000071")
@@ -1072,6 +1083,10 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
             ingestion_status="PARSING",
             completed_at=None,
             external_asset_id="ASSET-1",
+            source_status="N",
+            failure_stage="KC_STATUS_SYNC",
+            error_code="OLD_ERROR",
+            error_message="旧错误",
             row_version=1,
         )
         revision = SimpleNamespace(status="PROCESSING")
@@ -1083,6 +1098,9 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
 
             async def get_revision(self, **_):
                 return revision
+
+            async def find_job_by_key(self, **_):
+                return None
 
             async def add(self, value):
                 added.append(value)
@@ -1125,6 +1143,9 @@ class KmWorkerSnapshotTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(kc.request["include_members"])
         self.assertEqual("READY", asset.ingestion_status)
         self.assertEqual("READY", revision.status)
+        self.assertIsNone(asset.failure_stage)
+        self.assertIsNone(asset.error_code)
+        self.assertIsNone(asset.error_message)
         self.assertEqual("SOURCE_STATUS_UPDATE", added[0].job_type)
 
     async def test_kc_status_sync_waits_for_discovery_publication(self):

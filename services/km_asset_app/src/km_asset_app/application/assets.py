@@ -449,6 +449,9 @@ class KmAssetService:
                         "bundle_revision_id": str(bundle_revision_id),
                         "reindex_generation": generation,
                         "profile_job_id": str(receipt["profile_job_id"]),
+                        "recover_asset": self._requires_reindex_recovery(
+                            asset_snapshot
+                        ),
                         "expected_bundle_row_version": int(
                             receipt["expected_bundle_row_version"]
                         ),
@@ -478,6 +481,14 @@ class KmAssetService:
                 "PENDING" if tracking_job is not None else "UNAVAILABLE"
             ),
         }
+
+    @staticmethod
+    def _requires_reindex_recovery(asset: dict[str, Any]) -> bool:
+        """判断重新索引成功后是否还需恢复 KM 与源状态。"""
+        return (
+            str(asset.get("ingestion_status") or "").upper() != "READY"
+            or str(asset.get("source_status") or "").upper() != "Y"
+        )
 
     async def batch_reindex_assets(
         self,

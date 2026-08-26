@@ -26,22 +26,34 @@
       render();
     } catch (error) { KBotKmShell.showError(error, "Asset 查询失败"); }
   }
+  function requiresIndexRecovery(row) {
+    return row.ingestion_status === "KC_ACCEPTED"
+      || (row.ingestion_status === "FAILED" && row.failure_stage === "KC_STATUS_SYNC");
+  }
+  function canReindex(row) {
+    const recoverable = requiresIndexRecovery(row);
+    const stateEligible = row.ingestion_status === "READY" || recoverable;
+    const reindexActive = ["PENDING", "RUNNING", "RETRY_WAIT"].includes(row.reindex?.status);
+    return stateEligible && Boolean(row.kc_bundle_revision_id) && !reindexActive;
+  }
+  function reindexLabel(row) { return row.ingestion_status === "READY" ? "重新索引" : "恢复索引"; }
   function render() {
     const body = $("asset-rows");
     if (!rows.length) { if (statusRefreshTimer) clearTimeout(statusRefreshTimer); updateSelection(); return KBotKmShell.renderEmpty(body, 8, "当前筛选条件下没有 Asset"); }
     body.innerHTML = rows.map((row, index) => {
-      const retryable = ["FAILED", "DOWNLOAD_FAILED"].includes(row.ingestion_status) || row.source_status === "F";
+      const retryable = !requiresIndexRecovery(row)
+        && (["FAILED", "DOWNLOAD_FAILED"].includes(row.ingestion_status) || row.source_status === "F");
       const reindexActive = ["PENDING", "RUNNING", "RETRY_WAIT"].includes(row.reindex?.status);
-      const reindexable = row.ingestion_status === "READY" && row.kc_bundle_revision_id && !reindexActive;
+      const reindexable = canReindex(row);
       const checked = selectedAssetIds.has(String(row.km_asset_id)) ? " checked" : "";
       const reindexText = { PENDING: "等待中", RUNNING: "处理中", RETRY_WAIT: "处理中", SUCCEEDED: "已完成", FAILED: "失败" }[row.reindex?.status] || "";
       const reindexStatus = row.reindex ? `<div class="km-cell-sub" title="${KBotKmShell.escapeHtml(row.reindex.error_message || "")}">重新索引：${KBotKmShell.escapeHtml(reindexText)}</div>` : "";
-      return `<tr><td class="km-select-cell"><input type="checkbox" data-select="${index}" aria-label="选择 ${KBotKmShell.escapeHtml(row.asset_title || row.external_asset_id)}"${reindexable ? checked : " disabled"}></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div>${reindexStatus}</td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}${reindexable ? ` <button class="small" data-reindex="${index}">重新索引</button>` : ""}</td></tr>`;
+      return `<tr><td class="km-select-cell"><input type="checkbox" data-select="${index}" aria-label="选择 ${KBotKmShell.escapeHtml(row.asset_title || row.external_asset_id)}"${reindexable ? checked : " disabled"}></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.external_asset_id)}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(sourceName(row.source_id))}</div></td><td><span class="km-cell-main">${KBotKmShell.escapeHtml(row.asset_title || "未命名 Asset")}</span><div class="km-cell-sub">${KBotKmShell.escapeHtml(row.author_mail || "—")}</div></td><td>${KBotKmShell.escapeHtml([row.asset_solution, row.asset_product, row.content_category].filter(Boolean).join(" · ") || "—")}</td><td>${KBotKmShell.badge(row.ingestion_status)}<div class="km-cell-sub">源 ${KBotKmShell.escapeHtml(row.source_status || "—")}</div>${reindexStatus}</td><td>${row.kc_bundle_id ? `<code>${KBotKmShell.escapeHtml(KBotKmShell.shortId(row.kc_bundle_id))}</code>` : "—"}</td><td>${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.completed_at || row.last_update_time))}</td><td><button class="small" data-view="${index}">详情</button>${retryable ? ` <button class="small" data-retry="${index}">重试</button>` : ""}${reindexable ? ` <button class="small" data-reindex="${index}">${reindexLabel(row)}</button>` : ""}</td></tr>`;
     }).join("");
     updateSelection();
     scheduleStatusRefresh();
   }
-  function reindexableRows() { return rows.filter((row) => row.ingestion_status === "READY" && row.kc_bundle_revision_id && !["PENDING", "RUNNING", "RETRY_WAIT"].includes(row.reindex?.status)); }
+  function reindexableRows() { return rows.filter(canReindex); }
   function scheduleStatusRefresh() {
     if (statusRefreshTimer) clearTimeout(statusRefreshTimer);
     if (!rows.some((row) => ["PENDING", "RUNNING", "RETRY_WAIT"].includes(row.reindex?.status))) return;

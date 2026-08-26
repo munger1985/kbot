@@ -94,6 +94,16 @@ class KmUiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_asset_page_allows_discovery_publication_recovery(self):
+        source = (KM_ROOT / "js" / "km-assets.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('row.ingestion_status === "KC_ACCEPTED"', source)
+        self.assertIn('row.failure_stage === "KC_STATUS_SYNC"', source)
+        self.assertIn('function requiresIndexRecovery(row)', source)
+        self.assertIn('function reindexLabel(row)', source)
+        self.assertIn('"恢复索引"', source)
+
     def test_agent_page_has_no_rerank_product_control(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")
