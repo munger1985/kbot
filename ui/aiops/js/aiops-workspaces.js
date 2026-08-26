@@ -145,11 +145,21 @@
 
   async function followRun(runId, progress) {
     let summary = "诊断任务已经开始";
+    let answer = "";
+    let answerNode = null;
     await KBotAIOpsAuth.stream(`${api}/runs/${encodeURIComponent(runId)}/events`, ({ event, data }) => {
       if (event === "task.status") {
         const payload = data?.payload || {};
         summary = payload.task_key ? `正在执行：${payload.task_key}` : summary;
         progress.textContent = summary;
+      }
+      if (event === "answer.delta") {
+        answer += String(data?.payload?.delta || "");
+        if (!answerNode) {
+          progress.insertAdjacentHTML("beforebegin", messageHtml("AGENT", ""));
+          answerNode = progress.previousElementSibling.querySelector(".ops-message-body");
+        }
+        answerNode.innerHTML = markdown.render(answer);
       }
       if (event === "done") progress.textContent = "诊断已完成，正在整理结论…";
     });

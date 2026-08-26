@@ -257,6 +257,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('["reports", "报告中心"]', shell)
         self.assertIn("source_run_id", workspace)
         self.assertIn("KBotAIOpsAuth.stream", workspace)
+        self.assertIn('event === "answer.delta"', workspace)
         self.assertIn("EVIDENCE_REQUEST", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (

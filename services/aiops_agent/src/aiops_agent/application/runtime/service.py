@@ -142,6 +142,41 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def _diagnosis_answer_markdown(payload: dict[str, Any]) -> str:
+    """把最终诊断 Artifact 投影为可流式展示的安全 Markdown。"""
+    root = dict(payload.get("root_cause") or {})
+    direct = dict(payload.get("direct_answer") or {})
+    solution = dict(payload.get("solution") or {})
+
+    def bullet_lines(items, *, key: str | None = None) -> str:
+        rows = []
+        for item in list(items or ())[:20]:
+            value = item.get(key) if key and isinstance(item, dict) else item
+            if value:
+                rows.append(f"- {str(value)[:1000]}")
+        return "\n".join(rows) or "- 无"
+
+    return "\n\n".join(
+        (
+            "## 诊断结论",
+            str(
+                direct.get("answer_text")
+                or payload.get("diagnosis_rationale")
+                or "当前证据未形成可展示的文字结论。"
+            )[:3000],
+            "**根因等级：** "
+            + str(root.get("effective_level") or "INCONCLUSIVE"),
+            "### 已验证事实\n"
+            + bullet_lines(payload.get("facts"), key="fact_summary"),
+            "### 立即建议\n"
+            + bullet_lines(solution.get("immediate_mitigations")),
+            "### 长期建议\n"
+            + bullet_lines(solution.get("long_term_remediations")),
+            "### 尚缺证据\n" + bullet_lines(payload.get("gaps")),
+        )
+    )[:16000]
+
+
 def _runtime_error(
     code: str,
     message: str,
@@ -1776,6 +1811,41 @@ class AIOpsRuntimeService:
                         "effective_level", "INCONCLUSIVE"
                     )
                 run.completed_at = now
+                if (
+                    run.trigger_type == "CHAT"
+                    and final_artifact.schema_version
+                    == "DIAGNOSIS_REPORT_DRAFT.v1"
+                ):
+                    answer = _diagnosis_answer_markdown(
+                        dict(final_artifact.payload_json or {})
+                    )
+                    chunks = tuple(
+                        answer[index:index + 800]
+                        for index in range(0, len(answer), 800)
+                    )
+                    for index, delta in enumerate(chunks, start=1):
+                        await uow.runs.append_event(
+                            ops_run_id=run.ops_run_id,
+                            event_type="answer.delta",
+                            event_key=(
+                                f"run:{run.ops_run_id}:answer:{index}"
+                            ),
+                            visibility="USER",
+                            payload_json={
+                                "delta": delta,
+                                "trace_id": command.trace_id,
+                            },
+                        )
+                    await uow.runs.append_event(
+                        ops_run_id=run.ops_run_id,
+                        event_type="answer.completed",
+                        event_key=f"run:{run.ops_run_id}:answer:completed",
+                        visibility="USER",
+                        payload_json={
+                            "chunk_count": len(chunks),
+                            "trace_id": command.trace_id,
+                        },
+                    )
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     event_type="run.completed",

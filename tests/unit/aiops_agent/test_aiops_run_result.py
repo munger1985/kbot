@@ -8,7 +8,10 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.application.runtime.service import (
+    AIOpsRuntimeService,
+    _diagnosis_answer_markdown,
+)
 from platform_core.identity import uuid7
 
 
@@ -20,6 +23,24 @@ def _context(uow):
 
 
 class AIOpsRunResultTest(unittest.TestCase):
+    def test_final_diagnosis_has_safe_streaming_markdown_projection(self) -> None:
+        content = _diagnosis_answer_markdown(
+            {
+                "root_cause": {"effective_level": "PROBABLE"},
+                "diagnosis_rationale": "锁等待导致响应变慢",
+                "facts": [{"fact_summary": "阻塞会话持续存在"}],
+                "solution": {
+                    "immediate_mitigations": ["确认阻塞源"],
+                    "long_term_remediations": ["缩短事务边界"],
+                },
+                "gaps": ["缺少应用调用链"],
+            }
+        )
+
+        self.assertIn("锁等待导致响应变慢", content)
+        self.assertIn("根因等级：** PROBABLE", content)
+        self.assertIn("- 确认阻塞源", content)
+
     def test_returns_scoped_final_artifact_payload(self) -> None:
         run_id = uuid7()
         artifact_id = uuid7()
