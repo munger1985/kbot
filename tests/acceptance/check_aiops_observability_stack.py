@@ -85,6 +85,10 @@ def main() -> int:
         for service_name in ("prometheus", "alertmanager", "loki"):
             if not rendered_compose["services"][service_name].get("group_add"):
                 raise RuntimeError(f"{service_name}没有获得运行配置文件所属组")
+        for service_name in ("prometheus", "loki", "grafana"):
+            service_networks = rendered_compose["services"][service_name]["networks"]
+            if "management" not in service_networks:
+                raise RuntimeError(f"{service_name}只连接内部网络，维护端口无法发布")
         loki_healthcheck = rendered_compose["services"]["loki"]["healthcheck"][
             "test"
         ]
