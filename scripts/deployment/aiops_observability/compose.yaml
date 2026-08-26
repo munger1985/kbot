@@ -40,9 +40,7 @@ services:
       - --data.retention=${ALERTMANAGER_RETENTION:-120h}
     volumes:
       - ${AIOPS_STACK_STATE_DIR}/alertmanager:/etc/alertmanager:ro
-      - ${AIOPS_STACK_SECRET_DIR}:/run/secrets/kbot:ro
       - alertmanager-data:/alertmanager
-    group_add: ["${AIOPS_SECRET_GID}"]
     networks: [observability, outbound]
     expose: ["9093"]
     healthcheck:
@@ -57,7 +55,7 @@ services:
     profiles: [logs]
     command: [-config.file=/etc/loki/loki.yml]
     volumes:
-      - ./configuration/loki.yml:/etc/loki/loki.yml:ro
+      - ${AIOPS_STACK_STATE_DIR}/loki:/etc/loki:ro
       - loki-data:/loki
     expose: ["3100"]
     healthcheck:
@@ -77,12 +75,12 @@ services:
     environment:
       AIOPS_LOKI_PUSH_URL: ${AIOPS_LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
       AIOPS_LOKI_TENANT: ${AIOPS_LOKI_TENANT:-kbot}
-      AIOPS_TARGET_KEY: ${AIOPS_TARGET_KEY:-unconfigured}
     volumes:
       - ./configuration/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - ${AIOPS_STACK_SECRET_DIR}:/run/secrets/kbot:ro
-      - oracle-alert-log:/var/lib/kbot/oracle-alert:ro
       - alloy-data:/var/lib/alloy
+    secrets:
+      - source: loki-authorization
+        target: loki_authorization
     group_add: ["${AIOPS_SECRET_GID}"]
     networks: [observability, outbound]
     expose: ["12345"]
@@ -92,13 +90,17 @@ services:
     image: ${GRAFANA_IMAGE}
     profiles: [dashboard]
     environment:
-      GF_SECURITY_ADMIN_USER__FILE: /run/secrets/kbot/grafana_admin_user
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/kbot/grafana_admin_password
+      GF_SECURITY_ADMIN_USER__FILE: /run/secrets/grafana_admin_user
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./configuration/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ${AIOPS_STACK_SECRET_DIR}:/run/secrets/kbot:ro
       - grafana-data:/var/lib/grafana
+    secrets:
+      - source: grafana-admin-user
+        target: grafana_admin_user
+      - source: grafana-admin-password
+        target: grafana_admin_password
     group_add: ["${AIOPS_SECRET_GID}"]
     expose: ["3000"]
 
@@ -114,77 +116,18 @@ services:
       - /:/host:ro,rslave
     expose: ["9100"]
 
-  oracle-exporter:
-    <<: *service-defaults
-    image: kbot/oracledb-exporter-secret-wrapper:0.6.0
-    build:
-      context: ./oracle_exporter_wrapper
-      args:
-        ORACLE_EXPORTER_IMAGE: ${ORACLE_EXPORTER_IMAGE}
-    profiles: [oracle]
-    environment:
-      QUERY_TIMEOUT: ${ORACLE_EXPORTER_QUERY_TIMEOUT:-15}
-    volumes:
-      - ${AIOPS_STACK_SECRET_DIR}/oracle_exporter_dsn:/run/secrets/oracle_exporter_dsn:ro
-    group_add: ["${AIOPS_SECRET_GID}"]
-    networks: [observability, outbound]
-    expose: ["9161"]
-
-  oracle-alert-collector:
-    <<: *service-defaults
-    image: ${ORACLE_ALERT_COLLECTOR_IMAGE}
-    build:
-      context: ./oracle_alert_collector
-    profiles: [oracle]
-    environment:
-      ORACLE_HOST: ${ORACLE_HOST}
-      ORACLE_PORT: ${ORACLE_PORT:-1521}
-      ORACLE_SERVICE: ${ORACLE_SERVICE}
-      ORACLE_TARGET_KEY: ${AIOPS_TARGET_KEY}
-      ORACLE_POLL_SECONDS: ${ORACLE_ALERT_POLL_SECONDS:-15}
-      ORACLE_INITIAL_LOOKBACK_SECONDS: ${ORACLE_ALERT_INITIAL_LOOKBACK_SECONDS:-900}
-      ORACLE_MAX_ROWS: ${ORACLE_ALERT_MAX_ROWS:-1000}
-    volumes:
-      - ${AIOPS_STACK_SECRET_DIR}/oracle_username:/run/secrets/oracle_username:ro
-      - ${AIOPS_STACK_SECRET_DIR}/oracle_password:/run/secrets/oracle_password:ro
-      - oracle-alert-log:/var/lib/kbot/oracle-alert
-    group_add: ["${AIOPS_SECRET_GID}"]
-    networks: [observability, outbound]
-    healthcheck:
-      test: [CMD, python, /app/healthcheck.py]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  mysql-exporter:
-    <<: *service-defaults
-    image: ${MYSQL_EXPORTER_IMAGE}
-    profiles: [mysql]
-    command: [--config.my-cnf=/run/secrets/mysql_exporter_cnf]
-    volumes:
-      - ${AIOPS_STACK_SECRET_DIR}/mysql_exporter_cnf:/run/secrets/mysql_exporter_cnf:ro
-    group_add: ["${AIOPS_SECRET_GID}"]
-    networks: [observability, outbound]
-    expose: ["9104"]
-
-  postgres-exporter:
-    <<: *service-defaults
-    image: ${POSTGRES_EXPORTER_IMAGE}
-    profiles: [postgres]
-    environment:
-      DATA_SOURCE_URI_FILE: /run/secrets/postgres_uri
-      DATA_SOURCE_USER_FILE: /run/secrets/postgres_username
-      DATA_SOURCE_PASS_FILE: /run/secrets/postgres_password
-    volumes:
-      - ${AIOPS_STACK_SECRET_DIR}:/run/secrets:ro
-    group_add: ["${AIOPS_SECRET_GID}"]
-    networks: [observability, outbound]
-    expose: ["9187"]
-
 networks:
   observability:
     internal: ${AIOPS_INTERNAL_NETWORK:-true}
   outbound:
+
+secrets:
+  loki-authorization:
+    file: ${AIOPS_STACK_SECRET_DIR}/loki_authorization
+  grafana-admin-user:
+    file: ${AIOPS_STACK_SECRET_DIR}/grafana_admin_user
+  grafana-admin-password:
+    file: ${AIOPS_STACK_SECRET_DIR}/grafana_admin_password
 
 volumes:
   prometheus-data:
@@ -192,4 +135,3 @@ volumes:
   loki-data:
   alloy-data:
   grafana-data:
-  oracle-alert-log:

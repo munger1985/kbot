@@ -1,13 +1,12 @@
 local.file "loki_authorization" {
-  filename  = "/run/secrets/kbot/loki_authorization"
+  filename  = "/run/secrets/loki_authorization"
   is_secret = true
 }
 
 loki.source.file "oracle_alert" {
   targets = [{
-    __path__   = "/var/lib/kbot/oracle-alert/*.jsonl",
+    __path__   = "/var/lib/kbot/oracle-alert/*/*.jsonl",
     job        = "oracle_alert",
-    target_key = sys.env("AIOPS_TARGET_KEY"),
     source     = "V$DIAG_ALERT_EXT",
   }]
   forward_to = [loki.process.oracle_alert.receiver]
@@ -26,6 +25,7 @@ loki.process "oracle_alert" {
       problem_key    = "problem_key",
       container_name = "container_name",
       database_id    = "database_id",
+      target_key     = "target_key",
     }
   }
   stage.labels {
@@ -34,6 +34,7 @@ loki.process "oracle_alert" {
       message_type   = "",
       container_name = "",
       database_id    = "",
+      target_key     = "",
     }
   }
   forward_to = [loki.write.central.receiver]

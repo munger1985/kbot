@@ -18,6 +18,9 @@
 - `scripts/deployment/ensure_workspace_packages.py`：启动前比较源码与已安装内部包内容指纹，不一致时加锁自动更新。
 - `scripts/deployment/run_service.sh`：正式编排的单服务启动入口，完成包预检后执行指定 Python 模块。
 - `scripts/deployment/bootstrap_kbot.sh`：空白环境一键安装、配置检查、建表和系统种子初始化；发现已有 KBot 对象时停止。
+- `scripts/aiops-stack`：AIOps观测栈零参数部署入口，从唯一INI生成Central/Collector、
+  多数据库Exporter、规则、Secret和运行清单；具体资产位于
+  `scripts/deployment/aiops_observability/`。
 - `scripts/deployment/models/`：按需下载本地 OCR、Tokenizer、VLM 或视觉模型。
 - `scripts/release/verify_release.py`：编排发布前检查、实库验收并生成发布证据。
 

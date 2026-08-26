@@ -27,6 +27,8 @@ Git 历史保存，不再作为有效文档。
 ## 部署与运维
 
 - [部署指南](operations/deployment.md)
+- [AIOps观测栈生产自动化部署](operations/aiops-observability-production-deployment.md)
+- [AIOps Oracle观测栈人工安装与运维](operations/aiops-observability-manual-deployment.md)
 - [配置指南](../configuration/README.md)
 - [Oracle 初始化](../database/oracle/README.md)
 - [脚本说明](../scripts/README.md)

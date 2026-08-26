@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import getpass
+import configparser
 import json
 import os
 import re
@@ -11,36 +10,23 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STACK_ROOT = REPO_ROOT / "services/aiops_agent/deployment/observability"
+STACK_ROOT = REPO_ROOT / "scripts/deployment/aiops_observability"
 COMPOSE_FILE = STACK_ROOT / "compose.yaml"
 ACCESS_FILE = STACK_ROOT / "compose.access.yaml"
+GENERATED_COMPOSE_FILE_NAME = "compose.generated.yaml"
 IMAGES_FILE = STACK_ROOT / "images.env"
-DEFAULT_STATE_DIR = REPO_ROOT / "var/aiops-stack"
+CONFIG_FILE = REPO_ROOT / "var/aiops-stack/aiops-stack.ini"
 
-PRESETS: dict[str, tuple[str, ...]] = {
-    "oracle-lite": ("metrics", "logs", "host", "oracle"),
-    "mysql-lite": ("metrics", "logs", "host", "mysql"),
-    "postgres-lite": ("metrics", "logs", "host", "postgres"),
-    "oracle-oem": ("logs",),
-    "external-zabbix": ("logs",),
-    "external-all": (),
-}
-
-ROLE_SERVICES: dict[str, set[str]] = {
-    "central": {"prometheus", "alertmanager", "loki", "grafana"},
-    "collector": {
-        "alloy",
-        "node-exporter",
-        "oracle-exporter",
-        "oracle-alert-collector",
-        "mysql-exporter",
-        "postgres-exporter",
-    },
+MODULE_PROFILES = {
+    "metrics": "metrics",
+    "logs": "logs",
+    "dashboard": "dashboard",
+    "host": "host",
 }
 
 PROFILE_SERVICES: dict[str, set[str]] = {
@@ -48,21 +34,142 @@ PROFILE_SERVICES: dict[str, set[str]] = {
     "logs": {"loki", "alloy"},
     "dashboard": {"grafana"},
     "host": {"node-exporter"},
-    "oracle": {"oracle-exporter", "oracle-alert-collector"},
-    "mysql": {"mysql-exporter"},
-    "postgres": {"postgres-exporter"},
 }
 
+ROLE_SERVICES: dict[str, set[str]] = {
+    "central": {"prometheus", "alertmanager", "loki", "grafana"},
+    "collector": {
+        "alloy",
+        "node-exporter",
+    },
+}
 
-def _state_dir(value: str | None) -> Path:
-    configured = value or os.environ.get("KBOT_AIOPS_STACK_HOME")
-    return Path(configured).expanduser().resolve() if configured else DEFAULT_STATE_DIR
+DATABASE_SECTION = re.compile(
+    r"^(?P<engine>oracle|mysql|postgres):(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
+)
+PROMETHEUS_TARGET_SECTION = re.compile(
+    r"^prometheus_target:(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
+)
+
+CONFIG_TEMPLATE = """# KBot AIOps观测工具唯一部署配置
+#
+# 使用方法：
+#   1. 修改[deployment]中的必填项。
+#   2. 需要安装哪个模块，就取消该模块“enabled = true”及所需配置的注释。
+#   3. 直接执行 scripts/aiops-stack，不带任何参数。
+#
+# 本文件包含数据库密码和Token，脚本要求权限必须为0600。
+# 本文件位于Git忽略的var目录，不得复制到仓库内其他配置文件或提交到Git。
+# OEM不在此部署文件中配置，也不会由Compose安装；请在AIOps App内配置OEM数据源。
+
+[deployment]
+# 必填：本次部署实例标识，只能包含字母、数字、连字符和下划线。
+deployment_id = CHANGE_ME
+# 必填：all-in-one、central或collector。
+role = all-in-one
+# 必填：true时把Central维护端口绑定到127.0.0.1；Collector Exporter端口单独配置。
+local_access = false
+# minimum_free_gb = 10
+
+[metrics]
+# enabled = true
+# prometheus_retention = 30d
+# alertmanager_retention = 120h
+# prometheus_port = 9090
+# alertmanager_port = 9093
+# 可选：三项同时配置后，由签名桥接器将Alertmanager告警推送到KBot。
+# URL只填写Main API根地址，不要包含Webhook Key。
+# kbot_webhook_url = https://kbot.example.com
+# kbot_webhook_key = CHANGE_ME
+# kbot_webhook_secret = CHANGE_ME
+
+[logs]
+# enabled = true
+# loki_retention = 720h
+# loki_port = 3100
+# 单机部署使用下面的内部地址；Collector分离部署时改为带TLS的Central地址。
+# loki_url = http://loki:3100/loki/api/v1/push
+# loki_tenant = kbot
+# 本地内部Loki可以留空；远程Loki必须填写真实Token。
+# loki_token =
+
+[dashboard]
+# enabled = true
+# grafana_port = 3000
+# grafana_admin_user = kbot-admin
+# grafana_admin_password = CHANGE_ME
+
+[host]
+# enabled = true
+# 必填：启用后填写该主机在KBot中的稳定Target Key。
+# target_key = host-prod-01
+# Collector角色必须填写Central可达的监听地址。
+# exporter_bind_address = 10.0.0.30
+# exporter_port = 19100
+
+# 每个数据库使用一个独立配置段；复制整段即可增加数据库。
+# 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
+[oracle:oracle-prod-01]
+# enabled = true
+# host = 10.0.0.20
+# port = 1521
+# service = ORCLPDB1
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_query_timeout = 15
+# 自动启用KBot CPU和SQL解析失败补充指标，需要V_$SYSMETRIC和V_$SYSSTAT读取权限。
+# alert_poll_seconds = 15
+# alert_initial_lookback_seconds = 900
+# alert_max_rows = 1000
+# Collector角色必须显式填写中心Prometheus可达的监听地址和宿主机端口。
+# exporter_bind_address = 10.0.0.30
+# exporter_port = 19161
+
+[mysql:mysql-prod-01]
+# enabled = true
+# host = 10.0.0.21
+# port = 3306
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_bind_address = 10.0.0.31
+# exporter_port = 19104
+
+[postgres:postgres-prod-01]
+# enabled = true
+# uri = 10.0.0.22:5432/postgres?sslmode=require
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_bind_address = 10.0.0.32
+# exporter_port = 19187
+
+# Central角色监控远程Collector时，每个Exporter登记一个目标。
+# all-in-one角色下，本文件启用的数据库会自动登记，无需重复填写。
+[prometheus_target:oracle-prod-01]
+# enabled = true
+# 必填：oracle、mysql、postgres或node。
+# engine = oracle
+# 必填：Central Prometheus可达的host:port，不要带URL路径。
+# address = 10.0.0.30:19161
+# environment = production
+"""
 
 
-def _safe_value(name: str, value: str) -> str:
-    if not value or "\n" in value or "\r" in value:
-        raise ValueError(f"{name}不能为空或包含换行")
-    return value
+@dataclass(frozen=True)
+class DeploymentSettings:
+    config_path: Path
+    runtime_dir: Path
+    deployment_id: str
+    role: str
+    local_access: bool
+    profiles: tuple[str, ...]
+    values: configparser.ConfigParser
+
+
+@dataclass(frozen=True)
+class DatabaseTarget:
+    section: str
+    engine: str
+    target_key: str
 
 
 def _write_text(path: Path, content: str, mode: int = 0o640) -> None:
@@ -79,25 +186,260 @@ def _write_text(path: Path, content: str, mode: int = 0o640) -> None:
 
 
 def _write_secret(path: Path, value: str) -> None:
-    _write_text(path, _safe_value(path.name, value).rstrip("\r\n") + "\n", 0o640)
+    _write_text(path, _safe_value(path.name, value) + "\n", 0o640)
 
 
-def _read_secret_input(prompt: str, source: str | None) -> str:
-    if source:
-        return _safe_value("Secret", Path(source).read_text(encoding="utf-8").rstrip("\r\n"))
-    if not sys.stdin.isatty():
-        raise ValueError(f"非交互模式必须通过Secret文件提供{prompt}")
-    return _safe_value(prompt, getpass.getpass(f"{prompt}："))
+def _write_secret_document(path: Path, content: str) -> None:
+    if not content.strip() or "\x00" in content:
+        raise ValueError(f"{path.name}不能为空或包含空字节")
+    _write_text(path, content.rstrip("\r\n") + "\n", 0o640)
 
 
-def _parse_profiles(args: argparse.Namespace) -> tuple[str, ...]:
-    if args.preset == "custom":
-        profiles = tuple(dict.fromkeys(args.profile or ()))
-        unknown = set(profiles) - set(PROFILE_SERVICES)
-        if unknown:
-            raise ValueError(f"未知Profile：{', '.join(sorted(unknown))}")
-        return profiles
-    return PRESETS[args.preset]
+def _safe_value(name: str, value: str) -> str:
+    normalized = value.strip()
+    if not normalized or "\n" in normalized or "\r" in normalized:
+        raise ValueError(f"{name}不能为空或包含换行")
+    return normalized
+
+
+def _create_initial_config(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    _write_text(path, CONFIG_TEMPLATE, 0o600)
+
+
+def _required(
+    parser: configparser.ConfigParser,
+    section: str,
+    option: str,
+) -> str:
+    if not parser.has_option(section, option):
+        raise ValueError(f"已启用[{section}]，必须配置{option}")
+    value = _safe_value(f"[{section}] {option}", parser.get(section, option))
+    if value == "CHANGE_ME":
+        raise ValueError(f"[{section}] {option}仍为CHANGE_ME")
+    return value
+
+
+def _optional(
+    parser: configparser.ConfigParser,
+    section: str,
+    option: str,
+    default: str,
+) -> str:
+    value = parser.get(section, option, fallback=default)
+    return _safe_value(f"[{section}] {option}", value)
+
+
+def _enabled(parser: configparser.ConfigParser, section: str) -> bool:
+    if not parser.has_option(section, "enabled"):
+        return False
+    if not parser.getboolean(section, "enabled"):
+        raise ValueError(f"[{section}] enabled只允许设置为true；不安装时请注释该行")
+    return True
+
+
+def _database_targets(parser: configparser.ConfigParser) -> tuple[DatabaseTarget, ...]:
+    targets: list[DatabaseTarget] = []
+    for section in parser.sections():
+        match = DATABASE_SECTION.fullmatch(section)
+        if not match or not _enabled(parser, section):
+            continue
+        targets.append(
+            DatabaseTarget(
+                section=section,
+                engine=match.group("engine"),
+                target_key=match.group("target_key"),
+            )
+        )
+    return tuple(targets)
+
+
+def _prometheus_target_sections(parser: configparser.ConfigParser) -> tuple[str, ...]:
+    return tuple(
+        section
+        for section in parser.sections()
+        if PROMETHEUS_TARGET_SECTION.fullmatch(section) and _enabled(parser, section)
+    )
+
+
+def _load_settings(path: Path) -> DeploymentSettings:
+    if path.stat().st_mode & 0o077:
+        raise ValueError(f"配置文件权限必须为0600：chmod 600 {path}")
+    parser = configparser.ConfigParser(interpolation=None, empty_lines_in_values=False)
+    with path.open(encoding="utf-8") as stream:
+        parser.read_file(stream)
+    if not parser.has_section("deployment"):
+        raise ValueError("配置文件缺少[deployment]")
+    deployment_id = _required(parser, "deployment", "deployment_id")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", deployment_id):
+        raise ValueError("[deployment] deployment_id只能包含字母、数字、连字符和下划线")
+    role = _required(parser, "deployment", "role")
+    if role not in {"all-in-one", "central", "collector"}:
+        raise ValueError("[deployment] role必须是all-in-one、central或collector")
+    try:
+        local_access = parser.getboolean("deployment", "local_access")
+    except (configparser.NoOptionError, ValueError) as exc:
+        raise ValueError("[deployment] local_access必须配置为true或false") from exc
+    profiles = tuple(
+        profile
+        for section, profile in MODULE_PROFILES.items()
+        if _enabled(parser, section)
+    )
+    database_targets = _database_targets(parser)
+    target_keys = [item.target_key for item in database_targets]
+    if len(target_keys) != len(set(target_keys)):
+        raise ValueError("数据库Target Key必须跨数据库类型保持唯一")
+    external_targets = _prometheus_target_sections(parser)
+    external_target_keys = [
+        PROMETHEUS_TARGET_SECTION.fullmatch(section).group("target_key")
+        for section in external_targets
+        if PROMETHEUS_TARGET_SECTION.fullmatch(section)
+    ]
+    if set(target_keys).intersection(external_target_keys):
+        raise ValueError("同一Target Key不能同时声明为本地数据库和远程Prometheus目标")
+    if not profiles and not database_targets:
+        raise ValueError("没有启用任何模块；请取消至少一个enabled = true的注释")
+    if database_targets:
+        profiles = (*profiles, *tuple(sorted({item.engine for item in database_targets})))
+    if external_targets and "metrics" not in profiles:
+        raise ValueError("启用[prometheus_target:*]前必须启用[metrics]")
+    settings = DeploymentSettings(
+        config_path=path,
+        runtime_dir=path.parent / "generated",
+        deployment_id=deployment_id,
+        role=role,
+        local_access=local_access,
+        profiles=profiles,
+        values=parser,
+    )
+    _validate_module_settings(settings)
+    return settings
+
+
+def _validate_module_settings(settings: DeploymentSettings) -> None:
+    parser = settings.values
+    if "dashboard" in settings.profiles:
+        _required(parser, "dashboard", "grafana_admin_user")
+        _required(parser, "dashboard", "grafana_admin_password")
+    if "host" in settings.profiles:
+        _required(parser, "host", "target_key")
+        if settings.role == "collector":
+            _required(parser, "host", "exporter_bind_address")
+            _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535)
+    database_targets = _database_targets(parser)
+    seen_ports: set[tuple[str, int]] = set()
+    if settings.role == "collector" and "host" in settings.profiles:
+        seen_ports.add(
+            (
+                _required(parser, "host", "exporter_bind_address"),
+                _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535),
+            )
+        )
+    if settings.role == "central" and database_targets:
+        raise ValueError(
+            "central角色不能直接启用数据库采集段；请在Collector部署，并用[prometheus_target:*]登记抓取地址"
+        )
+    if settings.role == "collector" and _prometheus_target_sections(parser):
+        raise ValueError("collector角色不能配置[prometheus_target:*]")
+    for target in database_targets:
+        section = target.section
+        if target.engine == "oracle":
+            for option in ("host", "service", "username", "password"):
+                _required(parser, section, option)
+            _bounded_int(parser, section, "port", 1521, 1, 65535)
+            _bounded_int(parser, section, "exporter_query_timeout", 15, 1, 300)
+            _bounded_int(parser, section, "alert_poll_seconds", 15, 5, 3600)
+            _bounded_int(
+                parser, section, "alert_initial_lookback_seconds", 900, 0, 86400
+            )
+            _bounded_int(parser, section, "alert_max_rows", 1000, 1, 5000)
+            default_exporter_port = 9161
+        elif target.engine == "mysql":
+            for option in ("host", "username", "password"):
+                _required(parser, section, option)
+            _bounded_int(parser, section, "port", 3306, 1, 65535)
+            default_exporter_port = 9104
+        else:
+            for option in ("uri", "username", "password"):
+                _required(parser, section, option)
+            default_exporter_port = 9187
+        if settings.role == "collector":
+            bind_address = _required(parser, section, "exporter_bind_address")
+            exporter_port = _bounded_int(
+                parser, section, "exporter_port", default_exporter_port, 1, 65535
+            )
+            endpoint = (bind_address, exporter_port)
+            if endpoint in seen_ports:
+                raise ValueError(f"采集端Exporter监听地址重复：{bind_address}:{exporter_port}")
+            seen_ports.add(endpoint)
+    if "metrics" in settings.profiles:
+        webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
+        webhook_key = parser.get(
+            "metrics", "kbot_webhook_key", fallback=""
+        ).strip()
+        webhook_secret = parser.get(
+            "metrics", "kbot_webhook_secret", fallback=""
+        ).strip()
+        if len({bool(webhook_url), bool(webhook_key), bool(webhook_secret)}) != 1:
+            raise ValueError(
+                "[metrics] kbot_webhook_url、kbot_webhook_key和kbot_webhook_secret必须同时配置或同时注释"
+            )
+        if "CHANGE_ME" in {webhook_key, webhook_secret}:
+            raise ValueError("[metrics] KBot Webhook配置仍为CHANGE_ME")
+        if webhook_key and not 32 <= len(webhook_key) <= 256:
+            raise ValueError("[metrics] kbot_webhook_key长度必须介于32和256之间")
+        if webhook_url:
+            parsed = urllib.parse.urlparse(webhook_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("[metrics] kbot_webhook_url必须是有效HTTP(S)根地址")
+            if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+                raise ValueError("[metrics] kbot_webhook_url只能填写Main API根地址")
+            if settings.role == "central" and parsed.scheme != "https":
+                raise ValueError("central角色的KBot Webhook必须使用HTTPS")
+    for section in _prometheus_target_sections(parser):
+        engine = _required(parser, section, "engine")
+        if engine not in {"oracle", "mysql", "postgres", "node"}:
+            raise ValueError(f"[{section}] engine必须是oracle、mysql、postgres或node")
+        address = _required(parser, section, "address")
+        if not re.fullmatch(r"[^\s:/]+:\d{1,5}", address):
+            raise ValueError(f"[{section}] address必须是host:port")
+        if int(address.rsplit(":", 1)[1]) > 65535:
+            raise ValueError(f"[{section}] address端口必须介于1和65535之间")
+    if "logs" in settings.profiles:
+        loki_url = _optional(
+            parser,
+            "logs",
+            "loki_url",
+            "http://loki:3100/loki/api/v1/push",
+        )
+        loki_token = parser.get("logs", "loki_token", fallback="").strip()
+        if loki_url != "http://loki:3100/loki/api/v1/push" and not loki_token:
+            raise ValueError("远程[logs] loki_url必须同时配置loki_token")
+        if loki_token == "CHANGE_ME":
+            raise ValueError("[logs] loki_token仍为CHANGE_ME")
+        if settings.role == "collector":
+            if loki_url == "http://loki:3100/loki/api/v1/push":
+                raise ValueError("collector角色必须配置远程[logs] loki_url")
+            if not loki_url.startswith("https://"):
+                raise ValueError("collector角色的远程Loki入口必须使用HTTPS")
+
+
+def _bounded_int(
+    parser: configparser.ConfigParser,
+    section: str,
+    option: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = parser.getint(section, option, fallback=default)
+    except ValueError as exc:
+        raise ValueError(f"[{section}] {option}必须是整数") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"[{section}] {option}必须介于{minimum}和{maximum}之间")
+    return value
 
 
 def _prometheus_config() -> str:
@@ -135,26 +477,143 @@ def _prometheus_rules() -> str:
           summary: "诊断数据源不可用"
           description: "{{ $labels.job }}/{{ $labels.instance }} 连续2分钟无法抓取。"
       - alert: OracleDatabaseUnavailable
-        expr: oracledb_up == 0
+        expr: oracledb_up{job="oracle"} == 0
         for: 1m
         labels:
           severity: critical
           event_class: database.unavailable
         annotations:
           summary: "Oracle数据库不可用"
-          description: "Oracle Exporter存活，但数据库连接失败。"
+          description: "{{ $labels.target_key }}的Exporter存活，但数据库连接失败。"
+
+  - name: kbot-aiops-oracle-recording
+    interval: 15s
+    rules:
+      - record: kbot_db_cpu_utilization_percent
+        expr: oracledb_kbot_cpu_utilization_percent{job="oracle"}
+
+      - record: kbot_db_active_connections
+        expr: sum by (instance, target_key) (oracledb_sessions_value{job="oracle", status="ACTIVE", type="USER"})
+
+      - record: kbot_db_connection_utilization_percent
+        expr: 100 * oracledb_resource_current_utilization{job="oracle", resource_name="sessions"} / oracledb_resource_limit_value{job="oracle", resource_name="sessions"} > 0
+
+      - record: kbot_db_transactions_total
+        expr: sum by (instance, target_key) (oracledb_activity_user_commits{job="oracle"}) + sum by (instance, target_key) (oracledb_activity_user_rollbacks{job="oracle"})
+
+      - record: kbot_db_response_latency_milliseconds
+        expr: oracledb_exporter_last_scrape_duration_seconds{job="oracle"} * 1000
+
+      - record: kbot_db_storage_utilization_percent
+        expr: oracledb_tablespace_used_percent{job="oracle"}
+
+      - record: kbot_db_storage_free_bytes
+        expr: oracledb_tablespace_free_bytes{job="oracle"}
+
+      - record: kbot_db_storage_max_bytes
+        expr: oracledb_tablespace_max_bytes{job="oracle"}
+
+      - record: kbot_db_errors_total
+        expr: oracledb_kbot_errors_total{job="oracle"}
+
+  - name: kbot-aiops-oracle-alerts
+    interval: 15s
+    rules:
+      - alert: OracleExporterScrapeFailed
+        expr: oracledb_exporter_last_scrape_error{job="oracle"} > 0
+        for: 2m
+        labels:
+          severity: warning
+          event_class: diagnostic_source.scrape_failed
+        annotations:
+          summary: "Oracle指标抓取失败"
+          description: "{{ $labels.target_key }}连续2分钟无法完成数据库指标查询。"
+
+      - alert: OracleConnectionUtilizationHigh
+        expr: kbot_db_connection_utilization_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.connection_pressure
+        annotations:
+          summary: "Oracle连接使用率过高"
+          description: "{{ $labels.target_key }}连接使用率连续10分钟超过85%。"
+
+      - alert: OracleDatabaseCpuHigh
+        expr: kbot_db_cpu_utilization_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.cpu_pressure
+        annotations:
+          summary: "Oracle数据库主机CPU使用率过高"
+          description: "{{ $labels.target_key }}最近一分钟CPU使用率连续10分钟超过90%。"
+
+      - alert: OracleResponseLatencyHigh
+        expr: kbot_db_response_latency_milliseconds > 5000
+        for: 5m
+        labels:
+          severity: warning
+          event_class: database.response_slow
+        annotations:
+          summary: "Oracle监控查询响应缓慢"
+          description: "{{ $labels.target_key }}的Exporter完整抓取耗时连续5分钟超过5秒。"
+
+      - alert: OracleSqlParseErrors
+        expr: rate(kbot_db_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          event_class: database.sql_parse_errors
+        annotations:
+          summary: "Oracle SQL解析失败持续发生"
+          description: "{{ $labels.target_key }}最近5分钟持续出现SQL解析失败。"
+
+      - alert: OracleTablespaceUsageHigh
+        expr: kbot_db_storage_utilization_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.storage_pressure
+        annotations:
+          summary: "Oracle表空间使用率过高"
+          description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过85%。"
+
+      - alert: OracleTablespaceUsageCritical
+        expr: kbot_db_storage_utilization_percent > 95
+        for: 5m
+        labels:
+          severity: critical
+          event_class: database.storage_critical
+        annotations:
+          summary: "Oracle表空间使用率严重不足"
+          description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过95%。"
 """
 
 
-def _target(name: str, address: str, target_key: str) -> dict[str, object]:
-    return {
-        "targets": [address],
-        "labels": {"job": name, "target_key": target_key},
-    }
+def _prometheus_query_overrides() -> str:
+    return json.dumps(
+        {
+            "prometheus_queries": {
+                "db.availability": 'oracledb_up{instance="${external_target}"}',
+                "db.cpu.utilization": 'kbot_db_cpu_utilization_percent{instance="${external_target}"}',
+                "db.connection.active": 'kbot_db_active_connections{instance="${external_target}"}',
+                "db.connection.utilization": 'kbot_db_connection_utilization_percent{instance="${external_target}"}',
+                "db.transaction.throughput": 'rate(kbot_db_transactions_total{instance="${external_target}"}[5m])',
+                "db.response.latency": 'kbot_db_response_latency_milliseconds{instance="${external_target}"}',
+                "db.storage.utilization": 'kbot_db_storage_utilization_percent{instance="${external_target}"}',
+                "db.storage.free_bytes": 'kbot_db_storage_free_bytes{instance="${external_target}"}',
+                "db.storage.max_bytes": 'kbot_db_storage_max_bytes{instance="${external_target}"}',
+                "db.error.rate": 'rate(kbot_db_errors_total{instance="${external_target}"}[5m])',
+            }
+        },
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
 
 
-def _alertmanager_config(webhook_url: str | None) -> str:
-    receiver = "kbot" if webhook_url else "discard"
+def _alertmanager_config(webhook_enabled: bool) -> str:
+    receiver = "kbot" if webhook_enabled else "discard"
     lines = [
         "route:",
         f"  receiver: {receiver}",
@@ -165,273 +624,588 @@ def _alertmanager_config(webhook_url: str | None) -> str:
         "receivers:",
         "  - name: discard",
     ]
-    if webhook_url:
+    if webhook_enabled:
         lines.extend(
             [
                 "  - name: kbot",
                 "    webhook_configs:",
-                f"      - url: {json.dumps(webhook_url, ensure_ascii=False)}",
+                '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
                 "        send_resolved: true",
-                "        http_config:",
-                "          authorization:",
-                "            type: Bearer",
-                "            credentials_file: /run/secrets/kbot/kbot_webhook_token",
             ]
         )
     return "\n".join(lines) + "\n"
 
 
-def _configure(args: argparse.Namespace) -> None:
-    state = _state_dir(args.state_dir)
-    profiles = _parse_profiles(args)
-    secrets = state / "secrets"
-    prometheus = state / "prometheus"
-    target_key = _safe_value("target-key", args.target_key or "unconfigured")
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", target_key):
-        raise ValueError("target-key只能包含字母、数字、连字符和下划线")
+def _loki_config(retention: str) -> str:
+    return f"""auth_enabled: false
 
-    if state.exists() and not args.force:
-        raise ValueError(f"配置目录已存在：{state}；确认覆盖时使用--force")
-    state.mkdir(parents=True, exist_ok=True)
-    os.chmod(state, 0o750)
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+limits_config:
+  retention_period: {retention}
+  max_query_lookback: {retention}
+  max_query_length: 744h
+  max_entries_limit_per_query: 5000
+  allow_structured_metadata: true
+"""
+
+
+def _target(
+    name: str,
+    address: str,
+    target_key: str,
+    environment: str = "",
+) -> dict[str, object]:
+    labels = {"job": name, "instance": target_key, "target_key": target_key}
+    if environment:
+        labels["environment"] = environment
+    return {"targets": [address], "labels": labels}
+
+
+def _service_name(engine: str, target_key: str) -> str:
+    return f"{engine}-{target_key}"
+
+
+def _database_generated_compose(
+    settings: DeploymentSettings,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    parser = settings.values
+    services: dict[str, object] = {}
+    secrets: dict[str, object] = {}
+    volumes: dict[str, object] = {}
+    local_targets: list[dict[str, object]] = []
+    alloy_mounts: list[str] = []
+
+    if "host" in settings.profiles and settings.role == "collector":
+        services["node-exporter"] = {
+            "ports": [
+                "{}:{}:9100".format(
+                    _required(parser, "host", "exporter_bind_address"),
+                    _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535),
+                )
+            ]
+        }
+
+    for target in _database_targets(parser):
+        section = target.section
+        key = target.target_key
+        engine = target.engine
+        base_name = _service_name(engine, key)
+        exporter_name = f"{base_name}-exporter"
+        common = {
+            "restart": "unless-stopped",
+            "security_opt": ["no-new-privileges:true"],
+            "networks": ["observability", "outbound"],
+        }
+        port_mapping: list[str] = []
+        if settings.role == "collector":
+            default_port = {"oracle": 9161, "mysql": 9104, "postgres": 9187}[engine]
+            bind_address = _required(parser, section, "exporter_bind_address")
+            host_port = _bounded_int(
+                parser, section, "exporter_port", default_port, 1, 65535
+            )
+            port_mapping = [f"{bind_address}:{host_port}:{default_port}"]
+
+        if engine == "oracle":
+            host = _required(parser, section, "host")
+            port = _bounded_int(parser, section, "port", 1521, 1, 65535)
+            service = _required(parser, section, "service")
+            username = _required(parser, section, "username")
+            password = _required(parser, section, "password")
+            dsn = "oracle://{}:{}@{}:{}/{}".format(
+                urllib.parse.quote(username, safe=""),
+                urllib.parse.quote(password, safe=""),
+                host,
+                port,
+                urllib.parse.quote(service, safe=""),
+            )
+            secret_names = {
+                "dsn": f"{base_name}-exporter-dsn",
+                "username": f"{base_name}-username",
+                "password": f"{base_name}-password",
+            }
+            secret_files = {
+                "dsn": f"{base_name}_exporter_dsn",
+                "username": f"{base_name}_username",
+                "password": f"{base_name}_password",
+            }
+            _write_secret(settings.runtime_dir / "secrets" / secret_files["dsn"], dsn)
+            _write_secret(
+                settings.runtime_dir / "secrets" / secret_files["username"], username
+            )
+            _write_secret(
+                settings.runtime_dir / "secrets" / secret_files["password"], password
+            )
+            for kind, secret_name in secret_names.items():
+                secrets[secret_name] = {
+                    "file": str(settings.runtime_dir / "secrets" / secret_files[kind])
+                }
+            query_timeout = _bounded_int(
+                parser, section, "exporter_query_timeout", 15, 1, 300
+            )
+            exporter = {
+                **common,
+                "image": "kbot/oracledb-exporter-secret-wrapper:0.6.0",
+                "build": {
+                    "context": str(STACK_ROOT / "oracle_exporter_wrapper"),
+                    "args": {"ORACLE_EXPORTER_IMAGE": "${ORACLE_EXPORTER_IMAGE}"},
+                },
+                "command": [
+                    f"--query.timeout={query_timeout}",
+                    "--custom.metrics=/etc/oracledb_exporter/kbot-custom-metrics.yaml",
+                ],
+                "volumes": [
+                    str(
+                        STACK_ROOT
+                        / "configuration/oracle/custom-metrics.yaml"
+                    )
+                    + ":/etc/oracledb_exporter/kbot-custom-metrics.yaml:ro"
+                ],
+                "secrets": [
+                    {"source": secret_names["dsn"], "target": "oracle_exporter_dsn"}
+                ],
+                "group_add": ["${AIOPS_SECRET_GID}"],
+                "expose": ["9161"],
+            }
+            if port_mapping:
+                exporter["ports"] = port_mapping
+            services[exporter_name] = exporter
+
+            collector_name = f"{base_name}-alert-collector"
+            volume_name = f"{base_name}-alert-log"
+            volumes[volume_name] = {}
+            services[collector_name] = {
+                **common,
+                "image": "${ORACLE_ALERT_COLLECTOR_IMAGE}",
+                "build": {"context": str(STACK_ROOT / "oracle_alert_collector")},
+                "environment": {
+                    "ORACLE_HOST": host,
+                    "ORACLE_PORT": port,
+                    "ORACLE_SERVICE": service,
+                    "ORACLE_TARGET_KEY": key,
+                    "ORACLE_POLL_SECONDS": _bounded_int(
+                        parser, section, "alert_poll_seconds", 15, 5, 3600
+                    ),
+                    "ORACLE_INITIAL_LOOKBACK_SECONDS": _bounded_int(
+                        parser,
+                        section,
+                        "alert_initial_lookback_seconds",
+                        900,
+                        0,
+                        86400,
+                    ),
+                    "ORACLE_MAX_ROWS": _bounded_int(
+                        parser, section, "alert_max_rows", 1000, 1, 5000
+                    ),
+                },
+                "volumes": [f"{volume_name}:/var/lib/kbot/oracle-alert"],
+                "secrets": [
+                    {"source": secret_names["username"], "target": "oracle_username"},
+                    {"source": secret_names["password"], "target": "oracle_password"},
+                ],
+                "group_add": ["${AIOPS_SECRET_GID}"],
+                "healthcheck": {
+                    "test": ["CMD", "python", "/app/healthcheck.py"],
+                    "interval": "30s",
+                    "timeout": "5s",
+                    "retries": 5,
+                },
+            }
+            alloy_mounts.append(
+                f"{volume_name}:/var/lib/kbot/oracle-alert/{key}:ro"
+            )
+            exporter_port = 9161
+        elif engine == "mysql":
+            secret_name = f"{base_name}-exporter-cnf"
+            secret_file = f"{base_name}_exporter_cnf"
+            mysql_cnf = """[client]
+host={host}
+port={port}
+user={username}
+password={password}
+""".format(
+                host=_required(parser, section, "host"),
+                port=_bounded_int(parser, section, "port", 3306, 1, 65535),
+                username=_required(parser, section, "username"),
+                password=_required(parser, section, "password"),
+            )
+            _write_secret_document(
+                settings.runtime_dir / "secrets" / secret_file, mysql_cnf
+            )
+            secrets[secret_name] = {
+                "file": str(settings.runtime_dir / "secrets" / secret_file)
+            }
+            exporter = {
+                **common,
+                "image": "${MYSQL_EXPORTER_IMAGE}",
+                "command": ["--config.my-cnf=/run/secrets/mysql_exporter_cnf"],
+                "secrets": [
+                    {"source": secret_name, "target": "mysql_exporter_cnf"}
+                ],
+                "group_add": ["${AIOPS_SECRET_GID}"],
+                "expose": ["9104"],
+            }
+            if port_mapping:
+                exporter["ports"] = port_mapping
+            services[exporter_name] = exporter
+            exporter_port = 9104
+        else:
+            secret_names = {
+                "uri": f"{base_name}-uri",
+                "username": f"{base_name}-username",
+                "password": f"{base_name}-password",
+            }
+            secret_files = {kind: f"{base_name}_{kind}" for kind in secret_names}
+            values = {
+                "uri": _required(parser, section, "uri"),
+                "username": _required(parser, section, "username"),
+                "password": _required(parser, section, "password"),
+            }
+            for kind, value in values.items():
+                _write_secret(settings.runtime_dir / "secrets" / secret_files[kind], value)
+                secrets[secret_names[kind]] = {
+                    "file": str(settings.runtime_dir / "secrets" / secret_files[kind])
+                }
+            exporter = {
+                **common,
+                "image": "${POSTGRES_EXPORTER_IMAGE}",
+                "environment": {
+                    "DATA_SOURCE_URI_FILE": "/run/secrets/postgres_uri",
+                    "DATA_SOURCE_USER_FILE": "/run/secrets/postgres_username",
+                    "DATA_SOURCE_PASS_FILE": "/run/secrets/postgres_password",
+                },
+                "secrets": [
+                    {"source": secret_names["uri"], "target": "postgres_uri"},
+                    {
+                        "source": secret_names["username"],
+                        "target": "postgres_username",
+                    },
+                    {
+                        "source": secret_names["password"],
+                        "target": "postgres_password",
+                    },
+                ],
+                "group_add": ["${AIOPS_SECRET_GID}"],
+                "expose": ["9187"],
+            }
+            if port_mapping:
+                exporter["ports"] = port_mapping
+            services[exporter_name] = exporter
+            exporter_port = 9187
+
+        if settings.role == "all-in-one":
+            local_targets.append(_target(engine, f"{exporter_name}:{exporter_port}", key))
+
+    if alloy_mounts and "logs" in settings.profiles:
+        services["alloy"] = {"volumes": alloy_mounts}
+    document: dict[str, object] = {"services": services}
+    if secrets:
+        document["secrets"] = secrets
+    if volumes:
+        document["volumes"] = volumes
+    return document, local_targets
+
+
+def _prepare_runtime(settings: DeploymentSettings) -> None:
+    parser = settings.values
+    runtime = settings.runtime_dir
+    secrets = runtime / "secrets"
+    runtime.mkdir(parents=True, exist_ok=True)
+    os.chmod(runtime, 0o750)
     secrets.mkdir(parents=True, exist_ok=True)
     os.chmod(secrets, 0o750)
 
     env_lines = IMAGES_FILE.read_text(encoding="utf-8").rstrip().splitlines()
     env_lines.extend(
         [
-            f"AIOPS_STACK_STATE_DIR={state}",
+            f"AIOPS_STACK_STATE_DIR={runtime}",
             f"AIOPS_STACK_SECRET_DIR={secrets}",
             f"AIOPS_SECRET_GID={os.getgid()}",
-            f"AIOPS_STACK_PRESET={args.preset}",
-            f"AIOPS_STACK_PROFILES={','.join(profiles)}",
-            f"AIOPS_TARGET_KEY={target_key}",
-            f"AIOPS_LOCAL_ACCESS={'true' if args.local_access else 'false'}",
-            f"AIOPS_LOKI_PUSH_URL={_safe_value('loki-url', args.loki_url)}",
-            f"AIOPS_LOKI_TENANT={_safe_value('loki-tenant', args.loki_tenant)}",
+            f"AIOPS_DEPLOYMENT_ID={settings.deployment_id}",
+            f"AIOPS_INTERNAL_NETWORK={'false' if settings.role == 'collector' else 'true'}",
         ]
     )
-
     targets: list[dict[str, object]] = []
-    if "host" in profiles:
-        targets.append(_target("node", "node-exporter:9100", target_key))
-    if "oracle" in profiles:
-        host = _safe_value("oracle-host", args.oracle_host or "")
-        service = _safe_value("oracle-service", args.oracle_service or "")
-        username = _safe_value("oracle-user", args.oracle_user or "")
-        password = _read_secret_input("Oracle监控密码", args.oracle_password_file)
-        port = args.oracle_port
-        quoted_user = urllib.parse.quote(username, safe="")
-        quoted_password = urllib.parse.quote(password, safe="")
-        quoted_service = urllib.parse.quote(service, safe="")
-        oracle_dsn = (
-            f"oracle://{quoted_user}:{quoted_password}@{host}:{port}/{quoted_service}"
-        )
-        _write_secret(secrets / "oracle_username", username)
-        _write_secret(secrets / "oracle_password", password)
-        _write_secret(secrets / "oracle_exporter_dsn", oracle_dsn)
+    webhook_url = ""
+
+    if "metrics" in settings.profiles:
         env_lines.extend(
             [
-                f"ORACLE_HOST={host}",
-                f"ORACLE_PORT={port}",
-                f"ORACLE_SERVICE={service}",
+                "PROMETHEUS_RETENTION="
+                + _optional(parser, "metrics", "prometheus_retention", "30d"),
+                "ALERTMANAGER_RETENTION="
+                + _optional(parser, "metrics", "alertmanager_retention", "120h"),
+                "PROMETHEUS_PORT="
+                + str(
+                    _bounded_int(parser, "metrics", "prometheus_port", 9090, 1, 65535)
+                ),
+                "ALERTMANAGER_PORT="
+                + str(
+                    _bounded_int(
+                        parser, "metrics", "alertmanager_port", 9093, 1, 65535
+                    )
+                ),
             ]
         )
-        targets.append(_target("oracle", "oracle-exporter:9161", target_key))
-    if "mysql" in profiles:
-        if not args.mysql_cnf_file:
-            raise ValueError("MySQL Profile必须提供--mysql-cnf-file")
-        _write_secret(
-            secrets / "mysql_exporter_cnf",
-            Path(args.mysql_cnf_file).read_text(encoding="utf-8").rstrip("\r\n"),
+        webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
+        webhook_key = parser.get("metrics", "kbot_webhook_key", fallback="").strip()
+        webhook_secret = parser.get(
+            "metrics", "kbot_webhook_secret", fallback=""
+        ).strip()
+        if webhook_url:
+            env_lines.append(f"KBOT_WEBHOOK_BASE_URL={webhook_url.rstrip('/')}")
+            _write_secret(secrets / "kbot_webhook_key", webhook_key)
+            _write_secret(secrets / "kbot_webhook_secret", webhook_secret)
+        _write_text(
+            runtime / "alertmanager/alertmanager.yml",
+            _alertmanager_config(bool(webhook_url)),
         )
-        targets.append(_target("mysql", "mysql-exporter:9104", target_key))
-    if "postgres" in profiles:
-        required = (args.postgres_uri, args.postgres_user)
-        if not all(required):
-            raise ValueError("PostgreSQL Profile必须提供--postgres-uri和--postgres-user")
-        password = _read_secret_input(
-            "PostgreSQL监控密码", args.postgres_password_file
-        )
-        _write_secret(secrets / "postgres_uri", args.postgres_uri)
-        _write_secret(secrets / "postgres_username", args.postgres_user)
-        _write_secret(secrets / "postgres_password", password)
-        targets.append(_target("postgres", "postgres-exporter:9187", target_key))
 
-    if args.kbot_webhook_url:
-        token = _read_secret_input("KBot Webhook Token", args.kbot_webhook_token_file)
-        _write_secret(secrets / "kbot_webhook_token", token)
-    _write_secret(
-        secrets / "loki_authorization",
-        _read_secret_input("Loki Bearer Token", args.loki_token_file)
-        if args.loki_token_file
-        else "local-internal-only",
-    )
-    if "dashboard" in profiles:
-        _write_secret(secrets / "grafana_admin_user", args.grafana_admin_user)
+    if "logs" in settings.profiles:
+        loki_url = _optional(
+            parser,
+            "logs",
+            "loki_url",
+            "http://loki:3100/loki/api/v1/push",
+        )
+        loki_tenant = _optional(parser, "logs", "loki_tenant", "kbot")
+        loki_token = parser.get("logs", "loki_token", fallback="").strip()
+        env_lines.extend(
+            [
+                f"AIOPS_LOKI_PUSH_URL={loki_url}",
+                f"AIOPS_LOKI_TENANT={loki_tenant}",
+                f"LOKI_PORT={_bounded_int(parser, 'logs', 'loki_port', 3100, 1, 65535)}",
+            ]
+        )
+        _write_secret(
+            secrets / "loki_authorization", loki_token or "local-internal-only"
+        )
+        _write_text(
+            runtime / "loki/loki.yml",
+            _loki_config(_optional(parser, "logs", "loki_retention", "720h")),
+        )
+
+    if "dashboard" in settings.profiles:
+        env_lines.append(
+            f"GRAFANA_PORT={_bounded_int(parser, 'dashboard', 'grafana_port', 3000, 1, 65535)}"
+        )
+        _write_secret(
+            secrets / "grafana_admin_user",
+            _required(parser, "dashboard", "grafana_admin_user"),
+        )
         _write_secret(
             secrets / "grafana_admin_password",
-            _read_secret_input("Grafana管理员密码", args.grafana_password_file),
+            _required(parser, "dashboard", "grafana_admin_password"),
         )
 
-    _write_text(state / "stack.env", "\n".join(env_lines) + "\n")
-    _write_text(prometheus / "prometheus.yml", _prometheus_config())
-    _write_text(prometheus / "rules/kbot-observability.yml", _prometheus_rules())
+    if "host" in settings.profiles:
+        targets.append(
+            _target("node", "node-exporter:9100", _required(parser, "host", "target_key"))
+        )
+
+    generated_compose, local_targets = _database_generated_compose(settings)
+    targets.extend(local_targets)
+    for section in _prometheus_target_sections(parser):
+        match = PROMETHEUS_TARGET_SECTION.fullmatch(section)
+        if match is None:
+            raise ValueError(f"无法解析Prometheus目标配置段：{section}")
+        targets.append(
+            _target(
+                _required(parser, section, "engine"),
+                _required(parser, section, "address"),
+                match.group("target_key"),
+                parser.get(section, "environment", fallback="").strip(),
+            )
+        )
+
+    if webhook_url:
+        generated_compose.setdefault("services", {})["kbot-webhook-signer"] = {
+            "restart": "unless-stopped",
+            "security_opt": ["no-new-privileges:true"],
+            "image": "${KBOT_WEBHOOK_SIGNER_IMAGE}",
+            "build": {"context": str(STACK_ROOT / "webhook_signer")},
+            "environment": {"KBOT_WEBHOOK_BASE_URL": "${KBOT_WEBHOOK_BASE_URL}"},
+            "secrets": [
+                {"source": "kbot-webhook-key", "target": "kbot_webhook_key"},
+                {"source": "kbot-webhook-secret", "target": "kbot_webhook_secret"},
+            ],
+            "group_add": ["${AIOPS_SECRET_GID}"],
+            "networks": ["observability", "outbound"],
+            "expose": ["8080"],
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/healthcheck.py"],
+                "interval": "15s",
+                "timeout": "5s",
+                "retries": 12,
+            },
+        }
+        generated_compose.setdefault("secrets", {}).update(
+            {
+                "kbot-webhook-key": {
+                    "file": str(secrets / "kbot_webhook_key")
+                },
+                "kbot-webhook-secret": {
+                    "file": str(secrets / "kbot_webhook_secret")
+                },
+            }
+        )
+
+    _write_text(runtime / "stack.env", "\n".join(env_lines) + "\n")
+    _write_text(runtime / "prometheus/prometheus.yml", _prometheus_config())
+    _write_text(runtime / "prometheus/rules/kbot-observability.yml", _prometheus_rules())
     _write_text(
-        prometheus / "targets/kbot.json",
+        runtime / "prometheus/kbot-aiops-query-overrides.json",
+        _prometheus_query_overrides(),
+    )
+    _write_text(
+        runtime / "prometheus/targets/kbot.json",
         json.dumps(targets, ensure_ascii=False, indent=2) + "\n",
     )
     _write_text(
-        state / "alertmanager/alertmanager.yml",
-        _alertmanager_config(args.kbot_webhook_url),
+        runtime / GENERATED_COMPOSE_FILE_NAME,
+        json.dumps(generated_compose, ensure_ascii=False, indent=2) + "\n",
     )
-    manifest = {
-        "schema": "KBOT_AIOPS_STACK.v1",
-        "preset": args.preset,
-        "profiles": profiles,
-        "target_key": target_key,
-        "local_access": args.local_access,
-        "compose_file": str(COMPOSE_FILE),
-    }
     _write_text(
-        state / "deployment.json",
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        runtime / "deployment.json",
+        json.dumps(
+            {
+                "schema": "KBOT_AIOPS_STACK.v3",
+                "config_file": str(settings.config_path),
+                "deployment_id": settings.deployment_id,
+                "role": settings.role,
+                "profiles": settings.profiles,
+                "database_targets": [
+                    {
+                        "engine": item.engine,
+                        "target_key": item.target_key,
+                    }
+                    for item in _database_targets(parser)
+                ],
+                "services": _selected_services(settings),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
     )
-    print(f"AIOps观测栈配置已生成：{state}")
-    print(f"已选择Profile：{', '.join(profiles) if profiles else '无（仅外部接入）'}")
-    print("Secret仅允许属主写入、部署组读取，未写入stack.env或Compose。")
 
 
-def _load_manifest(state: Path) -> dict[str, object]:
-    path = state / "deployment.json"
-    if not path.is_file():
-        raise ValueError(f"尚未配置观测栈：{path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+def _selected_services(settings: DeploymentSettings) -> list[str]:
+    selected: set[str] = set()
+    for profile in settings.profiles:
+        selected.update(PROFILE_SERVICES.get(profile, set()))
+    if settings.role != "all-in-one":
+        selected.intersection_update(ROLE_SERVICES[settings.role])
+    if settings.role != "central":
+        for target in _database_targets(settings.values):
+            base_name = _service_name(target.engine, target.target_key)
+            selected.add(f"{base_name}-exporter")
+            if target.engine == "oracle":
+                selected.add(f"{base_name}-alert-collector")
+    if (
+        settings.role != "collector"
+        and settings.values.get("metrics", "kbot_webhook_url", fallback="").strip()
+    ):
+        selected.add("kbot-webhook-signer")
+    if not selected:
+        raise ValueError(f"当前启用模块在{settings.role}角色下没有可启动服务")
+    return sorted(selected)
 
 
-def _compose_command(state: Path, manifest: dict[str, object]) -> list[str]:
+def _compose_command(settings: DeploymentSettings) -> list[str]:
     command = [
         "docker",
         "compose",
         "--env-file",
-        str(state / "stack.env"),
+        str(settings.runtime_dir / "stack.env"),
         "-f",
         str(COMPOSE_FILE),
+        "-f",
+        str(settings.runtime_dir / GENERATED_COMPOSE_FILE_NAME),
     ]
-    if manifest.get("local_access"):
+    if settings.local_access:
         command.extend(["-f", str(ACCESS_FILE)])
-    for profile in manifest["profiles"]:
-        command.extend(["--profile", str(profile)])
+    for profile in settings.profiles:
+        if profile not in MODULE_PROFILES.values():
+            continue
+        command.extend(["--profile", profile])
     return command
 
 
-def _selected_services(manifest: dict[str, object], role: str) -> list[str]:
-    selected: set[str] = set()
-    for profile in manifest["profiles"]:
-        selected.update(PROFILE_SERVICES[str(profile)])
-    if role != "all-in-one":
-        selected.intersection_update(ROLE_SERVICES[role])
-    return sorted(selected)
+def _preflight(settings: DeploymentSettings) -> None:
+    subprocess.run(
+        ["docker", "compose", "version"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    minimum_free_gb = _bounded_int(
+        settings.values, "deployment", "minimum_free_gb", 10, 1, 10240
+    )
+    free_bytes = shutil.disk_usage(settings.config_path.parent).free
+    if free_bytes < minimum_free_gb * 1024**3:
+        free_gb = free_bytes / 1024**3
+        raise ValueError(
+            f"可用磁盘空间不足：{free_gb:.1f}GiB，至少需要{minimum_free_gb}GiB"
+        )
 
 
-def _run_compose(args: argparse.Namespace, action: str) -> None:
+def _deploy(config_path: Path) -> None:
     if not shutil.which("docker"):
         raise ValueError("未安装Docker")
-    state = _state_dir(args.state_dir)
-    manifest = _load_manifest(state)
-    command = _compose_command(state, manifest)
-    if action == "up":
-        services = _selected_services(manifest, args.role)
-        if not services:
-            print("当前配置没有需要启动的托管组件。")
-            return
-        command.extend(["up", "--detach", "--build", *services])
-    elif action == "status":
-        command.extend(["ps"])
-    elif action == "validate":
-        command.extend(["config", "--quiet"])
-    subprocess.run(command, check=True)
-    if action == "validate":
-        _validate_files(state, manifest)
-        print("Compose、Secret权限和生成配置检查通过。")
-
-
-def _validate_files(state: Path, manifest: dict[str, object]) -> None:
-    env_text = (state / "stack.env").read_text(encoding="utf-8")
-    forbidden = ("password=", "PASSWORD=", "token=", "TOKEN=")
-    if any(marker in env_text for marker in forbidden):
-        raise ValueError("stack.env包含疑似Secret")
-    for path in (state / "secrets").iterdir():
-        if path.stat().st_mode & 0o037:
-            raise ValueError(f"Secret权限过宽：{path}")
-    image_assignments = (
-        line
-        for line in IMAGES_FILE.read_text(encoding="utf-8").splitlines()
-        if line and not line.startswith("#")
+    settings = _load_settings(config_path)
+    _preflight(settings)
+    _prepare_runtime(settings)
+    command = _compose_command(settings)
+    subprocess.run([*command, "config", "--quiet"], check=True)
+    services = _selected_services(settings)
+    subprocess.run(
+        [*command, "up", "--detach", "--build", "--remove-orphans", *services],
+        check=True,
     )
-    if any(":latest" in line.lower() for line in image_assignments):
-        raise ValueError("镜像清单不得使用latest")
-    if "oracle" in manifest["profiles"]:
-        required = {
-            "oracle_username",
-            "oracle_password",
-            "oracle_exporter_dsn",
-        }
-        missing = required - {path.name for path in (state / "secrets").iterdir()}
-        if missing:
-            raise ValueError(f"缺少Oracle Secret：{', '.join(sorted(missing))}")
+    subprocess.run([*command, "ps"], check=True)
+    print(f"AIOps观测栈已应用：{', '.join(settings.profiles)}")
+    print(f"唯一配置文件：{settings.config_path}")
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="KBot AIOps可选观测栈管理入口")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    configure = subparsers.add_parser("configure", help="生成非敏感配置和Secret文件")
-    configure.add_argument("--state-dir")
-    configure.add_argument("--preset", choices=[*PRESETS, "custom"], required=True)
-    configure.add_argument("--profile", action="append", choices=sorted(PROFILE_SERVICES))
-    configure.add_argument("--target-key")
-    configure.add_argument("--force", action="store_true")
-    configure.add_argument("--local-access", action="store_true")
-    configure.add_argument("--loki-url", default="http://loki:3100/loki/api/v1/push")
-    configure.add_argument("--loki-tenant", default="kbot")
-    configure.add_argument("--loki-token-file")
-    configure.add_argument("--kbot-webhook-url")
-    configure.add_argument("--kbot-webhook-token-file")
-    configure.add_argument("--oracle-host")
-    configure.add_argument("--oracle-port", type=int, default=1521)
-    configure.add_argument("--oracle-service")
-    configure.add_argument("--oracle-user")
-    configure.add_argument("--oracle-password-file")
-    configure.add_argument("--mysql-cnf-file")
-    configure.add_argument("--postgres-uri")
-    configure.add_argument("--postgres-user")
-    configure.add_argument("--postgres-password-file")
-    configure.add_argument("--grafana-admin-user", default="kbot-admin")
-    configure.add_argument("--grafana-password-file")
-
-    up = subparsers.add_parser("up", help="启动选中的固定版本组件")
-    up.add_argument("--state-dir")
-    up.add_argument(
-        "--role", choices=("all-in-one", "central", "collector"), default="all-in-one"
-    )
-    for name, help_text in (
-        ("status", "查看容器与健康状态"),
-        ("validate", "检查Compose、配置和Secret权限"),
-    ):
-        command = subparsers.add_parser(name, help=help_text)
-        command.add_argument("--state-dir")
-    return parser
-
-
-def main(argv: Iterable[str] | None = None) -> int:
-    parser = _parser()
-    args = parser.parse_args(argv)
+def main() -> int:
+    if len(sys.argv) != 1:
+        print("错误：本脚本不接受命令行参数，请修改唯一配置文件后直接执行。", file=sys.stderr)
+        return 2
     try:
-        if args.command == "configure":
-            _configure(args)
-        else:
-            _run_compose(args, args.command)
-    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        if not CONFIG_FILE.exists():
+            _create_initial_config(CONFIG_FILE)
+            print(f"已生成唯一配置文件：{CONFIG_FILE}")
+            print("请编辑该文件，取消所需模块的enabled = true注释，然后再次执行本脚本。")
+            return 0
+        _deploy(CONFIG_FILE)
+    except (configparser.Error, OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 1
     return 0

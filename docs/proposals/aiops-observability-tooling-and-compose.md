@@ -4,8 +4,10 @@
 
 本文既是已经确认的目标态设计基线，也是轻量观测栈当前实现说明。仓库已经交付
 `metrics`、`logs`、`dashboard`、`host`、`oracle`、`mysql` 和 `postgres` Profile，
-以及 `configure`、`up`、`status`、`validate` 四类入口。托管 Zabbix Overlay、生产
-级多节点 Loki、备份/升级/卸载和端到端告警注入仍属于后续阶段。
+并通过一份INI配置和一个零参数入口完成选择、配置、校验与启动。当前实现还支持
+Central/Collector角色、同一部署中的多数据库目标、动态Prometheus目标发现，以及
+Alertmanager到KBot的HMAC签名桥。托管Zabbix Overlay、生产级多节点Loki和完整的
+备份/升级/卸载仍属于后续阶段。
 
 本设计只解决 AIOps 诊断数据工具的选型、组合和部署，不替代 KBot AIOps 的数据库
 目标、Diagnostic Source、Evidence、Situation 和 Diagnostic Run 领域设计。工具
@@ -113,48 +115,35 @@ Alertmanager 和 Exporter默认不绑定公网地址。
 | `zabbix-managed` | 独立 Zabbix Server、Web和数据库 Overlay |
 | `demo` | 仅用于测试的示例数据、规则和 Dashboard |
 
-Profile 表示组件集合，不能承载环境 Secret。数据库密码、API Token、Wallet 和 TLS
-私钥由独立 Secret 文件或外部 Secret Manager 注入。
+Profile 仍是 Compose 内部组件集合。用户不直接传递 Profile参数，而是在唯一配置
+文件中取消对应模块的 `enabled = true` 注释。数据库密码和 API Token也集中写入该
+配置文件；脚本校验其权限为 `0600`，再生成每个容器独享的 Compose Secret。
 
-## 部署预设
+数据库Profile采用可重复配置段，例如`[oracle:oracle-prod-01]`。冒号后的值是稳定的
+KBot Target Key。每段生成独立Exporter、Secret；Oracle还生成独立Alert Collector
+和Checkpoint Volume。Central角色通过可重复的`[prometheus_target:<target_key>]`
+登记远程Collector地址，一套Prometheus统一抓取多个数据库。
 
-安装脚本在 Profile 之上提供易用预设：
+## 唯一配置与零参数入口
 
-| Preset | Profile/外部接入组合 |
-| --- | --- |
-| `oracle-lite` | `metrics + logs + host + oracle`，Grafana可选 |
-| `mysql-lite` | `metrics + logs + host + mysql`，Grafana可选 |
-| `postgres-lite` | `metrics + logs + host + postgres`，Grafana可选 |
-| `oracle-oem` | 外部 OEM，加可选 `logs`；不安装 OEM |
-| `external-zabbix` | 外部 Zabbix Webhook/API，按需增加 `logs` |
-| `zabbix-managed` | Zabbix独立 Overlay，按需增加 `logs` |
-| `external-all` | 不启动观测工具，只登记已有 Diagnostic Source |
-| `custom` | 用户显式选择 Profile和外部数据源 |
+首次执行：
 
-当前脚本的交互形式为：
-
-```bash
-scripts/aiops-stack configure --preset oracle-lite \
-  --target-key oracle-dev-01 \
-  --oracle-host 10.0.0.20 \
-  --oracle-service ORCLPDB1 \
-  --oracle-user kbot_monitor
-scripts/aiops-stack up --role all-in-one
-scripts/aiops-stack status
-scripts/aiops-stack validate
+```console
+$ scripts/aiops-stack
+已生成唯一配置文件：var/aiops-stack/aiops-stack.ini
 ```
 
-生产分离部署的目标形式为：
+编辑这一份文件：`[deployment]` 是必填配置；其他模块默认全部注释。需要安装哪个
+模块，就取消该模块 `enabled = true` 以及所需配置项的注释。密码和 Token直接写在
+同一文件中。再次执行 `scripts/aiops-stack`，脚本会校验文件、生成只读运行资产、
+执行 `docker compose config`，然后构建并启动选中服务。脚本不接受命令行参数。
 
-```bash
-scripts/aiops-stack up --role central
-scripts/aiops-collector
-```
-
-`configure` 只接收非敏感参数；密码默认通过无回显终端输入，也可以通过
-`--oracle-password-file` 等 Secret 文件参数注入，脚本不提供密码命令行参数。
-`--local-access` 只把维护端口绑定到 `127.0.0.1`，不提供公网监听。分离 Collector
-写入远程 Loki 时必须把 `--loki-url` 指向已有 TLS/认证入口并提供 Token 文件。
+`[deployment] deployment_id`标识部署实例，不再兼任数据库Target Key。数据库和主机
+各自在对应配置段声明Target Key。`local_access = true`只把维护端口绑定到
+`127.0.0.1`，不提供公网监听。分离
+Collector写入远程 Loki 时，`[logs] loki_url` 必须指向已有 TLS/认证入口并填写
+`loki_token`。角色通过 `[deployment] role` 选择 `all-in-one`、`central` 或
+`collector`。
 
 ## OEM 外部接入约束
 
@@ -167,9 +156,10 @@ Existing OEM
 └── Target API ────────────▶ KBot Topology Evidence Adapter
 ```
 
-KBot 只保存 OEM Endpoint、TLS Profile、托管凭据引用、Target映射和 Capability，
-不保存明文 OEM 密码。OEM不可用时，依赖其证据的任务应形成明确数据缺口；若同一
-Target还绑定 Prometheus、Loki或数据库直连，则调查计划可以使用这些来源降级取证。
+OEM不出现在观测栈 INI 配置中。部署完成后，管理员在 AIOps App内配置 OEM
+Endpoint、TLS Profile、托管凭据、Target映射和 Capability。OEM不可用时，依赖其
+证据的任务应形成明确数据缺口；若同一 Target还绑定 Prometheus、Loki或数据库直连，
+则调查计划可以使用这些来源降级取证。
 
 OEM事件保留 Incident ID、Event ID、Target GUID、原始状态和严重级别。KBot可以
 将其与其他来源事件关联为 Situation，但不能覆盖 OEM原始事件，也不能默认向 OEM
@@ -211,6 +201,7 @@ Collector和 Alloy共享专用 Volume；Alloy只读挂载。Collector以
 ```sql
 GRANT CREATE SESSION TO kbot_monitor;
 GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO kbot_monitor;
+GRANT SELECT ON SYS.V_$SYSMETRIC TO kbot_monitor;
 ```
 
 不同 Oracle版本、CDB/PDB连接位置及客户许可证策略必须在部署前校验。Collector不会
@@ -232,9 +223,11 @@ GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO kbot_monitor;
 - 是否采集数据库日志及日志来源；
 - Central Endpoint、认证和 TLS配置。
 
-安装向导可以自动生成非敏感配置，但不得把 Secret写入 Compose、仓库、普通 `.env`、
-命令行参数或容器日志。正式部署优先使用外部 Secret Manager；本地 Compose使用权限
-受限且不进入 Git的 Secret文件，并通过 Compose Secrets挂载。
+唯一配置文件允许包含数据库密码和 Token，但必须位于 Git忽略的
+`var/aiops-stack/aiops-stack.ini`，权限必须是 `0600`。脚本不得把 Secret写入
+Compose、普通 `.env`、命令行参数或容器日志；它只从该文件生成权限受限的逐服务
+Compose Secret。该简化模式适合当前单机交付，后续接入外部 Secret Manager时仍须
+保持唯一配置文件作为模块选择和非敏感配置来源。
 
 ## 网络、持久化与保留
 
@@ -257,8 +250,8 @@ Target绑定、Domain权限、查询时间窗、最大行数/字节数和敏感�
 后续生成的脚本必须至少完成：
 
 1. 检查操作系统、CPU架构、Docker和 Compose版本；
-2. 根据 Preset解析实际 Profile、外部依赖和端口；
-3. 收集并校验数据库、Central、TLS和 Secret配置；
+2. 根据唯一 INI中已取消注释的模块解析实际 Profile、外部依赖和端口；
+3. 读取并校验同一文件中的数据库、Central、TLS和 Secret配置；
 4. 检查端口冲突、目录权限、磁盘空间和网络连通性；
 5. 拉取固定版本/Digest镜像并生成可审计部署清单；
 6. 启动组件并等待 Healthcheck和 Readiness；
@@ -272,16 +265,18 @@ Target绑定、Domain权限、查询时间窗、最大行数/字节数和敏感�
 
 ## 当前实现位置
 
-- Compose与固定镜像清单：
-  `services/aiops_agent/deployment/observability/`；
+- Compose、固定镜像清单与采集器构建资产：
+  `scripts/deployment/aiops_observability/`；
 - Oracle Alert Collector：同目录的 `oracle_alert_collector/`；
-- 安全入口：`scripts/aiops-stack` 和 `scripts/aiops-collector`；
-- 运行时配置与 Secret：默认写入 Git忽略的 `var/aiops-stack/`，也可以通过
-  `--state-dir` 或 `KBOT_AIOPS_STACK_HOME` 指向受控目录；
+- 唯一入口：`scripts/aiops-stack`，不接受命令行参数；
+- 唯一用户配置：Git忽略的 `var/aiops-stack/aiops-stack.ini`；
+- 生成的运行配置与逐服务 Secret：`var/aiops-stack/generated/`，不得手工维护；
+- 生产自动化部署说明：`docs/operations/aiops-observability-production-deployment.md`；
+- 人工安装与运维说明：`docs/operations/aiops-observability-manual-deployment.md`；
 - 静态验收：`python3 tests/acceptance/check_aiops_observability_stack.py`。
 
-当前实现不会自动启动容器；只有显式执行 `up` 才会构建/启动所选服务。OEM没有任何
-Compose Service。`external-all` 不启动组件，只保留外部 Diagnostic Source登记模式。
+首次执行只生成唯一配置文件；用户完成配置后再次执行会自动校验、构建并启动已启用
+模块。OEM没有任何 Compose Service或 INI配置项，只能在 AIOps App内配置。
 
 ## 后续实现边界
 
@@ -294,7 +289,7 @@ Compose Service。`external-all` 不启动组件，只保留外部 Diagnostic So
 5. Exporter自定义指标、数据库规则包和版本兼容矩阵；
 6. Oracle Alert Log文件轮转、归档和更大规模重复数据治理；
 7. 外部 Zabbix/OEM能力探测、Target映射和托管 Zabbix Overlay；
-8. 备份、升级、回滚、卸载和真实依赖端到端验收。
+8. 备份、升级、回滚、卸载和真实依赖环境的自动化端到端验收。
 
-这些细节可以改变具体配置文件，但不能推翻本文“工具可选、OEM独立、外部平台优先
-复用、Central/Collector可分离、Secret不落明文”的已确认边界。
+这些细节可以改变具体配置文件，但不能推翻本文“工具可选、OEM由 App配置、外部平台
+优先复用、Central/Collector可分离、Secret不进入命令行或 Compose环境变量”的边界。

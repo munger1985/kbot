@@ -53,9 +53,14 @@ required_metrics=(
   oracledb_activity_user_commits
   oracledb_activity_user_rollbacks
   oracledb_tablespace_used_percent
-  oracledb_tablespace_free
+  oracledb_tablespace_free_bytes
   oracledb_tablespace_max_bytes
   oracledb_exporter_last_scrape_error
+  oracledb_exporter_last_scrape_duration_seconds
+  oracledb_resource_current_utilization
+  oracledb_resource_limit_value
+  oracledb_kbot_cpu_utilization_percent
+  oracledb_kbot_errors_total
 )
 for metric_name in "${required_metrics[@]}"; do
   grep -Eq "^${metric_name}(\{|[[:space:]])" "${metrics_file}" \
@@ -69,19 +74,31 @@ groups:
     interval: 15s
     rules:
       - record: kbot_db_active_connections
-        expr: sum by (instance) (oracledb_sessions_value{job="${ORACLE_JOB}", status="ACTIVE", type="USER"})
+        expr: sum by (instance, target_key) (oracledb_sessions_value{job="${ORACLE_JOB}", status="ACTIVE", type="USER"})
+
+      - record: kbot_db_cpu_utilization_percent
+        expr: oracledb_kbot_cpu_utilization_percent{job="${ORACLE_JOB}"}
+
+      - record: kbot_db_connection_utilization_percent
+        expr: 100 * oracledb_resource_current_utilization{job="${ORACLE_JOB}", resource_name="sessions"} / oracledb_resource_limit_value{job="${ORACLE_JOB}", resource_name="sessions"} > 0
 
       - record: kbot_db_transactions_total
-        expr: sum by (instance) (oracledb_activity_user_commits{job="${ORACLE_JOB}"}) + sum by (instance) (oracledb_activity_user_rollbacks{job="${ORACLE_JOB}"})
+        expr: sum by (instance, target_key) (oracledb_activity_user_commits{job="${ORACLE_JOB}"}) + sum by (instance, target_key) (oracledb_activity_user_rollbacks{job="${ORACLE_JOB}"})
+
+      - record: kbot_db_response_latency_milliseconds
+        expr: oracledb_exporter_last_scrape_duration_seconds{job="${ORACLE_JOB}"} * 1000
 
       - record: kbot_db_storage_utilization_percent
-        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}"} * 100
+        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}"}
 
       - record: kbot_db_storage_free_bytes
-        expr: oracledb_tablespace_free{job="${ORACLE_JOB}"}
+        expr: oracledb_tablespace_free_bytes{job="${ORACLE_JOB}"}
 
       - record: kbot_db_storage_max_bytes
         expr: oracledb_tablespace_max_bytes{job="${ORACLE_JOB}"}
+
+      - record: kbot_db_errors_total
+        expr: oracledb_kbot_errors_total{job="${ORACLE_JOB}"}
 
   - name: kbot-aiops-oracle-alerts
     interval: 15s
@@ -124,7 +141,7 @@ groups:
           description: "Exporter 仍可访问，但数据库指标查询持续失败。"
 
       - alert: OracleTablespaceUsageHigh
-        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}", instance="${ORACLE_INSTANCE}"} * 100 > 85
+        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}", instance="${ORACLE_INSTANCE}"} > 85
         for: 10m
         labels:
           severity: warning
@@ -133,7 +150,7 @@ groups:
           description: "表空间 {{ \$labels.tablespace }} 当前使用率为 {{ \$value | printf \"%.2f\" }}%。"
 
       - alert: OracleTablespaceUsageCritical
-        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}", instance="${ORACLE_INSTANCE}"} * 100 > 95
+        expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}", instance="${ORACLE_INSTANCE}"} > 95
         for: 5m
         labels:
           severity: critical
@@ -176,7 +193,16 @@ override_candidate="${temporary_dir}/kbot-aiops-query-overrides.json"
 cat >"${override_candidate}" <<EOF
 {
   "prometheus_queries": {
-    "db.availability": "oracledb_up{instance=\"\${external_target}\"}"
+    "db.availability": "oracledb_up{instance=\"\${external_target}\"}",
+    "db.cpu.utilization": "kbot_db_cpu_utilization_percent{instance=\"\${external_target}\"}",
+    "db.connection.active": "kbot_db_active_connections{instance=\"\${external_target}\"}",
+    "db.connection.utilization": "kbot_db_connection_utilization_percent{instance=\"\${external_target}\"}",
+    "db.transaction.throughput": "rate(kbot_db_transactions_total{instance=\"\${external_target}\"}[5m])",
+    "db.response.latency": "kbot_db_response_latency_milliseconds{instance=\"\${external_target}\"}",
+    "db.storage.utilization": "kbot_db_storage_utilization_percent{instance=\"\${external_target}\"}",
+    "db.storage.free_bytes": "kbot_db_storage_free_bytes{instance=\"\${external_target}\"}",
+    "db.storage.max_bytes": "kbot_db_storage_max_bytes{instance=\"\${external_target}\"}",
+    "db.error.rate": "rate(kbot_db_errors_total{instance=\"\${external_target}\"}[5m])"
   }
 }
 EOF
@@ -236,5 +262,4 @@ done
 
 echo "Prometheus AIOps Oracle 规则已安装：${RULE_FILE}"
 echo "KBot Target Monitor mapping_overrides 已生成：${OVERRIDE_FILE}"
-echo "已覆盖的 AIOps 基线：可用性、活动连接、事务吞吐、表空间使用率、可用容量、最大容量"
-echo "仍需自定义 Oracle 指标：CPU、连接利用率、响应延迟、错误率"
+echo "已覆盖的AIOps基线：可用性、CPU、活动连接、连接利用率、事务吞吐、响应延迟、表空间和错误率"

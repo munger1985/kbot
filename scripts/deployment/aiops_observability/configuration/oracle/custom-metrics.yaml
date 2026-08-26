@@ -1,0 +1,22 @@
+# KBot AIOps补充Oracle指标。
+# SQL必须保持低基数、无分号，并且只能读取已审核的动态性能视图。
+
+metrics:
+  - context: kbot_cpu
+    metricsdesc:
+      utilization_percent: Oracle主机最近一分钟CPU使用率百分比。
+    request: |-
+      SELECT ROUND(value, 6) AS utilization_percent
+      FROM v$sysmetric
+      WHERE metric_name = 'Host CPU Utilization (%)'
+        AND group_id = 2
+
+  - context: kbot_errors
+    metricsdesc:
+      total: Oracle实例启动以来SQL解析失败累计次数。
+    metricstype:
+      total: counter
+    request: |-
+      SELECT value AS total
+      FROM v$sysstat
+      WHERE name = 'parse count (failures)'
