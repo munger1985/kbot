@@ -125,6 +125,17 @@ Oracle补充指标读取`V$SYSMETRIC`中的最近一分钟主机CPU使用率，�
 SQL解析失败累计数。DBA必须按实际视图审核最小权限；不得使用SYS、SYSTEM或应用账号。
 这些指标不采集SQL文本、用户名或业务数据。
 
+首次创建监控账号时，以SYSDBA连接目标PDB后执行：
+
+```sql
+ALTER SESSION SET CONTAINER = PDB01;
+SHOW CON_NAME;
+@scripts/deployment/aiops_observability/oracle/create_kbot_monitor.sql
+```
+
+脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证完整授权清单。用户已存在时不
+重复执行该初始化脚本，应由DBA审核后单独补充缺少的授权。
+
 ## 5. Central与Collector配置示例
 
 数据库侧Collector节点：

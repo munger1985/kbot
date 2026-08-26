@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KM Portal 用户提问处理流程</title>
+  <style>
+    /*
+      设计假设：
+      1. 画布用于 PPT/文档截图，固定为 1920×1080，并在浏览器中等比缩放。
+      2. 视觉继承 ui/km 的纸张色、墨色和陶土红，不引入额外品牌色体系。
+      3. 图只展示影响回答正确性的主链路；鉴权、事件持久化等作为节点注释，不展开时序细节。
+    */
+    :root {
+      --paper: #f3f0e9;
+      --surface: #fffdf8;
+      --ink: #24231f;
+      --muted: #716e65;
+      --line: #d9d3c8;
+      --line-strong: #aaa194;
+      --accent: #a33d24;
+      --accent-soft: #f3e6df;
+      --green: #256348;
+      --green-soft: #e3f0e9;
+      --gold: #9a6317;
+      --gold-soft: #f5ead4;
+      --slate: #3a3d38;
+      --slate-soft: #e8e9e5;
+      --shadow: 0 14px 35px rgba(49, 42, 34, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      background: #242722;
+      font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      transform-origin: center center;
+      background:
+        linear-gradient(rgba(36, 35, 31, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36, 35, 31, .035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 40px 40px;
+    }
+
+    .masthead {
+      position: absolute;
+      top: 54px;
+      left: 66px;
+      right: 66px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+    .eyebrow {
+      margin-bottom: 12px;
+      color: var(--accent);
+      font: 700 15px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font: 700 45px/1.08 Georgia, "Noto Serif CJK SC", serif;
+      letter-spacing: -.025em;
+    }
+    .subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .legend {
+      display: flex;
+      gap: 10px;
+      margin-top: 13px;
+    }
+    .legend span, .type {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 4px 9px;
+      border: 1px solid currentColor;
+      font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+    .llm { color: var(--accent); background: var(--accent-soft); }
+    .db { color: var(--green); background: var(--green-soft); }
+    .search { color: var(--gold); background: var(--gold-soft); }
+    .code { color: var(--slate); background: var(--slate-soft); }
+
+    .flow-label {
+      position: absolute;
+      left: 67px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font: 700 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .flow-label::before {
+      width: 26px;
+      height: 3px;
+      background: currentColor;
+      content: "";
+    }
+    .flow-label.primary { top: 200px; color: var(--ink); }
+    .flow-label.help { top: 449px; color: var(--accent); }
+    .flow-label.asset { top: 682px; color: var(--green); }
+
+    .row {
+      position: absolute;
+      left: 66px;
+      right: 66px;
+      display: grid;
+      align-items: stretch;
+    }
+    .row.primary {
+      top: 235px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 42px;
+    }
+    .row.help {
+      top: 484px;
+      left: 326px;
+      right: 326px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 58px;
+    }
+    .row.asset {
+      top: 717px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 27px;
+    }
+
+    .node {
+      position: relative;
+      z-index: 2;
+      min-height: 164px;
+      padding: 18px 19px 17px;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 253, 248, .96);
+      box-shadow: var(--shadow);
+    }
+    .primary .node { min-height: 168px; }
+    .help .node { min-height: 145px; border-top: 4px solid var(--accent); }
+    .asset .node { min-height: 185px; border-top: 4px solid var(--green); }
+
+    .node .step {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 13px;
+      color: var(--muted);
+      font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: .09em;
+    }
+    .node h2 {
+      margin: 0 0 8px;
+      font: 700 20px/1.18 Georgia, "Noto Serif CJK SC", serif;
+    }
+    .node p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+    .node code {
+      color: #5a463b;
+      font: 700 12px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .type-group { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+    .type { min-height: 21px; padding: 3px 6px; font-size: 9px; }
+    .contract {
+      border-color: var(--accent);
+      box-shadow: 0 16px 42px rgba(163, 61, 36, .14);
+    }
+    .answer {
+      color: #fff;
+      border-color: var(--slate);
+      background: var(--slate);
+    }
+    .answer .step, .answer p { color: #d9ddd5; }
+    .answer h2 { color: #fffdf8; }
+
+    .route-chip {
+      position: absolute;
+      z-index: 3;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 7px 14px;
+      border: 1px solid;
+      background: var(--paper);
+      font: 800 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: .1em;
+    }
+    .route-chip.help { top: 438px; color: var(--accent); }
+    .route-chip.asset { top: 671px; color: var(--green); }
+
+    svg.connectors {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .arrow {
+      fill: none;
+      stroke: var(--line-strong);
+      stroke-width: 2;
+      marker-end: url(#arrowhead);
+    }
+    .branch-help { stroke: var(--accent); }
+    .branch-asset { stroke: var(--green); }
+    .bus {
+      fill: none;
+      stroke-width: 2;
+      stroke-dasharray: 6 7;
+    }
+
+    .footer {
+      position: absolute;
+      left: 66px;
+      right: 66px;
+      bottom: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 15px;
+      border-top: 1px solid var(--line-strong);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .footer strong { color: var(--ink); }
+    .footer code {
+      color: var(--accent-dark, #792b19);
+      font: 700 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-label="KM Portal 用户提问处理流程图">
+    <header class="masthead">
+      <div>
+        <div class="eyebrow">KM Portal · Query Lifecycle</div>
+        <h1>用户提问后，系统如何生成最终回答</h1>
+        <p class="subtitle">一次 Router 规划，两条受控执行路径；Asset 结果必须经过证据与引用校验。</p>
+      </div>
+      <div class="legend" aria-label="处理类型图例">
+        <span class="llm">LLM 调用</span>
+        <span class="db">Oracle 数据库</span>
+        <span class="search">关键词 / 向量检索</span>
+        <span class="code">确定性代码</span>
+      </div>
+    </header>
+
+    <div class="flow-label primary">公共入口与规划</div>
+    <section class="row primary">
+      <article class="node">
+        <div class="step"><span>01 · INPUT</span><span class="type code">UI</span></div>
+        <h2>用户提问</h2>
+        <p>KM Portal Chat 接收问题、会话 ID，以及用户当前可见的授权范围。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>02 · GATEWAY</span><span class="type db">API + DB</span></div>
+        <h2>Main API</h2>
+        <p>校验用户与 Domain 权限，创建 Turn，并把运行请求提交给 Agent Runtime。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>03 · SNAPSHOT</span><span class="type code">确定性代码</span></div>
+        <h2>冻结运行上下文</h2>
+        <p>Unicode 判定回复语言；冻结 Agent 模型、策略、会话上下文和资源范围。</p>
+      </article>
+      <article class="node contract">
+        <div class="step"><span>04 · PLAN</span><span class="type llm">Router LLM</span></div>
+        <h2>Planner 生成查询合同</h2>
+        <p>理解多条件、数量、排序与追问，输出 <code>KmPortalRequestPlan.v1</code>。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>05 · VALIDATE</span><span class="type code">Pydantic</span></div>
+        <h2>合同校验与路由</h2>
+        <p>规范字段并拒绝无效合同，只允许 <code>PORTAL_HELP</code> 或 <code>ASSET_SEARCH</code>。</p>
+      </article>
+    </section>
+
+    <div class="flow-label help">产品介绍 / 使用帮助</div>
+    <div class="route-chip help">PORTAL_HELP</div>
+    <section class="row help">
+      <article class="node">
+        <div class="step"><span>H1 · LANGUAGE</span><span class="type code">确定性代码</span></div>
+        <h2>选择回复语言</h2>
+        <p>从冻结语言选择中文、英文、日文或韩文内容。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>H2 · CONTENT</span><span class="type code">Markdown</span></div>
+        <h2>读取预置介绍</h2>
+        <p>读取并缓存对应 Markdown；不调用 LLM、数据库或知识检索。</p>
+      </article>
+      <article class="node answer">
+        <div class="step"><span>H3 · OUTPUT</span><span class="type code">SSE</span></div>
+        <h2>流式返回帮助</h2>
+        <p>直接输出统一产品介绍、功能说明和典型提问方式，不生成引用。</p>
+      </article>
+    </section>
+
+    <div class="flow-label asset">Asset 搜索 / 问数 / 详情解释</div>
+    <div class="route-chip asset">ASSET_SEARCH</div>
+    <section class="row asset">
+      <article class="node">
+        <div class="step"><span>A1 · CONTRACT</span><span class="type code">确定性代码</span></div>
+        <h2>AssetSearchPlan</h2>
+        <p>冻结条件表达式、数量、排序、投影及证据要求。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>A2 · METADATA</span><span class="type db">Oracle DB</span></div>
+        <h2>托管元数据查询</h2>
+        <p>按 Domain、READY、作者、时间、产品等条件执行计数、筛选和排序。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>A3 · EVIDENCE</span><span class="type search">KC 检索</span></div>
+        <h2>正文证据检索</h2>
+        <p>在候选 Bundle 内组合关键词检索与向量检索，获取 Asset 正文证据。</p>
+      </article>
+      <article class="node">
+        <div class="step"><span>A4 · QUALIFY</span><span class="type code">确定性代码</span></div>
+        <h2>资格与证据收敛</h2>
+        <p>按布尔条件、同 Bundle 约束和语义支持度剔除噪声候选。</p>
+      </article>
+      <article class="node">
+        <div class="step">
+          <span>A5 · COMPOSE</span>
+          <span class="type-group"><span class="type llm">LLM</span><span class="type code">代码</span></span>
+        </div>
+        <h2>Composer 生成回答</h2>
+        <p>简单计数/分组确定性排版；正文解释与详情由 Composer LLM 基于证据生成。</p>
+      </article>
+      <article class="node answer">
+        <div class="step"><span>A6 · OUTPUT</span><span class="type code">校验 + SSE</span></div>
+        <h2>引用校验并返回</h2>
+        <p>验证每个 Asset 的 C 引用，再流式返回答案和可打开的 Asset 引用列表。</p>
+      </article>
+    </section>
+
+    <svg class="connectors" viewBox="0 0 1920 1080" aria-hidden="true">
+      <defs>
+        <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L8,4.5 L0,9 Z" fill="#aaa194"></path>
+        </marker>
+      </defs>
+      <path class="arrow" d="M403 319 H439"></path>
+      <path class="arrow" d="M758 319 H794"></path>
+      <path class="arrow" d="M1113 319 H1149"></path>
+      <path class="arrow" d="M1468 319 H1504"></path>
+
+      <path class="bus branch-help" d="M1645 403 V455 H960 V478"></path>
+      <path class="bus branch-asset" d="M1645 403 V688 H960 V711"></path>
+
+      <path class="arrow branch-help" d="M694 557 H748"></path>
+      <path class="arrow branch-help" d="M1172 557 H1226"></path>
+
+      <path class="arrow branch-asset" d="M343 810 H365"></path>
+      <path class="arrow branch-asset" d="M640 810 H662"></path>
+      <path class="arrow branch-asset" d="M937 810 H959"></path>
+      <path class="arrow branch-asset" d="M1234 810 H1256"></path>
+      <path class="arrow branch-asset" d="M1531 810 H1553"></path>
+    </svg>
+
+    <footer class="footer">
+      <span><strong>原则：</strong>Planner 决定“怎么查”，检索与数据库决定“查到什么”，Composer 只能使用已验证结果。</span>
+      <code>KM Portal · Agent Runtime · 2026</code>
+    </footer>
+  </main>
+
+  <script>
+    const stage = document.getElementById('stage');
+    function fitStage() {
+      const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      stage.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', fitStage);
+    fitStage();
+  </script>
+</body>
+</html>

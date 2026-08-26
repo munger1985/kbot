@@ -197,6 +197,18 @@ AIOps App中各数据库Target的Source Binding Locator完全一致。
 
 ## 7. 核验或安装 Oracle Exporter
 
+首次准备监控账号时，以SYSDBA连接实际PDB并执行仓库脚本：
+
+```sql
+ALTER SESSION SET CONTAINER = PDB01;
+SHOW CON_NAME;
+@scripts/deployment/aiops_observability/oracle/create_kbot_monitor.sql
+```
+
+脚本会隐藏密码输入，拒绝在`CDB$ROOT`运行，并创建固定用户`kbot_monitor`及当前
+Exporter、补充指标和Alert Collector所需的逐对象最小授权。脚本只用于首次创建；
+用户已存在时不要重复执行`CREATE USER`，应由DBA审核现有账号后单独补授权。
+
 当前设备已经在 Prometheus中登记 Oracle Exporter，但 Target抓取超时。先检查现有
 进程、端口和日志；只有确认服务不存在时才安装，不能并行启动第二个 `9161` 实例：
 

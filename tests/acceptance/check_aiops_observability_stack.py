@@ -136,6 +136,26 @@ environment = production
             raise RuntimeError("KBot Webhook签名桥没有生成")
     if "@sha256:" not in (STACK / "images.env").read_text(encoding="utf-8"):
         raise RuntimeError("镜像清单没有固定Digest")
+    oracle_user_script = (
+        STACK / "oracle/create_kbot_monitor.sql"
+    ).read_text(encoding="utf-8")
+    for required_text in (
+        "CURRENT_USER",
+        "CDB$ROOT",
+        "ACCEPT KBOT_MONITOR_PASSWORD",
+        "GRANT CREATE SESSION TO kbot_monitor",
+        "SYS.V_$SYSMETRIC",
+        "SYS.V_$DIAG_ALERT_EXT",
+    ):
+        if required_text not in oracle_user_script:
+            raise RuntimeError(f"Oracle监控用户脚本缺少约束：{required_text}")
+    for forbidden_text in (
+        "GRANT DBA TO",
+        "GRANT SELECT ANY TABLE TO",
+        "GRANT SELECT_CATALOG_ROLE TO",
+    ):
+        if forbidden_text in oracle_user_script:
+            raise RuntimeError(f"Oracle监控用户脚本包含过宽授权：{forbidden_text}")
     print("AIOps观测栈检查通过：角色、Compose、Secret、多数据库目标和签名桥配置有效")
     return 0
 
