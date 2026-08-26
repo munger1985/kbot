@@ -94,6 +94,14 @@
             <label for="target-diagnostic-password">只读诊断密码</label>
             <input id="target-diagnostic-password" name="diagnostic_password" type="password" maxlength="4096" required autocomplete="new-password">
           </div>
+          <div class="ops-field span-6">
+            <label for="target-execution-username">变更执行用户名（可选）</label>
+            <input id="target-execution-username" name="execution_username" maxlength="256" autocomplete="off" placeholder="仅在允许人工审批后执行变更时配置">
+          </div>
+          <div class="ops-field span-6">
+            <label for="target-execution-password">变更执行密码（可选）</label>
+            <input id="target-execution-password" name="execution_password" type="password" maxlength="4096" autocomplete="new-password" placeholder="用户名和密码必须同时填写">
+          </div>
           <div class="ops-field span-12">
             <label><input name="tls_enabled" type="checkbox" checked> 数据库连接启用 TLS</label>
           </div>

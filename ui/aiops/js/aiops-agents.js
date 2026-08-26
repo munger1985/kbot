@@ -20,12 +20,20 @@
   }
   function renderResources() {
     document.getElementById("agent-sources").innerHTML = sources.length ? sources.map((source) => `<label><input type="checkbox" name="diagnostic_source_ids" value="${escape(source.source_id)}">${escape(source.display_name)} <small>${escape(source.source_type)} · ${escape(source.connectivity_status)}</small></label>`).join("") : '<span class="ops-error">没有已启用且可连接的监控源，请先完成监控源配置。</span>';
-    document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}</option>`).join("");
+    document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}${target.execution_credential_configured ? " · 已配置执行凭据" : " · 仅只读"}</option>`).join("");
   }
   function toggleTargetFields() {
-    const selected = Boolean(document.getElementById("agent-target").value);
+    const targetId = document.getElementById("agent-target").value;
+    const selected = Boolean(targetId);
+    const target = targets.find((item) => item.target_id === targetId);
+    const executionConfigured = Boolean(target?.execution_credential_configured);
+    const executionToggle = document.querySelector('[name="allow_change_execution"]');
     document.getElementById("agent-change-field").hidden = !selected;
-    if (!selected) document.querySelector('[name="allow_change_execution"]').checked = false;
+    executionToggle.disabled = selected && !executionConfigured;
+    if (!selected || !executionConfigured) executionToggle.checked = false;
+    document.getElementById("agent-change-help").textContent = executionConfigured
+      ? "只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。"
+      : "该 Target 尚未配置变更执行凭据。请先在运维目标中配置；当前 Agent 仍可进行只读诊断。";
   }
   function openCreate() {
     editing = null;

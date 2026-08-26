@@ -128,6 +128,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('button.textContent = editing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
+        self.assertIn("execution_credential_configured", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
@@ -148,6 +149,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('oracle ? "service" : "database"', script)
         self.assertIn('method: "PATCH"', script)
         self.assertIn("diagnostic-credential:rotate", script)
+        self.assertIn("execution-credential:rotate", script)
+        self.assertIn('name="execution_username"', page)
+        self.assertIn('name="execution_password"', page)
         self.assertIn("openEdit", script)
         self.assertIn("db_type", script)
         self.assertNotIn("engine_type", script)

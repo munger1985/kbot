@@ -6192,6 +6192,10 @@
           "diagnostic_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
+          "diagnostic_credential_configured": {
+            "title": "Diagnostic Credential Configured",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -6212,6 +6216,10 @@
           },
           "execution_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
+          },
+          "execution_credential_configured": {
+            "title": "Execution Credential Configured",
+            "type": "boolean"
           },
           "last_connectivity_check_at": {
             "anyOf": [
@@ -6327,6 +6335,8 @@
           "connectivity_status",
           "observed_status",
           "connectivity_check_pending",
+          "diagnostic_credential_configured",
+          "execution_credential_configured",
           "row_version",
           "updated_at",
           "db_role",
@@ -6559,6 +6569,10 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "diagnostic_credential_configured": {
+            "title": "Diagnostic Credential Configured",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -6566,6 +6580,10 @@
           "environment": {
             "title": "Environment",
             "type": "string"
+          },
+          "execution_credential_configured": {
+            "title": "Execution Credential Configured",
+            "type": "boolean"
           },
           "observed_status": {
             "enum": [
@@ -6615,6 +6633,8 @@
           "connectivity_status",
           "observed_status",
           "connectivity_check_pending",
+          "diagnostic_credential_configured",
+          "execution_credential_configured",
           "row_version",
           "updated_at"
         ],

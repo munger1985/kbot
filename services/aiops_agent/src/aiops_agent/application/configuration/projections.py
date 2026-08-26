@@ -132,6 +132,8 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
         connectivity_status=entity.connectivity_status,
         observed_status=entity.observed_status,
         connectivity_check_pending=pending,
+        diagnostic_credential_configured=bool(entity.diagnostic_credential_id),
+        execution_credential_configured=bool(entity.execution_credential_id),
         row_version=int(entity.row_version),
         updated_at=entity.updated_at.astimezone(UTC),
     )

@@ -14,7 +14,7 @@
       <div class="ops-field span-12"><label for="agent-description">说明</label><input id="agent-description" name="description" maxlength="1000"></div>
       <div class="ops-field span-12"><label>监控源（必选，可多选）</label><div id="agent-sources" class="ops-choice-list"></div><small>Agent 只会消费这里选择的 Prometheus、Loki 等监控证据。</small></div>
       <div class="ops-field span-12"><label for="agent-target">数据库直连 Target（可选）</label><select id="agent-target" name="target_id"><option value="">不允许数据库直连诊断</option></select><small>选择后表示允许使用该 Target 的只读诊断凭据；不选择仍可使用监控源。</small></div>
-      <div id="agent-change-field" class="ops-field span-12" hidden><label><input name="allow_change_execution" type="checkbox">允许人工审批后执行数据库变更</label><small>只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。</small></div>
+      <div id="agent-change-field" class="ops-field span-12" hidden><label><input name="allow_change_execution" type="checkbox">允许人工审批后执行数据库变更</label><small id="agent-change-help">只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。</small></div>
       <div class="ops-field span-12"><label><input name="auto_alert_enabled" type="checkbox" checked>允许监控告警自动触发诊断</label><small>以下最低级别和冷却时间只适用于告警自动触发；不影响聊天诊断、人工运行和计划巡检。</small></div>
       <div class="ops-field span-6"><label for="agent-min-severity">自动告警诊断最低级别</label><select id="agent-min-severity" name="auto_observe_min_severity"><option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option></select></div>
       <div class="ops-field span-6"><label for="agent-cooldown">同一告警冷却时间（分钟）</label><input id="agent-cooldown" name="alert_cooldown_minutes" type="number" min="0" max="1440" value="15" required></div>

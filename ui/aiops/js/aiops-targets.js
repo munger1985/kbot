@@ -13,6 +13,8 @@
   const database = document.getElementById("target-database");
   const username = document.getElementById("target-diagnostic-username");
   const password = document.getElementById("target-diagnostic-password");
+  const executionUsername = document.getElementById("target-execution-username");
+  const executionPassword = document.getElementById("target-execution-password");
   const result = document.getElementById("target-connection-result");
   const submit = document.getElementById("save-target");
   let editingTarget = null;
@@ -39,9 +41,15 @@
     password.required = required;
     username.placeholder = required ? "" : "留空则不更换现有凭据";
     password.placeholder = required ? "" : "留空则不更换现有凭据";
+    executionUsername.placeholder = required
+      ? "可选；仅用于人工审批后的受控变更"
+      : "留空则不更换现有执行凭据";
+    executionPassword.placeholder = required
+      ? "用户名和密码必须同时填写"
+      : "留空则不更换现有执行凭据";
     document.getElementById("target-credential-note").textContent = required
       ? "诊断凭据将写入 AIOps 加密凭据存储，列表和详情不会返回密码明文。"
-      : "已保存的诊断凭据不会回显；用户名和密码都留空表示保持不变，同时填写才会轮换。";
+      : "已保存的凭据不会回显；对应用户名和密码都留空表示保持不变，同时填写才会轮换。";
   }
 
   function openCreate() {
@@ -102,6 +110,13 @@
     return { username: username.value.trim(), password: password.value };
   }
 
+  function executionCredentialPayload() {
+    return {
+      username: executionUsername.value.trim(),
+      password: executionPassword.value,
+    };
+  }
+
   function connectionFieldsAreValid() {
     if (editingTarget && (!username.value.trim() || !password.value)) {
       result.dataset.tone = "bad";
@@ -158,9 +173,20 @@
   async function saveTarget(event) {
     event.preventDefault();
     const rotatingCredential = Boolean(username.value.trim() || password.value);
+    const rotatingExecutionCredential = Boolean(
+      executionUsername.value.trim() || executionPassword.value
+    );
     if (editingTarget && rotatingCredential && (!username.value.trim() || !password.value)) {
       result.dataset.tone = "bad";
       result.textContent = "轮换凭据时必须同时填写用户名和密码。";
+      return;
+    }
+    if (
+      rotatingExecutionCredential
+      && (!executionUsername.value.trim() || !executionPassword.value)
+    ) {
+      result.dataset.tone = "bad";
+      result.textContent = "配置或轮换变更执行凭据时，必须同时填写用户名和密码。";
       return;
     }
     submit.disabled = true;
@@ -168,10 +194,19 @@
     let baseSaved = false;
     try {
       if (!editingTarget) {
+        const createPayload = {
+          ...targetFields(),
+          db_type: dbType.value,
+          capabilities: {},
+          diagnostic_credential: credentialPayload(),
+        };
+        if (rotatingExecutionCredential) {
+          createPayload.execution_credential = executionCredentialPayload();
+        }
         await KBotAIOpsAuth.request(`${api}/targets`, {
           method: "POST",
           headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify({ ...targetFields(), db_type: dbType.value, capabilities: {}, diagnostic_credential: credentialPayload() }),
+          body: JSON.stringify(createPayload),
         });
       } else {
         let updated = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(editingTarget.target_id)}`, {
@@ -190,6 +225,16 @@
             },
           );
         }
+        if (rotatingExecutionCredential) {
+          updated = await KBotAIOpsAuth.request(
+            `${api}/targets/${encodeURIComponent(editingTarget.target_id)}/execution-credential:rotate`,
+            {
+              method: "POST",
+              headers: { "If-Match": `"rv-${updated.row_version}"`, "Idempotency-Key": KBotAIOpsAuth.uuid() },
+              body: JSON.stringify(executionCredentialPayload()),
+            },
+          );
+        }
       }
       dialog.close();
       shell.toast(editingTarget ? "运维目标已更新" : "运维目标已创建");
@@ -197,7 +242,7 @@
       await KBotAIOpsPages.reload();
     } catch (error) {
       result.dataset.tone = "bad";
-      result.textContent = baseSaved ? `基本信息已保存，但诊断凭据轮换失败：${error.message}` : error.message;
+      result.textContent = baseSaved ? `基本信息已保存，但凭据轮换失败：${error.message}` : error.message;
       if (baseSaved) await KBotAIOpsPages.reload();
     } finally {
       submit.disabled = false;

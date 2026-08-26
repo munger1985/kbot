@@ -138,6 +138,8 @@ class TargetSummary(AIOpsContract):
     connectivity_status: ConnectivityStatus
     observed_status: ObservedStatus
     connectivity_check_pending: bool
+    diagnostic_credential_configured: bool
+    execution_credential_configured: bool
     row_version: int = Field(ge=1)
     updated_at: UtcDatetime
 
