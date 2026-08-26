@@ -43,7 +43,7 @@ class NotificationSubscriptionConfigurationTest(unittest.IsolatedAsyncioTestCase
             trace_id="trace-1",
         )
 
-    def _service(self, *, target_status: str = "ACTIVE"):
+    def _service(self, *, target_status: str = "ENABLED"):
         subscriptions = SimpleNamespace(
             get_for_actor=AsyncMock(return_value=None),
             add=AsyncMock(),

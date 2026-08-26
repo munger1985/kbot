@@ -10,7 +10,7 @@ from .configuration import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    HealthCheckReceipt,
+    ConnectivityCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,

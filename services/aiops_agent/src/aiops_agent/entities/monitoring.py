@@ -46,24 +46,24 @@ class DiagnosticSourceEntity(BaseEntity):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="DISABLED"
     )
-    health_status: Mapped[str] = mapped_column(
+    connectivity_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="UNKNOWN"
     )
-    health_check_request_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    health_check_requested_at: Mapped[datetime | None] = mapped_column(
+    connectivity_check_request_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    connectivity_check_requested_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
-    last_health_check_at: Mapped[datetime | None] = mapped_column(
+    last_connectivity_check_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
-    last_success_at: Mapped[datetime | None] = mapped_column(
+    last_connectivity_success_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
     last_error_code: Mapped[str | None] = mapped_column(String(128))
     row_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1
     )
-    health_version: Mapped[int] = mapped_column(
+    connectivity_version: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=1
     )
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)

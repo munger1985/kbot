@@ -225,7 +225,7 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
-    async def test_create_requests_persisted_health_check(self) -> None:
+    async def test_create_requests_persisted_connectivity_check(self) -> None:
         scope = ConfigurationScope(
             domain_id=100,
             principal_id="PORTAL:km_portal",
@@ -259,8 +259,8 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
             idempotency_key="create-source-1",
         )
 
-        self.assertTrue(result.health_check_pending)
-        self.assertEqual("UNKNOWN", result.health_status)
+        self.assertTrue(result.connectivity_check_pending)
+        self.assertEqual("CHECKING", result.connectivity_status)
         self.assertEqual("DISABLED", result.status)
         repository.add.assert_awaited_once()
         self.assertEqual(2, outbox.add.await_count)
@@ -268,8 +268,60 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
             call.args[0].event_type for call in outbox.add.await_args_list
         ]
         self.assertEqual(
-            ["DIAGNOSTIC_SOURCE_CREATED", "SOURCE_HEALTH_CHECK_REQUESTED"],
+            [
+                "DIAGNOSTIC_SOURCE_CREATED",
+                "SOURCE_CONNECTIVITY_CHECK_REQUESTED",
+            ],
             event_types,
+        )
+
+
+class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_create_disables_target_and_requests_connectivity(self) -> None:
+        scope = ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:km_portal",
+            actor_id="portal-user-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+        targets = AsyncMock()
+        outbox = AsyncMock()
+        uow = SimpleNamespace(
+            targets=targets,
+            managed_credentials=object(),
+            outbox=outbox,
+        )
+        service = object.__new__(AIOpsConfigurationService)
+        service._managed_credentials = AsyncMock()
+
+        async def execute_handler(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = AsyncMock(side_effect=execute_handler)
+        result = await service.create_target(
+            scope=scope,
+            request=TargetCreate(
+                display_name="Oracle Dev",
+                db_type="ORACLE",
+                environment="DEV",
+                endpoint={
+                    "host": "10.0.0.190",
+                    "port": 1521,
+                    "service": "PDB01",
+                    "tls_enabled": False,
+                },
+            ),
+            idempotency_key="create-target-1",
+        )
+
+        self.assertEqual("DISABLED", result.status)
+        self.assertEqual("CHECKING", result.connectivity_status)
+        self.assertEqual("UNKNOWN", result.observed_status)
+        self.assertTrue(result.connectivity_check_pending)
+        self.assertEqual(
+            ["TARGET_CREATED", "TARGET_CONNECTIVITY_CHECK_REQUESTED"],
+            [call.args[0].event_type for call in outbox.add.await_args_list],
         )
 
 
@@ -304,13 +356,14 @@ class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
             discovered_capabilities_json=None,
             config_json={},
             status="DISABLED",
-            health_status="UNKNOWN",
-            health_check_request_id=None,
-            health_check_requested_at=None,
-            last_health_check_at=None,
+            connectivity_status="UNKNOWN",
+            connectivity_check_request_id=None,
+            connectivity_check_requested_at=None,
+            last_connectivity_check_at=None,
+            last_connectivity_success_at=None,
             last_error_code=None,
             row_version=3,
-            health_version=1,
+            connectivity_version=1,
             created_by=self.scope.actor_id,
             updated_by=self.scope.actor_id,
             created_at=now,
@@ -372,7 +425,7 @@ class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, self.managed_credentials.revoke.await_count)
 
     async def test_rejects_deleting_active_source(self) -> None:
-        self.entity.status = "ACTIVE"
+        self.entity.status = "ENABLED"
 
         with self.assertRaises(AIOpsApplicationError) as caught:
             await self.service.delete_diagnostic_source(

@@ -111,7 +111,8 @@ class ApprovalServiceTest(unittest.TestCase):
         )
         target = SimpleNamespace(
             target_id=target_id,
-            status="ACTIVE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
             domain_id=200,
             execution_credential_id=uuid7(),
             row_version=3,
@@ -293,7 +294,8 @@ class ExecutionClaimTest(unittest.TestCase):
         )
         target = SimpleNamespace(
             target_id=target_id,
-            status="ACTIVE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
             domain_id=200,
             execution_credential_id=uuid7(),
             row_version=7,

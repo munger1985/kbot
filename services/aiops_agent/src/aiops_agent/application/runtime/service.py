@@ -249,7 +249,7 @@ class AIOpsRuntimeService:
                 domain_id=command.domain_id,
                 lock=True,
             )
-            if target is None or target.status != "ACTIVE":
+            if target is None or target.status != "ENABLED":
                 raise resource_not_found("可用 Target")
             binding = private_agent_binding
             if binding is None:
@@ -1046,6 +1046,14 @@ class AIOpsRuntimeService:
                     "retryable": False,
                 }
             )
+        if target.connectivity_status not in {"CONNECTED", "DEGRADED"}:
+            initial_gaps.append(
+                {
+                    "code": "TARGET_CONNECTIVITY_UNAVAILABLE",
+                    "detail": "Target 当前不可连接，跳过数据库直连诊断",
+                    "retryable": True,
+                }
+            )
         if not target.version_code:
             initial_gaps.append(
                 {
@@ -1059,6 +1067,7 @@ class AIOpsRuntimeService:
             and bool(target.version_code)
             and bool(target.diagnostic_credential_id)
             and bool(target.endpoint_json)
+            and target.connectivity_status in {"CONNECTED", "DEGRADED"}
         )
         requested = requested_tool_ids or (
             "db.instance.identity",
@@ -1189,13 +1198,23 @@ class AIOpsRuntimeService:
                 diagnostic_source_id=monitor.diagnostic_source_id,
                 domain_id=command.domain_id,
             )
-            if source is None or source.status != "ACTIVE":
+            if source is None or source.status != "ENABLED":
                 initial_gaps.append(
                     {
                         "binding_id": str(monitor.target_source_binding_id),
                         "source_id": str(monitor.diagnostic_source_id),
                         "code": "DIAGNOSTIC_SOURCE_INACTIVE",
                         "detail": "监控源不存在或未激活",
+                    }
+                )
+                continue
+            if source.connectivity_status not in {"CONNECTED", "DEGRADED"}:
+                initial_gaps.append(
+                    {
+                        "binding_id": str(monitor.target_source_binding_id),
+                        "source_id": str(monitor.diagnostic_source_id),
+                        "code": "DIAGNOSTIC_SOURCE_UNAVAILABLE",
+                        "detail": "监控源当前不可连接",
                     }
                 )
                 continue
@@ -2576,37 +2595,8 @@ class AIOpsRuntimeService:
     async def _reduce_database_health(
         *, uow, run, payload: dict[str, Any], now: datetime
     ) -> None:
-        """仅实例身份工具可改变 Target 直连健康状态，并使用配置版本围栏。"""
-        if payload.get("tool_id") != "db.instance.identity":
-            return
-        plan = run.plan_snapshot_json or {}
-        snapshot = plan.get("database_diagnostics")
-        target_snapshot = plan.get("target", {})
-        if not snapshot:
-            return
-        target = await uow.targets.get_scoped(
-            target_id=run.target_id,
-            domain_id=int(target_snapshot["domain_id"]),
-        )
-        if target is None or int(target.row_version) != int(
-            snapshot["target_row_version"]
-        ):
-            return
-        gap = payload.get("gap") or {}
-        code = str(gap.get("code", ""))
-        if payload.get("status") == "SUCCEEDED":
-            health, error = "HEALTHY", None
-        elif code in {"TARGET_UNREACHABLE", "TIMEOUT"}:
-            health, error = "UNREACHABLE", code
-        else:
-            health, error = "DEGRADED", code or "DATABASE_DIAGNOSTIC_GAP"
-        await uow.targets.update_health(
-            target_id=target.target_id,
-            expected_health_version=int(target.health_version),
-            health_status=health,
-            checked_at=now,
-            last_error_code=error,
-        )
+        """连通性由独立探测任务维护，诊断结果不得覆盖该状态。"""
+        del uow, run, payload, now
 
     @staticmethod
     async def _materialize_advisory_proposal(
@@ -2838,16 +2828,16 @@ class AIOpsRuntimeService:
             source_status, source_error = (
                 (
                     "DEGRADED"
-                    if source.health_status == "UNREACHABLE"
-                    else "HEALTHY"
+                    if source.connectivity_status == "UNREACHABLE"
+                    else "CONNECTED"
                 ),
                 None,
             )
-        await uow.diagnostic_sources.reduce_health(
+        await uow.diagnostic_sources.reduce_connectivity(
             diagnostic_source_id=source.diagnostic_source_id,
             expected_config_version=int(source_snapshot["config_version"]),
-            expected_health_version=int(source.health_version),
-            health_status=source_status,
+            expected_connectivity_version=int(source.connectivity_version),
+            connectivity_status=source_status,
             checked_at=now,
             last_error_code=source_error,
         )
@@ -2904,19 +2894,18 @@ class AIOpsRuntimeService:
             target_status = (
                 "DEGRADED"
                 if len(normalized) > 1
-                else "HEALTHY"
+                else "UP"
                 if True in normalized
-                else "UNREACHABLE"
+                else "DOWN"
             )
             target = await uow.targets.get_scoped(
                 target_id=run.target_id,
                 domain_id=int(source.domain_id),
             )
             if target is not None:
-                await uow.targets.update_health(
+                await uow.targets.update_observed_status(
                     target_id=target.target_id,
-                    expected_health_version=int(target.health_version),
-                    health_status=target_status,
+                    observed_status=target_status,
                     checked_at=now,
                     last_error_code=None,
                 )

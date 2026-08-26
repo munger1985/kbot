@@ -108,6 +108,43 @@ class TargetRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def claim_due_connectivity(
+        self, *, due_before: datetime, pending_before: datetime
+    ) -> TargetEntity | None:
+        """锁定一个到期 Target，供多副本 Scheduler 安全发起检查。"""
+        self._check_active()
+        statement = (
+            select(TargetEntity)
+            .where(
+                or_(
+                    and_(
+                        TargetEntity.last_connectivity_check_at.is_(None),
+                        or_(
+                            TargetEntity.connectivity_check_requested_at.is_(None),
+                            TargetEntity.connectivity_check_requested_at
+                            <= pending_before,
+                        ),
+                    ),
+                    and_(
+                        TargetEntity.last_connectivity_check_at <= due_before,
+                        TargetEntity.connectivity_status != "CHECKING",
+                    ),
+                    and_(
+                        TargetEntity.connectivity_status == "CHECKING",
+                        TargetEntity.connectivity_check_requested_at
+                        <= pending_before,
+                    ),
+                )
+            )
+            .order_by(
+                TargetEntity.last_connectivity_check_at.asc().nullsfirst(),
+                TargetEntity.target_id,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def update_target(
         self,
         *,
@@ -405,12 +442,11 @@ class TargetRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def update_health(
+    async def update_observed_status(
         self,
         *,
         target_id: UUID,
-        expected_health_version: int,
-        health_status: str,
+        observed_status: str,
         checked_at: datetime,
         last_error_code: str | None,
     ) -> bool:
@@ -419,13 +455,50 @@ class TargetRepository(AIOpsRepository):
             update(TargetEntity)
             .where(
                 TargetEntity.target_id == target_id,
-                TargetEntity.health_version == expected_health_version,
             )
             .values(
-                health_status=health_status,
-                last_health_check_at=checked_at,
+                observed_status=observed_status,
+                last_observed_at=checked_at,
                 last_error_code=last_error_code,
-                health_version=TargetEntity.health_version + 1,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = await self._session.execute(statement)
+        return result.rowcount == 1
+
+    async def update_connectivity(
+        self,
+        *,
+        target_id: UUID,
+        connectivity_check_request_id: UUID,
+        expected_config_version: int,
+        expected_connectivity_version: int,
+        connectivity_status: str,
+        checked_at: datetime,
+        last_error_code: str | None,
+    ) -> bool:
+        """仅在配置和检查版本未变化时归并数据库连通性。"""
+        self._check_active()
+        statement = (
+            update(TargetEntity)
+            .where(
+                TargetEntity.target_id == target_id,
+                TargetEntity.connectivity_check_request_id
+                == connectivity_check_request_id,
+                TargetEntity.row_version == expected_config_version,
+                TargetEntity.connectivity_version
+                == expected_connectivity_version,
+            )
+            .values(
+                connectivity_status=connectivity_status,
+                last_connectivity_check_at=checked_at,
+                last_connectivity_success_at=(
+                    checked_at
+                    if connectivity_status in {"CONNECTED", "DEGRADED"}
+                    else TargetEntity.last_connectivity_success_at
+                ),
+                last_error_code=last_error_code,
+                connectivity_version=TargetEntity.connectivity_version + 1,
             )
             .execution_options(synchronize_session=False)
         )

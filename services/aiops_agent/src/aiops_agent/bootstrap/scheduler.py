@@ -12,7 +12,10 @@ from aiops_agent.bootstrap.common import (
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
-from aiops_agent.scheduling import AIOpsInspectionScheduler
+from aiops_agent.scheduling import (
+    AIOpsConnectivityScheduler,
+    AIOpsInspectionScheduler,
+)
 from platform_core.database.oracle import create_database_runtime
 
 
@@ -49,16 +52,25 @@ def create_aiops_scheduler_probe(
             interval_seconds=config.scan_interval_seconds,
             misfire_grace_seconds=config.misfire_grace_seconds,
         )
-        background_task = asyncio.create_task(
-            scheduler.run_forever()
+        connectivity_scheduler = AIOpsConnectivityScheduler(
+            uow_factory=runtime.uow_factory,
+            scheduler_id=config.scheduler_id,
+            interval_seconds=config.connectivity_check_interval_seconds,
+            jitter_seconds=config.connectivity_check_jitter_seconds,
+            scan_interval_seconds=config.scan_interval_seconds,
         )
+        background_tasks = [
+            asyncio.create_task(scheduler.run_forever()),
+            asyncio.create_task(connectivity_scheduler.run_forever()),
+        ]
         logger.info("正在启动 AIOps Inspection Scheduler")
         try:
             yield
         finally:
             scheduler.stop()
+            connectivity_scheduler.stop()
             await asyncio.gather(
-                background_task, return_exceptions=True
+                *background_tasks, return_exceptions=True
             )
             await runtime.close()
             logger.info("AIOps Inspection Scheduler 资源已释放")

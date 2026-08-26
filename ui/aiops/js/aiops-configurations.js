@@ -160,8 +160,8 @@
       );
       document.getElementById("diagnostic-source-dialog").close();
       shell.toast(
-        saved.health_check_pending
-          ? "诊断源已保存，正在执行健康检查"
+        saved.connectivity_check_pending
+          ? "诊断源已保存，正在执行连通性检查"
           : editing ? "诊断源已更新" : "诊断源已创建"
       );
       editing = null;

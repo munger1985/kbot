@@ -29,7 +29,7 @@ from platform_core.contracts.aiops import (
     ApprovalCommand,
     ApprovalReceipt,
     CancelRunCommand,
-    HealthCheckReceipt,
+    ConnectivityCheckReceipt,
     HitlResponse,
     HitlResult,
     HitlSkipCommand,
@@ -789,8 +789,8 @@ async def _target_command(
     return _validated(TargetDetail, payload, response)
 
 
-@router.post("/targets/{target_id}/activate", response_model=TargetDetail)
-async def activate_target(
+@router.post("/targets/{target_id}/enable", response_model=TargetDetail)
+async def enable_target(
     target_id: UUID,
     request: Request,
     response: Response,
@@ -799,25 +799,7 @@ async def activate_target(
 ) -> TargetDetail:
     return await _target_command(
         target_id=target_id,
-        command="activate",
-        request=request,
-        response=response,
-        if_match=if_match,
-        idempotency_key=idempotency_key,
-    )
-
-
-@router.post("/targets/{target_id}/maintenance", response_model=TargetDetail)
-async def maintain_target(
-    target_id: UUID,
-    request: Request,
-    response: Response,
-    if_match: IfMatch,
-    idempotency_key: IdempotencyKey,
-) -> TargetDetail:
-    return await _target_command(
-        target_id=target_id,
-        command="maintenance",
+        command="enable",
         request=request,
         response=response,
         if_match=if_match,
@@ -841,6 +823,27 @@ async def disable_target(
         if_match=if_match,
         idempotency_key=idempotency_key,
     )
+
+
+@router.post(
+    "/targets/{target_id}/connectivity-checks",
+    response_model=TargetDetail,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_target_connectivity_check(
+    target_id: UUID,
+    request: Request,
+    response: Response,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> TargetDetail:
+    payload = await _client(request).request_target_connectivity_check(
+        target_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(TargetDetail, payload, response)
 
 
 @router.get(
@@ -1022,23 +1025,23 @@ async def delete_diagnostic_source(
 
 
 @router.post(
-    "/diagnostic-sources/{source_id}/health-checks",
-    response_model=HealthCheckReceipt,
+    "/diagnostic-sources/{source_id}/connectivity-checks",
+    response_model=ConnectivityCheckReceipt,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def request_diagnostic_source_health_check(
+async def request_diagnostic_source_connectivity_check(
     source_id: UUID,
     request: Request,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
-) -> HealthCheckReceipt:
-    payload = await _client(request).request_diagnostic_source_health_check(
+) -> ConnectivityCheckReceipt:
+    payload = await _client(request).request_diagnostic_source_connectivity_check(
         source_id,
         if_match=if_match,
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return HealthCheckReceipt.model_validate(payload)
+    return ConnectivityCheckReceipt.model_validate(payload)
 
 
 @router.post(

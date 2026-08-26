@@ -330,6 +330,23 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def request_target_connectivity_check(
+        self,
+        target_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/connectivity-checks",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def rotate_target_credential(self, target_id: UUID, kind: str, payload: dict[str, Any], *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("POST", f"{self._CONFIG}/targets/{target_id}/{kind}-credential:rotate", payload=payload, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
 
@@ -515,7 +532,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def request_diagnostic_source_health_check(
+    async def request_diagnostic_source_connectivity_check(
         self,
         source_id: UUID,
         *,
@@ -525,7 +542,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/diagnostic-sources/{source_id}/health-checks",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/connectivity-checks",
             payload={},
             if_match=if_match,
             idempotency_key=idempotency_key,

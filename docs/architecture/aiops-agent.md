@@ -118,7 +118,22 @@ Loki Adapter 根据这些精确标签生成查询，并对日志行、标签和�
 SQL：LLM 只能选择版本化诊断工具和参数，DB Executor 根据数据库方言使用预审计
 模板，执行只读、超时、行数和敏感字段限制。Oracle/MySQL 支持版本化只读诊断、
 受控人工 SQL 和审批后变更；PostgreSQL 已进入公开 Target 契约并支持版本化只读
-诊断。Target 启用时探测权限和能力，凭据只保存统一托管凭据引用。
+诊断。Target 创建或连接配置变更后立即探测连通性，凭据只保存统一托管凭据引用。
+
+## 配置资源生命周期与连通性
+
+Target 和 Diagnostic Source 的人工管理状态统一为 `ENABLED`、`DISABLED`，不使用
+“维护中”表示未启用或连接失败。连通性独立使用 `UNKNOWN`、`CHECKING`、
+`CONNECTED`、`DEGRADED`、`UNREACHABLE`；Target 从监控证据归并出的业务观测状态
+另行使用 `UNKNOWN`、`UP`、`DOWN`、`DEGRADED`。新建资源默认停用并立即写入持久化
+连通性检查请求，连接配置发生变化时也会自动停用并重新检查。只有最近两小时内
+成功连接的资源允许人工启用。
+
+Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入最多十分钟抖动；
+实际网络调用由 Worker 消费 Outbox 执行。周期失败只更新连通性，不改变人工启用
+意图。Run 只接受已启用 Target；数据库不可连接时跳过直连能力并记录 Evidence Gap，
+仍可继续消费已启用且可连接的监控源。Target 的 `db.availability` 观测只更新业务
+观测状态，不能覆盖数据库直连状态。
 
 ## 建议、审批与执行
 

@@ -161,12 +161,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         pages_script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('data-source-action="health"', pages_script)
+        self.assertIn('data-source-action="connectivity"', pages_script)
         self.assertIn('data-source-action="enable"', pages_script)
         self.assertIn('data-source-action="disable"', pages_script)
-        self.assertIn("health_check_pending", pages_script)
-        self.assertIn('data-target-action="activate"', pages_script)
-        self.assertIn('data-target-action="maintenance"', pages_script)
+        self.assertIn("connectivity_check_pending", pages_script)
+        self.assertIn('data-target-action="connectivity"', pages_script)
+        self.assertIn('data-target-action="enable"', pages_script)
+        self.assertNotIn('data-target-action="maintenance"', pages_script)
         self.assertIn('data-target-action="disable"', pages_script)
         self.assertIn('method: editing ? "PATCH" : "POST"', script)
         self.assertIn("基于当前策略创建新版本", script)

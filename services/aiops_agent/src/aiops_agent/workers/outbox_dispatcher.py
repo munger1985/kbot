@@ -38,22 +38,30 @@ class AIOpsDomainOutboxSink:
         *,
         runtime_service,
         fallback: OutboxSink,
-        diagnostic_source_health_service=None,
+        diagnostic_source_connectivity_service=None,
+        target_connectivity_service=None,
         db_executor_client=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
-        self._diagnostic_source_health_service = (
-            diagnostic_source_health_service
+        self._diagnostic_source_connectivity_service = (
+            diagnostic_source_connectivity_service
         )
+        self._target_connectivity_service = target_connectivity_service
         self._db_executor_client = db_executor_client
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if (
-            event_type == "SOURCE_HEALTH_CHECK_REQUESTED"
-            and self._diagnostic_source_health_service is not None
+            event_type == "SOURCE_CONNECTIVITY_CHECK_REQUESTED"
+            and self._diagnostic_source_connectivity_service is not None
         ):
-            await self._diagnostic_source_health_service.execute(payload)
+            await self._diagnostic_source_connectivity_service.execute(payload)
+            return
+        if (
+            event_type == "TARGET_CONNECTIVITY_CHECK_REQUESTED"
+            and self._target_connectivity_service is not None
+        ):
+            await self._target_connectivity_service.execute(payload)
             return
         if event_type == "OPS_ADVISORY_RESULT_RECORDED":
             await self._create_verification_run(

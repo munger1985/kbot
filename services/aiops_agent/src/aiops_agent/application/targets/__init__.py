@@ -1,1 +1,5 @@
-"""Target、Monitor 与 Policy 用例。"""
+"""Target 应用用例。"""
+
+from .connectivity_check import TargetConnectivityCheckService
+
+__all__ = ["TargetConnectivityCheckService"]

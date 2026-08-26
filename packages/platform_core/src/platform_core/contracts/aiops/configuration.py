@@ -17,10 +17,15 @@ from .types import (
 )
 
 
-TargetStatus = Literal["ACTIVE", "MAINTENANCE", "DISABLED"]
+TargetStatus = Literal["ENABLED", "DISABLED"]
+ConnectivityStatus = Literal[
+    "UNKNOWN", "CHECKING", "CONNECTED", "DEGRADED", "UNREACHABLE"
+]
+ObservedStatus = Literal["UNKNOWN", "UP", "DOWN", "DEGRADED"]
 HealthStatus = Literal["UNKNOWN", "HEALTHY", "DEGRADED", "UNREACHABLE"]
 BindingStatus = Literal["ACTIVE", "REVOKED"]
-SourceStatus = Literal["ACTIVE", "DISABLED"]
+SourceStatus = Literal["ENABLED", "DISABLED"]
+SourceBindingStatus = Literal["ACTIVE", "DISABLED"]
 PolicyStatus = Literal["DRAFT", "ACTIVE", "RETIRED"]
 InspectionPlanStatus = Literal["ACTIVE", "PAUSED", "DISABLED"]
 InspectionTargetStatus = Literal["ACTIVE", "DISABLED"]
@@ -130,7 +135,9 @@ class TargetSummary(AIOpsContract):
     db_type: DatabaseType
     environment: str
     status: TargetStatus
-    health_status: HealthStatus
+    connectivity_status: ConnectivityStatus
+    observed_status: ObservedStatus
+    connectivity_check_pending: bool
     row_version: int = Field(ge=1)
     updated_at: UtcDatetime
 
@@ -143,8 +150,10 @@ class TargetDetail(TargetSummary):
     execution_credential: DatabaseCredentialStatus
     security_level: int
     capabilities: JsonObject
-    health_version: int = Field(ge=1)
-    last_health_check_at: UtcDatetime | None = None
+    connectivity_version: int = Field(ge=1)
+    last_observed_at: UtcDatetime | None = None
+    last_connectivity_check_at: UtcDatetime | None = None
+    last_connectivity_success_at: UtcDatetime | None = None
     last_error_code: str | None = None
     created_at: UtcDatetime
     created_by: str
@@ -309,8 +318,8 @@ class DiagnosticSourceSummary(AIOpsContract):
     adapter_id: str
     adapter_version: str
     status: SourceStatus
-    health_status: HealthStatus
-    health_check_pending: bool
+    connectivity_status: ConnectivityStatus
+    connectivity_check_pending: bool
     row_version: int = Field(ge=1)
     updated_at: UtcDatetime
 
@@ -324,8 +333,9 @@ class DiagnosticSourceDetail(DiagnosticSourceSummary):
     discovered_capabilities: JsonObject
     config: JsonObject
     webhook_configured: bool
-    health_version: int = Field(ge=1)
-    last_health_check_at: UtcDatetime | None = None
+    connectivity_version: int = Field(ge=1)
+    last_connectivity_check_at: UtcDatetime | None = None
+    last_connectivity_success_at: UtcDatetime | None = None
     last_error_code: str | None = None
     created_at: UtcDatetime
     created_by: str
@@ -372,7 +382,7 @@ class SourceBindingView(AIOpsContract):
     capability_scope: JsonObject | None = None
     mapping_overrides: JsonObject | None = None
     query_budget: JsonObject | None = None
-    status: SourceStatus
+    status: SourceBindingStatus
     health_status: HealthStatus
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
@@ -495,13 +505,13 @@ class InspectionTargetView(AIOpsContract):
     updated_at: UtcDatetime
 
 
-class HealthCheckReceipt(AIOpsContract):
+class ConnectivityCheckReceipt(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7
     request_id: UUIDv7
     accepted_at: UtcDatetime
     config_row_version: int = Field(ge=1)
-    health_version: int = Field(ge=1)
+    connectivity_version: int = Field(ge=1)
 
 
 class WebhookKeyRotation(AIOpsContract):

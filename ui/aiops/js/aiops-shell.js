@@ -31,9 +31,9 @@
   };
   function badge(value) {
     const text = String(value || "UNKNOWN").toUpperCase();
-    const tone = ["ACTIVE", "COMPLETED", "SUCCEEDED", "HEALTHY", "RESOLVED", "PUBLISHED", "APPROVED"].includes(text)
-      ? "good" : ["FAILED", "ERROR", "CRITICAL", "REJECTED", "UNHEALTHY"].includes(text)
-        ? "bad" : ["RUNNING", "OPEN", "PENDING", "WARNING", "DEGRADED"].includes(text)
+    const tone = ["ACTIVE", "ENABLED", "CONNECTED", "UP", "COMPLETED", "SUCCEEDED", "HEALTHY", "RESOLVED", "PUBLISHED", "APPROVED"].includes(text)
+      ? "good" : ["FAILED", "ERROR", "CRITICAL", "REJECTED", "UNHEALTHY", "UNREACHABLE", "DOWN"].includes(text)
+        ? "bad" : ["RUNNING", "CHECKING", "OPEN", "PENDING", "WARNING", "DEGRADED"].includes(text)
           ? "warn" : "";
     return `<span class="ops-badge ${tone}">${escape(text)}</span>`;
   }

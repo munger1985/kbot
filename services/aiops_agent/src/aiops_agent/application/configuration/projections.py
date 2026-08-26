@@ -51,7 +51,6 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    HealthCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -115,13 +114,24 @@ def _credential_status(credential_id, entity: TargetEntity) -> DatabaseCredentia
     )
 
 def _target_summary(entity: TargetEntity) -> TargetSummary:
+    pending = bool(
+        entity.connectivity_check_request_id
+        and entity.connectivity_check_requested_at
+        and (
+            entity.last_connectivity_check_at is None
+            or entity.last_connectivity_check_at
+            < entity.connectivity_check_requested_at
+        )
+    )
     return TargetSummary(
         target_id=entity.target_id,
         display_name=entity.display_name,
         db_type=entity.db_type,
         environment=entity.environment,
         status=entity.status,
-        health_status=entity.health_status,
+        connectivity_status=entity.connectivity_status,
+        observed_status=entity.observed_status,
+        connectivity_check_pending=pending,
         row_version=int(entity.row_version),
         updated_at=entity.updated_at.astimezone(UTC),
     )
@@ -136,10 +146,20 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         execution_credential=_credential_status(entity.execution_credential_id, entity),
         security_level=int(entity.security_level),
         capabilities=entity.capabilities_json or {},
-        health_version=int(entity.health_version),
-        last_health_check_at=(
-            entity.last_health_check_at.astimezone(UTC)
-            if entity.last_health_check_at
+        connectivity_version=int(entity.connectivity_version),
+        last_observed_at=(
+            entity.last_observed_at.astimezone(UTC)
+            if entity.last_observed_at
+            else None
+        ),
+        last_connectivity_check_at=(
+            entity.last_connectivity_check_at.astimezone(UTC)
+            if entity.last_connectivity_check_at
+            else None
+        ),
+        last_connectivity_success_at=(
+            entity.last_connectivity_success_at.astimezone(UTC)
+            if entity.last_connectivity_success_at
             else None
         ),
         last_error_code=entity.last_error_code,
@@ -170,11 +190,12 @@ def _agent_binding_view(entity: TargetBindingEntity) -> AgentBindingView:
 
 def _diagnostic_source_summary(entity: DiagnosticSourceEntity) -> DiagnosticSourceSummary:
     pending = bool(
-        entity.health_check_request_id
-        and entity.health_check_requested_at
+        entity.connectivity_check_request_id
+        and entity.connectivity_check_requested_at
         and (
-            entity.last_health_check_at is None
-            or entity.last_health_check_at < entity.health_check_requested_at
+            entity.last_connectivity_check_at is None
+            or entity.last_connectivity_check_at
+            < entity.connectivity_check_requested_at
         )
     )
     return DiagnosticSourceSummary(
@@ -184,8 +205,8 @@ def _diagnostic_source_summary(entity: DiagnosticSourceEntity) -> DiagnosticSour
         adapter_id=entity.adapter_id,
         adapter_version=entity.adapter_version,
         status=entity.status,
-        health_status=entity.health_status,
-        health_check_pending=pending,
+        connectivity_status=entity.connectivity_status,
+        connectivity_check_pending=pending,
         row_version=int(entity.row_version),
         updated_at=entity.updated_at.astimezone(UTC),
     )
@@ -201,10 +222,15 @@ def _diagnostic_source_detail(entity: DiagnosticSourceEntity) -> DiagnosticSourc
         discovered_capabilities=dict(entity.discovered_capabilities_json or {}),
         config=dict(entity.config_json or {}),
         webhook_configured=entity.webhook_key_hash is not None,
-        health_version=int(entity.health_version),
-        last_health_check_at=(
-            entity.last_health_check_at.astimezone(UTC)
-            if entity.last_health_check_at
+        connectivity_version=int(entity.connectivity_version),
+        last_connectivity_check_at=(
+            entity.last_connectivity_check_at.astimezone(UTC)
+            if entity.last_connectivity_check_at
+            else None
+        ),
+        last_connectivity_success_at=(
+            entity.last_connectivity_success_at.astimezone(UTC)
+            if entity.last_connectivity_success_at
             else None
         ),
         last_error_code=entity.last_error_code,

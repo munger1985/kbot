@@ -182,7 +182,7 @@ class InspectionRepository(AIOpsRepository):
                 InspectionTargetEntity.status == "ACTIVE",
                 InspectionPlanEntity.domain_id == domain_id,
                 TargetEntity.domain_id == domain_id,
-                TargetEntity.status == "ACTIVE",
+                TargetEntity.status == "ENABLED",
             )
             .order_by(InspectionTargetEntity.inspection_target_id)
         )

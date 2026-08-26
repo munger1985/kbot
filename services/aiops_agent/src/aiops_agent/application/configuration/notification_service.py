@@ -42,7 +42,7 @@ class NotificationConfigurationMixin:
                 target_id=target_id,
                 domain_id=scope.domain_id,
             )
-            if target is None or target.status != "ACTIVE":
+            if target is None or target.status != "ENABLED":
                 raise resource_not_found("Target")
             row = await uow.notification_subscriptions.get_for_actor(
                 domain_id=scope.domain_id,

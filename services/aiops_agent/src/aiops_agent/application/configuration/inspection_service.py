@@ -51,7 +51,6 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    HealthCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,

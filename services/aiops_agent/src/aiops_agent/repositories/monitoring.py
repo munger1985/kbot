@@ -84,6 +84,44 @@ class DiagnosticSourceRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def claim_due_connectivity(
+        self, *, due_before: datetime, pending_before: datetime
+    ) -> DiagnosticSourceEntity | None:
+        """锁定一个到期监控源，供多副本 Scheduler 安全发起检查。"""
+        self._check_active()
+        statement = (
+            select(DiagnosticSourceEntity)
+            .where(
+                or_(
+                    and_(
+                        DiagnosticSourceEntity.last_connectivity_check_at.is_(None),
+                        or_(
+                            DiagnosticSourceEntity.connectivity_check_requested_at.is_(None),
+                            DiagnosticSourceEntity.connectivity_check_requested_at
+                            <= pending_before,
+                        ),
+                    ),
+                    and_(
+                        DiagnosticSourceEntity.last_connectivity_check_at
+                        <= due_before,
+                        DiagnosticSourceEntity.connectivity_status != "CHECKING",
+                    ),
+                    and_(
+                        DiagnosticSourceEntity.connectivity_status == "CHECKING",
+                        DiagnosticSourceEntity.connectivity_check_requested_at
+                        <= pending_before,
+                    ),
+                )
+            )
+            .order_by(
+                DiagnosticSourceEntity.last_connectivity_check_at.asc().nullsfirst(),
+                DiagnosticSourceEntity.diagnostic_source_id,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def update_config(
         self,
         *,
@@ -113,7 +151,7 @@ class DiagnosticSourceRepository(AIOpsRepository):
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def request_health_check(
+    async def request_connectivity_check(
         self,
         *,
         diagnostic_source_id: UUID,
@@ -128,8 +166,8 @@ class DiagnosticSourceRepository(AIOpsRepository):
             domain_id=domain_id,
             expected_version=expected_version,
             values={
-                "health_check_request_id": request_id,
-                "health_check_requested_at": requested_at,
+                "connectivity_check_request_id": request_id,
+                "connectivity_check_requested_at": requested_at,
                 "updated_by": updated_by,
             },
         )
@@ -142,7 +180,10 @@ class DiagnosticSourceRepository(AIOpsRepository):
     ) -> DiagnosticSourceEntity | None:
         self._check_active()
         statement = select(DiagnosticSourceEntity).where(
-            DiagnosticSourceEntity.status == "ACTIVE",
+            DiagnosticSourceEntity.status == "ENABLED",
+            DiagnosticSourceEntity.connectivity_status.in_(
+                ("CONNECTED", "DEGRADED")
+            ),
             or_(
                 DiagnosticSourceEntity.webhook_key_hash == webhook_key_hash,
                 (
@@ -159,14 +200,14 @@ class DiagnosticSourceRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def update_health(
+    async def update_connectivity(
         self,
         *,
         diagnostic_source_id: UUID,
-        health_check_request_id: UUID,
+        connectivity_check_request_id: UUID,
         expected_config_version: int,
-        expected_health_version: int,
-        health_status: str,
+        expected_connectivity_version: int,
+        connectivity_status: str,
         checked_at: datetime,
         last_error_code: str | None,
         discovered_capabilities: dict | None = None,
@@ -176,40 +217,42 @@ class DiagnosticSourceRepository(AIOpsRepository):
             update(DiagnosticSourceEntity)
             .where(
                 DiagnosticSourceEntity.diagnostic_source_id == diagnostic_source_id,
-                DiagnosticSourceEntity.health_check_request_id
-                == health_check_request_id,
+                DiagnosticSourceEntity.connectivity_check_request_id
+                == connectivity_check_request_id,
                 DiagnosticSourceEntity.row_version == expected_config_version,
-                DiagnosticSourceEntity.health_version
-                == expected_health_version,
+                DiagnosticSourceEntity.connectivity_version
+                == expected_connectivity_version,
             )
             .values(
-                health_status=health_status,
-                last_health_check_at=checked_at,
-                last_success_at=(
+                connectivity_status=connectivity_status,
+                last_connectivity_check_at=checked_at,
+                last_connectivity_success_at=(
                     checked_at
-                    if health_status == "HEALTHY"
-                    else DiagnosticSourceEntity.last_success_at
+                    if connectivity_status in {"CONNECTED", "DEGRADED"}
+                    else DiagnosticSourceEntity.last_connectivity_success_at
                 ),
                 last_error_code=last_error_code,
                 discovered_capabilities_json=discovered_capabilities,
-                health_version=DiagnosticSourceEntity.health_version + 1,
+                connectivity_version=(
+                    DiagnosticSourceEntity.connectivity_version + 1
+                ),
             )
             .execution_options(synchronize_session=False)
         )
         result = await self._session.execute(statement)
         return result.rowcount == 1
 
-    async def reduce_health(
+    async def reduce_connectivity(
         self,
         *,
         diagnostic_source_id: UUID,
         expected_config_version: int,
-        expected_health_version: int,
-        health_status: str,
+        expected_connectivity_version: int,
+        connectivity_status: str,
         checked_at: datetime,
         last_error_code: str | None,
     ) -> bool:
-        """归并普通采集健康，不消费显式 Health Check Request。"""
+        """归并普通采集连通性，不消费显式检查请求。"""
         self._check_active()
         statement = (
             update(DiagnosticSourceEntity)
@@ -218,14 +261,16 @@ class DiagnosticSourceRepository(AIOpsRepository):
                 == diagnostic_source_id,
                 DiagnosticSourceEntity.row_version
                 == expected_config_version,
-                DiagnosticSourceEntity.health_version
-                == expected_health_version,
+                DiagnosticSourceEntity.connectivity_version
+                == expected_connectivity_version,
             )
             .values(
-                health_status=health_status,
-                last_health_check_at=checked_at,
+                connectivity_status=connectivity_status,
+                last_connectivity_check_at=checked_at,
                 last_error_code=last_error_code,
-                health_version=DiagnosticSourceEntity.health_version + 1,
+                connectivity_version=(
+                    DiagnosticSourceEntity.connectivity_version + 1
+                ),
             )
             .execution_options(synchronize_session=False)
         )

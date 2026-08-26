@@ -1,4 +1,4 @@
-"""Diagnostic Source 显式健康检查用例。"""
+"""Diagnostic Source 显式连通性检查用例。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 
-class DiagnosticSourceHealthCheckService:
+class DiagnosticSourceConnectivityCheckService:
     def __init__(
         self, *, uow_factory, diagnostic_source_registry, secret_store
     ):
@@ -28,7 +28,7 @@ class DiagnosticSourceHealthCheckService:
     async def execute(self, payload: dict) -> None:
         source_id = UUID(payload["aggregate_id"])
         details = payload["details"]
-        request_id = UUID(details["health_check_request_id"])
+        request_id = UUID(details["connectivity_check_request_id"])
         async with self._uow_factory() as uow:
             source = await uow.diagnostic_sources.get_scoped(
                 diagnostic_source_id=source_id,
@@ -36,7 +36,7 @@ class DiagnosticSourceHealthCheckService:
             )
             if (
                 source is None
-                or source.health_check_request_id != request_id
+                or source.connectivity_check_request_id != request_id
             ):
                 return
             credential_id = (
@@ -53,7 +53,7 @@ class DiagnosticSourceHealthCheckService:
                 "adapter_id": source.adapter_id,
                 "adapter_version": source.adapter_version,
                 "config_version": int(source.row_version),
-                "health_version": int(source.health_version),
+                "connectivity_version": int(source.connectivity_version),
                 "endpoint": source.endpoint,
                 "secret_ref": (
                     AIOpsManagedCredentialService.reference(
@@ -119,13 +119,15 @@ class DiagnosticSourceHealthCheckService:
             )
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
-            changed = await uow.diagnostic_sources.update_health(
+            changed = await uow.diagnostic_sources.update_connectivity(
                 diagnostic_source_id=source_id,
-                health_check_request_id=request_id,
+                connectivity_check_request_id=request_id,
                 expected_config_version=snapshot["config_version"],
-                expected_health_version=snapshot["health_version"],
-                health_status=(
-                    "HEALTHY" if result.healthy else "UNREACHABLE"
+                expected_connectivity_version=snapshot[
+                    "connectivity_version"
+                ],
+                connectivity_status=(
+                    "CONNECTED" if result.healthy else "UNREACHABLE"
                 ),
                 checked_at=now,
                 last_error_code=result.error_code,

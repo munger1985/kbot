@@ -34,7 +34,7 @@ from aiops_agent.ports.diagnostic_source import (
     LogSourceLocator,
 )
 from platform_core.contracts.aiops import (
-    HealthCheckReceipt,
+    ConnectivityCheckReceipt,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -149,7 +149,7 @@ class DiagnosticSourceConfigurationMixin:
             assert uow.diagnostic_sources is not None
             assert uow.managed_credentials is not None
             source_id = uuid7()
-            health_check_request_id = uuid7()
+            connectivity_check_request_id = uuid7()
             auth_credential_id = webhook_credential_id = None
             for kind, values in (
                 ("diagnostic_source", request.credentials),
@@ -184,11 +184,11 @@ class DiagnosticSourceConfigurationMixin:
                 discovered_capabilities_json=None,
                 config_json=config,
                 status="DISABLED",
-                health_status="UNKNOWN",
-                health_check_request_id=health_check_request_id,
-                health_check_requested_at=now,
+                connectivity_status="CHECKING",
+                connectivity_check_request_id=connectivity_check_request_id,
+                connectivity_check_requested_at=now,
                 row_version=1,
-                health_version=1,
+                connectivity_version=1,
                 created_by=scope.actor_id,
                 updated_by=scope.actor_id,
                 created_at=now,
@@ -208,13 +208,13 @@ class DiagnosticSourceConfigurationMixin:
                 scope=scope,
                 aggregate_type="DIAGNOSTIC_SOURCE",
                 aggregate_id=entity.diagnostic_source_id,
-                event_type="SOURCE_HEALTH_CHECK_REQUESTED",
+                event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
                 row_version=1,
                 details={
-                    "health_check_request_id": str(
-                        health_check_request_id
+                    "connectivity_check_request_id": str(
+                        connectivity_check_request_id
                     ),
-                    "health_version": 1,
+                    "connectivity_version": 1,
                 },
             )
             return _diagnostic_source_detail(entity)
@@ -250,7 +250,7 @@ class DiagnosticSourceConfigurationMixin:
         cursor: str | None,
         limit: int,
     ) -> DiagnosticSourcePage:
-        if status is not None and status not in {"ACTIVE", "DISABLED"}:
+        if status is not None and status not in {"ENABLED", "DISABLED"}:
             raise validation_failed("Diagnostic Source status 过滤条件无效")
         filters = {"status": status}
         before_at = before_id = None
@@ -382,15 +382,17 @@ class DiagnosticSourceConfigurationMixin:
                 )
             if connectivity_changed:
                 entity.status = "DISABLED"
-                entity.health_status = "UNKNOWN"
-                entity.health_version = int(entity.health_version) + 1
-                entity.health_check_request_id = uuid7()
-                entity.last_health_check_at = None
+                entity.connectivity_status = "CHECKING"
+                entity.connectivity_version = (
+                    int(entity.connectivity_version) + 1
+                )
+                entity.connectivity_check_request_id = uuid7()
+                entity.last_connectivity_check_at = None
                 entity.last_error_code = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
             if connectivity_changed:
-                entity.health_check_requested_at = entity.updated_at
+                entity.connectivity_check_requested_at = entity.updated_at
             await uow.session.flush()  # type: ignore[union-attr]
             await add_configuration_event(
                 uow=uow,
@@ -406,13 +408,15 @@ class DiagnosticSourceConfigurationMixin:
                     scope=scope,
                     aggregate_type="DIAGNOSTIC_SOURCE",
                     aggregate_id=source_id,
-                    event_type="SOURCE_HEALTH_CHECK_REQUESTED",
+                    event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
                     row_version=int(entity.row_version),
                     details={
-                        "health_check_request_id": str(
-                            entity.health_check_request_id
+                        "connectivity_check_request_id": str(
+                            entity.connectivity_check_request_id
                         ),
-                        "health_version": int(entity.health_version),
+                        "connectivity_version": int(
+                            entity.connectivity_version
+                        ),
                     },
                 )
             response = _diagnostic_source_detail(entity)
@@ -428,7 +432,7 @@ class DiagnosticSourceConfigurationMixin:
         expected_version: int,
         idempotency_key: str,
     ) -> DiagnosticSourceDetail:
-        destination = {"enable": "ACTIVE", "disable": "DISABLED"}.get(command)
+        destination = {"enable": "ENABLED", "disable": "DISABLED"}.get(command)
         if destination is None:
             raise validation_failed("未知 Diagnostic Source 命令")
 
@@ -446,8 +450,21 @@ class DiagnosticSourceConfigurationMixin:
             self._check_version(entity.row_version, expected_version)
             if entity.status == destination:
                 raise state_conflict(f"Diagnostic Source 已处于 {destination}")
-            if destination == "ACTIVE" and entity.health_status != "HEALTHY":
-                raise validation_failed("启用前必须通过至少一次健康检查")
+            if (
+                destination == "ENABLED"
+                and entity.connectivity_status
+                not in {"CONNECTED", "DEGRADED"}
+            ):
+                raise validation_failed("启用前必须通过至少一次连通性检查")
+            if (
+                destination == "ENABLED"
+                and (
+                    entity.last_connectivity_success_at is None
+                    or entity.last_connectivity_success_at
+                    < now - timedelta(hours=2)
+                )
+            ):
+                raise validation_failed("连通性结果已过期，请重新检查")
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now
@@ -527,17 +544,17 @@ class DiagnosticSourceConfigurationMixin:
             handler=handler,
         )
 
-    async def request_diagnostic_source_health_check(
+    async def request_diagnostic_source_connectivity_check(
         self,
         *,
         scope: ConfigurationScope,
         source_id: UUID,
         expected_version: int,
         idempotency_key: str,
-    ) -> HealthCheckReceipt:
+    ) -> ConnectivityCheckReceipt:
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
-        ) -> HealthCheckReceipt:
+        ) -> ConnectivityCheckReceipt:
             assert uow.diagnostic_sources is not None
             entity = await uow.diagnostic_sources.get_scoped(
                 diagnostic_source_id=source_id,
@@ -548,8 +565,9 @@ class DiagnosticSourceConfigurationMixin:
                 raise resource_not_found("Diagnostic Source")
             self._check_version(entity.row_version, expected_version)
             request_id = uuid7()
-            entity.health_check_request_id = request_id
-            entity.health_check_requested_at = now
+            entity.connectivity_status = "CHECKING"
+            entity.connectivity_check_request_id = request_id
+            entity.connectivity_check_requested_at = now
             entity.updated_by = scope.actor_id
             entity.updated_at = now
             await uow.session.flush()  # type: ignore[union-attr]
@@ -558,28 +576,30 @@ class DiagnosticSourceConfigurationMixin:
                 scope=scope,
                 aggregate_type="DIAGNOSTIC_SOURCE",
                 aggregate_id=source_id,
-                event_type="SOURCE_HEALTH_CHECK_REQUESTED",
+                event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
                 row_version=int(entity.row_version),
                 details={
-                    "health_check_request_id": str(request_id),
-                    "health_version": int(entity.health_version),
+                    "connectivity_check_request_id": str(request_id),
+                    "connectivity_version": int(
+                        entity.connectivity_version
+                    ),
                 },
             )
-            return HealthCheckReceipt(
+            return ConnectivityCheckReceipt(
                 source_id=source_id,
                 request_id=request_id,
                 accepted_at=now,
                 config_row_version=int(entity.row_version),
-                health_version=int(entity.health_version),
+                connectivity_version=int(entity.connectivity_version),
             )
 
         return await self._idempotent(
             scope=scope,
-            operation="SOURCE_HEALTH_CHECK",
+            operation="SOURCE_CONNECTIVITY_CHECK",
             parent_resource=str(source_id),
             idempotency_key=idempotency_key,
             payload={"row_version": expected_version},
-            response_type=HealthCheckReceipt,
+            response_type=ConnectivityCheckReceipt,
             handler=handler,
         )
 

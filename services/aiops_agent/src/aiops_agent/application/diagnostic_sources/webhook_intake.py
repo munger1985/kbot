@@ -152,7 +152,9 @@ class SignalEventIntakeService:
             )
             if (
                 source is None
-                or source.status != "ACTIVE"
+                or source.status != "ENABLED"
+                or source.connectivity_status
+                not in {"CONNECTED", "DEGRADED"}
                 or int(source.row_version)
                 != source_snapshot["config_version"]
             ):
@@ -334,7 +336,7 @@ class SignalEventIntakeService:
             domain_id=int(source.domain_id),
             lock=True,
         )
-        if target is None or target.status != "ACTIVE":
+        if target is None or target.status != "ENABLED":
             return None
         source_incident_hash = hashlib.sha256(
             (

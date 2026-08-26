@@ -27,7 +27,7 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    HealthCheckReceipt,
+    ConnectivityCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -269,8 +269,8 @@ async def _command_target(
     return result
 
 
-@router.post("/targets/{target_id}/activate", response_model=TargetDetail)
-async def activate_target(
+@router.post("/targets/{target_id}/enable", response_model=TargetDetail)
+async def enable_target(
     target_id: UUID,
     response: Response,
     service: Service,
@@ -279,27 +279,7 @@ async def activate_target(
     if_match: IfMatch = None,
 ) -> TargetDetail:
     return await _command_target(
-        target_id, "activate", response, service, scope, idempotency_key, if_match
-    )
-
-
-@router.post("/targets/{target_id}/maintenance", response_model=TargetDetail)
-async def maintain_target(
-    target_id: UUID,
-    response: Response,
-    service: Service,
-    scope: Scope,
-    idempotency_key: IdempotencyKey,
-    if_match: IfMatch = None,
-) -> TargetDetail:
-    return await _command_target(
-        target_id,
-        "maintenance",
-        response,
-        service,
-        scope,
-        idempotency_key,
-        if_match,
+        target_id, "enable", response, service, scope, idempotency_key, if_match
     )
 
 
@@ -315,6 +295,29 @@ async def disable_target(
     return await _command_target(
         target_id, "disable", response, service, scope, idempotency_key, if_match
     )
+
+
+@router.post(
+    "/targets/{target_id}/connectivity-checks",
+    response_model=TargetDetail,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_target_connectivity_check(
+    target_id: UUID,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> TargetDetail:
+    result = await service.request_target_connectivity_check(
+        scope=scope,
+        target_id=target_id,
+        expected_version=parse_etag(if_match),
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
 
 
 @router.get(
@@ -519,18 +522,18 @@ async def delete_diagnostic_source(
 
 
 @router.post(
-    "/diagnostic-sources/{source_id}/health-checks",
-    response_model=HealthCheckReceipt,
+    "/diagnostic-sources/{source_id}/connectivity-checks",
+    response_model=ConnectivityCheckReceipt,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def request_diagnostic_source_health_check(
+async def request_diagnostic_source_connectivity_check(
     source_id: UUID,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
-) -> HealthCheckReceipt:
-    return await service.request_diagnostic_source_health_check(
+) -> ConnectivityCheckReceipt:
+    return await service.request_diagnostic_source_connectivity_check(
         scope=scope,
         source_id=source_id,
         expected_version=parse_etag(if_match),

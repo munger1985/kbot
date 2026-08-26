@@ -25,7 +25,10 @@ from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
-from aiops_agent.application.diagnostic_sources import DiagnosticSourceHealthCheckService
+from aiops_agent.application.diagnostic_sources import (
+    DiagnosticSourceConnectivityCheckService,
+)
+from aiops_agent.application.targets import TargetConnectivityCheckService
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
@@ -192,10 +195,14 @@ def create_aiops_worker_probe(
             sink=AIOpsDomainOutboxSink(
                 runtime_service=runtime_service,
                 fallback=LoggingOutboxSink(),
-                diagnostic_source_health_service=DiagnosticSourceHealthCheckService(
+                diagnostic_source_connectivity_service=DiagnosticSourceConnectivityCheckService(
                     uow_factory=runtime.uow_factory,
                     diagnostic_source_registry=diagnostic_source_registry,
                     secret_store=secret_store,
+                ),
+                target_connectivity_service=TargetConnectivityCheckService(
+                    uow_factory=runtime.uow_factory,
+                    managed_credentials=managed_credential_service,
                 ),
                 db_executor_client=db_executor_client,
             ),

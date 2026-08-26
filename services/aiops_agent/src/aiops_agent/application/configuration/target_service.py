@@ -54,7 +54,6 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    HealthCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -157,10 +156,13 @@ class TargetConfigurationMixin:
                 execution_credential_id=execution_id,
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
-                status="MAINTENANCE",
-                health_status="UNKNOWN",
+                status="DISABLED",
+                connectivity_status="CHECKING",
+                observed_status="UNKNOWN",
+                connectivity_check_request_id=(request_id := uuid7()),
+                connectivity_check_requested_at=now,
                 row_version=1,
-                health_version=1,
+                connectivity_version=1,
                 created_by=scope.actor_id,
                 updated_by=scope.actor_id,
                 created_at=now,
@@ -174,6 +176,18 @@ class TargetConfigurationMixin:
                 aggregate_id=entity.target_id,
                 event_type="TARGET_CREATED",
                 row_version=1,
+            )
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="TARGET",
+                aggregate_id=entity.target_id,
+                event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
+                row_version=1,
+                details={
+                    "connectivity_check_request_id": str(request_id),
+                    "connectivity_version": 1,
+                },
             )
             return _target_detail(entity)
 
@@ -208,11 +222,7 @@ class TargetConfigurationMixin:
         cursor: str | None,
         limit: int,
     ) -> TargetPage:
-        if status is not None and status not in {
-            "ACTIVE",
-            "MAINTENANCE",
-            "DISABLED",
-        }:
+        if status is not None and status not in {"ENABLED", "DISABLED"}:
             raise validation_failed("Target status 过滤条件无效")
         filters = {"status": status}
         before_at = before_id = None
@@ -292,11 +302,12 @@ class TargetConfigurationMixin:
             for name, value in fields.items():
                 setattr(entity, name, value)
             if connectivity_changed:
-                if entity.status == "ACTIVE":
-                    entity.status = "MAINTENANCE"
-                entity.health_status = "UNKNOWN"
-                entity.health_version = int(entity.health_version) + 1
-                entity.last_health_check_at = None
+                entity.status = "DISABLED"
+                entity.connectivity_status = "CHECKING"
+                entity.connectivity_version = int(entity.connectivity_version) + 1
+                entity.connectivity_check_request_id = uuid7()
+                entity.connectivity_check_requested_at = datetime.now(UTC)
+                entity.last_connectivity_check_at = None
                 entity.last_error_code = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
@@ -309,6 +320,21 @@ class TargetConfigurationMixin:
                 event_type="TARGET_UPDATED",
                 row_version=int(entity.row_version),
             )
+            if connectivity_changed:
+                await add_configuration_event(
+                    uow=uow,
+                    scope=scope,
+                    aggregate_type="TARGET",
+                    aggregate_id=target_id,
+                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
+                    row_version=int(entity.row_version),
+                    details={
+                        "connectivity_check_request_id": str(
+                            entity.connectivity_check_request_id
+                        ),
+                        "connectivity_version": int(entity.connectivity_version),
+                    },
+                )
             response = _target_detail(entity)
             await uow.commit()
             return response
@@ -333,11 +359,25 @@ class TargetConfigurationMixin:
             field = "diagnostic_credential_id" if credential_kind == "DIAGNOSTIC" else "execution_credential_id"
             setattr(target, field, credential_id)
             if credential_kind == "DIAGNOSTIC":
-                target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
-                target.health_version = int(target.health_version) + 1
-                target.last_health_check_at, target.last_error_code = None, None
+                target.status = "DISABLED"
+                target.connectivity_status = "CHECKING"
+                target.connectivity_version = int(target.connectivity_version) + 1
+                target.connectivity_check_request_id = uuid7()
+                target.connectivity_check_requested_at = now
+                target.last_connectivity_check_at, target.last_error_code = None, None
             target.updated_by, target.updated_at = scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
+            if credential_kind == "DIAGNOSTIC":
+                await add_configuration_event(
+                    uow=uow, scope=scope, aggregate_type="TARGET",
+                    aggregate_id=target_id,
+                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
+                    row_version=int(target.row_version),
+                    details={
+                        "connectivity_check_request_id": str(target.connectivity_check_request_id),
+                        "connectivity_version": int(target.connectivity_version),
+                    },
+                )
             return _target_detail(target)
         return await self._idempotent(scope=scope, operation=f"TARGET_{credential_kind}_CREDENTIAL_ROTATE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version, "credential_kind": credential_kind, "username": username, "password": password}, response_type=TargetDetail, handler=handler)
 
@@ -371,9 +411,11 @@ class TargetConfigurationMixin:
                     credential_kind="target_diagnostic", actor_id=scope.actor_id,
                 )
             target.diagnostic_credential_id = None
-            target.status, target.health_status = "MAINTENANCE", "UNKNOWN"
-            target.health_version = int(target.health_version) + 1
-            target.last_health_check_at, target.last_error_code = None, None
+            target.status = "DISABLED"
+            target.connectivity_status = "UNREACHABLE"
+            target.connectivity_version = int(target.connectivity_version) + 1
+            target.last_connectivity_check_at = now
+            target.last_error_code = "TARGET_CREDENTIAL_REQUIRED"
             target.updated_by, target.updated_at = scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
             return _target_detail(target)
@@ -412,9 +454,8 @@ class TargetConfigurationMixin:
         idempotency_key: str,
     ) -> TargetDetail:
         transitions = {
-            "activate": ({"MAINTENANCE"}, "ACTIVE"),
-            "maintenance": ({"ACTIVE", "DISABLED"}, "MAINTENANCE"),
-            "disable": ({"ACTIVE", "MAINTENANCE"}, "DISABLED"),
+            "enable": ({"DISABLED"}, "ENABLED"),
+            "disable": ({"ENABLED"}, "DISABLED"),
         }
         if command not in transitions:
             raise validation_failed("未知 Target 状态命令")
@@ -436,6 +477,20 @@ class TargetConfigurationMixin:
                 raise state_conflict(
                     f"Target 不能从 {entity.status} 执行 {command}"
                 )
+            if (
+                destination == "ENABLED"
+                and entity.connectivity_status not in {"CONNECTED", "DEGRADED"}
+            ):
+                raise state_conflict("Target 连通性检查通过后才能启用")
+            if (
+                destination == "ENABLED"
+                and (
+                    entity.last_connectivity_success_at is None
+                    or entity.last_connectivity_success_at
+                    < now - timedelta(hours=2)
+                )
+            ):
+                raise state_conflict("Target 连通性结果已过期，请重新检查")
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now
@@ -456,6 +511,57 @@ class TargetConfigurationMixin:
             parent_resource=str(target_id),
             idempotency_key=idempotency_key,
             payload={"target_id": str(target_id), "row_version": expected_version},
+            response_type=TargetDetail,
+            handler=handler,
+        )
+
+    async def request_target_connectivity_check(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> TargetDetail:
+        """显式请求 Target 连通性检查。"""
+
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
+            assert uow.targets is not None
+            entity = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Target")
+            self._check_version(entity.row_version, expected_version)
+            request_id = uuid7()
+            entity.connectivity_status = "CHECKING"
+            entity.connectivity_check_request_id = request_id
+            entity.connectivity_check_requested_at = now
+            entity.updated_by = scope.actor_id
+            entity.updated_at = now
+            await uow.session.flush()  # type: ignore[union-attr]
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="TARGET",
+                aggregate_id=target_id,
+                event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
+                row_version=int(entity.row_version),
+                details={
+                    "connectivity_check_request_id": str(request_id),
+                    "connectivity_version": int(entity.connectivity_version),
+                },
+            )
+            return _target_detail(entity)
+
+        return await self._idempotent(
+            scope=scope,
+            operation="TARGET_CONNECTIVITY_CHECK",
+            parent_resource=str(target_id),
+            idempotency_key=idempotency_key,
+            payload={"row_version": expected_version},
             response_type=TargetDetail,
             handler=handler,
         )

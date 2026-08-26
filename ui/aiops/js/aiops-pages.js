@@ -10,8 +10,8 @@
     reports: { path: "/reports", cols: [["report_key", "报告"], ["report_type", "类型"], ["status", "状态", "badge"], ["summary", "摘要"], ["period_end", "周期结束", "date"]], detail: "report-detail.html?id=" },
     inspections: { path: "/inspection-fires", cols: [["fire_id", "执行 ID", "id"], ["scheduled_at", "计划时间", "date"], ["status", "状态", "badge"], ["target_count", "目标数"], ["failed_count", "失败数"]] },
     changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
-    targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["environment", "环境"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
-    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
+    targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
+    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_key", "策略标识"], ["status", "状态", "badge"], ["version_no", "规则版本"]], detail: "#" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
     "notification-subscriptions": { path: "/notification-subscriptions", cols: [["target_id", "目标", "id"], ["channel_type", "渠道"], ["minimum_severity", "最低级别", "badge"], ["enabled", "启用"]] },
@@ -20,32 +20,26 @@
   function cell(item, [key, , type]) {
     const value = item?.[key];
     if (type === "source-actions") {
-      const checking = item.health_check_pending;
-      const healthButton = `<button type="button" data-source-action="health" ${checking ? "disabled" : ""}>${checking ? "检查中" : "健康检查"}</button>`;
-      const lifecycleButton = item.status === "ACTIVE"
+      const checking = item.connectivity_check_pending;
+      const healthButton = `<button type="button" data-source-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`;
+      const lifecycleButton = item.status === "ENABLED"
         ? '<button type="button" data-source-action="disable">停用</button>'
-        : item.health_status === "HEALTHY" && !checking
+        : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status) && !checking
           ? '<button type="button" class="primary" data-source-action="enable">启用</button>'
           : "";
       return `<div class="ops-actions">${healthButton}${lifecycleButton}</div>`;
     }
     if (type === "target-actions") {
-      const buttons = item.status === "ACTIVE"
-        ? [
-            '<button type="button" data-target-action="maintenance">进入维护</button>',
-            '<button type="button" data-target-action="disable">停用</button>',
-          ]
-        : item.status === "MAINTENANCE"
-          ? [
-              '<button type="button" class="primary" data-target-action="activate">启用</button>',
-              '<button type="button" data-target-action="disable">停用</button>',
-            ]
-          : [
-              '<button type="button" data-target-action="maintenance">进入维护</button>',
-            ];
-      return `<div class="ops-actions">${buttons.join("")}</div>`;
+      const checking = item.connectivity_check_pending;
+      const checkButton = `<button type="button" data-target-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`;
+      const buttons = item.status === "ENABLED"
+        ? ['<button type="button" data-target-action="disable">停用</button>']
+        : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status)
+          ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
+          : [];
+      return `<div class="ops-actions">${checkButton}${buttons.join("")}</div>`;
     }
-    if (key === "health_status" && item.health_check_pending) {
+    if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
     }
     if (type === "badge") return shell.badge(value);
@@ -66,8 +60,8 @@
   async function runSourceAction(button, item) {
     const action = button.dataset.sourceAction;
     const sourceId = encodeURIComponent(item.source_id);
-    const path = action === "health"
-      ? `/diagnostic-sources/${sourceId}/health-checks`
+    const path = action === "connectivity"
+      ? `/diagnostic-sources/${sourceId}/connectivity-checks`
       : `/diagnostic-sources/${sourceId}/${action}`;
     button.disabled = true;
     try {
@@ -79,9 +73,9 @@
         },
         body: JSON.stringify({}),
       });
-      shell.toast(action === "health" ? "健康检查已提交" : action === "enable" ? "诊断源已启用" : "诊断源已停用");
+      shell.toast(action === "connectivity" ? "连通性检查已提交" : action === "enable" ? "诊断源已启用" : "诊断源已停用");
       await renderList("diagnostic-sources");
-      if (action === "health") {
+      if (action === "connectivity") {
         sourceReloadAttempts = 0;
         scheduleSourceReload();
       }
@@ -93,10 +87,13 @@
   async function runTargetAction(button, item) {
     const action = button.dataset.targetAction;
     const targetId = encodeURIComponent(item.target_id);
+    const path = action === "connectivity"
+      ? `/targets/${targetId}/connectivity-checks`
+      : `/targets/${targetId}/${action}`;
     button.disabled = true;
     try {
       await KBotAIOpsAuth.request(
-        `${appApi}/targets/${targetId}/${action}`,
+        appApi + path,
         {
           method: "POST",
           headers: {
@@ -107,8 +104,8 @@
         },
       );
       const messages = {
-        activate: "运维目标已启用",
-        maintenance: "运维目标已进入维护状态",
+        connectivity: "Target 连通性检查已提交",
+        enable: "运维目标已启用",
         disable: "运维目标已停用",
       };
       shell.toast(messages[action]);
@@ -159,7 +156,7 @@
             if (item) runSourceAction(button, item);
           });
         });
-        if (items.some((item) => item.health_check_pending)) {
+        if (items.some((item) => item.connectivity_check_pending)) {
           scheduleSourceReload();
         } else {
           sourceReloadAttempts = 0;

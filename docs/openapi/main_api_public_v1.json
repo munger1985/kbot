@@ -2106,6 +2106,50 @@
         "title": "CollectionStatusRequest",
         "type": "object"
       },
+      "ConnectivityCheckReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "title": "Accepted At",
+            "type": "string"
+          },
+          "config_row_version": {
+            "minimum": 1.0,
+            "title": "Config Row Version",
+            "type": "integer"
+          },
+          "connectivity_version": {
+            "minimum": 1.0,
+            "title": "Connectivity Version",
+            "type": "integer"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "request_id",
+          "accepted_at",
+          "config_row_version",
+          "connectivity_version"
+        ],
+        "title": "ConnectivityCheckReceipt",
+        "type": "object"
+      },
       "ConversationCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -3154,6 +3198,26 @@
             "title": "Config",
             "type": "object"
           },
+          "connectivity_check_pending": {
+            "title": "Connectivity Check Pending",
+            "type": "boolean"
+          },
+          "connectivity_status": {
+            "enum": [
+              "UNKNOWN",
+              "CHECKING",
+              "CONNECTED",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Connectivity Status",
+            "type": "string"
+          },
+          "connectivity_version": {
+            "minimum": 1.0,
+            "title": "Connectivity Version",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3188,24 +3252,29 @@
             ],
             "title": "Endpoint"
           },
-          "health_check_pending": {
-            "title": "Health Check Pending",
-            "type": "boolean"
-          },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
+          "last_connectivity_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Health Status",
-            "type": "string"
+            "title": "Last Connectivity Check At"
           },
-          "health_version": {
-            "minimum": 1.0,
-            "title": "Health Version",
-            "type": "integer"
+          "last_connectivity_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Connectivity Success At"
           },
           "last_error_code": {
             "anyOf": [
@@ -3217,18 +3286,6 @@
               }
             ],
             "title": "Last Error Code"
-          },
-          "last_health_check_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Health Check At"
           },
           "row_version": {
             "minimum": 1.0,
@@ -3254,7 +3311,7 @@
           },
           "status": {
             "enum": [
-              "ACTIVE",
+              "ENABLED",
               "DISABLED"
             ],
             "title": "Status",
@@ -3287,8 +3344,8 @@
           "adapter_id",
           "adapter_version",
           "status",
-          "health_status",
-          "health_check_pending",
+          "connectivity_status",
+          "connectivity_check_pending",
           "row_version",
           "updated_at",
           "secret",
@@ -3298,7 +3355,7 @@
           "discovered_capabilities",
           "config",
           "webhook_configured",
-          "health_version",
+          "connectivity_version",
           "created_at",
           "created_by",
           "updated_by"
@@ -3435,22 +3492,23 @@
             "title": "Adapter Version",
             "type": "string"
           },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "health_check_pending": {
-            "title": "Health Check Pending",
+          "connectivity_check_pending": {
+            "title": "Connectivity Check Pending",
             "type": "boolean"
           },
-          "health_status": {
+          "connectivity_status": {
             "enum": [
               "UNKNOWN",
-              "HEALTHY",
+              "CHECKING",
+              "CONNECTED",
               "DEGRADED",
               "UNREACHABLE"
             ],
-            "title": "Health Status",
+            "title": "Connectivity Status",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
             "type": "string"
           },
           "row_version": {
@@ -3474,7 +3532,7 @@
           },
           "status": {
             "enum": [
-              "ACTIVE",
+              "ENABLED",
               "DISABLED"
             ],
             "title": "Status",
@@ -3493,8 +3551,8 @@
           "adapter_id",
           "adapter_version",
           "status",
-          "health_status",
-          "health_check_pending",
+          "connectivity_status",
+          "connectivity_check_pending",
           "row_version",
           "updated_at"
         ],
@@ -3809,50 +3867,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HealthCheckReceipt": {
-        "additionalProperties": false,
-        "properties": {
-          "accepted_at": {
-            "format": "date-time",
-            "title": "Accepted At",
-            "type": "string"
-          },
-          "config_row_version": {
-            "minimum": 1.0,
-            "title": "Config Row Version",
-            "type": "integer"
-          },
-          "health_version": {
-            "minimum": 1.0,
-            "title": "Health Version",
-            "type": "integer"
-          },
-          "request_id": {
-            "format": "uuid",
-            "title": "Request Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_id",
-          "request_id",
-          "accepted_at",
-          "config_row_version",
-          "health_version"
-        ],
-        "title": "HealthCheckReceipt",
         "type": "object"
       },
       "HitlResponse": {
@@ -8997,6 +9011,26 @@
             "title": "Capabilities",
             "type": "object"
           },
+          "connectivity_check_pending": {
+            "title": "Connectivity Check Pending",
+            "type": "boolean"
+          },
+          "connectivity_status": {
+            "enum": [
+              "UNKNOWN",
+              "CHECKING",
+              "CONNECTED",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Connectivity Status",
+            "type": "string"
+          },
+          "connectivity_version": {
+            "minimum": 1.0,
+            "title": "Connectivity Version",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -9037,20 +9071,29 @@
           "execution_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
           },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
+          "last_connectivity_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Health Status",
-            "type": "string"
+            "title": "Last Connectivity Check At"
           },
-          "health_version": {
-            "minimum": 1.0,
-            "title": "Health Version",
-            "type": "integer"
+          "last_connectivity_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Connectivity Success At"
           },
           "last_error_code": {
             "anyOf": [
@@ -9063,7 +9106,7 @@
             ],
             "title": "Last Error Code"
           },
-          "last_health_check_at": {
+          "last_observed_at": {
             "anyOf": [
               {
                 "format": "date-time",
@@ -9073,7 +9116,17 @@
                 "type": "null"
               }
             ],
-            "title": "Last Health Check At"
+            "title": "Last Observed At"
+          },
+          "observed_status": {
+            "enum": [
+              "UNKNOWN",
+              "UP",
+              "DOWN",
+              "DEGRADED"
+            ],
+            "title": "Observed Status",
+            "type": "string"
           },
           "row_version": {
             "minimum": 1.0,
@@ -9091,8 +9144,7 @@
           },
           "status": {
             "enum": [
-              "ACTIVE",
-              "MAINTENANCE",
+              "ENABLED",
               "DISABLED"
             ],
             "title": "Status",
@@ -9130,7 +9182,9 @@
           "db_type",
           "environment",
           "status",
-          "health_status",
+          "connectivity_status",
+          "observed_status",
+          "connectivity_check_pending",
           "row_version",
           "updated_at",
           "db_role",
@@ -9138,7 +9192,7 @@
           "execution_credential",
           "security_level",
           "capabilities",
-          "health_version",
+          "connectivity_version",
           "created_at",
           "created_by",
           "updated_by"
@@ -9345,6 +9399,21 @@
       "TargetSummary": {
         "additionalProperties": false,
         "properties": {
+          "connectivity_check_pending": {
+            "title": "Connectivity Check Pending",
+            "type": "boolean"
+          },
+          "connectivity_status": {
+            "enum": [
+              "UNKNOWN",
+              "CHECKING",
+              "CONNECTED",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Connectivity Status",
+            "type": "string"
+          },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
@@ -9356,14 +9425,14 @@
             "title": "Environment",
             "type": "string"
           },
-          "health_status": {
+          "observed_status": {
             "enum": [
               "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
+              "UP",
+              "DOWN",
+              "DEGRADED"
             ],
-            "title": "Health Status",
+            "title": "Observed Status",
             "type": "string"
           },
           "row_version": {
@@ -9378,8 +9447,7 @@
           },
           "status": {
             "enum": [
-              "ACTIVE",
-              "MAINTENANCE",
+              "ENABLED",
               "DISABLED"
             ],
             "title": "Status",
@@ -9402,7 +9470,9 @@
           "db_type",
           "environment",
           "status",
-          "health_status",
+          "connectivity_status",
+          "observed_status",
+          "connectivity_check_pending",
           "row_version",
           "updated_at"
         ],
@@ -10683,9 +10753,9 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/health-checks": {
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/connectivity-checks": {
       "post": {
-        "operationId": "request_diagnostic_source_health_check_api_v1_apps_aiops_diagnostic_sources__source_id__health_checks_post",
+        "operationId": "request_diagnostic_source_connectivity_check_api_v1_apps_aiops_diagnostic_sources__source_id__connectivity_checks_post",
         "parameters": [
           {
             "in": "path",
@@ -10728,7 +10798,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthCheckReceipt"
+                  "$ref": "#/components/schemas/ConnectivityCheckReceipt"
                 }
               }
             },
@@ -10745,7 +10815,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Request Diagnostic Source Health Check",
+        "summary": "Request Diagnostic Source Connectivity Check",
         "tags": [
           "AIOps"
         ]
@@ -14013,74 +14083,6 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/targets/{target_id}/activate": {
-      "post": {
-        "operationId": "activate_target_api_v1_apps_aiops_targets__target_id__activate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TargetDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Activate Target",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
     "/api/v1/apps/aiops/targets/{target_id}/agent-bindings": {
       "get": {
         "operationId": "list_agent_bindings_api_v1_apps_aiops_targets__target_id__agent_bindings_get",
@@ -14358,6 +14360,74 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/targets/{target_id}/connectivity-checks": {
+      "post": {
+        "operationId": "request_target_connectivity_check_api_v1_apps_aiops_targets__target_id__connectivity_checks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Target Connectivity Check",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/targets/{target_id}/diagnostic-credential:remove": {
       "post": {
         "operationId": "remove_diagnostic_credential_api_v1_apps_aiops_targets__target_id__diagnostic_credential_remove_post",
@@ -14572,6 +14642,74 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/targets/{target_id}/enable": {
+      "post": {
+        "operationId": "enable_target_api_v1_apps_aiops_targets__target_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Target",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/targets/{target_id}/execution-credential:remove": {
       "post": {
         "operationId": "remove_execution_credential_api_v1_apps_aiops_targets__target_id__execution_credential_remove_post",
@@ -14713,74 +14851,6 @@
           }
         },
         "summary": "Rotate Execution Credential",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/maintenance": {
-      "post": {
-        "operationId": "maintain_target_api_v1_apps_aiops_targets__target_id__maintenance_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TargetDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Maintain Target",
         "tags": [
           "AIOps"
         ]

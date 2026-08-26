@@ -312,7 +312,9 @@ class AIOpsChangeService:
             )
             if (
                 target is None
-                or target.status != "ACTIVE"
+                or target.status != "ENABLED"
+                or target.connectivity_status
+                not in {"CONNECTED", "DEGRADED"}
                 or not target.execution_credential_id
             ):
                 raise state_conflict("Target 当前不允许受控执行")
@@ -831,7 +833,9 @@ class AIOpsChangeService:
             )
             if (
                 target is None
-                or target.status != "ACTIVE"
+                or target.status != "ENABLED"
+                or target.connectivity_status
+                not in {"CONNECTED", "DEGRADED"}
                 or not target.execution_credential_id
                 or int(target.row_version) != int(token.target_version)
             ):
