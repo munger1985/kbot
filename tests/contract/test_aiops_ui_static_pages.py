@@ -30,7 +30,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "notifications", "targets", "target-detail",
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
-        "policies", "inspection-plans", "inspection-plan-detail",
+        "inspection-plans", "inspection-plan-detail",
         "report-templates", "notification-subscriptions", "api-clients",
         "login",
     }
@@ -192,9 +192,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('data-target-action="maintenance"', pages_script)
         self.assertIn('data-target-action="disable"', pages_script)
         self.assertIn('method: editing ? "PATCH" : "POST"', script)
-        policies = (AIOPS_ROOT / "policies.html").read_text(encoding="utf-8")
-        self.assertIn("仅用于查看", policies)
-        self.assertNotIn('id="policy-dialog"', policies)
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('["policies", "执行策略"]', shell)
+        self.assertFalse((AIOPS_ROOT / "policies.html").exists())
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
 
