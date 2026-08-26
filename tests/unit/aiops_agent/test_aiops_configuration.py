@@ -224,6 +224,55 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("plain-secret-value", repr(metadata))
 
 
+class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_create_requests_persisted_health_check(self) -> None:
+        scope = ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:km_portal",
+            actor_id="portal-user-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+        repository = AsyncMock()
+        outbox = AsyncMock()
+        uow = SimpleNamespace(
+            diagnostic_sources=repository,
+            managed_credentials=object(),
+            outbox=outbox,
+        )
+        service = object.__new__(AIOpsConfigurationService)
+        service._diagnostic_source_catalog = (
+            DiagnosticSourceAdapterCatalog()
+        )
+
+        async def execute_handler(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = AsyncMock(side_effect=execute_handler)
+        result = await service.create_diagnostic_source(
+            scope=scope,
+            request=DiagnosticSourceCreate(
+                display_name="Dev Prometheus",
+                source_type="PROMETHEUS",
+                endpoint="http://127.0.0.1:9090",
+            ),
+            idempotency_key="create-source-1",
+        )
+
+        self.assertTrue(result.health_check_pending)
+        self.assertEqual("UNKNOWN", result.health_status)
+        self.assertEqual("DISABLED", result.status)
+        repository.add.assert_awaited_once()
+        self.assertEqual(2, outbox.add.await_count)
+        event_types = [
+            call.args[0].event_type for call in outbox.add.await_args_list
+        ]
+        self.assertEqual(
+            ["DIAGNOSTIC_SOURCE_CREATED", "SOURCE_HEALTH_CHECK_REQUESTED"],
+            event_types,
+        )
+
+
 class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.scope = ConfigurationScope(

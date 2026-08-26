@@ -149,6 +149,7 @@ class DiagnosticSourceConfigurationMixin:
             assert uow.diagnostic_sources is not None
             assert uow.managed_credentials is not None
             source_id = uuid7()
+            health_check_request_id = uuid7()
             auth_credential_id = webhook_credential_id = None
             for kind, values in (
                 ("diagnostic_source", request.credentials),
@@ -184,6 +185,8 @@ class DiagnosticSourceConfigurationMixin:
                 config_json=config,
                 status="DISABLED",
                 health_status="UNKNOWN",
+                health_check_request_id=health_check_request_id,
+                health_check_requested_at=now,
                 row_version=1,
                 health_version=1,
                 created_by=scope.actor_id,
@@ -199,6 +202,20 @@ class DiagnosticSourceConfigurationMixin:
                 aggregate_id=entity.diagnostic_source_id,
                 event_type="DIAGNOSTIC_SOURCE_CREATED",
                 row_version=1,
+            )
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="DIAGNOSTIC_SOURCE",
+                aggregate_id=entity.diagnostic_source_id,
+                event_type="SOURCE_HEALTH_CHECK_REQUESTED",
+                row_version=1,
+                details={
+                    "health_check_request_id": str(
+                        health_check_request_id
+                    ),
+                    "health_version": 1,
+                },
             )
             return _diagnostic_source_detail(entity)
 
@@ -367,12 +384,13 @@ class DiagnosticSourceConfigurationMixin:
                 entity.status = "DISABLED"
                 entity.health_status = "UNKNOWN"
                 entity.health_version = int(entity.health_version) + 1
-                entity.health_check_request_id = None
-                entity.health_check_requested_at = None
+                entity.health_check_request_id = uuid7()
                 entity.last_health_check_at = None
                 entity.last_error_code = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
+            if connectivity_changed:
+                entity.health_check_requested_at = entity.updated_at
             await uow.session.flush()  # type: ignore[union-attr]
             await add_configuration_event(
                 uow=uow,
@@ -382,6 +400,21 @@ class DiagnosticSourceConfigurationMixin:
                 event_type="DIAGNOSTIC_SOURCE_UPDATED",
                 row_version=int(entity.row_version),
             )
+            if connectivity_changed:
+                await add_configuration_event(
+                    uow=uow,
+                    scope=scope,
+                    aggregate_type="DIAGNOSTIC_SOURCE",
+                    aggregate_id=source_id,
+                    event_type="SOURCE_HEALTH_CHECK_REQUESTED",
+                    row_version=int(entity.row_version),
+                    details={
+                        "health_check_request_id": str(
+                            entity.health_check_request_id
+                        ),
+                        "health_version": int(entity.health_version),
+                    },
+                )
             response = _diagnostic_source_detail(entity)
             await uow.commit()
             return response

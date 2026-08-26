@@ -76,7 +76,7 @@
       type === "ALERTMANAGER"
       && !endpoint
       && !webhookSecret
-      && (testing || !editing?.webhook_configured)
+      && (testing || !editing?.webhook_secret?.configured)
     ) {
       throw new Error("Alertmanager 必须填写访问地址或 Webhook Secret。");
     }
@@ -148,7 +148,7 @@
     button.disabled = true;
     try {
       const payload = sourcePayload(form, !editing);
-      await KBotAIOpsAuth.request(
+      const saved = await KBotAIOpsAuth.request(
         editing ? `${api}/diagnostic-sources/${encodeURIComponent(editing.source_id)}` : `${api}/diagnostic-sources`,
         {
           method: editing ? "PATCH" : "POST",
@@ -159,7 +159,11 @@
         },
       );
       document.getElementById("diagnostic-source-dialog").close();
-      shell.toast(editing ? "诊断源已更新" : "诊断源已创建");
+      shell.toast(
+        saved.health_check_pending
+          ? "诊断源已保存，正在执行健康检查"
+          : editing ? "诊断源已更新" : "诊断源已创建"
+      );
       editing = null;
       await KBotAIOpsPages.reload();
     } catch (error) {

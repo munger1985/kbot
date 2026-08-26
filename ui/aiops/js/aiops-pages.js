@@ -2,6 +2,8 @@
   "use strict";
   const appApi = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
+  let sourceReloadTimer = null;
+  let sourceReloadAttempts = 0;
   const configs = {
     situations: { path: "/situations", cols: [["title", "情境"], ["severity", "严重度", "badge"], ["status", "状态", "badge"], ["event_count", "事件数"], ["last_observed_at", "最近观测", "date"]] },
     runs: { path: "/runs", cols: [["ops_run_id", "运行 ID", "id"], ["trigger_type", "触发方式"], ["investigation_mode", "模式"], ["status", "状态", "badge"], ["created_at", "创建时间", "date"]], detail: "run-detail.html?id=" },
@@ -9,7 +11,7 @@
     inspections: { path: "/inspection-fires", cols: [["fire_id", "执行 ID", "id"], ["scheduled_at", "计划时间", "date"], ["status", "状态", "badge"], ["target_count", "目标数"], ["failed_count", "失败数"]] },
     changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["environment", "环境"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "target-detail.html?id=" },
-    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "diagnostic-source-detail.html?id=" },
+    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["health_status", "健康", "badge"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_key", "策略标识"], ["status", "状态", "badge"], ["version_no", "规则版本"]], detail: "#" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
     "notification-subscriptions": { path: "/notification-subscriptions", cols: [["target_id", "目标", "id"], ["channel_type", "渠道"], ["minimum_severity", "最低级别", "badge"], ["enabled", "启用"]] },
@@ -17,10 +19,60 @@
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.policy_id || item.plan_id;
   function cell(item, [key, , type]) {
     const value = item?.[key];
+    if (type === "source-actions") {
+      const checking = item.health_check_pending;
+      const healthButton = `<button type="button" data-source-action="health" ${checking ? "disabled" : ""}>${checking ? "检查中" : "健康检查"}</button>`;
+      const lifecycleButton = item.status === "ACTIVE"
+        ? '<button type="button" data-source-action="disable">停用</button>'
+        : item.health_status === "HEALTHY" && !checking
+          ? '<button type="button" class="primary" data-source-action="enable">启用</button>'
+          : "";
+      return `<div class="ops-actions">${healthButton}${lifecycleButton}</div>`;
+    }
+    if (key === "health_status" && item.health_check_pending) {
+      return shell.badge("检查中");
+    }
     if (type === "badge") return shell.badge(value);
     if (type === "date") return shell.escape(shell.fmt(value));
     if (type === "id") return `<code>${shell.escape(shell.short(value))}</code>`;
     return shell.escape(value ?? "—");
+  }
+  function scheduleSourceReload() {
+    if (sourceReloadTimer || sourceReloadAttempts >= 6) return;
+    sourceReloadAttempts += 1;
+    sourceReloadTimer = setTimeout(() => {
+      sourceReloadTimer = null;
+      if (document.body.dataset.page === "diagnostic-sources") {
+        renderList("diagnostic-sources");
+      }
+    }, 1500);
+  }
+  async function runSourceAction(button, item) {
+    const action = button.dataset.sourceAction;
+    const sourceId = encodeURIComponent(item.source_id);
+    const path = action === "health"
+      ? `/diagnostic-sources/${sourceId}/health-checks`
+      : `/diagnostic-sources/${sourceId}/${action}`;
+    button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(appApi + path, {
+        method: "POST",
+        headers: {
+          "If-Match": `"rv-${item.row_version}"`,
+          "Idempotency-Key": KBotAIOpsAuth.uuid(),
+        },
+        body: JSON.stringify({}),
+      });
+      shell.toast(action === "health" ? "健康检查已提交" : action === "enable" ? "诊断源已启用" : "诊断源已停用");
+      await renderList("diagnostic-sources");
+      if (action === "health") {
+        sourceReloadAttempts = 0;
+        scheduleSourceReload();
+      }
+    } catch (error) {
+      shell.toast(error.message);
+      button.disabled = false;
+    }
   }
   async function renderList(page) {
     const cfg = configs[page];
@@ -52,6 +104,23 @@
           location.href = row.dataset.href;
         });
       });
+      if (page === "diagnostic-sources") {
+        body.querySelectorAll("[data-source-action]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const row = button.closest("tr");
+            const item = items.find(
+              (candidate) => String(candidate.source_id) === row.dataset.resourceId
+            );
+            if (item) runSourceAction(button, item);
+          });
+        });
+        if (items.some((item) => item.health_check_pending)) {
+          scheduleSourceReload();
+        } else {
+          sourceReloadAttempts = 0;
+        }
+      }
     } catch (error) {
       body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">${shell.escape(error.message)}</td></tr>`;
     }
