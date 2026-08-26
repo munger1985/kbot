@@ -46,20 +46,13 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         )
         self.assertIn(expected_summary, self.sql)
 
-    def test_rebuild_requires_target_and_destructive_confirmations(self) -> None:
-        for required_fragment in (
-            "ACCEPT expected_pdb",
-            "ACCEPT expected_schema",
-            "ACCEPT services_stopped",
-            "ACCEPT rebuild_confirmation",
-            "<> 'STOPPED'",
-            "<> 'REBUILD_AIOPS'",
-            "child_constraint.table_name NOT LIKE 'KBOT\\_OPS\\_%'",
-        ):
-            self.assertIn(required_fragment, self.sql)
-
+    def test_rebuild_is_non_interactive_and_scoped_to_aiops_objects(self) -> None:
+        self.assertNotIn("ACCEPT ", self.sql.upper())
+        self.assertNotRegex(self.sql, r"&[a-zA-Z][a-zA-Z0-9_]*")
         self.assertIn("DROP TABLE ", self.sql)
         self.assertIn(" CASCADE CONSTRAINTS PURGE", self.sql)
+        self.assertIn("KBOT\\_OPS\\_%", self.sql)
+        self.assertIn("KBOT\\_V\\_OPS\\_%", self.sql)
         self.assertNotIn("DROP USER", self.sql.upper())
 
 

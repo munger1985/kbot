@@ -13,20 +13,20 @@
 8. `008_ops_conversations_reports.sql`：对话、报告模板和多模态证据。
 
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
-需要保留的数据，然后用 KBot Schema 所有者执行 `rebuild_aiops_schema.sql`。该脚本
-会校验预期 PDB/Schema、列出待删除对象和行数、拒绝跨服务外键，并要求两次显式
-确认。它只删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，然后直接调用上述八份
-规范 DDL，避免维护第二份建表定义。
+需要保留的数据，然后用 KBot Schema 所有者执行 `rebuild_aiops_schema.sql`。它会
+直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再调用上述八份规范 DDL，避免
+维护第二份建表定义。
 
-从本目录启动 SQLcl/SQL*Plus、连接到 KBot Schema 所有者后执行：
+在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
+Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter），因为脚本包含多段
+PL/SQL 和相对路径 `@@` 调用。
 
-```sql
-@rebuild_aiops_schema.sql
-```
-
-按提示输入预期 PDB、Schema、`STOPPED` 和最终的 `REBUILD_AIOPS`。不要把数据库
-密码写进脚本或命令历史。脚本成功后先确认 `KBOT_V_OPS_SCHEMA_VERSION` 返回
-`AIOPS / 10 / aiops-oracle-v2`，再启动 AIOps 服务并检查 `/ready`。
+此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
+权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
+不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
+会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 10 / aiops-oracle-v2`，再启动 AIOps
+服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用启动时
 只检查 `KBOT_V_OPS_SCHEMA_VERSION`，不得执行 DDL、补列或调用 `create_all()`。
