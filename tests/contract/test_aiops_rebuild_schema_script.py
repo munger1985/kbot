@@ -7,6 +7,8 @@ from pathlib import Path
 import re
 import unittest
 
+from scripts.db.render_aiops_rebuild_schema import render_rebuild_sql
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "database" / "oracle" / "aiops_agent"
@@ -20,21 +22,31 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
     def test_rebuild_uses_every_canonical_script_in_manifest_order(self) -> None:
-        includes = re.findall(r"^@@([0-9]{3}_[a-z0-9_]+\.sql)$", self.sql, re.MULTILINE)
+        sections = re.findall(
+            r"^-- ===== 开始规范 DDL：([0-9]{3}_[a-z0-9_]+\.sql) =====$",
+            self.sql,
+            re.MULTILINE,
+        )
         expected = [item["name"] for item in self.manifest["scripts"]]
 
-        self.assertEqual(expected, includes)
-        self.assertNotRegex(self.sql, r"(?im)^\s*CREATE\s+TABLE\s+")
-        self.assertNotRegex(self.sql, r"(?im)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+")
-
-    def test_rebuild_validation_matches_manifest_contract(self) -> None:
-        expected_summary = (
-            f"验证通过：{len(self.manifest['tables'])} 张表、"
-            f"{len(self.manifest['views'])} 个视图，Schema Version "
-            f"{self.manifest['schema_version']}，合同 "
-            f"{self.manifest['contract_version']}。"
+        self.assertEqual(expected, sections)
+        self.assertEqual(render_rebuild_sql(), self.sql)
+        self.assertNotRegex(self.sql, r"(?m)^@@")
+        self.assertEqual(
+            len(self.manifest["tables"]),
+            len(re.findall(r"(?im)^\s*CREATE\s+TABLE\s+", self.sql)),
+        )
+        self.assertEqual(
+            len(self.manifest["views"]),
+            len(
+                re.findall(
+                    r"(?im)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+",
+                    self.sql,
+                )
+            ),
         )
 
+    def test_rebuild_validation_matches_manifest_contract(self) -> None:
         self.assertIn(f"l_table_count <> {len(self.manifest['tables'])}", self.sql)
         self.assertIn(f"l_view_count <> {len(self.manifest['views'])}", self.sql)
         self.assertIn(
@@ -44,7 +56,11 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             f"l_contract_version <> '{self.manifest['contract_version']}'",
             self.sql,
         )
-        self.assertIn(expected_summary, self.sql)
+        self.assertIn(
+            f"{self.manifest['schema_version']}，合同 "
+            f"{self.manifest['contract_version']}。",
+            self.sql,
+        )
 
     def test_rebuild_is_non_interactive_and_scoped_to_aiops_objects(self) -> None:
         self.assertNotIn("ACCEPT ", self.sql.upper())

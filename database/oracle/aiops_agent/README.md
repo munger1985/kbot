@@ -18,8 +18,8 @@
 维护第二份建表定义。
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
-Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter），因为脚本包含多段
-PL/SQL 和相对路径 `@@` 调用。
+Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建文件已经内嵌
+全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
