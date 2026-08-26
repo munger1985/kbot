@@ -1,4 +1,4 @@
-# 仅用于本机维护。远程访问应由带 TLS 和认证的反向代理提供。
+# 发布Central维护端口。除Grafana可显式指定管理网IPv4外，其余端口仅绑定本机。
 services:
   prometheus:
     ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
@@ -7,4 +7,4 @@ services:
   loki:
     ports: ["127.0.0.1:${LOKI_PORT:-3100}:3100"]
   grafana:
-    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    ports: ["${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"]

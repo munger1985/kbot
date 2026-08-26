@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import configparser
+import ipaddress
 import json
 import os
 import re
@@ -67,7 +68,7 @@ CONFIG_TEMPLATE = """# KBot AIOps观测工具唯一部署配置
 deployment_id = CHANGE_ME
 # 必填：all-in-one、central或collector。
 role = all-in-one
-# 必填：true时把Central维护端口绑定到127.0.0.1；Collector Exporter端口单独配置。
+# 必填：true时发布Central维护端口；默认仅绑定127.0.0.1，Grafana可单独指定管理网IP。
 local_access = false
 # minimum_free_gb = 10
 
@@ -95,6 +96,8 @@ local_access = false
 
 [dashboard]
 # enabled = true
+# 默认127.0.0.1；需要从管理网直连时填写本机管理网IPv4地址，不建议使用0.0.0.0。
+# grafana_bind_address = 127.0.0.1
 # grafana_port = 3000
 # grafana_admin_user = kbot-admin
 # grafana_admin_password = CHANGE_ME
@@ -231,6 +234,22 @@ def _optional(
     return _safe_value(f"[{section}] {option}", value)
 
 
+def _ipv4_address(
+    parser: configparser.ConfigParser,
+    section: str,
+    option: str,
+    default: str,
+) -> str:
+    value = _optional(parser, section, option, default)
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as exc:
+        raise ValueError(f"[{section}] {option}必须是有效的IPv4地址") from exc
+    if address.version != 4:
+        raise ValueError(f"[{section}] {option}当前只支持IPv4地址")
+    return str(address)
+
+
 def _enabled(parser: configparser.ConfigParser, section: str) -> bool:
     if not parser.has_option(section, "enabled"):
         return False
@@ -322,6 +341,7 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
     if "dashboard" in settings.profiles:
         _required(parser, "dashboard", "grafana_admin_user")
         _required(parser, "dashboard", "grafana_admin_password")
+        _ipv4_address(parser, "dashboard", "grafana_bind_address", "127.0.0.1")
     if "host" in settings.profiles:
         _required(parser, "host", "target_key")
         if settings.role == "collector":
@@ -1013,8 +1033,14 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         )
 
     if "dashboard" in settings.profiles:
-        env_lines.append(
-            f"GRAFANA_PORT={_bounded_int(parser, 'dashboard', 'grafana_port', 3000, 1, 65535)}"
+        env_lines.extend(
+            [
+                "GRAFANA_BIND_ADDRESS="
+                + _ipv4_address(
+                    parser, "dashboard", "grafana_bind_address", "127.0.0.1"
+                ),
+                f"GRAFANA_PORT={_bounded_int(parser, 'dashboard', 'grafana_port', 3000, 1, 65535)}",
+            ]
         )
         _write_secret(
             secrets / "grafana_admin_user",

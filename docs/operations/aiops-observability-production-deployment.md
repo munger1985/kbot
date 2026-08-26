@@ -73,6 +73,14 @@ alertmanager_retention = 120h
 enabled = true
 loki_retention = 720h
 
+[dashboard]
+enabled = true
+# 仅允许本机访问时使用127.0.0.1；管理网直连时填写部署节点的管理网IPv4地址。
+grafana_bind_address = 10.10.1.10
+grafana_port = 3000
+grafana_admin_user = kbot-admin
+grafana_admin_password = 填写实际强密码
+
 [oracle:oracle-prod-01]
 enabled = true
 host = 10.10.1.21

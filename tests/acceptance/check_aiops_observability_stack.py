@@ -36,8 +36,25 @@ def main() -> int:
             stack.CONFIG_TEMPLATE.replace(
                 "deployment_id = CHANGE_ME", "deployment_id = acceptance-oracle"
             )
+            .replace("local_access = false", "local_access = true", 1)
             .replace("[metrics]\n# enabled = true", "[metrics]\nenabled = true")
             .replace("[logs]\n# enabled = true", "[logs]\nenabled = true")
+            .replace(
+                "[dashboard]\n# enabled = true",
+                "[dashboard]\nenabled = true",
+            )
+            .replace(
+                "# grafana_bind_address = 127.0.0.1",
+                "grafana_bind_address = 10.0.0.190",
+            )
+            .replace(
+                "# grafana_admin_user = kbot-admin",
+                "grafana_admin_user = kbot-admin",
+            )
+            .replace(
+                "# grafana_admin_password = CHANGE_ME",
+                "grafana_admin_password = acceptance-grafana-password",
+            )
             .replace("[host]\n# enabled = true", "[host]\nenabled = true")
             .replace("# target_key = host-prod-01", "target_key = host-acceptance-01")
             .replace(
@@ -56,6 +73,9 @@ def main() -> int:
         settings = stack._load_settings(config)
         stack._prepare_runtime(settings)
         state = settings.runtime_dir
+        stack_env = (state / "stack.env").read_text(encoding="utf-8")
+        if "GRAFANA_BIND_ADDRESS=10.0.0.190" not in stack_env:
+            raise RuntimeError("Grafana管理网监听地址没有写入Compose环境")
         subprocess.run(
             [*stack._compose_command(settings), "config", "--quiet"],
             check=True,

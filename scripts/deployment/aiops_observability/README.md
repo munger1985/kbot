@@ -17,3 +17,8 @@ Oracle DBA在目标PDB创建最小权限监控用户时，使用
 创建用户。
 
 OEM不属于此安装包，部署完成后在AIOps App内配置。
+
+启用`[dashboard]`且`local_access = true`时，Grafana默认只发布到
+`127.0.0.1:3000`。需要从管理网直接访问时，通过唯一INI中的
+`grafana_bind_address`填写本机管理网IPv4地址；不要手工修改Compose文件，也不建议
+在客户生产环境使用`0.0.0.0`。
