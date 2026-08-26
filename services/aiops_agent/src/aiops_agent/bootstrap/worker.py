@@ -74,8 +74,12 @@ def create_aiops_worker_probe(
         )
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
+        action_registry = ActionRegistry.load()
         agent_catalog = AIOpsAgentValidator(
-            AIOpsAgentService(uow_factory=runtime.uow_factory),
+            AIOpsAgentService(
+                uow_factory=runtime.uow_factory,
+                action_registry=action_registry,
+            ),
             model_client=AIModelConfigClient(
                 base_url=resolved.clients.model_serving.base_url,
                 timeout=resolved.clients.model_serving.timeout_seconds,
@@ -96,7 +100,6 @@ def create_aiops_worker_probe(
             else None
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
-        action_registry = ActionRegistry.load()
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path

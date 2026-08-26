@@ -101,8 +101,10 @@ def create_aiops_api(
             ),
         )
         app.state.runtime = runtime
+        action_registry = ActionRegistry.load()
         app.state.agent_service = AIOpsAgentService(
-            uow_factory=runtime.uow_factory
+            uow_factory=runtime.uow_factory,
+            action_registry=action_registry,
         )
         app.state.conversation_service = AIOpsConversationService(
             uow_factory=runtime.uow_factory,
@@ -173,7 +175,6 @@ def create_aiops_api(
             else None
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
-        action_registry = ActionRegistry.load()
         app.state.change_service = AIOpsChangeService(
             uow_factory=runtime.uow_factory,
             cursor_codec=cursor_codec,

@@ -12,7 +12,7 @@
     changes: { path: "/proposals", cols: [["proposal_id", "建议 ID", "id"], ["action_template_id", "动作模板"], ["risk", "风险", "badge"], ["status", "状态", "badge"], ["expires_at", "失效时间", "date"]] },
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
-    policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_key", "策略标识"], ["status", "状态", "badge"], ["version_no", "规则版本"]], detail: "#" },
+    policies: { path: "/policies", cols: [["display_name", "策略"], ["policy_key", "系统标识"], ["status", "状态", "badge"], ["version_no", "规则版本"]] },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
     "notification-subscriptions": { path: "/notification-subscriptions", cols: [["target_id", "目标", "id"], ["channel_type", "渠道"], ["minimum_severity", "最低级别", "badge"], ["enabled", "启用"]] },
   };
@@ -134,7 +134,6 @@
           const editors = {
             targets: globalThis.KBotAIOpsTargets,
             "diagnostic-sources": globalThis.KBotAIOpsConfigurations,
-            policies: globalThis.KBotAIOpsConfigurations,
             "inspection-plans": globalThis.KBotAIOpsConfigurations,
           };
           if (editors[page]?.openEdit) {

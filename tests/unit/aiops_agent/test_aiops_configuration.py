@@ -446,8 +446,8 @@ class ConfigurationContractTest(unittest.TestCase):
             {
                 "schema_version": "ops.policy.v1",
                 "allow_agent_execution": False,
-                "max_risk_level": "LOW",
-                "allowed_action_types": [],
+                "readonly_database_enabled": False,
+                "auto_alert_enabled": True,
                 "auto_observe_min_severity": "CRITICAL",
                 "alert_cooldown_seconds": 900,
             }

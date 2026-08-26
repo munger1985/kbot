@@ -321,12 +321,20 @@ class AIOpsChangeService:
             snapshot = await self._snapshot(uow, proposal)
             if int(target.row_version) != snapshot.target_version:
                 raise state_conflict("Target 配置版本已变化")
-            binding = await uow.targets.get_agent_binding(
-                target_id=target.target_id,
-                agent_id=run.agent_id,
-                domain_id=domain_id,
-                lock=True,
-            )
+            binding = None
+            if getattr(uow, "agents", None) is not None:
+                candidate = await uow.agents.get_active(
+                    domain_id=domain_id, agent_id=run.agent_id, lock=True
+                )
+                if candidate is not None and candidate.target_id == target.target_id:
+                    binding = candidate
+            if binding is None:
+                binding = await uow.targets.get_agent_binding(
+                    target_id=target.target_id,
+                    agent_id=run.agent_id,
+                    domain_id=domain_id,
+                    lock=True,
+                )
             if (
                 binding is None
                 or binding.status != "ACTIVE"
@@ -848,12 +856,20 @@ class AIOpsChangeService:
             )
             if conflicting is not None:
                 raise state_conflict("Target 已存在进行中的 Mutation")
-            binding = await uow.targets.get_agent_binding(
-                target_id=target.target_id,
-                agent_id=run.agent_id,
-                domain_id=domain_id,
-                lock=True,
-            )
+            binding = None
+            if getattr(uow, "agents", None) is not None:
+                candidate = await uow.agents.get_active(
+                    domain_id=domain_id, agent_id=run.agent_id, lock=True
+                )
+                if candidate is not None and candidate.target_id == target.target_id:
+                    binding = candidate
+            if binding is None:
+                binding = await uow.targets.get_agent_binding(
+                    target_id=target.target_id,
+                    agent_id=run.agent_id,
+                    domain_id=domain_id,
+                    lock=True,
+                )
             if (
                 binding is None
                 or binding.status != "ACTIVE"

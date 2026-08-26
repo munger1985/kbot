@@ -261,6 +261,11 @@ class AIOpsRuntimeService:
                 )
                 if binding is None or binding.status != "ACTIVE":
                     raise resource_not_found("Active Agent Binding")
+            elif (
+                binding.target_id is not None
+                and binding.target_id != command.target_id
+            ):
+                raise validation_failed("Agent 仅允许诊断其已选择的数据库直连 Target")
             policy = None
             configured_policy_status = None
             if binding.policy_id is not None:
@@ -332,6 +337,9 @@ class AIOpsRuntimeService:
                     command=command,
                     target=target,
                     now=now,
+                    allowed_source_ids=getattr(
+                        binding, "diagnostic_source_ids", None
+                    ),
                 )
             elif command.blueprint_id == "database.diagnostic-baseline":
                 (
@@ -352,6 +360,9 @@ class AIOpsRuntimeService:
                     command=command,
                     target=target,
                     now=now,
+                    allowed_source_ids=getattr(
+                        binding, "diagnostic_source_ids", None
+                    ),
                 )
                 (
                     _,
@@ -1167,6 +1178,7 @@ class AIOpsRuntimeService:
         command: CreateOpsRunCommand,
         target,
         now: datetime,
+        allowed_source_ids: tuple[UUID, ...] | None = None,
     ):
         """在 Run 创建事务内冻结监控绑定、目录与查询窗口。"""
         if command.blueprint_version != "1":
@@ -1189,6 +1201,13 @@ class AIOpsRuntimeService:
             domain_id=command.domain_id,
             active_only=True,
         )
+        if allowed_source_ids is not None:
+            allowed = set(allowed_source_ids)
+            monitors = [
+                monitor
+                for monitor in monitors
+                if monitor.diagnostic_source_id in allowed
+            ]
         snapshots = []
         initial_gaps = []
         observation_binding_ids = []

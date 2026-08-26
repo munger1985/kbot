@@ -27,7 +27,14 @@ class _Request(BaseModel):
 class AgentCreateRequest(_Request):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    policy_id: UUID
+    diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
+    target_id: UUID | None = None
+    allow_change_execution: bool = False
+    auto_alert_enabled: bool = True
+    auto_observe_min_severity: Literal[
+        "INFO", "WARNING", "HIGH", "CRITICAL"
+    ] = "CRITICAL"
+    alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
     models: dict[str, UUID] = Field(default_factory=dict)
     image_capabilities: AgentImageCapabilities = Field(
         default_factory=AgentImageCapabilities
@@ -41,7 +48,16 @@ class AgentUpdateRequest(_Request):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    policy_id: UUID | None = None
+    diagnostic_source_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=16
+    )
+    target_id: UUID | None = None
+    allow_change_execution: bool | None = None
+    auto_alert_enabled: bool | None = None
+    auto_observe_min_severity: Literal[
+        "INFO", "WARNING", "HIGH", "CRITICAL"
+    ] | None = None
+    alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
     models: dict[str, UUID] | None = None
     image_capabilities: AgentImageCapabilities | None = None
     instruction: str | None = Field(default=None, max_length=32000)

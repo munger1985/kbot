@@ -1,1 +1,27 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIOps Agent</title><link rel="stylesheet" href="./css/aiops.css"></head><body data-page="agents"><main class="ops-main"><header class="ops-head"><div><h1>AIOps Agent</h1><p>组合诊断源、目标、执行策略、模型与专业指令。</p></div><button class="primary">新增 Agent</button></header><section id="ops-simple" class="ops-panel"><div class="ops-panel-body">正在加载 Agent…</div></section></main><script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIOps Agent</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
+<body data-page="agents">
+  <main class="ops-main">
+    <header class="ops-head"><div><h1>AIOps Agent</h1><p>在一个表单中绑定监控证据、可选数据库直连能力和自动告警诊断规则。</p></div><button id="create-agent" class="primary" type="button" data-write-ready>新增 Agent</button></header>
+    <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Agent</th><th>状态</th><th>监控源</th><th>数据库直连</th><th>变更</th><th>自动告警诊断</th><th>操作</th></tr></thead><tbody id="agent-rows"><tr><td class="ops-empty" colspan="7">正在加载 Agent…</td></tr></tbody></table></div></section>
+  </main>
+  <dialog id="agent-dialog" class="ops-dialog"><form id="agent-form">
+    <header><h2 id="agent-dialog-title">新增 Agent</h2><button data-close-dialog type="button">关闭</button></header>
+    <div class="ops-dialog-body"><div class="ops-form">
+      <div class="ops-field span-8"><label for="agent-display-name">Agent 名称</label><input id="agent-display-name" name="display_name" maxlength="256" required></div>
+      <div class="ops-field span-4"><label for="agent-status">启用状态</label><select id="agent-status" name="status"><option value="DRAFT">草稿</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select></div>
+      <div class="ops-field span-12"><label for="agent-description">说明</label><input id="agent-description" name="description" maxlength="1000"></div>
+      <div class="ops-field span-12"><label>监控源（必选，可多选）</label><div id="agent-sources" class="ops-choice-list"></div><small>Agent 只会消费这里选择的 Prometheus、Loki 等监控证据。</small></div>
+      <div class="ops-field span-12"><label for="agent-target">数据库直连 Target（可选）</label><select id="agent-target" name="target_id"><option value="">不允许数据库直连诊断</option></select><small>选择后表示允许使用该 Target 的只读诊断凭据；不选择仍可使用监控源。</small></div>
+      <div id="agent-change-field" class="ops-field span-12" hidden><label><input name="allow_change_execution" type="checkbox">允许人工审批后执行数据库变更</label><small>只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。</small></div>
+      <div class="ops-field span-12"><label><input name="auto_alert_enabled" type="checkbox" checked>允许监控告警自动触发诊断</label><small>以下最低级别和冷却时间只适用于告警自动触发；不影响聊天诊断、人工运行和计划巡检。</small></div>
+      <div class="ops-field span-6"><label for="agent-min-severity">自动告警诊断最低级别</label><select id="agent-min-severity" name="auto_observe_min_severity"><option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option></select></div>
+      <div class="ops-field span-6"><label for="agent-cooldown">同一告警冷却时间（分钟）</label><input id="agent-cooldown" name="alert_cooldown_minutes" type="number" min="0" max="1440" value="15" required></div>
+      <div class="ops-field span-12"><label for="agent-model">诊断模型 ID（可选）</label><input id="agent-model" name="diagnosis_model_id" placeholder="未填写时由运行时默认模型配置决定"></div>
+      <div class="ops-field span-12"><label for="agent-instruction">专业指令</label><textarea id="agent-instruction" name="instruction" maxlength="32000"></textarea></div>
+    </div><p id="agent-result" class="ops-connection-result" role="status"></p></div>
+    <footer><button data-close-dialog type="button">取消</button><button id="save-agent" class="primary" type="submit">创建 Agent</button></footer>
+  </form></dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script><script src="./js/aiops-agents.js"></script>
+</body></html>

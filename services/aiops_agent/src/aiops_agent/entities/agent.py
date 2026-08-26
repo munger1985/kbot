@@ -52,6 +52,7 @@ class AIOpsAgentVersionEntity(BaseEntity):
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
     policy_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    target_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     models_json: Mapped[dict[str, str]] = mapped_column(OracleNativeJSON, nullable=False)
     image_capabilities_json: Mapped[dict[str, Any]] = mapped_column(
         OracleNativeJSON, nullable=False, default=dict
@@ -59,6 +60,22 @@ class AIOpsAgentVersionEntity(BaseEntity):
     instruction: Mapped[str | None] = mapped_column(Text)
     config_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AIOpsAgentVersionSourceEntity(BaseEntity):
+    """固定一个 Agent 版本可以消费的监控源集合。"""
+
+    __tablename__ = "KBOT_OPS_AGENT_VERSION_SOURCE"
+
+    agent_version_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True
+    )
+    diagnostic_source_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
     )

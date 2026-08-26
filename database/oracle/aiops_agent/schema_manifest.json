@@ -1,6 +1,6 @@
 {
   "component": "aiops_agent",
-  "schema_version": 11,
+  "schema_version": 12,
   "contract_version": "aiops-oracle-v2",
   "oracle_baseline": "26ai",
   "scripts": [
@@ -32,12 +32,12 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 35,
-      "sha256": "311c347996cdf9e18452dcc1b5e34413c4fab6cb4ef817bcb8622e467e7bb676"
+      "sha256": "70293a938c96cd62abffae9bc38860b283dc07dc1f1c27dd04abeab7ac126ff1"
     },
     {
       "name": "007_ops_agents.sql",
-      "statements": 10,
-      "sha256": "0d7d7f4b225f34e7802500f39b8a0db42814ff9e060197ccabe33e80ed515f3f"
+      "statements": 13,
+      "sha256": "2b92f9e8a9e07038971fa8b853e1a90800185ae666bcacc72c13f0ef08078f56"
     },
     {
       "name": "008_ops_conversations_reports.sql",
@@ -71,6 +71,7 @@
     "KBOT_OPS_OUTBOX",
     "KBOT_OPS_AGENT",
     "KBOT_OPS_AGENT_VERSION",
+    "KBOT_OPS_AGENT_VERSION_SOURCE",
     "KBOT_OPS_AGENT_GRANT",
     "KBOT_OPS_REPORT_TEMPLATE",
     "KBOT_OPS_REPORT_TEMPLATE_VER",
@@ -115,6 +116,8 @@
     {"constraint": "FK_OPS_SOURCE_AUTH_CRED", "index": "IX_OPS_SOURCE_AUTH_CRED", "table": "KBOT_OPS_DIAGNOSTIC_SOURCE", "columns": ["AUTH_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_SOURCE_WEBHOOK_CRED", "index": "IX_OPS_SOURCE_WEBHOOK_CRED", "table": "KBOT_OPS_DIAGNOSTIC_SOURCE", "columns": ["WEBHOOK_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_AGENT_VERSION_POLICY", "index": "IX_OPS_AGENT_VERSION_POLICY", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["POLICY_ID"]},
+    {"constraint": "FK_OPS_AGENT_VERSION_TARGET", "index": "IX_OPS_AGENT_VERSION_TARGET", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["TARGET_ID"]},
+    {"constraint": "FK_OPS_AGENT_VER_SOURCE_SRC", "index": "IX_OPS_AGENT_VER_SOURCE_SRC", "table": "KBOT_OPS_AGENT_VERSION_SOURCE", "columns": ["DIAGNOSTIC_SOURCE_ID"]},
     {"constraint": "FK_OPS_AGENT_CURRENT_VERSION", "index": "IX_OPS_AGENT_CURRENT_VERSION", "table": "KBOT_OPS_AGENT", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_VER_DOMAIN", "index": "IX_OPS_RPT_TPL_VER_DOMAIN", "table": "KBOT_OPS_REPORT_TEMPLATE_VER", "columns": ["DOMAIN_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_CURRENT_VERSION", "index": "IX_OPS_RPT_TPL_CURRENT_VERSION", "table": "KBOT_OPS_REPORT_TEMPLATE", "columns": ["CURRENT_VERSION_ID"]},

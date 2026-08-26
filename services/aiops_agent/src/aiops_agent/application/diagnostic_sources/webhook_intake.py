@@ -502,17 +502,21 @@ class SignalEventIntakeService:
                 situation_resolved = situation.status != "RESOLVED"
                 situation.status = "RESOLVED"
                 situation.resolved_at = event.occurred_at
-        if (
-            situation is not None
-            and situation.status != "RESOLVED"
-            and event.event_status != "RESOLVED"
-            and await self._auto_run_allowed(
+        auto_agent = None
+        if situation is not None and situation.status != "RESOLVED":
+            auto_agent = await self._resolve_auto_agent(
                 uow=uow,
                 target=target,
+                source_id=source.diagnostic_source_id,
                 severity=situation.severity,
                 fingerprint=situation.correlation_hash,
                 now=now,
             )
+        if (
+            situation is not None
+            and situation.status != "RESOLVED"
+            and event.event_status != "RESOLVED"
+            and auto_agent is not None
             and await uow.runs.get_active_by_situation(
                 situation_id=situation.situation_id
             )
@@ -523,6 +527,7 @@ class SignalEventIntakeService:
                 target=target,
                 situation=situation,
                 event_entity=entity,
+                agent_id=auto_agent.agent_id,
                 trace_id=trace_id,
                 now=now,
             )
@@ -586,53 +591,38 @@ class SignalEventIntakeService:
         )
         situation.correlation_json = metadata
 
-    async def _auto_run_allowed(
+    async def _resolve_auto_agent(
         self,
         *,
         uow,
         target,
+        source_id,
         severity: str,
         fingerprint: str,
         now: datetime,
-    ) -> bool:
-        binding = await uow.targets.get_agent_binding(
-            target_id=target.target_id,
-            agent_id=self._system_agent_id,
+    ):
+        resolved = await uow.agents.resolve_auto_alert(
             domain_id=int(target.domain_id),
+            source_id=source_id,
+            target_id=target.target_id,
         )
-        if (
-            binding is None
-            or binding.status != "ACTIVE"
-        ):
-            return False
-        minimum = "CRITICAL"
-        cooldown_seconds = 900
-        if binding.policy_id is not None:
-            policy = await uow.policies.get_scoped(
-                policy_id=binding.policy_id,
-                domain_id=int(target.domain_id),
-            )
-            if policy is None or policy.status != "ACTIVE":
-                return False
-            minimum = str(
-                policy.rules_json.get(
-                    "auto_observe_min_severity", "CRITICAL"
-                )
-            )
-            cooldown_seconds = int(
-                policy.rules_json.get("alert_cooldown_seconds", 900)
-            )
+        if resolved is None:
+            return None
+        binding, policy = resolved
+        minimum = str(policy.rules_json.get("auto_observe_min_severity", "CRITICAL"))
+        cooldown_seconds = int(policy.rules_json.get("alert_cooldown_seconds", 900))
         if _SEVERITY_RANK[severity] < _SEVERITY_RANK.get(
             minimum, _SEVERITY_RANK["CRITICAL"]
         ):
-            return False
+            return None
         latest = await uow.runs.get_latest_by_situation_correlation(
             target_id=target.target_id,
             fingerprint=fingerprint,
         )
-        return latest is None or (
+        allowed = latest is None or (
             now - latest.created_at
         ).total_seconds() >= cooldown_seconds
+        return binding if allowed else None
 
     async def _enqueue_auto_run(
         self,
@@ -641,10 +631,13 @@ class SignalEventIntakeService:
         target,
         situation,
         event_entity,
+        agent_id,
         trace_id: str,
         now: datetime,
     ) -> None:
-        idempotency_key = f"situation:{situation.situation_id}:observe-run"
+        idempotency_key = (
+            f"situation:{situation.situation_id}:agent:{agent_id}:observe-run"
+        )
         if (
             await uow.outbox.get_by_idempotency(
                 idempotency_key=idempotency_key
@@ -654,7 +647,7 @@ class SignalEventIntakeService:
             return
         payload = {
             "domain_id": int(target.domain_id),
-            "agent_id": str(self._system_agent_id),
+            "agent_id": str(agent_id),
             "target_id": str(target.target_id),
             "situation_id": str(situation.situation_id),
             "signal_event_id": str(event_entity.signal_event_id),

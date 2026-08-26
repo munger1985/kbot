@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(6, len(scripts))
+        self.assertEqual(7, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -138,7 +138,6 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
     def test_configuration_pages_open_real_create_and_edit_dialogs(self):
         pages = {
             "diagnostic-sources.html": "diagnostic-source-dialog",
-            "policies.html": "policy-dialog",
             "inspection-plans.html": "inspection-plan-dialog",
         }
         for filename, dialog_id in pages.items():
@@ -170,9 +169,25 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('data-target-action="maintenance"', pages_script)
         self.assertIn('data-target-action="disable"', pages_script)
         self.assertIn('method: editing ? "PATCH" : "POST"', script)
-        self.assertIn("基于当前策略创建新版本", script)
+        policies = (AIOPS_ROOT / "policies.html").read_text(encoding="utf-8")
+        self.assertIn("仅用于查看", policies)
+        self.assertNotIn('id="policy-dialog"', policies)
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
+
+    def test_agent_form_owns_resources_and_policy_inputs(self):
+        page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('name="diagnostic_source_ids"', script)
+        self.assertIn('name="target_id"', page)
+        self.assertIn('name="allow_change_execution"', page)
+        self.assertIn('name="auto_alert_enabled"', page)
+        self.assertIn("只适用于告警自动触发", page)
+        self.assertNotIn('name="policy_id"', page)
+        self.assertNotIn("max_risk_level", page)
+        self.assertNotIn("allowed_action_types", page)
 
 
 if __name__ == "__main__":

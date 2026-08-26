@@ -99,20 +99,25 @@ from .projections import (
 class PolicyConfigurationMixin:
     @staticmethod
     def _validate_policy_rules(rules: dict[str, Any]) -> None:
+        obsolete = {"max_risk_level", "allowed_action_types"}.intersection(rules)
+        if obsolete:
+            raise validation_failed(
+                "Policy 不再接受最大风险级别或用户指定动作类型"
+            )
         if rules.get("schema_version") != "ops.policy.v1":
             raise validation_failed("Policy rules.schema_version 必须为 ops.policy.v1")
         if not isinstance(rules.get("allow_agent_execution"), bool):
             raise validation_failed(
                 "Policy rules.allow_agent_execution 必须为布尔值"
             )
-        risk = rules.get("max_risk_level", "LOW")
-        if risk not in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}:
-            raise validation_failed("Policy max_risk_level 无效")
-        actions = rules.get("allowed_action_types", [])
-        if not isinstance(actions, list) or not all(
-            isinstance(item, str) and item for item in actions
-        ):
-            raise validation_failed("Policy allowed_action_types 必须为字符串数组")
+        if not isinstance(rules.get("readonly_database_enabled"), bool):
+            raise validation_failed(
+                "Policy rules.readonly_database_enabled 必须为布尔值"
+            )
+        if not isinstance(rules.get("auto_alert_enabled"), bool):
+            raise validation_failed(
+                "Policy rules.auto_alert_enabled 必须为布尔值"
+            )
         minimum_severity = rules.get(
             "auto_observe_min_severity", "CRITICAL"
         )

@@ -4,6 +4,34 @@
       "AIOpsAgentCreatePayload": {
         "additionalProperties": false,
         "properties": {
+          "alert_cooldown_minutes": {
+            "default": 15,
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Alert Cooldown Minutes",
+            "type": "integer"
+          },
+          "allow_change_execution": {
+            "default": false,
+            "title": "Allow Change Execution",
+            "type": "boolean"
+          },
+          "auto_alert_enabled": {
+            "default": true,
+            "title": "Auto Alert Enabled",
+            "type": "boolean"
+          },
+          "auto_observe_min_severity": {
+            "default": "CRITICAL",
+            "enum": [
+              "INFO",
+              "WARNING",
+              "HIGH",
+              "CRITICAL"
+            ],
+            "title": "Auto Observe Min Severity",
+            "type": "string"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -21,10 +49,15 @@
             ],
             "title": "Description"
           },
-          "diagnostic_source_id": {
-            "format": "uuid",
-            "title": "Diagnostic Source Id",
-            "type": "string"
+          "diagnostic_source_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Diagnostic Source Ids",
+            "type": "array"
           },
           "display_name": {
             "maxLength": 256,
@@ -36,18 +69,6 @@
             "additionalProperties": true,
             "title": "Image Capabilities",
             "type": "object"
-          },
-          "inspection_plan_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inspection Plan Id"
           },
           "instruction": {
             "anyOf": [
@@ -68,11 +89,6 @@
             },
             "title": "Models",
             "type": "object"
-          },
-          "policy_id": {
-            "format": "uuid",
-            "title": "Policy Id",
-            "type": "string"
           },
           "status": {
             "default": "DRAFT",
@@ -98,8 +114,7 @@
         },
         "required": [
           "display_name",
-          "diagnostic_source_id",
-          "policy_id"
+          "diagnostic_source_ids"
         ],
         "title": "AIOpsAgentCreatePayload",
         "type": "object"
@@ -171,6 +186,58 @@
       "AIOpsAgentUpdatePayload": {
         "additionalProperties": false,
         "properties": {
+          "alert_cooldown_minutes": {
+            "anyOf": [
+              {
+                "maximum": 1440.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Cooldown Minutes"
+          },
+          "allow_change_execution": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Change Execution"
+          },
+          "auto_alert_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Alert Enabled"
+          },
+          "auto_observe_min_severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "INFO",
+                  "WARNING",
+                  "HIGH",
+                  "CRITICAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Observe Min Severity"
+          },
           "config": {
             "anyOf": [
               {
@@ -195,17 +262,22 @@
             ],
             "title": "Description"
           },
-          "diagnostic_source_id": {
+          "diagnostic_source_ids": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Diagnostic Source Id"
+            "title": "Diagnostic Source Ids"
           },
           "display_name": {
             "anyOf": [
@@ -237,18 +309,6 @@
             ],
             "title": "Image Capabilities"
           },
-          "inspection_plan_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inspection Plan Id"
-          },
           "instruction": {
             "anyOf": [
               {
@@ -275,18 +335,6 @@
               }
             ],
             "title": "Models"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
           },
           "status": {
             "anyOf": [

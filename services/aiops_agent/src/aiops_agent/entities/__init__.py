@@ -46,6 +46,7 @@ __all__ = [
     "AIOpsAgentEntity",
     "AIOpsAgentGrantEntity",
     "AIOpsAgentVersionEntity",
+    "AIOpsAgentVersionSourceEntity",
     "ApprovalTokenEntity",
     "ChangeProposalEntity",
     "ExecutionEntity",
@@ -72,4 +73,9 @@ __all__ = [
     "TargetEntity",
     "TargetSourceBindingEntity",
 ]
-from .agent import AIOpsAgentEntity, AIOpsAgentGrantEntity, AIOpsAgentVersionEntity
+from .agent import (
+    AIOpsAgentEntity,
+    AIOpsAgentGrantEntity,
+    AIOpsAgentVersionEntity,
+    AIOpsAgentVersionSourceEntity,
+)

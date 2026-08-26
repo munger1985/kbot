@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -12,7 +14,9 @@ from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
+    PolicyEntity,
 )
+from aiops_agent.application.configuration.common import sha256_json
 from platform_core.identity import uuid7
 
 
@@ -42,7 +46,14 @@ class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    policy_id: UUID
+    diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
+    target_id: UUID | None = None
+    allow_change_execution: bool = False
+    auto_alert_enabled: bool = True
+    auto_observe_min_severity: Literal[
+        "INFO", "WARNING", "HIGH", "CRITICAL"
+    ] = "CRITICAL"
+    alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
     models: dict[str, UUID] = Field(default_factory=dict)
     image_capabilities: AgentImageCapabilities = Field(
         default_factory=AgentImageCapabilities
@@ -52,6 +63,14 @@ class CreateAIOpsAgentCommand(_Model):
     status: Literal["DRAFT", "ACTIVE"] = "DRAFT"
     actor_id: str = Field(min_length=1, max_length=256)
 
+    @model_validator(mode="after")
+    def validate_resources(self):
+        if len(set(self.diagnostic_source_ids)) != len(self.diagnostic_source_ids):
+            raise ValueError("diagnostic_source_ids 不能重复")
+        if self.allow_change_execution and self.target_id is None:
+            raise ValueError("允许执行变更前必须选择数据库直连 Target")
+        return self
+
 
 class UpdateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
@@ -59,13 +78,32 @@ class UpdateAIOpsAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    policy_id: UUID | None = None
+    diagnostic_source_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=16
+    )
+    target_id: UUID | None = None
+    allow_change_execution: bool | None = None
+    auto_alert_enabled: bool | None = None
+    auto_observe_min_severity: Literal[
+        "INFO", "WARNING", "HIGH", "CRITICAL"
+    ] | None = None
+    alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
     models: dict[str, UUID] | None = None
     image_capabilities: AgentImageCapabilities | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
     actor_id: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_resources(self):
+        if (
+            self.diagnostic_source_ids is not None
+            and len(set(self.diagnostic_source_ids))
+            != len(self.diagnostic_source_ids)
+        ):
+            raise ValueError("diagnostic_source_ids 不能重复")
+        return self
 
 
 class UpsertAIOpsAgentGrantCommand(_Model):
@@ -86,19 +124,26 @@ class AIOpsAgentError(ValueError):
 
 
 class AIOpsAgentService:
-    def __init__(self, *, uow_factory):
+    def __init__(self, *, uow_factory, action_registry=None):
         self._uow_factory = uow_factory
+        self._action_registry = action_registry
 
     async def create(self, command: CreateAIOpsAgentCommand) -> dict[str, Any]:
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
-            states = await uow.agents.resource_states(
-                domain_id=command.domain_id,
-                policy_id=command.policy_id,
+            values = command.model_dump()
+            await self._validate_resources(
+                uow, command.domain_id, command.status, values
             )
-            self._validate_resources(
-                states, command.status, command.model_dump()
+            policy = await self._create_policy(
+                uow=uow,
+                agent_id=agent_id,
+                version_no=1,
+                display_name=command.display_name,
+                values=values,
+                actor_id=command.actor_id,
             )
+            values["policy_id"] = policy.policy_id
             agent = AIOpsAgentEntity(
                 agent_id=agent_id,
                 domain_id=command.domain_id,
@@ -116,9 +161,13 @@ class AIOpsAgentService:
                         agent_id=agent_id,
                         version_id=version_id,
                         version_no=1,
-                        values=command.model_dump(),
+                        values=values,
                         actor_id=command.actor_id,
                     )
+                )
+                await uow.agents.add_version_sources(
+                    version_id=version_id,
+                    source_ids=command.diagnostic_source_ids,
                 )
                 agent.current_version_id = version_id
                 await uow.commit()
@@ -130,17 +179,20 @@ class AIOpsAgentService:
 
     async def list(self, *, domain_id: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
-            return [
-                self._view(agent, await self._version(uow.agents, agent))
-                for agent in await uow.agents.list(domain_id=domain_id)
-            ]
+            rows = []
+            for agent in await uow.agents.list(domain_id=domain_id):
+                version = await self._version(uow.agents, agent)
+                rows.append(await self._view(uow, agent, version))
+            return rows
 
     async def get(self, *, domain_id: int, agent_id: UUID) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
             if agent is None:
                 self._not_found()
-            return self._view(agent, await self._version(uow.agents, agent))
+            return await self._view(
+                uow, agent, await self._version(uow.agents, agent)
+            )
 
     async def update(self, command: UpdateAIOpsAgentCommand) -> dict[str, Any]:
         async with self._uow_factory() as uow:
@@ -156,12 +208,43 @@ class AIOpsAgentService:
                     "STATE_VERSION_CONFLICT", "Agent 配置版本已变化"
                 )
             current = await self._version(uow.agents, agent)
+            current_sources = await uow.agents.version_source_ids(
+                agent_version_id=current.agent_version_id
+            )
+            current_policy = await uow.policies.get_scoped(
+                policy_id=current.policy_id, domain_id=command.domain_id
+            )
+            if current_policy is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_POLICY_MISSING", "Agent 执行策略不存在"
+                )
+            current_rules = dict(current_policy.rules_json or {})
             changes = command.model_dump(
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
             effective = {
-                "policy_id": changes.get("policy_id", current.policy_id),
+                "domain_id": command.domain_id,
+                "diagnostic_source_ids": changes.get(
+                    "diagnostic_source_ids", tuple(current_sources)
+                ),
+                "target_id": changes.get("target_id", current.target_id),
+                "allow_change_execution": changes.get(
+                    "allow_change_execution",
+                    bool(current_rules.get("allow_agent_execution", False)),
+                ),
+                "auto_alert_enabled": changes.get(
+                    "auto_alert_enabled",
+                    bool(current_rules.get("auto_alert_enabled", True)),
+                ),
+                "auto_observe_min_severity": changes.get(
+                    "auto_observe_min_severity",
+                    current_rules.get("auto_observe_min_severity", "CRITICAL"),
+                ),
+                "alert_cooldown_minutes": changes.get(
+                    "alert_cooldown_minutes",
+                    int(current_rules.get("alert_cooldown_seconds", 900)) // 60,
+                ),
                 "models": changes.get("models", current.models_json),
                 "image_capabilities": changes.get(
                     "image_capabilities", current.image_capabilities_json
@@ -169,15 +252,16 @@ class AIOpsAgentService:
                 "instruction": changes.get("instruction", current.instruction),
                 "config": changes.get("config", current.config_json),
             }
-            states = await uow.agents.resource_states(
-                domain_id=command.domain_id,
-                policy_id=effective["policy_id"],
-            )
-            self._validate_resources(
-                states, str(changes.get("status", agent.status)), effective
+            await self._validate_resources(
+                uow, command.domain_id, str(changes.get("status", agent.status)), effective
             )
             version_fields = {
-                "policy_id",
+                "diagnostic_source_ids",
+                "target_id",
+                "allow_change_execution",
+                "auto_alert_enabled",
+                "auto_observe_min_severity",
+                "alert_cooldown_minutes",
                 "models",
                 "image_capabilities",
                 "instruction",
@@ -185,16 +269,34 @@ class AIOpsAgentService:
             }
             if version_fields.intersection(changes):
                 version_id = uuid7()
+                next_version_no = await uow.agents.next_version_no(
+                    agent_id=agent.agent_id
+                )
+                current_policy.status = "RETIRED"
+                current_policy.retired_at = datetime.now(UTC)
+                current_policy.updated_by = command.actor_id
+                current_policy.row_version = int(current_policy.row_version) + 1
+                policy = await self._create_policy(
+                    uow=uow,
+                    agent_id=agent.agent_id,
+                    version_no=next_version_no,
+                    display_name=changes.get("display_name", agent.display_name),
+                    values=effective,
+                    actor_id=command.actor_id,
+                )
+                effective["policy_id"] = policy.policy_id
                 await uow.agents.add_version(
                     self._new_version(
                         agent_id=agent.agent_id,
                         version_id=version_id,
-                        version_no=await uow.agents.next_version_no(
-                            agent_id=agent.agent_id
-                        ),
+                        version_no=next_version_no,
                         values=effective,
                         actor_id=command.actor_id,
                     )
+                )
+                await uow.agents.add_version_sources(
+                    version_id=version_id,
+                    source_ids=effective["diagnostic_source_ids"],
                 )
                 agent.current_version_id = version_id
             for field in ("display_name", "description", "status"):
@@ -224,6 +326,12 @@ class AIOpsAgentService:
             "instruction": row["instruction"],
             "resource_context": {
                 "policy_id": row["policy_id"],
+                "diagnostic_source_ids": row["diagnostic_source_ids"],
+                "target_id": row["target_id"],
+                "allow_change_execution": row["allow_change_execution"],
+                "auto_alert_enabled": row["auto_alert_enabled"],
+                "auto_observe_min_severity": row["auto_observe_min_severity"],
+                "alert_cooldown_minutes": row["alert_cooldown_minutes"],
                 "image_capabilities": row["image_capabilities"],
                 **row["config"],
             },
@@ -343,24 +451,161 @@ class AIOpsAgentService:
             await uow.commit()
             return self._grant_view(row)
 
-    @staticmethod
-    def _validate_resources(states, status: str, values) -> None:
-        required = ("policy",)
-        if any(states[item] is None for item in required):
+    async def _validate_resources(
+        self, uow, domain_id: int, status: str, values
+    ) -> None:
+        source_ids = tuple(values.get("diagnostic_source_ids") or ())
+        if not source_ids:
             raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的策略不存在"
+                "AIOPS_AGENT_SOURCE_REQUIRED", "Agent 至少需要选择一个监控源",
+                status_code=422,
             )
-        if status == "ACTIVE":
-            expected = {
-                "policy": "ACTIVE",
-            }
-            for key, active in expected.items():
-                if states[key] is not None and states[key] != active:
+        sources = [
+            await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=source_id, domain_id=domain_id
+            )
+            for source_id in source_ids
+        ]
+        if any(source is None for source in sources):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的监控源不存在"
+            )
+        if status == "ACTIVE" and any(
+            source.status != "ENABLED"
+            or source.connectivity_status not in {"CONNECTED", "DEGRADED"}
+            for source in sources
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_SOURCE_UNAVAILABLE",
+                "启用 Agent 前，所选监控源必须已启用且连接健康",
+                status_code=422,
+            )
+        target_id = values.get("target_id")
+        target = None
+        if target_id is not None:
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=domain_id
+            )
+            if target is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的 Target 不存在"
+                )
+            if status == "ACTIVE" and (
+                target.status != "ENABLED"
+                or target.connectivity_status not in {"CONNECTED", "DEGRADED"}
+            ):
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_TARGET_UNAVAILABLE",
+                    "启用 Agent 前，数据库直连 Target 必须已启用且连接健康",
+                    status_code=422,
+                )
+            if status == "ACTIVE":
+                bindings = await uow.targets.list_source_bindings(
+                    target_id=target_id,
+                    domain_id=domain_id,
+                    active_only=True,
+                )
+                bound_source_ids = {
+                    binding.diagnostic_source_id for binding in bindings
+                }
+                if not set(source_ids) <= bound_source_ids:
                     raise AIOpsAgentError(
-                        "AIOPS_AGENT_RESOURCE_NOT_ACTIVE",
-                        f"启用 Agent 前资源 {key} 必须处于 ACTIVE",
+                        "AIOPS_AGENT_SOURCE_NOT_BOUND",
+                        "启用 Agent 前，所选监控源必须与数据库直连 Target 建立有效映射",
                         status_code=422,
                     )
+        if values.get("allow_change_execution"):
+            if target is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_TARGET_REQUIRED",
+                    "允许执行变更前必须选择数据库直连 Target",
+                    status_code=422,
+                )
+            if target.execution_credential_id is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_EXECUTION_CREDENTIAL_REQUIRED",
+                    "允许执行变更前必须为 Target 配置执行凭据",
+                    status_code=422,
+                )
+            actions = self._compatible_action_ids(target)
+            if not actions:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_ACTION_UNAVAILABLE",
+                    "当前 Target 没有可在人工审批后执行的受支持动作",
+                    status_code=422,
+                )
+            values["_allowed_action_types"] = actions
+
+    def _compatible_action_ids(self, target) -> list[str]:
+        if self._action_registry is None:
+            return []
+        match = re.search(r"\d+", target.version_code or "")
+        if match is None:
+            return []
+        major = int(match.group())
+        capabilities = {
+            key
+            for key, enabled in dict(target.capabilities_json or {}).items()
+            if enabled is True
+        }
+        features = dict(target.capabilities_json or {}).get("features", [])
+        if isinstance(features, list):
+            capabilities.update(str(item) for item in features if item)
+        return sorted(
+            {
+                template.definition.action_template_id
+                for template in self._action_registry.templates
+                if template.definition.status == "ACTIVE"
+                and template.definition.execution_capability
+                == "EXECUTABLE_AFTER_APPROVAL"
+                and template.definition.db_type == target.db_type
+                and template.definition.supported_version_min <= major
+                < template.definition.supported_version_max_exclusive
+                and set(template.definition.required_capabilities)
+                <= capabilities
+                and target.environment
+                in template.definition.environment_allowlist
+            }
+        )
+
+    async def _create_policy(
+        self, *, uow, agent_id, version_no, display_name, values, actor_id
+    ) -> PolicyEntity:
+        now = datetime.now(UTC)
+        rules = {
+            "schema_version": "ops.policy.v1",
+            "readonly_database_enabled": values.get("target_id") is not None,
+            "allow_agent_execution": bool(
+                values.get("allow_change_execution", False)
+            ),
+            "allowed_action_types": list(values.get("_allowed_action_types") or []),
+            "auto_alert_enabled": bool(values.get("auto_alert_enabled", True)),
+            "auto_observe_min_severity": values.get(
+                "auto_observe_min_severity", "CRITICAL"
+            ),
+            "alert_cooldown_seconds": int(
+                values.get("alert_cooldown_minutes", 15)
+            )
+            * 60,
+        }
+        policy = PolicyEntity(
+            policy_id=uuid7(),
+            domain_id=values["domain_id"],
+            policy_key=f"agent.{agent_id}",
+            version_no=version_no,
+            display_name=f"{display_name.strip()} 执行策略",
+            rules_json=rules,
+            policy_hash=sha256_json(rules),
+            status="ACTIVE",
+            effective_at=now,
+            row_version=1,
+            created_by=actor_id,
+            updated_by=actor_id,
+            created_at=now,
+            updated_at=now,
+        )
+        await uow.policies.add(policy)
+        return policy
 
     @staticmethod
     def _new_version(*, agent_id, version_id, version_no, values, actor_id):
@@ -369,6 +614,7 @@ class AIOpsAgentService:
             agent_id=agent_id,
             version_no=version_no,
             policy_id=values["policy_id"],
+            target_id=values.get("target_id"),
             models_json={
                 key: str(value)
                 for key, value in dict(values.get("models") or {}).items()
@@ -396,7 +642,14 @@ class AIOpsAgentService:
         return version
 
     @staticmethod
-    def _view(agent, version):
+    async def _view(uow, agent, version):
+        source_ids = await uow.agents.version_source_ids(
+            agent_version_id=version.agent_version_id
+        )
+        policy = await uow.policies.get_scoped(
+            policy_id=version.policy_id, domain_id=int(agent.domain_id)
+        )
+        rules = dict(policy.rules_json or {}) if policy is not None else {}
         return {
             "agent_id": str(agent.agent_id),
             "domain_id": str(agent.domain_id),
@@ -406,6 +659,18 @@ class AIOpsAgentService:
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),
             "policy_id": str(version.policy_id),
+            "diagnostic_source_ids": [str(item) for item in source_ids],
+            "target_id": str(version.target_id) if version.target_id else None,
+            "allow_change_execution": bool(
+                rules.get("allow_agent_execution", False)
+            ),
+            "auto_alert_enabled": bool(rules.get("auto_alert_enabled", True)),
+            "auto_observe_min_severity": rules.get(
+                "auto_observe_min_severity", "CRITICAL"
+            ),
+            "alert_cooldown_minutes": int(
+                rules.get("alert_cooldown_seconds", 900)
+            ) // 60,
             "models": dict(version.models_json or {}),
             "instruction": version.instruction,
             "image_capabilities": dict(version.image_capabilities_json or {}),

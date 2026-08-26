@@ -15,4 +15,8 @@
 .ops-field small{display:block;margin-top:7px;color:var(--muted);line-height:1.45}
 .ops-capability-list{display:flex;flex-wrap:wrap;gap:8px;min-height:32px;align-items:center}
 .ops-capability{display:inline-flex;align-items:center;min-height:30px;padding:4px 10px;border:1px solid var(--line);background:#f5f7fa;color:var(--ink);font-size:13px}
+.ops-choice-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border:1px solid var(--line);background:#f8fafc}
+.ops-choice-list label{display:flex;align-items:center;gap:6px;padding:7px 8px;background:#fff;border:1px solid var(--line);font-weight:500}
+.ops-choice-list label small{display:inline;margin:0 0 0 auto}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
+@media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}

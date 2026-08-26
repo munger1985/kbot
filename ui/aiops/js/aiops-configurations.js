@@ -197,87 +197,6 @@
     }
   }
 
-  function policyRules(form) {
-    return {
-      schema_version: "ops.policy.v1",
-      allow_agent_execution: form.elements.allow_agent_execution.checked,
-      readonly_database_enabled: form.elements.readonly_database_enabled.checked,
-      max_risk_level: form.elements.max_risk_level.value,
-      allowed_action_types: form.elements.allowed_action_types.value.split("\n").map((item) => item.trim()).filter(Boolean),
-      auto_observe_min_severity: form.elements.auto_observe_min_severity.value,
-      alert_cooldown_seconds: Number(form.elements.alert_cooldown_seconds.value),
-    };
-  }
-
-  function openPolicyCreate() {
-    editing = null;
-    const form = document.getElementById("policy-form");
-    form.reset();
-    form.elements.policy_key.disabled = false;
-    form.elements.readonly_database_enabled.checked = true;
-    form.elements.alert_cooldown_seconds.value = 900;
-    document.getElementById("policy-dialog-title").textContent = "新增执行策略";
-    document.getElementById("policy-version-note").textContent = "创建后生成 DRAFT 版本，激活需在后续状态操作中明确执行。";
-    document.getElementById("save-policy").textContent = "创建策略";
-    showResult("policy-result", "", "");
-    document.getElementById("policy-dialog").showModal();
-    form.elements.policy_key.focus();
-  }
-
-  async function openPolicyVersion(policyId) {
-    try {
-      const policy = await KBotAIOpsAuth.request(`${api}/policies/${encodeURIComponent(policyId)}`);
-      editing = policy;
-      const form = document.getElementById("policy-form");
-      form.reset();
-      form.elements.policy_key.disabled = false;
-      form.elements.policy_key.value = policy.policy_key;
-      form.elements.policy_key.disabled = true;
-      form.elements.display_name.value = policy.display_name;
-      form.elements.readonly_database_enabled.checked = policy.rules.readonly_database_enabled !== false;
-      form.elements.allow_agent_execution.checked = Boolean(policy.rules.allow_agent_execution);
-      form.elements.max_risk_level.value = policy.rules.max_risk_level || "LOW";
-      form.elements.auto_observe_min_severity.value = policy.rules.auto_observe_min_severity || "CRITICAL";
-      form.elements.alert_cooldown_seconds.value = policy.rules.alert_cooldown_seconds ?? 900;
-      form.elements.allowed_action_types.value = (policy.rules.allowed_action_types || []).join("\n");
-      document.getElementById("policy-dialog-title").textContent = "基于当前策略创建新版本";
-      document.getElementById("policy-version-note").textContent = `当前为版本 ${policy.version_no}。保存不会修改原版本，而会创建版本 ${policy.version_no + 1} 的 DRAFT。`;
-      document.getElementById("save-policy").textContent = "创建新版本";
-      showResult("policy-result", "", "");
-      document.getElementById("policy-dialog").showModal();
-      form.elements.display_name.focus();
-    } catch (error) {
-      shell.toast(error.message);
-    }
-  }
-
-  async function savePolicy(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = document.getElementById("save-policy");
-    button.disabled = true;
-    try {
-      await KBotAIOpsAuth.request(`${api}/policies`, {
-        method: "POST",
-        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-        body: JSON.stringify({
-          policy_key: editing ? editing.policy_key : form.elements.policy_key.value.trim(),
-          display_name: form.elements.display_name.value.trim(),
-          rules: policyRules(form),
-        }),
-      });
-      document.getElementById("policy-dialog").close();
-      shell.toast(editing ? "策略新版本已创建" : "执行策略已创建");
-      editing = null;
-      await KBotAIOpsPages.reload();
-    } catch (error) {
-      showResult("policy-result", error.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = editing ? "创建新版本" : "创建策略";
-    }
-  }
-
   function planPayload(form, create) {
     const payload = {
       display_name: form.elements.display_name.value.trim(),
@@ -374,7 +293,6 @@
 
   function openEdit(page, resourceId) {
     if (page === "diagnostic-sources") return openSourceEdit(resourceId);
-    if (page === "policies") return openPolicyVersion(resourceId);
     if (page === "inspection-plans") return openPlanEdit(resourceId);
     return Promise.resolve();
   }
@@ -391,10 +309,6 @@
       document.getElementById("source-type").addEventListener("change", (event) => {
         renderSourceType(event.target.form);
       });
-    } else if (page === "policies") {
-      closeButtons(document.getElementById("policy-dialog"));
-      document.getElementById("create-policy").addEventListener("click", openPolicyCreate);
-      document.getElementById("policy-form").addEventListener("submit", savePolicy);
     } else if (page === "inspection-plans") {
       closeButtons(document.getElementById("inspection-plan-dialog"));
       document.getElementById("create-inspection-plan").addEventListener("click", openPlanCreate);
