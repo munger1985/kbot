@@ -1799,6 +1799,38 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual({"status": "ready"}, response.json())
 
+    def test_ready_does_not_cascade_downstream_unavailability(self) -> None:
+        class _FakeResult:
+            pass
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+            async def execute(self, statement):
+                return _FakeResult()
+
+        class _FakeDbRuntime:
+            @staticmethod
+            def session_factory():
+                return _FakeSession()
+
+        async def must_not_probe():
+            raise AssertionError("Main API readyz 不应探测下游服务")
+
+        self.app.state.db_runtime = _FakeDbRuntime()
+        self.kc.is_ready = must_not_probe
+        self.agent_runtime.is_ready = must_not_probe
+        self.aiops.is_ready = must_not_probe
+
+        response = self.client.get("/readyz")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"status": "ready"}, response.json())
+
     def test_problem_response_generates_request_id(self) -> None:
         response = self.client.post(
             "/api/v1/apps/knowledge-retrieval/knowledge/collections",

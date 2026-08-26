@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from main_api.repositories import (
@@ -32,14 +34,29 @@ class MainApiUnitOfWork:
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         if self.session is None:
             return
-        if self.session.in_transaction():
-            await self.session.rollback()
-        await self.session.close()
-        self.session = None
-        self.domains = None
-        self.notifications = None
-        self.access = None
-        self.app_api_keys = None
+        session = self.session
+        cancelled = (
+            exc_type is not None
+            and issubclass(exc_type, asyncio.CancelledError)
+        )
+        try:
+            if cancelled:
+                # 流式请求取消时驱动可能已关闭连接，不能再发送 rollback。
+                try:
+                    await session.invalidate()
+                except BaseException:
+                    # 保留原始取消信号，避免清理异常污染 ASGI 日志。
+                    pass
+            else:
+                if session.in_transaction():
+                    await session.rollback()
+                await session.close()
+        finally:
+            self.session = None
+            self.domains = None
+            self.notifications = None
+            self.access = None
+            self.app_api_keys = None
 
     async def commit(self) -> None:
         if self.session is None:

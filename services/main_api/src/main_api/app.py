@@ -620,33 +620,8 @@ def create_main_api_app(
                 checks["database"] = "ok"
             except Exception:
                 checks["database"] = "unavailable"
-        kc_client = getattr(
-            request.app.state,
-            "knowledge_core_client",
-            None,
-        )
-        if kc_client is None:
-            checks["knowledge_core"] = "not_configured"
-        else:
-            checks["knowledge_core"] = (
-                "ok" if await kc_client.is_ready() else "unavailable"
-            )
-        agent_client = getattr(
-            request.app.state, "agent_runtime_client", None
-        )
-        if agent_client is None:
-            checks["agent_runtime"] = "not_configured"
-        else:
-            checks["agent_runtime"] = (
-                "ok" if await agent_client.is_ready() else "unavailable"
-            )
-        aiops_client = getattr(request.app.state, "aiops_client", None)
-        if aiops_client is None:
-            checks["aiops"] = "not_configured"
-        else:
-            checks["aiops"] = (
-                "ok" if await aiops_client.is_ready() else "unavailable"
-            )
+        # Main API 能继续服务时，下游局部故障由对应业务路由返回稳定错误，
+        # 不应级联摘除整个公开 API 实例。
         ready = all(value == "ok" for value in checks.values())
         if not ready:
             logger.warning("Main API 尚未就绪：checks={}", checks)
