@@ -521,19 +521,7 @@ class AIOpsAgentService:
                     "允许执行变更前必须选择数据库直连 Target",
                     status_code=422,
                 )
-            if target.execution_credential_id is None:
-                raise AIOpsAgentError(
-                    "AIOPS_AGENT_EXECUTION_CREDENTIAL_REQUIRED",
-                    "允许执行变更前必须为 Target 配置执行凭据",
-                    status_code=422,
-                )
             actions = self._compatible_action_ids(target)
-            if not actions:
-                raise AIOpsAgentError(
-                    "AIOPS_AGENT_ACTION_UNAVAILABLE",
-                    "当前 Target 没有可在人工审批后执行的受支持动作",
-                    status_code=422,
-                )
             values["_allowed_action_types"] = actions
 
     def _compatible_action_ids(self, target) -> list[str]:

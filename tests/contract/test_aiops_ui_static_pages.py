@@ -129,6 +129,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
         self.assertIn("execution_credential_configured", agent)
+        self.assertIn("可以先保存允许变更", agent)
+        self.assertNotIn("selected && !executionConfigured", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )

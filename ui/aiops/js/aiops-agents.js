@@ -108,7 +108,7 @@
     document.getElementById("agent-sources").innerHTML = sources.length
       ? sources.map(sourceCard).join("")
       : '<div class="ops-error">没有已启用且可连接的监控源，请先完成监控源配置。</div>';
-    document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}${target.execution_credential_configured ? " · 已配置执行凭据" : " · 仅只读"}</option>`).join("");
+    document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}${target.execution_credential_configured ? " · 执行凭据就绪" : " · 执行凭据待配置"}</option>`).join("");
   }
 
   function bindingFor(sourceId) {
@@ -197,11 +197,11 @@
     const executionConfigured = Boolean(target?.execution_credential_configured);
     const executionToggle = document.querySelector('[name="allow_change_execution"]');
     document.getElementById("agent-change-field").hidden = !targetId;
-    executionToggle.disabled = Boolean(targetId && !executionConfigured);
-    if (!targetId || !executionConfigured) executionToggle.checked = false;
+    executionToggle.disabled = !targetId;
+    if (!targetId) executionToggle.checked = false;
     document.getElementById("agent-change-help").textContent = executionConfigured
       ? "只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。"
-      : "该 Target 尚未配置变更执行凭据；当前 Agent 仍可进行只读诊断。";
+      : "可以先保存允许变更；实际执行前仍必须在运维目标中配置独立的执行凭据，并通过人工审批。";
     syncSourceMappingVisibility();
   }
 

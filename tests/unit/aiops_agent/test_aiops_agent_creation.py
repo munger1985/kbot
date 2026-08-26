@@ -49,7 +49,7 @@ class _AgentRepository:
 
 
 class _UnitOfWork:
-    def __init__(self, repository, source_id):
+    def __init__(self, repository, source_id, target=None):
         self.agents = repository
         self.diagnostic_sources = SimpleNamespace(
             get_scoped=self._get_source
@@ -57,6 +57,7 @@ class _UnitOfWork:
         self.targets = SimpleNamespace(get_scoped=self._get_target)
         self.policies = _PolicyRepository()
         self.source_id = source_id
+        self.target = target
         self.commit_count = 0
 
     async def _get_source(self, *, diagnostic_source_id, domain_id):
@@ -69,7 +70,7 @@ class _UnitOfWork:
 
     async def _get_target(self, **kwargs):
         del kwargs
-        return None
+        return self.target
 
     async def __aenter__(self):
         return self
@@ -153,6 +154,36 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 allow_change_execution=True,
                 actor_id="kbotui_dev",
             )
+
+    async def test_change_permission_can_be_saved_before_execution_credential(self):
+        source_id = uuid7()
+        target_id = uuid7()
+        target = SimpleNamespace(
+            target_id=target_id,
+            execution_credential_id=None,
+            version_code=None,
+            capabilities_json={},
+        )
+        unit_of_work = _UnitOfWork(
+            _AgentRepository(), source_id, target=target
+        )
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+
+        result = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库变更助手",
+                diagnostic_source_ids=(source_id,),
+                target_id=target_id,
+                allow_change_execution=True,
+                actor_id="kbotui_dev",
+            )
+        )
+
+        self.assertTrue(result["allow_change_execution"])
+        policy = next(iter(unit_of_work.policies.rows.values()))
+        self.assertTrue(policy.rules_json["allow_agent_execution"])
+        self.assertEqual([], policy.rules_json["allowed_action_types"])
 
 
 if __name__ == "__main__":
