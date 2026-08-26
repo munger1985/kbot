@@ -1,4 +1,5 @@
 import asyncio
+import math
 from pydantic import Field
 from loguru import logger
 from openai import AsyncOpenAI, APIError, RateLimitError
@@ -70,30 +71,62 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
                 logger.error(f"❌ OpenAI API exception: {e}")
                 raise
 
-    def _bounded_inputs(self, texts: list[str]) -> list[str]:
-        """按当前模型配置收敛远程 Provider 的单条输入。"""
+    def _split_input(self, text: str) -> list[str]:
+        """按配置预算切分远程输入，并尽量保留自然文本边界。"""
         byte_limit = int(self.config.max_tokens)
         if byte_limit <= 0:
             raise ValueError("Embedding 模型 max_tokens 必须为正整数")
-        bounded: list[str] = []
-        truncated_count = 0
-        for text in texts:
-            value = str(text)
-            if not value.strip():
-                raise ValueError("Embedding 输入不能为空")
-            encoded = value.encode("utf-8")
-            if len(encoded) > byte_limit:
-                value = encoded[:byte_limit].decode("utf-8", errors="ignore")
-                truncated_count += 1
-            bounded.append(value)
-        if truncated_count:
-            logger.info(
-                "Embedding 输入已按模型配置收敛：模型={} 条数={} max_tokens={}",
-                self.model_name,
-                truncated_count,
-                byte_limit,
+        remaining = str(text)
+        if not remaining.strip():
+            raise ValueError("Embedding 输入不能为空")
+        chunks: list[str] = []
+        while len(remaining.encode("utf-8")) > byte_limit:
+            candidate = remaining.encode("utf-8")[:byte_limit].decode(
+                "utf-8", errors="ignore"
             )
-        return bounded
+            if not candidate:
+                raise ValueError("Embedding 模型 max_tokens 小于单个字符的 UTF-8 长度")
+            cut = len(candidate)
+            minimum_boundary = max(1, len(candidate) // 2)
+            for marker in ("\n\n", "\n", "。", "！", "？", ". ", "; ", " "):
+                position = candidate.rfind(marker)
+                boundary = position + len(marker)
+                if position >= 0 and boundary >= minimum_boundary:
+                    cut = boundary
+                    break
+            chunk = remaining[:cut].strip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[cut:]
+        tail = remaining.strip()
+        if tail:
+            chunks.append(tail)
+        return chunks
+
+    @staticmethod
+    def _merge_chunk_embeddings(
+        vectors: list[list[float]], weights: list[int]
+    ) -> list[float]:
+        """按块内容长度加权合并并归一化，维持一条输入对应一个向量。"""
+        if not vectors or len(vectors) != len(weights):
+            raise RuntimeError("Embedding 分块结果数量不一致")
+        dimension = len(vectors[0])
+        if dimension <= 0 or any(len(vector) != dimension for vector in vectors):
+            raise RuntimeError("Embedding 分块向量维度不一致")
+        if len(vectors) == 1:
+            return vectors[0]
+        total_weight = sum(weights)
+        if total_weight <= 0:
+            raise RuntimeError("Embedding 分块权重无效")
+        merged = [
+            sum(vector[index] * weight for vector, weight in zip(vectors, weights))
+            / total_weight
+            for index in range(dimension)
+        ]
+        norm = math.sqrt(sum(value * value for value in merged))
+        if norm <= 0:
+            raise RuntimeError("Embedding 分块合并结果无法归一化")
+        return [value / norm for value in merged]
 
     async def embed(
         self, 
@@ -113,10 +146,24 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
         if not texts:
             return self._build_empty_response(self.model_name)
 
-        texts = self._bounded_inputs(texts)
+        chunks_by_input = [self._split_input(text) for text in texts]
+        remote_inputs = [
+            chunk for chunks in chunks_by_input for chunk in chunks
+        ]
+        split_count = sum(len(chunks) > 1 for chunks in chunks_by_input)
+        if split_count:
+            logger.info(
+                "Embedding 超长输入已完整分块：模型={} 输入条数={} 分块数={} max_tokens={}",
+                self.model_name,
+                split_count,
+                len(remote_inputs),
+                self.config.max_tokens,
+            )
 
         # 1. Prepare request parameters
         eff_batch_size = batch_size if batch_size is not None and 0 < batch_size <= 96 else self.batch_size
+        if self.model_name in {"text-embedding-v3", "text-embedding-v4"}:
+            eff_batch_size = min(eff_batch_size, 10)
         embed_kwargs = {
             "model": self.model_name,
             "encoding_format": "float"
@@ -133,8 +180,8 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
 
         # 2. Create concurrent task queue
         tasks = []
-        for i in range(0, len(texts), eff_batch_size):
-            batch = texts[i : i + eff_batch_size]
+        for i in range(0, len(remote_inputs), eff_batch_size):
+            batch = remote_inputs[i : i + eff_batch_size]
             tasks.append(self._embed_batch(batch, **embed_kwargs))
 
         # 3. Execute concurrently and collect results
@@ -146,11 +193,23 @@ class OpenAIEmbedding(BaseEmbedding[OpenAIEmbeddingConfig]):
             raise
 
         # 4. Merge results
-        all_embeddings = []
+        chunk_embeddings = []
         total_tokens = 0
         for embeddings, tokens in results:
-            all_embeddings.extend(embeddings)
+            chunk_embeddings.extend(embeddings)
             total_tokens += tokens
+
+        if len(chunk_embeddings) != len(remote_inputs):
+            raise RuntimeError("Embedding Provider 返回的向量数量与分块数量不一致")
+        all_embeddings: list[list[float]] = []
+        offset = 0
+        for chunks in chunks_by_input:
+            end = offset + len(chunks)
+            all_embeddings.append(self._merge_chunk_embeddings(
+                chunk_embeddings[offset:end],
+                [len(chunk.encode("utf-8")) for chunk in chunks],
+            ))
+            offset = end
 
         return self._build_standard_response(
             embeddings=all_embeddings,
