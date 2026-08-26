@@ -85,6 +85,11 @@ def main() -> int:
         for service_name in ("prometheus", "alertmanager", "loki"):
             if not rendered_compose["services"][service_name].get("group_add"):
                 raise RuntimeError(f"{service_name}没有获得运行配置文件所属组")
+        loki_healthcheck = rendered_compose["services"]["loki"]["healthcheck"][
+            "test"
+        ]
+        if "wget" in loki_healthcheck or "-verify-config=true" not in loki_healthcheck:
+            raise RuntimeError("Loki健康检查依赖镜像中不存在的外部工具")
         if os.stat(state / "secrets/oracle-oracle-prod-01_password").st_mode & 0o037:
             raise RuntimeError("Oracle Secret权限过宽")
         generated = json.loads((state / "compose.generated.yaml").read_text())
