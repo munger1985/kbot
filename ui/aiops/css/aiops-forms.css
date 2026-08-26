@@ -113,3 +113,23 @@
   .agent-advanced{margin:14px}
   .agent-result{margin:0 14px 14px}
 }
+
+/* Target 详情中的当前用户通知关注。 */
+.target-detail-grid{align-items:start}
+.target-subscription-panel{position:sticky;top:88px}
+.target-subscription-panel .ops-panel-head{align-items:flex-start}
+.target-follow-switch{display:flex;align-items:flex-start;gap:11px;padding:14px;border:1px solid #cfd6e4;background:#f7f8fb;cursor:pointer}
+.target-follow-switch input{width:17px;height:17px;margin:3px 0 0;accent-color:var(--accent)}
+.target-follow-switch strong,.target-follow-switch small{display:block}
+.target-follow-switch small{margin-top:3px;color:var(--muted);font-weight:400}
+.target-subscription-settings{display:grid;gap:17px;margin-top:19px;transition:opacity .16s ease}
+.target-subscription-disabled{opacity:.42}
+.target-stage-fieldset{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line)}
+.target-stage-fieldset legend{margin-left:10px;padding:0 6px;color:var(--muted);font-size:11px;font-weight:650}
+.target-stage-fieldset>label{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.target-stage-fieldset>label:last-child{border-bottom:0}
+.target-stage-fieldset input{margin:3px 0 0;accent-color:var(--accent)}
+.target-stage-fieldset strong,.target-stage-fieldset small{display:block}
+.target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
+.target-subscription-actions{display:flex;justify-content:flex-end;margin-top:14px}
+@media(max-width:1000px){.target-subscription-panel{position:static}.target-detail-grid>.span-7,.target-detail-grid>.span-5{grid-column:span 12}}

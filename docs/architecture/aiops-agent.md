@@ -155,7 +155,8 @@ Inspection Plan 支持日报、周报和 Cron。Scheduler 生成不可变 Fire�
 阶段事件。事件和业务状态在同一个 UoW 内写入平台 Notification Outbox，再由平台
 投影到用户 Inbox。无订阅者时自动告警 Run 不向 `system:signal-intake` 创建无意义
 用户通知。Email、IM、ITSM、静默、升级和值班路由当前不实现；未来接入不改变
-Situation、Run、Report 和审批模型。
+Situation、Run、Report 和审批模型。Portal 在运维目标详情中管理当前用户订阅，
+不把订阅资源暴露为独立配置页面。
 
 精确 API 以 `docs/openapi/aiops_*.json` 为准，表结构以
 `database/oracle/aiops_agent/` 为准。

@@ -13,7 +13,6 @@
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度类型"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
-    "notification-subscriptions": { path: "/notification-subscriptions", cols: [["target_id", "目标", "id"], ["channel_type", "渠道"], ["minimum_severity", "最低级别", "badge"], ["enabled", "启用"]] },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
   function cell(item, [key, , type]) {
@@ -30,13 +29,14 @@
     }
     if (type === "target-actions") {
       const checking = item.connectivity_check_pending;
+      const detailButton = '<button type="button" data-target-action="detail">详情</button>';
       const checkButton = `<button type="button" data-target-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`;
       const buttons = item.status === "ENABLED"
         ? ['<button type="button" data-target-action="disable">停用</button>']
         : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status)
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
-      return `<div class="ops-actions">${checkButton}${buttons.join("")}</div>`;
+      return `<div class="ops-actions">${detailButton}${checkButton}${buttons.join("")}</div>`;
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
@@ -86,6 +86,10 @@
   async function runTargetAction(button, item) {
     const action = button.dataset.targetAction;
     const targetId = encodeURIComponent(item.target_id);
+    if (action === "detail") {
+      location.href = `target-detail.html?id=${targetId}`;
+      return;
+    }
     const path = action === "connectivity"
       ? `/targets/${targetId}/connectivity-checks`
       : `/targets/${targetId}/${action}`;
@@ -176,6 +180,148 @@
       body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">${shell.escape(error.message)}</td></tr>`;
     }
   }
+
+  let targetSubscription = null;
+
+  function subscriptionElements() {
+    const form = document.getElementById("target-subscription-form");
+    if (!form) return null;
+    return {
+      form,
+      follow: form.elements.follow_target,
+      severity: form.elements.minimum_severity,
+      settings: document.getElementById("target-subscription-settings"),
+      state: document.getElementById("target-subscription-state"),
+      result: document.getElementById("target-subscription-result"),
+      save: document.getElementById("save-target-subscription"),
+    };
+  }
+
+  function renderTargetSubscription(target) {
+    const elements = subscriptionElements();
+    if (!elements) return;
+    const active = targetSubscription?.status === "ACTIVE";
+    elements.follow.checked = active;
+    elements.severity.value = targetSubscription?.minimum_severity || "HIGH";
+    const stages = new Set(targetSubscription?.stages || [
+      "SITUATION_DETECTED", "DIAGNOSIS_STARTED", "REPORT_READY",
+      "SITUATION_RECOVERED",
+    ]);
+    elements.form.querySelectorAll('[name="stages"]').forEach((input) => {
+      input.checked = stages.has(input.value);
+    });
+    elements.state.className = `ops-badge ${active ? "good" : ""}`;
+    elements.state.textContent = active ? "已关注" : "未关注";
+    const targetEnabled = target.status === "ENABLED";
+    elements.follow.disabled = !targetEnabled && !active;
+    elements.settings.classList.toggle("target-subscription-disabled", !active);
+    elements.settings.querySelectorAll("input,select").forEach((input) => {
+      input.disabled = !active;
+    });
+    elements.save.disabled = !targetEnabled && !active;
+    if (!targetEnabled && !active) {
+      elements.result.textContent = "Target 启用后才能关注。";
+      elements.result.dataset.tone = "bad";
+    } else {
+      elements.result.textContent = active
+        ? "当前用户将按以上条件接收站内通知。"
+        : "关注后，符合条件的事件会进入通知中心。";
+      elements.result.dataset.tone = "";
+    }
+  }
+
+  async function loadTargetSubscription(targetId) {
+    const payload = await KBotAIOpsAuth.request(
+      `${appApi}/notification-subscriptions`,
+    );
+    targetSubscription = (payload?.items || []).find(
+      (item) => String(item.target_id) === String(targetId),
+    ) || null;
+  }
+
+  async function saveTargetSubscription(event, targetId, target) {
+    event.preventDefault();
+    const elements = subscriptionElements();
+    const following = elements.follow.checked;
+    const originalText = elements.save.textContent;
+    elements.save.disabled = true;
+    elements.save.textContent = "保存中…";
+    elements.result.textContent = "正在保存当前用户的通知设置…";
+    elements.result.dataset.tone = "";
+    try {
+      if (!following) {
+        if (targetSubscription?.status === "ACTIVE") {
+          await KBotAIOpsAuth.request(
+            `${appApi}/notification-subscriptions/targets/${encodeURIComponent(targetId)}`,
+            {
+              method: "DELETE",
+              headers: { "If-Match": `"rv-${targetSubscription.row_version}"` },
+            },
+          );
+        }
+      } else {
+        if (target.status !== "ENABLED") throw new Error("Target 启用后才能关注。");
+        const stages = [...elements.form.querySelectorAll('[name="stages"]:checked')].map((input) => input.value);
+        if (!stages.length) throw new Error("至少选择一个通知阶段。");
+        const headers = targetSubscription
+          ? { "If-Match": `"rv-${targetSubscription.row_version}"` }
+          : {};
+        await KBotAIOpsAuth.request(
+          `${appApi}/notification-subscriptions/targets/${encodeURIComponent(targetId)}`,
+          {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({
+              minimum_severity: elements.severity.value,
+              stages,
+            }),
+          },
+        );
+      }
+      await loadTargetSubscription(targetId);
+      renderTargetSubscription(target);
+      shell.toast(following ? "已更新该目标的通知关注" : "已取消关注该目标");
+    } catch (error) {
+      elements.result.textContent = error.message;
+      elements.result.dataset.tone = "bad";
+    } finally {
+      elements.save.disabled = (
+        target.status !== "ENABLED"
+        && targetSubscription?.status !== "ACTIVE"
+      );
+      elements.save.textContent = originalText;
+    }
+  }
+
+  async function initializeTargetSubscription(targetId, target) {
+    const elements = subscriptionElements();
+    if (!elements) return;
+    elements.follow.addEventListener("change", () => {
+      const enabled = elements.follow.checked;
+      elements.settings.classList.toggle("target-subscription-disabled", !enabled);
+      elements.settings.querySelectorAll("input,select").forEach((input) => {
+        input.disabled = !enabled;
+      });
+      elements.result.textContent = enabled
+        ? "设置通知条件后保存。"
+        : "保存后将停止接收该目标的订阅通知。";
+      elements.result.dataset.tone = "";
+    });
+    elements.form.addEventListener("submit", (event) => {
+      void saveTargetSubscription(event, targetId, target);
+    });
+    try {
+      await loadTargetSubscription(targetId);
+      renderTargetSubscription(target);
+    } catch (error) {
+      elements.state.className = "ops-badge bad";
+      elements.state.textContent = "读取失败";
+      elements.result.textContent = error.message;
+      elements.result.dataset.tone = "bad";
+      elements.save.disabled = true;
+    }
+  }
+
   async function renderDetail(page) {
     const id = new URLSearchParams(location.search).get("id");
     const paths = { "run-detail": "/runs/", "report-detail": "/reports/", "target-detail": "/targets/", "diagnostic-source-detail": "/diagnostic-sources/", "inspection-plan-detail": "/inspection-plans/" };
@@ -184,6 +330,7 @@
     try {
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
       panel.innerHTML = `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
+      if (page === "target-detail") await initializeTargetSubscription(id, data);
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
   async function renderDashboard() {

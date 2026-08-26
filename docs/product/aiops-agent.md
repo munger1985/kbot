@@ -140,7 +140,8 @@ Finding、Report 和审批模型。
 相关信号全部恢复四类事实，复用平台 Notification Outbox/Inbox 保证业务事务内写入
 和幂等投影。通知只包含 Target、Situation/Run/Report 标识和安全摘要，不复制监控
 原始 Payload、日志正文、SQL、凭据或模型消息。诊断中间假设、静默窗口、升级规则、
-值班表、IM、Email 和 ITSM Adapter 仍属于后续能力。
+值班表、IM、Email 和 ITSM Adapter 仍属于后续能力。订阅入口位于运维目标详情中的
+“关注与通知”，不设置独立的订阅资源页面；通知结果统一进入通知中心。
 
 ### 目标态核心领域对象
 

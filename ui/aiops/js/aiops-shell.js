@@ -12,7 +12,6 @@
       ["knowledge-core", "Knowledge Core"], ["agents", "AIOps Agent"],
       ["inspection-plans", "巡检计划"],
       ["report-templates", "报告模板"],
-      ["notification-subscriptions", "主动分享"],
       ["api-clients", "API 客户端"],
     ]],
   ];

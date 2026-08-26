@@ -31,7 +31,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
         "inspection-plans", "inspection-plan-detail",
-        "report-templates", "notification-subscriptions", "api-clients",
+        "report-templates", "api-clients",
         "login",
     }
 
@@ -158,6 +158,28 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("db_type", script)
         self.assertNotIn("engine_type", script)
 
+    def test_target_detail_owns_current_user_notification_subscription(self):
+        page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="target-subscription-form"', page)
+        self.assertIn('name="follow_target"', page)
+        self.assertIn('name="minimum_severity"', page)
+        self.assertIn('value="SITUATION_DETECTED"', page)
+        self.assertIn('value="DIAGNOSIS_STARTED"', page)
+        self.assertIn('value="REPORT_READY"', page)
+        self.assertIn('value="SITUATION_RECOVERED"', page)
+        self.assertIn("initializeTargetSubscription", script)
+        self.assertIn("/notification-subscriptions/targets/", script)
+        self.assertNotIn('["notification-subscriptions", "主动分享"]', shell)
+        self.assertFalse(
+            (AIOPS_ROOT / "notification-subscriptions.html").exists()
+        )
+
     def test_configuration_pages_open_real_create_and_edit_dialogs(self):
         pages = {
             "diagnostic-sources.html": "diagnostic-source-dialog",
@@ -188,6 +210,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-source-action="disable"', pages_script)
         self.assertIn("connectivity_check_pending", pages_script)
         self.assertIn('data-target-action="connectivity"', pages_script)
+        self.assertIn('data-target-action="detail"', pages_script)
         self.assertIn('data-target-action="enable"', pages_script)
         self.assertNotIn('data-target-action="maintenance"', pages_script)
         self.assertIn('data-target-action="disable"', pages_script)
