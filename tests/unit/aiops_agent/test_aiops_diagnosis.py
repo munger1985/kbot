@@ -232,11 +232,9 @@ class EvidenceIndexTest(unittest.TestCase):
         )
 
         self.assertIsNotNone(answer)
-        self.assertIn("USERS：可用 80.00 GiB，剩余 20.00%", answer.answer_text)
-        self.assertIn(
-            "SYSTEM：可用 60.00 GiB，剩余 60.00%",
-            answer.answer_text,
-        )
+        self.assertIn("| 表空间 | 可用空间 | 剩余比例 |", answer.answer_text)
+        self.assertIn("| USERS | 80.00 GiB | 20.00% |", answer.answer_text)
+        self.assertIn("| SYSTEM | 60.00 GiB | 60.00% |", answer.answer_text)
         self.assertEqual(4, len(answer.fact_refs))
 
         utilization_answer = DiagnosisReportHandler._direct_answer(
@@ -245,11 +243,9 @@ class EvidenceIndexTest(unittest.TestCase):
         )
         self.assertIsNotNone(utilization_answer)
         self.assertEqual("ANSWERED", utilization_answer.status)
-        self.assertIn("USERS：使用率 80.00%", utilization_answer.answer_text)
-        self.assertIn(
-            "SYSTEM：使用率 40.00%",
-            utilization_answer.answer_text,
-        )
+        self.assertIn("| 表空间 | 使用率 |", utilization_answer.answer_text)
+        self.assertIn("| USERS | 80.00% |", utilization_answer.answer_text)
+        self.assertIn("| SYSTEM | 40.00% |", utilization_answer.answer_text)
         self.assertNotIn("可用", utilization_answer.answer_text)
 
 

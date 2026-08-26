@@ -263,6 +263,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("source_run_id", workspace)
         self.assertIn("KBotAIOpsAuth.stream", workspace)
         self.assertIn('event === "answer.delta"', workspace)
+        self.assertIn("enqueueAnswerDelta", workspace)
+        self.assertIn("waitForTyping", workspace)
+        self.assertIn("evidenceDetails", workspace)
+        self.assertIn('class="ops-evidence"', workspace)
+        self.assertIn("tablespaceChartHtml", workspace)
+        self.assertIn("inspectionMarkdown", workspace)
+        self.assertNotIn('`**根因等级：**', workspace)
         self.assertIn("EVIDENCE_REQUEST", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (

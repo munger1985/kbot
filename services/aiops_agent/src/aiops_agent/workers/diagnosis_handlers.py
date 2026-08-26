@@ -1199,6 +1199,7 @@ class DiagnosisReportHandler:
             rows = []
             refs = []
             has_free_bytes = False
+            table_rows = []
 
             def _used_percent(item):
                 fact = item[1].get(
@@ -1246,6 +1247,31 @@ class DiagnosisReportHandler:
                     refs.append(utilization.fact_id)
                 if parts:
                     rows.append(f"{tablespace}：{'，'.join(parts)}")
+                    table_rows.append(
+                        {
+                            "tablespace": tablespace,
+                            "free": (
+                                f"{float(free_bytes.value) / (1024 ** 3):.2f} GiB"
+                                if free_bytes is not None and asks_remaining
+                                else "—"
+                            ),
+                            "maximum": (
+                                f"{float(max_bytes.value) / (1024 ** 3):.2f} GiB"
+                                if max_bytes is not None and asks_remaining
+                                else "—"
+                            ),
+                            "used": (
+                                f"{max(0.0, min(100.0, float(utilization.value))):.2f}%"
+                                if utilization is not None and asks_utilization
+                                else "—"
+                            ),
+                            "remaining": (
+                                f"{100.0 - max(0.0, min(100.0, float(utilization.value))):.2f}%"
+                                if utilization is not None and asks_remaining
+                                else "—"
+                            ),
+                        }
+                    )
             if rows:
                 bytes_gap = (
                     "当前监控未提供表空间可用字节数，只能回答剩余百分比。"
@@ -1260,6 +1286,33 @@ class DiagnosisReportHandler:
                     if asks_bytes and not has_free_bytes
                     else ()
                 )
+                columns = [("表空间", "tablespace")]
+                if asks_remaining and any(row["free"] != "—" for row in table_rows):
+                    columns.append(("可用空间", "free"))
+                if asks_remaining and any(row["maximum"] != "—" for row in table_rows):
+                    columns.append(("最大空间", "maximum"))
+                if asks_utilization:
+                    columns.append(("使用率", "used"))
+                if asks_remaining:
+                    columns.append(("剩余比例", "remaining"))
+
+                def table_value(value):
+                    return str(value).replace("|", "\\|").replace("\n", " ")
+
+                table = "\n".join(
+                    (
+                        "| " + " | ".join(label for label, _ in columns) + " |",
+                        "| " + " | ".join("---" for _ in columns) + " |",
+                        *(
+                            "| "
+                            + " | ".join(
+                                table_value(row[key]) for _, key in columns
+                            )
+                            + " |"
+                            for row in table_rows
+                        ),
+                    )
+                )
                 return DirectQuestionAnswer(
                     answer_kind="EVIDENCE_FACT",
                     status=status,
@@ -1272,10 +1325,10 @@ class DiagnosisReportHandler:
                             if asks_utilization
                             else "当前监控窗口内各表空间余量如下："
                         )
-                        + "；".join(rows)
-                        + "。"
+                        + "\n\n"
+                        + table
                         + (
-                            f" {bytes_gap}"
+                            f"\n\n{bytes_gap}"
                             if asks_bytes and not has_free_bytes
                             else ""
                         )

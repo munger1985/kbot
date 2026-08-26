@@ -5,6 +5,10 @@
   const shell = globalThis.KBotAIOpsShell;
   const markdown = globalThis.KBotMarkdown;
   const state = { agents: [], conversation: null, selectedFile: null };
+  const typingFrameMs = 22;
+  const graphemeSegmenter = typeof Intl?.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
 
   const esc = shell.escape;
   const values = (items) => Array.isArray(items) ? items : [];
@@ -12,31 +16,64 @@
     ? values(items).map((item) => `- ${typeof item === "string" ? item : item.fact_summary || item.summary || item.title || "已记录"}`).join("\n")
     : "- 无";
 
-  function resultMarkdown(result) {
+  function inspectionMarkdown(result) {
     const payload = result?.payload || {};
     if (!result?.final_artifact) {
       return `### 诊断尚未形成最终结论\n\n当前状态：${result?.status || "处理中"}`;
     }
-    if (payload.schema_version === "REPORT_CONTENT.v1" || payload.title) {
-      return `## ${payload.title || "巡检报告"}\n\n${payload.summary || ""}\n\n### 发现\n${bullets(payload.facts)}\n\n### 建议\n${bullets(payload.recommendations)}\n\n### 数据缺口\n${bullets(payload.gaps)}`;
-    }
-    const root = payload.root_cause || {};
-    const direct = payload.direct_answer?.answer_text;
-    const solution = payload.solution || {};
-    return [
-      `## ${direct ? "诊断回答" : "诊断结论"}`,
-      direct || payload.diagnosis_rationale || "当前证据未形成可展示的文字结论。",
-      `**根因等级：** ${root.effective_level || result.root_cause_grade || "INCONCLUSIVE"}`,
-      "### 已验证事实", bullets(payload.facts),
-      "### 立即建议", bullets(solution.immediate_mitigations),
-      "### 长期建议", bullets(solution.long_term_remediations),
-      "### 尚缺证据", bullets(payload.gaps),
-    ].join("\n\n");
+    return `## ${payload.title || "巡检报告"}\n\n${payload.summary || ""}\n\n### 发现\n${bullets(payload.facts)}\n\n### 建议\n${bullets(payload.recommendations)}\n\n### 数据缺口\n${bullets(payload.gaps)}`;
   }
 
-  function messageHtml(role, text, meta = "") {
+  function conversationAnswerMarkdown(result) {
+    const payload = result?.payload || {};
+    if (!result?.final_artifact) {
+      return `诊断尚未完成，当前状态为 ${result?.status || "处理中"}。`;
+    }
+    const direct = payload.direct_answer?.answer_text;
+    const solution = payload.solution || {};
+    let answer = direct || payload.diagnosis_rationale || "现有证据还不足以回答这个问题。";
+    const limitations = values(payload.direct_answer?.limitations).filter((item) => !answer.includes(String(item)));
+    if (limitations.length) answer += `\n\n${limitations.map((item) => `> ${item}`).join("\n")}`;
+    if (!direct) {
+      const recommendations = [
+        ...values(solution.immediate_mitigations),
+        ...values(solution.long_term_remediations),
+      ].filter(Boolean);
+      if (recommendations.length) answer += `\n\n接下来可以这样处理：\n\n${bullets(recommendations)}`;
+    }
+    return answer;
+  }
+
+  function evidenceDetails(result) {
+    const payload = result?.payload || {};
+    const facts = values(payload.facts);
+    const gaps = values(payload.gaps);
+    const root = payload.root_cause || {};
+    if (!facts.length && !gaps.length && !root.effective_level) return "";
+    const factRows = facts.length
+      ? `<ol class="ops-evidence-list">${facts.map((fact) => `<li><span>${esc(fact.fact_summary || "已验证事实")}</span><small>${esc(fact.source_type || "EVIDENCE")}${fact.captured_at ? ` · ${esc(shell.fmt(fact.captured_at))}` : ""}</small></li>`).join("")}</ol>`
+      : '<p class="ops-evidence-empty">本次没有形成可展示的事实条目。</p>';
+    const rootRow = root.effective_level
+      ? `<div class="ops-evidence-assessment"><span>根因判断</span><strong>${esc(root.effective_level)}</strong></div>`
+      : "";
+    const gapRows = gaps.length
+      ? `<div class="ops-evidence-gaps"><strong>仍缺少的证据</strong><ul>${gaps.map((item) => `<li>${esc(typeof item === "string" ? item : item.code || item.summary || "EVIDENCE_GAP")}</li>`).join("")}</ul></div>`
+      : "";
+    return `<details class="ops-evidence"><summary>诊断依据 <span>${facts.length} 项已验证事实</span></summary><div class="ops-evidence-body">${rootRow}${factRows}${gapRows}</div></details>`;
+  }
+
+  function tablespaceChartHtml(result) {
+    const rows = values(result?.payload?.facts)
+      .filter((fact) => fact.metric_or_fact_type === "db.storage.utilization.series.last" && fact.dimensions?.tablespace && Number.isFinite(Number(fact.value)))
+      .map((fact) => ({ name: String(fact.dimensions.tablespace), value: Math.max(0, Math.min(100, Number(fact.value))) }))
+      .sort((left, right) => right.value - left.value);
+    if (rows.length < 2) return "";
+    return `<figure class="ops-tablespace-chart"><figcaption>表空间使用率对比</figcaption><div class="ops-chart-rows">${rows.map((row) => `<div class="ops-chart-row"><span title="${esc(row.name)}">${esc(row.name)}</span><div class="ops-chart-track"><i style="width:${row.value.toFixed(2)}%"></i></div><strong>${row.value.toFixed(2)}%</strong></div>`).join("")}</div></figure>`;
+  }
+
+  function messageHtml(role, text, meta = "", supplemental = "") {
     const user = role === "USER";
-    return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown">${markdown.render(text)}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
+    return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
   }
 
   function messageText(item) {
@@ -72,7 +109,12 @@
         container.insertAdjacentHTML("beforeend", messageHtml("AGENT", "诊断仍在进行中，页面会通过事件流持续更新。", result.status));
         return;
       }
-      container.insertAdjacentHTML("beforeend", messageHtml("AGENT", resultMarkdown(result), `Run ${shell.short(runId)}`));
+      container.insertAdjacentHTML("beforeend", messageHtml(
+        "AGENT",
+        conversationAnswerMarkdown(result),
+        "",
+        tablespaceChartHtml(result) + evidenceDetails(result),
+      ));
       try { await renderProposals(runId, container); } catch (_) { /* 无审批权限时仍展示诊断结果。 */ }
     } catch (error) {
       container.insertAdjacentHTML("beforeend", messageHtml("AGENT", `无法读取本次诊断结果：${error.message}`));
@@ -143,26 +185,86 @@
     if (id) await loadConversation(id);
   }
 
+  function typingUnits(value) {
+    const text = String(value || "");
+    if (!text) return [];
+    if (!graphemeSegmenter) return Array.from(text);
+    return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
+  }
+
+  function typingBatchSize(pending) {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return pending.queue.length;
+    if (pending.finalizing) return Math.max(1, Math.ceil(pending.queue.length / 16));
+    if (pending.queue.length > 800) return 8;
+    if (pending.queue.length > 240) return 4;
+    if (pending.queue.length > 80) return 2;
+    return 1;
+  }
+
+  function settleTyping(pending) {
+    pending.timer = null;
+    pending.message.classList.remove("is-typing");
+    pending.message.setAttribute("aria-busy", "false");
+    pending.waiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  function typingTick(pending) {
+    if (!pending.queue.length) return settleTyping(pending);
+    pending.displayedMarkdown += pending.queue.splice(0, typingBatchSize(pending)).join("");
+    pending.content.innerHTML = markdown.render(pending.displayedMarkdown);
+    const panel = document.getElementById("message-list");
+    panel.scrollTop = panel.scrollHeight;
+    pending.timer = window.setTimeout(() => typingTick(pending), typingFrameMs);
+  }
+
+  function enqueueAnswerDelta(pending, delta) {
+    pending.queue.push(...typingUnits(delta));
+    pending.message.classList.add("is-typing");
+    pending.message.setAttribute("aria-busy", "true");
+    if (pending.timer === null) typingTick(pending);
+  }
+
+  function waitForTyping(pending) {
+    if (!pending.queue.length && pending.timer === null) return Promise.resolve();
+    return new Promise((resolve) => pending.waiters.push(resolve));
+  }
+
   async function followRun(runId, progress) {
     let summary = "诊断任务已经开始";
-    let answer = "";
-    let answerNode = null;
+    let pending = null;
     await KBotAIOpsAuth.stream(`${api}/runs/${encodeURIComponent(runId)}/events`, ({ event, data }) => {
       if (event === "task.status") {
         const payload = data?.payload || {};
-        summary = payload.task_key ? `正在执行：${payload.task_key}` : summary;
+        summary = payload.public_summary || payload.summary || "正在继续诊断…";
         progress.textContent = summary;
       }
       if (event === "answer.delta") {
-        answer += String(data?.payload?.delta || "");
-        if (!answerNode) {
+        const delta = String(data?.payload?.delta || "");
+        if (!pending) {
           progress.insertAdjacentHTML("beforebegin", messageHtml("AGENT", ""));
-          answerNode = progress.previousElementSibling.querySelector(".ops-message-body");
+          const message = progress.previousElementSibling;
+          pending = {
+            message,
+            content: message.querySelector(".ops-message-content"),
+            displayedMarkdown: "",
+            queue: [],
+            timer: null,
+            waiters: [],
+            finalizing: false,
+          };
         }
-        answerNode.innerHTML = markdown.render(answer);
+        enqueueAnswerDelta(pending, delta);
       }
-      if (event === "done") progress.textContent = "诊断已完成，正在整理结论…";
+      if (event === "answer.completed" && pending) pending.finalizing = true;
+      if (event === "done") {
+        if (pending) pending.finalizing = true;
+        progress.textContent = "诊断已完成，正在整理结论…";
+      }
     });
+    if (pending) {
+      pending.finalizing = true;
+      await waitForTyping(pending);
+    }
   }
 
   async function fileBase64(file) {
@@ -249,7 +351,7 @@
     const runId = detail.run_ids[0];
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${result ? `<div class="ops-result-markdown">${markdown.render(resultMarkdown(result))}</div>${continueForm(run, detail.title)}` : '<div class="ops-empty">自动诊断尚未生成结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${result ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${tablespaceChartHtml(result)}${evidenceDetails(result)}</div>${continueForm(run, detail.title)}` : '<div class="ops-empty">自动诊断尚未生成结果。</div>'}`;
     await bindContinue(run, detail.title);
   }
 
@@ -260,7 +362,7 @@
     const runId = detail.run_ids[0];
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(resultMarkdown(result))}</div>${continueForm(run, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${continueForm(run, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     await bindContinue(run, "本次日常巡检");
   }
 

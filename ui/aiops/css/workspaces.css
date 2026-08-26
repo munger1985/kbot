@@ -22,6 +22,11 @@
 .ops-message-body { padding: 13px 15px; border: 1px solid var(--line); border-radius: 3px 12px 12px 12px; background: #fff; overflow-wrap: anywhere; }
 .ops-message-body > :first-child { margin-top: 0; }
 .ops-message-body > :last-child { margin-bottom: 0; }
+.ops-message-content > :first-child { margin-top: 0; }
+.ops-message-content > :last-child { margin-bottom: 0; }
+.ops-message.agent.is-typing .ops-message-content::after { display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: currentColor; content: ""; animation: ops-typewriter-caret .8s steps(1, end) infinite; }
+@keyframes ops-typewriter-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ops-message.agent.is-typing .ops-message-content::after { animation: none; } }
 .ops-message-meta { margin-top: 7px; color: var(--muted); font-size: 11px; }
 .ops-composer { padding: 16px 20px; border-top: 1px solid var(--line); background: #fff; }
 .ops-composer textarea { width: 100%; min-height: 92px; padding: 12px; border: 1px solid #aeb7c6; resize: vertical; }
@@ -36,8 +41,31 @@
 .ops-case-row p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
 .ops-case-content { padding: 20px; }
 .ops-result-markdown { line-height: 1.72; }
-.ops-result-markdown table { width: 100%; border-collapse: collapse; }
-.ops-result-markdown th, .ops-result-markdown td { padding: 7px; border: 1px solid var(--line); text-align: left; }
+.ops-result-markdown table { display: block; max-width: 100%; margin: 12px 0 16px; overflow-x: auto; border: 1px solid var(--line); border-spacing: 0; border-collapse: separate; background: #fff; }
+.ops-result-markdown th, .ops-result-markdown td { min-width: 110px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ops-result-markdown th { background: #eef1f6; font-weight: 700; }
+.ops-result-markdown tbody tr:last-child td { border-bottom: 0; }
+.ops-evidence { margin-top: 14px; border-top: 1px solid var(--line); color: #47536a; }
+.ops-evidence summary { display: flex; align-items: center; gap: 8px; padding: 11px 2px 2px; color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; list-style-position: inside; }
+.ops-evidence summary span { color: var(--muted); font-weight: 500; }
+.ops-evidence-body { padding: 10px 2px 2px; }
+.ops-evidence-assessment { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 9px; border-bottom: 1px solid #e6e9ef; font-size: 12px; }
+.ops-evidence-assessment span { color: var(--muted); }
+.ops-evidence-list { display: grid; gap: 9px; margin: 12px 0; padding-left: 22px; }
+.ops-evidence-list li { padding-left: 3px; }
+.ops-evidence-list span, .ops-evidence-list small { display: block; }
+.ops-evidence-list small { margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: .03em; }
+.ops-evidence-gaps { padding-top: 10px; border-top: 1px solid #e6e9ef; font-size: 12px; }
+.ops-evidence-gaps ul { margin: 7px 0 0; padding-left: 20px; }
+.ops-evidence-empty { margin: 10px 0; color: var(--muted); }
+.ops-tablespace-chart { margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.ops-tablespace-chart figcaption { margin-bottom: 11px; font-size: 12px; font-weight: 700; }
+.ops-chart-rows { display: grid; gap: 8px; }
+.ops-chart-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(120px, 1fr) 62px; align-items: center; gap: 10px; font-size: 12px; }
+.ops-chart-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-chart-row > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.ops-chart-track { height: 8px; overflow: hidden; background: #e5e9f0; }
+.ops-chart-track i { display: block; height: 100%; background: var(--accent); }
 .ops-inline-dialog { margin-top: 18px; padding: 16px; border: 1px solid var(--line); background: #f8f9fb; }
 .agent-code-block { margin: 12px 0; border: 1px solid #39445a; background: #20283a; color: #eef2fa; }
 .agent-code-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #2b3549; font-size: 11px; }

@@ -143,38 +143,35 @@ def sha256_json(value: Any) -> str:
 
 
 def _diagnosis_answer_markdown(payload: dict[str, Any]) -> str:
-    """把最终诊断 Artifact 投影为可流式展示的安全 Markdown。"""
-    root = dict(payload.get("root_cause") or {})
+    """把结构化诊断投影为适合聊天的自然 Markdown。"""
     direct = dict(payload.get("direct_answer") or {})
     solution = dict(payload.get("solution") or {})
-
-    def bullet_lines(items, *, key: str | None = None) -> str:
-        rows = []
-        for item in list(items or ())[:20]:
-            value = item.get(key) if key and isinstance(item, dict) else item
-            if value:
-                rows.append(f"- {str(value)[:1000]}")
-        return "\n".join(rows) or "- 无"
-
-    return "\n\n".join(
-        (
-            "## 诊断结论",
-            str(
-                direct.get("answer_text")
-                or payload.get("diagnosis_rationale")
-                or "当前证据未形成可展示的文字结论。"
-            )[:3000],
-            "**根因等级：** "
-            + str(root.get("effective_level") or "INCONCLUSIVE"),
-            "### 已验证事实\n"
-            + bullet_lines(payload.get("facts"), key="fact_summary"),
-            "### 立即建议\n"
-            + bullet_lines(solution.get("immediate_mitigations")),
-            "### 长期建议\n"
-            + bullet_lines(solution.get("long_term_remediations")),
-            "### 尚缺证据\n" + bullet_lines(payload.get("gaps")),
-        )
-    )[:16000]
+    answer = str(
+        direct.get("answer_text")
+        or payload.get("diagnosis_rationale")
+        or "现有证据还不足以回答这个问题。"
+    )[:6000]
+    limitations = [
+        str(item)[:1000]
+        for item in list(direct.get("limitations") or ())[:5]
+        if item and str(item) not in answer
+    ]
+    if limitations:
+        answer += "\n\n" + "\n".join(f"> {item}" for item in limitations)
+    if not direct:
+        recommendations = [
+            str(item)[:1000]
+            for item in (
+                *list(solution.get("immediate_mitigations") or ())[:5],
+                *list(solution.get("long_term_remediations") or ())[:3],
+            )
+            if item
+        ]
+        if recommendations:
+            answer += "\n\n接下来可以这样处理：\n\n" + "\n".join(
+                f"- {item}" for item in recommendations
+            )
+    return answer[:16000]
 
 
 def _runtime_error(
@@ -1820,8 +1817,8 @@ class AIOpsRuntimeService:
                         dict(final_artifact.payload_json or {})
                     )
                     chunks = tuple(
-                        answer[index:index + 800]
-                        for index in range(0, len(answer), 800)
+                        answer[index:index + 120]
+                        for index in range(0, len(answer), 120)
                     )
                     for index, delta in enumerate(chunks, start=1):
                         await uow.runs.append_event(

@@ -23,7 +23,7 @@ def _context(uow):
 
 
 class AIOpsRunResultTest(unittest.TestCase):
-    def test_final_diagnosis_has_safe_streaming_markdown_projection(self) -> None:
+    def test_chat_diagnosis_has_natural_streaming_markdown_projection(self) -> None:
         content = _diagnosis_answer_markdown(
             {
                 "root_cause": {"effective_level": "PROBABLE"},
@@ -38,8 +38,27 @@ class AIOpsRunResultTest(unittest.TestCase):
         )
 
         self.assertIn("锁等待导致响应变慢", content)
-        self.assertIn("根因等级：** PROBABLE", content)
+        self.assertNotIn("根因等级", content)
+        self.assertNotIn("已验证事实", content)
+        self.assertNotIn("## 诊断结论", content)
+        self.assertIn("接下来可以这样处理", content)
         self.assertIn("- 确认阻塞源", content)
+
+    def test_direct_answer_does_not_append_report_sections(self) -> None:
+        content = _diagnosis_answer_markdown(
+            {
+                "direct_answer": {
+                    "answer_text": "| 表空间 | 使用率 |\n| --- | --- |\n| USERS | 80% |",
+                    "limitations": [],
+                },
+                "facts": [{"fact_summary": "USERS 使用率为 80%"}],
+                "solution": {"immediate_mitigations": ["无需处理"]},
+            }
+        )
+
+        self.assertIn("| USERS | 80% |", content)
+        self.assertNotIn("无需处理", content)
+        self.assertNotIn("已验证事实", content)
 
     def test_returns_scoped_final_artifact_payload(self) -> None:
         run_id = uuid7()
