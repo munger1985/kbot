@@ -30,7 +30,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
         "inspection-plans", "inspection-plan-detail",
-        "report-templates", "api-clients",
+        "api-clients",
         "login",
     }
 
@@ -255,6 +255,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["runs", "诊断运行"]', shell)
         self.assertNotIn('["reports", "报告中心"]', shell)
+        self.assertNotIn('["report-templates", "报告模板"]', shell)
         self.assertIn("source_run_id", workspace)
         self.assertIn("KBotAIOpsAuth.stream", workspace)
         self.assertIn('event === "answer.delta"', workspace)
@@ -262,7 +263,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("upload", workspace.lower())
         for obsolete in (
             "dashboard.html", "runs.html", "reports.html",
-            "changes.html", "notifications.html",
+            "changes.html", "notifications.html", "report-templates.html",
         ):
             self.assertFalse((AIOPS_ROOT / obsolete).exists())
 

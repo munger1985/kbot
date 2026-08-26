@@ -329,7 +329,7 @@
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
   async function renderSimple(page) {
-    const paths = { "report-templates": `${appApi}/report-templates`, "api-clients": `${appApi}/api-clients` };
+    const paths = { "api-clients": `${appApi}/api-clients` };
     const panel = document.getElementById("ops-simple");
     if (!paths[page] || !panel) return;
     try { panel.innerHTML = `<pre class="ops-code">${shell.escape(JSON.stringify(await KBotAIOpsAuth.request(paths[page]), null, 2))}</pre>`; }
