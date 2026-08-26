@@ -71,6 +71,13 @@
                 <label for="agent-description">简短说明</label>
                 <input id="agent-description" name="description" maxlength="1000" placeholder="这个 Agent 负责什么">
               </div>
+              <div class="ops-field span-12">
+                <label for="agent-model">诊断模型</label>
+                <select id="agent-model" name="diagnosis_model_id" required>
+                  <option value="">正在加载已启用的 LLM…</option>
+                </select>
+                <small>必选。Agent 的人工诊断、告警诊断和巡检分析都使用该模型。</small>
+              </div>
             </div>
             <p id="agent-status-help" class="agent-inline-note">新增 Agent 固定保存为草稿；确认资源后再启用。</p>
           </div>
@@ -131,10 +138,6 @@
         <details class="agent-advanced">
           <summary>高级设置</summary>
           <div class="ops-form">
-            <div class="ops-field span-12">
-              <label for="agent-model">诊断模型 ID（可选）</label>
-              <input id="agent-model" name="diagnosis_model_id" placeholder="未填写时使用运行时默认模型">
-            </div>
             <div class="ops-field span-12">
               <label for="agent-instruction">专业指令</label>
               <textarea id="agent-instruction" name="instruction" maxlength="32000" placeholder="补充该 Agent 的诊断边界、关注重点或输出要求"></textarea>

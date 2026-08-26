@@ -454,6 +454,14 @@ class AIOpsAgentService:
     async def _validate_resources(
         self, uow, domain_id: int, status: str, values
     ) -> None:
+        if status == "ACTIVE" and not dict(values.get("models") or {}).get(
+            "diagnosis_llm"
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED",
+                "启用 Agent 前必须选择诊断模型",
+                status_code=422,
+            )
         source_ids = tuple(values.get("diagnostic_source_ids") or ())
         if not source_ids:
             raise AIOpsAgentError(

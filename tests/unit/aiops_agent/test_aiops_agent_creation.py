@@ -3,8 +3,10 @@
 import unittest
 from types import SimpleNamespace
 from aiops_agent.application.agents import (
+    AIOpsAgentError,
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
+    UpdateAIOpsAgentCommand,
 )
 from pydantic import ValidationError
 from platform_core.identity import uuid7
@@ -129,6 +131,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(source_id,),
+                models={"diagnosis_llm": uuid7()},
                 status="ACTIVE",
                 actor_id="kbotui_dev",
             )
@@ -144,6 +147,55 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(policy.rules_json["readonly_database_enabled"])
         self.assertTrue(policy.rules_json["auto_alert_enabled"])
         self.assertEqual(900, policy.rules_json["alert_cooldown_seconds"])
+
+    async def test_active_agent_requires_diagnosis_model(self):
+        source_id = uuid7()
+        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.create(
+                CreateAIOpsAgentCommand(
+                    domain_id=100,
+                    display_name="缺少模型的诊断助手",
+                    diagnostic_source_ids=(source_id,),
+                    status="ACTIVE",
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED", raised.exception.code
+        )
+        self.assertEqual(0, unit_of_work.commit_count)
+
+    async def test_draft_without_model_cannot_be_enabled(self):
+        source_id = uuid7()
+        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+        draft = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="待配置模型的诊断助手",
+                diagnostic_source_ids=(source_id,),
+                actor_id="kbotui_dev",
+            )
+        )
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.update(
+                UpdateAIOpsAgentCommand(
+                    domain_id=100,
+                    agent_id=draft["agent_id"],
+                    expected_row_version=draft["row_version"],
+                    status="ACTIVE",
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED", raised.exception.code
+        )
 
     async def test_change_execution_requires_selected_target(self):
         with self.assertRaises(ValidationError):

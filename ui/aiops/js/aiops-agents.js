@@ -6,6 +6,7 @@
   let agents = [];
   let sources = [];
   let targets = [];
+  let models = [];
   let sourceBindings = [];
   let bindingTargetId = "";
   let editing = null;
@@ -109,6 +110,10 @@
       ? sources.map(sourceCard).join("")
       : '<div class="ops-error">没有已启用且可连接的监控源，请先完成监控源配置。</div>';
     document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}${target.execution_credential_configured ? " · 执行凭据就绪" : " · 执行凭据待配置"}</option>`).join("");
+    const diagnosisModels = models.filter((model) => Number(model.category) === 1);
+    document.getElementById("agent-model").innerHTML = diagnosisModels.length
+      ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
+      : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
   }
 
   function bindingFor(sourceId) {
@@ -247,7 +252,7 @@
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15;
-    form.elements.diagnosis_model_id.value = editing.models?.diagnosis || "";
+    form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
     form.elements.instruction.value = editing.instruction || "";
     form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => {
       input.checked = (editing.diagnostic_source_ids || []).includes(input.value);
@@ -272,6 +277,7 @@
     const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
     if (!selectedSources.length) throw new Error("至少选择一个监控源。");
     const modelId = form.elements.diagnosis_model_id.value.trim();
+    if (!modelId) throw new Error("请选择诊断模型。");
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
     return {
       display_name: form.elements.display_name.value.trim(),
@@ -283,7 +289,7 @@
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
       alert_cooldown_minutes: autoAlertEnabled ? Number(form.elements.alert_cooldown_minutes.value) : (editing?.alert_cooldown_minutes ?? 15),
-      models: modelId ? { diagnosis: modelId } : {},
+      models: { diagnosis_llm: modelId },
       instruction: form.elements.instruction.value.trim() || null,
       image_capabilities: {},
       config: {},
@@ -389,14 +395,16 @@
   }
 
   async function load() {
-    const [agentRows, sourcePage, targetPage] = await Promise.all([
+    const [agentRows, sourcePage, targetPage, modelRows] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/diagnostic-sources?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
+      KBotAIOpsAuth.request(`${api}/model-catalog`),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
     sources = (sourcePage.items || []).filter((item) => ["CONNECTED", "DEGRADED"].includes(item.connectivity_status));
     targets = (targetPage.items || []).filter((item) => ["CONNECTED", "DEGRADED"].includes(item.connectivity_status));
+    models = Array.isArray(modelRows) ? modelRows : [];
     renderResources();
     renderRows();
   }
