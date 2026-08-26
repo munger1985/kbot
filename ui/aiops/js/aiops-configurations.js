@@ -5,16 +5,6 @@
   const shell = globalThis.KBotAIOpsShell;
   let editing = null;
 
-  function jsonObject(value, label) {
-    try {
-      const parsed = JSON.parse(value || "{}");
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error();
-      return parsed;
-    } catch (_) {
-      throw new Error(`${label}必须是合法的 JSON 对象。`);
-    }
-  }
-
   function showResult(id, message, tone = "bad") {
     const element = document.getElementById(id);
     if (!element) return;
@@ -28,36 +18,88 @@
     });
   }
 
-  function sourceIdentity(type) {
-    return { source_type: type, adapter_id: type.toLowerCase(), adapter_version: "1.0.0" };
+  const sourcePresentation = {
+    PROMETHEUS: {
+      placeholder: "http://prometheus.internal:9090",
+      help: "Prometheus HTTP API 地址，必须能从 KBot 服务访问。",
+      capabilities: ["指标时序查询", "活动告警查询"],
+    },
+    ALERTMANAGER: {
+      placeholder: "http://alertmanager.internal:9093（可选）",
+      help: "只接收 Webhook 时可以留空；填写后可同时检查 Alertmanager 就绪状态。",
+      capabilities: ["告警事件接收"],
+    },
+    LOKI: {
+      placeholder: "http://loki.internal:3100",
+      help: "Loki HTTP API 地址，必须能从 KBot 服务访问。",
+      capabilities: ["日志查询"],
+    },
+    ZABBIX: {
+      placeholder: "https://zabbix.internal/api_jsonrpc.php",
+      help: "请输入完整的 Zabbix JSON-RPC API 地址。",
+      capabilities: ["告警事件接收", "活动事件查询", "指标时序查询"],
+    },
+    OEM: {
+      placeholder: "https://oem.internal/em/websvcs/restful",
+      help: "Oracle Enterprise Manager REST API 根地址。",
+      capabilities: ["事件查询", "指标时序查询"],
+    },
+  };
+
+  function renderSourceType(form) {
+    const type = form.elements.source_type.value;
+    const presentation = sourcePresentation[type];
+    const endpoint = form.elements.endpoint;
+    const isAlertmanager = type === "ALERTMANAGER";
+    const receivesWebhook = isAlertmanager || type === "ZABBIX";
+    endpoint.placeholder = presentation.placeholder;
+    endpoint.required = !isAlertmanager;
+    document.getElementById("source-endpoint-help").textContent = presentation.help;
+    document.getElementById("source-token-field").hidden = false;
+    document.getElementById("source-webhook-field").hidden = !receivesWebhook;
+    document.getElementById("source-target-label-field").hidden = !isAlertmanager;
+    document.getElementById("source-tenant-field").hidden = type !== "LOKI";
+    const list = document.getElementById("source-capability-list");
+    list.replaceChildren(...presentation.capabilities.map((label) => {
+      const item = document.createElement("span");
+      item.className = "ops-capability";
+      item.textContent = label;
+      return item;
+    }));
   }
 
-  function sourceCapabilities(type) {
-    const capabilities = {
-      PROMETHEUS: ["metric.query_range", "event.query"],
-      ALERTMANAGER: ["event.receive"],
-      LOKI: ["log.query"],
-      ZABBIX: ["event.receive", "event.query", "metric.query_range"],
-      OEM: ["event.query", "metric.query_range"],
-    }[type] || [];
-    return Object.fromEntries(capabilities.map((capability) => [capability, {}]));
-  }
-
-  function sourcePayload(form, includeIdentity = true) {
+  function sourcePayload(form, includeIdentity = true, testing = false) {
+    const type = form.elements.source_type.value;
+    const endpoint = form.elements.endpoint.value.trim();
+    const webhookSecret = form.elements.webhook_secret.value;
+    if (
+      type === "ALERTMANAGER"
+      && !endpoint
+      && !webhookSecret
+      && (testing || !editing?.webhook_configured)
+    ) {
+      throw new Error("Alertmanager 必须填写访问地址或 Webhook Secret。");
+    }
     const credentials = {};
-    if (form.elements.token.value) credentials.token = form.elements.token.value;
+    if (form.elements.token.value) {
+      credentials.token = form.elements.token.value;
+    }
     const payload = {
       display_name: form.elements.display_name.value.trim(),
-      adapter_version: form.elements.adapter_version.value.trim(),
-      endpoint: form.elements.endpoint.value.trim(),
-      declared_capabilities: jsonObject(form.elements.declared_capabilities.value, "声明能力"),
-      config: jsonObject(form.elements.config.value, "Adapter 配置"),
+      endpoint: endpoint || null,
+      config: {},
     };
-    if (Object.keys(credentials).length) payload.credentials = credentials;
-    if (form.elements.webhook_secret.value) {
-      payload.webhook_credentials = { webhook_secret: form.elements.webhook_secret.value };
+    if (type === "ALERTMANAGER") {
+      payload.config.target_label = form.elements.target_label.value.trim() || "instance";
     }
-    if (includeIdentity) Object.assign(payload, sourceIdentity(form.elements.source_type.value));
+    if (type === "LOKI" && form.elements.tenant_id.value.trim()) {
+      payload.config.tenant_id = form.elements.tenant_id.value.trim();
+    }
+    if (Object.keys(credentials).length) payload.credentials = credentials;
+    if (["ALERTMANAGER", "ZABBIX"].includes(type) && webhookSecret) {
+      payload.webhook_credentials = { webhook_secret: webhookSecret };
+    }
+    if (includeIdentity) payload.source_type = type;
     return payload;
   }
 
@@ -66,9 +108,8 @@
     const form = document.getElementById("diagnostic-source-form");
     form.reset();
     form.elements.source_type.disabled = false;
-    form.elements.adapter_version.value = "1.0.0";
-    form.elements.declared_capabilities.value = JSON.stringify(sourceCapabilities("PROMETHEUS"), null, 2);
-    form.elements.config.value = "{}";
+    form.elements.target_label.value = "instance";
+    renderSourceType(form);
     document.getElementById("diagnostic-source-dialog-title").textContent = "新增诊断源";
     document.getElementById("save-diagnostic-source").textContent = "创建诊断源";
     showResult("source-test-result", "", "");
@@ -86,10 +127,10 @@
       form.elements.source_type.disabled = false;
       form.elements.source_type.value = source.source_type;
       form.elements.source_type.disabled = true;
-      form.elements.adapter_version.value = source.adapter_version;
       form.elements.endpoint.value = source.endpoint || "";
-      form.elements.declared_capabilities.value = JSON.stringify(source.declared_capabilities || {}, null, 2);
-      form.elements.config.value = JSON.stringify(source.config || {}, null, 2);
+      form.elements.target_label.value = source.config?.target_label || "instance";
+      form.elements.tenant_id.value = source.config?.tenant_id || "";
+      renderSourceType(form);
       document.getElementById("diagnostic-source-dialog-title").textContent = "编辑诊断源";
       document.getElementById("save-diagnostic-source").textContent = "保存修改";
       showResult("source-test-result", "", "");
@@ -139,10 +180,11 @@
     try {
       const response = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/test-connection`, {
         method: "POST",
-        body: JSON.stringify(sourcePayload(form, true)),
+        body: JSON.stringify(sourcePayload(form, true, true)),
       });
       if (!response.ok) throw new Error(response.error_code || "诊断源连接测试失败。");
-      showResult("source-test-result", "连接成功，诊断源 API 可用。", "good");
+      const count = (response.discovered_capabilities || []).length;
+      showResult("source-test-result", `连接成功，已发现 ${count} 项系统能力。`, "good");
     } catch (error) {
       showResult("source-test-result", error.message);
     } finally {
@@ -343,8 +385,7 @@
       document.getElementById("diagnostic-source-form").addEventListener("submit", saveSource);
       document.getElementById("test-diagnostic-source").addEventListener("click", testSource);
       document.getElementById("source-type").addEventListener("change", (event) => {
-        document.getElementById("source-adapter-version").value = sourceIdentity(event.target.value).adapter_version;
-        document.getElementById("source-capabilities").value = JSON.stringify(sourceCapabilities(event.target.value), null, 2);
+        renderSourceType(event.target.form);
       });
     } else if (page === "policies") {
       closeButtons(document.getElementById("policy-dialog"));

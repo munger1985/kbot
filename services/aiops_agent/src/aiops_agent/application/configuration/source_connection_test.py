@@ -21,20 +21,31 @@ async def test_diagnostic_source_connection(
     """使用临时上下文调用 Adapter 健康检查，不保存配置或凭据。"""
 
     try:
+        descriptor = diagnostic_source_registry.describe_source_type(
+            source_type=request.source_type
+        )
+        config = diagnostic_source_registry.normalize_config(
+            source_type=request.source_type,
+            config=dict(request.config),
+        )
         adapter = diagnostic_source_registry.create(
             DiagnosticSourceContext(
                 source_id=str(uuid7()),
                 source_type=request.source_type,
-                adapter_id=request.adapter_id,
-                adapter_version=request.adapter_version,
+                adapter_id=descriptor.adapter_id,
+                adapter_version=descriptor.adapter_version,
                 config_version=1,
                 endpoint=str(request.endpoint) if request.endpoint else None,
                 credentials={
                     **dict(request.credentials or {}),
                     **dict(request.webhook_credentials or {}),
                 },
-                declared_capabilities=dict(request.declared_capabilities),
-                config=dict(request.config),
+                declared_capabilities={
+                    capability: {}
+                    for capability in descriptor.capabilities
+                    if capability != CAPABILITY_HEALTH_CHECK
+                },
+                config=config,
             ),
             capability=CAPABILITY_HEALTH_CHECK,
         )
@@ -49,6 +60,10 @@ async def test_diagnostic_source_connection(
     except DiagnosticSourceAdapterError as exc:
         return DiagnosticSourceConnectionTestResult(
             ok=False, error_code=exc.code
+        )
+    except ValueError:
+        return DiagnosticSourceConnectionTestResult(
+            ok=False, error_code="SOURCE_CONFIGURATION_INVALID"
         )
     except LookupError:
         return DiagnosticSourceConnectionTestResult(

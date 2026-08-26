@@ -148,7 +148,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         script = (AIOPS_ROOT / "js" / "aiops-configurations.js").read_text(
             encoding="utf-8"
         )
+        diagnostic_page = (
+            AIOPS_ROOT / "diagnostic-sources.html"
+        ).read_text(encoding="utf-8")
         self.assertIn("/diagnostic-sources/test-connection", script)
+        self.assertNotIn("声明能力（JSON 对象）", diagnostic_page)
+        self.assertNotIn("Adapter 配置（JSON 对象）", diagnostic_page)
+        self.assertNotIn('name="adapter_version"', diagnostic_page)
+        self.assertIn('name="target_label"', diagnostic_page)
+        self.assertIn('name="tenant_id"', diagnostic_page)
+        self.assertIn("renderSourceType", script)
         self.assertIn('method: editing ? "PATCH" : "POST"', script)
         self.assertIn("基于当前策略创建新版本", script)
         self.assertIn('"If-Match"', script)

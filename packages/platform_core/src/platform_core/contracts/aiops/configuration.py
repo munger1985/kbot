@@ -233,8 +233,6 @@ class DiagnosticSourceCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
     source_type: str = Field(pattern=r"^[A-Z][A-Z0-9_.-]{1,63}$")
-    adapter_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")
-    adapter_version: str = Field(min_length=1, max_length=64)
     endpoint: HttpUrl | None = None
     credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
@@ -242,7 +240,6 @@ class DiagnosticSourceCreate(AIOpsContract):
     webhook_credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
-    declared_capabilities: JsonObject = Field(default_factory=dict)
     config: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -254,15 +251,28 @@ class DiagnosticSourceCreate(AIOpsContract):
             or self.endpoint.fragment
         ):
             raise ValueError("Diagnostic Source Endpoint 不允许凭证、Query 或 Fragment")
-        if self.endpoint is None and self.webhook_credentials is None:
-            raise ValueError("Diagnostic Source 必须配置 Endpoint 或 Webhook 凭据")
+        if self.source_type == "ALERTMANAGER":
+            if self.endpoint is None and self.webhook_credentials is None:
+                raise ValueError(
+                    "Alertmanager 必须配置 Endpoint 或 Webhook 凭据"
+                )
+        elif self.endpoint is None:
+            raise ValueError(
+                f"{self.source_type} Diagnostic Source 必须配置 Endpoint"
+            )
+        if (
+            self.source_type not in {"ALERTMANAGER", "ZABBIX"}
+            and self.webhook_credentials is not None
+        ):
+            raise ValueError(
+                "只有 Alertmanager 或 Zabbix 可以配置 Webhook 凭据"
+            )
         return self
 
 
 class DiagnosticSourcePatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    adapter_version: str | None = Field(default=None, min_length=1, max_length=64)
     endpoint: HttpUrl | None = None
     credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
@@ -270,7 +280,6 @@ class DiagnosticSourcePatch(AIOpsContract):
     webhook_credentials: dict[str, str] | None = Field(
         default=None, json_schema_extra={"writeOnly": True}
     )
-    declared_capabilities: JsonObject | None = None
     config: JsonObject | None = None
 
     @model_validator(mode="after")

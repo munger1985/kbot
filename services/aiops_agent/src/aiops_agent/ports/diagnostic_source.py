@@ -49,6 +49,14 @@ class DiagnosticSourceAdapterCatalogPort(Protocol):
         self, *, adapter_id: str, adapter_version: str
     ) -> DiagnosticSourceAdapterDescriptor: ...
 
+    def describe_source_type(
+        self, *, source_type: str
+    ) -> DiagnosticSourceAdapterDescriptor: ...
+
+    def normalize_config(
+        self, *, source_type: str, config: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
 
 class DiagnosticSourceContext(BaseModel):
     """冻结一次 Adapter 调用所需的配置和凭据。"""

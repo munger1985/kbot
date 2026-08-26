@@ -378,26 +378,35 @@ class ConfigurationContractTest(unittest.TestCase):
                 {
                     "display_name": "Prometheus",
                     "source_type": "PROMETHEUS",
-                    "adapter_id": "prometheus",
-                    "adapter_version": "1.0.0",
                     "endpoint": "https://user:pass@prom.example.com",
-                    "declared_capabilities": {"metric.query": {}},
                 }
             )
 
-    def test_diagnostic_source_accepts_adapter_config(self) -> None:
+    def test_diagnostic_source_accepts_structured_adapter_config(self) -> None:
         source = DiagnosticSourceCreate.model_validate(
             {
-                "display_name": "Prometheus",
-                "source_type": "PROMETHEUS",
-                "adapter_id": "prometheus",
-                "adapter_version": "1.0.0",
-                "endpoint": "https://prom.example.com",
-                "declared_capabilities": {"metric.query_range": {}},
-                "config": {"scrape_timeout_seconds": 15},
+                "display_name": "Loki",
+                "source_type": "LOKI",
+                "endpoint": "https://loki.example.com",
+                "config": {"tenant_id": "ops"},
             }
         )
-        self.assertEqual(15, source.config["scrape_timeout_seconds"])
+        self.assertEqual("ops", source.config["tenant_id"])
+
+    def test_diagnostic_source_rejects_internal_adapter_protocol(self) -> None:
+        with self.assertRaises(ValidationError):
+            DiagnosticSourceCreate.model_validate(
+                {
+                    "display_name": "Prometheus",
+                    "source_type": "PROMETHEUS",
+                    "adapter_id": "prometheus",
+                    "adapter_version": "1.0.0",
+                    "endpoint": "https://prom.example.com",
+                    "declared_capabilities": {
+                        "metric.query_range": {}
+                    },
+                }
+            )
 
     def test_application_rejects_adapter_capability_mismatch(self) -> None:
         service = object.__new__(AIOpsConfigurationService)
@@ -420,14 +429,55 @@ class ConfigurationContractTest(unittest.TestCase):
             )
         self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
 
+    def test_application_derives_adapter_from_source_type(self) -> None:
+        descriptor = DiagnosticSourceAdapterCatalog().describe_source_type(
+            source_type="PROMETHEUS"
+        )
+
+        self.assertEqual("prometheus", descriptor.adapter_id)
+        self.assertEqual("1.0.0", descriptor.adapter_version)
+        self.assertIn("metric.query_range", descriptor.capabilities)
+
+    def test_application_normalizes_only_supported_source_config(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._diagnostic_source_catalog = (
+            DiagnosticSourceAdapterCatalog()
+        )
+
+        self.assertEqual(
+            {"target_label": "instance"},
+            service._normalize_source_config(
+                source_type="ALERTMANAGER", config={}
+            ),
+        )
+        self.assertEqual(
+            {"tenant_id": "ops"},
+            service._normalize_source_config(
+                source_type="LOKI", config={"tenant_id": " ops "}
+            ),
+        )
+        with self.assertRaises(AIOpsApplicationError):
+            service._normalize_source_config(
+                source_type="PROMETHEUS",
+                config={"custom_query": "up"},
+            )
+
+    def test_alertmanager_accepts_webhook_only_configuration(self) -> None:
+        source = DiagnosticSourceCreate.model_validate(
+            {
+                "display_name": "Alertmanager",
+                "source_type": "ALERTMANAGER",
+                "webhook_credentials": {"webhook_secret": "secret"},
+            }
+        )
+
+        self.assertIsNone(source.endpoint)
+
     def test_diagnostic_source_requires_endpoint_or_webhook_credential(self) -> None:
         with self.assertRaises(ValidationError):
             DiagnosticSourceCreate.model_validate(
                 {
                     "display_name": "Prometheus",
                     "source_type": "LOKI",
-                    "adapter_id": "loki",
-                    "adapter_version": "1.0.0",
-                    "declared_capabilities": {"log.query": {}},
                 }
             )

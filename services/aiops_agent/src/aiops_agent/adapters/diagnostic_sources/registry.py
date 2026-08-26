@@ -106,6 +106,11 @@ class DiagnosticSourceAdapterCatalog:
             (item.adapter_id, item.adapter_version): item
             for item in self._registrations
         }
+        self._by_source_type = {
+            source_type: item
+            for item in self._registrations
+            for source_type in item.source_types
+        }
 
     def resolve(
         self, *, adapter_id: str, adapter_version: str
@@ -130,6 +135,52 @@ class DiagnosticSourceAdapterCatalog:
             source_types=registration.source_types,
             capabilities=registration.capabilities,
         )
+
+    def describe_source_type(
+        self, *, source_type: str
+    ) -> DiagnosticSourceAdapterDescriptor:
+        try:
+            registration = self._by_source_type[source_type]
+        except KeyError as exc:
+            raise LookupError(
+                f"未注册的诊断源类型：{source_type}"
+            ) from exc
+        return DiagnosticSourceAdapterDescriptor(
+            adapter_id=registration.adapter_id,
+            adapter_version=registration.adapter_version,
+            source_types=registration.source_types,
+            capabilities=registration.capabilities,
+        )
+
+    @staticmethod
+    def normalize_config(
+        *, source_type: str, config: dict[str, object]
+    ) -> dict[str, object]:
+        allowed_fields = {
+            "ALERTMANAGER": {"target_label"},
+            "LOKI": {"tenant_id"},
+        }.get(source_type, set())
+        unsupported = sorted(set(config) - allowed_fields)
+        if unsupported:
+            raise ValueError(
+                f"{source_type} 不支持配置项：" + ", ".join(unsupported)
+            )
+        normalized: dict[str, object] = {}
+        for name in allowed_fields:
+            if name not in config:
+                continue
+            value = config[name]
+            if not isinstance(value, str):
+                raise ValueError(f"{name} 必须是字符串")
+            value = value.strip()
+            if not value or len(value) > 256 or any(
+                character in value for character in "\r\n"
+            ):
+                raise ValueError(f"{name} 格式无效")
+            normalized[name] = value
+        if source_type == "ALERTMANAGER":
+            normalized.setdefault("target_label", "instance")
+        return normalized
 
 
 class DiagnosticSourceAdapterRegistry:
@@ -187,4 +238,16 @@ class DiagnosticSourceAdapterRegistry:
         return self._catalog.describe(
             adapter_id=adapter_id,
             adapter_version=adapter_version,
+        )
+
+    def describe_source_type(
+        self, *, source_type: str
+    ) -> DiagnosticSourceAdapterDescriptor:
+        return self._catalog.describe_source_type(source_type=source_type)
+
+    def normalize_config(
+        self, *, source_type: str, config: dict[str, object]
+    ) -> dict[str, object]:
+        return self._catalog.normalize_config(
+            source_type=source_type, config=config
         )

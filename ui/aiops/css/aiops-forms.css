@@ -11,4 +11,8 @@
 .ops-connection-result{min-height:22px;margin:12px 0 0;color:var(--muted)}
 .ops-connection-result[data-tone="good"]{color:var(--good)}
 .ops-connection-result[data-tone="bad"]{color:var(--bad)}
+.ops-field-label{display:block;margin-bottom:7px;font-weight:650;color:var(--ink)}
+.ops-field small{display:block;margin-top:7px;color:var(--muted);line-height:1.45}
+.ops-capability-list{display:flex;flex-wrap:wrap;gap:8px;min-height:32px;align-items:center}
+.ops-capability{display:inline-flex;align-items:center;min-height:30px;padding:4px 10px;border:1px solid var(--line);background:#f5f7fa;color:var(--ink);font-size:13px}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}

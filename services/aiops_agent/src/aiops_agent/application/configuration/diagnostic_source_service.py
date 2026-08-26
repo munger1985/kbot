@@ -29,6 +29,7 @@ from aiops_agent.entities import (
 from aiops_agent.domain.evidence import validate_event_class_map
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.diagnostic_source import (
+    CAPABILITY_HEALTH_CHECK,
     CAPABILITY_LOG_QUERY,
     LogSourceLocator,
 )
@@ -54,6 +55,28 @@ from .projections import (
 
 
 class DiagnosticSourceConfigurationMixin:
+    def _normalize_source_config(
+        self, *, source_type: str, config: dict[str, object]
+    ) -> dict[str, object]:
+        catalog = self._diagnostic_source_catalog
+        if catalog is None:
+            raise validation_failed("Diagnostic Source Adapter 目录不可用")
+        try:
+            return catalog.normalize_config(
+                source_type=source_type, config=config
+            )
+        except ValueError as exc:
+            raise validation_failed(str(exc)) from exc
+
+    def _resolve_source_descriptor(self, *, source_type: str):
+        catalog = self._diagnostic_source_catalog
+        if catalog is None:
+            raise validation_failed("Diagnostic Source Adapter 目录不可用")
+        try:
+            return catalog.describe_source_type(source_type=source_type)
+        except LookupError as exc:
+            raise validation_failed(str(exc)) from exc
+
     @staticmethod
     def _validate_source_binding_locator(
         *, source, source_locator: dict[str, object]
@@ -107,11 +130,17 @@ class DiagnosticSourceConfigurationMixin:
         request: DiagnosticSourceCreate,
         idempotency_key: str,
     ) -> DiagnosticSourceDetail:
-        self._validate_diagnostic_source_adapter(
+        descriptor = self._resolve_source_descriptor(
+            source_type=request.source_type
+        )
+        declared_capabilities = {
+            capability: {}
+            for capability in descriptor.capabilities
+            if capability != CAPABILITY_HEALTH_CHECK
+        }
+        config = self._normalize_source_config(
             source_type=request.source_type,
-            adapter_id=request.adapter_id,
-            adapter_version=request.adapter_version,
-            declared_capabilities=request.declared_capabilities,
+            config=dict(request.config),
         )
 
         async def handler(
@@ -144,15 +173,15 @@ class DiagnosticSourceConfigurationMixin:
                 domain_id=scope.domain_id,
                 display_name=request.display_name,
                 source_type=request.source_type,
-                adapter_id=request.adapter_id,
-                adapter_version=request.adapter_version,
+                adapter_id=descriptor.adapter_id,
+                adapter_version=descriptor.adapter_version,
                 endpoint=(str(request.endpoint) if request.endpoint else None),
                 auth_credential_id=auth_credential_id,
                 webhook_credential_id=webhook_credential_id,
                 tls_profile_ref=None,
-                declared_capabilities_json=request.declared_capabilities,
+                declared_capabilities_json=declared_capabilities,
                 discovered_capabilities_json=None,
-                config_json=request.config,
+                config_json=config,
                 status="DISABLED",
                 health_status="UNKNOWN",
                 row_version=1,
@@ -255,10 +284,6 @@ class DiagnosticSourceConfigurationMixin:
             "diagnostic_source": fields.pop("credentials", ...),
             "source_webhook": fields.pop("webhook_credentials", ...),
         }
-        if "declared_capabilities" in fields:
-            fields["declared_capabilities_json"] = fields.pop(
-                "declared_capabilities"
-            )
         if "config" in fields:
             fields["config_json"] = fields.pop("config")
         if "endpoint" in fields:
@@ -267,7 +292,6 @@ class DiagnosticSourceConfigurationMixin:
             )
         connectivity_changed = bool(
             {
-                "adapter_version",
                 "endpoint",
                 "credentials",
                 "webhook_credentials",
@@ -286,16 +310,23 @@ class DiagnosticSourceConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Diagnostic Source")
             self._check_version(entity.row_version, expected_version)
+            if (
+                entity.source_type not in {"ALERTMANAGER", "ZABBIX"}
+                and credential_updates["source_webhook"] is not ...
+            ):
+                raise validation_failed(
+                    "只有 Alertmanager 或 Zabbix 可以配置 Webhook 凭据"
+                )
+            if "config_json" in fields:
+                fields["config_json"] = self._normalize_source_config(
+                    source_type=entity.source_type,
+                    config=fields["config_json"],
+                )
             self._validate_diagnostic_source_adapter(
                 source_type=entity.source_type,
                 adapter_id=entity.adapter_id,
-                adapter_version=fields.get(
-                    "adapter_version", entity.adapter_version
-                ),
-                declared_capabilities=fields.get(
-                    "declared_capabilities_json",
-                    entity.declared_capabilities_json,
-                ),
+                adapter_version=entity.adapter_version,
+                declared_capabilities=entity.declared_capabilities_json,
             )
             for kind, values in credential_updates.items():
                 if values is ...:

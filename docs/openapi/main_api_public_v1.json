@@ -3065,17 +3065,6 @@
       "DiagnosticSourceCreate": {
         "additionalProperties": false,
         "properties": {
-          "adapter_id": {
-            "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
-            "title": "Adapter Id",
-            "type": "string"
-          },
-          "adapter_version": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Adapter Version",
-            "type": "string"
-          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -3095,11 +3084,6 @@
             ],
             "title": "Credentials",
             "writeOnly": true
-          },
-          "declared_capabilities": {
-            "additionalProperties": true,
-            "title": "Declared Capabilities",
-            "type": "object"
           },
           "display_name": {
             "maxLength": 256,
@@ -3149,9 +3133,7 @@
         },
         "required": [
           "display_name",
-          "source_type",
-          "adapter_id",
-          "adapter_version"
+          "source_type"
         ],
         "title": "DiagnosticSourceCreate",
         "type": "object"
@@ -3364,19 +3346,6 @@
       "DiagnosticSourcePatch": {
         "additionalProperties": false,
         "properties": {
-          "adapter_version": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Adapter Version"
-          },
           "config": {
             "anyOf": [
               {
@@ -3403,18 +3372,6 @@
             ],
             "title": "Credentials",
             "writeOnly": true
-          },
-          "declared_capabilities": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Declared Capabilities"
           },
           "display_name": {
             "anyOf": [
