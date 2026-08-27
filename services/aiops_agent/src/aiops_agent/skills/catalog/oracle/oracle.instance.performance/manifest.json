@@ -10,7 +10,7 @@
   "required_source_capabilities": [],
   "optional_source_capabilities": ["PROMETHEUS_QUERY"],
   "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
-  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SYSMETRIC", "V_$SGA", "V_$PGASTAT"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SYSMETRIC", "V_$SGA", "V_$PGASTAT", "V_$RESOURCE_LIMIT"],
   "required_entitlements": [],
   "input_schema": "oracle.instance.performance.input.v1",
   "defaults": {},
@@ -18,7 +18,8 @@
   "tool_dag": [
     {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
     {"step_id": "performance", "tool_id": "db.instance.performance", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
-    {"step_id": "memory", "tool_id": "db.memory.summary", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+    {"step_id": "memory", "tool_id": "db.memory.summary", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "session_capacity", "tool_id": "db.resource.session_utilization", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
   ],
   "output_schema": "oracle.instance.performance.output.v1",
   "measurement_semantics": "CURRENT_ACTIVITY",

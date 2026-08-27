@@ -120,10 +120,19 @@ class OracleDiagnosticDriver:
                 mapped = "AUTH_FAILED"
             elif code in {942, 1031}:
                 mapped = "PRIVILEGE_MISSING"
+            elif code in {904, 918, 933, 936}:
+                mapped = "QUERY_INCOMPATIBLE"
             elif code in {12154, 12514, 12541, 12545}:
                 mapped = "TARGET_UNREACHABLE"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
+            logger.warning(
+                "Oracle诊断查询失败：tool_id={} phase={} oracle_code={} mapped_code={}",
+                tool.definition.tool_id,
+                phase,
+                code,
+                mapped,
+            )
             raise DiagnosticDriverError(
                 mapped,
                 retryable=mapped in {"TARGET_UNREACHABLE", "TIMEOUT"},

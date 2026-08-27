@@ -226,6 +226,7 @@ class DatabaseDiagnosticHandler:
             "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
             "TIMEOUT": "受控只读查询执行超时",
             "OUTPUT_SCHEMA_INVALID": "数据库返回列与受控诊断目录不一致",
+            "QUERY_INCOMPATIBLE": "受控查询与当前 Oracle 视图列定义不兼容",
             "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
             "EXECUTOR_INTERNAL_ERROR": "受控数据库执行器未能完成本次只读查询",
         }

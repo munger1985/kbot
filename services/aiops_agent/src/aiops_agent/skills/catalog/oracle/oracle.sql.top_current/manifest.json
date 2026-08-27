@@ -24,7 +24,7 @@
   "presentation_kind": "TABLE_AND_CHART",
   "fallback_skills": [],
   "manual_evidence_template": "oracle.sql.top_current.manual.v1",
-  "sensitive_fields": ["parsing_schema_name", "module", "action"],
-  "redaction_rules": ["HASH_SCHEMA_NAME", "MASK_CLIENT_MODULE"],
+  "sensitive_fields": [],
+  "redaction_rules": [],
   "freshness": {"max_age_seconds": 60, "requires_observed_at": true}
 }

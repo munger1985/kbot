@@ -42,19 +42,16 @@
       "output_columns": [
         {"name": "sql_id", "logical_type": "STRING", "nullable": false},
         {"name": "plan_hash_value", "logical_type": "INTEGER"},
-        {"name": "parsing_schema_name", "logical_type": "STRING", "sensitivity": "HASHED"},
         {"name": "executions", "logical_type": "INTEGER", "nullable": false},
         {"name": "elapsed_seconds", "logical_type": "DECIMAL", "nullable": false},
         {"name": "cpu_seconds", "logical_type": "DECIMAL", "nullable": false},
         {"name": "buffer_gets", "logical_type": "INTEGER", "nullable": false},
         {"name": "disk_reads", "logical_type": "INTEGER", "nullable": false},
         {"name": "rows_processed", "logical_type": "INTEGER", "nullable": false},
-        {"name": "last_active_time", "logical_type": "DATETIME"},
-        {"name": "module", "logical_type": "STRING", "sensitivity": "MASKED"},
-        {"name": "action", "logical_type": "STRING", "sensitivity": "MASKED"}
+        {"name": "last_active_time", "logical_type": "DATETIME"}
       ],
       "template_ref": "sql/sql_top_current.sql",
-      "template_sha256": "06eabdae199de26d8972394abc8605d5584be97c95d7825221f3964ce92e924e",
+      "template_sha256": "b4fe6a3fd89c6fe982574b87d4e83ea7d837c98c88b9740e9fd608a77674b976",
       "timeout_seconds": 20,
       "max_rows": 50,
       "max_bytes": 1048576,
@@ -187,6 +184,31 @@
       "template_sha256": "d3c97a768c283bdf7f12b441e58ba8a806fb5f8b344a19fb1c10958c2a4391bf",
       "timeout_seconds": 20,
       "max_rows": 8,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.resource.session_utilization",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_resource_limit",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [],
+      "required_privileges": ["V_$RESOURCE_LIMIT"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "resource_name", "logical_type": "STRING", "nullable": false},
+        {"name": "current_utilization", "logical_type": "INTEGER", "nullable": false},
+        {"name": "max_utilization", "logical_type": "INTEGER", "nullable": false},
+        {"name": "limit_value", "logical_type": "STRING", "nullable": false},
+        {"name": "utilization_percent", "logical_type": "DECIMAL"}
+      ],
+      "template_ref": "sql/session_resource_utilization.sql",
+      "template_sha256": "200804263b6ba7ed97e91b184a2db3b0badf682a8d9176bf922324b4f4614101",
+      "timeout_seconds": 20,
+      "max_rows": 2,
       "max_bytes": 131072,
       "cost_level": "LOW"
     },

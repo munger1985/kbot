@@ -286,6 +286,11 @@ class DbaAnswerComposeHandler:
             )
         ]
         blocks.extend(self._data_blocks(assessment.evidence))
+        evidence_request = self._evidence_request_block(
+            assessment, context
+        )
+        if evidence_request is not None:
+            blocks.append(evidence_request)
         status = (
             "COMPLETED"
             if assessment.status == SufficiencyStatus.ANSWERABLE
@@ -410,6 +415,11 @@ class DbaAnswerComposeHandler:
             )
         ]
         blocks.extend(self._data_blocks(assessment.evidence))
+        evidence_request = self._evidence_request_block(
+            assessment, context
+        )
+        if evidence_request is not None:
+            blocks.append(evidence_request)
         yield AIOpsTurnResult(
             status=(
                 "COMPLETED"
@@ -490,6 +500,11 @@ class DbaAnswerComposeHandler:
             for tool in invocation.get("tools", ()):
                 tools_by_step[(skill_id, str(tool.get("step_id", "")))] = tool
         requests: list[tuple[TurnEvidenceGap, dict[str, Any]]] = []
+        monitoring_gaps = [
+            gap
+            for gap in assessment.gaps
+            if gap.skill_id == "monitoring.overview"
+        ]
         seen_tools: set[str] = set()
         for gap in assessment.gaps:
             tool = tools_by_step.get((gap.skill_id, gap.step_id))
@@ -498,40 +513,68 @@ class DbaAnswerComposeHandler:
                 continue
             seen_tools.add(tool_id)
             requests.append((gap, tool))
-        if not requests:
+        if not requests and not monitoring_gaps:
             return None
         lines = [
-            "\n### 自动取证未完成的项目",
+            "\n### 要继续完成这次诊断",
             "",
         ]
-        for gap, tool in requests:
-            tool_id = str(tool["tool_id"])
-            lines.append(f"- `{tool_id}`：{gap.detail}（`{gap.code}`）")
-        lines.extend(
-            [
-                "",
-                "请优先修正 Target 只读凭据或数据库对象权限后重新提问。",
-                "如果暂时不能调整权限，也可以在目标数据库中执行下面的只读 SQL，",
-                "再把结果以文字或截图粘贴到对话中：",
-            ]
-        )
-        for _, tool in requests:
-            sql = DbaAnswerComposeHandler._manual_sql(tool)
-            if not sql:
-                continue
-            privileges = tuple(tool.get("required_privileges", ()))
+        if requests:
+            for gap, tool in requests:
+                tool_id = str(tool["tool_id"])
+                lines.append(
+                    f"- `{tool_id}`：{gap.detail}（`{gap.code}`）"
+                )
             lines.extend(
                 [
                     "",
-                    f"#### {tool['tool_id']}",
-                    (
-                        f"所需对象权限：`{', '.join(privileges)}`"
-                        if privileges
-                        else "无需额外对象权限"
-                    ),
-                    "```sql",
-                    sql,
-                    "```",
+                    "请优先修正 Target 只读凭据、对象权限或数据库版本兼容问题。",
+                    "如果暂时不能调整，可以执行下面的只读 SQL，",
+                    "再把结果以文字或截图粘贴到对话中：",
+                ]
+            )
+            for _, tool in requests:
+                sql = DbaAnswerComposeHandler._manual_sql(tool)
+                if not sql:
+                    continue
+                privileges = tuple(tool.get("required_privileges", ()))
+                lines.extend(
+                    [
+                        "",
+                        f"#### {tool['tool_id']}",
+                        (
+                            f"所需对象权限：`{', '.join(privileges)}`"
+                            if privileges
+                            else "无需额外对象权限"
+                        ),
+                        "```sql",
+                        sql,
+                        "```",
+                    ]
+                )
+        if monitoring_gaps:
+            queries = DbaAnswerComposeHandler._monitoring_queries(
+                context
+            )
+            lines.extend(
+                [
+                    "",
+                    "#### Prometheus 未返回的指标",
+                ]
+            )
+            for gap in monitoring_gaps:
+                lines.append(
+                    f"- `{gap.step_id}`：{gap.detail}（`{gap.code}`）"
+                )
+                query = queries.get(gap.step_id)
+                if query:
+                    lines.extend(["```promql", query, "```"])
+            lines.extend(
+                [
+                    "",
+                    "请在 Prometheus 中执行上述 PromQL，并检查 Target 映射、Exporter 自定义指标和记录规则。",
+                    "修复后直接回复“监控已补齐”，我会在下一轮重新自动取证；",
+                    "如果暂时无法修改监控，请把查询结果粘贴到对话中继续分析。",
                 ]
             )
         return TurnAnswerBlock(
@@ -539,6 +582,47 @@ class DbaAnswerComposeHandler:
             schema_version="AIOPS_EVIDENCE_REQUEST_BLOCK.v1",
             payload={"markdown": "\n".join(lines)},
         )
+
+    @staticmethod
+    def _monitoring_queries(
+        context: TaskExecutionContext,
+    ) -> dict[str, str]:
+        """生成与本轮冻结配置一致的可重放 PromQL。"""
+        result: dict[str, str] = {}
+        monitoring = dict(context.plan_snapshot.get("monitoring", {}))
+        for binding in monitoring.get("bindings", ()):
+            source = dict(binding.get("source", {}))
+            if source.get("source_type") != "PROMETHEUS":
+                continue
+            overrides = dict(
+                binding.get("mapping_overrides") or {}
+            ).get("prometheus_queries") or {}
+            source_key = str(binding.get("source_locator_key", ""))
+            locator = dict(binding.get("source_locator") or {})
+            host_key = str(locator.get("host_target_key") or source_key)
+            escaped_source = source_key.replace("\\", "\\\\").replace(
+                '"', '\\"'
+            )
+            escaped_host = host_key.replace("\\", "\\\\").replace(
+                '"', '\\"'
+            )
+            for metric in binding.get("metrics", ()):
+                metric_code = str(metric.get("metric_code", ""))
+                provider = dict(metric.get("providers", {})).get(
+                    "PROMETHEUS"
+                ) or {}
+                template = overrides.get(metric_code) or provider.get(
+                    "query_template"
+                )
+                if not metric_code or not isinstance(template, str):
+                    continue
+                result.setdefault(
+                    metric_code,
+                    template.replace(
+                        "${external_target}", escaped_source
+                    ).replace("${host_target}", escaped_host),
+                )
+        return result
 
     @staticmethod
     def _manual_sql(tool: dict[str, Any]) -> str:

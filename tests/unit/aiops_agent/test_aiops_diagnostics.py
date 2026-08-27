@@ -77,7 +77,7 @@ class FailingDriver:
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(23, len(registry.tools))
+        self.assertEqual(24, len(registry.tools))
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools
@@ -92,6 +92,24 @@ class DiagnosticCatalogTest(unittest.TestCase):
             self.assertIn(("MYSQL", tool_id), pairs)
             self.assertIn(("POSTGRESQL", tool_id), pairs)
         self.assertIn(("ORACLE", "db.sql.top_current"), pairs)
+        self.assertIn(
+            ("ORACLE", "db.resource.session_utilization"), pairs
+        )
+
+    def test_oracle_top_sql_uses_only_v_sqlstats_columns(self) -> None:
+        registry = DiagnosticRegistry.load()
+        tool = registry.resolve(
+            tool_id="db.sql.top_current",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities={"dynamic_performance_views"},
+            entitlements=set(),
+        )
+
+        self.assertNotIn("parsing_schema_name", tool.sql.lower())
+        self.assertNotIn("module", tool.sql.lower())
+        self.assertNotIn("action", tool.sql.lower())
 
     def test_capability_and_entitlement_selection_is_exact(self) -> None:
         registry = DiagnosticRegistry.load()
