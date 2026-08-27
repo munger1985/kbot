@@ -61,7 +61,20 @@
     if (!code) return;
     const original = button.textContent;
     try {
-      await navigator.clipboard.writeText(code);
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = code;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) throw new Error("浏览器拒绝复制操作");
+      }
       button.textContent = "已复制";
     } catch (_) {
       button.textContent = "复制失败";

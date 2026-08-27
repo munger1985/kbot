@@ -285,7 +285,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn("DOMPurify 3.4.13", purifier)
         self.assertIn("marked.umd.js?v=18.0.9", chat)
         self.assertIn("purify.min.js?v=3.4.13", chat)
-        self.assertIn("kbot-markdown.js?v=20260819_3", chat)
+        self.assertIn("kbot-markdown.js?v=20260827_1", chat)
+
+    def test_shared_markdown_copy_supports_insecure_http_context(self):
+        source = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("navigator.clipboard?.writeText", source)
+        self.assertIn("window.isSecureContext", source)
+        self.assertIn('document.execCommand("copy")', source)
 
     def test_km_markdown_renders_safe_responsive_tables(self):
         renderer = (

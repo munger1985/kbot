@@ -80,6 +80,7 @@ groups:
         expr: oracledb_kbot_cpu_utilization_percent{job="${ORACLE_JOB}"}
 
       - record: kbot_db_connection_utilization_percent
+        # Exporter将UNLIMITED转换为-1；没有有限上限时不生成虚假的使用率。
         expr: 100 * oracledb_resource_current_utilization{job="${ORACLE_JOB}", resource_name="sessions"} / oracledb_resource_limit_value{job="${ORACLE_JOB}", resource_name="sessions"} > 0
 
       - record: kbot_db_transactions_total

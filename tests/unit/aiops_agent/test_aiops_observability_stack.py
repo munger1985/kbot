@@ -100,6 +100,7 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
     oracle_exporter = generated["services"]["oracle-oracle-prod-01-exporter"]
     assert "--query.timeout=15" in oracle_exporter["command"]
     assert any("kbot-custom-metrics.yaml" in item for item in oracle_exporter["volumes"])
+    assert len(oracle_exporter["environment"]["KBOT_CUSTOM_METRICS_REVISION"]) == 64
     overrides = json.loads(
         (state / "prometheus/kbot-aiops-query-overrides.json").read_text()
     )["prometheus_queries"]
@@ -375,3 +376,12 @@ def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -
     assert "oracledb_tablespace_free_bytes" in rules
     assert 'expr: oracledb_tablespace_used_percent{job="oracle"}' in rules
     assert 'oracledb_tablespace_used_percent{job="oracle"} * 100' not in rules
+
+
+def test_oracle_cpu_custom_metric_uses_pdb_resource_metric() -> None:
+    custom_metrics = (STACK / "configuration/oracle/custom-metrics.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "v$rsrcpdbmetric" in custom_metrics
+    assert "avg_cpu_utilization" in custom_metrics
+    assert "Host CPU Utilization (%)" not in custom_metrics

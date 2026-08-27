@@ -4,12 +4,16 @@
 metrics:
   - context: kbot_cpu
     metricsdesc:
-      utilization_percent: Oracle主机最近一分钟CPU使用率百分比。
+      utilization_percent: 当前PDB最近一分钟相对数据库主机总CPU容量的平均使用率百分比。
     request: |-
-      SELECT ROUND(value, 6) AS utilization_percent
-      FROM v$sysmetric
-      WHERE metric_name = 'Host CPU Utilization (%)'
-        AND group_id = 2
+      SELECT utilization_percent
+      FROM (
+        SELECT ROUND(avg_cpu_utilization, 6) AS utilization_percent
+        FROM v$rsrcpdbmetric
+        WHERE intsize_csec > 0
+        ORDER BY end_time DESC
+      )
+      WHERE ROWNUM = 1
 
   - context: kbot_errors
     metricsdesc:

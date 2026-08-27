@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import configparser
+import hashlib
 import ipaddress
 import json
 import os
@@ -120,7 +121,7 @@ local_access = false
 # username = kbot_monitor
 # password = CHANGE_ME
 # exporter_query_timeout = 15
-# 自动启用KBot CPU和SQL解析失败补充指标，需要V_$SYSMETRIC和V_$SYSSTAT读取权限。
+# 自动启用KBot PDB CPU和SQL解析失败补充指标，需要V_$RSRCPDBMETRIC和V_$SYSSTAT读取权限。
 # alert_poll_seconds = 15
 # alert_initial_lookback_seconds = 900
 # alert_max_rows = 1000
@@ -516,6 +517,7 @@ def _prometheus_rules() -> str:
         expr: sum by (instance, target_key) (oracledb_sessions_value{job="oracle", status="ACTIVE", type="USER"})
 
       - record: kbot_db_connection_utilization_percent
+        # Exporter将UNLIMITED转换为-1；没有有限上限时不生成虚假的使用率。
         expr: 100 * oracledb_resource_current_utilization{job="oracle", resource_name="sessions"} / oracledb_resource_limit_value{job="oracle", resource_name="sessions"} > 0
 
       - record: kbot_db_transactions_total
@@ -806,6 +808,14 @@ def _database_generated_compose(
                     f"--query.timeout={query_timeout}",
                     "--custom.metrics=/etc/oracledb_exporter/kbot-custom-metrics.yaml",
                 ],
+                "environment": {
+                    "KBOT_CUSTOM_METRICS_REVISION": hashlib.sha256(
+                        (
+                            STACK_ROOT
+                            / "configuration/oracle/custom-metrics.yaml"
+                        ).read_bytes()
+                    ).hexdigest()
+                },
                 "volumes": [
                     str(
                         STACK_ROOT

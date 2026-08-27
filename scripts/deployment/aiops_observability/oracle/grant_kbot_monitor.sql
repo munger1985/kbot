@@ -73,6 +73,7 @@ GRANT SELECT ON SYS.DBA_FREE_SPACE                TO kbot_monitor;
 
 -- KBot AIOps实时性能、内存和归档/FRA诊断。
 GRANT SELECT ON SYS.V_$SYSMETRIC                  TO kbot_monitor;
+GRANT SELECT ON SYS.V_$RSRCPDBMETRIC              TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SGA                        TO kbot_monitor;
 GRANT SELECT ON SYS.V_$PGASTAT                    TO kbot_monitor;
 GRANT SELECT ON SYS.V_$RECOVERY_FILE_DEST         TO kbot_monitor;
@@ -117,13 +118,14 @@ BEGIN
           'DBA_DATA_FILES',
           'DBA_FREE_SPACE',
           'V_$SYSMETRIC',
+          'V_$RSRCPDBMETRIC',
           'V_$SGA',
           'V_$PGASTAT',
           'V_$RECOVERY_FILE_DEST',
           'V_$DIAG_ALERT_EXT'
       );
 
-    IF session_grant_count <> 1 OR object_grant_count <> 22 THEN
+    IF session_grant_count <> 1 OR object_grant_count <> 23 THEN
         RAISE_APPLICATION_ERROR(
             -20004,
             'kbot_monitor完整授权清单验证失败'

@@ -209,7 +209,7 @@ SHOW CON_NAME;
 Exporter、补充指标、Alert Collector和AIOps诊断所需的逐对象最小授权。当前累计Top SQL
 读取`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`；当前活跃会话和阻塞链读取
 `GV_$SESSION`；长事务读取`GV_$TRANSACTION`；表空间容量读取`DBA_DATA_FILES`和
-`DBA_FREE_SPACE`；实时性能读取`V_$SYSMETRIC`；内存读取`V_$SGA`和
+`DBA_FREE_SPACE`；实时性能读取`V_$SYSMETRIC`和`V_$RSRCPDBMETRIC`；内存读取`V_$SGA`和
 `V_$PGASTAT`；归档/FRA容量读取`V_$RECOVERY_FILE_DEST`。脚本不授予AWR
 历史视图，也不隐含Diagnostics Pack许可。
 建用户脚本只用于首次创建。用户已存在时不要重复执行`CREATE USER`，应执行以下完整
@@ -282,12 +282,27 @@ grep '^oracledb_kbot_cpu_utilization_percent' /tmp/oracle-exporter.metrics
 grep '^oracledb_kbot_errors_total' /tmp/oracle-exporter.metrics
 ```
 
+CPU记录指标没有样本时，先确认`oracledb_kbot_cpu_utilization_percent`是否存在。该指标读取
+`V_$RSRCPDBMETRIC`，因此必须在被监控PDB中执行最新授权脚本，并在替换采集配置后重启
+Exporter。连接使用率读取Exporter默认的`V_$RESOURCE_LIMIT`指标，可用以下查询区分原因：
+
+```bash
+curl -fsSG http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=oracledb_resource_current_utilization{instance="oracle-dev-190",resource_name="sessions"}'
+curl -fsSG http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=oracledb_resource_limit_value{instance="oracle-dev-190",resource_name="sessions"}'
+```
+
+`limit_value=-1`表示Oracle返回`UNLIMITED`，此时不存在可解释的连接使用百分比，记录规则
+会有意不生成`kbot_db_connection_utilization_percent`；数值上限大于0但记录指标仍为空时，
+再检查Prometheus规则状态和规则文件是否已重载。
+
 只有 `oracledb_up=1` 且 Prometheus Target为 `up` 才算恢复。Exporter监控账号所需
 数据字典和动态性能视图权限应按实际启用指标逐项授权，不能为省事使用 `SYS`、
 `SYSTEM` 或应用账号。
 
-KBot补充指标还需要读取`SYS.V_$SYSMETRIC`；`SYS.V_$SYSSTAT`已属于Exporter默认指标
-依赖。补充指标分别提供最近一分钟主机CPU使用率和实例启动以来SQL解析失败累计数，
+KBot补充指标还需要读取`SYS.V_$RSRCPDBMETRIC`；`SYS.V_$SYSSTAT`已属于Exporter默认指标
+依赖。补充指标分别提供当前PDB最近一分钟相对数据库主机总CPU容量的平均使用率，以及实例启动以来SQL解析失败累计数，
 不采集SQL文本、用户名或业务数据。
 
 ## 8. 核验或安装 Node Exporter
@@ -488,6 +503,7 @@ Binding时，应审核后把其中 `prometheus_queries` 内容配置为该绑定
 GRANT CREATE SESSION TO kbot_monitor;
 GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SYSMETRIC TO kbot_monitor;
+GRANT SELECT ON SYS.V_$RSRCPDBMETRIC TO kbot_monitor;
 ```
 
 验证查询：

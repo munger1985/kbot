@@ -60,6 +60,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_chat_code_copy_supports_insecure_http_context(self):
+        renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(
+            encoding="utf-8"
+        )
+        chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("navigator.clipboard?.writeText", renderer)
+        self.assertIn("window.isSecureContext", renderer)
+        self.assertIn('document.execCommand("copy")', renderer)
+        self.assertIn("kbot-markdown.js?v=20260827_1", chat)
+
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")
