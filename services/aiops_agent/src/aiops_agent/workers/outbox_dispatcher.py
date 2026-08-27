@@ -43,6 +43,7 @@ class AIOpsDomainOutboxSink:
         db_executor_client=None,
         turn_queue_service=None,
         turn_planner_service=None,
+        turn_planning_service=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -53,6 +54,7 @@ class AIOpsDomainOutboxSink:
         self._db_executor_client = db_executor_client
         self._turn_queue_service = turn_queue_service
         self._turn_planner_service = turn_planner_service
+        self._turn_planning_service = turn_planning_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if event_type == "aiops.turn.created" and self._turn_queue_service is not None:
@@ -62,7 +64,12 @@ class AIOpsDomainOutboxSink:
             event_type == "aiops.turn.planning_requested"
             and self._turn_planner_service is not None
         ):
-            await self._turn_planner_service.begin(payload)
+            result = await self._turn_planner_service.begin(payload)
+            if (
+                result.get("status") == "PLANNING"
+                and self._turn_planning_service is not None
+            ):
+                await self._turn_planning_service.execute(payload)
             return
         if (
             event_type == "aiops.turn.cancel_requested"

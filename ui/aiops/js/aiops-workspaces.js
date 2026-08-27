@@ -94,13 +94,26 @@
 
   function answerBlockHtml(block) {
     const payload = block.payload || {};
-    if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
+    const citations = values(block.citations);
+    const citationHtml = citations.length
+      ? `<details class="ops-evidence"><summary>诊断依据 <span>${citations.length} 项证据</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${citations.map((item) => `<li><span>${esc(item.label || `证据 ${item.citation_no}`)}</span><small>${esc(shell.short(item.turn_evidence_id))}</small></li>`).join("")}</ol></div></details>`
+      : "";
+    if (block.block_type === "MARKDOWN") return `${markdown.render(payload.markdown || payload.text || "")}${citationHtml}`;
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
-      return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column) => `<td>${esc(row[column.key || column] ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      const cell = (row, column, index) => Array.isArray(row)
+        ? row[index]
+        : row?.[column.key || column.name || column];
+      return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.name || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column, index) => `<td>${esc(cell(row, column, index) ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${citationHtml}`;
     }
     if (block.block_type === "CHART") {
-      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${values(payload.series).map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
+      const categories = values(payload.categories);
+      const sourceSeries = values(payload.series);
+      const series = sourceSeries.map((item, index) => typeof item === "object"
+        ? item
+        : { label: categories[index] ?? "-", value: item });
+      const maximum = Math.max(0, ...series.map((item) => Number(item.value)).filter(Number.isFinite));
+      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>${citationHtml}`;
     }
     if (block.block_type === "EVIDENCE_REFERENCES") {
       const items = values(payload.items);

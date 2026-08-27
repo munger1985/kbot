@@ -209,11 +209,14 @@ class DbaSkillPlanner:
             for value in manifest.required_target_capabilities
             if value not in target_capabilities
         )
-        missing.extend(
-            f"PRIVILEGE:{value}"
-            for value in manifest.required_privileges
-            if value not in privileges
-        )
+        # 空清单表示权限尚未探测，而不是明确缺失。Tool执行器仍会把真实的
+        # ORA-00942等权限错误转换成Evidence Gap；显式清单则用于提前拦截。
+        if privileges:
+            missing.extend(
+                f"PRIVILEGE:{value}"
+                for value in manifest.required_privileges
+                if value not in privileges
+            )
         missing.extend(
             f"ENTITLEMENT:{value}"
             for value in manifest.required_entitlements

@@ -11,6 +11,7 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.contracts.aiops import (
     ConversationCreate,
     ConversationSourceContext,
@@ -35,6 +36,25 @@ class _FailingCollectionRepository(_CollectionRepository):
         raise RuntimeError("模拟 Outbox 写入失败")
 
 
+class _NoopSink:
+    async def publish(self, event_type, payload):
+        del event_type, payload
+
+
+class _PlannerStage:
+    def __init__(self, result=None) -> None:
+        self.calls = []
+        self.result = result
+
+    async def begin(self, payload):
+        self.calls.append(dict(payload))
+        return self.result
+
+    async def execute(self, payload):
+        self.calls.append(dict(payload))
+        return {"status": "COLLECTING"}
+
+
 class _TurnRepository:
     def __init__(self) -> None:
         self.turns = []
@@ -42,6 +62,7 @@ class _TurnRepository:
         self.events = []
         self.run_links = []
         self.answer_blocks = []
+        self.answer_citations = []
 
     async def add_turn(self, row):
         row.created_at = datetime.now(UTC)
@@ -79,6 +100,18 @@ class _TurnRepository:
     async def add_answer_block(self, row):
         self.answer_blocks.append(row)
         return row
+
+    async def list_answer_blocks(self, *, turn_id):
+        return [
+            row for row in self.answer_blocks if row.turn_id == turn_id
+        ]
+
+    async def list_answer_citations(self, *, answer_block_ids):
+        return [
+            row
+            for row in self.answer_citations
+            if row.answer_block_id in answer_block_ids
+        ]
 
     async def list_events(
         self,
@@ -352,6 +385,22 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             uow.outbox.rows[0].event_type,
         )
         self.assertEqual(1, uow.commit_count)
+
+    async def test_planning_outbox_runs_both_transaction_stages(self) -> None:
+        begin = _PlannerStage(result={"status": "PLANNING"})
+        planning = _PlannerStage()
+        sink = AIOpsDomainOutboxSink(
+            runtime_service=object(),
+            fallback=_NoopSink(),
+            turn_planner_service=begin,
+            turn_planning_service=planning,
+        )
+        payload = {"domain_id": 7, "turn_id": str(uuid7())}
+
+        await sink.publish("aiops.turn.planning_requested", payload)
+
+        self.assertEqual([payload], begin.calls)
+        self.assertEqual([payload], planning.calls)
 
     async def test_concurrent_turns_allocate_unique_monotonic_numbers(
         self,

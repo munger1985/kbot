@@ -25,6 +25,11 @@ def build_capability_snapshot(
         and bool(getattr(target, "endpoint_json", None))
     ):
         target_capabilities.add("DB_READONLY")
+        if str(getattr(target, "db_type", "")) == "ORACLE":
+            # 能力表示允许尝试受控只读 Tool；具体对象授权仍由数据库执行结果确认。
+            target_capabilities.update(
+                {"dynamic_performance_views", "dba_catalog_views"}
+            )
     if getattr(target, "execution_credential_id", None) is not None:
         target_capabilities.add("DB_MUTATION_CREDENTIAL")
 

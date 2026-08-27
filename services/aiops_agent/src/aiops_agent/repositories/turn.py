@@ -47,15 +47,53 @@ class TurnRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_run_link_by_ops_run_id(
+        self, *, ops_run_id: UUID
+    ) -> OpsTurnRunEntity | None:
+        statement = select(OpsTurnRunEntity).where(
+            OpsTurnRunEntity.ops_run_id == ops_run_id,
+            OpsTurnRunEntity.purpose == "PRIMARY",
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def add_skill_invocation(
         self, row: OpsSkillInvocationEntity
     ) -> OpsSkillInvocationEntity:
         return await self._add(row)
 
+    async def get_skill_invocation_by_task(
+        self, *, ops_task_id: UUID, lock: bool = False
+    ) -> OpsSkillInvocationEntity | None:
+        statement = select(OpsSkillInvocationEntity).where(
+            OpsSkillInvocationEntity.ops_task_id == ops_task_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def add_evidence(
         self, row: OpsTurnEvidenceEntity
     ) -> OpsTurnEvidenceEntity:
         return await self._add(row)
+
+    async def get_evidence_by_artifact(
+        self, *, turn_id: UUID, artifact_id: UUID
+    ) -> OpsTurnEvidenceEntity | None:
+        statement = select(OpsTurnEvidenceEntity).where(
+            OpsTurnEvidenceEntity.turn_id == turn_id,
+            OpsTurnEvidenceEntity.artifact_id == artifact_id,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_evidence(
+        self, *, turn_id: UUID
+    ) -> list[OpsTurnEvidenceEntity]:
+        rows = await self._session.scalars(
+            select(OpsTurnEvidenceEntity)
+            .where(OpsTurnEvidenceEntity.turn_id == turn_id)
+            .order_by(OpsTurnEvidenceEntity.linked_at)
+        )
+        return list(rows)
 
     async def add_answer_block(
         self, row: OpsAnswerBlockEntity
@@ -127,6 +165,15 @@ class TurnRepository(AIOpsRepository):
         )
         return list(rows)
 
+    async def get_message_by_artifact(
+        self, *, turn_id: UUID, artifact_id: UUID
+    ) -> OpsConversationMessageEntity | None:
+        statement = select(OpsConversationMessageEntity).where(
+            OpsConversationMessageEntity.turn_id == turn_id,
+            OpsConversationMessageEntity.artifact_id == artifact_id,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_recent_conversation_messages(
         self,
         *,
@@ -179,5 +226,24 @@ class TurnRepository(AIOpsRepository):
                 OpsAnswerBlockEntity.status == "ACTIVE",
             )
             .order_by(OpsAnswerBlockEntity.block_no)
+        )
+        return list(rows)
+
+    async def list_answer_citations(
+        self, *, answer_block_ids: tuple[UUID, ...]
+    ) -> list[OpsAnswerCitationEntity]:
+        if not answer_block_ids:
+            return []
+        rows = await self._session.scalars(
+            select(OpsAnswerCitationEntity)
+            .where(
+                OpsAnswerCitationEntity.answer_block_id.in_(
+                    answer_block_ids
+                )
+            )
+            .order_by(
+                OpsAnswerCitationEntity.answer_block_id,
+                OpsAnswerCitationEntity.citation_no,
+            )
         )
         return list(rows)

@@ -541,6 +541,33 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         self.assertEqual(20, invocation["tools"][1]["parameters"]["limit"])
         self.assertEqual(64, len(invocation["tools"][1]["template_sha256"]))
 
+    def test_unknown_privilege_inventory_defers_check_to_executor(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        capabilities = _capabilities().model_copy(
+            update={
+                "target_capabilities": (
+                    "DB_READONLY",
+                    "dynamic_performance_views",
+                ),
+                "privileges": (),
+            }
+        )
+
+        plan = DbaSkillPlanner(registry).plan(
+            intent=_intent_plan(DbaIntent.OBSERVE).model_copy(
+                update={"subject": "TOP_SQL"}
+            ),
+            capabilities=capabilities,
+        )
+
+        self.assertEqual("oracle.sql.top_current", plan.items[0].skill_id)
+
     def test_capability_snapshot_uses_only_enabled_reachable_resources(self) -> None:
         snapshot = build_capability_snapshot(
             agent_id="agent-1",
@@ -590,6 +617,10 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         )
 
         self.assertIn("DB_READONLY", snapshot.target_capabilities)
+        self.assertIn(
+            "dynamic_performance_views", snapshot.target_capabilities
+        )
+        self.assertIn("dba_catalog_views", snapshot.target_capabilities)
         self.assertIn("DB_SQL_STATS", snapshot.target_capabilities)
         self.assertEqual(
             frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),

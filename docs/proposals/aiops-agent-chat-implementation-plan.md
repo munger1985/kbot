@@ -12,10 +12,13 @@ Intent Router、DBA Skill 目录、确定性校验和 Skill Plan 编译；目前
 Manifest/Registry/Hash、能力快照、Skill Planner、通用 Task 编译和计划持久化骨架已经
 完成；Oracle当前累计Top SQL、活跃会话、阻塞链和表空间容量的Manifest及目录离线校验
 已经完成，Skill Invocation Handler执行时复用DB Executor的短期Grant与租约。生产
-Worker接线和其余首批Oracle Skill尚待后续切片。Turn级充分性判断与自然回答组合Handler
-已经完成：累计口径不能冒充时间窗口，LLM只生成自然语言正文，表格和图表由服务端从
-受控证据生成，且引用被限制在当前Turn证据集合内。Answer Block持久化、流式SSE投影和
-前端引用展示仍待后续切片。
+其余首批Oracle Skill尚待后续切片。Turn级充分性判断与自然回答组合Handler已经完成：
+累计口径不能冒充时间窗口，LLM只生成自然语言正文，表格和图表由服务端从受控证据生成，
+且引用被限制在当前Turn证据集合内。生产Worker现已从Turn Outbox接入新规划链；Task完成
+事务会同步维护Skill Invocation、Turn Evidence、Assistant Message、Answer Block、
+Citation和Turn SSE投影，前端能够渲染数组型表格/图表并折叠显示引用。当前`answer.delta`
+是完整结构化回答形成后的分块事件；模型服务原生增量输出仍待单独切片，不能将其描述为
+已经完成的实时Token流。
 
 版本：1.0
 

@@ -236,10 +236,26 @@ class ConversationTurnService:
                 raise resource_not_found("Conversation Turn")
             messages = await uow.turns.list_messages(turn_id=turn_id)
             blocks = await uow.turns.list_answer_blocks(turn_id=turn_id)
+            citations = await uow.turns.list_answer_citations(
+                answer_block_ids=tuple(
+                    row.answer_block_id for row in blocks
+                )
+            )
+            citations_by_block: dict[UUID, list] = {}
+            for citation in citations:
+                citations_by_block.setdefault(
+                    citation.answer_block_id, []
+                ).append(citation)
             return {
                 **self._turn_summary(turn),
                 "messages": [self._message_view(row) for row in messages],
-                "answer_blocks": [self._block_view(row) for row in blocks],
+                "answer_blocks": [
+                    self._block_view(
+                        row,
+                        citations_by_block.get(row.answer_block_id, []),
+                    )
+                    for row in blocks
+                ],
             }
 
     async def list_events(
@@ -601,7 +617,7 @@ class ConversationTurnService:
         }
 
     @staticmethod
-    def _block_view(row) -> dict[str, Any]:
+    def _block_view(row, citations=()) -> dict[str, Any]:
         return {
             "answer_block_id": str(row.answer_block_id),
             "block_no": int(row.block_no),
@@ -609,7 +625,14 @@ class ConversationTurnService:
             "schema_version": row.schema_version,
             "payload": dict(row.payload_json),
             "content_hash": row.content_hash,
-            "citations": [],
+            "citations": [
+                {
+                    "citation_no": int(item.citation_no),
+                    "turn_evidence_id": str(item.turn_evidence_id),
+                    "label": item.label,
+                }
+                for item in citations
+            ],
         }
 
     @staticmethod

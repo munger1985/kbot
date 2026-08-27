@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import unittest
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.turn_answer import DbaAnswerDraft
+from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.workers.handlers import TaskExecutionContext
@@ -49,6 +51,70 @@ class _AnswerModel:
                 duration_ms=1,
             ),
         )
+
+
+class _ProjectionTurns:
+    def __init__(self, *, invocation) -> None:
+        self.invocation = invocation
+        self.evidence = []
+        self.messages = []
+        self.blocks = []
+        self.citations = []
+        self.events = []
+
+    async def get_skill_invocation_by_task(self, **_):
+        return self.invocation
+
+    async def get_evidence_by_artifact(self, *, turn_id, artifact_id):
+        return next(
+            (
+                row
+                for row in self.evidence
+                if row.turn_id == turn_id and row.artifact_id == artifact_id
+            ),
+            None,
+        )
+
+    async def add_evidence(self, row):
+        self.evidence.append(row)
+        return row
+
+    async def add_event(self, row):
+        self.events.append(row)
+        return row
+
+    async def get_message_by_artifact(self, *, turn_id, artifact_id):
+        return next(
+            (
+                row
+                for row in self.messages
+                if row.turn_id == turn_id and row.artifact_id == artifact_id
+            ),
+            None,
+        )
+
+    async def add_message(self, row):
+        self.messages.append(row)
+        return row
+
+    async def list_evidence(self, *, turn_id):
+        return [row for row in self.evidence if row.turn_id == turn_id]
+
+    async def add_answer_block(self, row):
+        self.blocks.append(row)
+        return row
+
+    async def add_answer_citation(self, row):
+        self.citations.append(row)
+        return row
+
+
+class _ProjectionConversations:
+    def __init__(self, conversation) -> None:
+        self.conversation = conversation
+
+    async def get_conversation(self, **_):
+        return self.conversation
 
 
 def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
@@ -240,6 +306,92 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "批准证据之外"):
             asyncio.run(handler.execute(context))
+
+    def test_runtime_projects_skill_evidence_answer_and_citation(self) -> None:
+        service = object.__new__(AIOpsRuntimeService)
+        turn = SimpleNamespace(
+            turn_id=uuid7(),
+            conversation_id=uuid7(),
+            domain_id=7,
+            created_by="dba@example.com",
+            event_cursor=0,
+            status="COLLECTING",
+            sufficiency_status=None,
+            completed_at=None,
+        )
+        conversation = SimpleNamespace(
+            last_message_no=1,
+            updated_by=None,
+            updated_at=None,
+        )
+        invocation = SimpleNamespace(
+            turn_id=turn.turn_id,
+            skill_invocation_id=uuid7(),
+            status="PLANNED",
+            output_artifact_id=None,
+            attempt_count=0,
+            completed_at=None,
+        )
+        turns = _ProjectionTurns(invocation=invocation)
+        uow = SimpleNamespace(
+            turns=turns,
+            conversations=_ProjectionConversations(conversation),
+        )
+        skill_input = _skill_artifact(semantics="CURRENT_ACTIVITY")
+        skill_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            payload_json=skill_input["payload"],
+        )
+        task = SimpleNamespace(ops_task_id=uuid7(), attempt_count=1)
+        now = datetime.now(UTC)
+
+        asyncio.run(
+            service._project_skill_result(
+                uow=uow,
+                turn=turn,
+                task=task,
+                artifact=skill_artifact,
+                payload=skill_artifact.payload_json,
+                now=now,
+            )
+        )
+        evidence_ref = f"artifact:{skill_artifact.artifact_id}#top_sql"
+        answer_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            payload_json={},
+        )
+        answer_payload = {
+            "schema_version": "AIOPS_TURN_RESULT.v1",
+            "status": "COMPLETED",
+            "sufficiency_status": "ANSWERABLE",
+            "blocks": [
+                {
+                    "block_type": "MARKDOWN",
+                    "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                    "payload": {"markdown": "当前没有阻塞会话。"},
+                    "evidence_refs": [evidence_ref],
+                }
+            ],
+        }
+
+        asyncio.run(
+            service._project_turn_answer(
+                uow=uow,
+                turn=turn,
+                artifact=answer_artifact,
+                payload=answer_payload,
+                now=now,
+            )
+        )
+
+        self.assertEqual("SUCCEEDED", invocation.status)
+        self.assertEqual(skill_artifact.artifact_id, invocation.output_artifact_id)
+        self.assertEqual(1, len(turns.evidence))
+        self.assertEqual(1, len(turns.messages))
+        self.assertEqual(1, len(turns.blocks))
+        self.assertEqual(1, len(turns.citations))
+        self.assertEqual("COMPLETED", turn.status)
+        self.assertEqual("当前没有阻塞会话。", turns.messages[0].payload_json["text"])
 
 
 if __name__ == "__main__":

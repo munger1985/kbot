@@ -23,6 +23,7 @@ from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
+from aiops_agent.application.turn_planning import TurnPlanningService
 from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
@@ -35,6 +36,13 @@ from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
+)
+from aiops_agent.skills import (
+    DbaIntentRouter,
+    DbaSkillPlanner,
+    DbaSkillRegistry,
+    SkillExecutionSnapshotBuilder,
+    SkillPlanCompiler,
 )
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
@@ -102,6 +110,17 @@ def create_aiops_worker_probe(
             else None
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
+        skill_registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (tool.definition.tool_id, tool.definition.version)
+                for tool in diagnostic_registry.tools
+            )
+        )
+        execution_snapshot_builder = SkillExecutionSnapshotBuilder(
+            skill_registry=skill_registry,
+            diagnostic_registry=diagnostic_registry,
+        )
+        execution_snapshot_builder.validate_catalog()
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path
@@ -215,6 +234,16 @@ def create_aiops_worker_probe(
                 ),
                 turn_planner_service=TurnPlannerService(
                     uow_factory=runtime.uow_factory,
+                ),
+                turn_planning_service=TurnPlanningService(
+                    uow_factory=runtime.uow_factory,
+                    intent_router=DbaIntentRouter(diagnosis_model_client),
+                    skill_planner=DbaSkillPlanner(skill_registry),
+                    skill_compiler=SkillPlanCompiler(skill_registry),
+                    execution_snapshot_builder=(
+                        execution_snapshot_builder
+                    ),
+                    agent_catalog=agent_catalog,
                 ),
             ),
             dispatcher_id=f"{config.worker_id}-outbox",

@@ -48,11 +48,21 @@ from aiops_agent.domain.states import (
 from aiops_agent.entities import (
     ChangeProposalEntity,
     HitlEntity,
+    OpsAnswerBlockEntity,
+    OpsAnswerCitationEntity,
     OpsArtifactEntity,
+    OpsConversationMessageEntity,
     OpsRunEntity,
     OpsTaskEntity,
+    OpsTurnEventEntity,
+    OpsTurnEvidenceEntity,
     OutboxEntity,
     ReportEntity,
+)
+from aiops_agent.contracts.skill_execution import DbaSkillResult
+from aiops_agent.contracts.turn_answer import (
+    AIOpsTurnResult,
+    DbaSufficiencyAssessment,
 )
 from aiops_agent.contracts.change import (
     ActionVerification,
@@ -1706,6 +1716,14 @@ class AIOpsRuntimeService:
             task.output_artifact_id = artifact.artifact_id
             task.completed_at = now
             self._clear_lease(task)
+            if run.workflow_kind == "CHAT_TURN":
+                await self._project_chat_turn_task(
+                    uow=uow,
+                    run=run,
+                    task=task,
+                    artifact=artifact,
+                    now=now,
+                )
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -1872,6 +1890,289 @@ class AIOpsRuntimeService:
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
+
+    async def _project_chat_turn_task(
+        self,
+        *,
+        uow,
+        run,
+        task,
+        artifact,
+        now: datetime,
+    ) -> None:
+        """在 Task 完成事务内同步维护 Turn 的权威业务投影。"""
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=run.ops_run_id
+        )
+        if link is None:
+            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+        turn = await uow.turns.get_turn(
+            domain_id=int(run.domain_id),
+            turn_id=link.turn_id,
+            lock=True,
+        )
+        if turn is None:
+            raise resource_not_found("Conversation Turn")
+        payload = dict(artifact.payload_json or {})
+        if artifact.schema_version == "DBA_SKILL_RESULT.v1":
+            await self._project_skill_result(
+                uow=uow,
+                turn=turn,
+                task=task,
+                artifact=artifact,
+                payload=payload,
+                now=now,
+            )
+        elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
+            assessment = DbaSufficiencyAssessment.model_validate(payload)
+            turn.sufficiency_status = str(assessment.status)
+            turn.sufficiency_json = assessment.model_dump(mode="json")
+            turn.sufficiency_artifact_id = artifact.artifact_id
+            turn.status = "ANSWERING"
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="evidence.assessed",
+                payload={
+                    "sufficiency_status": str(assessment.status),
+                    "evidence_count": len(assessment.evidence),
+                    "gap_count": len(assessment.gaps),
+                },
+            )
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="turn.status",
+                payload={
+                    "status": "ANSWERING",
+                    "public_summary": "证据已整理，正在形成回答",
+                },
+            )
+        elif artifact.schema_version == "AIOPS_TURN_RESULT.v1":
+            await self._project_turn_answer(
+                uow=uow,
+                turn=turn,
+                artifact=artifact,
+                payload=payload,
+                now=now,
+            )
+
+    async def _project_skill_result(
+        self,
+        *,
+        uow,
+        turn,
+        task,
+        artifact,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        result = DbaSkillResult.model_validate(payload)
+        invocation = await uow.turns.get_skill_invocation_by_task(
+            ops_task_id=task.ops_task_id,
+            lock=True,
+        )
+        if invocation is None or invocation.turn_id != turn.turn_id:
+            raise state_conflict("Skill Task 缺少当前 Turn Invocation")
+        invocation.status = result.status
+        invocation.output_artifact_id = artifact.artifact_id
+        invocation.attempt_count = int(task.attempt_count)
+        invocation.completed_at = now
+        observations = tuple(
+            item.observation
+            for item in result.tool_outcomes
+            if item.observation is not None
+            and item.tool_id != "db.instance.identity"
+        )
+        existing = await uow.turns.get_evidence_by_artifact(
+            turn_id=turn.turn_id,
+            artifact_id=artifact.artifact_id,
+        )
+        if observations and existing is None:
+            observed_at = max(item.captured_at for item in observations)
+            await uow.turns.add_evidence(
+                OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(),
+                    turn_id=turn.turn_id,
+                    artifact_id=artifact.artifact_id,
+                    skill_invocation_id=invocation.skill_invocation_id,
+                    evidence_role="SUPPORTS",
+                    measurement_semantics=str(
+                        result.measurement_semantics
+                    ),
+                    observed_at=observed_at,
+                    freshness_status="FRESH",
+                    usage_reason=(
+                        f"用于回答本轮问题的 {result.skill_id} 受控观测"
+                    ),
+                    linked_by="aiops.turn-projector",
+                )
+            )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="skill.completed",
+            payload={
+                "skill_invocation_id": str(
+                    invocation.skill_invocation_id
+                ),
+                "skill_id": result.skill_id,
+                "status": result.status,
+            },
+        )
+
+    async def _project_turn_answer(
+        self,
+        *,
+        uow,
+        turn,
+        artifact,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        result = AIOpsTurnResult.model_validate(payload)
+        prior = await uow.turns.get_message_by_artifact(
+            turn_id=turn.turn_id,
+            artifact_id=artifact.artifact_id,
+        )
+        if prior is not None:
+            return
+        conversation = await uow.conversations.get_conversation(
+            domain_id=int(turn.domain_id),
+            conversation_id=turn.conversation_id,
+            lock=True,
+        )
+        if conversation is None:
+            raise resource_not_found("Conversation")
+        conversation.last_message_no = int(conversation.last_message_no) + 1
+        conversation.updated_by = turn.created_by
+        conversation.updated_at = now
+        markdown = "\n\n".join(
+            str(block.payload.get("markdown", ""))
+            for block in result.blocks
+            if str(block.block_type) == "MARKDOWN"
+        ).strip()
+        message_id = uuid7()
+        await uow.turns.add_message(
+            OpsConversationMessageEntity(
+                message_id=message_id,
+                conversation_id=turn.conversation_id,
+                turn_id=turn.turn_id,
+                sequence_no=conversation.last_message_no,
+                role="AGENT",
+                message_type="ASSISTANT_MESSAGE",
+                payload_schema="AIOPS_ASSISTANT_MESSAGE.v1",
+                payload_json={"text": markdown},
+                artifact_id=artifact.artifact_id,
+                created_by="aiops.answer-composer",
+            )
+        )
+        evidence_rows = await uow.turns.list_evidence(turn_id=turn.turn_id)
+        evidence_by_artifact = {
+            str(row.artifact_id): row for row in evidence_rows
+        }
+        for offset in range(0, len(markdown), 120):
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="answer.delta",
+                payload={"delta": markdown[offset:offset + 120]},
+            )
+        for block_no, block in enumerate(result.blocks, start=1):
+            block_payload = dict(block.payload)
+            answer_block_id = uuid7()
+            await uow.turns.add_answer_block(
+                OpsAnswerBlockEntity(
+                    answer_block_id=answer_block_id,
+                    turn_id=turn.turn_id,
+                    message_id=message_id,
+                    block_no=block_no,
+                    block_type=str(block.block_type),
+                    schema_version=block.schema_version,
+                    payload_json=block_payload,
+                    content_hash=sha256_json(block_payload),
+                )
+            )
+            cited: set[UUID] = set()
+            for reference in block.evidence_refs:
+                artifact_id = reference.removeprefix("artifact:").split(
+                    "#", 1
+                )[0]
+                evidence = evidence_by_artifact.get(artifact_id)
+                if evidence is None:
+                    raise state_conflict(
+                        "回答引用的证据尚未投影到当前 Turn"
+                    )
+                if evidence.turn_evidence_id in cited:
+                    continue
+                cited.add(evidence.turn_evidence_id)
+                reference_label = (
+                    reference.split("#", 1)[1]
+                    if "#" in reference
+                    else f"证据 {len(cited)}"
+                )
+                await uow.turns.add_answer_citation(
+                    OpsAnswerCitationEntity(
+                        answer_block_id=answer_block_id,
+                        citation_no=len(cited),
+                        turn_evidence_id=evidence.turn_evidence_id,
+                        label=reference_label,
+                    )
+                )
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="answer.block",
+                payload={
+                    "answer_block_id": str(answer_block_id),
+                    "block_no": block_no,
+                    "block_type": str(block.block_type),
+                    "schema_version": block.schema_version,
+                    "payload": block_payload,
+                    "citation_count": len(cited),
+                },
+                answer_block_id=answer_block_id,
+            )
+        turn.status = result.status
+        turn.sufficiency_status = str(result.sufficiency_status)
+        if result.status in {"COMPLETED", "PARTIAL"}:
+            turn.completed_at = now
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="answer.completed",
+            payload={"answer_block_count": len(result.blocks)},
+        )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="turn.status",
+            payload={"status": result.status},
+        )
+
+    @staticmethod
+    async def _append_turn_event(
+        uow,
+        turn,
+        *,
+        event_type: str,
+        payload: dict[str, Any],
+        answer_block_id: UUID | None = None,
+    ) -> None:
+        turn.event_cursor = int(turn.event_cursor) + 1
+        await uow.turns.add_event(
+            OpsTurnEventEntity(
+                turn_id=turn.turn_id,
+                sequence_no=turn.event_cursor,
+                event_type=event_type,
+                event_key=(
+                    f"{event_type}:{turn.turn_id}:{turn.event_cursor}"
+                ),
+                visibility="USER",
+                answer_block_id=answer_block_id,
+                payload_json=payload,
+            )
+        )
 
     async def _publish_inspection_report(
         self,
