@@ -9,4 +9,9 @@ DEFAULT_BASELINE_METRICS = (
     "db.response.latency",
     "db.storage.utilization",
     "db.error.rate",
+    "host.cpu.utilization",
+    "host.memory.utilization",
+    "host.filesystem.utilization",
+    "host.disk.io.utilization",
+    "host.network.throughput",
 )

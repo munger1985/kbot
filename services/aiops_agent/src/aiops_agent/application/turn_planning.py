@@ -14,6 +14,7 @@ from aiops_agent.entities import (
     OpsTaskEntity,
     OpsTurnEventEntity,
 )
+from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 from aiops_agent.skills import (
     DbaIntentRouter,
     DbaSkillPlanner,
@@ -22,6 +23,7 @@ from aiops_agent.skills import (
     build_capability_snapshot,
     canonical_hash,
 )
+from platform_core.contracts.aiops.conversation import DbaIntent
 from platform_core.contracts.aiops.skills import DbaCapabilitySnapshot
 from platform_core.identity import uuid7
 
@@ -33,6 +35,8 @@ class TurnPlanningContext:
     conversation_id: UUID
     ops_run_id: UUID
     agent_id: UUID
+    target_id: UUID
+    source_ids: tuple[UUID, ...]
     question: str
     recent_context: tuple[str, ...]
     trace_id: str
@@ -59,6 +63,7 @@ class TurnPlanningService:
         skill_compiler: SkillPlanCompiler,
         execution_snapshot_builder: SkillExecutionSnapshotBuilder,
         agent_catalog,
+        monitoring_snapshot_builder=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._intent_router = intent_router
@@ -66,6 +71,7 @@ class TurnPlanningService:
         self._skill_compiler = skill_compiler
         self._execution_snapshot_builder = execution_snapshot_builder
         self._agent_catalog = agent_catalog
+        self._monitoring_snapshot_builder = monitoring_snapshot_builder
 
     async def execute(self, payload: dict) -> dict:
         try:
@@ -89,7 +95,30 @@ class TurnPlanningService:
             intent=intent_plan,
             capabilities=context.capabilities,
         )
-        compiled = self._skill_compiler.compile(skill_plan)
+        monitoring_requested = (
+            intent_plan.subject == "DATABASE_OVERVIEW"
+            and intent_plan.primary_intent
+            in {DbaIntent.OBSERVE, DbaIntent.INSPECT}
+        )
+        monitoring_execution = (
+            await self._prepare_monitoring(context)
+            if monitoring_requested
+            else {}
+        )
+        monitoring_binding_ids = (
+            tuple(
+                item["binding_id"]
+                for item in monitoring_execution.get("bindings", ())
+                if CAPABILITY_METRIC_QUERY_RANGE
+                in item.get("effective_capabilities", ())
+            )
+            if monitoring_requested
+            else ()
+        )
+        compiled = self._skill_compiler.compile(
+            skill_plan,
+            monitoring_binding_ids=monitoring_binding_ids,
+        )
         execution_snapshot = self._execution_snapshot_builder.build(
             plan=skill_plan,
             compiled=compiled,
@@ -104,6 +133,8 @@ class TurnPlanningService:
             compiled=compiled,
             execution_snapshot=execution_snapshot,
             model_snapshot=model_snapshot,
+            monitoring_requested=monitoring_requested,
+            monitoring_execution=monitoring_execution,
         )
 
     async def fail_terminal(
@@ -273,6 +304,8 @@ class TurnPlanningService:
                 conversation_id=turn.conversation_id,
                 ops_run_id=run.ops_run_id,
                 agent_id=run.agent_id,
+                target_id=target.target_id,
+                source_ids=tuple(source_ids),
                 question=str(user_message.payload_json["text"]),
                 recent_context=tuple(
                     str(row.payload_json.get("text", ""))
@@ -299,6 +332,43 @@ class TurnPlanningService:
                 },
             )
 
+    async def _prepare_monitoring(
+        self,
+        context: TurnPlanningContext,
+    ) -> dict:
+        if self._monitoring_snapshot_builder is None:
+            return {}
+        async with self._uow_factory() as uow:
+            target = await uow.targets.get_scoped(
+                target_id=context.target_id,
+                domain_id=context.domain_id,
+            )
+            if target is None:
+                raise resource_not_found("Turn Target")
+            snapshot = await self._monitoring_snapshot_builder.build(
+                uow=uow,
+                domain_id=context.domain_id,
+                target=target,
+                now=await uow.runs.database_now(),
+                allowed_source_ids=context.source_ids,
+            )
+            if not any(
+                CAPABILITY_METRIC_QUERY_RANGE
+                in item.get("effective_capabilities", ())
+                for item in snapshot.get("bindings", ())
+            ):
+                snapshot["initial_gaps"].append(
+                    {
+                        "binding_id": "monitoring",
+                        "source_id": "",
+                        "code": "METRIC_SOURCE_UNAVAILABLE",
+                        "detail": (
+                            "当前 Agent 与 Target 没有可用的时序指标监控绑定"
+                        ),
+                    }
+                )
+            return snapshot
+
     async def _persist(
         self,
         *,
@@ -309,6 +379,8 @@ class TurnPlanningService:
         compiled,
         execution_snapshot: dict,
         model_snapshot: dict,
+        monitoring_requested: bool,
+        monitoring_execution: dict,
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -426,6 +498,11 @@ class TurnPlanningService:
                 "skill_catalog_hash": skill_plan.catalog_hash,
                 "intent_model_receipt": intent_receipt.model_dump(mode="json"),
                 "skill_execution": execution_snapshot,
+                **(
+                    {"monitoring": monitoring_execution}
+                    if monitoring_requested
+                    else {}
+                ),
                 "answer_context": {
                     "question": context.question,
                     "intent": intent_plan.model_dump(mode="json"),

@@ -318,6 +318,121 @@
           "metric_name": "ErrorRate"
         }
       }
+    },
+    {
+      "metric_code": "host.cpu.utilization",
+      "semantic_version": "1.0.0",
+      "name": "主机 CPU 使用率",
+      "description": "数据库所在主机的非空闲 CPU 使用百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 8,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.cpu",
+          "template_version": "1",
+          "query_template": "100 - (avg by (target_key) (rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=\"${external_target}\"}[5m])) * 100)",
+          "required_labels": ["target_key"]
+        }
+      }
+    },
+    {
+      "metric_code": "host.memory.utilization",
+      "semantic_version": "1.0.0",
+      "name": "主机内存使用率",
+      "description": "数据库所在主机排除可用内存后的内存使用百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 8,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.memory",
+          "template_version": "1",
+          "query_template": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=\"${external_target}\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=\"${external_target}\"})",
+          "required_labels": ["target_key"]
+        }
+      }
+    },
+    {
+      "metric_code": "host.filesystem.utilization",
+      "semantic_version": "1.0.0",
+      "name": "主机文件系统使用率",
+      "description": "数据库所在主机持久文件系统的空间使用百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device", "mountpoint", "fstype"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.filesystem",
+          "template_version": "1",
+          "query_template": "100 * (1 - node_filesystem_avail_bytes{job=\"node\",fstype!~\"tmpfs|overlay\",target_key=\"${external_target}\"} / node_filesystem_size_bytes{job=\"node\",fstype!~\"tmpfs|overlay\",target_key=\"${external_target}\"})",
+          "required_labels": ["target_key"]
+        }
+      }
+    },
+    {
+      "metric_code": "host.disk.io.utilization",
+      "semantic_version": "1.0.0",
+      "name": "主机磁盘 I/O 忙碌率",
+      "description": "数据库所在主机各块设备处理 I/O 的时间占比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.disk.io",
+          "template_version": "1",
+          "query_template": "rate(node_disk_io_time_seconds_total{job=\"node\",target_key=\"${external_target}\"}[5m]) * 100",
+          "required_labels": ["target_key"]
+        }
+      }
+    },
+    {
+      "metric_code": "host.network.throughput",
+      "semantic_version": "1.0.0",
+      "name": "主机网络吞吐",
+      "description": "数据库所在主机非回环网卡的收发总字节速率。",
+      "unit": "bytes_per_second",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.network",
+          "template_version": "1",
+          "query_template": "rate(node_network_receive_bytes_total{job=\"node\",device!=\"lo\",target_key=\"${external_target}\"}[5m]) + rate(node_network_transmit_bytes_total{job=\"node\",device!=\"lo\",target_key=\"${external_target}\"}[5m])",
+          "required_labels": ["target_key"]
+        }
+      }
     }
   ]
 }

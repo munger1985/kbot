@@ -9,6 +9,7 @@ import re
 import time
 from typing import Any
 
+from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.skill_execution import DbaSkillResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -37,8 +38,31 @@ class DbaEvidenceAssessmentHandler:
         facts: list[TurnEvidenceFact] = []
         gaps: list[TurnEvidenceGap] = []
         reasons: list[str] = []
+        database_gap_found = False
+        monitoring_gap_found = False
         for artifact in context.input_artifacts:
-            if artifact.get("schema_version") != "DBA_SKILL_RESULT.v1":
+            schema_version = artifact.get("schema_version")
+            if schema_version == "OBSERVATION_SET.v1":
+                result = ObservationSet.model_validate(artifact["payload"])
+                fact = self._monitoring_fact(
+                    artifact_id=str(artifact["artifact_id"]),
+                    result=result,
+                )
+                if fact is not None:
+                    facts.append(fact)
+                for gap in result.gaps:
+                    monitoring_gap_found = True
+                    gaps.append(
+                        TurnEvidenceGap(
+                            skill_id="monitoring.overview",
+                            step_id=gap.metric_code or gap.binding_id,
+                            code=gap.code,
+                            detail=gap.detail,
+                            retryable=gap.retryable,
+                        )
+                    )
+                continue
+            if schema_version != "DBA_SKILL_RESULT.v1":
                 continue
             result = DbaSkillResult.model_validate(artifact["payload"])
             artifact_id = str(artifact["artifact_id"])
@@ -72,6 +96,7 @@ class DbaEvidenceAssessmentHandler:
                             )
                         )
                 if outcome.gap is not None:
+                    database_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
                             skill_id=result.skill_id,
@@ -81,6 +106,19 @@ class DbaEvidenceAssessmentHandler:
                             retryable=outcome.gap.retryable,
                         )
                     )
+
+        for gap in dict(
+            context.plan_snapshot.get("monitoring", {})
+        ).get("initial_gaps", ()):
+            monitoring_gap_found = True
+            gaps.append(
+                TurnEvidenceGap(
+                    skill_id="monitoring.overview",
+                    step_id=str(gap.get("binding_id", "source")),
+                    code=str(gap.get("code", "MONITORING_UNAVAILABLE")),
+                    detail=str(gap.get("detail", "监控源不可用")),
+                )
+            )
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         intent = dict(answer_context.get("intent", {}))
@@ -105,8 +143,10 @@ class DbaEvidenceAssessmentHandler:
             reasons.append(
                 "请求的是时间窗口数据，但当前证据只有实例启动后的累计口径"
             )
-        if gaps:
+        if database_gap_found:
             reasons.append("部分受控取证步骤未能返回可验证结果")
+        if monitoring_gap_found:
+            reasons.append("部分监控指标查询失败、无采样或监控源不可用")
 
         if not facts:
             status = SufficiencyStatus.NEEDS_EVIDENCE
@@ -120,6 +160,83 @@ class DbaEvidenceAssessmentHandler:
             evidence=tuple(facts),
             gaps=tuple(gaps),
             reasons=tuple(reasons),
+        )
+
+    @staticmethod
+    def _monitoring_fact(
+        *,
+        artifact_id: str,
+        result: ObservationSet,
+    ) -> TurnEvidenceFact | None:
+        """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
+        rows: list[tuple[Any, ...]] = []
+        warnings: list[str] = []
+        for observation in result.observations:
+            warnings.extend(observation.warnings)
+            for series in observation.series:
+                points = [
+                    point
+                    for point in series.points
+                    if point.quality == "GOOD" and point.value is not None
+                ]
+                if not points:
+                    continue
+                numeric_values = [
+                    float(point.value)
+                    for point in points
+                    if isinstance(point.value, (int, float))
+                    and not isinstance(point.value, bool)
+                ]
+                dimensions = ", ".join(
+                    f"{key}={value}"
+                    for key, value in sorted(series.dimensions.items())
+                )
+                rows.append(
+                    (
+                        observation.metric_code,
+                        dimensions or "-",
+                        points[-1].value,
+                        (
+                            round(sum(numeric_values) / len(numeric_values), 4)
+                            if numeric_values
+                            else None
+                        ),
+                        round(max(numeric_values), 4)
+                        if numeric_values
+                        else None,
+                        observation.unit,
+                        observation.window_start.isoformat(),
+                        observation.window_end.isoformat(),
+                        round(observation.coverage_ratio, 4),
+                    )
+                )
+        if not rows:
+            return None
+        columns = (
+            {"name": "metric_code", "logical_type": "STRING"},
+            {"name": "dimensions", "logical_type": "STRING"},
+            {"name": "latest", "logical_type": "DECIMAL"},
+            {"name": "average", "logical_type": "DECIMAL"},
+            {"name": "maximum", "logical_type": "DECIMAL"},
+            {"name": "unit", "logical_type": "STRING"},
+            {"name": "window_start", "logical_type": "DATETIME"},
+            {"name": "window_end", "logical_type": "DATETIME"},
+            {"name": "coverage_ratio", "logical_type": "DECIMAL"},
+        )
+        return TurnEvidenceFact(
+            evidence_ref=f"artifact:{artifact_id}#prometheus",
+            artifact_id=artifact_id,
+            skill_id="monitoring.overview",
+            step_id="prometheus",
+            tool_id="metric.query_range",
+            measurement_semantics=MeasurementSemantics.HISTORICAL_SAMPLES,
+            presentation_kind="TABLE",
+            captured_at=result.collected_at.isoformat(),
+            columns=columns,
+            rows=tuple(rows),
+            row_count=len(rows),
+            truncated=any(item.truncated for item in result.observations),
+            warnings=tuple(dict.fromkeys(warnings)),
         )
 
 

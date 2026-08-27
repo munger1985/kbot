@@ -310,7 +310,78 @@ def _skill_artifact(*, semantics: str, row_count: int = 1) -> dict:
     }
 
 
+def _monitoring_artifact() -> dict:
+    now = datetime.now(UTC)
+    start = now - timedelta(minutes=15)
+    artifact_id = str(uuid7())
+    target_id = str(uuid7())
+    binding_id = str(uuid7())
+    source_id = str(uuid7())
+    return {
+        "artifact_id": artifact_id,
+        "schema_version": "OBSERVATION_SET.v1",
+        "payload": {
+            "schema_version": "OBSERVATION_SET.v1",
+            "target_id": target_id,
+            "binding_id": binding_id,
+            "source_id": source_id,
+            "collected_at": now.isoformat(),
+            "observations": [
+                {
+                    "metric_code": "host.cpu.utilization",
+                    "semantic_version": "1.0.0",
+                    "unit": "percent",
+                    "value_kind": "GAUGE",
+                    "window_start": start.isoformat(),
+                    "window_end": now.isoformat(),
+                    "requested_step_seconds": 60,
+                    "effective_step_seconds": 60,
+                    "source_id": source_id,
+                    "source_type": "PROMETHEUS",
+                    "source_version": 1,
+                    "target_id": target_id,
+                    "binding_id": binding_id,
+                    "external_target_fingerprint": "a" * 64,
+                    "series": [
+                        {
+                            "dimensions": {"target_key": "oracle-dev-190"},
+                            "points": [
+                                {
+                                    "observed_at": start.isoformat(),
+                                    "value": 12.5,
+                                },
+                                {
+                                    "observed_at": now.isoformat(),
+                                    "value": 18.5,
+                                },
+                            ],
+                        }
+                    ],
+                    "expected_points": 2,
+                    "actual_points": 2,
+                    "coverage_ratio": 1,
+                }
+            ],
+        },
+    }
+
+
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_prometheus_observation_is_aggregated_as_one_fact(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(artifacts=(_monitoring_artifact(),))
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertEqual(1, len(result.evidence))
+        fact = result.evidence[0]
+        self.assertEqual("monitoring.overview", fact.skill_id)
+        self.assertEqual("HISTORICAL_SAMPLES", fact.measurement_semantics)
+        self.assertEqual("host.cpu.utilization", fact.rows[0][0])
+        self.assertEqual(15.5, fact.rows[0][3])
+
     def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:
         assessment = DbaSufficiencyAssessment(
             status=SufficiencyStatus.NEEDS_EVIDENCE,
@@ -728,7 +799,23 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 now=now,
             )
         )
+        monitoring_input = _monitoring_artifact()
+        monitoring_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            payload_json=monitoring_input["payload"],
+        )
+        asyncio.run(
+            service._project_monitoring_result(
+                uow=uow,
+                turn=turn,
+                artifact=monitoring_artifact,
+                payload=monitoring_artifact.payload_json,
+            )
+        )
         evidence_ref = f"artifact:{skill_artifact.artifact_id}#top_sql"
+        monitoring_ref = (
+            f"artifact:{monitoring_artifact.artifact_id}#prometheus"
+        )
         answer_artifact = SimpleNamespace(
             artifact_id=uuid7(),
             payload_json={},
@@ -742,7 +829,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                     "block_type": "MARKDOWN",
                     "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
                     "payload": {"markdown": "当前没有阻塞会话。"},
-                    "evidence_refs": [evidence_ref],
+                    "evidence_refs": [evidence_ref, monitoring_ref],
                 }
             ],
         }
@@ -759,10 +846,14 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         self.assertEqual("SUCCEEDED", invocation.status)
         self.assertEqual(skill_artifact.artifact_id, invocation.output_artifact_id)
-        self.assertEqual(1, len(turns.evidence))
+        self.assertEqual(2, len(turns.evidence))
+        self.assertEqual(
+            "HISTORICAL_SAMPLES",
+            turns.evidence[1].measurement_semantics,
+        )
         self.assertEqual(1, len(turns.messages))
         self.assertEqual(1, len(turns.blocks))
-        self.assertEqual(1, len(turns.citations))
+        self.assertEqual(2, len(turns.citations))
         self.assertEqual("COMPLETED", turn.status)
         self.assertEqual("当前没有阻塞会话。", turns.messages[0].payload_json["text"])
 

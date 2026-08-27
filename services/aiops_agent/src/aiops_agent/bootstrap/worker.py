@@ -28,6 +28,7 @@ from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
+from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.application.diagnostic_sources import (
     DiagnosticSourceConnectivityCheckService,
 )
@@ -179,6 +180,13 @@ def create_aiops_worker_probe(
                 resolved.management.agent_execution_enabled
             ),
         )
+        monitoring_snapshot_builder = MonitoringSnapshotBuilder(
+            metric_catalog=metric_catalog,
+            default_window_seconds=(
+                resolved.monitoring.default_window_seconds
+            ),
+            max_response_bytes=resolved.monitoring.max_response_bytes,
+        )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
@@ -198,6 +206,7 @@ def create_aiops_worker_probe(
             diagnosis_config=resolved.diagnosis,
             diagnosis_prompt_registry=diagnosis_prompts,
             agent_catalog=agent_catalog,
+            monitoring_snapshot_builder=monitoring_snapshot_builder,
         )
         workers = [
             AIOpsTaskWorker(
@@ -244,6 +253,9 @@ def create_aiops_worker_probe(
                         execution_snapshot_builder
                     ),
                     agent_catalog=agent_catalog,
+                    monitoring_snapshot_builder=(
+                        monitoring_snapshot_builder
+                    ),
                 ),
             ),
             dispatcher_id=f"{config.worker_id}-outbox",

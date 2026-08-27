@@ -114,6 +114,11 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
         "db.storage.free_bytes",
         "db.storage.max_bytes",
         "db.error.rate",
+        "host.cpu.utilization",
+        "host.memory.utilization",
+        "host.filesystem.utilization",
+        "host.disk.io.utilization",
+        "host.network.throughput",
     }
 
 

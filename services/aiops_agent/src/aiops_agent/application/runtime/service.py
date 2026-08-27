@@ -22,7 +22,7 @@ from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
 )
-from aiops_agent.application.managed_credentials import AIOpsManagedCredentialService
+from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
     TASK_TYPE_TO_RUN_PHASE,
@@ -34,12 +34,6 @@ from aiops_agent.domain.operations import (
 from aiops_agent.adapters.diagnostic_sources.catalog import (
     MetricCatalog,
     load_metric_catalog,
-)
-from aiops_agent.domain.evidence import DEFAULT_BASELINE_METRICS
-from aiops_agent.ports.diagnostic_source import (
-    CAPABILITY_EVENT_QUERY,
-    CAPABILITY_LOG_QUERY,
-    CAPABILITY_METRIC_QUERY_RANGE,
 )
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
@@ -59,6 +53,7 @@ from aiops_agent.entities import (
     OutboxEntity,
     ReportEntity,
 )
+from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.skill_execution import DbaSkillResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -218,6 +213,7 @@ class AIOpsRuntimeService:
         diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
         agent_catalog=None,
         cursor_codec: SignedCursorCodec | None = None,
+        monitoring_snapshot_builder: MonitoringSnapshotBuilder | None = None,
     ):
         self._uow_factory = uow_factory
         self._blueprints = blueprint_registry
@@ -229,6 +225,14 @@ class AIOpsRuntimeService:
             default_observation_window_seconds
         )
         self._max_monitor_response_bytes = max_monitor_response_bytes
+        self._monitoring_snapshot_builder = (
+            monitoring_snapshot_builder
+            or MonitoringSnapshotBuilder(
+                metric_catalog=self._metric_catalog,
+                default_window_seconds=self._default_observation_window,
+                max_response_bytes=self._max_monitor_response_bytes,
+            )
+        )
         self._diagnostic_registry = diagnostic_registry
         self._diagnosis_config = diagnosis_config
         self._diagnosis_prompts = diagnosis_prompt_registry
@@ -1312,187 +1316,19 @@ class AIOpsRuntimeService:
         """在 Run 创建事务内冻结监控绑定、目录与查询窗口。"""
         if command.blueprint_version != "1":
             raise validation_failed("监控 Blueprint 版本不受支持")
-        if (command.observation_start is None) != (
-            command.observation_end is None
-        ):
-            raise validation_failed("观测窗口起止时间必须同时提供")
-        window_end = command.observation_end or now
-        window_start = command.observation_start or (
-            window_end
-            - timedelta(seconds=self._default_observation_window)
-        )
-        if window_start >= window_end or window_end > now + timedelta(
-            seconds=5
-        ):
-            raise validation_failed("观测窗口无效或结束时间位于未来")
-        monitors = await uow.targets.list_source_bindings(
-            target_id=target.target_id,
+        snapshot = await self._monitoring_snapshot_builder.build(
+            uow=uow,
             domain_id=command.domain_id,
-            active_only=True,
+            target=target,
+            now=now,
+            allowed_source_ids=allowed_source_ids,
+            window_start=command.observation_start,
+            window_end=command.observation_end,
         )
-        if allowed_source_ids is not None:
-            allowed = set(allowed_source_ids)
-            monitors = [
-                monitor
-                for monitor in monitors
-                if monitor.diagnostic_source_id in allowed
-            ]
-        snapshots = []
-        initial_gaps = []
-        observation_binding_ids = []
-        log_binding_ids = []
-        for monitor in monitors:
-            source = await uow.diagnostic_sources.get_scoped(
-                diagnostic_source_id=monitor.diagnostic_source_id,
-                domain_id=command.domain_id,
-            )
-            if source is None or source.status != "ENABLED":
-                initial_gaps.append(
-                    {
-                        "binding_id": str(monitor.target_source_binding_id),
-                        "source_id": str(monitor.diagnostic_source_id),
-                        "code": "DIAGNOSTIC_SOURCE_INACTIVE",
-                        "detail": "监控源不存在或未激活",
-                    }
-                )
-                continue
-            if source.connectivity_status not in {"CONNECTED", "DEGRADED"}:
-                initial_gaps.append(
-                    {
-                        "binding_id": str(monitor.target_source_binding_id),
-                        "source_id": str(monitor.diagnostic_source_id),
-                        "code": "DIAGNOSTIC_SOURCE_UNAVAILABLE",
-                        "detail": "监控源当前不可连接",
-                    }
-                )
-                continue
-            requested = (monitor.capability_scope_json or {}).get(
-                "metric_codes", DEFAULT_BASELINE_METRICS
-            )
-            if (
-                not isinstance(requested, (list, tuple))
-                or not requested
-                or len(requested) > 64
-                or not all(
-                    isinstance(item, str) and item for item in requested
-                )
-            ):
-                raise validation_failed("监控绑定的 metric_codes 格式无效")
-            requested_codes = tuple(dict.fromkeys(requested))
-            try:
-                selected = self._metric_catalog.select(
-                    requested_codes, db_type=target.db_type
-                )
-            except KeyError as exc:
-                raise validation_failed("监控绑定引用了未知标准指标") from exc
-            supported = tuple(
-                item
-                for item in selected
-                if source.source_type in item.providers
-            )
-            declared_capabilities = set(
-                (source.declared_capabilities_json or {}).keys()
-            )
-            requested_capabilities = (
-                monitor.capability_scope_json or {}
-            ).get("capabilities")
-            if requested_capabilities is not None:
-                if (
-                    not isinstance(requested_capabilities, (list, tuple))
-                    or not requested_capabilities
-                    or not all(
-                        isinstance(item, str) and item
-                        for item in requested_capabilities
-                    )
-                ):
-                    raise validation_failed(
-                        "Source Binding capabilities 格式无效"
-                    )
-                effective_capabilities = declared_capabilities.intersection(
-                    requested_capabilities
-                )
-            else:
-                effective_capabilities = declared_capabilities
-            binding_id = str(monitor.target_source_binding_id)
-            if effective_capabilities.intersection(
-                {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_EVENT_QUERY}
-            ):
-                observation_binding_ids.append(binding_id)
-            if CAPABILITY_LOG_QUERY in effective_capabilities:
-                log_binding_ids.append(binding_id)
-            snapshots.append(
-                {
-                    "binding_id": binding_id,
-                    "binding_version": int(monitor.row_version),
-                    "role": monitor.role,
-                    "priority": int(monitor.priority),
-                    "source_locator_key": monitor.source_locator_key,
-                    "source_locator": dict(monitor.source_locator_json),
-                    "source_locator_fingerprint": hashlib.sha256(
-                        monitor.source_locator_key.encode("utf-8")
-                    ).hexdigest(),
-                    "mapping_overrides": dict(
-                        monitor.mapping_overrides_json or {}
-                    ),
-                    "query_budget": dict(monitor.query_budget_json or {}),
-                    "effective_capabilities": sorted(
-                        effective_capabilities
-                    ),
-                    "source": {
-                        "source_id": str(source.diagnostic_source_id),
-                        "source_type": source.source_type,
-                        "adapter_id": source.adapter_id,
-                        "adapter_version": source.adapter_version,
-                        "config_version": int(source.row_version),
-                        "endpoint": source.endpoint,
-                        "secret_ref": (
-                            AIOpsManagedCredentialService.reference(
-                                domain_id=int(source.domain_id),
-                                external_key=source.diagnostic_source_id,
-                                credential_kind="diagnostic_source",
-                                credential_id=source.auth_credential_id,
-                            )
-                            if source.auth_credential_id
-                            else None
-                        ),
-                        "declared_capabilities": dict(
-                            source.declared_capabilities_json or {}
-                        ),
-                        "config": dict(source.config_json or {}),
-                    },
-                    "metrics": [
-                        item.model_dump(mode="json")
-                        for item in supported
-                        if CAPABILITY_METRIC_QUERY_RANGE
-                        in effective_capabilities
-                    ],
-                    "unsupported_metrics": sorted(
-                        (
-                            set(requested_codes)
-                            - {item.metric_code for item in supported}
-                        )
-                        if CAPABILITY_METRIC_QUERY_RANGE
-                        in effective_capabilities
-                        else ()
-                    ),
-                }
-            )
         blueprint = build_monitor_observe_blueprint(
-            tuple(observation_binding_ids)
+            tuple(snapshot["observation_binding_ids"])
         )
-        return blueprint, {
-            "window": {
-                "start": window_start.isoformat(),
-                "end": window_end.isoformat(),
-            },
-            "catalog_version": self._metric_catalog.version,
-            "catalog_hash": self._metric_catalog.manifest_hash,
-            "max_response_bytes": self._max_monitor_response_bytes,
-            "bindings": snapshots,
-            "observation_binding_ids": sorted(observation_binding_ids),
-            "log_binding_ids": sorted(log_binding_ids),
-            "initial_gaps": initial_gaps,
-        }
+        return blueprint, snapshot
 
     async def claim_task(
         self, command: ClaimOpsTaskCommand
@@ -2007,6 +1843,13 @@ class AIOpsRuntimeService:
                 payload=payload,
                 now=now,
             )
+        elif artifact.schema_version == "OBSERVATION_SET.v1":
+            await self._project_monitoring_result(
+                uow=uow,
+                turn=turn,
+                artifact=artifact,
+                payload=payload,
+            )
         elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
             assessment = DbaSufficiencyAssessment.model_validate(payload)
             turn.sufficiency_status = str(assessment.status)
@@ -2143,6 +1986,54 @@ class AIOpsRuntimeService:
                 ),
                 "skill_id": result.skill_id,
                 "status": result.status,
+            },
+        )
+
+    async def _project_monitoring_result(
+        self,
+        *,
+        uow,
+        turn,
+        artifact,
+        payload: dict[str, Any],
+    ) -> None:
+        """把本轮 Prometheus 观测登记为可引用的 Turn 证据。"""
+        result = ObservationSet.model_validate(payload)
+        existing = await uow.turns.get_evidence_by_artifact(
+            turn_id=turn.turn_id,
+            artifact_id=artifact.artifact_id,
+        )
+        if result.observations and existing is None:
+            window_start = min(
+                item.window_start for item in result.observations
+            )
+            window_end = max(
+                item.window_end for item in result.observations
+            )
+            await uow.turns.add_evidence(
+                OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(),
+                    turn_id=turn.turn_id,
+                    artifact_id=artifact.artifact_id,
+                    skill_invocation_id=None,
+                    evidence_role="SUPPORTS",
+                    measurement_semantics="HISTORICAL_SAMPLES",
+                    observed_at=result.collected_at,
+                    window_start_at=window_start,
+                    window_end_at=window_end,
+                    freshness_status="FRESH",
+                    usage_reason="用于回答本轮问题的监控时间序列",
+                    linked_by="aiops.turn-projector",
+                )
+            )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="monitor.completed",
+            payload={
+                "source_id": result.source_id,
+                "observation_count": len(result.observations),
+                "gap_count": len(result.gaps),
             },
         )
 

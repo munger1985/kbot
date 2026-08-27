@@ -713,6 +713,48 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             invocation["tools"][1]["required_privileges"],
         )
 
+    def test_compiler_adds_monitoring_tasks_to_evidence_barrier(self) -> None:
+        registry = DbaSkillRegistry(
+            (
+                _manifest(
+                    skill_id="oracle.sql.current",
+                    intent=DbaIntent.OBSERVE,
+                    domain=DbaDomain.SQL_PERFORMANCE,
+                ),
+            )
+        )
+        plan = DbaSkillPlanner(registry).plan(
+            intent=_intent_plan(DbaIntent.OBSERVE),
+            capabilities=_capabilities(),
+        )
+        compiled = SkillPlanCompiler(registry).compile(
+            plan,
+            monitoring_binding_ids=("binding-1", "binding-2"),
+        )
+
+        self.assertEqual(
+            ("observe:binding-1", "observe:binding-2"),
+            compiled.monitoring_task_keys,
+        )
+        monitor_task = next(
+            item
+            for item in compiled.tasks
+            if item.task_key == "observe:binding-1"
+        )
+        self.assertEqual("SKILL_INVOKE", monitor_task.task_type)
+        evidence_task = next(
+            item
+            for item in compiled.tasks
+            if item.task_key == "evidence:assess"
+        )
+        self.assertEqual(
+            (
+                "skill:1:oracle.sql.current",
+                "observe:binding-1",
+                "observe:binding-2",
+            ),
+            evidence_task.depends_on,
+        )
     def test_database_overview_combines_all_available_oracle_skills(
         self,
     ) -> None:
