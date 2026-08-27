@@ -98,17 +98,13 @@
 
   function answerBlockHtml(block) {
     const payload = block.payload || {};
-    const citations = values(block.citations);
-    const citationHtml = citations.length
-      ? `<details class="ops-evidence"><summary>诊断依据 <span>${citations.length} 项证据</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${citations.map((item) => `<li><span>${esc(item.label || `证据 ${item.citation_no}`)}</span><small>${esc(shell.short(item.turn_evidence_id))}</small></li>`).join("")}</ol></div></details>`
-      : "";
-    if (block.block_type === "MARKDOWN") return `${markdown.render(payload.markdown || payload.text || "")}${citationHtml}`;
+    if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
       const cell = (row, column, index) => Array.isArray(row)
         ? row[index]
         : row?.[column.key || column.name || column];
-      return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.name || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column, index) => `<td>${esc(cell(row, column, index) ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${citationHtml}`;
+      return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.name || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column, index) => `<td>${esc(cell(row, column, index) ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
     if (block.block_type === "CHART") {
       const categories = values(payload.categories);
@@ -117,22 +113,46 @@
         ? item
         : { label: categories[index] ?? "-", value: item });
       const maximum = Math.max(0, ...series.map((item) => Number(item.value)).filter(Number.isFinite));
-      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>${citationHtml}`;
+      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
     }
-    if (block.block_type === "EVIDENCE_REFERENCES") {
-      const items = values(payload.items);
-      return `<details class="ops-evidence"><summary>诊断依据 <span>${items.length} 项证据</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${items.map((item) => `<li><span>${esc(item.label || item.summary || "诊断证据")}</span><small>${esc(item.source || "EVIDENCE")}${item.observed_at ? ` · ${esc(shell.fmt(item.observed_at))}` : ""}</small></li>`).join("")}</ol></div></details>`;
-    }
+    if (block.block_type === "EVIDENCE_REFERENCES") return "";
     return markdown.render(payload.markdown || payload.text || payload.instruction || "");
+  }
+
+  function turnEvidenceHtml(blocks) {
+    const evidence = new Map();
+    const add = (key, label, meta) => {
+      const normalizedLabel = String(label || "诊断证据").trim();
+      const normalizedKey = String(key || normalizedLabel.toLowerCase());
+      if (!evidence.has(normalizedKey)) evidence.set(normalizedKey, { label: normalizedLabel, meta });
+    };
+    blocks.forEach((block) => {
+      values(block.citations).forEach((item) => add(
+        item.turn_evidence_id || `citation:${item.label || item.citation_no}`,
+        item.label || `证据 ${item.citation_no}`,
+        shell.short(item.turn_evidence_id),
+      ));
+      if (block.block_type !== "EVIDENCE_REFERENCES") return;
+      values(block.payload?.items).forEach((item, index) => add(
+        item.turn_evidence_id || item.artifact_id || `reference:${item.label || item.summary || index}`,
+        item.label || item.summary || "诊断证据",
+        `${item.source || "EVIDENCE"}${item.observed_at ? ` · ${shell.fmt(item.observed_at)}` : ""}`,
+      ));
+    });
+    const rows = Array.from(evidence.values());
+    if (!rows.length) return "";
+    return `<details class="ops-evidence"><summary>诊断依据 <span>${rows.length} 项证据</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${rows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta || "EVIDENCE")}</small></li>`).join("")}</ol></div></details>`;
   }
 
   function turnHtml(turn) {
     const messages = values(turn.messages);
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
-    const blocks = values(turn.answer_blocks).map(answerBlockHtml).join("");
+    const answerBlocks = values(turn.answer_blocks);
+    const blocks = answerBlocks.map(answerBlockHtml).join("");
+    const evidence = turnEvidenceHtml(answerBlocks);
     const terminal = terminalTurnStatuses.has(turn.status);
-    const answer = assistant || blocks ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div></div></article>` : "";
+    const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const progress = terminal && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${answer}${progress}`;
   }
