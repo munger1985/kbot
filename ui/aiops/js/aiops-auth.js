@@ -125,14 +125,16 @@
       buffer = blocks.pop() || "";
       for (const block of blocks) {
         let event = "message";
+        let id = "";
         let data = "";
         for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("id:")) id = line.slice(3).trim();
           if (line.startsWith("event:")) event = line.slice(6).trim();
           if (line.startsWith("data:")) data += line.slice(5).trim();
         }
         let payload = data;
         try { payload = data ? JSON.parse(data) : null; } catch (_) { /* 保留文本事件。 */ }
-        await onEvent({ event, data: payload });
+        await onEvent({ event, data: payload, id });
       }
       if (done) break;
     }

@@ -6,6 +6,8 @@
   const markdown = globalThis.KBotMarkdown;
   const state = { agents: [], conversation: null, selectedFile: null };
   const typingFrameMs = 22;
+  const streamRecoveryAttempts = 120;
+  const terminalTurnStatuses = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"]);
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
@@ -127,7 +129,7 @@
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
     const blocks = values(turn.answer_blocks).map(answerBlockHtml).join("");
-    const terminal = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(turn.status);
+    const terminal = terminalTurnStatuses.has(turn.status);
     const answer = assistant || blocks ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div></div></article>` : "";
     const progress = terminal && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${answer}${progress}`;
@@ -211,7 +213,11 @@
 
   async function followTurn(conversationId, turnId, progress) {
     let pending = null;
-    await KBotAIOpsAuth.stream(`${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events`, ({ event, data }) => {
+    let lastEventId = "";
+    let completed = false;
+    const path = `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events`;
+    const onEvent = ({ event, data, id }) => {
+      if (id) lastEventId = id;
       const payload = data?.payload || {};
       if (["turn.created", "turn.status", "skill.status"].includes(event)) {
         progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
@@ -238,10 +244,35 @@
       }
       if (event === "answer.completed" && pending) pending.finalizing = true;
       if (event === "done") {
+        completed = true;
         if (pending) pending.finalizing = true;
         progress.textContent = "诊断已完成，正在整理结论…";
       }
-    });
+    };
+    for (let attempt = 0; attempt < streamRecoveryAttempts && !completed; attempt += 1) {
+      try {
+        await KBotAIOpsAuth.stream(path, onEvent, {
+          headers: lastEventId ? { "Last-Event-ID": lastEventId } : {},
+        });
+      } catch (_) {
+        // 临时断流统一由权威 Turn 状态与续传游标恢复。
+      }
+      if (completed) break;
+      try {
+        const turn = await KBotAIOpsAuth.request(
+          `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}`,
+        );
+        if (terminalTurnStatuses.has(turn.status)) {
+          completed = true;
+          break;
+        }
+      } catch (_) {
+        // 状态回读也可能遇到同一次短暂网络抖动，下一轮继续恢复。
+      }
+      progress.textContent = "事件流暂时中断，正在恢复诊断进度…";
+      await new Promise((resolve) => window.setTimeout(resolve, Math.min(5000, 1000 * (attempt + 1))));
+    }
+    if (!completed) throw new Error("诊断仍在后台运行，请稍后刷新会话查看结果");
     if (pending) {
       pending.finalizing = true;
       await waitForTyping(pending);
@@ -273,9 +304,7 @@
       panel.insertAdjacentHTML("beforeend", messageHtml("USER", text));
       panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">正在建立诊断计划…</div>');
       const progress = document.getElementById("live-progress");
-      followTurn(receipt.conversation_id, receipt.turn_id, progress)
-        .then(() => loadConversationList(receipt.conversation_id))
-        .catch((error) => shell.toast(`事件流已中断：${error.message}`));
+      await followTurn(receipt.conversation_id, receipt.turn_id, progress);
       await loadConversationList(receipt.conversation_id);
     } catch (error) { shell.toast(error.message); } finally { button.disabled = false; }
   }

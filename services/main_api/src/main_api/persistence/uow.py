@@ -35,10 +35,7 @@ class MainApiUnitOfWork:
         if self.session is None:
             return
         session = self.session
-        cancelled = (
-            exc_type is not None
-            and issubclass(exc_type, asyncio.CancelledError)
-        )
+        cancelled = self._contains_cancellation(exc_type, exc)
         try:
             if cancelled:
                 # 流式请求取消时驱动可能已关闭连接，不能再发送 rollback。
@@ -57,6 +54,25 @@ class MainApiUnitOfWork:
             self.notifications = None
             self.access = None
             self.app_api_keys = None
+
+    @staticmethod
+    def _contains_cancellation(exc_type, exc) -> bool:
+        """识别直接取消及 ASGI TaskGroup 包装后的取消异常。"""
+        if exc_type is not None and issubclass(exc_type, asyncio.CancelledError):
+            return True
+        pending = [exc]
+        visited: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if current is None or id(current) in visited:
+                continue
+            visited.add(id(current))
+            if isinstance(current, asyncio.CancelledError):
+                return True
+            children = getattr(current, "exceptions", ())
+            if isinstance(children, (tuple, list)):
+                pending.extend(children)
+        return False
 
     async def commit(self) -> None:
         if self.session is None:
