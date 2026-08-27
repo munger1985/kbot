@@ -216,6 +216,9 @@
       if (["turn.created", "turn.status", "skill.status"].includes(event)) {
         progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
       }
+      if (event === "thinking.delta") {
+        progress.textContent = payload.public_summary || payload.delta || "正在组织回答";
+      }
       if (event === "answer.delta") {
         const delta = String(data?.payload?.delta || "");
         if (!pending) {

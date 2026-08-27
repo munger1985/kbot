@@ -2,6 +2,7 @@
 from .turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
+    DbaAnswerProgress,
     DbaSufficiencyAssessment,
     TurnAnswerBlock,
     TurnEvidenceFact,
@@ -11,6 +12,7 @@ from .turn_answer import (
 __all__ = [
     "AIOpsTurnResult",
     "DbaAnswerDraft",
+    "DbaAnswerProgress",
     "DbaSufficiencyAssessment",
     "TurnAnswerBlock",
     "TurnEvidenceFact",

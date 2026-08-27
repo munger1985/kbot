@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from collections.abc import AsyncIterator
 from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -32,3 +33,14 @@ class AIOpsModelPort(Protocol):
         deadline: datetime | None,
         idempotency_key: str,
     ) -> StructuredModelResult: ...
+
+    def stream_text(
+        self,
+        *,
+        purpose: str,
+        model_snapshot: dict[str, Any],
+        prompt_ref: dict[str, str],
+        input_payload: dict[str, Any],
+        deadline: datetime | None,
+        idempotency_key: str,
+    ) -> AsyncIterator[str]: ...

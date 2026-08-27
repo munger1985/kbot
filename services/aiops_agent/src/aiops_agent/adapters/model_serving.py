@@ -184,3 +184,114 @@ class AIOpsStructuredModelClient:
             finish_reason=choice.get("finish_reason"),
         )
         return StructuredModelResult(output=output, receipt=receipt)
+
+    async def stream_text(
+        self,
+        *,
+        purpose: str,
+        model_snapshot: dict[str, Any],
+        prompt_ref: dict[str, str],
+        input_payload: dict[str, Any],
+        deadline: datetime | None,
+        idempotency_key: str,
+    ):
+        """把模型服务SSE归一为最终回答正文增量。"""
+        del idempotency_key
+        prompt_content = str(prompt_ref["content"])
+        if (
+            hashlib.sha256(prompt_content.encode()).hexdigest()
+            != prompt_ref["prompt_sha256"]
+        ):
+            raise AIOpsModelError("PROMPT_HASH_MISMATCH")
+        technical_name = str(model_snapshot["technical_name"])
+        request_payload = {
+            "served_model_name": technical_name,
+            "messages": [
+                {"role": "system", "content": prompt_content},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        input_payload,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                },
+            ],
+            "stream": True,
+            "temperature": 0,
+        }
+        timeout = self._timeout_seconds
+        if deadline is not None:
+            remaining = int(
+                (deadline.astimezone(UTC) - datetime.now(UTC)).total_seconds()
+            )
+            if remaining <= 1:
+                raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
+            timeout = min(timeout, remaining)
+        headers = build_internal_auth_headers(
+            audience=self._audience,
+            caller_service=self._caller,
+        )
+        pending = ""
+        try:
+            async with self._session.post(
+                self._url,
+                headers=headers,
+                json=request_payload,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as response:
+                if response.status != 200:
+                    response_text = (await response.text())[:1000]
+                    logger.error(
+                        "AIOps流式模型调用失败：purpose={} model={} "
+                        "status={} response={}",
+                        purpose,
+                        technical_name,
+                        response.status,
+                        response_text,
+                    )
+                    raise AIOpsModelError(
+                        "MODEL_SERVICE_UNAVAILABLE",
+                        f"模型服务返回 HTTP {response.status}",
+                    )
+                async for raw in response.content.iter_any():
+                    pending += raw.decode("utf-8")
+                    lines = pending.splitlines(keepends=True)
+                    pending = ""
+                    if lines and not lines[-1].endswith(("\n", "\r")):
+                        pending = lines.pop()
+                    for line in lines:
+                        content = self._decode_stream_line(line)
+                        if content:
+                            yield content
+                if pending.strip():
+                    content = self._decode_stream_line(pending)
+                    if content:
+                        yield content
+        except AIOpsModelError:
+            raise
+        except (aiohttp.ClientError, TimeoutError, UnicodeDecodeError) as exc:
+            raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
+
+    @staticmethod
+    def _decode_stream_line(line: str) -> str | None:
+        value = line.strip()
+        if not value or value in {"data: [DONE]", "[DONE]"}:
+            return None
+        if value.startswith("data:"):
+            value = value[5:].strip()
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        if payload.get("error"):
+            raise AIOpsModelError(
+                "MODEL_SERVICE_UNAVAILABLE", str(payload["error"])[:1000]
+            )
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        choice = choices[0]
+        delta = choice.get("delta") or choice.get("message") or {}
+        return str(delta.get("content") or "") or None

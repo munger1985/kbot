@@ -92,6 +92,7 @@ class AIOpsTurnResult(BaseModel):
     status: Literal["COMPLETED", "PARTIAL", "WAITING_USER"]
     sufficiency_status: SufficiencyStatus
     blocks: tuple[TurnAnswerBlock, ...]
+    answer_streamed: bool = False
     model_receipt: dict[str, Any] | None = None
 
     @model_validator(mode="after")
@@ -99,3 +100,11 @@ class AIOpsTurnResult(BaseModel):
         if not self.blocks:
             raise ValueError("Turn 回答至少包含一个展示块")
         return self
+
+
+class DbaAnswerProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: Literal["answer.delta", "thinking.delta"]
+    event_key: str = Field(min_length=1, max_length=128)
+    payload: dict[str, Any]

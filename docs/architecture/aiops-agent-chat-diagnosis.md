@@ -510,6 +510,11 @@ Evaluator只读取本轮Turn Evidence。写入`SUFFICIENCY_JSON`后决定继续�
 Answer Block、Citation和`answer.block`事件。最终同一事务写Assistant Message、
 `answer.completed`及Turn终态。
 
+模型原始Token不能未经校验直接暴露。Answer Handler通过模型服务原生SSE聚合候选正文，
+校验其中的证据标签只能引用当前Turn Evidence；校验通过后，Worker以多个短事务写入可
+重放的`answer.delta`。未知引用自动重试，连续失败则终止Task，不得先展示错误正文再静默
+替换。最终Answer Artifact通过后再原子投影Message、Block和Citation。
+
 ### 9.5 补证与变更
 
 补证提交事务创建Response Artifact和Turn Evidence，关闭Evidence Request并投递恢复

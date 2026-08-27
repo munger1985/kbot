@@ -91,6 +91,7 @@ from aiops_agent.contracts.hitl import (
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.workers.handlers import HandlerRegistry
 from platform_core.contracts.aiops import (
+    AppendOpsTaskProgressCommand,
     ArtifactInput,
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
@@ -1891,6 +1892,89 @@ class AIOpsRuntimeService:
                 run, task, int(event.sequence_no), artifact.artifact_id
             )
 
+    async def append_task_progress(
+        self, command: AppendOpsTaskProgressCommand
+    ) -> TaskMutationReceipt:
+        """在有效Task租约内提交用户可见增量，并同步投影到Turn事件流。"""
+        if command.event_type not in {
+            "answer.delta",
+            "thinking.delta",
+            "skill.progress",
+        }:
+            raise validation_failed("不允许写入该类型的Task增量事件")
+        if len(
+            json.dumps(command.payload, ensure_ascii=False, default=str)
+        ) > 16000:
+            raise validation_failed("Task增量事件内容超过限制")
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            run, task = await self._lock_run_task(uow, command.task_id)
+            self._ensure_lease(
+                run=run,
+                task=task,
+                worker_id=command.worker_id,
+                lease_token=command.lease_token,
+                now=now,
+            )
+            event_key = (
+                f"task:{task.ops_task_id}:progress:{command.event_key}"
+            )
+            prior = await uow.runs.get_event_by_key(
+                ops_run_id=run.ops_run_id,
+                event_key=event_key,
+            )
+            if prior is not None:
+                prior_payload = dict(prior.payload_json or {})
+                prior_payload.pop("trace_id", None)
+                if (
+                    prior.event_type != command.event_type
+                    or prior_payload != dict(command.payload)
+                ):
+                    raise state_conflict(
+                        "Task增量事件幂等键对应的内容不一致"
+                    )
+                return self._mutation_receipt(
+                    run, task, int(prior.sequence_no), None
+                )
+            event = await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type=command.event_type,
+                event_key=event_key,
+                visibility="USER",
+                payload_json={
+                    **dict(command.payload),
+                    "trace_id": command.trace_id,
+                },
+            )
+            if run.workflow_kind == "CHAT_TURN":
+                link = await uow.turns.get_run_link_by_ops_run_id(
+                    ops_run_id=run.ops_run_id
+                )
+                turn = (
+                    await uow.turns.get_turn(
+                        domain_id=int(run.domain_id),
+                        turn_id=link.turn_id,
+                        lock=True,
+                    )
+                    if link is not None
+                    else None
+                )
+                if turn is None:
+                    raise state_conflict(
+                        "CHAT_TURN增量事件缺少有效Turn关联"
+                    )
+                await self._append_turn_event(
+                    uow,
+                    turn,
+                    event_type=command.event_type,
+                    payload=dict(command.payload),
+                )
+            await uow.commit()
+            return self._mutation_receipt(
+                run, task, int(event.sequence_no), None
+            )
+
     async def _project_chat_turn_task(
         self,
         *,
@@ -2071,13 +2155,14 @@ class AIOpsRuntimeService:
         evidence_by_artifact = {
             str(row.artifact_id): row for row in evidence_rows
         }
-        for offset in range(0, len(markdown), 120):
-            await self._append_turn_event(
-                uow,
-                turn,
-                event_type="answer.delta",
-                payload={"delta": markdown[offset:offset + 120]},
-            )
+        if not result.answer_streamed:
+            for offset in range(0, len(markdown), 120):
+                await self._append_turn_event(
+                    uow,
+                    turn,
+                    event_type="answer.delta",
+                    payload={"delta": markdown[offset:offset + 120]},
+                )
         for block_no, block in enumerate(result.blocks, start=1):
             block_payload = dict(block.payload)
             answer_block_id = uuid7()

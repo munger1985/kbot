@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
+import json
+import re
+import time
 from typing import Any
 
 from aiops_agent.contracts.skill_execution import DbaSkillResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
+    DbaAnswerProgress,
     DbaSufficiencyAssessment,
     TurnAnswerBlock,
     TurnEvidenceFact,
@@ -176,6 +181,136 @@ class DbaAnswerComposeHandler:
             model_receipt=result.receipt.model_dump(mode="json"),
         )
 
+    async def execute_stream(self, context: TaskExecutionContext):
+        """使用模型原生SSE生成正文，校验后逐块投递用户可见增量。"""
+        assessment = self._assessment(context.input_artifacts)
+        if assessment.status in {
+            SufficiencyStatus.NEEDS_CLARIFICATION,
+            SufficiencyStatus.NEEDS_EVIDENCE,
+            SufficiencyStatus.CAPABILITY_UNAVAILABLE,
+            SufficiencyStatus.UNSAFE,
+        }:
+            result = self._waiting_result(assessment).model_copy(
+                update={"answer_streamed": True}
+            )
+            markdown = str(result.blocks[0].payload.get("markdown", ""))
+            for index, delta in enumerate(self._answer_deltas(markdown), start=1):
+                yield DbaAnswerProgress(
+                    event_type="answer.delta",
+                    event_key=f"answer-delta:{index}",
+                    payload={"chunk_index": index, "delta": delta},
+                )
+            yield result
+            return
+
+        answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        prompt = self._prompts.resolve("answer_stream", "1")
+        labels = {
+            f"E{index}": fact.evidence_ref
+            for index, fact in enumerate(assessment.evidence, start=1)
+        }
+        evidence_payload = []
+        for label, fact in zip(
+            labels,
+            assessment.evidence,
+            strict=True,
+        ):
+            evidence_payload.append(
+                {"label": label, **fact.model_dump(mode="json")}
+            )
+        yield DbaAnswerProgress(
+            event_type="thinking.delta",
+            event_key="answer-thinking:compose",
+            payload={
+                "delta": "正在基于本轮已验证证据组织回答",
+                "public_summary": "正在组织带引用的诊断回答",
+            },
+        )
+        started = time.monotonic()
+        answer = ""
+        used_labels: tuple[str, ...] = ()
+        validation_error = ""
+        last_input_payload: dict[str, Any] = {}
+        for attempt in range(1, 3):
+            parts: list[str] = []
+            last_input_payload = {
+                "question": str(answer_context.get("question", "")),
+                "intent": dict(answer_context.get("intent", {})),
+                "sufficiency_status": str(assessment.status),
+                "limitations": list(assessment.reasons),
+                "evidence": evidence_payload,
+                "allowed_citation_labels": list(labels),
+                "previous_invalid_answer": answer or None,
+                "validation_error": validation_error or None,
+            }
+            async for chunk in self._model.stream_text(
+                purpose="aiops.dba-answer-stream",
+                model_snapshot=dict(answer_context["model"]),
+                prompt_ref={**prompt.ref(), "content": prompt.content},
+                input_payload=last_input_payload,
+                deadline=self._deadline(context.deadline_at),
+                idempotency_key=(
+                    f"turn:{context.run_id}:answer-stream:{attempt}"
+                ),
+            ):
+                parts.append(chunk)
+            answer = "".join(parts).strip()
+            try:
+                used_labels = self._validate_streamed_answer(answer, labels)
+                break
+            except ValueError as exc:
+                validation_error = str(exc)
+                if attempt == 1:
+                    yield DbaAnswerProgress(
+                        event_type="thinking.delta",
+                        event_key="answer-thinking:retry",
+                        payload={
+                            "delta": "回答引用未通过校验，正在重新生成",
+                            "public_summary": "正在修正证据引用",
+                        },
+                    )
+        else:
+            raise ValueError("模型连续两次未生成可验证的诊断回答")
+
+        markdown = self._strip_citation_labels(answer)
+        evidence_refs = tuple(labels[label] for label in used_labels)
+        for index, delta in enumerate(self._answer_deltas(markdown), start=1):
+            yield DbaAnswerProgress(
+                event_type="answer.delta",
+                event_key=f"answer-delta:{index}",
+                payload={"chunk_index": index, "delta": delta},
+            )
+        blocks: list[TurnAnswerBlock] = [
+            TurnAnswerBlock(
+                block_type=AnswerBlockType.MARKDOWN,
+                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                payload={"markdown": markdown},
+                evidence_refs=evidence_refs,
+            )
+        ]
+        blocks.extend(self._data_blocks(assessment.evidence))
+        yield AIOpsTurnResult(
+            status=(
+                "COMPLETED"
+                if assessment.status == SufficiencyStatus.ANSWERABLE
+                else "PARTIAL"
+            ),
+            sufficiency_status=assessment.status,
+            blocks=tuple(blocks),
+            answer_streamed=True,
+            model_receipt={
+                "purpose": "aiops.dba-answer-stream",
+                "model_technical_name": answer_context["model"][
+                    "technical_name"
+                ],
+                "model_revision": answer_context["model"]["revision"],
+                **prompt.ref(),
+                "input_sha256": self._hash(last_input_payload),
+                "output_sha256": self._hash(answer),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
+
     @staticmethod
     def _assessment(
         artifacts: tuple[dict[str, Any], ...]
@@ -288,3 +423,40 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _deadline(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value else None
+
+    @staticmethod
+    def _validate_streamed_answer(
+        answer: str, labels: dict[str, str]
+    ) -> tuple[str, ...]:
+        if not answer:
+            raise ValueError("模型返回的回答为空")
+        used = tuple(dict.fromkeys(re.findall(r"\[(E\d+)\]", answer)))
+        unknown = set(used) - labels.keys()
+        if unknown:
+            raise ValueError(f"回答使用了未知证据引用：{sorted(unknown)}")
+        if labels and not used:
+            raise ValueError("有验证证据的回答必须实际引用证据")
+        return used
+
+    @staticmethod
+    def _strip_citation_labels(answer: str) -> str:
+        return re.sub(r"\s*\[E\d+\]", "", answer).strip()
+
+    @staticmethod
+    def _answer_deltas(answer: str) -> tuple[str, ...]:
+        return tuple(
+            answer[index:index + 120]
+            for index in range(0, len(answer), 120)
+        ) or ("",)
+
+    @staticmethod
+    def _hash(value: Any) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
+        ).hexdigest()

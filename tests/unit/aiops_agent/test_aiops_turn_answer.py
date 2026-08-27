@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.turn_answer import DbaAnswerDraft
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.workers.handlers import TaskExecutionContext
+from aiops_agent.workers.task_worker import AIOpsTaskWorker
 from aiops_agent.workers.turn_answer_handlers import (
     DbaAnswerComposeHandler,
     DbaEvidenceAssessmentHandler,
 )
 from platform_core.contracts.aiops import (
+    AppendOpsTaskProgressCommand,
     AnswerBlockType,
     SufficiencyStatus,
 )
@@ -51,6 +54,27 @@ class _AnswerModel:
                 duration_ms=1,
             ),
         )
+
+
+class _StreamAnswerModel:
+    def __init__(self, answers: tuple[str, ...]) -> None:
+        self.answers = list(answers)
+        self.calls = 0
+
+    async def stream_text(self, **_):
+        answer = self.answers[self.calls]
+        self.calls += 1
+        midpoint = max(1, len(answer) // 2)
+        yield answer[:midpoint]
+        yield answer[midpoint:]
+
+
+class _ProgressService:
+    def __init__(self) -> None:
+        self.commands = []
+
+    async def append_task_progress(self, command):
+        self.commands.append(command)
 
 
 class _ProjectionTurns:
@@ -115,6 +139,72 @@ class _ProjectionConversations:
 
     async def get_conversation(self, **_):
         return self.conversation
+
+
+class _ProgressRuns:
+    def __init__(self, *, run, task, now) -> None:
+        self.run = run
+        self.task = task
+        self.now = now
+        self.events = []
+        self.prior_event = None
+
+    async def database_now(self):
+        return self.now
+
+    async def get_task(self, **_):
+        return self.task
+
+    async def get_run(self, **_):
+        return self.run
+
+    async def get_event_by_key(self, **_):
+        return self.prior_event
+
+    async def append_event(self, **kwargs):
+        event = SimpleNamespace(
+            sequence_no=len(self.events) + 1,
+            **kwargs,
+        )
+        self.events.append(event)
+        return event
+
+
+class _ProgressTurns:
+    def __init__(self, *, turn, run_id) -> None:
+        self.turn = turn
+        self.run_id = run_id
+        self.events = []
+
+    async def get_run_link_by_ops_run_id(self, *, ops_run_id):
+        return (
+            SimpleNamespace(turn_id=self.turn.turn_id)
+            if ops_run_id == self.run_id
+            else None
+        )
+
+    async def get_turn(self, **_):
+        return self.turn
+
+    async def add_event(self, row):
+        self.events.append(row)
+        return row
+
+
+class _ProgressUow:
+    def __init__(self, *, runs, turns) -> None:
+        self.runs = runs
+        self.turns = turns
+        self.commit_count = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def commit(self):
+        self.commit_count += 1
 
 
 def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
@@ -306,6 +396,222 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "批准证据之外"):
             asyncio.run(handler.execute(context))
+
+    def test_streamed_answer_is_validated_then_emits_progress(self) -> None:
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        model = _StreamAnswerModel(
+            ("当前累计耗时最高的是 SQL_ID abc123。[E1]",)
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=model,
+            prompts=DiagnosisPromptRegistry.load(),
+        )
+
+        async def collect():
+            return [item async for item in handler.execute_stream(context)]
+
+        items = asyncio.run(collect())
+        final = items[-1]
+
+        self.assertEqual("thinking.delta", items[0].event_type)
+        self.assertTrue(
+            any(item.event_type == "answer.delta" for item in items[:-1])
+        )
+        self.assertTrue(final.answer_streamed)
+        self.assertNotIn("[E1]", final.blocks[0].payload["markdown"])
+        self.assertEqual(
+            (assessment.evidence[0].evidence_ref,),
+            final.blocks[0].evidence_refs,
+        )
+
+    def test_streamed_answer_retries_unknown_reference(self) -> None:
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        model = _StreamAnswerModel(
+            ("错误引用。[E9]", "已按证据修正。[E1]")
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=model,
+            prompts=DiagnosisPromptRegistry.load(),
+        )
+
+        async def collect():
+            return [item async for item in handler.execute_stream(context)]
+
+        items = asyncio.run(collect())
+
+        self.assertEqual(2, model.calls)
+        self.assertTrue(
+            any(item.event_key == "answer-thinking:retry" for item in items[:-1])
+        )
+        self.assertEqual("已按证据修正。", items[-1].blocks[0].payload["markdown"])
+
+    def test_task_worker_commits_stream_progress_before_final_artifact(self) -> None:
+        service = _ProgressService()
+        worker = AIOpsTaskWorker(
+            runtime_service=service,
+            handler_registry=object(),
+            worker_id="worker-1",
+            lease_seconds=30,
+            heartbeat_seconds=10,
+            poll_interval_seconds=1,
+        )
+
+        class _Handler:
+            async def execute_stream(self, context):
+                del context
+                from aiops_agent.contracts.turn_answer import (
+                    AIOpsTurnResult,
+                    DbaAnswerProgress,
+                    TurnAnswerBlock,
+                )
+
+                yield DbaAnswerProgress(
+                    event_type="answer.delta",
+                    event_key="answer-delta:1",
+                    payload={"delta": "回答"},
+                )
+                yield AIOpsTurnResult(
+                    status="COMPLETED",
+                    sufficiency_status="ANSWERABLE",
+                    blocks=(
+                        TurnAnswerBlock(
+                            block_type="MARKDOWN",
+                            schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                            payload={"markdown": "回答"},
+                        ),
+                    ),
+                    answer_streamed=True,
+                )
+
+        lease = SimpleNamespace(
+            task_id=uuid7(),
+            lease_token=uuid7(),
+            trace_id="trace-stream",
+            attempt=1,
+        )
+        result = asyncio.run(
+            worker._invoke_handler(
+                manifest=SimpleNamespace(implementation=_Handler()),
+                context=object(),
+                current={"lease": lease},
+            )
+        )
+
+        self.assertEqual(1, len(service.commands))
+        self.assertEqual("answer.delta", service.commands[0].event_type)
+        self.assertTrue(result.answer_streamed)
+
+    def test_model_sse_decoder_accepts_openai_delta(self) -> None:
+        line = (
+            'data: {"choices":[{"delta":{"content":"诊断结果"}}]}\n'
+        )
+
+        self.assertEqual(
+            "诊断结果",
+            AIOpsStructuredModelClient._decode_stream_line(line),
+        )
+        self.assertIsNone(
+            AIOpsStructuredModelClient._decode_stream_line("data: [DONE]\n")
+        )
+
+    def test_runtime_progress_is_committed_to_run_and_turn_streams(self) -> None:
+        now = datetime.now(UTC)
+        run_id = uuid7()
+        task_id = uuid7()
+        lease_token = uuid7()
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            status="RUNNING",
+            workflow_kind="CHAT_TURN",
+            domain_id=7,
+            cancel_requested_at=None,
+            deadline_at=now + timedelta(minutes=5),
+            row_version=1,
+        )
+        task = SimpleNamespace(
+            ops_task_id=task_id,
+            ops_run_id=run_id,
+            status="RUNNING",
+            lease_owner="worker-1",
+            lease_token=lease_token,
+            lease_until=now + timedelta(minutes=1),
+            row_version=1,
+        )
+        turn = SimpleNamespace(turn_id=uuid7(), event_cursor=4)
+        runs = _ProgressRuns(run=run, task=task, now=now)
+        turns = _ProgressTurns(turn=turn, run_id=run_id)
+        uow = _ProgressUow(runs=runs, turns=turns)
+        service = object.__new__(AIOpsRuntimeService)
+        service._uow_factory = lambda: uow
+
+        command = AppendOpsTaskProgressCommand(
+            task_id=task_id,
+            worker_id="worker-1",
+            lease_token=lease_token,
+            trace_id="trace-progress",
+            event_type="answer.delta",
+            event_key="answer-delta:1",
+            payload={"chunk_index": 1, "delta": "诊断"},
+        )
+        receipt = asyncio.run(service.append_task_progress(command))
+
+        self.assertEqual(1, uow.commit_count)
+        self.assertEqual("answer.delta", runs.events[0].event_type)
+        self.assertEqual("answer.delta", turns.events[0].event_type)
+        self.assertEqual(5, turn.event_cursor)
+        self.assertEqual(task_id, receipt.task_id)
+
+        runs.prior_event = runs.events[0]
+        repeated = asyncio.run(service.append_task_progress(command))
+        self.assertEqual(receipt.event_cursor, repeated.event_cursor)
+        with self.assertRaises(Exception) as raised:
+            asyncio.run(
+                service.append_task_progress(
+                    command.model_copy(
+                        update={
+                            "payload": {
+                                "chunk_index": 1,
+                                "delta": "不同内容",
+                            }
+                        }
+                    )
+                )
+            )
+        self.assertIn("幂等键对应的内容不一致", str(raised.exception))
 
     def test_runtime_projects_skill_evidence_answer_and_citation(self) -> None:
         service = object.__new__(AIOpsRuntimeService)

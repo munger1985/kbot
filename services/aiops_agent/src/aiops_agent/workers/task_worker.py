@@ -12,6 +12,7 @@ from aiops_agent.workers.handlers import (
 )
 from aiops_agent.contracts.hitl import InputSuspension
 from platform_core.contracts.aiops import (
+    AppendOpsTaskProgressCommand,
     ArtifactInput,
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
@@ -90,8 +91,10 @@ class AIOpsTaskWorker:
                 error_code = "OUTPUT_SCHEMA_INVALID"
                 raise ValueError("Handler 输出 Schema 与 Task 冻结值不一致")
             execution = asyncio.create_task(
-                manifest.implementation.execute(
-                    self._context(lease)
+                self._invoke_handler(
+                    manifest=manifest,
+                    context=self._context(lease),
+                    current=current,
                 )
             )
             heartbeat = asyncio.create_task(
@@ -231,6 +234,35 @@ class AIOpsTaskWorker:
                     latest.task_id,
                     type(persist_error).__name__,
                 )
+
+    async def _invoke_handler(self, *, manifest, context, current):
+        stream_handler = getattr(
+            manifest.implementation, "execute_stream", None
+        )
+        if stream_handler is None:
+            return await manifest.implementation.execute(context)
+        final = None
+        async for item in stream_handler(context):
+            if hasattr(item, "event_type") and hasattr(item, "payload"):
+                latest = current["lease"]
+                await self._service.append_task_progress(
+                    AppendOpsTaskProgressCommand(
+                        task_id=latest.task_id,
+                        worker_id=self._worker_id,
+                        lease_token=latest.lease_token,
+                        trace_id=latest.trace_id,
+                        event_type=str(item.event_type),
+                        event_key=str(item.event_key),
+                        payload=dict(item.payload),
+                    )
+                )
+            else:
+                if final is not None:
+                    raise ValueError("流式Handler只能产生一个最终Artifact")
+                final = item
+        if final is None:
+            raise ValueError("流式Handler没有产生最终Artifact")
+        return final
 
     @staticmethod
     def _artifact_trust_level(schema_version: str) -> str:

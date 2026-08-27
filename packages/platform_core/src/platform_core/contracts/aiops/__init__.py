@@ -132,6 +132,7 @@ from .public import (
     WebhookKeyRotation,
 )
 from .runtime import (
+    AppendOpsTaskProgressCommand,
     ArtifactInput,
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
@@ -163,6 +164,7 @@ __all__ = [
     "AgentBindingView",
     "ApprovalCommand",
     "ApprovalReceipt",
+    "AppendOpsTaskProgressCommand",
     "ArtifactInput",
     "CancelRunCommand",
     "ClaimOpsTaskCommand",

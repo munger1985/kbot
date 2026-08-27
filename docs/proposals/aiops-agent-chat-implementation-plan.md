@@ -17,8 +17,10 @@ Manifest/Registry/Hash、能力快照、Skill Planner、通用 Task 编译和计
 且引用被限制在当前Turn证据集合内。生产Worker现已从Turn Outbox接入新规划链；Task完成
 事务会同步维护Skill Invocation、Turn Evidence、Assistant Message、Answer Block、
 Citation和Turn SSE投影，前端能够渲染数组型表格/图表并折叠显示引用。当前`answer.delta`
-是完整结构化回答形成后的分块事件；模型服务原生增量输出仍待单独切片，不能将其描述为
-已经完成的实时Token流。
+已经改为独立事务的可重放增量事件：Answer Handler使用模型服务原生SSE接收正文，在
+服务端完成当前Turn证据标签校验后逐块提交给用户，最终Artifact再原子写入Answer Block
+和Citation。为了避免把未知引用或半截无效回答展示给用户，原始Token在校验前不会直接
+透传；用户可见流从校验通过后开始，这一安全边界与KM Agent一致。
 
 版本：1.0
 
