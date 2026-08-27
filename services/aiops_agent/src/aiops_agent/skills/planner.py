@@ -7,6 +7,7 @@ import re
 from typing import Iterable
 
 from aiops_agent.orchestration.blueprints import TaskSpec
+from platform_core.contracts.aiops.conversation import DbaIntent
 from platform_core.contracts.aiops.skills import (
     DbaCapabilitySnapshot,
     DbaIntentPlan,
@@ -52,11 +53,19 @@ class DbaSkillPlanner:
         capabilities: DbaCapabilitySnapshot,
         suggested_skill_ids: Iterable[str] | None = None,
     ) -> DbaSkillPlan:
+        overview = (
+            intent.subject == "DATABASE_OVERVIEW"
+            and intent.primary_intent in {DbaIntent.OBSERVE, DbaIntent.INSPECT}
+        )
         candidate_ids = sorted(
             {
                 manifest.skill_id
                 for manifest in self._registry.manifests()
-                if self._matches_intent(manifest, intent, capabilities)
+                if (
+                    self._matches_overview(manifest, capabilities)
+                    if overview
+                    else self._matches_intent(manifest, intent, capabilities)
+                )
             }
         )
         candidates = tuple(
@@ -69,7 +78,7 @@ class DbaSkillPlanner:
                 for manifest in candidates
                 if not self._missing_capabilities(manifest, capabilities)
             ]
-            selected = tuple(
+            ordered = tuple(
                 sorted(
                     available,
                     key=lambda item: (
@@ -77,8 +86,10 @@ class DbaSkillPlanner:
                         item.skill_id,
                         item.version,
                     ),
-                )[:1]
+                )
             )
+            # 数据库概览需要组合多个互补事实；单一专业问题仍坚持最小 Skill。
+            selected = ordered if overview else ordered[:1]
             if not selected and candidates:
                 unavailable = min(
                     candidates,
@@ -127,8 +138,12 @@ class DbaSkillPlanner:
                         manifest.skill_id, manifest.version
                     ),
                     reason=(
-                        f"匹配 {intent.primary_intent}/"
-                        f"{intent.primary_domain}，且当前能力满足 Manifest"
+                        "数据库综合概览所需的互补事实，且当前能力满足 Manifest"
+                        if overview
+                        else (
+                            f"匹配 {intent.primary_intent}/"
+                            f"{intent.primary_domain}，且当前能力满足 Manifest"
+                        )
                     ),
                     evidence_question=(
                         f"{manifest.skill_id} 能为当前问题提供哪些可验证事实？"
@@ -162,6 +177,20 @@ class DbaSkillPlanner:
                     and intent.subject in manifest.subjects
                 )
             )
+        )
+
+    @staticmethod
+    def _matches_overview(
+        manifest: DbaSkillManifest,
+        capabilities: DbaCapabilitySnapshot,
+    ) -> bool:
+        """为综合概览选择同库版本下所有可观测 Skill。"""
+        return (
+            capabilities.database_type in manifest.database_types
+            and DbaSkillPlanner._supports_database_version(
+                manifest, capabilities.database_version
+            )
+            and DbaIntent.OBSERVE in manifest.supported_intents
         )
 
     @staticmethod

@@ -8,6 +8,11 @@ from typing import Protocol
 
 from loguru import logger
 
+from aiops_agent.skills import (
+    CapabilityUnavailableError,
+    IntentPlanValidationError,
+    SkillUnavailableError,
+)
 from platform_core.contracts.aiops import CreateOpsRunCommand
 from platform_core.contracts.aiops.executor import (
     MutationExecutionRequest,
@@ -69,7 +74,27 @@ class AIOpsDomainOutboxSink:
                 result.get("status") == "PLANNING"
                 and self._turn_planning_service is not None
             ):
-                await self._turn_planning_service.execute(payload)
+                try:
+                    await self._turn_planning_service.execute(payload)
+                except (
+                    CapabilityUnavailableError,
+                    IntentPlanValidationError,
+                    SkillUnavailableError,
+                ) as exc:
+                    error_code = getattr(
+                        exc, "code", "AIOPS_TURN_PLANNING_INVALID"
+                    )
+                    logger.warning(
+                        "AIOps Turn 规划无法执行：turn_id={} code={} type={}",
+                        payload.get("turn_id"),
+                        error_code,
+                        type(exc).__name__,
+                    )
+                    await self._turn_planning_service.fail_terminal(
+                        payload,
+                        error_code=error_code,
+                        error_message=str(exc),
+                    )
             return
         if (
             event_type == "aiops.turn.cancel_requested"
@@ -212,6 +237,31 @@ class AIOpsDomainOutboxSink:
             "严重故障情境诊断 Run 已创建：situation_id={}", situation_id
         )
 
+    async def on_terminal_failure(
+        self,
+        event_type: str,
+        payload: dict,
+        exc: Exception,
+    ) -> None:
+        """在 Outbox 重试耗尽后收敛关联业务状态。"""
+        if (
+            event_type != "aiops.turn.planning_requested"
+            or self._turn_planning_service is None
+        ):
+            return
+        error_code = getattr(exc, "code", "AIOPS_TURN_PLANNING_FAILED")
+        logger.error(
+            "AIOps Turn 规划重试耗尽：turn_id={} code={} type={}",
+            payload.get("turn_id"),
+            error_code,
+            type(exc).__name__,
+        )
+        await self._turn_planning_service.fail_terminal(
+            payload,
+            error_code=error_code,
+            error_message=str(exc),
+        )
+
     async def _create_verification_run(
         self,
         *,
@@ -298,9 +348,9 @@ class AIOpsOutboxDispatcher:
                 snapshot["event_type"], snapshot["payload"]
             )
         except Exception as exc:
+            retry = snapshot["attempt"] < snapshot["max_attempts"]
             async with self._uow_factory() as uow:
                 now = await uow.runs.database_now()
-                retry = snapshot["attempt"] < snapshot["max_attempts"]
                 changed = await uow.outbox.release_failed(
                     outbox_id=snapshot["outbox_id"],
                     lease_owner=self._dispatcher_id,
@@ -314,6 +364,16 @@ class AIOpsOutboxDispatcher:
                 )
                 if changed:
                     await uow.commit()
+            if not retry:
+                terminal_handler = getattr(
+                    self._sink, "on_terminal_failure", None
+                )
+                if terminal_handler is not None:
+                    await terminal_handler(
+                        snapshot["event_type"],
+                        snapshot["payload"],
+                        exc,
+                    )
             return True
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()

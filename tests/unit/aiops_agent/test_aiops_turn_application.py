@@ -11,7 +11,11 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
-from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
+from aiops_agent.skills import SkillUnavailableError
+from aiops_agent.workers.outbox_dispatcher import (
+    AIOpsDomainOutboxSink,
+    AIOpsOutboxDispatcher,
+)
 from platform_core.contracts.aiops import (
     ConversationCreate,
     ConversationSourceContext,
@@ -53,6 +57,80 @@ class _PlannerStage:
     async def execute(self, payload):
         self.calls.append(dict(payload))
         return {"status": "COLLECTING"}
+
+
+class _UnsupportedPlanningStage(_PlannerStage):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failures = []
+
+    async def execute(self, payload):
+        self.calls.append(dict(payload))
+        raise SkillUnavailableError("当前目录没有匹配的 Skill")
+
+    async def fail_terminal(self, payload, *, error_code, error_message):
+        self.failures.append(
+            {
+                "payload": dict(payload),
+                "error_code": error_code,
+                "error_message": error_message,
+            }
+        )
+        return {"status": "FAILED"}
+
+
+class _TerminalFailureSink:
+    def __init__(self) -> None:
+        self.failures = []
+
+    async def publish(self, event_type, payload):
+        del event_type, payload
+        raise RuntimeError("模拟规划执行失败")
+
+    async def on_terminal_failure(self, event_type, payload, exc):
+        self.failures.append((event_type, dict(payload), type(exc).__name__))
+
+
+class _TerminalOutboxRepository:
+    def __init__(self, turn_id) -> None:
+        self.message = SimpleNamespace(
+            outbox_id=uuid7(),
+            event_type="aiops.turn.planning_requested",
+            payload_json={"domain_id": 7, "turn_id": str(turn_id)},
+            attempt_count=3,
+            max_attempts=3,
+        )
+        self.release = None
+
+    async def recover_expired(self, **_):
+        return False
+
+    async def claim(self, **_):
+        message, self.message = self.message, None
+        return message
+
+    async def release_failed(self, **kwargs):
+        self.release = dict(kwargs)
+        return True
+
+
+class _TerminalOutboxUow:
+    def __init__(self, turn_id) -> None:
+        self.outbox = _TerminalOutboxRepository(turn_id)
+        self.runs = SimpleNamespace(database_now=self._database_now)
+        self.commit_count = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def _database_now(self):
+        return datetime.now(UTC)
+
+    async def commit(self):
+        self.commit_count += 1
 
 
 class _TurnRepository:
@@ -401,6 +479,57 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([payload], begin.calls)
         self.assertEqual([payload], planning.calls)
+
+    async def test_unsupported_planning_is_terminal_without_outbox_retry(
+        self,
+    ) -> None:
+        begin = _PlannerStage(result={"status": "PLANNING"})
+        planning = _UnsupportedPlanningStage()
+        sink = AIOpsDomainOutboxSink(
+            runtime_service=object(),
+            fallback=_NoopSink(),
+            turn_planner_service=begin,
+            turn_planning_service=planning,
+        )
+        payload = {"domain_id": 7, "turn_id": str(uuid7())}
+
+        await sink.publish("aiops.turn.planning_requested", payload)
+
+        self.assertEqual(1, len(planning.calls))
+        self.assertEqual(1, len(planning.failures))
+        self.assertEqual(
+            "AIOPS_SKILL_UNAVAILABLE",
+            planning.failures[0]["error_code"],
+        )
+
+    async def test_planning_retry_exhaustion_converges_terminal_state(
+        self,
+    ) -> None:
+        turn_id = uuid7()
+        uow = _TerminalOutboxUow(turn_id)
+        sink = _TerminalFailureSink()
+        dispatcher = AIOpsOutboxDispatcher(
+            uow_factory=lambda: uow,
+            sink=sink,
+            dispatcher_id="test-outbox",
+            lease_seconds=30,
+            interval_seconds=1,
+        )
+
+        worked = await dispatcher.run_once()
+
+        self.assertTrue(worked)
+        self.assertEqual("FAILED", uow.outbox.release["new_status"])
+        self.assertEqual(
+            [
+                (
+                    "aiops.turn.planning_requested",
+                    {"domain_id": 7, "turn_id": str(turn_id)},
+                    "RuntimeError",
+                )
+            ],
+            sink.failures,
+        )
 
     async def test_concurrent_turns_allocate_unique_monotonic_numbers(
         self,

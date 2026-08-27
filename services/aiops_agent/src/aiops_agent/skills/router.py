@@ -21,6 +21,11 @@ _INTENT_ROUTER_PROMPT = """
 
 OBSERVE 查询事实；DIAGNOSE 解释异常原因；EXPLAIN 解释错误或机制；PLAN 制定方案；
 CHANGE 请求产生或执行变更；VERIFY 验证结果；INSPECT 进行综合检查。
+
+subject 必须使用受控语义：数据库当前运行和资源使用的综合概览使用
+DATABASE_OVERVIEW；Top SQL 使用 TOP_SQL；活动会话使用 ACTIVE_SESSION；阻塞链使用
+BLOCKING_CHAIN；表空间使用 TABLESPACE。用户要求综合查看数据库当前情况、负载、资源
+使用或健康概览时，使用 DATABASE_OVERVIEW，不要自行创造近义 subject。
 """.strip()
 
 

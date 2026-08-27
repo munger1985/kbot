@@ -378,6 +378,36 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(uow.artifacts))
         self.assertEqual(3, len(uow.tasks))
 
+    async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
+        uow = _PlanningUow()
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            intent_router=DbaIntentRouter(
+                _FakeModel(_intent_plan(DbaIntent.OBSERVE))
+            ),
+            skill_planner=DbaSkillPlanner(DbaSkillRegistry(())),
+            skill_compiler=SkillPlanCompiler(DbaSkillRegistry(())),
+            execution_snapshot_builder=SimpleNamespace(),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.fail_terminal(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)},
+            error_code="AIOPS_SKILL_UNAVAILABLE",
+            error_message="当前目录没有匹配的 Skill",
+        )
+
+        self.assertEqual("FAILED", result["status"])
+        self.assertEqual("FAILED", uow.turn.status)
+        self.assertEqual("PLANNING", uow.turn.error_domain)
+        self.assertEqual("AIOPS_SKILL_UNAVAILABLE", uow.turn.error_code)
+        self.assertEqual("FAILED", uow.run.status)
+        self.assertIsNotNone(uow.turn.completed_at)
+        self.assertIsNotNone(uow.run.completed_at)
+        self.assertEqual("turn.status", uow.events[-1].event_type)
+        self.assertEqual("FAILED", uow.events[-1].payload_json["status"])
+        self.assertEqual(1, uow.commit_count)
+
 
 class DbaSkillFrameworkTest(unittest.TestCase):
     def test_skill_handler_executes_only_frozen_tool_dag(self) -> None:
@@ -540,6 +570,48 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         )
         self.assertEqual(20, invocation["tools"][1]["parameters"]["limit"])
         self.assertEqual(64, len(invocation["tools"][1]["template_sha256"]))
+
+    def test_database_overview_combines_all_available_oracle_skills(
+        self,
+    ) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        intent = _intent_plan(DbaIntent.INSPECT).model_copy(
+            update={"subject": "DATABASE_OVERVIEW"}
+        )
+        capabilities = _capabilities().model_copy(
+            update={
+                "target_capabilities": (
+                    "DB_READONLY",
+                    "dynamic_performance_views",
+                    "dba_catalog_views",
+                ),
+                # 空权限清单表示运行时再验证，适用于尚未完成权限探测的 Target。
+                "privileges": (),
+            }
+        )
+
+        plan = DbaSkillPlanner(registry).plan(
+            intent=intent,
+            capabilities=capabilities,
+        )
+        compiled = SkillPlanCompiler(registry).compile(plan)
+
+        self.assertEqual(
+            {
+                "oracle.session.active",
+                "oracle.session.blocking_chain",
+                "oracle.sql.top_current",
+                "oracle.storage.tablespace",
+            },
+            {item.skill_id for item in plan.items},
+        )
+        self.assertEqual(4, len(compiled.invocation_task_keys))
 
     def test_unknown_privilege_inventory_defers_check_to_executor(self) -> None:
         diagnostics = DiagnosticRegistry.load()

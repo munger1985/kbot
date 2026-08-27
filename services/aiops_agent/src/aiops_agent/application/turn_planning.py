@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict
@@ -104,6 +104,92 @@ class TurnPlanningService:
             compiled=compiled,
             execution_snapshot=execution_snapshot,
             model_snapshot=model_snapshot,
+        )
+
+    async def fail_terminal(
+        self,
+        payload: dict,
+        *,
+        error_code: str,
+        error_message: str,
+    ) -> dict:
+        """把不可重试的规划错误收敛为用户可见终态。"""
+        domain_id = int(payload["domain_id"])
+        turn_id = UUID(str(payload["turn_id"]))
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(
+                domain_id=domain_id,
+                turn_id=turn_id,
+                lock=True,
+            )
+            if turn is None:
+                raise resource_not_found("Conversation Turn")
+            if turn.status in {
+                "COMPLETED",
+                "PARTIAL",
+                "FAILED",
+                "CANCELLED",
+            }:
+                return {"turn_id": str(turn.turn_id), "status": turn.status}
+            link = await uow.turns.get_run_link(
+                turn_id=turn_id,
+                purpose="PRIMARY",
+            )
+            run = (
+                await uow.runs.get_run(
+                    ops_run_id=link.ops_run_id,
+                    lock=True,
+                )
+                if link is not None
+                else None
+            )
+            now = datetime.now(UTC)
+            public_summary = self._terminal_failure_summary(error_code)
+            turn.status = "FAILED"
+            turn.error_domain = "PLANNING"
+            turn.error_code = error_code
+            turn.error_message = public_summary
+            turn.completed_at = now
+            if run is not None and run.status not in {
+                "COMPLETED",
+                "PARTIAL",
+                "FAILED",
+                "CANCELLED",
+                "EXPIRED",
+            }:
+                run.status = "FAILED"
+                run.error_code = error_code
+                run.error_message = error_message[:2000]
+                run.completed_at = now
+            await self._append_event(
+                uow,
+                turn,
+                event_type="turn.status",
+                payload={
+                    "status": "FAILED",
+                    "error_domain": "PLANNING",
+                    "error_code": error_code,
+                    "public_summary": public_summary,
+                },
+            )
+            await uow.commit()
+            return {"turn_id": str(turn.turn_id), "status": turn.status}
+
+    @staticmethod
+    def _terminal_failure_summary(error_code: str) -> str:
+        if error_code == "AIOPS_CAPABILITY_UNAVAILABLE":
+            return (
+                "当前 Agent 缺少完成该诊断所需的可用监控证据"
+                "或数据库只读能力。"
+            )
+        if error_code == "AIOPS_SKILL_UNAVAILABLE":
+            return (
+                "当前 Agent 尚未配置能够处理该问题的诊断能力，"
+                "请补充诊断能力或换一个更具体的问题。"
+            )
+        return (
+            "本轮问题无法生成安全、可执行的诊断计划，"
+            "请补充更明确的诊断目标。"
         )
 
     async def _prepare(self, payload: dict) -> TurnPlanningContext:
