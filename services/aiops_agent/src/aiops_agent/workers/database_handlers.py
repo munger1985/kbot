@@ -172,7 +172,7 @@ class DatabaseDiagnosticHandler:
             ),
             diagnostic_credential_id=UUID(snapshot["diagnostic_credential_id"]),
             tool_id=tool["tool_id"],
-            tool_version=tool["version"],
+            tool_version=tool["tool_version"],
             variant=tool["variant"],
             template_sha256=tool["template_sha256"],
             parameters_sha256=canonical_sha256(parameters),

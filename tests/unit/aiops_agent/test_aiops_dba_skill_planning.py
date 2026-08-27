@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.artifacts.database import (
     DatabaseDiagnosticResult,
@@ -14,6 +15,7 @@ from aiops_agent.contracts.artifacts.database import (
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.application.turn_planning import TurnPlanningService
 from aiops_agent.ports.model import StructuredModelResult
+from aiops_agent.workers.database_handlers import DatabaseDiagnosticHandler
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.skill_handlers import DbaSkillInvocationHandler
 from aiops_agent.skills import (
@@ -43,6 +45,7 @@ from platform_core.contracts.aiops.skills import (
     SourceCapabilitySnapshot,
 )
 from platform_core.contracts.aiops.types import DatabaseType
+from platform_core.contracts.aiops.executor import ReadDiagnosticResult
 from platform_core.identity import uuid7
 
 
@@ -180,6 +183,7 @@ class _PlanningUow:
         )
         self.run = SimpleNamespace(
             ops_run_id=uuid7(),
+            domain_id=7,
             agent_id=uuid7(),
             agent_version_id=self.version.agent_version_id,
             target_id=self.target.target_id,
@@ -201,6 +205,7 @@ class _PlanningUow:
         self.turns = SimpleNamespace(
             get_turn=self._get_turn,
             get_run_link=self._get_run_link,
+            get_run_link_by_ops_run_id=self._get_run_link_by_ops_run_id,
             list_messages=self._list_messages,
             list_recent_conversation_messages=self._recent,
             add_skill_invocation=self._add_invocation,
@@ -234,6 +239,11 @@ class _PlanningUow:
     async def _get_run_link(self, *, turn_id, purpose):
         if turn_id == self.turn.turn_id and purpose == "PRIMARY":
             return SimpleNamespace(ops_run_id=self.run.ops_run_id)
+        return None
+
+    async def _get_run_link_by_ops_run_id(self, *, ops_run_id):
+        if ops_run_id == self.run.ops_run_id:
+            return SimpleNamespace(turn_id=self.turn.turn_id)
         return None
 
     async def _list_messages(self, *, turn_id):
@@ -307,6 +317,25 @@ class _FrozenToolExecutor:
                 tool_id=tool_id,
                 detail="缺少最小只读权限",
             ),
+        )
+
+
+class _CapturingGrantCodec:
+    def __init__(self) -> None:
+        self.grant = None
+
+    def issue(self, grant):
+        self.grant = grant
+        return "g" * 64
+
+
+class _GapExecutorClient:
+    async def execute_diagnostic(self, request, *, trace_id):
+        del trace_id
+        return ReadDiagnosticResult(
+            executor_request_id=request.executor_request_id,
+            status="GAP",
+            error_code="PRIVILEGE_MISSING",
         )
 
 
@@ -407,6 +436,26 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("turn.status", uow.events[-1].event_type)
         self.assertEqual("FAILED", uow.events[-1].payload_json["status"])
         self.assertEqual(1, uow.commit_count)
+
+    async def test_terminal_task_failure_updates_chat_turn(self) -> None:
+        uow = _PlanningUow()
+        runtime = object.__new__(AIOpsRuntimeService)
+        now = datetime.now(UTC)
+
+        await runtime._project_chat_turn_failure(
+            uow=uow,
+            run=uow.run,
+            error_code="HANDLER_TERMINAL_FAILURE",
+            public_summary="诊断任务执行失败",
+            now=now,
+        )
+
+        self.assertEqual("FAILED", uow.turn.status)
+        self.assertEqual("EXECUTION", uow.turn.error_domain)
+        self.assertEqual("HANDLER_TERMINAL_FAILURE", uow.turn.error_code)
+        self.assertEqual(now, uow.turn.completed_at)
+        self.assertEqual("turn.status", uow.events[-1].event_type)
+        self.assertEqual("FAILED", uow.events[-1].payload_json["status"])
 
 
 class DbaSkillFrameworkTest(unittest.TestCase):
@@ -612,6 +661,68 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             {item.skill_id for item in plan.items},
         )
         self.assertEqual(4, len(compiled.invocation_task_keys))
+
+    def test_database_handler_consumes_frozen_tool_version(self) -> None:
+        codec = _CapturingGrantCodec()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="diagnostic:db.instance.identity",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-tool-version",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "database_diagnostics": {
+                    "domain_id": 7,
+                    "target_row_version": 1,
+                    "db_type": "ORACLE",
+                    "connection_profile": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB1",
+                        "tls_enabled": False,
+                    },
+                    "diagnostic_credential_id": str(uuid7()),
+                    "capability_snapshot_hash": "a" * 64,
+                    "tools": [
+                        {
+                            "tool_id": "db.instance.identity",
+                            "tool_version": "1.0.0",
+                            "variant": "oracle.default",
+                            "template_sha256": "b" * 64,
+                            "parameters": {},
+                            "limits": {
+                                "statement_timeout_seconds": 10,
+                                "max_result_rows": 10,
+                                "max_result_bytes": 1024,
+                                "max_columns": 16,
+                                "max_cell_chars": 1024,
+                            },
+                        }
+                    ],
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+            lease_token="lease-token",
+            lease_until=(datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+        )
+
+        result = self.run_async(
+            DatabaseDiagnosticHandler(
+                executor_client=_GapExecutorClient(),
+                grant_codec=codec,
+                grant_issuer="aiops-worker",
+                grant_audience="aiops-db-executor",
+                grant_ttl_seconds=30,
+            ).execute(context)
+        )
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual("1.0.0", codec.grant.tool_version)
 
     def test_unknown_privilege_inventory_defers_check_to_executor(self) -> None:
         diagnostics = DiagnosticRegistry.load()

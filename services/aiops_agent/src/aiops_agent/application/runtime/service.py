@@ -2041,6 +2041,47 @@ class AIOpsRuntimeService:
                 now=now,
             )
 
+    async def _project_chat_turn_failure(
+        self,
+        *,
+        uow,
+        run,
+        error_code: str,
+        public_summary: str,
+        now: datetime,
+    ) -> None:
+        """在 Task 终态失败事务内同步结束聊天 Turn。"""
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=run.ops_run_id
+        )
+        if link is None:
+            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+        turn = await uow.turns.get_turn(
+            domain_id=int(run.domain_id),
+            turn_id=link.turn_id,
+            lock=True,
+        )
+        if turn is None:
+            raise resource_not_found("Conversation Turn")
+        if turn.status in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}:
+            return
+        turn.status = "FAILED"
+        turn.error_domain = "EXECUTION"
+        turn.error_code = error_code
+        turn.error_message = public_summary
+        turn.completed_at = now
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="turn.status",
+            payload={
+                "status": "FAILED",
+                "error_domain": "EXECUTION",
+                "error_code": error_code,
+                "public_summary": public_summary,
+            },
+        )
+
     async def _project_skill_result(
         self,
         *,
@@ -3552,6 +3593,14 @@ class AIOpsRuntimeService:
                 run.error_code = command.error_code
                 run.error_message = policy.safe_message
                 run.completed_at = now
+                if run.workflow_kind == "CHAT_TURN":
+                    await self._project_chat_turn_failure(
+                        uow=uow,
+                        run=run,
+                        error_code=command.error_code,
+                        public_summary=policy.safe_message,
+                        now=now,
+                    )
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     event_type="run.failed",
