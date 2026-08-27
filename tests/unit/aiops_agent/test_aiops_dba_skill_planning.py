@@ -358,6 +358,12 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(3, len(uow.tasks))
         self.assertEqual(1, len(uow.invocations))
         self.assertEqual(
+            "test-model",
+            uow.run.plan_snapshot_json["answer_context"]["model"][
+                "technical_name"
+            ],
+        )
+        self.assertEqual(
             uow.invocations[0].manifest_hash,
             uow.turn.skill_plan_json["items"][0]["manifest_hash"],
         )
@@ -404,6 +410,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                             "skill_version": "1.0.0",
                             "manifest_hash": "c" * 64,
                             "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+                            "presentation_kind": "TABLE_AND_CHART",
                             "output_schema": "oracle.sql.top_current.output.v1",
                             "tools": [
                                 {
@@ -677,6 +684,14 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         self.assertEqual("SKILL_INVOKE", compiled.tasks[0].task_type)
         self.assertEqual("EVIDENCE_ASSESS", compiled.tasks[-2].task_type)
         self.assertEqual("ANSWER", compiled.tasks[-1].task_type)
+        self.assertEqual(
+            compiled.invocation_task_keys,
+            compiled.tasks[-2].input_artifact_keys,
+        )
+        self.assertEqual(
+            ("evidence:assess",),
+            compiled.tasks[-1].input_artifact_keys,
+        )
 
     def test_planner_rejects_unknown_skill_and_missing_capability(self) -> None:
         manifest = _manifest(

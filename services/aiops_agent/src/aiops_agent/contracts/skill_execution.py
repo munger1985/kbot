@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aiops_agent.contracts.artifacts.database import EvidenceGap
 from platform_core.contracts.aiops.conversation import MeasurementSemantics
+from platform_core.contracts.aiops.skills import PresentationPreference
 from platform_core.contracts.aiops.executor import DatabaseObservation
 
 
@@ -31,5 +32,6 @@ class DbaSkillResult(BaseModel):
     manifest_hash: str
     output_schema: str
     measurement_semantics: MeasurementSemantics
+    presentation_kind: PresentationPreference
     status: Literal["SUCCEEDED", "PARTIAL", "FAILED"]
     tool_outcomes: tuple[SkillToolOutcome, ...]

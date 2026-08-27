@@ -221,6 +221,7 @@ def create_runtime_handler_registry(
             grant_ttl_seconds=diagnostic_grant_ttl_seconds,
         )
         from .skill_handlers import DbaSkillInvocationHandler
+        from .turn_answer_handlers import DbaEvidenceAssessmentHandler
 
         manifests.extend(
             (
@@ -232,6 +233,13 @@ def create_runtime_handler_registry(
                     implementation=DbaSkillInvocationHandler(
                         database_handler=database_diagnostic_handler
                     ),
+                ),
+                HandlerManifest(
+                    handler_id="dba.evidence.assess",
+                    version="1",
+                    output_schema_version="DBA_SUFFICIENCY.v1",
+                    idempotent=True,
+                    implementation=DbaEvidenceAssessmentHandler(),
                 ),
                 HandlerManifest(
                     handler_id="database.scope",
@@ -265,6 +273,21 @@ def create_runtime_handler_registry(
                 ),
             )
         )
+    if diagnosis_model_client is not None and diagnosis_prompt_registry is not None:
+        from .turn_answer_handlers import DbaAnswerComposeHandler
+
+        manifests.append(
+            HandlerManifest(
+                handler_id="dba.answer.compose",
+                version="1",
+                output_schema_version="AIOPS_TURN_RESULT.v1",
+                idempotent=True,
+                implementation=DbaAnswerComposeHandler(
+                    model_client=diagnosis_model_client,
+                    prompts=diagnosis_prompt_registry,
+                ),
+            )
+        )
     if (
         diagnosis_model_client is not None
         and diagnosis_prompt_registry is not None
@@ -286,7 +309,6 @@ def create_runtime_handler_registry(
             RootCauseAssessmentHandler,
             SolutionDraftHandler,
         )
-
         manifests.extend(
             (
                 HandlerManifest(

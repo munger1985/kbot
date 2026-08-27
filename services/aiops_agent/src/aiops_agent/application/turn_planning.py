@@ -103,6 +103,7 @@ class TurnPlanningService:
             skill_plan=skill_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
+            model_snapshot=model_snapshot,
         )
 
     async def _prepare(self, payload: dict) -> TurnPlanningContext:
@@ -221,6 +222,7 @@ class TurnPlanningService:
         skill_plan,
         compiled,
         execution_snapshot: dict,
+        model_snapshot: dict,
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -338,6 +340,11 @@ class TurnPlanningService:
                 "skill_catalog_hash": skill_plan.catalog_hash,
                 "intent_model_receipt": intent_receipt.model_dump(mode="json"),
                 "skill_execution": execution_snapshot,
+                "answer_context": {
+                    "question": context.question,
+                    "intent": intent_plan.model_dump(mode="json"),
+                    "model": dict(model_snapshot),
+                },
             }
             await self._append_event(
                 uow,

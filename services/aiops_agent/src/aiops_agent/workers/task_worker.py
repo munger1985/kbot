@@ -241,6 +241,7 @@ class AIOpsTaskWorker:
             "GROUNDING_VERIFICATION.v1",
             "SOLUTION_DRAFT.v1",
             "DIAGNOSIS_REPORT_DRAFT.v1",
+            "AIOPS_TURN_RESULT.v1",
         }:
             return "MODEL_INFERENCE"
         return "SOURCE_VERIFIED"

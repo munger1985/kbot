@@ -148,6 +148,7 @@ class SkillExecutionSnapshotBuilder:
                 "skill_version": item.skill_version,
                 "manifest_hash": item.manifest_hash,
                 "measurement_semantics": item.measurement_semantics,
+                "presentation_kind": manifest.presentation_kind,
                 "output_schema": manifest.output_schema,
                 "tools": tools,
             }

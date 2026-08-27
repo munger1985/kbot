@@ -94,6 +94,7 @@ class DbaSkillInvocationHandler:
             manifest_hash=invocation["manifest_hash"],
             output_schema=invocation["output_schema"],
             measurement_semantics=invocation["measurement_semantics"],
+            presentation_kind=invocation["presentation_kind"],
             status=status,
             tool_outcomes=tuple(outcomes),
         )
