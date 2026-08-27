@@ -5,6 +5,8 @@
 本文把产品层的
 [AIOps Agent 专业 DBA 对话诊断设计](../product/aiops-agent-chat-diagnosis.md)
 下钻为可实施的服务、Oracle 表结构、领域对象、API、SSE、Skill、事务和验收设计。
+现有代码差距、改造边界和分阶段落地顺序见
+[AIOps Agent 专业 DBA 对话诊断改造方案与实施计划](../proposals/aiops-agent-chat-implementation-plan.md)。
 本文只覆盖人工发起的智能诊断，以及从告警或巡检结果进入后的持续对话；自动告警诊断
 和日常巡检继续使用各自 Blueprint，但共享 Artifact、Skill、Change Proposal 和执行器。
 
@@ -121,6 +123,7 @@ Agent创建时Target仍可不选，这表示Agent没有数据库直连能力，�
 | --- | --- | --- |
 | `TITLE` | `VARCHAR2(256 CHAR)` | 首轮提交后由服务端生成，可由用户修改 |
 | `LAST_TURN_NO` | `NUMBER(19)` | 默认0，只在锁定Conversation后递增 |
+| `LAST_MESSAGE_NO` | `NUMBER(19)` | 默认0，只在锁定Conversation后递增 |
 | `UPDATED_BY` | `VARCHAR2(256 CHAR)` | 最近修改者 |
 
 `STATUS`只允许`ACTIVE/RESOLVED/ARCHIVED`。删除`WAITING_EVIDENCE`。在Agent Version建立
@@ -478,11 +481,14 @@ Snapshot和Source Capability Snapshot；输出`DBA_SKILL_PLAN.v1`，其中每个
 
 1. 校验Domain、Agent授权、Agent状态和版本；
 2. 解析或校验Target候选；
-3. 锁定Conversation，按`LAST_TURN_NO + 1`创建Turn；
-4. 写入User Message、`turn.created`和Outbox任务；
+3. 锁定Conversation，分别按`LAST_TURN_NO + 1`和`LAST_MESSAGE_NO + 1`分配Turn与
+   Message序号；
+4. 写入Turn、User Message、`turn.created`和Outbox任务；
 5. 提交后返回Turn Receipt。
 
 不得在事务中调用LLM、监控源或数据库。`IDEMPOTENCY_KEY`重复时返回已有Turn。
+不得以`MAX(sequence_no) + 1`分配序号；所有消息，包括Assistant Message和系统消息，
+都必须在锁定Conversation后递增`LAST_MESSAGE_NO`，避免并发排队Turn产生重复序号。
 
 ### 9.2 规划
 
