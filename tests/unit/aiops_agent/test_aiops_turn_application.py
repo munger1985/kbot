@@ -11,6 +11,7 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.skills import SkillUnavailableError
 from aiops_agent.workers.outbox_dispatcher import (
     AIOpsDomainOutboxSink,
@@ -232,6 +233,19 @@ class _TurnRepository:
             None,
         )
 
+    async def find_active(self, *, conversation_id):
+        terminal = {
+            "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
+        }
+        return next(
+            (
+                row for row in reversed(self.turns)
+                if row.conversation_id == conversation_id
+                and row.status not in terminal
+            ),
+            None,
+        )
+
 
 class _Uow:
     def __init__(self) -> None:
@@ -261,6 +275,7 @@ class _Uow:
         self.conversations = SimpleNamespace(
             add_conversation=self._add_conversation,
             get_conversation=self._get_conversation,
+            list_conversations=self._list_conversations,
         )
 
     async def __aenter__(self):
@@ -314,6 +329,18 @@ class _Uow:
             ),
             None,
         )
+
+    async def _list_conversations(
+        self, *, domain_id, created_by, agent_id=None, limit=50
+    ):
+        rows = [
+            row for row in reversed(self.conversation_rows)
+            if int(row.domain_id) == domain_id
+            and row.created_by == created_by
+            and row.status != "ARCHIVED"
+            and (agent_id is None or row.agent_id == agent_id)
+        ]
+        return rows[:limit]
 
     async def commit(self):
         self.commit_count += 1
@@ -616,6 +643,42 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], uow.turns.messages)
         self.assertEqual([], uow.turns.events)
         self.assertEqual(0, uow.commit_count)
+
+    async def test_archive_completed_conversation_removes_it_from_history(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service, receipt = await self._start(uow)
+        uow.turns.turns[0].status = "COMPLETED"
+
+        archived = await service.archive_conversation(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            actor_id="dba@example.com",
+        )
+        rows = await service.list_conversations(
+            domain_id=7,
+            actor_id="dba@example.com",
+            agent_id=uow.agent.agent_id,
+        )
+
+        self.assertEqual("ARCHIVED", archived["status"])
+        self.assertEqual([], rows)
+        self.assertEqual(2, uow.commit_count)
+
+    async def test_archive_rejects_conversation_with_active_turn(self) -> None:
+        uow = _Uow()
+        service, receipt = await self._start(uow)
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.archive_conversation(
+                domain_id=7,
+                conversation_id=UUID(receipt["conversation_id"]),
+                actor_id="dba@example.com",
+            )
+
+        self.assertEqual("OPS_STATE_CONFLICT", raised.exception.code)
+        self.assertEqual("ACTIVE", uow.conversation_rows[0].status)
 
     async def test_empty_flow_reaches_replayable_terminal_turn(self) -> None:
         uow = _Uow()

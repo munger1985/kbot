@@ -140,7 +140,15 @@
   function renderConversationList() {
     const list = $("conversation-list");
     if (!conversations.length) { list.innerHTML = '<li class="km-empty">当前 Agent 暂无会话</li>'; return; }
-    list.innerHTML = conversations.map((row) => `<li><button data-id="${KBotKmShell.escapeHtml(row.conversation_id)}" aria-current="${active?.conversation_id === row.conversation_id}"><span class="km-cell-main">${KBotKmShell.escapeHtml(row.title || "未命名会话")}</span><span class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.last_active_at))}</span></button></li>`).join("");
+    list.innerHTML = conversations.map((row) => `<li class="km-conversation-row"><button class="km-conversation-select" data-id="${KBotKmShell.escapeHtml(row.conversation_id)}" aria-current="${active?.conversation_id === row.conversation_id}"><span class="km-cell-main">${KBotKmShell.escapeHtml(row.title || "未命名会话")}</span><span class="km-cell-sub">${KBotKmShell.escapeHtml(KBotKmShell.formatDate(row.last_active_at))}</span></button><button class="km-conversation-delete" data-delete-id="${KBotKmShell.escapeHtml(row.conversation_id)}" aria-label="删除会话 ${KBotKmShell.escapeHtml(row.title || "未命名会话")}" title="删除会话">删除</button></li>`).join("");
+  }
+
+  async function deleteConversation(row) {
+    if (!confirm(`确认永久删除会话“${row.title || "未命名会话"}”吗？\n\n会话内容删除后无法恢复；正在执行的会话不能删除。`)) return;
+    await KBotKmApi.request(`${base}/conversations/${row.conversation_id}?expected_row_version=${row.row_version}`, { method: "DELETE" });
+    if (String(active?.conversation_id) === String(row.conversation_id)) active = null;
+    KBotKmShell.toast("会话已删除", "success");
+    await loadConversations();
   }
   function renderEmptyChat() {
     $("conversation-title").textContent = "请选择或创建会话";
@@ -420,7 +428,17 @@
   }
   window.addEventListener("DOMContentLoaded", () => {
     $("chat-agent").addEventListener("change", () => loadConversations()); $("new-conversation").addEventListener("click", createConversation); $("refresh-conversations").addEventListener("click", () => loadConversations(active?.conversation_id)); $("chat-form").addEventListener("submit", send);
-    $("conversation-list").addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); const row = conversations.find((item) => String(item.conversation_id) === button?.dataset.id); if (row) selectConversation(row).catch((error) => KBotKmShell.showError(error)); });
+    $("conversation-list").addEventListener("click", (event) => {
+      const deleteButton = event.target.closest("[data-delete-id]");
+      if (deleteButton) {
+        const row = conversations.find((item) => String(item.conversation_id) === deleteButton.dataset.deleteId);
+        if (row) deleteConversation(row).catch((error) => KBotKmShell.showError(error, "会话删除失败"));
+        return;
+      }
+      const button = event.target.closest("[data-id]");
+      const row = conversations.find((item) => String(item.conversation_id) === button?.dataset.id);
+      if (row) selectConversation(row).catch((error) => KBotKmShell.showError(error));
+    });
     $("chat-stream").addEventListener("click", (event) => {
       const copyButton = event.target.closest("[data-copy-code]");
       if (copyButton) { KBotMarkdown.copyCode(copyButton); return; }

@@ -28,6 +28,7 @@ class ConversationRepository(AIOpsRepository):
         statement = select(OpsConversationEntity).where(
             OpsConversationEntity.domain_id == domain_id,
             OpsConversationEntity.created_by == created_by,
+            OpsConversationEntity.status != "ARCHIVED",
         )
         if agent_id is not None:
             statement = statement.where(OpsConversationEntity.agent_id == agent_id)

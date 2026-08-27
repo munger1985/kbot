@@ -183,8 +183,43 @@ class ConversationTurnService:
                 domain_id=domain_id,
                 conversation_id=conversation_id,
             )
+            if (
+                row is None
+                or row.created_by != actor_id
+                or row.status == "ARCHIVED"
+            ):
+                raise resource_not_found("Conversation")
+            return self._conversation_summary(row)
+
+    async def archive_conversation(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        actor_id: str,
+    ) -> dict[str, Any]:
+        """从用户历史中移除会话，同时保留诊断和执行审计事实。"""
+        async with self._uow_factory() as uow:
+            row = await uow.conversations.get_conversation(
+                domain_id=domain_id,
+                conversation_id=conversation_id,
+                lock=True,
+            )
             if row is None or row.created_by != actor_id:
                 raise resource_not_found("Conversation")
+            if row.status == "ARCHIVED":
+                return self._conversation_summary(row)
+            active_turn = await uow.turns.find_active(
+                conversation_id=conversation_id
+            )
+            if active_turn is not None:
+                raise state_conflict(
+                    "会话仍有正在执行的诊断，请等待完成或先取消当前诊断"
+                )
+            row.status = "ARCHIVED"
+            row.updated_by = actor_id
+            row.updated_at = datetime.now(UTC)
+            await uow.commit()
             return self._conversation_summary(row)
 
     async def list_turns(

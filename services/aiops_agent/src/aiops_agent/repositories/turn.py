@@ -137,6 +137,29 @@ class TurnRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def find_active(
+        self, *, conversation_id: UUID
+    ) -> OpsConversationTurnEntity | None:
+        """返回会话中尚未结束的 Turn，用于保护会话生命周期操作。"""
+        statement = (
+            select(OpsConversationTurnEntity)
+            .where(
+                OpsConversationTurnEntity.conversation_id == conversation_id,
+                OpsConversationTurnEntity.status.not_in(
+                    (
+                        "WAITING_USER",
+                        "COMPLETED",
+                        "PARTIAL",
+                        "FAILED",
+                        "CANCELLED",
+                    )
+                ),
+            )
+            .order_by(OpsConversationTurnEntity.turn_no.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_turns(
         self,
         *,

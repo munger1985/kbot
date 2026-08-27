@@ -83,6 +83,21 @@ async def get_conversation(
     )
 
 
+@router.delete("/{conversation_id}", response_model=ConversationSummary)
+async def archive_conversation(
+    conversation_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    """从聊天历史移除会话，关联诊断和审计事实继续保留。"""
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.conversation_turn_service.archive_conversation(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        actor_id=actor_id,
+    )
+
+
 @router.post(
     "/{conversation_id}/turns",
     status_code=202,

@@ -435,6 +435,46 @@
         "title": "AIOpsCollectionStatusPayload",
         "type": "object"
       },
+      "AIOpsConversationTurnPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AIOpsConversationTurnPayload",
+        "type": "object"
+      },
       "AIOpsLoginPayload": {
         "additionalProperties": false,
         "properties": {
@@ -10362,46 +10402,6 @@
         ],
         "title": "WorkflowKind",
         "type": "string"
-      },
-      "main_api__api__aiops_app__ConversationTurnPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "message": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          },
-          "source_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Run Id"
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Id"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ConversationTurnPayload",
-        "type": "object"
       }
     }
   },
@@ -10881,6 +10881,47 @@
       }
     },
     "/api/v1/apps/aiops/conversations/{conversation_id}": {
+      "delete": {
+        "operationId": "archive_conversation_api_v1_apps_aiops_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Conversation",
+        "tags": [
+          "AIOps App"
+        ]
+      },
       "get": {
         "operationId": "get_conversation_api_v1_apps_aiops_conversations__conversation_id__get",
         "parameters": [
@@ -11019,7 +11060,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/main_api__api__aiops_app__ConversationTurnPayload"
+                "$ref": "#/components/schemas/AIOpsConversationTurnPayload"
               }
             }
           },

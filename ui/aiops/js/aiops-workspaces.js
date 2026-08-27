@@ -155,18 +155,75 @@
     const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
     await renderConversation(conversation, turns);
+    history.replaceState(null, "", `./chat.html?conversation=${encodeURIComponent(id)}`);
     document.querySelectorAll(".ops-workspace-item").forEach((button) => { button.setAttribute("aria-current", String(button.dataset.id === id)); });
   }
 
-  async function loadConversationList(preferredId) {
-    const selectedAgent = document.getElementById("agent-select").value;
-    const query = selectedAgent ? `?agent_id=${encodeURIComponent(selectedAgent)}` : "";
-    const rows = await KBotAIOpsAuth.request(`${api}/conversations${query}`);
+  function resetConversationView({ agentSelected = false } = {}) {
+    state.conversation = null;
+    document.getElementById("conversation-title").textContent = agentSelected
+      ? "开始一次数据库诊断"
+      : "请先选择 Agent";
+    document.getElementById("conversation-context").textContent = agentSelected
+      ? "可以选择历史会话，或在下方发起一次新诊断。"
+      : "选择 Agent 后，才会显示该 Agent 的会话历史。";
+    document.getElementById("message-list").innerHTML = agentSelected
+      ? '<div class="ops-empty">请在下方描述需要诊断的问题。</div>'
+      : '<div class="ops-empty">请选择 Agent 以查看历史并开始诊断。</div>';
+  }
+
+  function setComposerAvailability(enabled) {
+    const form = document.getElementById("conversation-form");
+    form.elements.message.disabled = !enabled;
+    form.querySelector('button[type="submit"]').disabled = !enabled;
+  }
+
+  function clearConversationUrl() {
+    history.replaceState(null, "", "./chat.html");
+  }
+
+  async function archiveConversation(id, title) {
+    if (!confirm(`确认删除会话“${title || "未命名会话"}”吗？\n\n会话将从聊天历史中移除；关联的诊断、证据和变更审计记录仍会保留。`)) return;
+    await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (String(state.conversation?.conversation_id) === String(id)) {
+      clearConversationUrl();
+      resetConversationView({ agentSelected: true });
+    }
+    shell.toast("会话已从历史中移除");
+    await loadConversationList();
+  }
+
+  function renderConversationList(rows) {
     const list = document.getElementById("conversation-list");
-    list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-workspace-item" data-id="${esc(item.conversation_id)}"><strong>${esc(item.title)}</strong><small>${esc(item.source_type)} · ${esc(shell.fmt(item.updated_at))}</small></button>`).join("") : '<div class="ops-empty">还没有诊断会话</div>';
-    list.querySelectorAll("button").forEach((button) => { button.onclick = () => loadConversation(button.dataset.id).catch((error) => shell.toast(error.message)); });
-    const id = preferredId || new URLSearchParams(location.search).get("conversation");
-    if (id) await loadConversation(id);
+    list.innerHTML = rows.length ? rows.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(item.source_type)} · ${esc(shell.fmt(item.updated_at))}</small></button><button class="ops-workspace-delete" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="删除会话 ${esc(item.title || "未命名会话")}" title="删除会话">删除</button></div>`).join("") : '<div class="ops-empty">当前 Agent 还没有诊断会话</div>';
+    list.querySelectorAll(".ops-workspace-item").forEach((button) => {
+      button.onclick = () => loadConversation(button.dataset.id).catch((error) => shell.toast(error.message));
+    });
+    list.querySelectorAll(".ops-workspace-delete").forEach((button) => {
+      button.onclick = () => archiveConversation(button.dataset.deleteId, button.dataset.deleteTitle).catch((error) => shell.toast(error.message));
+    });
+  }
+
+  async function loadConversationList(preferredId) {
+    const select = document.getElementById("agent-select");
+    const requestedId = preferredId || new URLSearchParams(location.search).get("conversation");
+    if (!select.value && requestedId) await loadConversation(requestedId);
+    const selectedAgent = select.value;
+    const list = document.getElementById("conversation-list");
+    if (!selectedAgent) {
+      list.innerHTML = '<div class="ops-empty">请先选择 Agent 查看其会话历史</div>';
+      setComposerAvailability(false);
+      resetConversationView();
+      return;
+    }
+    setComposerAvailability(true);
+    const rows = await KBotAIOpsAuth.request(`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}`);
+    renderConversationList(rows);
+    if (requestedId && String(state.conversation?.conversation_id) !== String(requestedId)) {
+      await loadConversation(requestedId);
+    }
   }
 
   function typingUnits(value) {
@@ -315,8 +372,16 @@
     const select = document.getElementById("agent-select");
     const rows = await agents();
     select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
-    select.onchange = () => { state.conversation = null; loadConversationList().catch((error) => shell.toast(error.message)); };
-    document.getElementById("new-conversation").onclick = () => { state.conversation = null; history.replaceState(null, "", "./chat.html"); document.getElementById("message-list").innerHTML = '<div class="ops-empty">请在下方描述需要诊断的问题。</div>'; document.getElementById("conversation-title").textContent = "开始一次数据库诊断"; };
+    select.onchange = () => {
+      clearConversationUrl();
+      resetConversationView({ agentSelected: Boolean(select.value) });
+      loadConversationList().catch((error) => shell.toast(error.message));
+    };
+    document.getElementById("new-conversation").onclick = () => {
+      if (!select.value) return shell.toast("请先选择 Agent");
+      clearConversationUrl();
+      resetConversationView({ agentSelected: true });
+    };
     document.getElementById("conversation-form").onsubmit = submitConversation;
     document.getElementById("evidence-file").onchange = (event) => { state.selectedFile = event.target.files[0] || null; document.getElementById("upload-preview").textContent = state.selectedFile ? `待上传：${state.selectedFile.name}` : ""; };
     await loadConversationList();

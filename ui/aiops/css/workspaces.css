@@ -4,10 +4,14 @@
 .ops-workspace-list-head h2 { margin: 0 0 12px; font: 650 17px Georgia, "Songti SC", serif; }
 .ops-workspace-list-head select { width: 100%; min-height: 38px; padding: 7px; }
 .ops-workspace-items { display: grid; max-height: 610px; overflow: auto; }
+.ops-workspace-row { position: relative; border-bottom: 1px solid #e6e9ef; }
 .ops-workspace-item { display: block; width: 100%; padding: 13px 16px; border: 0; border-bottom: 1px solid #e6e9ef; border-radius: 0; background: transparent; text-align: left; }
+.ops-workspace-row .ops-workspace-item { padding-right: 58px; border-bottom: 0; }
 .ops-workspace-item:hover, .ops-workspace-item[aria-current="true"] { background: #fff; box-shadow: inset 3px 0 var(--accent); }
 .ops-workspace-item strong, .ops-workspace-item small { display: block; }
 .ops-workspace-item small { margin-top: 4px; color: var(--muted); }
+.ops-workspace-delete { position: absolute; top: 50%; right: 9px; min-height: 28px; padding: 3px 7px; border-color: transparent; color: var(--muted); background: transparent; transform: translateY(-50%); font-size: 11px; }
+.ops-workspace-delete:hover { border-color: #d8a7a7; color: #9a3030; background: #fff5f5; }
 .ops-conversation { display: grid; grid-template-rows: auto minmax(420px, 1fr) auto; min-width: 0; }
 .ops-conversation-head { padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .ops-conversation-head h2 { margin: 0; font: 650 18px Georgia, "Songti SC", serif; }

@@ -189,6 +189,10 @@ pre.km-json { max-height: 430px; margin: 0; padding: 14px; overflow: auto; color
 .km-list { margin: 0; padding: 0; list-style: none; }
 .km-list button { width: 100%; min-height: auto; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--km-line); border-radius: 0; text-align: left; background: transparent; }
 .km-list button[aria-current="true"] { background: #f3e9df; }
+.km-list .km-conversation-row { position: relative; border-bottom: 1px solid var(--km-line); }
+.km-list .km-conversation-select { padding-right: 58px; border-bottom: 0; }
+.km-list .km-conversation-delete { position: absolute; top: 50%; right: 8px; width: auto; padding: 4px 7px; border: 1px solid transparent; color: var(--km-muted); transform: translateY(-50%); font-size: 11px; }
+.km-list .km-conversation-delete:hover { border-color: #d8a7a7; color: #963737; background: #fff5f5; }
 .km-chat-stream { min-height: 360px; max-height: calc(100vh - 370px); overflow: auto; padding: 20px; }
 .km-message { max-width: 78%; margin: 0 0 18px; }
 .km-message.user { margin-left: auto; }

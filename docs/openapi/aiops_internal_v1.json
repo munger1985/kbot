@@ -11052,6 +11052,48 @@
       }
     },
     "/internal/v1/aiops/conversations/{conversation_id}": {
+      "delete": {
+        "description": "从聊天历史移除会话，关联诊断和审计事实继续保留。",
+        "operationId": "archive_conversation_internal_v1_aiops_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Conversation",
+        "tags": [
+          "AIOps Conversations"
+        ]
+      },
       "get": {
         "operationId": "get_conversation_internal_v1_aiops_conversations__conversation_id__get",
         "parameters": [

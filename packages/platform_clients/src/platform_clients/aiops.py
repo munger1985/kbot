@@ -1262,6 +1262,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def archive_conversation(
+        self, conversation_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "DELETE",
+            f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}",
+            auth_context=auth_context,
+        )
+
     async def create_conversation_turn(
         self,
         conversation_id: UUID,

@@ -45,6 +45,7 @@ APP_API_SCOPE_PERMISSIONS = {
         "aiops:agent:read": "aiops:use",
         "aiops:chat:write": "aiops:use",
         "aiops:conversation:read": "aiops:use",
+        "aiops:conversation:delete": "aiops:use",
         "aiops:run:read": "aiops:use",
     },
 }
@@ -501,6 +502,7 @@ class AppApiKeyService:
                 ("GET", r"agents(?:/[0-9a-fA-F-]{36})?", "aiops:agent:read"),
                 ("POST", r"conversations(?:/.*)?", "aiops:chat:write"),
                 ("GET", r"conversations(?:/.*)?", "aiops:conversation:read"),
+                ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "aiops:conversation:delete"),
                 ("POST", r"runs(?:/[0-9a-fA-F-]{36}/cancel)?", "aiops:chat:write"),
                 ("GET", r"runs/[0-9a-fA-F-]{36}(?:/.*)?", "aiops:run:read"),
                 ("GET", r"reports(?:/[0-9a-fA-F-]{36})?", "aiops:run:read"),

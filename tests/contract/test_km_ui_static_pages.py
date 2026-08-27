@@ -161,6 +161,15 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('run.status !== "COMPLETED"', source)
         self.assertIn("run.error_message", source)
 
+    def test_km_chat_exposes_existing_conversation_delete_contract(self):
+        source = (
+            ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("deleteConversation", source)
+        self.assertIn("expected_row_version=${row.row_version}", source)
+        self.assertIn('method: "DELETE"', source)
+        self.assertIn("会话内容删除后无法恢复", source)
+
     def test_km_chat_streams_answer_deltas_as_accumulated_markdown(self):
         source = (
             ROOT / "ui" / "km" / "js" / "km-chat-v6.js"
@@ -189,7 +198,7 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertIn('message.classList.add("is-typing")', source)
         self.assertIn("onEvent: (item) => applyRunEvent(pending, item)", source)
         self.assertIn('content.setAttribute("aria-live", "polite")', source)
-        self.assertIn("km-chat-v6.js?v=20260824_2", html)
+        self.assertIn("km-chat-v6.js?v=20260827_1", html)
 
     def test_km_chat_uses_interactive_paper_style_citations(self):
         source = (

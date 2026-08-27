@@ -139,7 +139,7 @@ class ConversationStartPayload(_Payload):
     source_run_id: UUID | None = None
 
 
-class ConversationTurnPayload(_Payload):
+class AIOpsConversationTurnPayload(_Payload):
     message: str = Field(min_length=1, max_length=32000)
     target_id: UUID | None = None
     source_run_id: UUID | None = None
@@ -613,6 +613,19 @@ async def get_conversation(conversation_id: UUID, request: Request):
     return conversation
 
 
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=ConversationSummary,
+)
+async def archive_conversation(conversation_id: UUID, request: Request):
+    require_app_api_scope(request, "aiops:conversation:delete")
+    await _conversation_with_access(request, conversation_id)
+    return await _client(request).archive_conversation(
+        conversation_id,
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.post(
     "/conversations/{conversation_id}/turns",
     status_code=202,
@@ -620,7 +633,7 @@ async def get_conversation(conversation_id: UUID, request: Request):
 )
 async def create_conversation_turn(
     conversation_id: UUID,
-    payload: ConversationTurnPayload,
+    payload: AIOpsConversationTurnPayload,
     request: Request,
     idempotency_key: IdempotencyKey,
 ):

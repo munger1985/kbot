@@ -293,6 +293,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('"WAITING_USER", "COMPLETED"', workspace)
         self.assertIn("await followTurn(receipt.conversation_id", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
+        self.assertIn("请先选择 Agent 查看其会话历史", workspace)
+        self.assertIn("?agent_id=${encodeURIComponent(selectedAgent)}", workspace)
+        self.assertIn("archiveConversation", workspace)
+        self.assertIn('method: "DELETE"', workspace)
+        self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
             "dashboard.html", "runs.html", "reports.html",

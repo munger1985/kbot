@@ -293,6 +293,9 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
         self.assertTrue(hasattr(AIOpsManagementClient, "create_run"))
         self.assertTrue(hasattr(AIOpsManagementClient, "command"))
         self.assertTrue(hasattr(AIOpsManagementClient, "create_target"))
+        self.assertTrue(
+            hasattr(AIOpsManagementClient, "archive_conversation")
+        )
         self.assertFalse(
             hasattr(AIOpsDelegationClient, "command")
         )

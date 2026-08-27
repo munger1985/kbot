@@ -177,6 +177,15 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual("APP_API_KEY_SCOPE_DENIED", denied.exception.code)
 
+    def test_aiops_conversation_delete_has_an_explicit_scope(self):
+        scope = AppApiKeyService._required_scope(
+            app_id="aiops",
+            method="DELETE",
+            path=f"/api/v1/apps/aiops/conversations/{AGENT_ID}",
+        )
+
+        self.assertEqual("aiops:conversation:delete", scope)
+
 
 if __name__ == "__main__":
     unittest.main()
