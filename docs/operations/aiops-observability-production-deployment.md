@@ -299,9 +299,10 @@ curl -fsS http://127.0.0.1:9093/-/ready
 [configure_prometheus_aiops_oracle.sh](../../scripts/deployment/configure_prometheus_aiops_oracle.sh)。
 Target绑定和`mapping_overrides`仍需在AIOps App中逐库登记。
 
-AIOps App中的Prometheus和Alertmanager Diagnostic Source应把Target识别标签配置为
-`target_key`；Source Binding Locator使用对应值。`instance`同时被设置为同一值，供
-现有Oracle扩展指标脚本和常规PromQL兼容使用。
+AIOps App中的Prometheus Source Binding需要分别填写数据库指标的`instance`值和该
+数据库所在主机的Node Exporter `target_key`；例如数据库为`oracle-dev-190`、主机为
+`dev-db-host-190`。Alertmanager继续使用数据库`target_key`。数据库`instance`与主机
+`target_key`不得默认视为相同值。
 
 ## 9. 当前生产边界
 

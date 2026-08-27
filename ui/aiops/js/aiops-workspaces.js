@@ -384,7 +384,8 @@
       panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">正在建立诊断计划…</div>');
       const progress = document.getElementById("live-progress");
       await followTurn(receipt.conversation_id, receipt.turn_id, progress);
-      await loadConversationList(receipt.conversation_id);
+      await loadConversation(receipt.conversation_id);
+      await loadConversationList();
     } catch (error) { shell.toast(error.message); } finally { button.disabled = false; }
   }
 

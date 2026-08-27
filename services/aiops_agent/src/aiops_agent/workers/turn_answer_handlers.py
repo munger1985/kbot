@@ -355,6 +355,10 @@ class DbaAnswerComposeHandler:
                 "intent": dict(answer_context.get("intent", {})),
                 "sufficiency_status": str(assessment.status),
                 "limitations": list(assessment.reasons),
+                "evidence_gaps": [
+                    item.model_dump(mode="json")
+                    for item in assessment.gaps
+                ],
                 "evidence": evidence_payload,
                 "allowed_citation_labels": list(labels),
                 "previous_invalid_answer": answer or None,

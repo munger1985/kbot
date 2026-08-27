@@ -347,6 +347,8 @@ Oracle生产验证阶段至少补齐：
 编排两类证据，并在进入回答阶段前共同经过证据屏障：
 
 - Oracle只读Skill负责实例身份、当前会话、阻塞链、实时Top SQL和表空间等数据库内部事实；
+- Oracle实例概览Skill还应读取短窗口性能指标、SGA/PGA、非Idle等待类累计值以及归档模式和
+  FRA使用情况；累计等待必须明确标记为实例启动以来的口径；
 - Agent绑定且与Target有效映射的Prometheus负责最近一小时的可用性、连接、事务吞吐、
   响应延迟、数据库CPU和存储趋势；Node Exporter补充主机CPU、内存、文件系统、磁盘I/O
   忙碌率和网络吞吐。
@@ -355,6 +357,10 @@ Oracle生产验证阶段至少补齐：
 生成一个`monitor.observe`任务，输出`OBSERVATION_SET.v1`；充分性判断把同一监控源的多项
 指标汇总为一个可折叠诊断依据，保留指标、维度、最新值、平均值、最大值、单位、窗口和
 覆盖率。Top SQL文本与执行统计继续来自数据库只读Skill，不由Prometheus替代。
+
+Prometheus Source Binding需要分别保存数据库指标定位和主机定位。`source_locator_key`对应
+数据库`instance`，`source_locator.host_target_key`对应Node Exporter的`target_key`；两者
+不得假定相同。单机开发环境例如可以分别为`oracle-dev-190`和`dev-db-host-190`。
 
 只有真正执行监控查询后返回无样本、查询失败，或者冻结时确认监控源不可用，回答才可以
 声明对应监控缺口。不得仅凭数据库Skill没有返回CPU、I/O等字段就推断Prometheus无数据，

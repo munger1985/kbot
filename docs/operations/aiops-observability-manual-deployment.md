@@ -710,7 +710,8 @@ Oracle在测试时间窗没有 Alert Log时，可以得到成功但空结果；�
    `http://127.0.0.1:19090`，或填写 AIOps服务实际可达地址；
 3. 创建 Loki Diagnostic Source，Endpoint填写 `http://127.0.0.1:3100`，或填写受控
    反向代理地址；
-4. 将 Prometheus Source绑定到 Oracle Target，Locator填写 `oracle-dev-01`；
+4. 将 Prometheus Source绑定到 Oracle Target，数据库Locator填写`oracle-dev-01`，
+   Node Exporter target_key填写该数据库所在主机的Prometheus标签值；两者可以不同；
 5. 审核 `/etc/prometheus/rules/kbot-aiops-query-overrides.json`，将其中
    `prometheus_queries` 写入该 Source Binding的 `mapping_overrides`；
 6. 将 Loki Source绑定到同一 Target，绑定标签使用

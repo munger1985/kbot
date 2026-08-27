@@ -77,7 +77,7 @@ class FailingDriver:
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(19, len(registry.tools))
+        self.assertEqual(23, len(registry.tools))
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools

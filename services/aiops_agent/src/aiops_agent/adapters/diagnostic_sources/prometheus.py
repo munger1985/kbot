@@ -133,6 +133,9 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         observations = []
         gaps = []
         source_locator_key = request.source_locator_key
+        host_target_key = request.source_locator.get(
+            "host_target_key", source_locator_key
+        )
         for definition in request.metric_definitions:
             provider = definition.providers.get("PROMETHEUS")
             if provider is None or provider.query_template is None:
@@ -156,6 +159,9 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
             query = provider.query_template.replace(
                 "${external_target}",
                 _escape_prometheus_label(source_locator_key),
+            ).replace(
+                "${host_target}",
+                _escape_prometheus_label(host_target_key),
             )
             try:
                 async with self._session.get(

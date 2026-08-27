@@ -50,7 +50,9 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                 not isinstance(query, str)
                 or not query.strip()
                 or len(query) > 2000
-                or "${" in query.replace("${external_target}", "")
+                or "${" in query.replace("${external_target}", "").replace(
+                    "${host_target}", ""
+                )
             ):
                 raise ValueError("Prometheus 指标查询覆盖格式无效")
             provider = definition.providers.get("PROMETHEUS")
@@ -180,6 +182,7 @@ class EvidenceObserveHandler:
                         source_locator_key=snapshot[
                             "source_locator_key"
                         ],
+                        source_locator=dict(snapshot["source_locator"]),
                         metric_definitions=_metric_definitions(snapshot),
                         window_start=_parse_time(window["start"]),
                         window_end=_parse_time(window["end"]),

@@ -96,6 +96,7 @@ class MetricsEvidenceRequest(BaseModel):
     target_id: str
     binding_id: str
     source_locator_key: str
+    source_locator: dict[str, str] = Field(default_factory=dict)
     metric_definitions: tuple[MetricDefinition, ...]
     window_start: UtcDatetime
     window_end: UtcDatetime

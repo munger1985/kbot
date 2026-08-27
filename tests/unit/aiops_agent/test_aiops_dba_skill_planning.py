@@ -644,6 +644,9 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         self.assertEqual(
             {
                 "oracle.sql.top_current",
+                "oracle.instance.performance",
+                "oracle.instance.wait_summary",
+                "oracle.instance.archive",
                 "oracle.session.active",
                 "oracle.session.blocking_chain",
                 "oracle.storage.tablespace",
@@ -790,12 +793,15 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             {
                 "oracle.session.active",
                 "oracle.session.blocking_chain",
+                "oracle.instance.performance",
+                "oracle.instance.wait_summary",
+                "oracle.instance.archive",
                 "oracle.sql.top_current",
                 "oracle.storage.tablespace",
             },
             {item.skill_id for item in plan.items},
         )
-        self.assertEqual(4, len(compiled.invocation_task_keys))
+        self.assertEqual(7, len(compiled.invocation_task_keys))
 
     def test_database_handler_consumes_frozen_tool_version(self) -> None:
         codec = _CapturingGrantCodec()

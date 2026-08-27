@@ -87,6 +87,13 @@
         <input data-loki-target-value maxlength="256" placeholder="例如 oracle-dev-190">
       </div>
     </div>` : "";
+    const prometheusFields = source.source_type === "PROMETHEUS" ? `<div class="agent-prometheus-fields">
+      <div class="ops-field">
+        <label>数据库主机的 Node Exporter target_key</label>
+        <input data-prometheus-host-target maxlength="256" placeholder="例如 dev-db-host-190">
+        <small>填写 Prometheus 中该数据库所在主机的 Node Exporter target_key；它可以与数据库 instance 不同。</small>
+      </div>
+    </div>` : "";
     return `<article class="agent-source-card" data-source-id="${sourceId}" data-source-type="${escape(source.source_type)}">
       <label class="agent-source-choice">
         <input type="checkbox" name="diagnostic_source_ids" value="${sourceId}">
@@ -100,6 +107,7 @@
           <input data-locator-key maxlength="512" placeholder="例如 oracle-dev-190">
           <small>${locatorHelp(source.source_type)}</small>
         </div>
+        ${prometheusFields}
         ${lokiFields}
       </div>
     </article>`;
@@ -127,12 +135,14 @@
       const job = card.querySelector("[data-loki-job]");
       const label = card.querySelector("[data-loki-target-label]");
       const value = card.querySelector("[data-loki-target-value]");
+      const hostTarget = card.querySelector("[data-prometheus-host-target]");
       if (job) job.value = "oracle_alert";
       if (label) label.value = "target_key";
       if (value) {
         value.value = "";
         delete value.dataset.userEdited;
       }
+      if (hostTarget) hostTarget.value = "";
       card.querySelector("[data-binding-state]").textContent = "尚未配置";
       card.dataset.bindingId = "";
     });
@@ -148,12 +158,16 @@
       const job = card.querySelector("[data-loki-job]");
       const label = card.querySelector("[data-loki-target-label]");
       const value = card.querySelector("[data-loki-target-value]");
+      const hostTarget = card.querySelector("[data-prometheus-host-target]");
       if (job) job.value = labels.job || "oracle_alert";
       if (label && value) {
         const targetLabel = Object.keys(labels).find((name) => name !== "job") || "target_key";
         label.value = targetLabel;
         value.value = labels[targetLabel] || "";
         value.dataset.userEdited = "true";
+      }
+      if (hostTarget) {
+        hostTarget.value = binding.source_locator?.host_target_key || "";
       }
       const health = binding.health_status && binding.health_status !== "UNKNOWN" ? ` · ${binding.health_status}` : "";
       card.querySelector("[data-binding-state]").textContent = `${binding.status === "ACTIVE" ? "已建立" : "已停用"}${health}`;
@@ -321,6 +335,11 @@
         if (!job || !targetLabel || !targetValue) throw new Error(`${source.display_name}：请完整填写 Loki 日志标签。`);
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(targetLabel) || targetLabel === "job") throw new Error(`${source.display_name}：目标标签名称格式无效，且不能与 job 重复。`);
         sourceLocator = { labels: { job, [targetLabel]: targetValue } };
+      }
+      if (source.source_type === "PROMETHEUS") {
+        const hostTargetKey = card.querySelector("[data-prometheus-host-target]").value.trim();
+        if (!hostTargetKey) throw new Error(`${source.display_name}：请填写数据库主机的 Node Exporter target_key。`);
+        sourceLocator = { host_target_key: hostTargetKey };
       }
       return { source, locatorKey, sourceLocator, existing: bindingFor(sourceId) };
     });
