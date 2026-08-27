@@ -7,6 +7,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.turn_answer import (
@@ -367,6 +368,63 @@ def _monitoring_artifact() -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_chat_monitor_health_uses_run_domain(self) -> None:
+        source_id = uuid7()
+        binding_id = uuid7()
+        run = SimpleNamespace(
+            domain_id=7,
+            target_id=uuid7(),
+            plan_snapshot_json={
+                "monitoring": {
+                    "bindings": [
+                        {
+                            "binding_id": str(binding_id),
+                            "binding_version": 1,
+                            "source": {
+                                "source_id": str(source_id),
+                                "config_version": 1,
+                            },
+                        }
+                    ]
+                }
+            },
+        )
+        source = SimpleNamespace(
+            diagnostic_source_id=source_id,
+            domain_id=7,
+            connectivity_status="CONNECTED",
+            connectivity_version=1,
+        )
+        diagnostic_sources = SimpleNamespace(
+            get_scoped=AsyncMock(return_value=source),
+            reduce_connectivity=AsyncMock(),
+        )
+        targets = SimpleNamespace(
+            get_source_binding_scoped=AsyncMock(return_value=None)
+        )
+        uow = SimpleNamespace(
+            diagnostic_sources=diagnostic_sources,
+            targets=targets,
+        )
+
+        asyncio.run(
+            AIOpsRuntimeService._reduce_observation_health(
+                uow=uow,
+                run=run,
+                payload={
+                    "binding_id": str(binding_id),
+                    "observations": [],
+                    "gaps": [],
+                },
+                now=datetime.now(UTC),
+            )
+        )
+
+        diagnostic_sources.get_scoped.assert_awaited_once_with(
+            diagnostic_source_id=source_id,
+            domain_id=7,
+        )
+
     def test_prometheus_observation_is_aggregated_as_one_fact(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(

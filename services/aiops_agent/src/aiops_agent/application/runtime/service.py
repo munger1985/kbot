@@ -3278,9 +3278,7 @@ class AIOpsRuntimeService:
         source_snapshot = snapshot["source"]
         source = await uow.diagnostic_sources.get_scoped(
             diagnostic_source_id=UUID(source_snapshot["source_id"]),
-            domain_id=int(
-                (run.plan_snapshot_json or {})["target"]["domain_id"]
-            ),
+            domain_id=int(run.domain_id),
         )
         if source is None:
             return
