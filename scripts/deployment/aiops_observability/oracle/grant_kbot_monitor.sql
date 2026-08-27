@@ -1,4 +1,4 @@
--- KBot AIOps Oracle监控用户初始化脚本。
+-- 已有KBot AIOps Oracle监控用户的完整授权脚本。
 -- 使用SYSDBA连接到实际被监控PDB后执行，禁止在CDB$ROOT运行。
 
 SET ECHO OFF
@@ -10,6 +10,7 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 DECLARE
     current_container VARCHAR2(128);
     current_user_name VARCHAR2(128);
+    monitor_user_count NUMBER;
 BEGIN
     current_container := SYS_CONTEXT('USERENV', 'CON_NAME');
     current_user_name := SYS_CONTEXT('USERENV', 'CURRENT_USER');
@@ -24,7 +25,19 @@ BEGIN
     IF current_container = 'CDB$ROOT' THEN
         RAISE_APPLICATION_ERROR(
             -20002,
-            '禁止在CDB$ROOT创建监控用户，请先切换到实际被监控PDB'
+            '禁止在CDB$ROOT授权，请先切换到实际被监控PDB'
+        );
+    END IF;
+
+    SELECT COUNT(*)
+    INTO monitor_user_count
+    FROM DBA_USERS
+    WHERE USERNAME = 'KBOT_MONITOR';
+
+    IF monitor_user_count <> 1 THEN
+        RAISE_APPLICATION_ERROR(
+            -20003,
+            '当前PDB不存在kbot_monitor，请先执行建用户脚本'
         );
     END IF;
 END;
@@ -32,14 +45,6 @@ END;
 
 PROMPT 当前容器：
 SELECT SYS_CONTEXT('USERENV', 'CON_NAME') AS CURRENT_CONTAINER FROM DUAL;
-
-ACCEPT KBOT_MONITOR_PASSWORD CHAR PROMPT '请输入kbot_monitor密码（不得包含双引号）：' HIDE
-
-CREATE USER kbot_monitor
-    IDENTIFIED BY "&KBOT_MONITOR_PASSWORD"
-    ACCOUNT UNLOCK;
-
-UNDEFINE KBOT_MONITOR_PASSWORD
 
 GRANT CREATE SESSION TO kbot_monitor;
 
@@ -55,12 +60,12 @@ GRANT SELECT ON SYS.V_$WAITCLASSMETRIC            TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SESSION                    TO kbot_monitor;
 GRANT SELECT ON SYS.V_$RESOURCE_LIMIT             TO kbot_monitor;
 
--- KBot AIOps实例身份及当前累计Top SQL诊断；不包含AWR/Diagnostics Pack历史视图。
+-- KBot AIOps实例身份及当前累计Top SQL诊断。
 GRANT SELECT ON SYS.V_$INSTANCE                   TO kbot_monitor;
 GRANT SELECT ON SYS.V_$DATABASE                   TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SQLSTATS                   TO kbot_monitor;
 
--- KBot AIOps当前活跃会话、阻塞链和表空间容量诊断。
+-- KBot AIOps当前会话、阻塞链、长事务和表空间容量诊断。
 GRANT SELECT ON SYS.GV_$SESSION                   TO kbot_monitor;
 GRANT SELECT ON SYS.GV_$TRANSACTION               TO kbot_monitor;
 GRANT SELECT ON SYS.DBA_DATA_FILES                TO kbot_monitor;
@@ -72,8 +77,7 @@ GRANT SELECT ON SYS.V_$SYSMETRIC                  TO kbot_monitor;
 -- KBot Oracle Alert Collector。
 GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT             TO kbot_monitor;
 
-PROMPT 已创建kbot_monitor并完成最小权限授权。
-PROMPT 正在验证授权清单……
+PROMPT 完整授权已执行，正在验证授权清单……
 
 DECLARE
     session_grant_count NUMBER;
@@ -114,9 +118,21 @@ BEGIN
       );
 
     IF session_grant_count <> 1 OR object_grant_count <> 19 THEN
-        RAISE_APPLICATION_ERROR(-20003, 'kbot_monitor授权清单验证失败');
+        RAISE_APPLICATION_ERROR(
+            -20004,
+            'kbot_monitor完整授权清单验证失败'
+        );
     END IF;
 END;
 /
+
+PROMPT kbot_monitor完整授权清单验证通过。
+
+SELECT owner, table_name, privilege
+FROM DBA_TAB_PRIVS
+WHERE grantee = 'KBOT_MONITOR'
+  AND owner = 'SYS'
+  AND privilege = 'SELECT'
+ORDER BY table_name;
 
 EXIT SUCCESS

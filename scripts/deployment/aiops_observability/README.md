@@ -14,7 +14,8 @@ Collector、逐目标Secret、Volume和KBot Webhook签名桥由入口脚本生�
 
 Oracle DBA在目标PDB创建最小权限监控用户时，使用
 `oracle/create_kbot_monitor.sql`。该脚本必须以SYSDBA执行，并会拒绝在`CDB$ROOT`
-创建用户。
+创建用户。用户已经存在但授权不完整时，使用
+`oracle/grant_kbot_monitor.sql`补齐并验证完整授权，不要重复创建用户。
 
 OEM不属于此安装包，部署完成后在AIOps App内配置。
 

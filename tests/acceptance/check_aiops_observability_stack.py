@@ -191,6 +191,7 @@ environment = production
         "GRANT CREATE SESSION TO kbot_monitor",
         "SYS.V_$SYSMETRIC",
         "SYS.V_$DIAG_ALERT_EXT",
+        "SYS.GV_$TRANSACTION",
     ):
         if required_text not in oracle_user_script:
             raise RuntimeError(f"Oracle监控用户脚本缺少约束：{required_text}")
@@ -201,6 +202,35 @@ environment = production
     ):
         if forbidden_text in oracle_user_script:
             raise RuntimeError(f"Oracle监控用户脚本包含过宽授权：{forbidden_text}")
+    oracle_grant_script = (
+        STACK / "oracle/grant_kbot_monitor.sql"
+    ).read_text(encoding="utf-8")
+    for required_text in (
+        "CURRENT_USER",
+        "CDB$ROOT",
+        "DBA_USERS",
+        "GRANT CREATE SESSION TO kbot_monitor",
+        "SYS.V_$INSTANCE",
+        "SYS.V_$DATABASE",
+        "SYS.V_$SQLSTATS",
+        "SYS.GV_$SESSION",
+        "SYS.GV_$TRANSACTION",
+        "SYS.DBA_DATA_FILES",
+        "SYS.DBA_FREE_SPACE",
+        "SYS.V_$SYSMETRIC",
+        "SYS.V_$DIAG_ALERT_EXT",
+        "object_grant_count <> 19",
+    ):
+        if required_text not in oracle_grant_script:
+            raise RuntimeError(f"Oracle完整授权脚本缺少约束：{required_text}")
+    for forbidden_text in (
+        "CREATE USER",
+        "GRANT DBA TO",
+        "GRANT SELECT ANY TABLE TO",
+        "GRANT SELECT_CATALOG_ROLE TO",
+    ):
+        if forbidden_text in oracle_grant_script:
+            raise RuntimeError(f"Oracle完整授权脚本包含禁用内容：{forbidden_text}")
     datasource_config = (
         STACK / "configuration/grafana/provisioning/datasources/aiops.yml"
     ).read_text(encoding="utf-8")
