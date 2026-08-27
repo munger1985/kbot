@@ -236,10 +236,18 @@ Collection 状态和模型接口未暴露 `row_version`/ETag 条件，页面保�
 Agent 的有效绑定，页面不要求用户填写 Target ID、Source ID 或 JSON。消息时间线统一
 展示用户输入、Agent 进度、流式 Markdown 结论、引用、报告和待审批动作；刷新页面后以
 Conversation 和 Run Result 恢复权威内容，不能只依赖浏览器中收到的 SSE 片段。
+每条用户消息建立独立 `conversation_turn_id`，进度、正文、表格、图表、引用和错误都
+必须归属到该 Turn；历史证据只有经服务端显式关联后才能在本轮使用。
 聊天正文直接回应本轮问题，不固定输出“根因等级、已验证事实、立即建议、长期建议”等
-报告章节。Markdown 表格用于表空间使用率等多行对比数据；存在两个以上可比较序列时，
-页面可追加轻量数据图形。根因等级、监控事实及证据缺口进入默认折叠的“诊断依据”，
-交互方式与 KM 引用一致，用户需要核查时再展开。
+报告章节。前端按服务端 `answer.markdown`、`answer.table`、`answer.chart` 和
+`evidence.references` 等白名单块渲染；不得扫描 Conversation 或 Run 的全部 Facts，
+也不得根据字段名称自行决定展示表空间等图表。引用证据进入默认折叠的“诊断依据”，
+交互方式与 KM 引用一致，用户需要核查时再展开。详细契约见
+[AIOps Agent 专业 DBA 对话诊断设计](../product/aiops-agent-chat-diagnosis.md)。
+
+流式进度使用“正在确认实例”“正在查询最近15分钟SQL统计”等用户可理解的专业动作，
+不展示 Investigation Round、Evidence Index 或内部 Tool ID。回答生成失败时保留已经
+完成的同一 Turn 内容，并显示可行动的错误边界，不得用其他历史事实填充当前回答。
 
 当证据不足时，Agent 在普通消息中解释缺口并给出补证办法或经过校验的只读 SQL。
 用户继续使用同一个输入框粘贴文字、SQL 客户端输出或上传截图，系统将其登记为

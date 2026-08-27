@@ -19,6 +19,7 @@ Git 历史保存，不再作为有效文档。
 - [Agent 完整聊天流程](product/agent-chat.md)
 - [知识入库、解析与检索](product/knowledge-lifecycle.md)
 - [AIOps Agent 产品能力](product/aiops-agent.md)
+- [AIOps Agent 专业 DBA 对话诊断设计](product/aiops-agent-chat-diagnosis.md)
 - [AIOps 功能介绍与 PPT 生成说明](product/aiops-ppt-brief.md)
 - [Slack 集成](product/slack-integration.md)
 

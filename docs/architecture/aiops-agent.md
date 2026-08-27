@@ -7,16 +7,21 @@ PostgreSQL 及后续数据库是核心托管目标；Prometheus、Zabbix、OEM�
 数据库连接、主机与云平台通过端口提供诊断证据。任何外部工具都不得成为诊断领域
 模型的强制依赖。
 
-故障事件、用户问题和定时巡检统一创建 `DiagnosticRun`，并共用调查、取证、假设、
-结论、建议、执行、验证和报告链路。目标态逻辑结构如下：
+故障事件、用户问题和定时巡检共用证据、Skill、执行与审计基础设施，但使用不同的
+入口编排。告警和巡检按 Blueprint 创建 `DiagnosticRun`；用户消息先创建
+`ConversationTurn`，经过 Intent Router 与 Skill Planner 后再执行当前问题所需的最小
+能力集。目标态逻辑结构如下：
 
 ```mermaid
 flowchart TD
     A1[故障事件] --> SIT[Situation / Diagnostic Run]
-    A2[用户问题] --> SIT
+    A2[用户问题] --> TURN[Conversation Turn]
     A3[定时巡检] --> SIT
 
     SIT --> PLAN[Investigation Planner]
+    TURN --> IP[Intent Plan]
+    IP --> SP[DBA Skill Plan]
+    SP --> PLAN
     PLAN --> MP[Metrics Evidence Port]
     PLAN --> LP[Log Evidence Port]
     PLAN --> DP[Database Evidence Port]
@@ -29,7 +34,9 @@ flowchart TD
     HP --> EI
     TP --> EI
 
-    EI --> H[Hypothesis / Counter-evidence Loop]
+    EI --> SG[Sufficiency Gate]
+    SG --> ANS[Natural Answer / Clarification]
+    SG --> H[Hypothesis / Counter-evidence Loop]
     H --> F[Finding / Root Cause / Optimization]
     F --> R[Recommendation / Controlled Action]
     R --> V[Verification / Comparison]
@@ -69,6 +76,8 @@ Prometheus、Alertmanager、Loki、Alloy、可选 Exporter 和固定镜像清单
 完整产品目标、领域对象和能力矩阵见
 [`docs/product/aiops-agent.md`](../product/aiops-agent.md)，观测组件及其部署边界见
 [AIOps 观测工具选型与 Docker Compose 部署基线](../proposals/aiops-observability-tooling-and-compose.md)。
+专业 DBA 对话中的 Turn、意图、Skill、证据充分性和展示契约见
+[AIOps Agent 专业 DBA 对话诊断设计](../product/aiops-agent-chat-diagnosis.md)。
 
 ## 服务边界
 
@@ -79,17 +88,25 @@ AIOps Agent 是独立领域服务，当前面向 Oracle、MySQL 和 PostgreSQL �
 
 ## 触发与闭环
 
-入口包括用户聊天、监控告警和定期巡检。统一闭环为：
+入口包括用户聊天、监控告警和定期巡检。告警与巡检闭环为：
 
 ```text
 Trigger → Observe → Diagnose → Evidence Assessment → Advisory
         → Approval → Execute → Verify → Report / Comparison
 ```
 
+用户聊天按每轮问题编排：
+
+```text
+Message → Turn Scope → Intent Plan → Skill Plan → Evidence Collection
+        → Sufficiency Assessment → Answer / Clarification / Evidence Request / Proposal
+```
+
 自动告警和巡检只能使用已配置的数据源；证据不足时生成不确定结论和后续建议，
 不会等待用户。聊天场景可进入多轮 HITL：当数据库不可直连且监控证据不足时，
-Agent 给出受控只读 SQL，用户手工执行并粘贴结果，系统持续补证直到形成根因判断
-或达到预算。
+Agent 给出受控只读 SQL，用户手工执行并粘贴结果，系统持续补证直到能够回答当前问题
+或明确说明能力边界。只有 `DIAGNOSE` 意图进入假设与反证循环；观察、解释、规划、
+变更、验证和检查意图使用各自的 Skill 流程。
 
 Portal 将上述触发方式投影为智能诊断、告警诊断、日常巡检三个业务工作区。告警或
 巡检续聊创建 `OpsConversation` 时，服务端校验 `source_run_id` 属于同一 Domain、

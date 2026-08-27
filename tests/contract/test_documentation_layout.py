@@ -25,6 +25,7 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 "agent-runtime.md",
                 "aiops-agent.md",
+                "app-api-key-security.md",
                 "data-query.md",
                 "knowledge-core.md",
                 "model-serving.md",
@@ -40,6 +41,9 @@ class DocumentationLayoutTest(unittest.TestCase):
         )
         self.assertEqual(
             {
+                "aiops-initialization.md",
+                "aiops-observability-manual-deployment.md",
+                "aiops-observability-production-deployment.md",
                 "deployment.md",
                 "km-asset-migration.md",
                 "oracle-linux-nginx-http-apex-ords.md",
@@ -53,9 +57,11 @@ class DocumentationLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "agent-chat.md",
+                "aiops-agent-chat-diagnosis.md",
                 "aiops-agent.md",
                 "aiops-ppt-brief.md",
                 "knowledge-lifecycle.md",
+                "slack-complete-test-plan.md",
                 "slack-integration.md",
             },
             {
