@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from datetime import UTC, datetime
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
+from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.application.turn_planning import TurnPlanningService
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.skills import (
@@ -327,6 +328,21 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaSkillFrameworkTest(unittest.TestCase):
+    def test_repository_catalog_only_references_allowlisted_tools(self) -> None:
+        tools = DiagnosticRegistry.load().tools
+        registry = DbaSkillRegistry.load(
+            allowed_tool_ids=frozenset(
+                item.definition.tool_id for item in tools
+            )
+        )
+        manifest = registry.latest("oracle.sql.top_current")
+
+        self.assertEqual(
+            MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+            manifest.measurement_semantics,
+        )
+        self.assertEqual(64, len(registry.catalog_hash))
+
     def test_capability_snapshot_uses_only_enabled_reachable_resources(self) -> None:
         snapshot = build_capability_snapshot(
             agent_id="agent-1",

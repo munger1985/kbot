@@ -12,6 +12,9 @@ from pydantic import ValidationError
 from platform_core.contracts.aiops.skills import DbaSkillManifest
 
 
+DEFAULT_SKILL_CATALOG_ROOT = Path(__file__).resolve().parent / "catalog"
+
+
 class SkillCatalogError(ValueError):
     """Skill Manifest 或目录违反确定性约束。"""
 
@@ -51,7 +54,7 @@ class DbaSkillRegistry:
     @classmethod
     def load(
         cls,
-        root: Path,
+        root: Path = DEFAULT_SKILL_CATALOG_ROOT,
         *,
         allowed_tool_ids: frozenset[str] | None = None,
     ) -> "DbaSkillRegistry":

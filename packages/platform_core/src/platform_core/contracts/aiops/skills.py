@@ -87,8 +87,18 @@ class DbaIntentPlan(AIOpsContract):
 
 
 class SkillVersionRange(AIOpsContract):
-    minimum: str | None = Field(default=None, max_length=64)
-    maximum: str | None = Field(default=None, max_length=64)
+    minimum: str | None = Field(default=None, pattern=r"^[0-9]+$")
+    maximum: str | None = Field(default=None, pattern=r"^[0-9]+$")
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "SkillVersionRange":
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and int(self.minimum) > int(self.maximum)
+        ):
+            raise ValueError("Skill 数据库版本范围无效")
+        return self
 
 
 class SkillLimits(AIOpsContract):

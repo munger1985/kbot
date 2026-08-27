@@ -206,7 +206,9 @@ SHOW CON_NAME;
 ```
 
 脚本会隐藏密码输入，拒绝在`CDB$ROOT`运行，并创建固定用户`kbot_monitor`及当前
-Exporter、补充指标和Alert Collector所需的逐对象最小授权。脚本只用于首次创建；
+Exporter、补充指标、Alert Collector和AIOps当前累计Top SQL诊断所需的逐对象最小授权。
+Top SQL只读取`V_$SQLSTATS`，不授予AWR历史视图，也不隐含Diagnostics Pack许可。
+脚本只用于首次创建；
 用户已存在时不要重复执行`CREATE USER`，应由DBA审核现有账号后单独补授权。
 
 当前设备已经在 Prometheus中登记 Oracle Exporter，但 Target抓取超时。先检查现有

@@ -27,6 +27,40 @@
       "cost_level": "LOW"
     },
     {
+      "tool_id": "db.sql.top_current",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_v_sqlstats",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [],
+      "required_privileges": ["V_$SQLSTATS"],
+      "parameters": [
+        {"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}
+      ],
+      "output_columns": [
+        {"name": "sql_id", "logical_type": "STRING", "nullable": false},
+        {"name": "plan_hash_value", "logical_type": "INTEGER"},
+        {"name": "parsing_schema_name", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "executions", "logical_type": "INTEGER", "nullable": false},
+        {"name": "elapsed_seconds", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "cpu_seconds", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "buffer_gets", "logical_type": "INTEGER", "nullable": false},
+        {"name": "disk_reads", "logical_type": "INTEGER", "nullable": false},
+        {"name": "rows_processed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "last_active_time", "logical_type": "DATETIME"},
+        {"name": "module", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "action", "logical_type": "STRING", "sensitivity": "MASKED"}
+      ],
+      "template_ref": "sql/sql_top_current.sql",
+      "template_sha256": "06eabdae199de26d8972394abc8605d5584be97c95d7825221f3964ce92e924e",
+      "timeout_seconds": 20,
+      "max_rows": 50,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.session.active",
       "version": "1.0.0",
       "db_type": "ORACLE",

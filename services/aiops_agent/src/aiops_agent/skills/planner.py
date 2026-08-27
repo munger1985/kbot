@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterable
 
 from aiops_agent.orchestration.blueprints import TaskSpec
@@ -149,6 +150,9 @@ class DbaSkillPlanner:
     ) -> bool:
         return (
             capabilities.database_type in manifest.database_types
+            and DbaSkillPlanner._supports_database_version(
+                manifest, capabilities.database_version
+            )
             and intent.primary_intent in manifest.supported_intents
             and intent.primary_domain in manifest.domains
             and (
@@ -158,6 +162,27 @@ class DbaSkillPlanner:
                     and intent.subject in manifest.subjects
                 )
             )
+        )
+
+    @staticmethod
+    def _supports_database_version(
+        manifest: DbaSkillManifest,
+        database_version: str | None,
+    ) -> bool:
+        if database_version is None:
+            return (
+                manifest.version_range.minimum is None
+                and manifest.version_range.maximum is None
+            )
+        match = re.search(r"\d+", database_version)
+        if match is None:
+            return False
+        major = int(match.group(0))
+        minimum = manifest.version_range.minimum
+        maximum = manifest.version_range.maximum
+        return (
+            (minimum is None or major >= int(minimum))
+            and (maximum is None or major <= int(maximum))
         )
 
     @staticmethod
