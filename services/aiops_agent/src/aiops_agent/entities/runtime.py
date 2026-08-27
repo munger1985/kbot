@@ -25,13 +25,14 @@ class OpsRunEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     parent_delegation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     trigger_type: Mapped[str] = mapped_column(String(16), nullable=False)
     trigger_signal_event_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     situation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     interaction_mode: Mapped[str] = mapped_column(String(16), nullable=False)
-    investigation_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    workflow_kind: Mapped[str] = mapped_column(String(24), nullable=False)
     inspection_fire_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_proposal_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_result_artifact_id: Mapped[UUID | None] = mapped_column(
@@ -49,7 +50,6 @@ class OpsRunEntity(BaseEntity):
     policy_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(
         OracleNativeJSON
     )
-    root_cause_level: Mapped[str | None] = mapped_column(String(16))
     final_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     deadline_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)

@@ -23,6 +23,7 @@ from aiops_agent.repositories import (
     NotificationSubscriptionRepository,
     PolicyRepository,
     TargetRepository,
+    TurnRepository,
 )
 from aiops_agent.repositories.platform_notification import PlatformNotificationRepository
 from platform_core.notifications import NotificationOutboxRepository
@@ -58,6 +59,7 @@ class AIOpsUnitOfWork:
         self.outbox: OutboxRepository | None = None
         self.agents: AIOpsAgentRepository | None = None
         self.conversations: ConversationRepository | None = None
+        self.turns: TurnRepository | None = None
         self.notification_outbox: NotificationOutboxRepository | None = None
         self.platform_notifications: PlatformNotificationRepository | None = None
         self.notification_subscriptions: NotificationSubscriptionRepository | None = None
@@ -87,6 +89,7 @@ class AIOpsUnitOfWork:
         self.outbox = OutboxRepository(self.session, guard)
         self.agents = AIOpsAgentRepository(self.session, guard)
         self.conversations = ConversationRepository(self.session, guard)
+        self.turns = TurnRepository(self.session, guard)
         self.notification_outbox = NotificationOutboxRepository(self.session)
         self.platform_notifications = PlatformNotificationRepository(self)
         self.notification_subscriptions = NotificationSubscriptionRepository(
@@ -135,6 +138,7 @@ class AIOpsUnitOfWork:
             self.outbox = None
             self.agents = None
             self.conversations = None
+            self.turns = None
             self.notification_outbox = None
             self.platform_notifications = None
             self.notification_subscriptions = None

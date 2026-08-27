@@ -1231,18 +1231,117 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             payload=payload, auth_context=auth_context,
         )
 
-    async def conversation_request(
+    async def start_conversation(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/conversations",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def list_conversations(
         self,
-        method: str,
-        suffix: str,
+        *,
+        agent_id: UUID | None,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        path = f"{INTERNAL_API_V1}/aiops/conversations?limit={limit}"
+        if agent_id is not None:
+            path += f"&agent_id={agent_id}"
+        return await self._json("GET", path, auth_context=auth_context)
+
+    async def get_conversation(
+        self, conversation_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}",
+            auth_context=auth_context,
+        )
+
+    async def create_conversation_turn(
+        self,
+        conversation_id: UUID,
+        payload: dict[str, Any],
         *,
         auth_context: AuthContext,
-        payload: dict[str, Any] | None = None,
-    ):
+    ) -> dict[str, Any]:
         return await self._json(
-            method,
-            f"{INTERNAL_API_V1}/aiops/conversations{suffix}",
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}/turns",
             payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def list_conversation_turns(
+        self,
+        conversation_id: UUID,
+        *,
+        after_turn_no: int,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}/turns"
+                f"?after_turn_no={after_turn_no}&limit={limit}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def get_conversation_turn(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def list_conversation_turn_events(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        after_sequence: int,
+        limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/events?after_sequence={after_sequence}"
+                f"&limit={limit}"
+            ),
+            auth_context=auth_context,
+        )
+
+    async def cancel_conversation_turn(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/cancel"
+            ),
+            payload={},
             auth_context=auth_context,
         )
 

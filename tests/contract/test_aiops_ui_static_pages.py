@@ -280,10 +280,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("waitForTyping", workspace)
         self.assertIn("evidenceDetails", workspace)
         self.assertIn('class="ops-evidence"', workspace)
-        self.assertIn("tablespaceChartHtml", workspace)
+        self.assertIn('block.block_type === "TABLE"', workspace)
+        self.assertIn('block.block_type === "CHART"', workspace)
+        self.assertIn('block.block_type === "EVIDENCE_REFERENCES"', workspace)
+        self.assertNotIn("tablespaceChartHtml", workspace)
         self.assertIn("inspectionMarkdown", workspace)
         self.assertNotIn('`**根因等级：**', workspace)
-        self.assertIn("EVIDENCE_REQUEST", workspace)
+        self.assertIn("answerBlockHtml", workspace)
+        self.assertIn("followTurn", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
             "dashboard.html", "runs.html", "reports.html",

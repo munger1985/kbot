@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
-from aiops_agent.adapters.image_evidence import ImageEvidenceModelClient
 from aiops_agent.actions import (
     ActionRegistry,
     create_mutation_grant_codec,
@@ -33,7 +32,7 @@ from aiops_agent.api.management import router as management_router
 from aiops_agent.api.agents import router as agent_router
 from aiops_agent.api.conversations import router as conversation_router
 from aiops_agent.api.report_templates import router as report_template_router
-from aiops_agent.application.conversations import AIOpsConversationService
+from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.report_templates import InspectionReportTemplateService
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
@@ -106,13 +105,8 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             action_registry=action_registry,
         )
-        app.state.conversation_service = AIOpsConversationService(
+        app.state.conversation_turn_service = ConversationTurnService(
             uow_factory=runtime.uow_factory,
-            image_model_client=ImageEvidenceModelClient(
-                caller_service=config.service_name,
-                ocr_config=resolved.clients.model_ocr,
-                vlm_config=resolved.clients.model_vlm,
-            ),
         )
         app.state.report_template_service = InspectionReportTemplateService(
             uow_factory=runtime.uow_factory

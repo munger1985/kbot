@@ -69,7 +69,7 @@ DECLARE
     l_invalid_count PLS_INTEGER;
     l_bad_constraint_count PLS_INTEGER;
     l_bad_index_count PLS_INTEGER;
-    l_investigation_mode_count PLS_INTEGER;
+    l_workflow_kind_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -107,10 +107,10 @@ BEGIN
        AND status <> 'VALID';
 
     SELECT COUNT(*)
-      INTO l_investigation_mode_count
+      INTO l_workflow_kind_count
       FROM user_tab_columns
      WHERE table_name = 'KBOT_OPS_RUN'
-       AND column_name = 'INVESTIGATION_MODE'
+       AND column_name = 'WORKFLOW_KIND'
        AND nullable = 'N';
 
     SELECT component, schema_version, contract_version
@@ -132,8 +132,8 @@ BEGIN
     IF l_bad_index_count <> 0 THEN
         raise_application_error(-20004, '存在无效的 AIOps 索引。');
     END IF;
-    IF l_investigation_mode_count <> 1 THEN
-        raise_application_error(-20005, 'KBOT_OPS_RUN.INVESTIGATION_MODE 缺失或允许为空。');
+    IF l_workflow_kind_count <> 1 THEN
+        raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}

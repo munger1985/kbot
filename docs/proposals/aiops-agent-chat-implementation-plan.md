@@ -1,5 +1,16 @@
 # AIOps Agent 专业 DBA 对话诊断改造方案与实施计划
 
+## 当前实施状态（2026-08-27）
+
+第一批基础改造已进入代码，包含 Schema 13 与自包含重建制品、Conversation/Turn
+共享契约、Turn 实体与 Repository、原子接收和 Outbox、Turn 查询/取消 API、事件流代理，
+以及由 Answer Block 驱动的聊天页面骨架。当前 Worker 只会把 Turn 从`QUEUED`推进到
+`ACCEPTED`；Planner、通用 Run 状态机、DBA Skill 与真实流式回答尚未接入。
+
+因此当前分支是阶段0至阶段2的开发中切片，不是可部署版本，也没有操作任何共享数据库。
+后续必须继续完成阶段1的并发/回滚约束和旧代码删除、阶段2的空流程闭环，达到相应退出
+条件后，才进入 Intent Router 与 Oracle Skill 实现。
+
 版本：1.0
 
 状态：待实施

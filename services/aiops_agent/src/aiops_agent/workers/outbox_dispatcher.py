@@ -41,6 +41,7 @@ class AIOpsDomainOutboxSink:
         diagnostic_source_connectivity_service=None,
         target_connectivity_service=None,
         db_executor_client=None,
+        turn_queue_service=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -49,8 +50,12 @@ class AIOpsDomainOutboxSink:
         )
         self._target_connectivity_service = target_connectivity_service
         self._db_executor_client = db_executor_client
+        self._turn_queue_service = turn_queue_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
+        if event_type == "aiops.turn.created" and self._turn_queue_service is not None:
+            await self._turn_queue_service.accept_created(payload)
+            return
         if (
             event_type == "SOURCE_CONNECTIVITY_CHECK_REQUESTED"
             and self._diagnostic_source_connectivity_service is not None

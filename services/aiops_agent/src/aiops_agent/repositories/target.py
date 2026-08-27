@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, or_, select, update
+from sqlalchemy import Select, and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -42,6 +42,41 @@ class TargetRepository(AIOpsRepository):
         self, entity: TargetSourceBindingEntity
     ) -> TargetSourceBindingEntity:
         return await self._add(entity)
+
+    async def target_ids_shared_by_sources(
+        self,
+        *,
+        domain_id: int,
+        source_ids: Collection[UUID],
+    ) -> list[UUID]:
+        """返回所有指定监控源共同映射的可用 Target。"""
+        normalized = tuple(dict.fromkeys(source_ids))
+        if not normalized:
+            return []
+        rows = await self._session.execute(
+            select(TargetSourceBindingEntity.target_id)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+            )
+            .where(
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.status == "ENABLED",
+                TargetSourceBindingEntity.status == "ACTIVE",
+                TargetSourceBindingEntity.diagnostic_source_id.in_(normalized),
+            )
+            .group_by(TargetSourceBindingEntity.target_id)
+            .having(
+                func.count(
+                    func.distinct(
+                        TargetSourceBindingEntity.diagnostic_source_id
+                    )
+                )
+                == len(normalized)
+            )
+            .order_by(TargetSourceBindingEntity.target_id)
+        )
+        return list(rows.scalars())
 
     async def get_scoped(
         self,

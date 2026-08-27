@@ -22,6 +22,7 @@ class ChangeProposalEntity(BaseEntity):
     proposal_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
+    turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     ops_task_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)

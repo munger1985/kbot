@@ -1,11 +1,12 @@
 """AIOps App 的成员、私有 Agent、连续对话和报告模板 BFF。"""
 
-from typing import Any, Literal, cast
-from urllib.parse import urlencode
+import asyncio
+import json
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
@@ -20,6 +21,12 @@ from main_api.application import (
 from platform_clients import KnowledgeCoreClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
+from platform_core.contracts.aiops import (
+    ConversationSummary,
+    TurnReceipt,
+    TurnSummary,
+    TurnView,
+)
 from platform_core.security import get_auth_context
 
 
@@ -29,6 +36,7 @@ router = APIRouter(
 )
 AIOPS_PORTAL_DOMAIN_NAME = "aiops_portal"
 AIOPS_MANUAL_COLLECTION_NAME = "operations-manuals"
+IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 
 
 class _Payload(BaseModel):
@@ -123,28 +131,18 @@ class AIOpsAgentGrantStatusPayload(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
-class ConversationMessagePayload(_Payload):
+class ConversationStartPayload(_Payload):
     agent_id: UUID
     message: str = Field(min_length=1, max_length=32000)
-    conversation_id: UUID | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    target_id: UUID | None = None
     source_run_id: UUID | None = None
-    request_report: bool = False
 
 
-class EvidenceRequestPayload(_Payload):
-    purpose: str = Field(min_length=1, max_length=4000)
-    suggested_sql: str | None = Field(default=None, max_length=32000)
-
-
-class EvidenceTextPayload(_Payload):
-    text: str = Field(min_length=1, max_length=32000)
-
-
-class EvidenceUploadPayload(_Payload):
-    filename: str = Field(min_length=1, max_length=512)
-    mime_type: str = Field(min_length=3, max_length=128)
-    content_base64: str = Field(min_length=1, max_length=14_000_000)
-    text: str | None = Field(default=None, max_length=32000)
+class ConversationTurnPayload(_Payload):
+    message: str = Field(min_length=1, max_length=32000)
+    target_id: UUID | None = None
+    source_run_id: UUID | None = None
 
 
 class ReportTemplateCreatePayload(_Payload):
@@ -519,20 +517,52 @@ async def update_agent_grant(
     )
 
 
-@router.post("/conversations", status_code=status.HTTP_201_CREATED)
-async def create_or_append_conversation(
-    payload: ConversationMessagePayload, request: Request
+@router.post(
+    "/conversations",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TurnReceipt,
+)
+async def start_conversation(
+    payload: ConversationStartPayload,
+    request: Request,
+    idempotency_key: IdempotencyKey,
 ):
     _, actor_id, snapshot = await _require(request, "aiops:use")
     require_app_api_scope(request, "aiops:chat:write")
     await _authorize_agent(request, payload.agent_id, snapshot, actor_id)
-    return await _client(request).conversation_request(
-        "POST", "", payload=payload.model_dump(mode="json"),
+    source = (
+        {
+            "source_type": "RUN",
+            "run_id": str(payload.source_run_id),
+        }
+        if payload.source_run_id is not None
+        else {"source_type": "CHAT"}
+    )
+    return await _client(request).start_conversation(
+        {
+            "conversation": {
+                "agent_id": str(payload.agent_id),
+                "title": payload.title,
+                "source": source,
+            },
+            "first_turn": {
+                "message": payload.message,
+                "idempotency_key": idempotency_key,
+                "target_id": (
+                    str(payload.target_id) if payload.target_id else None
+                ),
+                "source_run_id": (
+                    str(payload.source_run_id)
+                    if payload.source_run_id
+                    else None
+                ),
+            },
+        },
         auth_context=request.state.auth_context,
     )
 
 
-@router.get("/conversations")
+@router.get("/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
     request: Request,
     agent_id: UUID | None = None,
@@ -542,11 +572,10 @@ async def list_conversations(
     require_app_api_scope(request, "aiops:conversation:read")
     if agent_id is not None:
         await _authorize_agent(request, agent_id, snapshot, actor_id)
-    query = {"limit": str(limit)}
-    if agent_id is not None:
-        query["agent_id"] = str(agent_id)
-    rows = await _client(request).conversation_request(
-        "GET", f"?{urlencode(query)}", auth_context=request.state.auth_context
+    rows = await _client(request).list_conversations(
+        agent_id=agent_id,
+        limit=limit,
+        auth_context=request.state.auth_context,
     )
     if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
         allowed = {
@@ -565,8 +594,9 @@ async def _conversation_with_access(
 ) -> tuple[dict[str, Any], Any, str]:
     _, actor_id, snapshot = await _require(request, "aiops:use")
     require_app_api_scope(request, "aiops:conversation:read")
-    conversation = await _client(request).conversation_request(
-        "GET", f"/{conversation_id}", auth_context=request.state.auth_context
+    conversation = await _client(request).get_conversation(
+        conversation_id,
+        auth_context=request.state.auth_context,
     )
     await _authorize_agent(
         request, UUID(str(conversation["agent_id"])), snapshot, actor_id
@@ -574,64 +604,154 @@ async def _conversation_with_access(
     return conversation, snapshot, actor_id
 
 
-@router.get("/conversations/{conversation_id}")
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationSummary,
+)
 async def get_conversation(conversation_id: UUID, request: Request):
     conversation, _, _ = await _conversation_with_access(request, conversation_id)
     return conversation
 
 
-@router.post("/conversations/{conversation_id}/evidence-requests", status_code=201)
-async def request_evidence(
-    conversation_id: UUID, payload: EvidenceRequestPayload, request: Request
+@router.post(
+    "/conversations/{conversation_id}/turns",
+    status_code=202,
+    response_model=TurnReceipt,
+)
+async def create_conversation_turn(
+    conversation_id: UUID,
+    payload: ConversationTurnPayload,
+    request: Request,
+    idempotency_key: IdempotencyKey,
 ):
     require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
-    return await _client(request).conversation_request(
-        "POST", f"/{conversation_id}/evidence-requests",
-        payload=payload.model_dump(mode="json"),
+    return await _client(request).create_conversation_turn(
+        conversation_id,
+        {
+            "message": payload.message,
+            "idempotency_key": idempotency_key,
+            "target_id": str(payload.target_id) if payload.target_id else None,
+            "source_run_id": (
+                str(payload.source_run_id) if payload.source_run_id else None
+            ),
+        },
         auth_context=request.state.auth_context,
     )
 
 
-@router.post("/conversations/{conversation_id}/evidence-requests/{request_id}/text")
-async def submit_evidence_text(
-    conversation_id: UUID, request_id: UUID,
-    payload: EvidenceTextPayload, request: Request,
+@router.get(
+    "/conversations/{conversation_id}/turns",
+    response_model=list[TurnSummary],
+)
+async def list_conversation_turns(
+    conversation_id: UUID,
+    request: Request,
+    after_turn_no: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
 ):
-    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
-    return await _client(request).conversation_request(
-        "POST", f"/{conversation_id}/evidence-requests/{request_id}/text",
-        payload=payload.model_dump(mode="json"),
+    return await _client(request).list_conversation_turns(
+        conversation_id,
+        after_turn_no=after_turn_no,
+        limit=limit,
         auth_context=request.state.auth_context,
     )
 
 
-@router.post("/conversations/{conversation_id}/evidence-requests/{request_id}/skip")
-async def skip_evidence(
-    conversation_id: UUID, request_id: UUID,
-    payload: EvidenceTextPayload, request: Request,
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}",
+    response_model=TurnView,
+)
+async def get_conversation_turn(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
 ):
-    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
-    return await _client(request).conversation_request(
-        "POST", f"/{conversation_id}/evidence-requests/{request_id}/skip",
-        payload=payload.model_dump(mode="json"),
+    return await _client(request).get_conversation_turn(
+        conversation_id,
+        turn_id,
         auth_context=request.state.auth_context,
     )
 
 
-@router.post("/conversations/{conversation_id}/evidence-requests/{request_id}/uploads")
-async def upload_evidence(
-    conversation_id: UUID, request_id: UUID,
-    payload: EvidenceUploadPayload, request: Request,
+@router.post(
+    "/conversations/{conversation_id}/turns/{turn_id}/cancel",
+    response_model=TurnSummary,
+)
+async def cancel_conversation_turn(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
 ):
     require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
-    return await _client(request).conversation_request(
-        "POST", f"/{conversation_id}/evidence-requests/{request_id}/uploads",
-        payload=payload.model_dump(mode="json"),
+    return await _client(request).cancel_conversation_turn(
+        conversation_id,
+        turn_id,
         auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/conversations/{conversation_id}/turns/{turn_id}/events")
+async def stream_conversation_turn_events(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
+    await _conversation_with_access(request, conversation_id)
+    try:
+        cursor = int(last_event_id or "0")
+    except ValueError as exc:
+        raise HTTPException(
+            400,
+            {
+                "code": "AIOPS_TURN_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 必须是非负整数",
+            },
+        ) from exc
+    if cursor < 0:
+        raise HTTPException(
+            400,
+            {
+                "code": "AIOPS_TURN_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 不能为负数",
+            },
+        )
+    client = _client(request)
+    context = request.state.auth_context
+
+    async def generate():
+        nonlocal cursor
+        while not await request.is_disconnected():
+            page = await client.list_conversation_turn_events(
+                conversation_id,
+                turn_id,
+                after_sequence=cursor,
+                limit=200,
+                auth_context=context,
+            )
+            for event in page["events"]:
+                cursor = int(event["sequence_no"])
+                yield (
+                    f"id: {cursor}\n"
+                    f"event: {event['event_type']}\n"
+                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                )
+            if page.get("terminal"):
+                yield (
+                    "event: done\n"
+                    f"data: {json.dumps({'sequence_no': cursor})}\n\n"
+                )
+                return
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

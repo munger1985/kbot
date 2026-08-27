@@ -507,18 +507,19 @@ class _FakeAIOpsClient:
             )
         return {"allowed": True}
 
-    async def conversation_request(
-        self, method, suffix, *, auth_context, payload=None
-    ):
-        del method, suffix, auth_context
+    async def start_conversation(self, payload, *, auth_context):
+        del auth_context
         return {
             "conversation_id": str(
                 UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
             ),
-            "agent_id": payload["agent_id"],
-            "run_id": str(
+            "turn_id": str(
                 UUID("019f8eae-2c25-7d48-b044-350ec3f5a103")
             ),
+            "turn_no": 1,
+            "status": "QUEUED",
+            "event_cursor": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def create_agent_binding(
@@ -1719,7 +1720,7 @@ class MainApiTest(unittest.TestCase):
     def test_aiops_manager_starts_chat_without_agent_grant(self) -> None:
         response = self.client.post(
             "/api/v1/apps/aiops/conversations",
-            headers=self._headers(),
+            headers={**self._headers(), "Idempotency-Key": "chat-turn-1"},
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
                 "message": "检查数据库负载",
@@ -1728,9 +1729,8 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(201, response.status_code)
         self.assertEqual(0, self.aiops.authorize_agent_calls)
-        self.assertEqual(
-            str(self.agent_runtime.agent_id), response.json()["agent_id"]
-        )
+        self.assertEqual("QUEUED", response.json()["status"])
+        self.assertEqual(1, response.json()["turn_no"])
 
     def test_aiops_agent_access_denial_remains_public_403(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(
@@ -1740,7 +1740,7 @@ class MainApiTest(unittest.TestCase):
 
         response = self.client.post(
             "/api/v1/apps/aiops/conversations",
-            headers=self._headers(),
+            headers={**self._headers(), "Idempotency-Key": "chat-turn-2"},
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
                 "message": "检查数据库负载",

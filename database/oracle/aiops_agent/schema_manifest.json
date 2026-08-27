@@ -1,23 +1,23 @@
 {
   "component": "aiops_agent",
-  "schema_version": 12,
-  "contract_version": "aiops-oracle-v2",
+  "schema_version": 13,
+  "contract_version": "aiops-oracle-v3",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 25,
-      "sha256": "d0a1558b0c8ec0bb053e1b8e691b6cbf959065372b2f5f143199c57db6d3bf4e"
+      "sha256": "ce4cd2bbef05ef94d90fad1b3b17ec71f82ea007a56d7ac7c6f355d9b6083666"
     },
     {
       "name": "002_ops_runtime.sql",
-      "statements": 34,
-      "sha256": "b2f06ee17d29a2accc0d5928b1b8e824011f62605144fe876ef87ca1ef21a49f"
+      "statements": 35,
+      "sha256": "db86bc6317fffcdf2e3c1999a673103c72459fa9f65fe28856eb7e50b75c74ec"
     },
     {
       "name": "003_ops_change.sql",
-      "statements": 27,
-      "sha256": "25962d2750e822561ce4fa1ed842030c1c7136ed9b037c814c85aafd2e5e5d7e"
+      "statements": 28,
+      "sha256": "78ba8af42dbbf04dcf967b243edc0727d50d5d4793c76e19e5ba251fbad07ec6"
     },
     {
       "name": "004_ops_inspection.sql",
@@ -32,17 +32,17 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 35,
-      "sha256": "70293a938c96cd62abffae9bc38860b283dc07dc1f1c27dd04abeab7ac126ff1"
+      "sha256": "1ff43769b8563e16ff232b0b10a7460efb2dd1544d55eb8aca36b6076de0d1d6"
     },
     {
       "name": "007_ops_agents.sql",
       "statements": 13,
-      "sha256": "2b92f9e8a9e07038971fa8b853e1a90800185ae666bcacc72c13f0ef08078f56"
+      "sha256": "ef6151b464eee2ae7e9be28f161d990c978dcac2c5307a2f78e26111b7176433"
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 31,
-      "sha256": "a2bf063220f43fba4f47f26a5088e8742b4748fe279daa816715c7cf1f00c5d9"
+      "statements": 63,
+      "sha256": "6a9fe2934141acc1adbb4c1d2ab701c89d1a72f8446185deb643242762c412b7"
     }
   ],
   "tables": [
@@ -76,10 +76,15 @@
     "KBOT_OPS_REPORT_TEMPLATE",
     "KBOT_OPS_REPORT_TEMPLATE_VER",
     "KBOT_OPS_CONVERSATION",
+    "KBOT_OPS_CONVERSATION_TURN",
     "KBOT_OPS_CONVERSATION_MESSAGE",
-    "KBOT_OPS_CONVERSATION_RUN",
+    "KBOT_OPS_TURN_RUN",
+    "KBOT_OPS_SKILL_INVOCATION",
+    "KBOT_OPS_TURN_EVIDENCE",
+    "KBOT_OPS_ANSWER_BLOCK",
+    "KBOT_OPS_ANSWER_CITATION",
+    "KBOT_OPS_TURN_EVENT",
     "KBOT_OPS_EVIDENCE_REQUEST",
-    "KBOT_OPS_ACTION_STEP",
     "KBOT_OPS_IMAGE_EVIDENCE"
   ],
   "views": [
@@ -108,13 +113,18 @@
     "UX_OPS_SITUATION_ACTIVE",
     "UX_OPS_HITL_PENDING",
     "UX_OPS_REPORT_CURRENT",
-    "UX_OPS_RUN_EVENT_KEY"
+    "UX_OPS_RUN_EVENT_KEY",
+    "UX_OPS_TURN_ACTIVE",
+    "UX_OPS_TURN_USER_MESSAGE",
+    "UX_OPS_TURN_PRIMARY_RUN",
+    "UX_OPS_TURN_EVENT_KEY"
   ],
   "foreign_key_indexes": [
     {"constraint": "FK_OPS_TARGET_DIAG_CRED", "index": "IX_OPS_TARGET_DIAG_CRED", "table": "KBOT_OPS_TARGET", "columns": ["DIAGNOSTIC_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_TARGET_EXEC_CRED", "index": "IX_OPS_TARGET_EXEC_CRED", "table": "KBOT_OPS_TARGET", "columns": ["EXECUTION_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_SOURCE_AUTH_CRED", "index": "IX_OPS_SOURCE_AUTH_CRED", "table": "KBOT_OPS_DIAGNOSTIC_SOURCE", "columns": ["AUTH_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_SOURCE_WEBHOOK_CRED", "index": "IX_OPS_SOURCE_WEBHOOK_CRED", "table": "KBOT_OPS_DIAGNOSTIC_SOURCE", "columns": ["WEBHOOK_CREDENTIAL_ID", "DOMAIN_ID"]},
+    {"constraint": "FK_OPS_RUN_AGENT_VERSION", "index": "IX_OPS_RUN_AGENT_VERSION", "table": "KBOT_OPS_RUN", "columns": ["AGENT_VERSION_ID", "STATUS", "CREATED_AT"]},
     {"constraint": "FK_OPS_AGENT_VERSION_POLICY", "index": "IX_OPS_AGENT_VERSION_POLICY", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["POLICY_ID"]},
     {"constraint": "FK_OPS_AGENT_VERSION_TARGET", "index": "IX_OPS_AGENT_VERSION_TARGET", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["TARGET_ID"]},
     {"constraint": "FK_OPS_AGENT_VER_SOURCE_SRC", "index": "IX_OPS_AGENT_VER_SOURCE_SRC", "table": "KBOT_OPS_AGENT_VERSION_SOURCE", "columns": ["DIAGNOSTIC_SOURCE_ID"]},
@@ -122,14 +132,30 @@
     {"constraint": "FK_OPS_RPT_TPL_VER_DOMAIN", "index": "IX_OPS_RPT_TPL_VER_DOMAIN", "table": "KBOT_OPS_REPORT_TEMPLATE_VER", "columns": ["DOMAIN_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_CURRENT_VERSION", "index": "IX_OPS_RPT_TPL_CURRENT_VERSION", "table": "KBOT_OPS_REPORT_TEMPLATE", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_CONV_AGENT", "index": "IX_OPS_CONV_AGENT", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_ID"]},
-    {"constraint": "FK_OPS_CONV_AGENT_VER", "index": "IX_OPS_CONV_AGENT_VER", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_VERSION_ID"]},
+    {"constraint": "FK_OPS_CONV_AGENT_VER_OWNER", "index": "IX_OPS_CONV_AGENT_VER", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_VERSION_ID", "AGENT_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_SITUATION", "index": "IX_OPS_CONV_SOURCE_SITUATION", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_SITUATION_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_RUN", "index": "IX_OPS_CONV_SOURCE_RUN", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_RUN_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_REPORT", "index": "IX_OPS_CONV_SOURCE_REPORT", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_REPORT_ID"]},
+    {"constraint": "FK_OPS_TURN_CONVERSATION", "index": "IX_OPS_TURN_CONV_OWNER", "table": "KBOT_OPS_CONVERSATION_TURN", "columns": ["CONVERSATION_ID", "DOMAIN_ID"]},
+    {"constraint": "FK_OPS_TURN_TARGET", "index": "IX_OPS_TURN_TARGET_OWNER", "table": "KBOT_OPS_CONVERSATION_TURN", "columns": ["RESOLVED_TARGET_ID", "DOMAIN_ID"]},
+    {"constraint": "FK_OPS_TURN_INTENT_ART", "index": "IX_OPS_TURN_INTENT_ART", "table": "KBOT_OPS_CONVERSATION_TURN", "columns": ["INTENT_PLAN_ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_TURN_SKILL_ART", "index": "IX_OPS_TURN_SKILL_ART", "table": "KBOT_OPS_CONVERSATION_TURN", "columns": ["SKILL_PLAN_ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_TURN_SUFF_ART", "index": "IX_OPS_TURN_SUFF_ART", "table": "KBOT_OPS_CONVERSATION_TURN", "columns": ["SUFFICIENCY_ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_CONV_MSG_TURN", "index": "IX_OPS_CONV_MSG_TURN_OWNER", "table": "KBOT_OPS_CONVERSATION_MESSAGE", "columns": ["TURN_ID", "CONVERSATION_ID"]},
     {"constraint": "FK_OPS_CONV_MSG_ARTIFACT", "index": "IX_OPS_CONV_MSG_ARTIFACT", "table": "KBOT_OPS_CONVERSATION_MESSAGE", "columns": ["ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_SKILL_INV_PARENT", "index": "IX_OPS_SKILL_INV_PARENT", "table": "KBOT_OPS_SKILL_INVOCATION", "columns": ["PARENT_INVOCATION_ID"]},
+    {"constraint": "FK_OPS_SKILL_INV_TASK", "index": "IX_OPS_SKILL_INV_TASK", "table": "KBOT_OPS_SKILL_INVOCATION", "columns": ["OPS_TASK_ID"]},
+    {"constraint": "FK_OPS_SKILL_INV_OUTPUT", "index": "IX_OPS_SKILL_INV_OUTPUT", "table": "KBOT_OPS_SKILL_INVOCATION", "columns": ["OUTPUT_ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_TURN_EVID_ART", "index": "IX_OPS_TURN_EVID_ART", "table": "KBOT_OPS_TURN_EVIDENCE", "columns": ["ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_TURN_EVID_SKILL", "index": "IX_OPS_TURN_EVID_SKILL", "table": "KBOT_OPS_TURN_EVIDENCE", "columns": ["SKILL_INVOCATION_ID"]},
+    {"constraint": "FK_OPS_ANSWER_BLOCK_MESSAGE", "index": "IX_OPS_ANSWER_BLOCK_MSG_OWNER", "table": "KBOT_OPS_ANSWER_BLOCK", "columns": ["MESSAGE_ID", "TURN_ID"]},
+    {"constraint": "FK_OPS_ANSWER_BLOCK_SUPERSEDES", "index": "IX_OPS_ANSWER_BLOCK_SUPERSEDES", "table": "KBOT_OPS_ANSWER_BLOCK", "columns": ["SUPERSEDES_ID"]},
+    {"constraint": "FK_OPS_ANSWER_CIT_EVID", "index": "IX_OPS_ANSWER_CIT_EVID", "table": "KBOT_OPS_ANSWER_CITATION", "columns": ["TURN_EVIDENCE_ID"]},
+    {"constraint": "FK_OPS_TURN_EVENT_SKILL", "index": "IX_OPS_TURN_EVENT_SKILL", "table": "KBOT_OPS_TURN_EVENT", "columns": ["SKILL_INVOCATION_ID"]},
+    {"constraint": "FK_OPS_TURN_EVENT_BLOCK", "index": "IX_OPS_TURN_EVENT_BLOCK", "table": "KBOT_OPS_TURN_EVENT", "columns": ["ANSWER_BLOCK_ID"]},
     {"constraint": "FK_OPS_EVID_REQ_PARENT", "index": "IX_OPS_EVID_REQ_PARENT", "table": "KBOT_OPS_EVIDENCE_REQUEST", "columns": ["PARENT_REQUEST_ID"]},
-    {"constraint": "FK_OPS_ACTION_STEP_PROP", "index": "IX_OPS_ACTION_STEP_PROP", "table": "KBOT_OPS_ACTION_STEP", "columns": ["PROPOSAL_ID"]},
-    {"constraint": "FK_OPS_ACTION_STEP_SUPERSEDES", "index": "IX_OPS_ACTION_STEP_SUPERSEDES", "table": "KBOT_OPS_ACTION_STEP", "columns": ["SUPERSEDES_STEP_ID"]},
+    {"constraint": "FK_OPS_EVID_REQ_QUERY", "index": "IX_OPS_EVID_REQ_QUERY", "table": "KBOT_OPS_EVIDENCE_REQUEST", "columns": ["QUERY_ARTIFACT_ID"]},
+    {"constraint": "FK_OPS_EVID_REQ_RESPONSE", "index": "IX_OPS_EVID_REQ_RESPONSE", "table": "KBOT_OPS_EVIDENCE_REQUEST", "columns": ["RESPONSE_ARTIFACT_ID"]},
     {"constraint": "FK_OPS_IMG_EVID_REQ", "index": "IX_OPS_IMG_EVID_REQ", "table": "KBOT_OPS_IMAGE_EVIDENCE", "columns": ["EVIDENCE_REQUEST_ID"]},
     {"constraint": "FK_OPS_IMG_EVID_SOURCE", "index": "IX_OPS_IMG_EVID_SOURCE", "table": "KBOT_OPS_IMAGE_EVIDENCE", "columns": ["SOURCE_ARTIFACT_ID"]},
     {"constraint": "FK_OPS_IMG_EVID_OUTPUT", "index": "IX_OPS_IMG_EVID_OUTPUT", "table": "KBOT_OPS_IMAGE_EVIDENCE", "columns": ["OUTPUT_ARTIFACT_ID"]}
@@ -139,6 +165,8 @@
     "resource_id_generation": "application_uuidv7",
     "timestamp_type": "TIMESTAMP(6) WITH TIME ZONE",
     "scheduled_fire_unique_helper": "SCHEDULED_FOR_UTC",
+    "conversation_sequence_allocation": "locked_counter",
+    "turn_event_sequence_allocation": "locked_counter",
     "apex_dml": false,
     "runtime_ddl": false
   }

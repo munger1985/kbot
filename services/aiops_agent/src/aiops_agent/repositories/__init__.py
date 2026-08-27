@@ -3,6 +3,7 @@
 
 from .change import ChangeRepository
 from .conversation import ConversationRepository
+from .turn import TurnRepository
 from .inspection import InspectionRepository
 from .messaging import InboxRepository, OutboxRepository
 from .monitoring import SituationRepository, DiagnosticSourceRepository
@@ -12,6 +13,7 @@ from .target import PolicyRepository, TargetRepository
 
 __all__ = [
     "ConversationRepository",
+    "TurnRepository",
     "AIOpsAgentExecutionBinding",
     "AIOpsAgentRepository",
     "SituationRepository",

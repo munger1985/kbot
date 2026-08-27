@@ -1,0 +1,269 @@
+"""AIOps 专业 DBA 对话、Turn、证据和回答块契约。"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+from pydantic import Field, model_validator
+
+from .types import AIOpsContract, CursorPage, JsonObject, UUIDv7, UtcDatetime
+
+
+CONVERSATION_SCHEMA_VERSION = "aiops.conversation.v1"
+TURN_EVENT_SCHEMA_VERSION = "aiops.turn-event.v1"
+
+
+class ConversationStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    RESOLVED = "RESOLVED"
+    ARCHIVED = "ARCHIVED"
+
+
+class ConversationSourceType(StrEnum):
+    CHAT = "CHAT"
+    SITUATION = "SITUATION"
+    RUN = "RUN"
+    REPORT = "REPORT"
+
+
+class TurnStatus(StrEnum):
+    QUEUED = "QUEUED"
+    ACCEPTED = "ACCEPTED"
+    PLANNING = "PLANNING"
+    COLLECTING = "COLLECTING"
+    ASSESSING = "ASSESSING"
+    ANSWERING = "ANSWERING"
+    WAITING_USER = "WAITING_USER"
+    PROPOSAL_PENDING = "PROPOSAL_PENDING"
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class DbaIntent(StrEnum):
+    OBSERVE = "OBSERVE"
+    DIAGNOSE = "DIAGNOSE"
+    EXPLAIN = "EXPLAIN"
+    PLAN = "PLAN"
+    CHANGE = "CHANGE"
+    VERIFY = "VERIFY"
+    INSPECT = "INSPECT"
+
+
+class SufficiencyStatus(StrEnum):
+    ANSWERABLE = "ANSWERABLE"
+    PARTIAL = "PARTIAL"
+    NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+    NEEDS_EVIDENCE = "NEEDS_EVIDENCE"
+    CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
+    UNSAFE = "UNSAFE"
+
+
+class AnswerBlockType(StrEnum):
+    MARKDOWN = "MARKDOWN"
+    TABLE = "TABLE"
+    CHART = "CHART"
+    EVIDENCE_REFERENCES = "EVIDENCE_REFERENCES"
+    CLARIFICATION = "CLARIFICATION"
+    EVIDENCE_REQUEST = "EVIDENCE_REQUEST"
+    PROPOSAL_SUMMARY = "PROPOSAL_SUMMARY"
+    VERIFICATION_COMPARISON = "VERIFICATION_COMPARISON"
+
+
+class EvidenceRole(StrEnum):
+    SUPPORTS = "SUPPORTS"
+    CONTRADICTS = "CONTRADICTS"
+    CONTEXT = "CONTEXT"
+    USER_PROVIDED = "USER_PROVIDED"
+
+
+class MeasurementSemantics(StrEnum):
+    CURRENT_ACTIVITY = "CURRENT_ACTIVITY"
+    CUMULATIVE_SINCE_LOAD = "CUMULATIVE_SINCE_LOAD"
+    SNAPSHOT_DELTA = "SNAPSHOT_DELTA"
+    HISTORICAL_SAMPLES = "HISTORICAL_SAMPLES"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class FreshnessStatus(StrEnum):
+    FRESH = "FRESH"
+    STALE = "STALE"
+    UNKNOWN = "UNKNOWN"
+
+
+class ConversationSourceContext(AIOpsContract):
+    source_type: ConversationSourceType = ConversationSourceType.CHAT
+    situation_id: UUIDv7 | None = None
+    run_id: UUIDv7 | None = None
+    report_id: UUIDv7 | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "ConversationSourceContext":
+        expected = {
+            ConversationSourceType.CHAT: None,
+            ConversationSourceType.SITUATION: self.situation_id,
+            ConversationSourceType.RUN: self.run_id,
+            ConversationSourceType.REPORT: self.report_id,
+        }[ConversationSourceType(self.source_type)]
+        supplied = tuple(
+            value
+            for value in (self.situation_id, self.run_id, self.report_id)
+            if value is not None
+        )
+        if self.source_type == ConversationSourceType.CHAT and supplied:
+            raise ValueError("CHAT 会话不能携带来源资源")
+        if self.source_type != ConversationSourceType.CHAT and (
+            expected is None or len(supplied) != 1
+        ):
+            raise ValueError("来源类型必须且只能携带对应的来源资源")
+        return self
+
+
+class ConversationCreate(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    agent_id: UUIDv7
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    source: ConversationSourceContext = Field(
+        default_factory=ConversationSourceContext
+    )
+
+
+class ConversationStart(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    conversation: ConversationCreate
+    first_turn: "TurnCreate"
+
+
+class ConversationReceipt(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    conversation_id: UUIDv7
+    agent_id: UUIDv7
+    agent_version_id: UUIDv7
+    status: ConversationStatus
+    title: str | None = None
+    created_at: UtcDatetime
+
+
+class ConversationSummary(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    conversation_id: UUIDv7
+    agent_id: UUIDv7
+    agent_version_id: UUIDv7
+    title: str | None = Field(default=None, max_length=256)
+    status: ConversationStatus
+    source_type: ConversationSourceType
+    source_situation_id: UUIDv7 | None = None
+    source_run_id: UUIDv7 | None = None
+    source_report_id: UUIDv7 | None = None
+    last_turn_no: int = Field(ge=0)
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class TurnCreate(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    message: str = Field(min_length=1, max_length=32000)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    target_id: UUIDv7 | None = None
+    source_run_id: UUIDv7 | None = None
+
+
+class TurnReceipt(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    conversation_id: UUIDv7
+    turn_id: UUIDv7
+    turn_no: int = Field(ge=1)
+    status: TurnStatus
+    event_cursor: int = Field(ge=0)
+    created_at: UtcDatetime
+
+
+class AnswerCitationView(AIOpsContract):
+    citation_no: int = Field(ge=1)
+    turn_evidence_id: UUIDv7
+    label: str = Field(min_length=1, max_length=256)
+
+
+class AnswerBlockView(AIOpsContract):
+    answer_block_id: UUIDv7
+    block_no: int = Field(ge=1)
+    block_type: AnswerBlockType
+    schema_version: str = Field(min_length=1, max_length=64)
+    payload: JsonObject
+    content_hash: str = Field(min_length=64, max_length=64)
+    citations: tuple[AnswerCitationView, ...] = ()
+
+
+class ConversationMessageView(AIOpsContract):
+    message_id: UUIDv7
+    sequence_no: int = Field(ge=1)
+    role: str = Field(min_length=1, max_length=16)
+    message_type: str = Field(min_length=1, max_length=32)
+    payload_schema: str = Field(min_length=1, max_length=64)
+    payload: JsonObject
+    artifact_id: UUIDv7 | None = None
+    created_at: UtcDatetime
+
+
+class TurnSummary(AIOpsContract):
+    turn_id: UUIDv7
+    conversation_id: UUIDv7
+    turn_no: int = Field(ge=1)
+    status: TurnStatus
+    resolved_target_id: UUIDv7 | None = None
+    primary_intent: DbaIntent | None = None
+    primary_domain: str | None = Field(default=None, max_length=48)
+    subject: str | None = Field(default=None, max_length=64)
+    sufficiency_status: SufficiencyStatus | None = None
+    event_cursor: int = Field(ge=0)
+    error_domain: str | None = Field(default=None, max_length=32)
+    error_code: str | None = Field(default=None, max_length=128)
+    error_message: str | None = Field(default=None, max_length=2000)
+    created_at: UtcDatetime
+    completed_at: UtcDatetime | None = None
+
+
+class TurnView(TurnSummary):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    messages: tuple[ConversationMessageView, ...] = ()
+    answer_blocks: tuple[AnswerBlockView, ...] = ()
+
+
+class TurnPage(CursorPage):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    items: tuple[TurnSummary, ...] = ()
+
+
+class TurnCancelCommand(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class EvidenceResponseCreate(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    text: str | None = Field(default=None, max_length=32000)
+    upload_id: UUIDv7 | None = None
+
+    @model_validator(mode="after")
+    def validate_response(self) -> "EvidenceResponseCreate":
+        if (self.text is None) == (self.upload_id is None):
+            raise ValueError("补证响应必须且只能提供文字或一个上传文件")
+        return self
+
+
+class TurnEventView(AIOpsContract):
+    schema_version: str = TURN_EVENT_SCHEMA_VERSION
+    turn_id: UUIDv7
+    sequence_no: int = Field(ge=1)
+    event_type: str = Field(min_length=1, max_length=64)
+    payload: JsonObject
+    occurred_at: UtcDatetime
+
+
+class TurnEventPage(AIOpsContract):
+    schema_version: str = TURN_EVENT_SCHEMA_VERSION
+    events: tuple[TurnEventView, ...] = ()
+    next_sequence: int = Field(ge=0)
+    terminal: bool = False

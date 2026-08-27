@@ -8,6 +8,7 @@ from aiops_agent.api.management import router as internal_config_router
 from aiops_agent.api.runtime import router as internal_runtime_router
 from aiops_agent.api.intake import router as internal_intake_router
 from aiops_agent.api.changes import router as internal_changes_router
+from aiops_agent.api.conversations import router as internal_conversations_router
 from aiops_agent.api.executions import (
     event_router as internal_execution_events_router,
     router as internal_executions_router,
@@ -39,6 +40,7 @@ def create_internal_contract_app() -> FastAPI:
     app.include_router(internal_runtime_router)
     app.include_router(internal_intake_router)
     app.include_router(internal_changes_router)
+    app.include_router(internal_conversations_router)
     app.include_router(internal_executions_router)
     app.include_router(internal_execution_events_router)
 

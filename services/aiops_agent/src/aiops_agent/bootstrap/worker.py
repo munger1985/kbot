@@ -21,6 +21,7 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
@@ -208,6 +209,9 @@ def create_aiops_worker_probe(
                     managed_credentials=managed_credential_service,
                 ),
                 db_executor_client=db_executor_client,
+                turn_queue_service=TurnQueueService(
+                    uow_factory=runtime.uow_factory,
+                ),
             ),
             dispatcher_id=f"{config.worker_id}-outbox",
             lease_seconds=config.lease_seconds,

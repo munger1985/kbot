@@ -1146,6 +1146,101 @@
         "title": "AgentUpdatePayload",
         "type": "object"
       },
+      "AnswerBlockType": {
+        "enum": [
+          "MARKDOWN",
+          "TABLE",
+          "CHART",
+          "EVIDENCE_REFERENCES",
+          "CLARIFICATION",
+          "EVIDENCE_REQUEST",
+          "PROPOSAL_SUMMARY",
+          "VERIFICATION_COMPARISON"
+        ],
+        "title": "AnswerBlockType",
+        "type": "string"
+      },
+      "AnswerBlockView": {
+        "additionalProperties": false,
+        "properties": {
+          "answer_block_id": {
+            "format": "uuid",
+            "title": "Answer Block Id",
+            "type": "string"
+          },
+          "block_no": {
+            "minimum": 1.0,
+            "title": "Block No",
+            "type": "integer"
+          },
+          "block_type": {
+            "$ref": "#/components/schemas/AnswerBlockType"
+          },
+          "citations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitationView"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content_hash": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "schema_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer_block_id",
+          "block_no",
+          "block_type",
+          "schema_version",
+          "payload",
+          "content_hash"
+        ],
+        "title": "AnswerBlockView",
+        "type": "object"
+      },
+      "AnswerCitationView": {
+        "additionalProperties": false,
+        "properties": {
+          "citation_no": {
+            "minimum": 1.0,
+            "title": "Citation No",
+            "type": "integer"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "turn_evidence_id": {
+            "format": "uuid",
+            "title": "Turn Evidence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_no",
+          "turn_evidence_id",
+          "label"
+        ],
+        "title": "AnswerCitationView",
+        "type": "object"
+      },
       "AppApiClientCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -2299,55 +2394,70 @@
         "title": "ConversationItemView",
         "type": "object"
       },
-      "ConversationMessagePayload": {
+      "ConversationMessageView": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "message_id": {
             "format": "uuid",
-            "title": "Agent Id",
+            "title": "Message Id",
             "type": "string"
           },
-          "conversation_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversation Id"
-          },
-          "message": {
-            "maxLength": 32000,
+          "message_type": {
+            "maxLength": 32,
             "minLength": 1,
-            "title": "Message",
+            "title": "Message Type",
             "type": "string"
           },
-          "request_report": {
-            "default": false,
-            "title": "Request Report",
-            "type": "boolean"
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
           },
-          "source_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Run Id"
+          "payload_schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Payload Schema",
+            "type": "string"
+          },
+          "role": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "sequence_no": {
+            "minimum": 1.0,
+            "title": "Sequence No",
+            "type": "integer"
           }
         },
         "required": [
-          "agent_id",
-          "message"
+          "message_id",
+          "sequence_no",
+          "role",
+          "message_type",
+          "payload_schema",
+          "payload",
+          "created_at"
         ],
-        "title": "ConversationMessagePayload",
+        "title": "ConversationMessageView",
         "type": "object"
       },
       "ConversationQueryImage": {
@@ -2377,6 +2487,190 @@
           "content_base64"
         ],
         "title": "ConversationQueryImage",
+        "type": "object"
+      },
+      "ConversationSourceType": {
+        "enum": [
+          "CHAT",
+          "SITUATION",
+          "RUN",
+          "REPORT"
+        ],
+        "title": "ConversationSourceType",
+        "type": "string"
+      },
+      "ConversationStartPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "agent_id",
+          "message"
+        ],
+        "title": "ConversationStartPayload",
+        "type": "object"
+      },
+      "ConversationStatus": {
+        "enum": [
+          "ACTIVE",
+          "RESOLVED",
+          "ARCHIVED"
+        ],
+        "title": "ConversationStatus",
+        "type": "string"
+      },
+      "ConversationSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_turn_no": {
+            "minimum": 0.0,
+            "title": "Last Turn No",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.conversation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Report Id"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "source_situation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Situation Id"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/ConversationSourceType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConversationStatus"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "agent_id",
+          "agent_version_id",
+          "status",
+          "source_type",
+          "last_turn_no",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary",
         "type": "object"
       },
       "ConversationTurnPage": {
@@ -2411,44 +2705,39 @@
       "ConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
-          "client_metadata": {
-            "additionalProperties": true,
-            "title": "Client Metadata",
-            "type": "object"
-          },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
-          "expected_conversation_version": {
-            "minimum": 1.0,
-            "title": "Expected Conversation Version",
-            "type": "integer"
-          },
-          "images": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ConversationQueryImage"
-            },
-            "maxItems": 8,
-            "title": "Images",
-            "type": "array"
-          },
-          "input": {
+          "message": {
             "maxLength": 32000,
             "minLength": 1,
-            "title": "Input",
+            "title": "Message",
             "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
           }
         },
         "required": [
-          "input",
-          "expected_conversation_version"
+          "message"
         ],
         "title": "ConversationTurnPayload",
         "type": "object"
@@ -3126,6 +3415,19 @@
           "POSTGRESQL"
         ],
         "title": "DatabaseType",
+        "type": "string"
+      },
+      "DbaIntent": {
+        "enum": [
+          "OBSERVE",
+          "DIAGNOSE",
+          "EXPLAIN",
+          "PLAN",
+          "CHANGE",
+          "VERIFY",
+          "INSPECT"
+        ],
+        "title": "DbaIntent",
         "type": "string"
       },
       "DiagnosticSourceConnectionTestResult": {
@@ -3806,92 +4108,6 @@
           "name"
         ],
         "title": "DomainCreateRequest",
-        "type": "object"
-      },
-      "EvidenceRequestPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "purpose": {
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Purpose",
-            "type": "string"
-          },
-          "suggested_sql": {
-            "anyOf": [
-              {
-                "maxLength": 32000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Suggested Sql"
-          }
-        },
-        "required": [
-          "purpose"
-        ],
-        "title": "EvidenceRequestPayload",
-        "type": "object"
-      },
-      "EvidenceTextPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "text": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "text"
-        ],
-        "title": "EvidenceTextPayload",
-        "type": "object"
-      },
-      "EvidenceUploadPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "content_base64": {
-            "maxLength": 14000000,
-            "minLength": 1,
-            "title": "Content Base64",
-            "type": "string"
-          },
-          "filename": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "mime_type": {
-            "maxLength": 128,
-            "minLength": 3,
-            "title": "Mime Type",
-            "type": "string"
-          },
-          "text": {
-            "anyOf": [
-              {
-                "maxLength": 32000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          }
-        },
-        "required": [
-          "filename",
-          "mime_type",
-          "content_base64"
-        ],
-        "title": "EvidenceUploadPayload",
         "type": "object"
       },
       "ExchangeAppPayload": {
@@ -8891,6 +9107,18 @@
         "title": "SubmitSemanticModelReviewRequest",
         "type": "object"
       },
+      "SufficiencyStatus": {
+        "enum": [
+          "ANSWERABLE",
+          "PARTIAL",
+          "NEEDS_CLARIFICATION",
+          "NEEDS_EVIDENCE",
+          "CAPABILITY_UNAVAILABLE",
+          "UNSAFE"
+        ],
+        "title": "SufficiencyStatus",
+        "type": "string"
+      },
       "SwitchDomainPayload": {
         "additionalProperties": false,
         "properties": {
@@ -9570,6 +9798,387 @@
         "title": "TriggerType",
         "type": "string"
       },
+      "TurnReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_cursor": {
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.conversation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TurnStatus"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "turn_no": {
+            "minimum": 1.0,
+            "title": "Turn No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turn_id",
+          "turn_no",
+          "status",
+          "event_cursor",
+          "created_at"
+        ],
+        "title": "TurnReceipt",
+        "type": "object"
+      },
+      "TurnStatus": {
+        "enum": [
+          "QUEUED",
+          "ACCEPTED",
+          "PLANNING",
+          "COLLECTING",
+          "ASSESSING",
+          "ANSWERING",
+          "WAITING_USER",
+          "PROPOSAL_PENDING",
+          "COMPLETED",
+          "PARTIAL",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "title": "TurnStatus",
+        "type": "string"
+      },
+      "TurnSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_domain": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Domain"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "event_cursor": {
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "primary_domain": {
+            "anyOf": [
+              {
+                "maxLength": 48,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Domain"
+          },
+          "primary_intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbaIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Target Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TurnStatus"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "sufficiency_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SufficiencyStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "turn_no": {
+            "minimum": 1.0,
+            "title": "Turn No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "turn_id",
+          "conversation_id",
+          "turn_no",
+          "status",
+          "event_cursor",
+          "created_at"
+        ],
+        "title": "TurnSummary",
+        "type": "object"
+      },
+      "TurnView": {
+        "additionalProperties": false,
+        "properties": {
+          "answer_blocks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnswerBlockView"
+            },
+            "title": "Answer Blocks",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_domain": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Domain"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "event_cursor": {
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "messages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessageView"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "primary_domain": {
+            "anyOf": [
+              {
+                "maxLength": 48,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Domain"
+          },
+          "primary_intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbaIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Target Id"
+          },
+          "schema_version": {
+            "default": "aiops.conversation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TurnStatus"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "sufficiency_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SufficiencyStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          },
+          "turn_no": {
+            "minimum": 1.0,
+            "title": "Turn No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "turn_id",
+          "conversation_id",
+          "turn_no",
+          "status",
+          "event_cursor",
+          "created_at"
+        ],
+        "title": "TurnView",
+        "type": "object"
+      },
       "UpdateConversationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9760,6 +10369,51 @@
           "created_at"
         ],
         "title": "WebhookKeyRotation",
+        "type": "object"
+      },
+      "main_api__api__km_asset_app__ConversationTurnPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "collection_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "expected_conversation_version": {
+            "minimum": 1.0,
+            "title": "Expected Conversation Version",
+            "type": "integer"
+          },
+          "images": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationQueryImage"
+            },
+            "maxItems": 8,
+            "title": "Images",
+            "type": "array"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input",
+          "expected_conversation_version"
+        ],
+        "title": "ConversationTurnPayload",
         "type": "object"
       }
     }
@@ -10161,7 +10815,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  },
+                  "title": "Response List Conversations Api V1 Apps Aiops Conversations Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -10183,12 +10843,23 @@
         ]
       },
       "post": {
-        "operationId": "create_or_append_conversation_api_v1_apps_aiops_conversations_post",
+        "operationId": "start_conversation_api_v1_apps_aiops_conversations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationMessagePayload"
+                "$ref": "#/components/schemas/ConversationStartPayload"
               }
             }
           },
@@ -10198,7 +10869,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TurnReceipt"
+                }
               }
             },
             "description": "Successful Response"
@@ -10214,7 +10887,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Or Append Conversation",
+        "summary": "Start Conversation",
         "tags": [
           "AIOps App"
         ]
@@ -10239,7 +10912,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
               }
             },
             "description": "Successful Response"
@@ -10261,9 +10936,9 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/conversations/{conversation_id}/evidence-requests": {
-      "post": {
-        "operationId": "request_evidence_api_v1_apps_aiops_conversations__conversation_id__evidence_requests_post",
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns": {
+      "get": {
+        "operationId": "list_conversation_turns_api_v1_apps_aiops_conversations__conversation_id__turns_get",
         "parameters": [
           {
             "in": "path",
@@ -10274,23 +10949,42 @@
               "title": "Conversation Id",
               "type": "string"
             }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceRequestPayload"
-              }
+          },
+          {
+            "in": "query",
+            "name": "after_turn_no",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Turn No",
+              "type": "integer"
             }
           },
-          "required": true
-        },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TurnSummary"
+                  },
+                  "title": "Response List Conversation Turns Api V1 Apps Aiops Conversations  Conversation Id  Turns Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -10306,15 +11000,75 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Request Evidence",
+        "summary": "List Conversation Turns",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_conversation_turn_api_v1_apps_aiops_conversations__conversation_id__turns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTurnPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Conversation Turn",
         "tags": [
           "AIOps App"
         ]
       }
     },
-    "/api/v1/apps/aiops/conversations/{conversation_id}/evidence-requests/{request_id}/skip": {
-      "post": {
-        "operationId": "skip_evidence_api_v1_apps_aiops_conversations__conversation_id__evidence_requests__request_id__skip_post",
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}": {
+      "get": {
+        "operationId": "get_conversation_turn_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__get",
         "parameters": [
           {
             "in": "path",
@@ -10328,25 +11082,137 @@
           },
           {
             "in": "path",
-            "name": "request_id",
+            "name": "turn_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Request Id",
+              "title": "Turn Id",
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceTextPayload"
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnView"
+                }
               }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Conversation Turn",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/cancel": {
+      "post": {
+        "operationId": "cancel_conversation_turn_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
             }
           },
-          "required": true
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
         },
+        "summary": "Cancel Conversation Turn",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/events": {
+      "get": {
+        "operationId": "stream_conversation_turn_events_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -10367,129 +11233,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Skip Evidence",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/conversations/{conversation_id}/evidence-requests/{request_id}/text": {
-      "post": {
-        "operationId": "submit_evidence_text_api_v1_apps_aiops_conversations__conversation_id__evidence_requests__request_id__text_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Request Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceTextPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Submit Evidence Text",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/conversations/{conversation_id}/evidence-requests/{request_id}/uploads": {
-      "post": {
-        "operationId": "upload_evidence_api_v1_apps_aiops_conversations__conversation_id__evidence_requests__request_id__uploads_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Request Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceUploadPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Upload Evidence",
+        "summary": "Stream Conversation Turn Events",
         "tags": [
           "AIOps App"
         ]
@@ -16082,7 +16826,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationTurnPayload"
+                "$ref": "#/components/schemas/main_api__api__km_asset_app__ConversationTurnPayload"
               }
             }
           },

@@ -62,74 +62,15 @@
     return `<details class="ops-evidence"><summary>诊断依据 <span>${facts.length} 项已验证事实</span></summary><div class="ops-evidence-body">${rootRow}${factRows}${gapRows}</div></details>`;
   }
 
-  function tablespaceChartHtml(result) {
-    const rows = values(result?.payload?.facts)
-      .filter((fact) => fact.metric_or_fact_type === "db.storage.utilization.series.last" && fact.dimensions?.tablespace && Number.isFinite(Number(fact.value)))
-      .map((fact) => ({ name: String(fact.dimensions.tablespace), value: Math.max(0, Math.min(100, Number(fact.value))) }))
-      .sort((left, right) => right.value - left.value);
-    if (rows.length < 2) return "";
-    return `<figure class="ops-tablespace-chart"><figcaption>表空间使用率对比</figcaption><div class="ops-chart-rows">${rows.map((row) => `<div class="ops-chart-row"><span title="${esc(row.name)}">${esc(row.name)}</span><div class="ops-chart-track"><i style="width:${row.value.toFixed(2)}%"></i></div><strong>${row.value.toFixed(2)}%</strong></div>`).join("")}</div></figure>`;
-  }
-
   function messageHtml(role, text, meta = "", supplemental = "") {
     const user = role === "USER";
     return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
-  }
-
-  function messageText(item) {
-    const payload = item.payload || {};
-    if (item.message_type === "EVIDENCE_REQUEST") {
-      const markers = values(payload.query_ids).length > 1
-        ? `\n\n这次包含多条查询。粘贴文本时，请依次使用 ${payload.query_ids.map((id) => `\`[${id}]\``).join("、")} 作为各段结果的标题；也可以直接上传完整截图。`
-        : "";
-      return `${payload.purpose || "为了继续判断，还需要补充一项证据。"}${payload.suggested_sql ? `\n\n请在目标数据库手工执行以下只读 SQL，并将结果或截图发回这里：\n\n\`\`\`sql\n${payload.suggested_sql}\n\`\`\`${markers}` : "\n\n请把相关输出或截图直接发回这里。"}`;
-    }
-    if (item.message_type === "AGENT_PROGRESS") return payload.summary || "正在诊断…";
-    if (item.message_type === "EVIDENCE_FILE") return `已上传补充证据：${payload.filename || "结果截图"}`;
-    if (item.message_type === "IMAGE_EVIDENCE_PROCESSED") return `已读取截图内容：\n\n${payload.text || "图片中未提取到可用文字。"}`;
-    return payload.text || payload.summary || "";
-  }
-
-  function openEvidenceRequest(conversation) {
-    const requests = conversation.messages.filter((item) => item.message_type === "EVIDENCE_REQUEST");
-    const completed = new Set(conversation.messages.filter((item) => ["EVIDENCE_TEXT", "EVIDENCE_FILE", "EVIDENCE_SKIPPED"].includes(item.message_type)).map((item) => item.payload?.request_id));
-    return [...requests].reverse().find((item) => !completed.has(item.payload?.request_id)) || null;
   }
 
   async function agents() {
     const rows = await KBotAIOpsAuth.request(`${api}/agents`);
     state.agents = values(rows).filter((item) => item.status === "ACTIVE");
     return state.agents;
-  }
-
-  async function renderRunResult(runId, container) {
-    try {
-      const result = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runId)}/result`);
-      if (!result.final_artifact && !["COMPLETED", "DEGRADED", "FAILED", "CANCELLED", "REJECTED", "EXPIRED"].includes(result.status)) {
-        container.insertAdjacentHTML("beforeend", messageHtml("AGENT", "诊断仍在进行中，页面会通过事件流持续更新。", result.status));
-        return;
-      }
-      container.insertAdjacentHTML("beforeend", messageHtml(
-        "AGENT",
-        conversationAnswerMarkdown(result),
-        "",
-        tablespaceChartHtml(result) + evidenceDetails(result),
-      ));
-      try { await renderProposals(runId, container); } catch (_) { /* 无审批权限时仍展示诊断结果。 */ }
-    } catch (error) {
-      container.insertAdjacentHTML("beforeend", messageHtml("AGENT", `无法读取本次诊断结果：${error.message}`));
-    }
-  }
-
-  async function renderProposals(runId, container) {
-    const run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runId)}`);
-    const page = await KBotAIOpsAuth.request(`${api}/proposals?target_id=${encodeURIComponent(run.target_id)}&limit=100`);
-    const proposals = values(page.items).filter((item) => String(item.ops_run_id) === String(runId));
-    proposals.forEach((item) => {
-      const executable = item.mode === "AGENT_EXECUTE" && item.status === "PENDING_APPROVAL";
-      const body = `### ${executable ? "待人工审批的变更" : "处理建议"}\n\n**影响：** ${item.impact}\n\n**风险：** ${item.risk}\n\n**回滚：** ${item.rollback_plan}\n\n\`\`\`sql\n${item.command_preview}\n\`\`\``;
-      container.insertAdjacentHTML("beforeend", `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown">${markdown.render(body)}${executable ? `<div class="ops-actions"><button type="button" class="primary" data-approve-proposal="${esc(item.proposal_id)}" data-version="${item.row_version}" data-hash="${esc(item.proposal_hash)}">审批并执行</button><button type="button" data-reject-proposal="${esc(item.proposal_id)}" data-version="${item.row_version}">拒绝</button></div>` : `<div class="ops-message-meta">${esc(item.status)} · 当前只提供人工建议</div>`}</div></article>`);
-    });
   }
 
   async function proposalAction(button) {
@@ -151,26 +92,52 @@
     } catch (error) { shell.toast(error.message); button.disabled = false; }
   }
 
-  async function renderConversation(conversation) {
-    state.conversation = conversation;
-    document.getElementById("conversation-title").textContent = conversation.messages.find((item) => item.role === "USER")?.payload?.text || "诊断对话";
-    document.getElementById("conversation-context").textContent = conversation.source_type === "ALERT" ? "这次对话继承自告警自动诊断。" : conversation.source_type === "INSPECTION" ? "这次对话继承自日常巡检。" : "人工发起的智能诊断。";
-    const panel = document.getElementById("message-list");
-    panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已由服务端关联原始自动诊断证据；后续结论会继续核验，不会把历史推断当作新事实。</div>' : "";
-    conversation.messages.forEach((item) => {
-      panel.insertAdjacentHTML("beforeend", messageHtml(item.role, messageText(item), shell.fmt(item.created_at)));
-    });
-    for (const link of conversation.runs) {
-      if (!["AUTO_DIAGNOSIS_SEED", "INSPECTION_SEED"].includes(link.purpose)) await renderRunResult(link.ops_run_id, panel);
+  function answerBlockHtml(block) {
+    const payload = block.payload || {};
+    if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
+    if (block.block_type === "TABLE") {
+      const columns = values(payload.columns);
+      return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column) => `<td>${esc(row[column.key || column] ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
+    if (block.block_type === "CHART") {
+      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${values(payload.series).map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
+    }
+    if (block.block_type === "EVIDENCE_REFERENCES") {
+      const items = values(payload.items);
+      return `<details class="ops-evidence"><summary>诊断依据 <span>${items.length} 项证据</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${items.map((item) => `<li><span>${esc(item.label || item.summary || "诊断证据")}</span><small>${esc(item.source || "EVIDENCE")}${item.observed_at ? ` · ${esc(shell.fmt(item.observed_at))}` : ""}</small></li>`).join("")}</ol></div></details>`;
+    }
+    return markdown.render(payload.markdown || payload.text || payload.instruction || "");
+  }
+
+  function turnHtml(turn) {
+    const messages = values(turn.messages);
+    const user = messages.find((item) => item.message_type === "USER_MESSAGE");
+    const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
+    const blocks = values(turn.answer_blocks).map(answerBlockHtml).join("");
+    const terminal = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(turn.status);
+    const answer = assistant || blocks ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div></div></article>` : "";
+    const progress = terminal && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${answer}${progress}`;
+  }
+
+  async function renderConversation(conversation, turns) {
+    state.conversation = conversation;
+    state.turns = turns;
+    document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
+    document.getElementById("conversation-context").textContent = conversation.source_type === "RUN" ? "这次对话继承自告警或巡检结果。" : "人工发起的智能诊断。";
+    const panel = document.getElementById("message-list");
+    panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
+    turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
   }
 
   async function loadConversation(id) {
     const conversation = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}`);
+    const turnRows = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns?limit=200`);
+    const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
-    await renderConversation(conversation);
+    await renderConversation(conversation, turns);
     document.querySelectorAll(".ops-workspace-item").forEach((button) => { button.setAttribute("aria-current", String(button.dataset.id === id)); });
   }
 
@@ -229,14 +196,12 @@
     return new Promise((resolve) => pending.waiters.push(resolve));
   }
 
-  async function followRun(runId, progress) {
-    let summary = "诊断任务已经开始";
+  async function followTurn(conversationId, turnId, progress) {
     let pending = null;
-    await KBotAIOpsAuth.stream(`${api}/runs/${encodeURIComponent(runId)}/events`, ({ event, data }) => {
-      if (event === "task.status") {
-        const payload = data?.payload || {};
-        summary = payload.public_summary || payload.summary || "正在继续诊断…";
-        progress.textContent = summary;
+    await KBotAIOpsAuth.stream(`${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events`, ({ event, data }) => {
+      const payload = data?.payload || {};
+      if (["turn.created", "turn.status", "skill.status"].includes(event)) {
+        progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
       }
       if (event === "answer.delta") {
         const delta = String(data?.payload?.delta || "");
@@ -267,12 +232,6 @@
     }
   }
 
-  async function fileBase64(file) {
-    if (file.size > 10 * 1024 * 1024) throw new Error("结果截图不能超过 10 MiB");
-    const url = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
-    return String(url).split(",", 2)[1];
-  }
-
   async function submitConversation(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -280,37 +239,27 @@
     const agentId = document.getElementById("agent-select").value;
     const text = form.elements.message.value.trim();
     if (!agentId) return shell.toast("请先选择 Agent");
+    if (!text) return shell.toast("请输入需要诊断的问题");
+    if (state.selectedFile) return shell.toast("截图和文件补证将在补证阶段启用，请先发送文字问题");
     button.disabled = true;
     try {
-      const request = state.conversation ? openEvidenceRequest(state.conversation) : null;
-      if (state.selectedFile) {
-        if (!request) throw new Error("只有 Agent 请求补充证据后才能上传结果截图");
-        await KBotAIOpsAuth.request(`${api}/conversations/${state.conversation.conversation_id}/evidence-requests/${request.payload.request_id}/uploads`, { method: "POST", body: JSON.stringify({ filename: state.selectedFile.name, mime_type: state.selectedFile.type, content_base64: await fileBase64(state.selectedFile), text: text || null }) });
-      } else if (request) {
-        await KBotAIOpsAuth.request(`${api}/conversations/${state.conversation.conversation_id}/evidence-requests/${request.payload.request_id}/text`, { method: "POST", body: JSON.stringify({ text }) });
-      }
-      if (request) {
-        const conversationId = state.conversation.conversation_id;
-        const resumedRun = [...state.conversation.runs].reverse().find((item) => item.purpose === "QUESTION");
-        const submittedFileName = state.selectedFile?.name;
-        form.reset(); state.selectedFile = null; document.getElementById("upload-preview").textContent = "";
-        const panel = document.getElementById("message-list");
-        panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedFileName ? `已上传结果截图：${submittedFileName}` : text));
-        panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">已接收补充证据，正在继续原诊断…</div>');
-        const progress = document.getElementById("live-progress");
-        if (resumedRun) {
-          try { await followRun(resumedRun.ops_run_id, progress); } catch (error) { shell.toast(`事件流已中断：${error.message}`); }
-        }
-        await loadConversationList(conversationId);
-        return;
-      }
-      const receipt = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", body: JSON.stringify({ agent_id: agentId, message: text, conversation_id: state.conversation?.conversation_id || null }) });
+      const path = state.conversation
+        ? `${api}/conversations/${state.conversation.conversation_id}/turns`
+        : `${api}/conversations`;
+      const body = state.conversation ? { message: text } : { agent_id: agentId, message: text };
+      const receipt = await KBotAIOpsAuth.request(path, {
+        method: "POST",
+        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+        body: JSON.stringify(body),
+      });
       form.reset(); state.selectedFile = null; document.getElementById("upload-preview").textContent = "";
       const panel = document.getElementById("message-list");
       panel.insertAdjacentHTML("beforeend", messageHtml("USER", text));
       panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">正在建立诊断计划…</div>');
       const progress = document.getElementById("live-progress");
-      try { await followRun(receipt.run_id, progress); } catch (error) { shell.toast(`事件流已中断：${error.message}`); }
+      followTurn(receipt.conversation_id, receipt.turn_id, progress)
+        .then(() => loadConversationList(receipt.conversation_id))
+        .catch((error) => shell.toast(`事件流已中断：${error.message}`));
       await loadConversationList(receipt.conversation_id);
     } catch (error) { shell.toast(error.message); } finally { button.disabled = false; }
   }
@@ -338,7 +287,7 @@
       event.preventDefault();
       const body = Object.fromEntries(new FormData(form));
       try {
-        const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", body: JSON.stringify({ ...body, source_run_id: run.ops_run_id }) });
+        const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ ...body, source_run_id: run.ops_run_id }) });
         location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
       } catch (error) { shell.toast(error.message); }
     };
@@ -351,7 +300,7 @@
     const runId = detail.run_ids[0];
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${result ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${tablespaceChartHtml(result)}${evidenceDetails(result)}</div>${continueForm(run, detail.title)}` : '<div class="ops-empty">自动诊断尚未生成结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${result ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>${continueForm(run, detail.title)}` : '<div class="ops-empty">自动诊断尚未生成结果。</div>'}`;
     await bindContinue(run, detail.title);
   }
 
