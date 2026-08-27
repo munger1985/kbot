@@ -127,6 +127,29 @@ class TurnRepository(AIOpsRepository):
         )
         return list(rows)
 
+    async def list_recent_conversation_messages(
+        self,
+        *,
+        conversation_id: UUID,
+        before_sequence_no: int,
+        limit: int = 12,
+    ) -> list[OpsConversationMessageEntity]:
+        rows = list(
+            await self._session.scalars(
+                select(OpsConversationMessageEntity)
+                .where(
+                    OpsConversationMessageEntity.conversation_id
+                    == conversation_id,
+                    OpsConversationMessageEntity.sequence_no
+                    < before_sequence_no,
+                )
+                .order_by(OpsConversationMessageEntity.sequence_no.desc())
+                .limit(limit)
+            )
+        )
+        rows.reverse()
+        return rows
+
     async def list_events(
         self,
         *,
