@@ -66,7 +66,7 @@ GRANT SELECT ON SYS.GV_$TRANSACTION               TO kbot_monitor;
 GRANT SELECT ON SYS.DBA_DATA_FILES                TO kbot_monitor;
 GRANT SELECT ON SYS.DBA_FREE_SPACE                TO kbot_monitor;
 
--- KBot补充CPU指标。
+-- KBot AIOps实时性能、内存和归档/FRA诊断。
 GRANT SELECT ON SYS.V_$SYSMETRIC                  TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SGA                        TO kbot_monitor;
 GRANT SELECT ON SYS.V_$PGASTAT                    TO kbot_monitor;

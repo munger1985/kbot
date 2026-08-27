@@ -209,7 +209,9 @@ SHOW CON_NAME;
 Exporter、补充指标、Alert Collector和AIOps诊断所需的逐对象最小授权。当前累计Top SQL
 读取`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`；当前活跃会话和阻塞链读取
 `GV_$SESSION`；长事务读取`GV_$TRANSACTION`；表空间容量读取`DBA_DATA_FILES`和
-`DBA_FREE_SPACE`。脚本不授予AWR历史视图，也不隐含Diagnostics Pack许可。
+`DBA_FREE_SPACE`；实时性能读取`V_$SYSMETRIC`；内存读取`V_$SGA`和
+`V_$PGASTAT`；归档/FRA容量读取`V_$RECOVERY_FILE_DEST`。脚本不授予AWR
+历史视图，也不隐含Diagnostics Pack许可。
 建用户脚本只用于首次创建。用户已存在时不要重复执行`CREATE USER`，应执行以下完整
 授权脚本补齐并验证授权：
 

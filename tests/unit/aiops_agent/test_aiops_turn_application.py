@@ -394,6 +394,43 @@ class _RunRepository:
 
 
 class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
+    def test_turn_summary_exposes_only_sanitized_evidence_gaps(self) -> None:
+        now = datetime.now(UTC)
+        row = SimpleNamespace(
+            turn_id=uuid7(),
+            conversation_id=uuid7(),
+            turn_no=1,
+            status="PARTIAL",
+            resolved_target_id=uuid7(),
+            primary_intent="DIAGNOSE",
+            primary_domain="PERFORMANCE",
+            subject="Top SQL",
+            sufficiency_status="PARTIAL",
+            sufficiency_json={
+                "gaps": [
+                    {
+                        "skill_id": "oracle.sql.top_current",
+                        "step_id": "top-sql",
+                        "code": "OUTPUT_SCHEMA_INVALID",
+                        "detail": "数据库返回列与受控诊断目录不一致",
+                        "retryable": False,
+                    }
+                ],
+                "evidence": [{"rows": [["sensitive"]]}],
+            },
+            event_cursor=9,
+            error_domain=None,
+            error_code=None,
+            error_message=None,
+            created_at=now,
+            completed_at=now,
+        )
+
+        summary = ConversationTurnService._turn_summary(row)
+
+        self.assertEqual("OUTPUT_SCHEMA_INVALID", summary["evidence_gaps"][0]["code"])
+        self.assertNotIn("evidence", summary)
+
     async def _start(self, uow: _Uow) -> tuple[ConversationTurnService, dict]:
         service = ConversationTurnService(uow_factory=lambda: uow)
         receipt = await service.start(

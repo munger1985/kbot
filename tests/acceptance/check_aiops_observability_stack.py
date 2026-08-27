@@ -5,6 +5,7 @@ import importlib.util
 from importlib.machinery import SourceFileLoader
 import os
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -237,6 +238,38 @@ environment = production
     ):
         if forbidden_text in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本包含禁用内容：{forbidden_text}")
+    oracle_catalog = json.loads(
+        (
+            ROOT
+            / "services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    catalog_privileges = {
+        privilege
+        for tool in oracle_catalog["tools"]
+        for privilege in tool.get("required_privileges", [])
+    }
+    grant_pattern = re.compile(
+        r"GRANT\s+SELECT\s+ON\s+SYS\.([A-Z0-9_$]+)\s+TO\s+kbot_monitor\s*;",
+        re.IGNORECASE,
+    )
+    create_grants = {
+        value.upper() for value in grant_pattern.findall(oracle_user_script)
+    }
+    existing_user_grants = {
+        value.upper() for value in grant_pattern.findall(oracle_grant_script)
+    }
+    for script_name, granted in (
+        ("Oracle建用户脚本", create_grants),
+        ("Oracle完整授权脚本", existing_user_grants),
+    ):
+        missing = catalog_privileges - granted
+        if missing:
+            raise RuntimeError(
+                f"{script_name}未覆盖当前诊断目录权限：{', '.join(sorted(missing))}"
+            )
+    if create_grants != existing_user_grants:
+        raise RuntimeError("Oracle建用户脚本与完整授权脚本的对象权限不一致")
     datasource_config = (
         STACK / "configuration/grafana/provisioning/datasources/aiops.yml"
     ).read_text(encoding="utf-8")

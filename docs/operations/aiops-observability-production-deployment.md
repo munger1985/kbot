@@ -147,7 +147,9 @@ SHOW CON_NAME;
 脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证完整授权清单。其中
 `V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`用于实例确认及当前累计Top SQL；
 `GV_$SESSION`用于当前活跃会话和阻塞链；`DBA_DATA_FILES`、`DBA_FREE_SPACE`用于
-表空间容量诊断；`GV_$TRANSACTION`用于长事务诊断。脚本不读取AWR历史视图，也不隐含
+表空间容量诊断；`GV_$TRANSACTION`用于长事务诊断；`V_$SYSMETRIC`用于实时
+性能指标；`V_$SGA`、`V_$PGASTAT`用于内存诊断；`V_$RECOVERY_FILE_DEST`用于
+归档/FRA容量诊断。脚本不读取AWR历史视图，也不隐含
 Diagnostics Pack许可。用户已存在时不要重复执行初始化脚本，改为执行完整授权脚本：
 
 ```sql

@@ -87,17 +87,21 @@
         <input data-loki-target-value maxlength="256" placeholder="例如 oracle-dev-190">
       </div>
     </div>` : "";
+    const prometheusHint = source.source_type === "PROMETHEUS"
+      ? '<small class="agent-source-requirement">需要配置 Oracle Exporter 与 Node Exporter 两个 target_key</small>'
+      : "";
     const prometheusFields = source.source_type === "PROMETHEUS" ? `<div class="agent-prometheus-fields">
+      <p><strong>主机指标映射</strong>CPU、内存、磁盘、文件系统和网络指标使用 Node Exporter 标签，不能沿用 Oracle Exporter 标签。</p>
       <div class="ops-field">
         <label>数据库主机的 Node Exporter target_key</label>
         <input data-prometheus-host-target maxlength="256" placeholder="例如 dev-db-host-190">
-        <small>填写 Prometheus 中该数据库所在主机的 Node Exporter target_key；它可以与数据库 instance 不同。</small>
+        <small>可在 Prometheus 查询 <code>count by (target_key) (node_uname_info{job=&quot;node&quot;})</code> 确认，然后填写该数据库所在主机对应的值。</small>
       </div>
     </div>` : "";
     return `<article class="agent-source-card" data-source-id="${sourceId}" data-source-type="${escape(source.source_type)}">
       <label class="agent-source-choice">
         <input type="checkbox" name="diagnostic_source_ids" value="${sourceId}">
-        <span class="agent-source-identity"><strong>${escape(source.display_name)}</strong><small>${escape(source.source_type)}</small></span>
+        <span class="agent-source-identity"><strong>${escape(source.display_name)}</strong><small>${escape(source.source_type)}</small>${prometheusHint}</span>
         <span class="agent-source-health">${escape(source.connectivity_status)}</span>
       </label>
       <div class="agent-source-mapping" hidden>

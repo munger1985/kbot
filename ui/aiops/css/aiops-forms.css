@@ -88,11 +88,16 @@
 .agent-source-choice input{width:16px!important;height:16px;margin:0!important;accent-color:var(--accent)}
 .agent-source-identity strong,.agent-source-identity small{display:block}
 .agent-source-identity small{margin:2px 0 0;color:var(--muted);font:10px/1.2 ui-monospace,monospace;letter-spacing:.05em}
+.agent-source-identity .agent-source-requirement{margin-top:5px;color:#72570b;font:500 11px/1.35 system-ui,sans-serif;letter-spacing:0}
 .agent-source-health{color:var(--good);font:650 10px ui-monospace,monospace}
 .agent-source-mapping{padding:16px 16px 18px 46px;background:#f7f8fb;border-top:1px solid var(--line)}
 .agent-mapping-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .agent-mapping-head strong{font-size:11px;letter-spacing:.04em}
 .agent-mapping-head span{color:var(--muted);font-size:10px}
+.agent-prometheus-fields{margin-top:12px;padding:13px 14px;border-left:3px solid #d09a25;background:#fff9eb}
+.agent-prometheus-fields>p{margin:0 0 11px;color:var(--muted);font-size:11px;line-height:1.5}
+.agent-prometheus-fields>p strong{display:block;color:var(--ink);font-size:12px}
+.agent-prometheus-fields code{font-size:10px}
 .agent-loki-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:11px}
 .agent-loki-fields .ops-field{grid-column:auto}
 .agent-permission-row{margin-top:15px;padding:15px 16px;border:1px solid #cfd6e4;background:#fbfcfe}

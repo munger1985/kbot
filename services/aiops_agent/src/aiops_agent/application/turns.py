@@ -615,6 +615,7 @@ class ConversationTurnService:
 
     @staticmethod
     def _turn_summary(row) -> dict[str, Any]:
+        sufficiency = dict(row.sufficiency_json or {})
         return {
             "turn_id": str(row.turn_id),
             "conversation_id": str(row.conversation_id),
@@ -627,6 +628,17 @@ class ConversationTurnService:
             "primary_domain": row.primary_domain,
             "subject": row.subject,
             "sufficiency_status": row.sufficiency_status,
+            "evidence_gaps": [
+                {
+                    "skill_id": item.get("skill_id"),
+                    "step_id": item.get("step_id"),
+                    "code": item.get("code"),
+                    "detail": item.get("detail"),
+                    "retryable": bool(item.get("retryable", False)),
+                }
+                for item in sufficiency.get("gaps", [])
+                if isinstance(item, dict)
+            ],
             "event_cursor": int(row.event_cursor),
             "error_domain": row.error_domain,
             "error_code": row.error_code,

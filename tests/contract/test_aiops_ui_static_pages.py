@@ -255,6 +255,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("ensureSourceBindings", script)
         self.assertIn("data-loki-target-label", script)
         self.assertIn("data-prometheus-host-target", script)
+        self.assertIn("Node Exporter 两个 target_key", script)
         self.assertIn('"Idempotency-Key"', script)
         self.assertNotIn("scrollIntoView", script)
         self.assertNotIn('name="policy_id"', page)
