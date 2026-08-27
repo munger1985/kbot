@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
-from aiops_agent.contracts.turn_answer import DbaAnswerDraft
+from aiops_agent.contracts.turn_answer import (
+    DbaAnswerDraft,
+    DbaSufficiencyAssessment,
+    TurnEvidenceGap,
+)
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
@@ -306,6 +311,68 @@ def _skill_artifact(*, semantics: str, row_count: int = 1) -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            gaps=(
+                TurnEvidenceGap(
+                    skill_id="oracle.sql.top_current",
+                    step_id="top_sql",
+                    code="PRIVILEGE_MISSING",
+                    detail="Target 只读凭据缺少对象查询权限",
+                ),
+            ),
+            reasons=("当前没有取得能够回答问题的主题证据",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        context = replace(
+            context,
+            plan_snapshot={
+                **context.plan_snapshot,
+                "skill_execution": {
+                    "invocations": {
+                        "skill:1:oracle.sql.top_current": {
+                            "skill_id": "oracle.sql.top_current",
+                            "tools": [
+                                {
+                                    "step_id": "top_sql",
+                                    "tool_id": "db.sql.top_current",
+                                    "manual_sql": "SELECT * FROM v$sqlstats WHERE ROWNUM <= :limit",
+                                    "parameters": {"limit": 10},
+                                    "required_privileges": ["V_$SQLSTATS"],
+                                }
+                            ],
+                        }
+                    }
+                },
+            },
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=_AnswerModel(evidence_refs=()),
+            prompts=DiagnosisPromptRegistry.load(),
+        )
+
+        result = asyncio.run(handler.execute(context))
+
+        self.assertEqual("WAITING_USER", result.status)
+        self.assertEqual(
+            AnswerBlockType.EVIDENCE_REQUEST,
+            result.blocks[1].block_type,
+        )
+        markdown = result.blocks[1].payload["markdown"]
+        self.assertIn("PRIVILEGE_MISSING", markdown)
+        self.assertIn("V_$SQLSTATS", markdown)
+        self.assertIn("ROWNUM <= 10", markdown)
+        self.assertNotIn(":limit", markdown)
+
     def test_recent_request_with_cumulative_evidence_is_partial(self) -> None:
         context = _context(
             artifacts=(

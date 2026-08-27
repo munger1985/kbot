@@ -34,11 +34,11 @@ class DbaSkillInvocationHandler:
             "tools": list(invocation["tools"]),
         }
         outcomes: list[SkillToolOutcome] = []
-        completed_steps: set[str] = set()
+        attempted_steps: set[str] = set()
         input_artifacts = list(context.input_artifacts)
         for tool in invocation["tools"]:
             dependencies = set(tool.get("depends_on", ()))
-            if not dependencies <= completed_steps:
+            if not dependencies <= attempted_steps:
                 outcomes.append(
                     SkillToolOutcome(
                         step_id=tool["step_id"],
@@ -70,8 +70,8 @@ class DbaSkillInvocationHandler:
                     gap=result.gap,
                 )
             )
+            attempted_steps.add(tool["step_id"])
             if result.status == "SUCCEEDED":
-                completed_steps.add(tool["step_id"])
                 input_artifacts.append(
                     {
                         "schema_version": result.schema_version,

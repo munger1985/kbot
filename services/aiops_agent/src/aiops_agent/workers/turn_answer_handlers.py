@@ -138,7 +138,7 @@ class DbaAnswerComposeHandler:
             SufficiencyStatus.CAPABILITY_UNAVAILABLE,
             SufficiencyStatus.UNSAFE,
         }:
-            return self._waiting_result(assessment)
+            return self._waiting_result(assessment, context)
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         prompt = self._prompts.resolve("answer_compose", "1")
@@ -190,7 +190,7 @@ class DbaAnswerComposeHandler:
             SufficiencyStatus.CAPABILITY_UNAVAILABLE,
             SufficiencyStatus.UNSAFE,
         }:
-            result = self._waiting_result(assessment).model_copy(
+            result = self._waiting_result(assessment, context).model_copy(
                 update={"answer_streamed": True}
             )
             markdown = str(result.blocks[0].payload.get("markdown", ""))
@@ -327,6 +327,7 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _waiting_result(
         assessment: DbaSufficiencyAssessment,
+        context: TaskExecutionContext,
     ) -> AIOpsTurnResult:
         if assessment.clarification_question:
             message = assessment.clarification_question
@@ -334,19 +335,105 @@ class DbaAnswerComposeHandler:
             detail = "；".join(assessment.reasons) or "当前证据不足"
             message = (
                 f"我暂时还不能可靠回答这个问题：{detail}。"
-                "请把相关命令或只读查询结果以文字或截图贴到对话中，我会继续判断。"
+                "系统已经使用该 Agent 绑定的 Target 只读凭据自动取证，"
+                "但没有取得足够结果。"
             )
+        blocks = [
+            TurnAnswerBlock(
+                block_type=AnswerBlockType.MARKDOWN,
+                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                payload={"markdown": message},
+            )
+        ]
+        evidence_request = DbaAnswerComposeHandler._evidence_request_block(
+            assessment, context
+        )
+        if evidence_request is not None:
+            blocks.append(evidence_request)
         return AIOpsTurnResult(
             status="WAITING_USER",
             sufficiency_status=assessment.status,
-            blocks=(
-                TurnAnswerBlock(
-                    block_type=AnswerBlockType.MARKDOWN,
-                    schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                    payload={"markdown": message},
-                ),
-            ),
+            blocks=tuple(blocks),
         )
+
+    @staticmethod
+    def _evidence_request_block(
+        assessment: DbaSufficiencyAssessment,
+        context: TaskExecutionContext,
+    ) -> TurnAnswerBlock | None:
+        execution = dict(context.plan_snapshot.get("skill_execution", {}))
+        invocations = dict(execution.get("invocations", {}))
+        tools_by_step: dict[tuple[str, str], dict[str, Any]] = {}
+        for invocation in invocations.values():
+            skill_id = str(invocation.get("skill_id", ""))
+            for tool in invocation.get("tools", ()):
+                tools_by_step[(skill_id, str(tool.get("step_id", "")))] = tool
+        requests: list[tuple[TurnEvidenceGap, dict[str, Any]]] = []
+        seen_tools: set[str] = set()
+        for gap in assessment.gaps:
+            tool = tools_by_step.get((gap.skill_id, gap.step_id))
+            tool_id = str((tool or {}).get("tool_id", ""))
+            if tool is None or not tool_id or tool_id in seen_tools:
+                continue
+            seen_tools.add(tool_id)
+            requests.append((gap, tool))
+        if not requests:
+            return None
+        lines = [
+            "\n### 自动取证未完成的项目",
+            "",
+        ]
+        for gap, tool in requests:
+            tool_id = str(tool["tool_id"])
+            lines.append(f"- `{tool_id}`：{gap.detail}（`{gap.code}`）")
+        lines.extend(
+            [
+                "",
+                "请优先修正 Target 只读凭据或数据库对象权限后重新提问。",
+                "如果暂时不能调整权限，也可以在目标数据库中执行下面的只读 SQL，",
+                "再把结果以文字或截图粘贴到对话中：",
+            ]
+        )
+        for _, tool in requests:
+            sql = DbaAnswerComposeHandler._manual_sql(tool)
+            if not sql:
+                continue
+            privileges = tuple(tool.get("required_privileges", ()))
+            lines.extend(
+                [
+                    "",
+                    f"#### {tool['tool_id']}",
+                    (
+                        f"所需对象权限：`{', '.join(privileges)}`"
+                        if privileges
+                        else "无需额外对象权限"
+                    ),
+                    "```sql",
+                    sql,
+                    "```",
+                ]
+            )
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.EVIDENCE_REQUEST,
+            schema_version="AIOPS_EVIDENCE_REQUEST_BLOCK.v1",
+            payload={"markdown": "\n".join(lines)},
+        )
+
+    @staticmethod
+    def _manual_sql(tool: dict[str, Any]) -> str:
+        """把冻结且已校验的参数写入仅供人工补证的目录 SQL。"""
+        sql = str(tool.get("manual_sql", "")).strip()
+        for name, value in dict(tool.get("parameters", {})).items():
+            if value is None:
+                literal = "NULL"
+            elif isinstance(value, bool):
+                literal = "1" if value else "0"
+            elif isinstance(value, (int, float)):
+                literal = str(value)
+            else:
+                literal = "'" + str(value).replace("'", "''") + "'"
+            sql = re.sub(rf":{re.escape(str(name))}\b", literal, sql)
+        return sql
 
     @staticmethod
     def _data_blocks(

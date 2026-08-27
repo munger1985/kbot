@@ -320,6 +320,28 @@ class _FrozenToolExecutor:
         )
 
 
+class _IdentityGapToolExecutor(_FrozenToolExecutor):
+    async def execute(self, context):
+        self.task_keys.append(context.task_key)
+        tool_id = context.task_key.removeprefix("diagnostic:")
+        if tool_id == "db.instance.identity":
+            return DatabaseDiagnosticResult(
+                target_id=context.target_id,
+                tool_id=tool_id,
+                status="GAP",
+                gap=EvidenceGap(
+                    code="PRIVILEGE_MISSING",
+                    tool_id=tool_id,
+                    detail="实例身份视图不可读",
+                ),
+            )
+        return DatabaseDiagnosticResult(
+            target_id=context.target_id,
+            tool_id=tool_id,
+            status="SUCCEEDED",
+        )
+
+
 class _CapturingGrantCodec:
     def __init__(self) -> None:
         self.grant = None
@@ -330,8 +352,12 @@ class _CapturingGrantCodec:
 
 
 class _GapExecutorClient:
+    def __init__(self) -> None:
+        self.calls = []
+
     async def execute_diagnostic(self, request, *, trace_id):
         del trace_id
+        self.calls.append(request)
         return ReadDiagnosticResult(
             executor_request_id=request.executor_request_id,
             status="GAP",
@@ -528,6 +554,68 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             executor.task_keys,
         )
 
+    def test_identity_gap_does_not_skip_independent_readonly_tool(self) -> None:
+        executor = _IdentityGapToolExecutor()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="skill:1:oracle.storage.tablespace",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-skill-identity-gap",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "skill_execution": {
+                    "diagnostic_catalog_hash": "a" * 64,
+                    "capability_snapshot_hash": "b" * 64,
+                    "database": {},
+                    "invocations": {
+                        "skill:1:oracle.storage.tablespace": {
+                            "skill_id": "oracle.storage.tablespace",
+                            "skill_version": "1.0.0",
+                            "manifest_hash": "c" * 64,
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                            "presentation_kind": "TABLE",
+                            "output_schema": "oracle.storage.tablespace.output.v1",
+                            "tools": [
+                                {
+                                    "step_id": "identity",
+                                    "depends_on": [],
+                                    "tool_id": "db.instance.identity",
+                                    "tool_version": "1.0.0",
+                                },
+                                {
+                                    "step_id": "tablespace",
+                                    "depends_on": ["identity"],
+                                    "tool_id": "db.storage.capacity",
+                                    "tool_version": "1.0.0",
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+        )
+
+        result = self.run_async(
+            DbaSkillInvocationHandler(
+                database_handler=executor
+            ).execute(context)
+        )
+
+        self.assertEqual("PARTIAL", result.status)
+        self.assertEqual(
+            [
+                "diagnostic:db.instance.identity",
+                "diagnostic:db.storage.capacity",
+            ],
+            executor.task_keys,
+        )
+
     @staticmethod
     def run_async(awaitable):
         import asyncio
@@ -619,6 +707,11 @@ class DbaSkillFrameworkTest(unittest.TestCase):
         )
         self.assertEqual(20, invocation["tools"][1]["parameters"]["limit"])
         self.assertEqual(64, len(invocation["tools"][1]["template_sha256"]))
+        self.assertIn("SELECT", invocation["tools"][1]["manual_sql"])
+        self.assertEqual(
+            ["V_$SQLSTATS"],
+            invocation["tools"][1]["required_privileges"],
+        )
 
     def test_database_overview_combines_all_available_oracle_skills(
         self,
@@ -723,6 +816,85 @@ class DbaSkillFrameworkTest(unittest.TestCase):
 
         self.assertEqual("GAP", result.status)
         self.assertEqual("1.0.0", codec.grant.tool_version)
+
+    def test_database_handler_uses_configured_version_when_identity_is_gap(
+        self,
+    ) -> None:
+        codec = _CapturingGrantCodec()
+        client = _GapExecutorClient()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="diagnostic:db.storage.capacity",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-configured-version",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "database_diagnostics": {
+                    "domain_id": 7,
+                    "target_row_version": 1,
+                    "db_type": "ORACLE",
+                    "configured_version": "19c",
+                    "connection_profile": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB1",
+                        "tls_enabled": False,
+                    },
+                    "diagnostic_credential_id": str(uuid7()),
+                    "capability_snapshot_hash": "a" * 64,
+                    "tools": [
+                        {
+                            "tool_id": "db.storage.capacity",
+                            "tool_version": "1.0.0",
+                            "variant": "oracle.default",
+                            "template_sha256": "b" * 64,
+                            "supported_version_min": 19,
+                            "supported_version_max_exclusive": 27,
+                            "parameters": {},
+                            "limits": {
+                                "statement_timeout_seconds": 10,
+                                "max_result_rows": 10,
+                                "max_result_bytes": 1024,
+                                "max_columns": 16,
+                                "max_cell_chars": 1024,
+                            },
+                        }
+                    ],
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "schema_version": "DATABASE_DIAGNOSTIC_RESULT.v1",
+                    "payload": {
+                        "status": "GAP",
+                        "tool_id": "db.instance.identity",
+                    },
+                },
+            ),
+            lease_token="lease-token",
+            lease_until=(
+                datetime.now(UTC) + timedelta(minutes=1)
+            ).isoformat(),
+        )
+
+        result = self.run_async(
+            DatabaseDiagnosticHandler(
+                executor_client=client,
+                grant_codec=codec,
+                grant_issuer="aiops-worker",
+                grant_audience="aiops-db-executor",
+                grant_ttl_seconds=30,
+            ).execute(context)
+        )
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual(1, len(client.calls))
+        self.assertEqual("db.storage.capacity", codec.grant.tool_id)
 
     def test_unknown_privilege_inventory_defers_check_to_executor(self) -> None:
         diagnostics = DiagnosticRegistry.load()

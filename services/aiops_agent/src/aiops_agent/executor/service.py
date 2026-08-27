@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from loguru import logger
+
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
     DiagnosticGrantError,
@@ -51,8 +53,10 @@ class DiagnosticExecutorService:
     async def execute(
         self, request: ReadDiagnosticRequest
     ) -> ReadDiagnosticResult:
+        tool_id = "UNKNOWN"
         try:
             grant = self._grant_codec.verify(request.grant)
+            tool_id = grant.tool_id
             if canonical_sha256(request.parameters) != grant.parameters_sha256:
                 raise DiagnosticGrantError(
                     "PARAMETERS_HASH_MISMATCH",
@@ -104,6 +108,12 @@ class DiagnosticExecutorService:
                 observation=observation,
             )
         except DiagnosticDriverError as exc:
+            logger.warning(
+                "数据库只读诊断未取得结果：tool_id={} code={} retryable={}",
+                tool_id,
+                exc.code,
+                exc.retryable,
+            )
             return self._gap(
                 request, exc.code, retryable=exc.retryable
             )

@@ -677,6 +677,20 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             [row["sequence_no"] for row in replay["events"]],
         )
 
+    async def test_waiting_user_ends_current_turn_event_stream(self) -> None:
+        uow = _Uow()
+        service, receipt = await self._start(uow)
+        uow.turns.turns[0].status = "WAITING_USER"
+
+        event_page = await service.list_events(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            turn_id=UUID(receipt["turn_id"]),
+            actor_id="dba@example.com",
+        )
+
+        self.assertTrue(event_page["terminal"])
+
     async def test_cancel_propagates_to_primary_run(self) -> None:
         uow = _Uow()
         service, receipt = await self._start(uow)

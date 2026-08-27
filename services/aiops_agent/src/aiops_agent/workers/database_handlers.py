@@ -106,21 +106,17 @@ class DatabaseDiagnosticHandler:
                 ),
                 None,
             )
-            if (
-                identity_result is None
-                or identity_result.get("status") != "SUCCEEDED"
-            ):
-                return self._gap(
-                    context,
-                    tool_id,
-                    "DEPENDENCY_EVIDENCE_MISSING",
-                    retryable=False,
-                )
         tool = next(
             item for item in snapshot["tools"] if item["tool_id"] == tool_id
         )
         if tool_id != "db.instance.identity":
-            actual_version = identity_result["observation"]["db_version"]
+            actual_version = snapshot["configured_version"]
+            if (
+                identity_result is not None
+                and identity_result.get("status") == "SUCCEEDED"
+                and identity_result.get("observation")
+            ):
+                actual_version = identity_result["observation"]["db_version"]
             try:
                 actual_major = database_major_version(actual_version)
             except ValueError:
@@ -224,6 +220,15 @@ class DatabaseDiagnosticHandler:
         *,
         retryable: bool,
     ) -> DatabaseDiagnosticResult:
+        details = {
+            "PRIVILEGE_MISSING": "Target 只读凭据缺少该诊断工具所需的对象查询权限",
+            "AUTH_FAILED": "Target 只读凭据认证失败",
+            "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
+            "TIMEOUT": "受控只读查询执行超时",
+            "OUTPUT_SCHEMA_INVALID": "数据库返回列与受控诊断目录不一致",
+            "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
+            "EXECUTOR_INTERNAL_ERROR": "受控数据库执行器未能完成本次只读查询",
+        }
         return DatabaseDiagnosticResult(
             target_id=context.target_id,
             tool_id=tool_id,
@@ -231,7 +236,7 @@ class DatabaseDiagnosticHandler:
             gap=EvidenceGap(
                 code=code,
                 tool_id=tool_id,
-                detail="该数据库诊断证据本次不可用",
+                detail=details.get(code, "该数据库诊断证据本次不可用"),
                 retryable=retryable,
             ),
         )

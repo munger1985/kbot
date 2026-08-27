@@ -290,6 +290,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("followTurn", workspace)
         self.assertIn('"Last-Event-ID": lastEventId', workspace)
         self.assertIn("terminalTurnStatuses.has(turn.status)", workspace)
+        self.assertIn('"WAITING_USER", "COMPLETED"', workspace)
         self.assertIn("await followTurn(receipt.conversation_id", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
         self.assertIn("upload", workspace.lower())

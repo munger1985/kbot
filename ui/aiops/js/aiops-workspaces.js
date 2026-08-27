@@ -7,7 +7,9 @@
   const state = { agents: [], conversation: null, selectedFile: null };
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
-  const terminalTurnStatuses = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"]);
+  const terminalTurnStatuses = new Set([
+    "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
+  ]);
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;

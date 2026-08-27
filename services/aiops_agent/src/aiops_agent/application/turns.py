@@ -304,7 +304,13 @@ class ConversationTurnService:
                 ],
                 "next_sequence": int(turn.event_cursor),
                 "terminal": turn.status
-                in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"},
+                in {
+                    "WAITING_USER",
+                    "COMPLETED",
+                    "PARTIAL",
+                    "FAILED",
+                    "CANCELLED",
+                },
             }
 
     async def cancel_turn(

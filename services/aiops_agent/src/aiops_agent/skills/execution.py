@@ -121,6 +121,10 @@ class SkillExecutionSnapshotBuilder:
                         "tool_version": definition.version,
                         "variant": definition.variant,
                         "template_sha256": definition.template_sha256,
+                        "manual_sql": resolved.sql,
+                        "required_privileges": list(
+                            definition.required_privileges
+                        ),
                         "supported_version_min": (
                             definition.supported_version_min
                         ),
