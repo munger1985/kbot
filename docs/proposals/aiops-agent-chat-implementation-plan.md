@@ -10,9 +10,9 @@
 当前分支仍是不可部署的开发中版本，也没有操作任何共享数据库。下一步进入阶段3，接入
 Intent Router、DBA Skill 目录、确定性校验和 Skill Plan 编译；目前严格意图契约、版本化
 Manifest/Registry/Hash、能力快照、Skill Planner、通用 Task 编译和计划持久化骨架已经
-完成；Oracle当前累计Top SQL的Manifest、受控Tool和Skill Invocation Handler也已完成，
-执行时复用DB Executor的短期Grant与租约。生产 Worker接线、其他首批Oracle Skill、
-充分性和回答生成尚待后续切片。
+完成；Oracle当前累计Top SQL、活跃会话、阻塞链和表空间容量的Manifest及目录离线校验
+已经完成，Skill Invocation Handler执行时复用DB Executor的短期Grant与租约。生产
+Worker接线、其余首批Oracle Skill、充分性和回答生成尚待后续切片。
 
 版本：1.0
 

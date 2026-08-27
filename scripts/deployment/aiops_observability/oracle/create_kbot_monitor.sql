@@ -55,10 +55,15 @@ GRANT SELECT ON SYS.V_$WAITCLASSMETRIC            TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SESSION                    TO kbot_monitor;
 GRANT SELECT ON SYS.V_$RESOURCE_LIMIT             TO kbot_monitor;
 
--- KBot AIOps当前累计Top SQL诊断；不包含AWR/Diagnostics Pack历史视图。
+-- KBot AIOps实例身份及当前累计Top SQL诊断；不包含AWR/Diagnostics Pack历史视图。
 GRANT SELECT ON SYS.V_$INSTANCE                   TO kbot_monitor;
 GRANT SELECT ON SYS.V_$DATABASE                   TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SQLSTATS                   TO kbot_monitor;
+
+-- KBot AIOps当前活跃会话、阻塞链和表空间容量诊断。
+GRANT SELECT ON SYS.GV_$SESSION                   TO kbot_monitor;
+GRANT SELECT ON SYS.DBA_DATA_FILES                TO kbot_monitor;
+GRANT SELECT ON SYS.DBA_FREE_SPACE                TO kbot_monitor;
 
 -- KBot补充CPU指标。
 GRANT SELECT ON SYS.V_$SYSMETRIC                  TO kbot_monitor;
@@ -99,11 +104,14 @@ BEGIN
           'V_$INSTANCE',
           'V_$DATABASE',
           'V_$SQLSTATS',
+          'GV_$SESSION',
+          'DBA_DATA_FILES',
+          'DBA_FREE_SPACE',
           'V_$SYSMETRIC',
           'V_$DIAG_ALERT_EXT'
       );
 
-    IF session_grant_count <> 1 OR object_grant_count <> 15 THEN
+    IF session_grant_count <> 1 OR object_grant_count <> 18 THEN
         RAISE_APPLICATION_ERROR(-20003, 'kbot_monitor授权清单验证失败');
     END IF;
 END;

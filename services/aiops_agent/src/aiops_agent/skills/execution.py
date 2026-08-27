@@ -22,6 +22,45 @@ class SkillExecutionSnapshotBuilder:
         self._skills = skill_registry
         self._tools = diagnostic_registry
 
+    def validate_catalog(self) -> None:
+        """离线验证所有 Skill 对 Tool 版本和要求的声明完整性。"""
+        for manifest in self._skills.manifests():
+            version = manifest.version_range.minimum or "0"
+            for database_type in manifest.database_types:
+                for step in manifest.tool_dag:
+                    try:
+                        resolved = self._tools.resolve(
+                            tool_id=step.tool_id,
+                            tool_version=step.tool_version,
+                            db_type=str(database_type),
+                            db_version=version,
+                            capabilities=set(
+                                manifest.required_target_capabilities
+                            ),
+                            entitlements=set(
+                                manifest.required_entitlements
+                            ),
+                        )
+                    except (LookupError, ValueError) as exc:
+                        raise SkillCatalogError(
+                            f"Skill {manifest.skill_id} 的 Tool 无法精确解析："
+                            f"{step.tool_id}@{step.tool_version}"
+                        ) from exc
+                    definition = resolved.definition
+                    self._validate_manifest_requirements(
+                        manifest=manifest,
+                        tool_id=definition.tool_id,
+                        required_capabilities=set(
+                            definition.required_capabilities
+                        ),
+                        required_entitlements=set(
+                            definition.required_entitlements
+                        ),
+                        required_privileges=set(
+                            definition.required_privileges
+                        ),
+                    )
+
     def build(
         self,
         *,

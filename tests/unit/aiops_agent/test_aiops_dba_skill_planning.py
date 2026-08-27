@@ -457,10 +457,24 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             )
         )
         manifest = registry.latest("oracle.sql.top_current")
+        validator = SkillExecutionSnapshotBuilder(
+            skill_registry=registry,
+            diagnostic_registry=DiagnosticRegistry.load(),
+        )
+        validator.validate_catalog()
 
         self.assertEqual(
             MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
             manifest.measurement_semantics,
+        )
+        self.assertEqual(
+            {
+                "oracle.sql.top_current",
+                "oracle.session.active",
+                "oracle.session.blocking_chain",
+                "oracle.storage.tablespace",
+            },
+            {item.skill_id for item in registry.manifests()},
         )
         self.assertEqual(64, len(registry.catalog_hash))
 

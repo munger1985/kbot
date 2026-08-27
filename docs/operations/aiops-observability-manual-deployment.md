@@ -206,9 +206,10 @@ SHOW CON_NAME;
 ```
 
 脚本会隐藏密码输入，拒绝在`CDB$ROOT`运行，并创建固定用户`kbot_monitor`及当前
-Exporter、补充指标、Alert Collector和AIOps当前累计Top SQL诊断所需的逐对象最小授权。
-该Skill只读取`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`，不授予AWR历史视图，
-也不隐含Diagnostics Pack许可。
+Exporter、补充指标、Alert Collector和AIOps诊断所需的逐对象最小授权。当前累计Top SQL
+读取`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`；当前活跃会话和阻塞链读取
+`GV_$SESSION`；表空间容量读取`DBA_DATA_FILES`和`DBA_FREE_SPACE`。脚本不授予AWR历史
+视图，也不隐含Diagnostics Pack许可。
 脚本只用于首次创建；
 用户已存在时不要重复执行`CREATE USER`，应由DBA审核现有账号后单独补授权。
 
