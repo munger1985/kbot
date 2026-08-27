@@ -284,25 +284,26 @@ grep '^oracledb_kbot_errors_total' /tmp/oracle-exporter.metrics
 
 CPU记录指标没有样本时，先确认`oracledb_kbot_cpu_utilization_percent`是否存在。该指标读取
 `V_$RSRCPDBMETRIC`，因此必须在被监控PDB中执行最新授权脚本，并在替换采集配置后重启
-Exporter。连接使用率读取Exporter默认的`V_$RESOURCE_LIMIT`指标，可用以下查询区分原因：
+Exporter。PDB中的`V_$RESOURCE_LIMIT`可能不返回`sessions`行，因此连接使用率不再依赖
+该视图，而是使用当前PDB的`V_$SESSION`会话数和`V_$PARAMETER`中的有效会话上限：优先
+使用大于0的`MAX_PDB_SESSIONS`，否则使用实例`SESSIONS`参数。可用以下查询核验原始指标：
 
 ```bash
 curl -fsSG http://127.0.0.1:9090/api/v1/query \
-  --data-urlencode 'query=oracledb_resource_current_utilization{instance="oracle-dev-190",resource_name="sessions"}'
+  --data-urlencode 'query=oracledb_kbot_connection_current_sessions{instance="oracle-dev-190"}'
 curl -fsSG http://127.0.0.1:9090/api/v1/query \
-  --data-urlencode 'query=oracledb_resource_limit_value{instance="oracle-dev-190",resource_name="sessions"}'
+  --data-urlencode 'query=oracledb_kbot_connection_limit_sessions{instance="oracle-dev-190"}'
 ```
 
-`limit_value=-1`表示Oracle返回`UNLIMITED`，此时不存在可解释的连接使用百分比，记录规则
-会有意不生成`kbot_db_connection_utilization_percent`；数值上限大于0但记录指标仍为空时，
-再检查Prometheus规则状态和规则文件是否已重载。
+两项原始指标都存在后，`kbot_db_connection_utilization_percent`应在下一个规则计算周期产生。
 
 只有 `oracledb_up=1` 且 Prometheus Target为 `up` 才算恢复。Exporter监控账号所需
 数据字典和动态性能视图权限应按实际启用指标逐项授权，不能为省事使用 `SYS`、
 `SYSTEM` 或应用账号。
 
-KBot补充指标还需要读取`SYS.V_$RSRCPDBMETRIC`；`SYS.V_$SYSSTAT`已属于Exporter默认指标
-依赖。补充指标分别提供当前PDB最近一分钟相对数据库主机总CPU容量的平均使用率，以及实例启动以来SQL解析失败累计数，
+KBot补充指标还需要读取`SYS.V_$RSRCPDBMETRIC`和`SYS.V_$PARAMETER`；
+`SYS.V_$SESSION`和`SYS.V_$SYSSTAT`已属于Exporter默认指标依赖。补充指标分别提供当前PDB
+最近一分钟相对数据库主机总CPU容量的平均使用率、PDB会话使用率，以及实例启动以来SQL解析失败累计数，
 不采集SQL文本、用户名或业务数据。
 
 ## 8. 核验或安装 Node Exporter
@@ -504,6 +505,7 @@ GRANT CREATE SESSION TO kbot_monitor;
 GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO kbot_monitor;
 GRANT SELECT ON SYS.V_$SYSMETRIC TO kbot_monitor;
 GRANT SELECT ON SYS.V_$RSRCPDBMETRIC TO kbot_monitor;
+GRANT SELECT ON SYS.V_$PARAMETER TO kbot_monitor;
 ```
 
 验证查询：

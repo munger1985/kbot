@@ -57,9 +57,9 @@ required_metrics=(
   oracledb_tablespace_max_bytes
   oracledb_exporter_last_scrape_error
   oracledb_exporter_last_scrape_duration_seconds
-  oracledb_resource_current_utilization
-  oracledb_resource_limit_value
   oracledb_kbot_cpu_utilization_percent
+  oracledb_kbot_connection_current_sessions
+  oracledb_kbot_connection_limit_sessions
   oracledb_kbot_errors_total
 )
 for metric_name in "${required_metrics[@]}"; do
@@ -80,8 +80,7 @@ groups:
         expr: oracledb_kbot_cpu_utilization_percent{job="${ORACLE_JOB}"}
 
       - record: kbot_db_connection_utilization_percent
-        # Exporter将UNLIMITED转换为-1；没有有限上限时不生成虚假的使用率。
-        expr: 100 * oracledb_resource_current_utilization{job="${ORACLE_JOB}", resource_name="sessions"} / oracledb_resource_limit_value{job="${ORACLE_JOB}", resource_name="sessions"} > 0
+        expr: 100 * oracledb_kbot_connection_current_sessions{job="${ORACLE_JOB}"} / oracledb_kbot_connection_limit_sessions{job="${ORACLE_JOB}"}
 
       - record: kbot_db_transactions_total
         expr: sum by (instance, target_key) (oracledb_activity_user_commits{job="${ORACLE_JOB}"}) + sum by (instance, target_key) (oracledb_activity_user_rollbacks{job="${ORACLE_JOB}"})

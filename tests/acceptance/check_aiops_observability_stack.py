@@ -192,6 +192,7 @@ environment = production
         "GRANT CREATE SESSION TO kbot_monitor",
         "SYS.V_$SYSMETRIC",
         "SYS.V_$RSRCPDBMETRIC",
+        "SYS.V_$PARAMETER",
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
@@ -224,11 +225,12 @@ environment = production
         "SYS.DBA_FREE_SPACE",
         "SYS.V_$SYSMETRIC",
         "SYS.V_$RSRCPDBMETRIC",
+        "SYS.V_$PARAMETER",
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
         "SYS.V_$DIAG_ALERT_EXT",
-        "object_grant_count <> 23",
+        "object_grant_count <> 24",
     ):
         if required_text not in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本缺少约束：{required_text}")

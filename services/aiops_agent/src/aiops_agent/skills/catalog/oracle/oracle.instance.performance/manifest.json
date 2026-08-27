@@ -10,7 +10,7 @@
   "required_source_capabilities": [],
   "optional_source_capabilities": ["PROMETHEUS_QUERY"],
   "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
-  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SYSMETRIC", "V_$SGA", "V_$PGASTAT", "V_$RESOURCE_LIMIT"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SYSMETRIC", "V_$SGA", "V_$PGASTAT", "V_$SESSION", "V_$PARAMETER"],
   "required_entitlements": [],
   "input_schema": "oracle.instance.performance.input.v1",
   "defaults": {},

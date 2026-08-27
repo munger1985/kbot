@@ -121,7 +121,7 @@ local_access = false
 # username = kbot_monitor
 # password = CHANGE_ME
 # exporter_query_timeout = 15
-# 自动启用KBot PDB CPU和SQL解析失败补充指标，需要V_$RSRCPDBMETRIC和V_$SYSSTAT读取权限。
+# 自动启用KBot PDB CPU、连接使用率和SQL解析失败补充指标，需要V_$RSRCPDBMETRIC、V_$PARAMETER和V_$SYSSTAT读取权限。
 # alert_poll_seconds = 15
 # alert_initial_lookback_seconds = 900
 # alert_max_rows = 1000
@@ -517,8 +517,7 @@ def _prometheus_rules() -> str:
         expr: sum by (instance, target_key) (oracledb_sessions_value{job="oracle", status="ACTIVE", type="USER"})
 
       - record: kbot_db_connection_utilization_percent
-        # Exporter将UNLIMITED转换为-1；没有有限上限时不生成虚假的使用率。
-        expr: 100 * oracledb_resource_current_utilization{job="oracle", resource_name="sessions"} / oracledb_resource_limit_value{job="oracle", resource_name="sessions"} > 0
+        expr: 100 * oracledb_kbot_connection_current_sessions{job="oracle"} / oracledb_kbot_connection_limit_sessions{job="oracle"}
 
       - record: kbot_db_transactions_total
         expr: sum by (instance, target_key) (oracledb_activity_user_commits{job="oracle"}) + sum by (instance, target_key) (oracledb_activity_user_rollbacks{job="oracle"})
