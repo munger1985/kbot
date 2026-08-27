@@ -7448,6 +7448,67 @@
         "title": "TurnEventView",
         "type": "object"
       },
+      "TurnEvidenceGapView": {
+        "additionalProperties": false,
+        "description": "对话页可安全展示的未取证摘要，不包含原始证据行。",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "step_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          }
+        },
+        "title": "TurnEvidenceGapView",
+        "type": "object"
+      },
       "TurnReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -7579,6 +7640,14 @@
             "minimum": 0.0,
             "title": "Event Cursor",
             "type": "integer"
+          },
+          "evidence_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnEvidenceGapView"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
           },
           "primary_domain": {
             "anyOf": [
@@ -7734,6 +7803,14 @@
             "minimum": 0.0,
             "title": "Event Cursor",
             "type": "integer"
+          },
+          "evidence_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnEvidenceGapView"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
           },
           "messages": {
             "default": [],

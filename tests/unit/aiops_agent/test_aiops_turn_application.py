@@ -21,6 +21,7 @@ from platform_core.contracts.aiops import (
     ConversationSourceContext,
     TurnCreate,
     TurnReceipt,
+    TurnSummary,
 )
 from platform_core.identity import uuid7
 
@@ -430,6 +431,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("OUTPUT_SCHEMA_INVALID", summary["evidence_gaps"][0]["code"])
         self.assertNotIn("evidence", summary)
+        TurnSummary.model_validate(summary)
 
     async def _start(self, uow: _Uow) -> tuple[ConversationTurnService, dict]:
         service = ConversationTurnService(uow_factory=lambda: uow)

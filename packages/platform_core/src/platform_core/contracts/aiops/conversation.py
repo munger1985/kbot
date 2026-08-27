@@ -206,6 +206,16 @@ class ConversationMessageView(AIOpsContract):
     created_at: UtcDatetime
 
 
+class TurnEvidenceGapView(AIOpsContract):
+    """对话页可安全展示的未取证摘要，不包含原始证据行。"""
+
+    skill_id: str | None = Field(default=None, max_length=128)
+    step_id: str | None = Field(default=None, max_length=128)
+    code: str | None = Field(default=None, max_length=128)
+    detail: str | None = Field(default=None, max_length=2000)
+    retryable: bool = False
+
+
 class TurnSummary(AIOpsContract):
     turn_id: UUIDv7
     conversation_id: UUIDv7
@@ -216,6 +226,7 @@ class TurnSummary(AIOpsContract):
     primary_domain: str | None = Field(default=None, max_length=48)
     subject: str | None = Field(default=None, max_length=64)
     sufficiency_status: SufficiencyStatus | None = None
+    evidence_gaps: tuple[TurnEvidenceGapView, ...] = ()
     event_cursor: int = Field(ge=0)
     error_domain: str | None = Field(default=None, max_length=32)
     error_code: str | None = Field(default=None, max_length=128)
