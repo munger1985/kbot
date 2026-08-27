@@ -7,15 +7,22 @@ from types import SimpleNamespace
 from datetime import UTC, datetime
 
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
+from aiops_agent.contracts.artifacts.database import (
+    DatabaseDiagnosticResult,
+    EvidenceGap,
+)
 from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.application.turn_planning import TurnPlanningService
 from aiops_agent.ports.model import StructuredModelResult
+from aiops_agent.workers.handlers import TaskExecutionContext
+from aiops_agent.workers.skill_handlers import DbaSkillInvocationHandler
 from aiops_agent.skills import (
     CapabilityUnavailableError,
     DbaIntentRouter,
     DbaSkillPlanner,
     DbaSkillRegistry,
     SkillCatalogError,
+    SkillExecutionSnapshotBuilder,
     SkillPlanCompiler,
     SkillUnavailableError,
     build_capability_snapshot,
@@ -82,6 +89,7 @@ def _manifest(
         domains=(domain,),
         required_source_capabilities=required_source,
         required_target_capabilities=required_target,
+        required_privileges=("V_$INSTANCE", "V_$DATABASE"),
         input_schema=f"{skill_id}.input.v1",
         limits=SkillLimits(max_rows=50, timeout_seconds=20),
         tool_dag=(SkillToolStep(step_id="collect", tool_id=tool_id),),
@@ -101,6 +109,7 @@ def _capabilities(*, reachable: bool = True) -> DbaCapabilitySnapshot:
         target_enabled=True,
         target_reachable=reachable,
         target_capabilities=("DB_READONLY",),
+        privileges=("V_$INSTANCE", "V_$DATABASE"),
         source_snapshots=(
             SourceCapabilitySnapshot(
                 source_id="prometheus-1",
@@ -159,7 +168,15 @@ class _PlanningUow:
             connectivity_status="CONNECTED",
             diagnostic_credential_id=uuid7(),
             execution_credential_id=None,
-            capabilities_json={"capabilities": ["DB_READONLY"]},
+            endpoint_json={
+                "host": "db.internal", "port": 1521, "service": "PDB1"
+            },
+            domain_id=7,
+            row_version=1,
+            capabilities_json={
+                "capabilities": ["DB_READONLY"],
+                "privileges": ["V_$INSTANCE", "V_$DATABASE"],
+            },
         )
         self.run = SimpleNamespace(
             ops_run_id=uuid7(),
@@ -268,6 +285,31 @@ class _AgentCatalog:
         return {"technical_name": "test-model", "revision": "1"}
 
 
+class _FrozenToolExecutor:
+    def __init__(self) -> None:
+        self.task_keys = []
+
+    async def execute(self, context):
+        self.task_keys.append(context.task_key)
+        tool_id = context.task_key.removeprefix("diagnostic:")
+        if tool_id == "db.instance.identity":
+            return DatabaseDiagnosticResult(
+                target_id=context.target_id,
+                tool_id=tool_id,
+                status="SUCCEEDED",
+            )
+        return DatabaseDiagnosticResult(
+            target_id=context.target_id,
+            tool_id=tool_id,
+            status="GAP",
+            gap=EvidenceGap(
+                code="PRIVILEGE_MISSING",
+                tool_id=tool_id,
+                detail="缺少最小只读权限",
+            ),
+        )
+
+
 class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
     async def test_all_seven_primary_intents_pass_structured_router(self) -> None:
         for intent in DbaIntent:
@@ -299,6 +341,10 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
             intent_router=DbaIntentRouter(_FakeModel(intent)),
             skill_planner=DbaSkillPlanner(registry),
             skill_compiler=SkillPlanCompiler(registry),
+            execution_snapshot_builder=SkillExecutionSnapshotBuilder(
+                skill_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
             agent_catalog=_AgentCatalog(),
         )
 
@@ -328,11 +374,86 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaSkillFrameworkTest(unittest.TestCase):
+    def test_skill_handler_executes_only_frozen_tool_dag(self) -> None:
+        executor = _FrozenToolExecutor()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="skill:1:oracle.sql.top_current",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-skill",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "skill_execution": {
+                    "diagnostic_catalog_hash": "a" * 64,
+                    "capability_snapshot_hash": "b" * 64,
+                    "database": {
+                        "domain_id": 7,
+                        "db_type": "ORACLE",
+                        "configured_version": "19c",
+                        "target_row_version": 1,
+                        "connection_profile": {},
+                        "diagnostic_credential_id": str(uuid7()),
+                    },
+                    "invocations": {
+                        "skill:1:oracle.sql.top_current": {
+                            "skill_id": "oracle.sql.top_current",
+                            "skill_version": "1.0.0",
+                            "manifest_hash": "c" * 64,
+                            "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+                            "output_schema": "oracle.sql.top_current.output.v1",
+                            "tools": [
+                                {
+                                    "step_id": "identity",
+                                    "depends_on": [],
+                                    "tool_id": "db.instance.identity",
+                                    "tool_version": "1.0.0",
+                                },
+                                {
+                                    "step_id": "top_sql",
+                                    "depends_on": ["identity"],
+                                    "tool_id": "db.sql.top_current",
+                                    "tool_version": "1.0.0",
+                                },
+                            ],
+                        }
+                    },
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+        )
+
+        result = self.run_async(
+            DbaSkillInvocationHandler(
+                database_handler=executor
+            ).execute(context)
+        )
+
+        self.assertEqual("PARTIAL", result.status)
+        self.assertEqual(
+            [
+                "diagnostic:db.instance.identity",
+                "diagnostic:db.sql.top_current",
+            ],
+            executor.task_keys,
+        )
+
+    @staticmethod
+    def run_async(awaitable):
+        import asyncio
+
+        return asyncio.run(awaitable)
+
     def test_repository_catalog_only_references_allowlisted_tools(self) -> None:
         tools = DiagnosticRegistry.load().tools
         registry = DbaSkillRegistry.load(
-            allowed_tool_ids=frozenset(
-                item.definition.tool_id for item in tools
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in tools
             )
         )
         manifest = registry.latest("oracle.sql.top_current")
@@ -342,6 +463,62 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             manifest.measurement_semantics,
         )
         self.assertEqual(64, len(registry.catalog_hash))
+
+    def test_top_sql_plan_freezes_exact_tools_hashes_and_user_limit(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        intent = _intent_plan(DbaIntent.OBSERVE).model_copy(
+            update={"subject": "TOP_SQL", "requested_limit": 20}
+        )
+        capabilities = _capabilities().model_copy(
+            update={
+                "target_capabilities": (
+                    "DB_READONLY",
+                    "dynamic_performance_views",
+                ),
+                "privileges": (
+                    "V_$INSTANCE",
+                    "V_$DATABASE",
+                    "V_$SQLSTATS",
+                ),
+            }
+        )
+        plan = DbaSkillPlanner(registry).plan(
+            intent=intent,
+            capabilities=capabilities,
+        )
+        compiled = SkillPlanCompiler(registry).compile(plan)
+        snapshot = SkillExecutionSnapshotBuilder(
+            skill_registry=registry,
+            diagnostic_registry=diagnostics,
+        ).build(
+            plan=plan,
+            compiled=compiled,
+            capabilities=capabilities,
+            database_execution={
+                "domain_id": 7,
+                "target_row_version": 1,
+                "db_type": "ORACLE",
+                "configured_version": "19c",
+                "connection_profile": {},
+                "diagnostic_credential_id": "credential-1",
+            },
+        )
+
+        invocation = snapshot["invocations"][
+            "skill:1:oracle.sql.top_current"
+        ]
+        self.assertEqual(
+            ["db.instance.identity", "db.sql.top_current"],
+            [item["tool_id"] for item in invocation["tools"]],
+        )
+        self.assertEqual(20, invocation["tools"][1]["parameters"]["limit"])
+        self.assertEqual(64, len(invocation["tools"][1]["template_sha256"]))
 
     def test_capability_snapshot_uses_only_enabled_reachable_resources(self) -> None:
         snapshot = build_capability_snapshot(
@@ -355,6 +532,11 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 connectivity_status="CONNECTED",
                 diagnostic_credential_id="credential-1",
                 execution_credential_id=None,
+                endpoint_json={
+                    "host": "db.internal",
+                    "port": 1521,
+                    "service": "PDB1",
+                },
                 capabilities_json={
                     "capabilities": ["DB_SQL_STATS"],
                     "privileges": ["ORACLE_SELECT_V_SQLSTATS"],
@@ -424,7 +606,34 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                         tool_id="db.dynamic.sql",
                     ),
                 ),
-                allowed_tool_ids=frozenset({"db.instance.identity"}),
+                allowed_tools=frozenset(
+                    {("db.instance.identity", "1.0.0")}
+                ),
+            )
+
+    def test_execution_snapshot_rejects_undeclared_tool_privileges(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        manifest = _manifest(
+            skill_id="oracle.identity.invalid",
+            intent=DbaIntent.OBSERVE,
+            domain=DbaDomain.SQL_PERFORMANCE,
+        ).model_copy(update={"required_privileges": ()})
+        registry = DbaSkillRegistry((manifest,))
+        plan = DbaSkillPlanner(registry).plan(
+            intent=_intent_plan(DbaIntent.OBSERVE),
+            capabilities=_capabilities().model_copy(update={"privileges": ()}),
+        )
+        compiled = SkillPlanCompiler(registry).compile(plan)
+
+        with self.assertRaisesRegex(SkillCatalogError, "未声明 Tool"):
+            SkillExecutionSnapshotBuilder(
+                skill_registry=registry,
+                diagnostic_registry=diagnostics,
+            ).build(
+                plan=plan,
+                compiled=compiled,
+                capabilities=_capabilities(),
+                database_execution={},
             )
 
     def test_planner_is_replayable_and_compiles_traceable_tasks(self) -> None:

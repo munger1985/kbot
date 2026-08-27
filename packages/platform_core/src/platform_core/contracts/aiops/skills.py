@@ -111,6 +111,9 @@ class SkillLimits(AIOpsContract):
 class SkillToolStep(AIOpsContract):
     step_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     tool_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    tool_version: str = Field(
+        default="1.0.0", pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$"
+    )
     depends_on: tuple[str, ...] = ()
     input: JsonObject = Field(default_factory=dict)
 

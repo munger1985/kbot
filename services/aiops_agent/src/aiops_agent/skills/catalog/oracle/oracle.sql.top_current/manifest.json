@@ -10,14 +10,14 @@
   "required_source_capabilities": [],
   "optional_source_capabilities": ["PROMETHEUS_QUERY"],
   "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
-  "required_privileges": ["V_$SQLSTATS"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SQLSTATS"],
   "required_entitlements": [],
   "input_schema": "oracle.sql.top_current.input.v1",
   "defaults": {"limit": 10, "ranking": "ELAPSED_TIME"},
   "limits": {"max_rows": 50, "timeout_seconds": 20, "max_attempts": 2, "cost_units": 2},
   "tool_dag": [
-    {"step_id": "identity", "tool_id": "db.instance.identity", "depends_on": [], "input": {}},
-    {"step_id": "top_sql", "tool_id": "db.sql.top_current", "depends_on": ["identity"], "input": {"limit": 10}}
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "top_sql", "tool_id": "db.sql.top_current", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"limit": 10}}
   ],
   "output_schema": "oracle.sql.top_current.output.v1",
   "measurement_semantics": "CUMULATIVE_SINCE_LOAD",

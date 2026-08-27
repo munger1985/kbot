@@ -42,11 +42,11 @@ class DbaSkillRegistry:
         self,
         manifests: Iterable[DbaSkillManifest] = (),
         *,
-        allowed_tool_ids: frozenset[str] | None = None,
+        allowed_tools: frozenset[tuple[str, str]] | None = None,
     ) -> None:
         self._items: dict[tuple[str, str], DbaSkillManifest] = {}
         self._hashes: dict[tuple[str, str], str] = {}
-        self._allowed_tool_ids = allowed_tool_ids
+        self._allowed_tools = allowed_tools
         for manifest in manifests:
             self.register(manifest)
         self.validate_references()
@@ -56,9 +56,9 @@ class DbaSkillRegistry:
         cls,
         root: Path = DEFAULT_SKILL_CATALOG_ROOT,
         *,
-        allowed_tool_ids: frozenset[str] | None = None,
+        allowed_tools: frozenset[tuple[str, str]] | None = None,
     ) -> "DbaSkillRegistry":
-        registry = cls(allowed_tool_ids=allowed_tool_ids)
+        registry = cls(allowed_tools=allowed_tools)
         for path in sorted(root.glob("**/manifest.json")):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -74,11 +74,12 @@ class DbaSkillRegistry:
             raise SkillCatalogError(
                 f"Skill ID 与版本不能重复：{manifest.skill_id}@{manifest.version}"
             )
-        if self._allowed_tool_ids is not None:
+        if self._allowed_tools is not None:
             unknown = sorted(
-                step.tool_id
+                f"{step.tool_id}@{step.tool_version}"
                 for step in manifest.tool_dag
-                if step.tool_id not in self._allowed_tool_ids
+                if (step.tool_id, step.tool_version)
+                not in self._allowed_tools
             )
             if unknown:
                 raise SkillCatalogError(

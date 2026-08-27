@@ -20,7 +20,10 @@ def build_capability_snapshot(
     """只根据已持久化且可审计的配置生成规划快照。"""
     target_payload = dict(getattr(target, "capabilities_json", None) or {})
     target_capabilities = set(_capability_names(target_payload))
-    if getattr(target, "diagnostic_credential_id", None) is not None:
+    if (
+        getattr(target, "diagnostic_credential_id", None) is not None
+        and bool(getattr(target, "endpoint_json", None))
+    ):
         target_capabilities.add("DB_READONLY")
     if getattr(target, "execution_credential_id", None) is not None:
         target_capabilities.add("DB_MUTATION_CREDENTIAL")

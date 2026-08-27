@@ -145,7 +145,8 @@ SHOW CON_NAME;
 ```
 
 脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证完整授权清单；其中
-`V_$SQLSTATS`仅用于当前累计Top SQL，不使用AWR历史视图。用户已存在时不
+`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`仅用于实例确认及当前累计Top SQL，
+不使用AWR历史视图。用户已存在时不
 重复执行该初始化脚本，应由DBA审核后单独补充缺少的授权。
 
 ## 5. Central与Collector配置示例

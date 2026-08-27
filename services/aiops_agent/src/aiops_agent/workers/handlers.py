@@ -220,8 +220,19 @@ def create_runtime_handler_registry(
             grant_audience=diagnostic_grant_audience or "",
             grant_ttl_seconds=diagnostic_grant_ttl_seconds,
         )
+        from .skill_handlers import DbaSkillInvocationHandler
+
         manifests.extend(
             (
+                HandlerManifest(
+                    handler_id="dba.skill.invoke",
+                    version="1",
+                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    idempotent=True,
+                    implementation=DbaSkillInvocationHandler(
+                        database_handler=database_diagnostic_handler
+                    ),
+                ),
                 HandlerManifest(
                     handler_id="database.scope",
                     version="1",

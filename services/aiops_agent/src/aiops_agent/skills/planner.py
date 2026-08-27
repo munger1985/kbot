@@ -252,7 +252,7 @@ class SkillPlanCompiler:
                     handler_id="dba.skill.invoke",
                     handler_version="1",
                     input_schema_version=manifest.input_schema,
-                    output_schema_version=manifest.output_schema,
+                    output_schema_version="DBA_SKILL_RESULT.v1",
                     depends_on=tuple(task_keys[value] for value in item.depends_on),
                     timeout_seconds=manifest.limits.timeout_seconds,
                     max_attempts=manifest.limits.max_attempts,

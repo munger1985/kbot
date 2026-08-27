@@ -7,6 +7,7 @@ from .planner import (
     SkillUnavailableError,
 )
 from .capabilities import build_capability_snapshot
+from .execution import SkillExecutionSnapshotBuilder
 from .registry import (
     DbaSkillRegistry,
     SkillCatalogError,
@@ -22,6 +23,7 @@ __all__ = [
     "IntentPlanValidationError",
     "SkillCatalogError",
     "SkillPlanCompiler",
+    "SkillExecutionSnapshotBuilder",
     "SkillUnavailableError",
     "canonical_hash",
     "build_capability_snapshot",

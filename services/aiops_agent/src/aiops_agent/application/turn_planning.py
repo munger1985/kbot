@@ -17,6 +17,7 @@ from aiops_agent.entities import (
 from aiops_agent.skills import (
     DbaIntentRouter,
     DbaSkillPlanner,
+    SkillExecutionSnapshotBuilder,
     SkillPlanCompiler,
     build_capability_snapshot,
     canonical_hash,
@@ -37,6 +38,7 @@ class TurnPlanningContext:
     trace_id: str
     deadline: datetime | None
     capabilities: DbaCapabilitySnapshot
+    database_execution: dict
 
 
 class _PlanningAlreadyApplied(Exception):
@@ -55,12 +57,14 @@ class TurnPlanningService:
         intent_router: DbaIntentRouter,
         skill_planner: DbaSkillPlanner,
         skill_compiler: SkillPlanCompiler,
+        execution_snapshot_builder: SkillExecutionSnapshotBuilder,
         agent_catalog,
     ) -> None:
         self._uow_factory = uow_factory
         self._intent_router = intent_router
         self._skill_planner = skill_planner
         self._skill_compiler = skill_compiler
+        self._execution_snapshot_builder = execution_snapshot_builder
         self._agent_catalog = agent_catalog
 
     async def execute(self, payload: dict) -> dict:
@@ -86,12 +90,19 @@ class TurnPlanningService:
             capabilities=context.capabilities,
         )
         compiled = self._skill_compiler.compile(skill_plan)
+        execution_snapshot = self._execution_snapshot_builder.build(
+            plan=skill_plan,
+            compiled=compiled,
+            capabilities=context.capabilities,
+            database_execution=context.database_execution,
+        )
         return await self._persist(
             context=context,
             intent_plan=intent_plan,
             intent_receipt=routed.receipt,
             skill_plan=skill_plan,
             compiled=compiled,
+            execution_snapshot=execution_snapshot,
         )
 
     async def _prepare(self, payload: dict) -> TurnPlanningContext:
@@ -189,6 +200,16 @@ class TurnPlanningService:
                     target=target,
                     sources=sources,
                 ),
+                database_execution={
+                    "domain_id": int(target.domain_id),
+                    "target_row_version": int(target.row_version),
+                    "db_type": str(target.db_type),
+                    "configured_version": target.version_code,
+                    "connection_profile": dict(target.endpoint_json or {}),
+                    "diagnostic_credential_id": str(
+                        target.diagnostic_credential_id
+                    ),
+                },
             )
 
     async def _persist(
@@ -199,6 +220,7 @@ class TurnPlanningService:
         intent_receipt,
         skill_plan,
         compiled,
+        execution_snapshot: dict,
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -315,6 +337,7 @@ class TurnPlanningService:
                 "skill_plan_artifact_id": str(skill_artifact.artifact_id),
                 "skill_catalog_hash": skill_plan.catalog_hash,
                 "intent_model_receipt": intent_receipt.model_dump(mode="json"),
+                "skill_execution": execution_snapshot,
             }
             await self._append_event(
                 uow,
