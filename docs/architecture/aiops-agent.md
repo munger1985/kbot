@@ -78,6 +78,8 @@ Prometheus、Alertmanager、Loki、Alloy、可选 Exporter 和固定镜像清单
 [AIOps 观测工具选型与 Docker Compose 部署基线](../proposals/aiops-observability-tooling-and-compose.md)。
 专业 DBA 对话中的 Turn、意图、Skill、证据充分性和展示契约见
 [AIOps Agent 专业 DBA 对话诊断设计](../product/aiops-agent-chat-diagnosis.md)。
+具体Oracle表结构、状态机、API、SSE和事务边界见
+[AIOps Agent 专业 DBA 对话诊断详细设计](aiops-agent-chat-diagnosis.md)。
 
 ## 服务边界
 

@@ -9,6 +9,8 @@ Target、权限和证据边界内工作的专业 DBA。它先理解用户正在�
 
 本文约束人工发起或从告警、巡检继续的 Conversation。告警自动诊断和计划巡检可以
 使用预定义 Blueprint，但用户进入续聊后，每条消息都必须进入本文定义的 Turn 编排。
+服务、Oracle表结构、API、SSE和事务级设计见
+[AIOps Agent 专业 DBA 对话诊断详细设计](../architecture/aiops-agent-chat-diagnosis.md)。
 
 核心原则：
 
@@ -290,13 +292,13 @@ Capability等对象。
 Turn生命周期为：
 
 ```text
-ACCEPTED → PLANNING → COLLECTING → ASSESSING → ANSWERING → COMPLETED
+QUEUED → ACCEPTED → PLANNING → COLLECTING → ASSESSING → ANSWERING → COMPLETED
                          └→ WAITING_USER
                          └→ PROPOSAL_PENDING
 任意执行中状态 → FAILED | CANCELLED
 ```
 
-同一Conversation默认只允许一个执行中的Turn，后续输入按顺序排队；用户可取消当前Turn，
+同一Conversation默认只允许一个执行中的Turn，后续Turn保持`QUEUED`并按顺序执行；用户可取消当前Turn，
 但已固化的证据和审计记录不删除。`WAITING_USER`收到补证后创建新的响应阶段并保留原问题，
 不把补证内容误判成一个无关任务。SSE事件具有单调序号，刷新或断线后从服务端重放，
 `answer.completed`之前的正文和展示块都可恢复。

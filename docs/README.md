@@ -9,6 +9,7 @@ Git 历史保存，不再作为有效文档。
 - [Knowledge Core](architecture/knowledge-core.md)：文件入库、解析、索引和二阶段检索。
 - [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
+- [AIOps Agent 专业 DBA 对话诊断详细设计](architecture/aiops-agent-chat-diagnosis.md)：Turn、Skill、证据、表结构、API 与 SSE。
 - [Model Serving](architecture/model-serving.md)：模型注册、托管进程和功能模型绑定。
 - [身份与 API](architecture/security-and-api.md)：Domain、用户 Token、App API Key 和内部 AuthContext。
 - [App API Key 安全设计](architecture/app-api-key-security.md)：App 绑定、Scope、Agent 白名单、轮换与撤销。

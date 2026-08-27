@@ -25,6 +25,7 @@ class DocumentationLayoutTest(unittest.TestCase):
             {
                 "agent-runtime.md",
                 "aiops-agent.md",
+                "aiops-agent-chat-diagnosis.md",
                 "app-api-key-security.md",
                 "data-query.md",
                 "knowledge-core.md",
