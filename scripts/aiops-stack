@@ -990,8 +990,12 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
     webhook_url = ""
 
     if "metrics" in settings.profiles:
+        prometheus_revision = hashlib.sha256(
+            (_prometheus_config() + _prometheus_rules()).encode("utf-8")
+        ).hexdigest()
         env_lines.extend(
             [
+                f"AIOPS_PROMETHEUS_CONFIG_REVISION={prometheus_revision}",
                 "PROMETHEUS_RETENTION="
                 + _optional(parser, "metrics", "prometheus_retention", "30d"),
                 "ALERTMANAGER_RETENTION="

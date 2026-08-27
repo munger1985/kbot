@@ -87,6 +87,7 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
     stack._prepare_runtime(settings)
     state = settings.runtime_dir
     env_text = (state / "stack.env").read_text(encoding="utf-8")
+    assert "AIOPS_PROMETHEUS_CONFIG_REVISION=" in env_text
     assert password not in env_text
     assert password not in (state / "deployment.json").read_text(encoding="utf-8")
     password_file = state / "secrets/oracle-oracle-prod-01_password"

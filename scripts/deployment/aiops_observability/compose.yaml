@@ -17,6 +17,8 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
       - --web.enable-lifecycle
+    environment:
+      AIOPS_PROMETHEUS_CONFIG_REVISION: ${AIOPS_PROMETHEUS_CONFIG_REVISION}
     volumes:
       - ${AIOPS_STACK_STATE_DIR}/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
