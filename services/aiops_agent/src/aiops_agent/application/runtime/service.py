@@ -29,6 +29,7 @@ from aiops_agent.domain.operations import (
     TERMINAL_RUN_STATUSES,
     ensure_run_transition,
     ensure_task_transition,
+    normalize_task_type,
 )
 from aiops_agent.adapters.diagnostic_sources.catalog import (
     MetricCatalog,
@@ -283,6 +284,22 @@ class AIOpsRuntimeService:
             )
             if target is None or target.status != "ENABLED":
                 raise resource_not_found("可用 Target")
+            agent = await uow.agents.get(
+                domain_id=command.domain_id,
+                agent_id=command.agent_id,
+            )
+            if (
+                agent is None
+                or agent.status != "ACTIVE"
+                or agent.current_version_id is None
+            ):
+                raise resource_not_found("Active AIOps Agent")
+            agent_version = await uow.agents.version(
+                agent_id=agent.agent_id,
+                agent_version_id=agent.current_version_id,
+            )
+            if agent_version is None:
+                raise resource_not_found("Agent Version")
             source_context = None
             requested_source_run_id = command.client_metadata.get(
                 "source_run_id"
@@ -331,7 +348,9 @@ class AIOpsRuntimeService:
                 source_context = {
                     "source_run_id": str(source_run.ops_run_id),
                     "source_trigger_type": source_run.trigger_type,
-                    "source_root_cause_grade": source_run.root_cause_level,
+                    "source_root_cause_grade": self._artifact_root_cause_grade(
+                        source_artifact
+                    ),
                     "source_artifact_schema": source_artifact.schema_version,
                     "source_result": json.dumps(
                         public_result,
@@ -746,6 +765,7 @@ class AIOpsRuntimeService:
                         domain_id=command.domain_id,
                         target_id=target.target_id,
                         agent_id=command.agent_id,
+                        agent_version_id=agent_version.agent_version_id,
                         parent_agent_run_id=command.parent_agent_run_id,
                         parent_delegation_id=command.parent_delegation_id,
                         trigger_type=str(command.trigger_type),
@@ -756,10 +776,7 @@ class AIOpsRuntimeService:
                             if str(command.trigger_type) == "CHAT"
                             else "AUTONOMOUS"
                         ),
-                        investigation_mode={
-                            "ALERT": "INCIDENT",
-                            "SCHEDULE": "INSPECTION",
-                        }.get(str(command.trigger_type), "ON_DEMAND"),
+                        workflow_kind=self._workflow_kind(command),
                         inspection_fire_id=command.inspection_fire_id,
                         source_proposal_id=(
                             UUID(verification["proposal_id"])
@@ -799,7 +816,7 @@ class AIOpsRuntimeService:
                         else None
                     ),
                     task_key=spec.task_key,
-                    task_type=spec.task_type,
+                    task_type=normalize_task_type(spec.task_type),
                     handler_id=spec.handler_id,
                     handler_version=spec.handler_version,
                     input_schema_version=spec.input_schema_version,
@@ -972,8 +989,8 @@ class AIOpsRuntimeService:
                         schema_version=artifact.schema_version,
                         content_hash=artifact.content_hash,
                     ),
-                    root_cause_grade=(
-                        run.root_cause_level or "INCONCLUSIVE"
+                    root_cause_grade=self._artifact_root_cause_grade(
+                        artifact
                     ),
                 )
             return RootDelegationResult(
@@ -1788,23 +1805,6 @@ class AIOpsRuntimeService:
                         trace_id=command.trace_id,
                     )
                 run.final_artifact_id = final_artifact.artifact_id
-                if artifact.schema_version in {
-                    "OBSERVE_REPORT.v1",
-                    "DB_DIAGNOSTIC_REPORT.v1",
-                }:
-                    run.root_cause_level = "INCONCLUSIVE"
-                elif (
-                    artifact.schema_version
-                    == "DIAGNOSIS_REPORT_DRAFT.v1"
-                ):
-                    root_cause = (
-                        (command.artifact.payload or {}).get(
-                            "root_cause", {}
-                        )
-                    )
-                    run.root_cause_level = root_cause.get(
-                        "effective_level", "INCONCLUSIVE"
-                    )
                 run.completed_at = now
                 if (
                     run.trigger_type == "CHAT"
@@ -3481,9 +3481,9 @@ class AIOpsRuntimeService:
                 task.completed_at = now
                 ensure_run_transition(
                     run_status,
-                    DomainOpsRunStatus.DIAGNOSING,
+                    DomainOpsRunStatus.RUNNING,
                 )
-                run.status = DomainOpsRunStatus.DIAGNOSING.value
+                run.status = DomainOpsRunStatus.RUNNING.value
                 tasks = await uow.runs.list_tasks(
                     ops_run_id=run.ops_run_id, lock=True
                 )
@@ -3933,7 +3933,11 @@ class AIOpsRuntimeService:
             return OpsRunResult(
                 ops_run_id=run.ops_run_id,
                 status=run.status,
-                root_cause_grade=run.root_cause_level,
+                root_cause_grade=(
+                    self._artifact_root_cause_grade(artifact)
+                    if artifact is not None
+                    else None
+                ),
                 final_artifact=(
                     self._artifact_ref(artifact)
                     if artifact is not None
@@ -4273,7 +4277,6 @@ class AIOpsRuntimeService:
             root = dict(payload.get("root_cause") or {})
             grade = str(
                 root.get("effective_level")
-                or run.root_cause_level
                 or "INCONCLUSIVE"
             )
             supporting = set(root.get("supporting_fact_refs") or ())
@@ -4328,13 +4331,35 @@ class AIOpsRuntimeService:
             ops_run_id=run.ops_run_id, agent_id=run.agent_id,
             target_id=run.target_id, trigger_type=run.trigger_type,
             interaction_mode=run.interaction_mode,
-            investigation_mode=run.investigation_mode, status=run.status,
-            root_cause_grade=run.root_cause_level,
+            workflow_kind=run.workflow_kind, status=run.status,
             source_proposal_id=getattr(run, "source_proposal_id", None),
             source_result_artifact_id=getattr(run, "source_result_artifact_id", None),
             final_artifact=final_artifact, row_version=int(run.row_version),
             created_at=run.created_at, completed_at=run.completed_at,
         )
+
+    @staticmethod
+    def _artifact_root_cause_grade(artifact) -> str:
+        payload = dict(artifact.payload_json or {})
+        root = dict(payload.get("root_cause") or {})
+        return str(
+            root.get("effective_level")
+            or payload.get("root_cause_grade")
+            or "INCONCLUSIVE"
+        )
+
+    @staticmethod
+    def _workflow_kind(command: CreateOpsRunCommand) -> str:
+        trigger_type = str(command.trigger_type)
+        if command.blueprint_id == "change.advisory-verify":
+            return "VERIFICATION"
+        if trigger_type == "SCHEDULE":
+            return "INSPECTION"
+        if trigger_type == "CHAT":
+            return "CHAT_TURN"
+        if command.blueprint_id.startswith("change."):
+            return "CHANGE"
+        return "ALERT_DIAGNOSIS"
 
     @staticmethod
     def _situation_summary(item) -> SituationSummary:
@@ -4580,9 +4605,9 @@ class AIOpsRuntimeService:
             task.completed_at = now
             ensure_run_transition(
                 DomainOpsRunStatus(run.status),
-                DomainOpsRunStatus.DIAGNOSING,
+                DomainOpsRunStatus.RUNNING,
             )
-            run.status = DomainOpsRunStatus.DIAGNOSING.value
+            run.status = DomainOpsRunStatus.RUNNING.value
             tasks = await uow.runs.list_tasks(
                 ops_run_id=run.ops_run_id, lock=True
             )
@@ -4831,9 +4856,9 @@ class AIOpsRuntimeService:
             task.completed_at = now
             ensure_run_transition(
                 DomainOpsRunStatus(run.status),
-                DomainOpsRunStatus.DIAGNOSING,
+                DomainOpsRunStatus.RUNNING,
             )
-            run.status = DomainOpsRunStatus.DIAGNOSING.value
+            run.status = DomainOpsRunStatus.RUNNING.value
             tasks = await uow.runs.list_tasks(
                 ops_run_id=run.ops_run_id, lock=True
             )

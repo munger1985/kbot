@@ -2705,39 +2705,44 @@
       "ConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
-          "message": {
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "collection_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "expected_conversation_version": {
+            "minimum": 1.0,
+            "title": "Expected Conversation Version",
+            "type": "integer"
+          },
+          "images": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationQueryImage"
+            },
+            "maxItems": 8,
+            "title": "Images",
+            "type": "array"
+          },
+          "input": {
             "maxLength": 32000,
             "minLength": 1,
-            "title": "Message",
+            "title": "Input",
             "type": "string"
-          },
-          "source_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Run Id"
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Id"
           }
         },
         "required": [
-          "message"
+          "input",
+          "expected_conversation_version"
         ],
         "title": "ConversationTurnPayload",
         "type": "object"
@@ -6292,19 +6297,12 @@
       "OpsRunStatus": {
         "enum": [
           "CREATED",
-          "SCOPING",
-          "OBSERVING",
-          "DIAGNOSING",
+          "QUEUED",
+          "RUNNING",
           "WAITING_INPUT",
-          "DIAGNOSED",
-          "PROPOSING",
           "WAITING_APPROVAL",
-          "EXECUTING",
-          "VERIFYING",
-          "ROLLBACK_PENDING",
           "COMPLETED",
-          "DEGRADED",
-          "REJECTED",
+          "PARTIAL",
           "FAILED",
           "CANCELLED",
           "EXPIRED"
@@ -6355,30 +6353,10 @@
             "title": "Interaction Mode",
             "type": "string"
           },
-          "investigation_mode": {
-            "enum": [
-              "INCIDENT",
-              "ON_DEMAND",
-              "INSPECTION",
-              "VERIFICATION"
-            ],
-            "title": "Investigation Mode",
-            "type": "string"
-          },
           "ops_run_id": {
             "format": "uuid",
             "title": "Ops Run Id",
             "type": "string"
-          },
-          "root_cause_grade": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RootCauseGrade"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "row_version": {
             "minimum": 1.0,
@@ -6424,6 +6402,9 @@
           },
           "trigger_type": {
             "$ref": "#/components/schemas/TriggerType"
+          },
+          "workflow_kind": {
+            "$ref": "#/components/schemas/WorkflowKind"
           }
         },
         "required": [
@@ -6432,7 +6413,7 @@
           "target_id",
           "trigger_type",
           "interaction_mode",
-          "investigation_mode",
+          "workflow_kind",
           "status",
           "row_version",
           "created_at"
@@ -10371,47 +10352,53 @@
         "title": "WebhookKeyRotation",
         "type": "object"
       },
-      "main_api__api__km_asset_app__ConversationTurnPayload": {
+      "WorkflowKind": {
+        "enum": [
+          "ALERT_DIAGNOSIS",
+          "INSPECTION",
+          "CHAT_TURN",
+          "CHANGE",
+          "VERIFICATION"
+        ],
+        "title": "WorkflowKind",
+        "type": "string"
+      },
+      "main_api__api__aiops_app__ConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
-          "client_metadata": {
-            "additionalProperties": true,
-            "title": "Client Metadata",
-            "type": "object"
-          },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
-          "expected_conversation_version": {
-            "minimum": 1.0,
-            "title": "Expected Conversation Version",
-            "type": "integer"
-          },
-          "images": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ConversationQueryImage"
-            },
-            "maxItems": 8,
-            "title": "Images",
-            "type": "array"
-          },
-          "input": {
+          "message": {
             "maxLength": 32000,
             "minLength": 1,
-            "title": "Input",
+            "title": "Message",
             "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
           }
         },
         "required": [
-          "input",
-          "expected_conversation_version"
+          "message"
         ],
         "title": "ConversationTurnPayload",
         "type": "object"
@@ -11032,7 +11019,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationTurnPayload"
+                "$ref": "#/components/schemas/main_api__api__aiops_app__ConversationTurnPayload"
               }
             }
           },
@@ -16826,7 +16813,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/main_api__api__km_asset_app__ConversationTurnPayload"
+                "$ref": "#/components/schemas/ConversationTurnPayload"
               }
             }
           },

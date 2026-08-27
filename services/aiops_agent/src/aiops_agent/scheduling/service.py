@@ -186,13 +186,12 @@ class AIOpsInspectionScheduler:
     async def _reconcile_one(self) -> bool:
         terminal = {
             "COMPLETED",
-            "DEGRADED",
-            "REJECTED",
+            "PARTIAL",
             "FAILED",
             "CANCELLED",
             "EXPIRED",
         }
-        success = {"COMPLETED", "DEGRADED"}
+        success = {"COMPLETED", "PARTIAL"}
         async with self._uow_factory() as uow:
             assert uow.runs is not None
             assert uow.inspections is not None

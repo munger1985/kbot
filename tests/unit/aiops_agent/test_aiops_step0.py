@@ -99,7 +99,7 @@ class AIOpsContractTest(unittest.TestCase):
                 "sequence_no": 1,
                 "occurred_at": datetime.now(UTC).isoformat(),
                 "trace_id": "trace-1",
-                "status": "SCOPING",
+                "status": "RUNNING",
             }
         )
         self.assertEqual("run.status", event.event_type)

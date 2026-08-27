@@ -184,8 +184,7 @@ class OpsRunRepository(AIOpsRepository):
                 OpsRunEntity.status.notin_(
                     (
                         "COMPLETED",
-                        "DEGRADED",
-                        "REJECTED",
+                        "PARTIAL",
                         "FAILED",
                         "CANCELLED",
                         "EXPIRED",
@@ -353,8 +352,7 @@ class OpsRunRepository(AIOpsRepository):
                         OpsRunEntity.status.not_in(
                             (
                                 "COMPLETED",
-                                "DEGRADED",
-                                "REJECTED",
+                                "PARTIAL",
                                 "FAILED",
                                 "CANCELLED",
                                 "EXPIRED",
@@ -386,8 +384,7 @@ class OpsRunRepository(AIOpsRepository):
                 or run.status
                 in {
                     "COMPLETED",
-                    "DEGRADED",
-                    "REJECTED",
+                    "PARTIAL",
                     "FAILED",
                     "CANCELLED",
                     "EXPIRED",
@@ -535,8 +532,7 @@ class OpsRunRepository(AIOpsRepository):
                     OpsRunEntity.status.not_in(
                         (
                             "COMPLETED",
-                            "DEGRADED",
-                            "REJECTED",
+                            "PARTIAL",
                             "FAILED",
                             "CANCELLED",
                             "EXPIRED",
@@ -564,8 +560,7 @@ class OpsRunRepository(AIOpsRepository):
                 and run.status
                 not in {
                     "COMPLETED",
-                    "DEGRADED",
-                    "REJECTED",
+                    "PARTIAL",
                     "FAILED",
                     "CANCELLED",
                     "EXPIRED",

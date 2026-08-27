@@ -10,6 +10,7 @@ from aiops_agent.domain.operations import (
     InvalidOperationTransition,
     ensure_run_transition,
     ensure_task_transition,
+    normalize_task_type,
 )
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
@@ -34,14 +35,14 @@ class RuntimeStateMachineTest(unittest.TestCase):
     def test_step4_happy_path_transitions_are_explicit(self) -> None:
         ensure_run_transition(
             DomainOpsRunStatus.CREATED,
-            DomainOpsRunStatus.SCOPING,
+            DomainOpsRunStatus.RUNNING,
         )
         ensure_run_transition(
-            DomainOpsRunStatus.SCOPING,
-            DomainOpsRunStatus.OBSERVING,
+            DomainOpsRunStatus.RUNNING,
+            DomainOpsRunStatus.RUNNING,
         )
         ensure_run_transition(
-            DomainOpsRunStatus.OBSERVING,
+            DomainOpsRunStatus.RUNNING,
             DomainOpsRunStatus.COMPLETED,
         )
         ensure_task_transition(
@@ -61,13 +62,24 @@ class RuntimeStateMachineTest(unittest.TestCase):
         with self.assertRaises(InvalidOperationTransition):
             ensure_run_transition(
                 DomainOpsRunStatus.COMPLETED,
-                DomainOpsRunStatus.SCOPING,
+                DomainOpsRunStatus.RUNNING,
             )
         with self.assertRaises(InvalidOperationTransition):
             ensure_task_transition(
                 DomainOpsTaskStatus.SUCCEEDED,
                 DomainOpsTaskStatus.RUNNING,
             )
+
+    def test_legacy_blueprint_task_types_are_normalized_for_schema_13(self) -> None:
+        self.assertEqual("INTENT_ROUTE", normalize_task_type("SCOPE"))
+        self.assertEqual("SKILL_INVOKE", normalize_task_type("OBSERVE"))
+        self.assertEqual("EVIDENCE_ASSESS", normalize_task_type("DIAGNOSE"))
+        self.assertEqual("VERIFY", normalize_task_type("COMPARE"))
+        self.assertEqual("REPORT", normalize_task_type("REPORT"))
+
+    def test_unknown_task_type_is_rejected_before_persistence(self) -> None:
+        with self.assertRaisesRegex(ValueError, "不支持的通用 Task 类型"):
+            normalize_task_type("UNKNOWN_TASK")
 
 
 class BlueprintRegistryTest(unittest.TestCase):

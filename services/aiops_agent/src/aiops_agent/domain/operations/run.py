@@ -1,4 +1,4 @@
-"""Ops Run 状态与阶段规则。"""
+"""Ops Run 通用调度状态与 Task 类型规则。"""
 
 from aiops_agent.domain.states import DomainOpsRunStatus
 
@@ -6,8 +6,19 @@ from aiops_agent.domain.states import DomainOpsRunStatus
 TERMINAL_RUN_STATUSES = frozenset(
     {
         DomainOpsRunStatus.COMPLETED,
-        DomainOpsRunStatus.DEGRADED,
-        DomainOpsRunStatus.REJECTED,
+        DomainOpsRunStatus.PARTIAL,
+        DomainOpsRunStatus.FAILED,
+        DomainOpsRunStatus.CANCELLED,
+        DomainOpsRunStatus.EXPIRED,
+    }
+)
+
+_ACTIVE_OUTCOMES = frozenset(
+    {
+        DomainOpsRunStatus.WAITING_INPUT,
+        DomainOpsRunStatus.WAITING_APPROVAL,
+        DomainOpsRunStatus.COMPLETED,
+        DomainOpsRunStatus.PARTIAL,
         DomainOpsRunStatus.FAILED,
         DomainOpsRunStatus.CANCELLED,
         DomainOpsRunStatus.EXPIRED,
@@ -19,66 +30,36 @@ RUN_TRANSITIONS: dict[
 ] = {
     DomainOpsRunStatus.CREATED: frozenset(
         {
-            DomainOpsRunStatus.SCOPING,
+            DomainOpsRunStatus.QUEUED,
+            DomainOpsRunStatus.RUNNING,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
         }
     ),
-    DomainOpsRunStatus.SCOPING: frozenset(
+    DomainOpsRunStatus.QUEUED: frozenset(
         {
-            DomainOpsRunStatus.OBSERVING,
-            DomainOpsRunStatus.DIAGNOSING,
-            DomainOpsRunStatus.VERIFYING,
+            DomainOpsRunStatus.RUNNING,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
         }
     ),
-    DomainOpsRunStatus.OBSERVING: frozenset(
-        {
-            DomainOpsRunStatus.DIAGNOSING,
-            DomainOpsRunStatus.COMPLETED,
-            DomainOpsRunStatus.DEGRADED,
-            DomainOpsRunStatus.FAILED,
-            DomainOpsRunStatus.CANCELLED,
-            DomainOpsRunStatus.EXPIRED,
-        }
-    ),
-    DomainOpsRunStatus.DIAGNOSING: frozenset(
-        {
-            DomainOpsRunStatus.WAITING_INPUT,
-            DomainOpsRunStatus.PROPOSING,
-            DomainOpsRunStatus.VERIFYING,
-            DomainOpsRunStatus.COMPLETED,
-            DomainOpsRunStatus.DEGRADED,
-            DomainOpsRunStatus.FAILED,
-            DomainOpsRunStatus.CANCELLED,
-            DomainOpsRunStatus.EXPIRED,
-        }
-    ),
+    DomainOpsRunStatus.RUNNING: _ACTIVE_OUTCOMES
+    | frozenset({DomainOpsRunStatus.RUNNING}),
     DomainOpsRunStatus.WAITING_INPUT: frozenset(
         {
-            DomainOpsRunStatus.DIAGNOSING,
-            DomainOpsRunStatus.CANCELLED,
-            DomainOpsRunStatus.EXPIRED,
-            DomainOpsRunStatus.FAILED,
-        }
-    ),
-    DomainOpsRunStatus.PROPOSING: frozenset(
-        {
-            DomainOpsRunStatus.WAITING_APPROVAL,
-            DomainOpsRunStatus.COMPLETED,
-            DomainOpsRunStatus.DEGRADED,
+            DomainOpsRunStatus.RUNNING,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
         }
     ),
-    DomainOpsRunStatus.VERIFYING: frozenset(
+    DomainOpsRunStatus.WAITING_APPROVAL: frozenset(
         {
+            DomainOpsRunStatus.RUNNING,
             DomainOpsRunStatus.COMPLETED,
-            DomainOpsRunStatus.DEGRADED,
+            DomainOpsRunStatus.PARTIAL,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
@@ -86,30 +67,37 @@ RUN_TRANSITIONS: dict[
     ),
 }
 
-# 步骤 4 尚不执行的阶段仍显式保留，避免状态规则散落到 Handler。
-for _status in DomainOpsRunStatus:
-    RUN_TRANSITIONS.setdefault(
-        _status,
-        frozenset()
-        if _status in TERMINAL_RUN_STATUSES
-        else frozenset(
-            {
-                DomainOpsRunStatus.FAILED,
-                DomainOpsRunStatus.CANCELLED,
-                DomainOpsRunStatus.EXPIRED,
-            }
-        ),
-    )
+for _status in TERMINAL_RUN_STATUSES:
+    RUN_TRANSITIONS[_status] = frozenset()
 
 
 TASK_TYPE_TO_RUN_PHASE: dict[str, DomainOpsRunStatus | None] = {
-    "SCOPE": DomainOpsRunStatus.SCOPING,
-    "OBSERVE": DomainOpsRunStatus.OBSERVING,
-    "DIAGNOSE": DomainOpsRunStatus.DIAGNOSING,
-    "PROPOSE": DomainOpsRunStatus.PROPOSING,
+    "INTENT_ROUTE": DomainOpsRunStatus.RUNNING,
+    "SKILL_PLAN": DomainOpsRunStatus.RUNNING,
+    "SKILL_INVOKE": DomainOpsRunStatus.RUNNING,
+    "EVIDENCE_ASSESS": DomainOpsRunStatus.RUNNING,
+    "ANSWER": DomainOpsRunStatus.RUNNING,
+    "REQUEST_INPUT": DomainOpsRunStatus.WAITING_INPUT,
+    "PROPOSE": DomainOpsRunStatus.RUNNING,
     "APPROVE": DomainOpsRunStatus.WAITING_APPROVAL,
-    "EXECUTE": DomainOpsRunStatus.EXECUTING,
-    "VERIFY": DomainOpsRunStatus.VERIFYING,
-    "COMPARE": DomainOpsRunStatus.VERIFYING,
+    "EXECUTE": DomainOpsRunStatus.RUNNING,
+    "VERIFY": DomainOpsRunStatus.RUNNING,
+    "ROLLBACK": DomainOpsRunStatus.RUNNING,
     "REPORT": None,
 }
+
+
+LEGACY_TASK_TYPE_MAP: dict[str, str] = {
+    "SCOPE": "INTENT_ROUTE",
+    "OBSERVE": "SKILL_INVOKE",
+    "DIAGNOSE": "EVIDENCE_ASSESS",
+    "COMPARE": "VERIFY",
+}
+
+
+def normalize_task_type(task_type: str) -> str:
+    """把 Blueprint 业务步骤映射到 Schema 13 通用 Task 类型。"""
+    normalized = LEGACY_TASK_TYPE_MAP.get(task_type, task_type)
+    if normalized not in TASK_TYPE_TO_RUN_PHASE:
+        raise ValueError(f"不支持的通用 Task 类型：{task_type}")
+    return normalized

@@ -5,6 +5,7 @@ from .run import (
     RUN_TRANSITIONS,
     TASK_TYPE_TO_RUN_PHASE,
     TERMINAL_RUN_STATUSES,
+    normalize_task_type,
 )
 from .task import TASK_TRANSITIONS, TERMINAL_TASK_STATUSES
 from .transitions import (
@@ -19,6 +20,7 @@ __all__ = [
     "TASK_TRANSITIONS",
     "TASK_TYPE_TO_RUN_PHASE",
     "TERMINAL_RUN_STATUSES",
+    "normalize_task_type",
     "TERMINAL_TASK_STATUSES",
     "InvalidOperationTransition",
     "RuntimeErrorPolicy",

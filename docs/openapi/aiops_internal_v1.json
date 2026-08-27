@@ -4180,19 +4180,12 @@
       "OpsRunStatus": {
         "enum": [
           "CREATED",
-          "SCOPING",
-          "OBSERVING",
-          "DIAGNOSING",
+          "QUEUED",
+          "RUNNING",
           "WAITING_INPUT",
-          "DIAGNOSED",
-          "PROPOSING",
           "WAITING_APPROVAL",
-          "EXECUTING",
-          "VERIFYING",
-          "ROLLBACK_PENDING",
           "COMPLETED",
-          "DEGRADED",
-          "REJECTED",
+          "PARTIAL",
           "FAILED",
           "CANCELLED",
           "EXPIRED"
@@ -4243,30 +4236,10 @@
             "title": "Interaction Mode",
             "type": "string"
           },
-          "investigation_mode": {
-            "enum": [
-              "INCIDENT",
-              "ON_DEMAND",
-              "INSPECTION",
-              "VERIFICATION"
-            ],
-            "title": "Investigation Mode",
-            "type": "string"
-          },
           "ops_run_id": {
             "format": "uuid",
             "title": "Ops Run Id",
             "type": "string"
-          },
-          "root_cause_grade": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RootCauseGrade"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "row_version": {
             "minimum": 1.0,
@@ -4312,6 +4285,9 @@
           },
           "trigger_type": {
             "$ref": "#/components/schemas/TriggerType"
+          },
+          "workflow_kind": {
+            "$ref": "#/components/schemas/WorkflowKind"
           }
         },
         "required": [
@@ -4320,7 +4296,7 @@
           "target_id",
           "trigger_type",
           "interaction_mode",
-          "investigation_mode",
+          "workflow_kind",
           "status",
           "row_version",
           "created_at"
@@ -7986,6 +7962,17 @@
         ],
         "title": "WebhookKeyRotation",
         "type": "object"
+      },
+      "WorkflowKind": {
+        "enum": [
+          "ALERT_DIAGNOSIS",
+          "INSPECTION",
+          "CHAT_TURN",
+          "CHANGE",
+          "VERIFICATION"
+        ],
+        "title": "WorkflowKind",
+        "type": "string"
       }
     }
   },

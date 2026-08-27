@@ -2,13 +2,13 @@
 
 ## 当前实施状态（2026-08-27）
 
-阶段0和阶段1已经完成：Schema 13、自包含重建制品、共享契约、Turn 原子接收、并发序号、
-失败回滚、幂等重试和旧 Conversation Run/Action Step 路径均已收口。阶段2已经建立可靠的
-`QUEUED → ACCEPTED → PLANNING`调度链、唯一 Primary Run、取消传播和可重放终态事件，
-并通过无外部依赖的空流程验收。
+阶段0、阶段1和阶段2已经完成：Schema 13、自包含重建制品、共享契约、Turn 原子接收、
+并发序号、失败回滚、幂等重试和旧 Conversation Run/Action Step 路径均已收口；可靠的
+`QUEUED → ACCEPTED → PLANNING`调度链、唯一 Primary Run、取消传播、可重放终态事件和
+通用 Run/Task 状态机也已落地，并通过无外部依赖的空流程验收。
 
-当前分支仍是不可部署的开发中版本，也没有操作任何共享数据库。阶段2还需完成既有
-Run/Task 运行时向通用状态机的迁移；Intent Router、DBA Skill 和真实流式回答尚未接入。
+当前分支仍是不可部署的开发中版本，也没有操作任何共享数据库。下一步进入阶段3，接入
+Intent Router、DBA Skill 目录、确定性校验和 Skill Plan 编译；真实取证与流式回答随后实施。
 
 版本：1.0
 

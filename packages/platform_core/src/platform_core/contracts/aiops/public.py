@@ -66,6 +66,7 @@ from .types import (
     TriggerType,
     UUIDv7,
     UtcDatetime,
+    WorkflowKind,
 )
 
 
@@ -133,11 +134,8 @@ class OpsRunSummary(AIOpsContract):
     target_id: UUIDv7
     trigger_type: TriggerType
     interaction_mode: Literal["INTERACTIVE", "AUTONOMOUS"]
-    investigation_mode: Literal[
-        "INCIDENT", "ON_DEMAND", "INSPECTION", "VERIFICATION"
-    ]
+    workflow_kind: WorkflowKind
     status: OpsRunStatus
-    root_cause_grade: RootCauseGrade | None = None
     source_proposal_id: UUIDv7 | None = None
     source_result_artifact_id: UUIDv7 | None = None
     final_artifact: ArtifactRef | None = None
