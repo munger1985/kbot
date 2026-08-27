@@ -28,6 +28,17 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 `KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 13 / aiops-oracle-v3`，再启动 AIOps
 服务并检查 `/ready`。
 
+已有的开发库如果仍是`AIOPS / 12 / aiops-oracle-v2`，优先执行
+`upgrade_aiops_v12_to_v13.sql`。该脚本保留 Target、监控源、绑定、策略、Agent、
+Agent版本和授权配置，只删除并重建运行、告警、巡检、变更与对话历史表。它同样是
+SQL Developer F5直接执行的单文件，并且只接受v12作为起始版本；其他版本必须先
+确认实际差异，不能跳过版本检查强行执行。生成或校验该脚本使用：
+
+```bash
+python scripts/db/render_aiops_rebuild_schema.py --upgrade-v12-v13
+python scripts/db/render_aiops_rebuild_schema.py --upgrade-v12-v13 --check
+```
+
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用启动时
 只检查 `KBOT_V_OPS_SCHEMA_VERSION`，不得执行 DDL、补列或调用 `create_all()`。
 APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
