@@ -209,13 +209,6 @@ class ConversationTurnService:
                 raise resource_not_found("Conversation")
             if row.status == "ARCHIVED":
                 return self._conversation_summary(row)
-            active_turn = await uow.turns.find_active(
-                conversation_id=conversation_id
-            )
-            if active_turn is not None:
-                raise state_conflict(
-                    "会话仍有正在执行的诊断，请等待完成或先取消当前诊断"
-                )
             row.status = "ARCHIVED"
             row.updated_by = actor_id
             row.updated_at = datetime.now(UTC)

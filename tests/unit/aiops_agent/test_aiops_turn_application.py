@@ -11,7 +11,6 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
-from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.skills import SkillUnavailableError
 from aiops_agent.workers.outbox_dispatcher import (
     AIOpsDomainOutboxSink,
@@ -232,20 +231,6 @@ class _TurnRepository:
             ),
             None,
         )
-
-    async def find_active(self, *, conversation_id):
-        terminal = {
-            "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
-        }
-        return next(
-            (
-                row for row in reversed(self.turns)
-                if row.conversation_id == conversation_id
-                and row.status not in terminal
-            ),
-            None,
-        )
-
 
 class _Uow:
     def __init__(self) -> None:
@@ -666,19 +651,19 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], rows)
         self.assertEqual(2, uow.commit_count)
 
-    async def test_archive_rejects_conversation_with_active_turn(self) -> None:
+    async def test_archive_active_conversation_keeps_turn_audit(self) -> None:
         uow = _Uow()
         service, receipt = await self._start(uow)
 
-        with self.assertRaises(AIOpsApplicationError) as raised:
-            await service.archive_conversation(
-                domain_id=7,
-                conversation_id=UUID(receipt["conversation_id"]),
-                actor_id="dba@example.com",
-            )
+        archived = await service.archive_conversation(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            actor_id="dba@example.com",
+        )
 
-        self.assertEqual("OPS_STATE_CONFLICT", raised.exception.code)
-        self.assertEqual("ACTIVE", uow.conversation_rows[0].status)
+        self.assertEqual("ARCHIVED", archived["status"])
+        self.assertEqual(1, len(uow.turns.turns))
+        self.assertEqual("QUEUED", uow.turns.turns[0].status)
 
     async def test_empty_flow_reaches_replayable_terminal_turn(self) -> None:
         uow = _Uow()
