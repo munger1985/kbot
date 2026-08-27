@@ -35,6 +35,18 @@ class TurnRepository(AIOpsRepository):
     async def add_run(self, row: OpsTurnRunEntity) -> OpsTurnRunEntity:
         return await self._add(row)
 
+    async def get_run_link(
+        self,
+        *,
+        turn_id: UUID,
+        purpose: str,
+    ) -> OpsTurnRunEntity | None:
+        statement = select(OpsTurnRunEntity).where(
+            OpsTurnRunEntity.turn_id == turn_id,
+            OpsTurnRunEntity.purpose == purpose,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def add_skill_invocation(
         self, row: OpsSkillInvocationEntity
     ) -> OpsSkillInvocationEntity:

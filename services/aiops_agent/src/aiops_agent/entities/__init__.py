@@ -31,23 +31,21 @@ from .runtime import (
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity
 from .conversation import (
-    ActionStepEntity, EvidenceRequestEntity, ImageEvidenceProcessingEntity,
+    EvidenceRequestEntity, ImageEvidenceProcessingEntity,
     OpsAnswerBlockEntity, OpsAnswerCitationEntity,
     OpsConversationEntity, OpsConversationMessageEntity,
-    OpsConversationRunEntity, OpsConversationTurnEntity,
+    OpsConversationTurnEntity,
     OpsSkillInvocationEntity, OpsTurnEventEntity,
     OpsTurnEvidenceEntity, OpsTurnRunEntity,
 )
 
 __all__ = [
-    "ActionStepEntity",
     "OpsAnswerBlockEntity",
     "OpsAnswerCitationEntity",
     "EvidenceRequestEntity",
     "ImageEvidenceProcessingEntity",
     "OpsConversationEntity",
     "OpsConversationMessageEntity",
-    "OpsConversationRunEntity",
     "OpsConversationTurnEntity",
     "OpsSkillInvocationEntity",
     "OpsTurnEventEntity",

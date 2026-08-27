@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict
-from aiops_agent.entities import OpsTurnEventEntity
+from aiops_agent.entities import OpsTurnEventEntity, OutboxEntity
 
 
 class TurnQueueService:
@@ -44,6 +46,21 @@ class TurnQueueService:
                         "status": "ACCEPTED",
                         "public_summary": "问题已进入诊断规划队列",
                     },
+                )
+            )
+            planning_payload = dict(payload)
+            encoded = json.dumps(
+                planning_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            await uow.outbox.add(
+                OutboxEntity(
+                    aggregate_type="CONVERSATION_TURN",
+                    aggregate_id=turn.turn_id,
+                    event_type="aiops.turn.planning_requested",
+                    idempotency_key=f"turn-planning:{turn.turn_id}",
+                    payload_json=planning_payload,
+                    payload_hash=hashlib.sha256(encoded).hexdigest(),
+                    trace_id=str(payload["trace_id"]),
                 )
             )
             await uow.commit()

@@ -11,6 +11,7 @@ from aiops_agent.application.errors import UnitOfWorkStateError
 from aiops_agent.entities import TargetEntity
 from aiops_agent.persistence import AIOpsUnitOfWork, UnitOfWorkState
 from aiops_agent.repositories import (
+    ConversationRepository,
     SituationRepository,
     ChangeRepository,
     InboxRepository,
@@ -28,6 +29,7 @@ from tests.acceptance.check_oracle_schema import SERVICE_TABLES
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_DIR = ROOT / "database" / "oracle" / "aiops_agent"
 REPOSITORIES = (
+    ConversationRepository,
     TargetRepository,
     DiagnosticSourceRepository,
     PolicyRepository,
@@ -109,6 +111,22 @@ class AIOpsEntityContractTest(unittest.TestCase):
         for entity in AIOPS_ENTITY_CLASSES:
             self.assertEqual([], list(entity.__mapper__.relationships))
 
+    def test_removed_conversation_persistence_has_no_active_code(self) -> None:
+        source_root = ROOT / "services" / "aiops_agent" / "src" / "aiops_agent"
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in source_root.rglob("*.py")
+        )
+        for token in (
+            "KBOT_OPS_CONVERSATION_RUN",
+            "KBOT_OPS_ACTION_STEP",
+            "OpsConversationRunEntity",
+            "ActionStepEntity",
+            "AGENT_PROGRESS",
+            "WAITING_EVIDENCE",
+        ):
+            self.assertNotIn(token, source)
+
     def test_repository_has_no_transaction_or_external_io_ownership(
         self,
     ) -> None:
@@ -143,6 +161,10 @@ class AIOpsEntityContractTest(unittest.TestCase):
         runtime_source = inspect.getsource(OpsRunRepository)
         self.assertIn("with_for_update(skip_locked=True)", runtime_source)
         self.assertIn("候选查询不持锁", runtime_source)
+        conversation_source = inspect.getsource(ConversationRepository)
+        self.assertIn("statement.with_for_update()", conversation_source)
+        self.assertNotIn("func.max", conversation_source)
+        self.assertNotIn("next_message_sequence", conversation_source)
 
 
 class AIOpsUnitOfWorkTest(unittest.IsolatedAsyncioTestCase):

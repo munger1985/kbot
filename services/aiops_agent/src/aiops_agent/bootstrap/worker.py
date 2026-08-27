@@ -22,6 +22,7 @@ from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
+from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
@@ -210,6 +211,9 @@ def create_aiops_worker_probe(
                 ),
                 db_executor_client=db_executor_client,
                 turn_queue_service=TurnQueueService(
+                    uow_factory=runtime.uow_factory,
+                ),
+                turn_planner_service=TurnPlannerService(
                     uow_factory=runtime.uow_factory,
                 ),
             ),

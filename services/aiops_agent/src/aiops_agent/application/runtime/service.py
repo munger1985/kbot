@@ -46,10 +46,8 @@ from aiops_agent.domain.states import (
 )
 from aiops_agent.entities import (
     ChangeProposalEntity,
-    EvidenceRequestEntity,
     HitlEntity,
     OpsArtifactEntity,
-    OpsConversationMessageEntity,
     OpsRunEntity,
     OpsTaskEntity,
     OutboxEntity,
@@ -2694,67 +2692,6 @@ class AIOpsRuntimeService:
                     expires_at=command.expires_at,
                 )
             )
-            conversation_id = (run.plan_snapshot_json or {}).get(
-                "client_metadata", {}
-            ).get("conversation_id")
-            conversations = getattr(uow, "conversations", None)
-            if conversation_id and conversations is not None:
-                try:
-                    parsed_conversation_id = UUID(str(conversation_id))
-                except (TypeError, ValueError):
-                    raise state_conflict("Run 的 Conversation 关联无效") from None
-                conversation = await conversations.get_conversation(
-                    domain_id=int(run.domain_id),
-                    conversation_id=parsed_conversation_id,
-                    lock=True,
-                )
-                if (
-                    conversation is None
-                    or conversation.agent_id != run.agent_id
-                    or conversation.created_by != run.actor_id
-                ):
-                    raise state_conflict("Run 的 Conversation 关联不可信")
-                queries = list(content.get("queries") or [])
-                sql_blocks = [
-                    f"-- [{item.get('query_id', 'query')}]\n{item.get('sql_text', '')}"
-                    for item in queries
-                    if item.get("sql_text")
-                ]
-                await conversations.add_evidence_request(
-                    EvidenceRequestEntity(
-                        request_id=command.hitl_id,
-                        conversation_id=parsed_conversation_id,
-                        purpose=command.prompt_text,
-                        suggested_sql="\n\n".join(sql_blocks) or None,
-                        sql_hash=(
-                            hashlib.sha256(
-                                "\n\n".join(sql_blocks).encode()
-                            ).hexdigest()
-                            if sql_blocks
-                            else None
-                        ),
-                        requested_by=command.request_artifact.producer,
-                    )
-                )
-                conversation.status = "WAITING_EVIDENCE"
-                await conversations.add_message(
-                    OpsConversationMessageEntity(
-                        conversation_id=parsed_conversation_id,
-                        sequence_no=await conversations.next_message_sequence(
-                            conversation_id=parsed_conversation_id
-                        ),
-                        role="AGENT",
-                        message_type="EVIDENCE_REQUEST",
-                        payload_json={
-                            "request_id": str(command.hitl_id),
-                            "purpose": command.prompt_text,
-                            "suggested_sql": "\n\n".join(sql_blocks) or None,
-                            "query_ids": [
-                                str(item.get("query_id")) for item in queries
-                            ],
-                        },
-                    )
-                )
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status),
                 DomainOpsTaskStatus.WAITING_INPUT,

@@ -84,6 +84,25 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
         )
         self.assertIn("THEN CORRELATION_HASH", self.upper_sql)
         self.assertNotIn("THEN FINGERPRINT", self.upper_sql)
+        self.assertRegex(
+            self.upper_sql,
+            r"CREATE\s+UNIQUE\s+INDEX\s+UX_OPS_TURN_ACTIVE\s+ON\s+"
+            r"KBOT_OPS_CONVERSATION_TURN\s*\(\s*CASE\s+WHEN\s+STATUS\s+IN\s*\(\s*"
+            r"'PLANNING'\s*,\s*'COLLECTING'\s*,\s*'ASSESSING'\s*,\s*'ANSWERING'\s*\)\s*"
+            r"THEN\s+CONVERSATION_ID\s+END\s*\)",
+        )
+        self.assertRegex(
+            self.upper_sql,
+            r"CREATE\s+UNIQUE\s+INDEX\s+UX_OPS_TURN_USER_MESSAGE\s+ON\s+"
+            r"KBOT_OPS_CONVERSATION_MESSAGE\s*\(\s*CASE\s+WHEN\s+"
+            r"MESSAGE_TYPE\s*=\s*'USER_MESSAGE'\s+THEN\s+TURN_ID\s+END\s*\)",
+        )
+        self.assertRegex(
+            self.upper_sql,
+            r"CREATE\s+UNIQUE\s+INDEX\s+UX_OPS_TURN_PRIMARY_RUN\s+ON\s+"
+            r"KBOT_OPS_TURN_RUN\s*\(\s*CASE\s+WHEN\s+PURPOSE\s*=\s*'PRIMARY'\s+"
+            r"THEN\s+TURN_ID\s+END\s*\)",
+        )
 
     def test_oracle_26ai_physical_adaptations_are_explicit(self) -> None:
         self.assertNotRegex(self.upper_sql, r"\bMODE\s+VARCHAR2\b")

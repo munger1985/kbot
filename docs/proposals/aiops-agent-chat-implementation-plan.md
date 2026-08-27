@@ -2,18 +2,17 @@
 
 ## 当前实施状态（2026-08-27）
 
-第一批基础改造已进入代码，包含 Schema 13 与自包含重建制品、Conversation/Turn
-共享契约、Turn 实体与 Repository、原子接收和 Outbox、Turn 查询/取消 API、事件流代理，
-以及由 Answer Block 驱动的聊天页面骨架。当前 Worker 只会把 Turn 从`QUEUED`推进到
-`ACCEPTED`；Planner、通用 Run 状态机、DBA Skill 与真实流式回答尚未接入。
+阶段0和阶段1已经完成：Schema 13、自包含重建制品、共享契约、Turn 原子接收、并发序号、
+失败回滚、幂等重试和旧 Conversation Run/Action Step 路径均已收口。阶段2已经建立可靠的
+`QUEUED → ACCEPTED → PLANNING`调度链、唯一 Primary Run、取消传播和可重放终态事件，
+并通过无外部依赖的空流程验收。
 
-因此当前分支是阶段0至阶段2的开发中切片，不是可部署版本，也没有操作任何共享数据库。
-后续必须继续完成阶段1的并发/回滚约束和旧代码删除、阶段2的空流程闭环，达到相应退出
-条件后，才进入 Intent Router 与 Oracle Skill 实现。
+当前分支仍是不可部署的开发中版本，也没有操作任何共享数据库。阶段2还需完成既有
+Run/Task 运行时向通用状态机的迁移；Intent Router、DBA Skill 和真实流式回答尚未接入。
 
 版本：1.0
 
-状态：待实施
+状态：实施中
 
 基准日期：2026-08-27
 

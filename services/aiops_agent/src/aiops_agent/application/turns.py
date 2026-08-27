@@ -333,7 +333,11 @@ class ConversationTurnService:
                     payload_json={"status": turn.status},
                 )
             )
-            payload = {"turn_id": str(turn.turn_id), "requested_by": actor_id}
+            payload = {
+                "domain_id": domain_id,
+                "turn_id": str(turn.turn_id),
+                "requested_by": actor_id,
+            }
             encoded = json.dumps(
                 payload, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
@@ -416,6 +420,7 @@ class ConversationTurnService:
             "agent_id": str(conversation.agent_id),
             "agent_version_id": str(conversation.agent_version_id),
             "source_run_id": str(source_run.ops_run_id) if source_run else None,
+            "trace_id": trace_id,
         }
         encoded = json.dumps(
             outbox_payload, sort_keys=True, separators=(",", ":")
