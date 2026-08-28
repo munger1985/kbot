@@ -31,3 +31,20 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用启动时
 只检查 `KBOT_V_OPS_SCHEMA_VERSION`，不得执行 DDL、补列或调用 `create_all()`。
 APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
+
+## 保留现有 AIOps 数据升级
+
+已经运行 Schema 14 且需要保留 Target、Agent、监控源、Webhook Key/Secret、会话和
+诊断数据时，不要执行全量重建文件。停止 AIOps API、Worker 和 Scheduler 并完成备份后，
+使用 Schema Owner 在 SQL Developer 中以 Run Script（F5）执行：
+
+```text
+upgrade_14_to_15_preserve_data.sql
+```
+
+该脚本只接受 `AIOPS / 14 / aiops-oracle-v4`，会在任何 DDL 前检查当前 Agent 与历史
+会话是否能够唯一确定逻辑 Target；无法确定时直接终止，不猜测映射。升级完成后应返回
+`AIOPS / 15 / aiops-oracle-v5`。脚本不会删除或重建
+`KBOT_OPS_DIAGNOSTIC_SOURCE`、`KBOT_MANAGED_CREDENTIAL` 和
+`KBOT_OPS_TARGET_SOURCE_BINDING`，因此不需要因为本次数据库升级重新生成 Webhook 密钥
+或重新运行监控 Docker。
