@@ -1,4 +1,4 @@
-"""AIOps 14 到 15 数据保留升级脚本契约。"""
+"""AIOps 13 到 15 数据保留升级脚本契约。"""
 
 from pathlib import Path
 import re
@@ -20,7 +20,7 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.sql = UPGRADE.read_text(encoding="utf-8").upper()
 
-    def test_upgrade_is_strictly_scoped_from_14_to_15(self) -> None:
+    def test_upgrade_is_strictly_scoped_from_13_to_15(self) -> None:
         self.assertIn("V_SCHEMA_VERSION <> 13", self.sql)
         self.assertIn("AIOPS-ORACLE-V3", self.sql)
         self.assertIn("15 AS SCHEMA_VERSION", self.sql)
@@ -55,16 +55,31 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
             self.assertIn(fragment, self.sql)
         self.assertNotIn("SET C.TARGET_ID", self.sql)
 
+    def test_upgrade_normalizes_known_schema_13_drift(self) -> None:
+        self.assertIn("USER_TAB_COLUMNS", self.sql)
+        self.assertIn(
+            "ALTER TABLE KBOT_OPS_AGENT_VERSION ADD (TARGET_ID RAW(16))",
+            self.sql,
+        )
+        self.assertIn(
+            "ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL ADD (TURN_ID RAW(16))",
+            self.sql,
+        )
+        self.assertIn("FK_OPS_PROPOSAL_TURN", self.sql)
+        self.assertIn("IX_OPS_PROPOSAL_TURN", self.sql)
+
     def test_upgrade_checks_mapping_before_first_ddl(self) -> None:
-        preflight = self.sql.index("PROMPT [1/11]")
+        preflight = self.sql.index("PROMPT [1/12]")
         first_ddl = self.sql.index(
-            "ALTER TABLE KBOT_OPS_CONVERSATION_TURN ADD"
+            "ALTER TABLE KBOT_OPS_AGENT_VERSION ADD (TARGET_ID RAW(16))"
         )
         unresolved_agent = self.sql.index("-20002")
         unresolved_conversation = self.sql.index("-20003")
+        unresolved_proposal = self.sql.index("-20006")
         self.assertLess(preflight, unresolved_agent)
         self.assertLess(unresolved_agent, first_ddl)
         self.assertLess(unresolved_conversation, first_ddl)
+        self.assertLess(unresolved_proposal, first_ddl)
 
 
 if __name__ == "__main__":

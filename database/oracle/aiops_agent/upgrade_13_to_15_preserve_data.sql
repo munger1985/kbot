@@ -13,13 +13,15 @@ SET DEFINE OFF
 SET SERVEROUTPUT ON SIZE UNLIMITED
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
-PROMPT [1/11] 校验当前 Schema 版本与可迁移数据
+PROMPT [1/12] 校验当前 Schema 版本与可迁移数据
 
 DECLARE
     v_component        VARCHAR2(32 CHAR);
     v_schema_version   NUMBER;
     v_contract_version VARCHAR2(64 CHAR);
     v_unresolved       NUMBER;
+    v_has_agent_target NUMBER;
+    v_has_proposal_turn NUMBER;
 BEGIN
     SELECT COMPONENT, SCHEMA_VERSION, CONTRACT_VERSION
       INTO v_component, v_schema_version, v_contract_version
@@ -36,28 +38,64 @@ BEGIN
         );
     END IF;
 
-    -- 当前 Agent 版本必须能够由旧 TARGET_ID、旧 Agent Binding，或唯一的
-    -- Source Binding 推导出至少一个逻辑 Target。
     SELECT COUNT(*)
-      INTO v_unresolved
-      FROM KBOT_OPS_AGENT a
-      JOIN KBOT_OPS_AGENT_VERSION av
-        ON av.AGENT_VERSION_ID = a.CURRENT_VERSION_ID
-     WHERE av.TARGET_ID IS NULL
-       AND NOT EXISTS (
-            SELECT 1
-              FROM KBOT_OPS_TARGET_BINDING tb
-             WHERE tb.AGENT_ID = a.AGENT_ID
-               AND tb.STATUS = 'ACTIVE'
-       )
-       AND 1 <> (
-            SELECT COUNT(DISTINCT tsb.TARGET_ID)
-              FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
-              JOIN KBOT_OPS_TARGET_SOURCE_BINDING tsb
-                ON tsb.DIAGNOSTIC_SOURCE_ID = avs.DIAGNOSTIC_SOURCE_ID
-               AND tsb.STATUS = 'ACTIVE'
-             WHERE avs.AGENT_VERSION_ID = av.AGENT_VERSION_ID
-       );
+      INTO v_has_agent_target
+      FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'KBOT_OPS_AGENT_VERSION'
+       AND COLUMN_NAME = 'TARGET_ID';
+
+    SELECT COUNT(*)
+      INTO v_has_proposal_turn
+      FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'KBOT_OPS_CHANGE_PROPOSAL'
+       AND COLUMN_NAME = 'TURN_ID';
+
+    -- 开发库曾通过保留配置表的 v12 -> v13 脚本升级，因此其版本投影虽为
+    -- Schema 13，AGENT_VERSION 仍可能没有后来加入规范重建 DDL 的 TARGET_ID。
+    -- 前置校验必须同时接受规范 Schema 13 和这一真实存量形态。
+    IF v_has_agent_target = 1 THEN
+        EXECUTE IMMEDIATE q'[
+            SELECT COUNT(*)
+              FROM KBOT_OPS_AGENT a
+              JOIN KBOT_OPS_AGENT_VERSION av
+                ON av.AGENT_VERSION_ID = a.CURRENT_VERSION_ID
+             WHERE av.TARGET_ID IS NULL
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM KBOT_OPS_TARGET_BINDING tb
+                     WHERE tb.AGENT_ID = a.AGENT_ID
+                       AND tb.STATUS = 'ACTIVE'
+               )
+               AND 1 <> (
+                    SELECT COUNT(DISTINCT tsb.TARGET_ID)
+                      FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
+                      JOIN KBOT_OPS_TARGET_SOURCE_BINDING tsb
+                        ON tsb.DIAGNOSTIC_SOURCE_ID = avs.DIAGNOSTIC_SOURCE_ID
+                       AND tsb.STATUS = 'ACTIVE'
+                     WHERE avs.AGENT_VERSION_ID = av.AGENT_VERSION_ID
+               )
+        ]' INTO v_unresolved;
+    ELSE
+        SELECT COUNT(*)
+          INTO v_unresolved
+          FROM KBOT_OPS_AGENT a
+          JOIN KBOT_OPS_AGENT_VERSION av
+            ON av.AGENT_VERSION_ID = a.CURRENT_VERSION_ID
+         WHERE NOT EXISTS (
+                SELECT 1
+                  FROM KBOT_OPS_TARGET_BINDING tb
+                 WHERE tb.AGENT_ID = a.AGENT_ID
+                   AND tb.STATUS = 'ACTIVE'
+         )
+           AND 1 <> (
+                SELECT COUNT(DISTINCT tsb.TARGET_ID)
+                  FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
+                  JOIN KBOT_OPS_TARGET_SOURCE_BINDING tsb
+                    ON tsb.DIAGNOSTIC_SOURCE_ID = avs.DIAGNOSTIC_SOURCE_ID
+                   AND tsb.STATUS = 'ACTIVE'
+                 WHERE avs.AGENT_VERSION_ID = av.AGENT_VERSION_ID
+           );
+    END IF;
 
     IF v_unresolved > 0 THEN
         RAISE_APPLICATION_ERROR(
@@ -67,30 +105,62 @@ BEGIN
         );
     END IF;
 
-    -- 会话必须能够在升级前唯一确定 Target。来源 Run/Situation/Report、Turn
-    -- 证据和旧 Agent 版本依次作为事实来源；最后才使用唯一绑定候选。
-    WITH resolved_conversation AS (
-        SELECT c.CONVERSATION_ID,
-               COALESCE(
-                   (SELECT r.TARGET_ID
-                      FROM KBOT_OPS_RUN r
+    -- 会话必须能够在升级前唯一确定 Target。动态 SQL 避免在漂移的 Schema 13
+    -- 上解析一个实际不存在的 AGENT_VERSION.TARGET_ID。
+    IF v_has_agent_target = 1 THEN
+        EXECUTE IMMEDIATE q'[
+            WITH resolved_conversation AS (
+                SELECT c.CONVERSATION_ID,
+                       COALESCE(
+                           (SELECT r.TARGET_ID FROM KBOT_OPS_RUN r
+                             WHERE r.OPS_RUN_ID = c.SOURCE_RUN_ID),
+                           (SELECT s.TARGET_ID FROM KBOT_OPS_SITUATION s
+                             WHERE s.SITUATION_ID = c.SOURCE_SITUATION_ID),
+                           (SELECT rp.TARGET_ID FROM KBOT_OPS_REPORT rp
+                             WHERE rp.REPORT_ID = c.SOURCE_REPORT_ID),
+                           (SELECT HEXTORAW(MIN(RAWTOHEX(ct.RESOLVED_TARGET_ID)))
+                              FROM KBOT_OPS_CONVERSATION_TURN ct
+                             WHERE ct.CONVERSATION_ID = c.CONVERSATION_ID
+                               AND ct.RESOLVED_TARGET_ID IS NOT NULL
+                            HAVING COUNT(DISTINCT ct.RESOLVED_TARGET_ID) = 1),
+                           av.TARGET_ID,
+                           (SELECT HEXTORAW(MIN(RAWTOHEX(tb.TARGET_ID)))
+                              FROM KBOT_OPS_TARGET_BINDING tb
+                             WHERE tb.AGENT_ID = c.AGENT_ID AND tb.STATUS = 'ACTIVE'
+                            HAVING COUNT(DISTINCT tb.TARGET_ID) = 1),
+                           (SELECT HEXTORAW(MIN(RAWTOHEX(tsb.TARGET_ID)))
+                              FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
+                              JOIN KBOT_OPS_TARGET_SOURCE_BINDING tsb
+                                ON tsb.DIAGNOSTIC_SOURCE_ID = avs.DIAGNOSTIC_SOURCE_ID
+                               AND tsb.STATUS = 'ACTIVE'
+                             WHERE avs.AGENT_VERSION_ID = c.AGENT_VERSION_ID
+                            HAVING COUNT(DISTINCT tsb.TARGET_ID) = 1)
+                       ) AS TARGET_ID
+                  FROM KBOT_OPS_CONVERSATION c
+                  JOIN KBOT_OPS_AGENT_VERSION av
+                    ON av.AGENT_VERSION_ID = c.AGENT_VERSION_ID
+            )
+            SELECT COUNT(*) FROM resolved_conversation WHERE TARGET_ID IS NULL
+        ]' INTO v_unresolved;
+    ELSE
+        SELECT COUNT(*)
+          INTO v_unresolved
+          FROM KBOT_OPS_CONVERSATION c
+         WHERE COALESCE(
+                   (SELECT r.TARGET_ID FROM KBOT_OPS_RUN r
                      WHERE r.OPS_RUN_ID = c.SOURCE_RUN_ID),
-                   (SELECT s.TARGET_ID
-                      FROM KBOT_OPS_SITUATION s
+                   (SELECT s.TARGET_ID FROM KBOT_OPS_SITUATION s
                      WHERE s.SITUATION_ID = c.SOURCE_SITUATION_ID),
-                   (SELECT rp.TARGET_ID
-                      FROM KBOT_OPS_REPORT rp
+                   (SELECT rp.TARGET_ID FROM KBOT_OPS_REPORT rp
                      WHERE rp.REPORT_ID = c.SOURCE_REPORT_ID),
                    (SELECT HEXTORAW(MIN(RAWTOHEX(ct.RESOLVED_TARGET_ID)))
                       FROM KBOT_OPS_CONVERSATION_TURN ct
                      WHERE ct.CONVERSATION_ID = c.CONVERSATION_ID
                        AND ct.RESOLVED_TARGET_ID IS NOT NULL
                     HAVING COUNT(DISTINCT ct.RESOLVED_TARGET_ID) = 1),
-                   av.TARGET_ID,
                    (SELECT HEXTORAW(MIN(RAWTOHEX(tb.TARGET_ID)))
                       FROM KBOT_OPS_TARGET_BINDING tb
-                     WHERE tb.AGENT_ID = c.AGENT_ID
-                       AND tb.STATUS = 'ACTIVE'
+                     WHERE tb.AGENT_ID = c.AGENT_ID AND tb.STATUS = 'ACTIVE'
                     HAVING COUNT(DISTINCT tb.TARGET_ID) = 1),
                    (SELECT HEXTORAW(MIN(RAWTOHEX(tsb.TARGET_ID)))
                       FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
@@ -99,15 +169,8 @@ BEGIN
                        AND tsb.STATUS = 'ACTIVE'
                      WHERE avs.AGENT_VERSION_ID = c.AGENT_VERSION_ID
                     HAVING COUNT(DISTINCT tsb.TARGET_ID) = 1)
-               ) AS TARGET_ID
-          FROM KBOT_OPS_CONVERSATION c
-          JOIN KBOT_OPS_AGENT_VERSION av
-            ON av.AGENT_VERSION_ID = c.AGENT_VERSION_ID
-    )
-    SELECT COUNT(*)
-      INTO v_unresolved
-      FROM resolved_conversation
-     WHERE TARGET_ID IS NULL;
+               ) IS NULL;
+    END IF;
 
     IF v_unresolved > 0 THEN
         RAISE_APPLICATION_ERROR(
@@ -115,6 +178,27 @@ BEGIN
             '存在 ' || v_unresolved
             || ' 条历史会话无法唯一推导 Target；升级未开始，请先人工补齐关联'
         );
+    END IF;
+
+    -- 若旧 CHANGE_PROPOSAL 尚无 TURN_ID，每条存量建议都必须能由其 Run
+    -- 唯一定位到一个 PRIMARY Turn；否则不允许开始任何 DDL。
+    IF v_has_proposal_turn = 0 THEN
+        SELECT COUNT(*)
+          INTO v_unresolved
+          FROM KBOT_OPS_CHANGE_PROPOSAL p
+         WHERE 1 <> (
+               SELECT COUNT(DISTINCT tr.TURN_ID)
+                 FROM KBOT_OPS_TURN_RUN tr
+                WHERE tr.OPS_RUN_ID = p.OPS_RUN_ID
+                  AND tr.PURPOSE = 'PRIMARY'
+         );
+        IF v_unresolved > 0 THEN
+            RAISE_APPLICATION_ERROR(
+                -20006,
+                '存在 ' || v_unresolved
+                || ' 条历史变更建议无法唯一推导 Turn；升级未开始'
+            );
+        END IF;
     END IF;
 
     -- 每条旧 Skill Invocation 都必须有一个可复用的冻结计划 Artifact，才能
@@ -156,7 +240,75 @@ BEGIN
 END;
 /
 
-PROMPT [2/11] 将 Schema 13 Turn 升级为调查循环结构
+PROMPT [2/12] 规范化真实 Schema 13 的存量漂移
+
+DECLARE
+    v_count NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+      FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'KBOT_OPS_AGENT_VERSION'
+       AND COLUMN_NAME = 'TARGET_ID';
+    IF v_count = 0 THEN
+        EXECUTE IMMEDIATE
+            'ALTER TABLE KBOT_OPS_AGENT_VERSION ADD (TARGET_ID RAW(16))';
+        EXECUTE IMMEDIATE q'[
+            UPDATE KBOT_OPS_AGENT_VERSION av
+               SET TARGET_ID = COALESCE(
+                   (SELECT HEXTORAW(MIN(RAWTOHEX(tb.TARGET_ID)))
+                      FROM KBOT_OPS_TARGET_BINDING tb
+                     WHERE tb.AGENT_ID = av.AGENT_ID AND tb.STATUS = 'ACTIVE'
+                    HAVING COUNT(DISTINCT tb.TARGET_ID) = 1),
+                   (SELECT HEXTORAW(MIN(RAWTOHEX(tsb.TARGET_ID)))
+                      FROM KBOT_OPS_AGENT_VERSION_SOURCE avs
+                      JOIN KBOT_OPS_TARGET_SOURCE_BINDING tsb
+                        ON tsb.DIAGNOSTIC_SOURCE_ID = avs.DIAGNOSTIC_SOURCE_ID
+                       AND tsb.STATUS = 'ACTIVE'
+                     WHERE avs.AGENT_VERSION_ID = av.AGENT_VERSION_ID
+                    HAVING COUNT(DISTINCT tsb.TARGET_ID) = 1)
+               )
+        ]';
+        EXECUTE IMMEDIATE
+            'ALTER TABLE KBOT_OPS_AGENT_VERSION ADD CONSTRAINT '
+            || 'FK_OPS_AGENT_VERSION_TARGET FOREIGN KEY (TARGET_ID) '
+            || 'REFERENCES KBOT_OPS_TARGET (TARGET_ID)';
+        EXECUTE IMMEDIATE
+            'CREATE INDEX IX_OPS_AGENT_VERSION_TARGET '
+            || 'ON KBOT_OPS_AGENT_VERSION (TARGET_ID)';
+        DBMS_OUTPUT.PUT_LINE('已补齐 KBOT_OPS_AGENT_VERSION.TARGET_ID');
+    END IF;
+
+    SELECT COUNT(*) INTO v_count
+      FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'KBOT_OPS_CHANGE_PROPOSAL'
+       AND COLUMN_NAME = 'TURN_ID';
+    IF v_count = 0 THEN
+        EXECUTE IMMEDIATE
+            'ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL ADD (TURN_ID RAW(16))';
+        EXECUTE IMMEDIATE q'[
+            UPDATE KBOT_OPS_CHANGE_PROPOSAL p
+               SET TURN_ID = (
+                   SELECT HEXTORAW(MIN(RAWTOHEX(tr.TURN_ID)))
+                     FROM KBOT_OPS_TURN_RUN tr
+                    WHERE tr.OPS_RUN_ID = p.OPS_RUN_ID
+                      AND tr.PURPOSE = 'PRIMARY'
+               )
+        ]';
+        EXECUTE IMMEDIATE
+            'ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL MODIFY (TURN_ID NOT NULL)';
+        EXECUTE IMMEDIATE
+            'ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL ADD CONSTRAINT '
+            || 'FK_OPS_PROPOSAL_TURN FOREIGN KEY (TURN_ID) '
+            || 'REFERENCES KBOT_OPS_CONVERSATION_TURN (TURN_ID)';
+        EXECUTE IMMEDIATE
+            'CREATE INDEX IX_OPS_PROPOSAL_TURN ON '
+            || 'KBOT_OPS_CHANGE_PROPOSAL (TURN_ID, STATUS, COMMAND_ORDINAL)';
+        DBMS_OUTPUT.PUT_LINE('已补齐 KBOT_OPS_CHANGE_PROPOSAL.TURN_ID');
+    END IF;
+END;
+/
+
+PROMPT [3/12] 将 Schema 13 Turn 升级为调查循环结构
 
 ALTER TABLE KBOT_OPS_CONVERSATION_TURN ADD (
     INPUT_ANALYSIS_ARTIFACT_ID RAW(16),
@@ -300,7 +452,7 @@ CREATE INDEX IX_OPS_INPUT_ITEM_SOURCE
 CREATE INDEX IX_OPS_INPUT_ITEM_EXTRACT
     ON KBOT_OPS_TURN_INPUT_ITEM (EXTRACTED_ARTIFACT_ID);
 
-PROMPT [3/11] 迁移旧 Skill、Evidence 和 Event 审计数据
+PROMPT [4/12] 迁移旧 Skill、Evidence 和 Event 审计数据
 
 CREATE TABLE KBOT_OPS_INVESTIGATION_REVISION (
     REVISION_ID RAW(16) PRIMARY KEY,
@@ -635,7 +787,7 @@ BEGIN
     SELECT COUNT(*) INTO v_tool_count FROM KBOT_OPS_TOOL_INVOCATION;
     IF v_skill_count <> v_playbook_count OR v_skill_count <> v_tool_count THEN
         RAISE_APPLICATION_ERROR(
-            -20006,
+            -20007,
             '旧 Skill 审计数据未被完整迁移：skill=' || v_skill_count
             || ', playbook=' || v_playbook_count || ', tool=' || v_tool_count
         );
@@ -675,7 +827,7 @@ ALTER TABLE KBOT_OPS_CONVERSATION_TURN DROP (
 
 DROP TABLE KBOT_OPS_SKILL_INVOCATION;
 
-PROMPT [4/11] 增加 Target 连接与受控变更开关
+PROMPT [5/12] 增加 Target 连接与受控变更开关
 
 ALTER TABLE KBOT_OPS_TARGET ADD (
     READONLY_CONNECTION_ENABLED NUMBER(1) DEFAULT 0 NOT NULL,
@@ -721,7 +873,7 @@ ALTER TABLE KBOT_OPS_TARGET ADD CONSTRAINT CK_OPS_TARGET_ACCESS CHECK (
     AND (CONTROLLED_CHANGE_ENABLED = 0 OR READONLY_CONNECTION_ENABLED = 1)
 );
 
-PROMPT [5/11] 创建 Agent 版本与逻辑 Target 多对多关系
+PROMPT [6/12] 创建 Agent 版本与逻辑 Target 多对多关系
 
 CREATE TABLE KBOT_OPS_AGENT_VERSION_TARGET (
     AGENT_VERSION_ID RAW(16) NOT NULL,
@@ -738,7 +890,7 @@ CREATE TABLE KBOT_OPS_AGENT_VERSION_TARGET (
 CREATE INDEX IX_OPS_AGENT_VER_TARGET_TARGET
     ON KBOT_OPS_AGENT_VERSION_TARGET (TARGET_ID);
 
-PROMPT [6/11] 回填 Agent 版本 Target 集合
+PROMPT [7/12] 回填 Agent 版本 Target 集合
 
 -- 首选旧版本直接绑定的 Target，保持原有行为不变。
 INSERT INTO KBOT_OPS_AGENT_VERSION_TARGET (
@@ -784,7 +936,7 @@ SELECT avs.AGENT_VERSION_ID,
  GROUP BY avs.AGENT_VERSION_ID
 HAVING COUNT(DISTINCT tsb.TARGET_ID) = 1;
 
-PROMPT [7/11] 为历史会话回填冻结 Target
+PROMPT [8/12] 为历史会话回填冻结 Target
 
 ALTER TABLE KBOT_OPS_CONVERSATION ADD (TARGET_ID RAW(16));
 
@@ -822,7 +974,7 @@ BEGIN
      WHERE TARGET_ID IS NULL;
     IF v_unresolved > 0 THEN
         RAISE_APPLICATION_ERROR(
-            -20004,
+            -20008,
             '回填后仍有 ' || v_unresolved || ' 条会话缺少 Target'
         );
     END IF;
@@ -847,13 +999,13 @@ SELECT DISTINCT c.AGENT_VERSION_ID, c.TARGET_ID, CURRENT_TIMESTAMP
           AND avt.TARGET_ID = c.TARGET_ID
  );
 
-PROMPT [8/11] 删除 Agent 版本旧单 Target 列
+PROMPT [9/12] 删除 Agent 版本旧单 Target 列
 
 ALTER TABLE KBOT_OPS_AGENT_VERSION DROP CONSTRAINT FK_OPS_AGENT_VERSION_TARGET;
 DROP INDEX IX_OPS_AGENT_VERSION_TARGET;
 ALTER TABLE KBOT_OPS_AGENT_VERSION DROP COLUMN TARGET_ID;
 
-PROMPT [9/11] 更新 Schema 版本投影
+PROMPT [10/12] 更新 Schema 版本投影
 
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
@@ -862,11 +1014,11 @@ SELECT
     'aiops-oracle-v5' AS CONTRACT_VERSION
 FROM DUAL;
 
-PROMPT [10/11] 提交升级
+PROMPT [11/12] 提交升级
 
 COMMIT;
 
-PROMPT [11/11] 输出升级结果
+PROMPT [12/12] 输出升级结果
 
 SELECT COMPONENT, SCHEMA_VERSION, CONTRACT_VERSION
   FROM KBOT_V_OPS_SCHEMA_VERSION;

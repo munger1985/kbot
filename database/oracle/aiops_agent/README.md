@@ -42,8 +42,11 @@ APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完�
 upgrade_13_to_15_preserve_data.sql
 ```
 
-该脚本只接受 `AIOPS / 13 / aiops-oracle-v3`，会在任何 DDL 前检查当前 Agent 与历史
-会话是否能够唯一确定逻辑 Target；无法确定时直接终止，不猜测映射。升级完成后应返回
+该脚本只接受 `AIOPS / 13 / aiops-oracle-v3`，同时识别规范 Schema 13 和早期保留配置表
+升级留下的存量形态；后者缺少的 `AGENT_VERSION.TARGET_ID`、
+`CHANGE_PROPOSAL.TURN_ID` 会在映射校验通过后补齐。脚本会在任何 DDL 前检查当前 Agent、
+历史会话和变更建议是否能够唯一确定逻辑 Target/Turn；无法确定时直接终止，不猜测映射。
+升级完成后应返回
 `AIOPS / 15 / aiops-oracle-v5`。脚本不会删除或重建
 `KBOT_OPS_DIAGNOSTIC_SOURCE`、`KBOT_MANAGED_CREDENTIAL` 和
 `KBOT_OPS_TARGET_SOURCE_BINDING`，因此不需要因为本次数据库升级重新生成 Webhook 密钥
