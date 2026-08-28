@@ -24,6 +24,9 @@ class TurnEvidenceFact(BaseModel):
     skill_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
     tool_id: str = Field(min_length=1, max_length=128)
+    trust_level: Literal[
+        "SOURCE_VERIFIED", "USER_PROVIDED", "MODEL_INFERENCE"
+    ] = "SOURCE_VERIFIED"
     measurement_semantics: MeasurementSemantics
     presentation_kind: PresentationPreference
     captured_at: str
