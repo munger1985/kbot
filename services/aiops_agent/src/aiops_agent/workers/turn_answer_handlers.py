@@ -9,7 +9,7 @@ import re
 import time
 from typing import Any
 
-from aiops_agent.contracts.evidence import ObservationSet
+from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
 from aiops_agent.contracts.skill_execution import DbaSkillResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -42,6 +42,34 @@ class DbaEvidenceAssessmentHandler:
         monitoring_gap_found = False
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
+            if schema_version == "USER_PROVIDED_INPUT.v1":
+                payload = dict(artifact.get("payload") or {})
+                text = str(payload.get("text", "")).strip()
+                if text and bool(payload.get("contains_evidence")):
+                    artifact_id = str(artifact["artifact_id"])
+                    facts.append(
+                        TurnEvidenceFact(
+                            evidence_ref=f"artifact:{artifact_id}#user-input",
+                            artifact_id=artifact_id,
+                            skill_id="user.provided-evidence",
+                            step_id="input",
+                            tool_id="user.input",
+                            measurement_semantics=(
+                                MeasurementSemantics.NOT_APPLICABLE
+                            ),
+                            presentation_kind="MARKDOWN",
+                            captured_at=str(
+                                payload.get("received_at")
+                                or datetime.now().isoformat()
+                            ),
+                            columns=(
+                                {"name": "content", "logical_type": "STRING"},
+                            ),
+                            rows=((text,),),
+                            row_count=1,
+                        )
+                    )
+                continue
             if schema_version == "OBSERVATION_SET.v1":
                 result = ObservationSet.model_validate(artifact["payload"])
                 fact = self._monitoring_fact(
@@ -56,6 +84,51 @@ class DbaEvidenceAssessmentHandler:
                         TurnEvidenceGap(
                             skill_id="monitoring.overview",
                             step_id=gap.metric_code or gap.binding_id,
+                            code=gap.code,
+                            detail=gap.detail,
+                            retryable=gap.retryable,
+                        )
+                    )
+                continue
+            if schema_version == "LOG_EVIDENCE_SET.v1":
+                result = LogEvidenceSet.model_validate(artifact["payload"])
+                artifact_id = str(artifact["artifact_id"])
+                if result.entries:
+                    facts.append(
+                        TurnEvidenceFact(
+                            evidence_ref=f"artifact:{artifact_id}#loki",
+                            artifact_id=artifact_id,
+                            skill_id="oracle.alert-log",
+                            step_id="loki",
+                            tool_id="loki.query_range",
+                            measurement_semantics=(
+                                MeasurementSemantics.HISTORICAL_SAMPLES
+                            ),
+                            presentation_kind="TABLE",
+                            captured_at=result.collected_at.isoformat(),
+                            columns=(
+                                {"name": "observed_at", "logical_type": "DATETIME"},
+                                {"name": "line", "logical_type": "STRING"},
+                                {"name": "labels", "logical_type": "JSON"},
+                            ),
+                            rows=tuple(
+                                (
+                                    entry.observed_at.isoformat(),
+                                    entry.line,
+                                    dict(entry.labels),
+                                )
+                                for entry in result.entries
+                            ),
+                            row_count=len(result.entries),
+                            truncated=result.truncated,
+                        )
+                    )
+                for gap in result.gaps:
+                    monitoring_gap_found = True
+                    gaps.append(
+                        TurnEvidenceGap(
+                            skill_id="oracle.alert-log",
+                            step_id="loki",
                             code=gap.code,
                             detail=gap.detail,
                             retryable=gap.retryable,
@@ -121,19 +194,8 @@ class DbaEvidenceAssessmentHandler:
             )
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
-        intent = dict(answer_context.get("intent", {}))
-        clarification = intent.get("clarification_question")
-        if clarification:
-            return DbaSufficiencyAssessment(
-                status=SufficiencyStatus.NEEDS_CLARIFICATION,
-                evidence=tuple(facts),
-                gaps=tuple(gaps),
-                reasons=("当前问题存在影响诊断范围的必要歧义",),
-                clarification_question=str(clarification),
-            )
-
-        time_window = dict(intent.get("time_window") or {})
-        requested_window = time_window.get("mode") in {"RECENT", "ABSOLUTE"}
+        task_frame = dict(answer_context.get("task_frame", {}))
+        requested_window = bool(task_frame.get("time_scope"))
         cumulative_only = bool(facts) and all(
             fact.measurement_semantics
             == MeasurementSemantics.CUMULATIVE_SINCE_LOAD
@@ -148,7 +210,12 @@ class DbaEvidenceAssessmentHandler:
         if monitoring_gap_found:
             reasons.append("部分监控指标查询失败、无采样或监控源不可用")
 
-        if not facts:
+        objective = str(task_frame.get("objective", ""))
+        can_answer_from_expertise = objective in {"UNDERSTAND", "EXPLAIN", "PLAN"}
+        if not facts and can_answer_from_expertise and not gaps:
+            status = SufficiencyStatus.ANSWERABLE
+            reasons.append("该问题可以依据 DBA 专业知识回答，无需伪造外部证据")
+        elif not facts:
             status = SufficiencyStatus.NEEDS_EVIDENCE
             reasons.append("当前没有取得能够回答问题的主题证据")
         elif reasons:
@@ -266,7 +333,10 @@ class DbaAnswerComposeHandler:
             prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "question": str(answer_context.get("question", "")),
-                "intent": dict(answer_context.get("intent", {})),
+                "input_envelope": dict(
+                    answer_context.get("input_envelope", {})
+                ),
+                "task_frame": dict(answer_context.get("task_frame", {})),
                 "sufficiency": assessment.model_dump(mode="json"),
             },
             deadline=self._deadline(context.deadline_at),
@@ -357,7 +427,10 @@ class DbaAnswerComposeHandler:
             parts: list[str] = []
             last_input_payload = {
                 "question": str(answer_context.get("question", "")),
-                "intent": dict(answer_context.get("intent", {})),
+                "input_envelope": dict(
+                    answer_context.get("input_envelope", {})
+                ),
+                "task_frame": dict(answer_context.get("task_frame", {})),
                 "sufficiency_status": str(assessment.status),
                 "limitations": list(assessment.reasons),
                 "evidence_gaps": [

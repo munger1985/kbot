@@ -20,13 +20,13 @@ from platform_core.identity import uuid7
 
 
 class TurnPlannerService:
-    """建立唯一 Primary Run，并为后续 Intent Planner 冻结 Turn 上下文。"""
+    """建立唯一 Primary Run，并为输入理解与调查规划冻结上下文。"""
 
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
 
     async def begin(self, payload: dict) -> dict:
-        """把已接收 Turn 推进到 PLANNING，不调用任何外部依赖。"""
+        """把已接收 Turn 推进到 UNDERSTANDING，不调用任何外部依赖。"""
         domain_id = int(payload["domain_id"])
         turn_id = UUID(str(payload["turn_id"]))
         async with self._uow_factory() as uow:
@@ -124,15 +124,15 @@ class TurnPlannerService:
                     sequence_no=1,
                 )
             )
-            turn.status = "PLANNING"
+            turn.status = "UNDERSTANDING"
             turn.started_at = turn.started_at or now
             await self._append_event(
                 uow,
                 turn,
                 event_type="turn.status",
                 payload={
-                    "status": "PLANNING",
-                    "public_summary": "正在理解问题并规划取证范围",
+                    "status": "UNDERSTANDING",
+                    "public_summary": "正在识别输入材料并理解要解决的问题",
                 },
             )
             await uow.commit()
@@ -225,7 +225,7 @@ class TurnPlannerService:
                     "ops_run_id": str(ops_run_id),
                     "status": turn.status,
                 }
-            if turn.status != "PLANNING" or run.status != "RUNNING":
+            if turn.status not in {"UNDERSTANDING", "PLANNING"} or run.status != "RUNNING":
                 raise state_conflict("只有规划中的 Turn 可以完成空流程")
 
             conversation = await uow.conversations.get_conversation(

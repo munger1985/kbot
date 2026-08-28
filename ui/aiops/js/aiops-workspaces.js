@@ -308,7 +308,13 @@
     const onEvent = ({ event, data, id }) => {
       if (id) lastEventId = id;
       const payload = data?.payload || {};
-      if (["turn.created", "turn.status", "skill.status"].includes(event)) {
+      if ([
+        "turn.created", "turn.status", "input.analysis.completed",
+        "task.frame.completed", "investigation.planned",
+        "playbook.completed", "tool.started", "tool.completed",
+        "tool.gap", "evidence.added", "assessment.completed",
+        "investigation.replanned",
+      ].includes(event)) {
         progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
       }
       if (event === "thinking.delta") {
@@ -382,7 +388,8 @@
       const path = state.conversation
         ? `${api}/conversations/${state.conversation.conversation_id}/turns`
         : `${api}/conversations`;
-      const body = state.conversation ? { message: text } : { agent_id: agentId, message: text };
+      const content = [{ content_type: "TEXT", text }];
+      const body = state.conversation ? { content } : { agent_id: agentId, content };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },

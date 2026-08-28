@@ -56,8 +56,6 @@ class DbaSufficiencyAssessment(BaseModel):
 
     @model_validator(mode="after")
     def validate_status(self) -> "DbaSufficiencyAssessment":
-        if self.status == SufficiencyStatus.ANSWERABLE and not self.evidence:
-            raise ValueError("ANSWERABLE 必须包含可引用证据")
         if (
             self.status == SufficiencyStatus.NEEDS_CLARIFICATION
             and not self.clarification_question

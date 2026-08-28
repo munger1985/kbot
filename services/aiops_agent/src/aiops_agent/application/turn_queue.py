@@ -56,7 +56,7 @@ class TurnQueueService:
                 OutboxEntity(
                     aggregate_type="CONVERSATION_TURN",
                     aggregate_id=turn.turn_id,
-                    event_type="aiops.turn.planning_requested",
+                    event_type="aiops.turn.understanding_requested",
                     idempotency_key=f"turn-planning:{turn.turn_id}",
                     payload_json=planning_payload,
                     payload_hash=hashlib.sha256(encoded).hexdigest(),

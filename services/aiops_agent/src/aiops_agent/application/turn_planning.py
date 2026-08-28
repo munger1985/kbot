@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -10,21 +11,30 @@ from uuid import UUID
 from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.entities import (
     OpsArtifactEntity,
-    OpsSkillInvocationEntity,
+    OpsInvestigationRevisionEntity,
+    OpsPlaybookInvocationEntity,
     OpsTaskEntity,
+    OpsToolInvocationEntity,
     OpsTurnEventEntity,
+    OpsTurnEvidenceEntity,
 )
-from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
+from aiops_agent.investigation import InvestigationReasoner
+from aiops_agent.ports.diagnostic_source import (
+    CAPABILITY_LOG_QUERY,
+    CAPABILITY_METRIC_QUERY_RANGE,
+)
 from aiops_agent.skills import (
-    DbaIntentRouter,
-    DbaSkillPlanner,
+    DbaSkillRegistry,
     SkillExecutionSnapshotBuilder,
     SkillPlanCompiler,
     build_capability_snapshot,
     canonical_hash,
 )
-from platform_core.contracts.aiops.conversation import DbaIntent
-from platform_core.contracts.aiops.skills import DbaCapabilitySnapshot
+from platform_core.contracts.aiops.skills import (
+    DbaCapabilitySnapshot,
+    DbaSkillPlan,
+    SkillPlanItem,
+)
 from platform_core.identity import uuid7
 
 
@@ -38,6 +48,7 @@ class TurnPlanningContext:
     target_id: UUID
     source_ids: tuple[UUID, ...]
     question: str
+    content: tuple[dict, ...]
     recent_context: tuple[str, ...]
     trace_id: str
     deadline: datetime | None
@@ -58,16 +69,16 @@ class TurnPlanningService:
         self,
         *,
         uow_factory,
-        intent_router: DbaIntentRouter,
-        skill_planner: DbaSkillPlanner,
+        investigation_reasoner: InvestigationReasoner,
+        playbook_registry: DbaSkillRegistry,
         skill_compiler: SkillPlanCompiler,
         execution_snapshot_builder: SkillExecutionSnapshotBuilder,
         agent_catalog,
         monitoring_snapshot_builder=None,
     ) -> None:
         self._uow_factory = uow_factory
-        self._intent_router = intent_router
-        self._skill_planner = skill_planner
+        self._investigation_reasoner = investigation_reasoner
+        self._playbook_registry = playbook_registry
         self._skill_compiler = skill_compiler
         self._execution_snapshot_builder = execution_snapshot_builder
         self._agent_catalog = agent_catalog
@@ -83,22 +94,25 @@ class TurnPlanningService:
             domain_id=context.domain_id,
             trace_id=context.trace_id,
         )
-        routed = await self._intent_router.route(
-            question=context.question,
+        planned = await self._investigation_reasoner.plan(
+            content=context.content,
             conversation_context=context.recent_context,
+            available_tools=self._available_tools(context.capabilities),
+            available_playbooks=self._available_playbooks(context.capabilities),
             model_snapshot=model_snapshot,
             deadline=context.deadline,
-            idempotency_key=f"turn:{context.turn_id}:intent:1",
+            idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
-        intent_plan = routed.output
-        skill_plan = self._skill_planner.plan(
-            intent=intent_plan,
+        investigation = planned.output
+        playbook_plan = self._build_playbook_plan(
+            investigation=investigation,
             capabilities=context.capabilities,
         )
-        monitoring_requested = (
-            intent_plan.subject == "DATABASE_OVERVIEW"
-            and intent_plan.primary_intent
-            in {DbaIntent.OBSERVE, DbaIntent.INSPECT}
+        monitoring_requested = any(
+            action.tool_id.startswith("monitor.")
+            or action.tool_id.startswith("prometheus.")
+            or action.tool_id.startswith("loki.")
+            for action in investigation.plan.actions
         )
         monitoring_execution = (
             await self._prepare_monitoring(context)
@@ -115,26 +129,197 @@ class TurnPlanningService:
             if monitoring_requested
             else ()
         )
+        log_binding_ids = (
+            tuple(monitoring_execution.get("log_binding_ids", ()))
+            if monitoring_requested
+            else ()
+        )
         compiled = self._skill_compiler.compile(
-            skill_plan,
+            playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
+            log_binding_ids=log_binding_ids,
+            user_evidence_artifact_keys=("turn-user-input:1",),
         )
         execution_snapshot = self._execution_snapshot_builder.build(
-            plan=skill_plan,
+            plan=playbook_plan,
             compiled=compiled,
             capabilities=context.capabilities,
             database_execution=context.database_execution,
         )
         return await self._persist(
             context=context,
-            intent_plan=intent_plan,
-            intent_receipt=routed.receipt,
-            skill_plan=skill_plan,
+            investigation=investigation,
+            planning_receipt=planned.receipt,
+            playbook_plan=playbook_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
             model_snapshot=model_snapshot,
             monitoring_requested=monitoring_requested,
             monitoring_execution=monitoring_execution,
+        )
+
+    def _available_tools(
+        self, capabilities: DbaCapabilitySnapshot
+    ) -> tuple[dict, ...]:
+        """向模型暴露当前数据库类型可用的原子只读工具，不暴露 SQL 模板。"""
+        tools: dict[tuple[str, str], dict] = {}
+        for manifest in self._playbook_registry.manifests():
+            if not self._manifest_applicable(manifest, capabilities):
+                continue
+            for step in manifest.tool_dag:
+                tools[(step.tool_id, step.tool_version)] = {
+                    "tool_id": step.tool_id,
+                    "version": step.tool_version,
+                    "tool_class": "ORACLE_SQL",
+                    "description": f"受控只读数据库观测：{step.tool_id}",
+                    "input": dict(step.input),
+                }
+        if CAPABILITY_METRIC_QUERY_RANGE in capabilities.available_source_capabilities:
+            tools[("monitor.query_range", "1.0.0")] = {
+                "tool_id": "monitor.query_range",
+                "version": "1.0.0",
+                "tool_class": "PROMETHEUS",
+                "description": "查询绑定 Target 的 Prometheus 时间序列",
+                "input": {"window": "RECENT"},
+            }
+        if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
+            tools[("loki.query_range", "1.0.0")] = {
+                "tool_id": "loki.query_range",
+                "version": "1.0.0",
+                "tool_class": "LOKI",
+                "description": "查询绑定 Target 的 Oracle Alert Log",
+                "input": {"window": "RECENT"},
+            }
+        return tuple(tools[key] for key in sorted(tools))
+
+    def _available_playbooks(
+        self, capabilities: DbaCapabilitySnapshot
+    ) -> tuple[dict, ...]:
+        """Playbook 只提供调查经验，不决定 Agent 是否能够回答。"""
+        return tuple(
+            {
+                "playbook_id": manifest.skill_id,
+                "version": manifest.version,
+                "tools": [step.tool_id for step in manifest.tool_dag],
+                "subjects": list(manifest.subjects),
+            }
+            for manifest in self._playbook_registry.manifests()
+            if self._manifest_applicable(manifest, capabilities)
+        )
+
+    @staticmethod
+    def _manifest_applicable(manifest, capabilities: DbaCapabilitySnapshot) -> bool:
+        """只按确定性能力与版本边界筛选Playbook，不使用意图作为准入条件。"""
+        if capabilities.database_type not in manifest.database_types:
+            return False
+        if not set(manifest.required_target_capabilities) <= set(
+            capabilities.target_capabilities
+        ):
+            return False
+        if not set(manifest.required_source_capabilities) <= set(
+            capabilities.available_source_capabilities
+        ):
+            return False
+        if not set(manifest.required_entitlements) <= set(
+            capabilities.entitlements
+        ):
+            return False
+        configured_privileges = set(capabilities.privileges)
+        if configured_privileges and not set(manifest.required_privileges) <= (
+            configured_privileges
+        ):
+            return False
+        configured_version = capabilities.database_version
+        if configured_version is None:
+            return (
+                manifest.version_range.minimum is None
+                and manifest.version_range.maximum is None
+            )
+        version_match = re.search(r"\d+", configured_version)
+        if version_match is None:
+            return False
+        major = int(version_match.group(0))
+        minimum = manifest.version_range.minimum
+        maximum = manifest.version_range.maximum
+        return (
+            (minimum is None or major >= int(minimum))
+            and (maximum is None or major <= int(maximum))
+        )
+
+    def _build_playbook_plan(
+        self, *, investigation, capabilities: DbaCapabilitySnapshot
+    ) -> DbaSkillPlan:
+        """把模型选择的原子工具映射到可复用 Playbook；空计划同样合法。"""
+        requested_tools = {action.tool_id for action in investigation.plan.actions}
+        suggested = set(investigation.suggested_playbook_ids)
+        candidates = []
+        for manifest in self._playbook_registry.manifests():
+            if not self._manifest_applicable(manifest, capabilities):
+                continue
+            candidates.append(manifest)
+        selected = [
+            manifest for manifest in candidates
+            if manifest.skill_id in suggested
+            and requested_tools.intersection(
+                step.tool_id for step in manifest.tool_dag
+            )
+        ]
+        covered = {
+            step.tool_id for manifest in selected for step in manifest.tool_dag
+        }
+        remaining = requested_tools - covered - {
+            "monitor.query_range", "loki.query_range"
+        }
+        while remaining:
+            ranked = sorted(
+                (
+                    manifest for manifest in candidates
+                    if manifest not in selected
+                    and remaining.intersection(
+                        step.tool_id for step in manifest.tool_dag
+                    )
+                ),
+                key=lambda manifest: (
+                    -len(
+                        remaining.intersection(
+                            step.tool_id for step in manifest.tool_dag
+                        )
+                    ),
+                    manifest.limits.cost_units,
+                    manifest.skill_id,
+                ),
+            )
+            if not ranked:
+                break
+            chosen = ranked[0]
+            selected.append(chosen)
+            covered.update(step.tool_id for step in chosen.tool_dag)
+            remaining -= covered
+        items = []
+        for ordinal, manifest in enumerate(selected, start=1):
+            action_inputs = {
+                key: value
+                for action in investigation.plan.actions
+                if action.tool_id in {step.tool_id for step in manifest.tool_dag}
+                for key, value in action.input.items()
+            }
+            items.append(
+                SkillPlanItem(
+                    ordinal=ordinal,
+                    skill_id=manifest.skill_id,
+                    skill_version=manifest.version,
+                    manifest_hash=self._playbook_registry.manifest_hash(
+                        manifest.skill_id, manifest.version
+                    ),
+                    reason="调查计划选择了该 Playbook 中的受控工具",
+                    evidence_question="这些观测能否验证或排除当前调查假设？",
+                    measurement_semantics=manifest.measurement_semantics,
+                    input={**dict(manifest.defaults), **action_inputs},
+                )
+            )
+        return DbaSkillPlan(
+            catalog_hash=self._playbook_registry.catalog_hash,
+            items=tuple(items),
         )
 
     async def fail_terminal(
@@ -208,19 +393,9 @@ class TurnPlanningService:
 
     @staticmethod
     def _terminal_failure_summary(error_code: str) -> str:
-        if error_code == "AIOPS_CAPABILITY_UNAVAILABLE":
-            return (
-                "当前 Agent 缺少完成该诊断所需的可用监控证据"
-                "或数据库只读能力。"
-            )
-        if error_code == "AIOPS_SKILL_UNAVAILABLE":
-            return (
-                "当前 Agent 尚未配置能够处理该问题的诊断能力，"
-                "请补充诊断能力或换一个更具体的问题。"
-            )
         return (
-            "本轮问题无法生成安全、可执行的诊断计划，"
-            "请补充更明确的诊断目标。"
+            "本轮输入未能形成通过安全校验的调查计划。"
+            "系统没有执行越界工具，请重试或补充问题范围。"
         )
 
     async def _prepare(self, payload: dict) -> TurnPlanningContext:
@@ -233,7 +408,7 @@ class TurnPlanningService:
             )
             if turn is None:
                 raise resource_not_found("Conversation Turn")
-            if turn.intent_plan_artifact_id is not None:
+            if turn.current_plan_artifact_id is not None:
                 link = await uow.turns.get_run_link(
                     turn_id=turn_id,
                     purpose="PRIMARY",
@@ -247,9 +422,9 @@ class TurnPlanningService:
                         "status": turn.status,
                     }
                 )
-            if turn.status != "PLANNING":
+            if turn.status not in {"UNDERSTANDING", "PLANNING"}:
                 raise state_conflict(
-                    f"只有 PLANNING Turn 可以生成计划，当前状态为 {turn.status}"
+                    f"只有 UNDERSTANDING/PLANNING Turn 可以生成计划，当前状态为 {turn.status}"
                 )
             link = await uow.turns.get_run_link(
                 turn_id=turn_id,
@@ -307,6 +482,7 @@ class TurnPlanningService:
                 target_id=target.target_id,
                 source_ids=tuple(source_ids),
                 question=str(user_message.payload_json["text"]),
+                content=tuple(user_message.payload_json["content"]),
                 recent_context=tuple(
                     str(row.payload_json.get("text", ""))
                     for row in recent
@@ -373,9 +549,9 @@ class TurnPlanningService:
         self,
         *,
         context: TurnPlanningContext,
-        intent_plan,
-        intent_receipt,
-        skill_plan,
+        investigation,
+        planning_receipt,
+        playbook_plan,
         compiled,
         execution_snapshot: dict,
         model_snapshot: dict,
@@ -394,33 +570,114 @@ class TurnPlanningService:
             )
             if turn is None or run is None:
                 raise resource_not_found("Turn Primary Run")
-            if turn.intent_plan_artifact_id is not None:
+            if turn.current_plan_artifact_id is not None:
                 return {
                     "turn_id": str(turn.turn_id),
                     "ops_run_id": str(run.ops_run_id),
                     "status": turn.status,
                 }
-            if turn.status != "PLANNING" or run.status != "RUNNING":
+            if turn.status not in {"UNDERSTANDING", "PLANNING"} or run.status != "RUNNING":
                 raise state_conflict("Turn 计划提交时状态已变化")
 
-            intent_artifact = self._artifact(
-                ops_run_id=run.ops_run_id,
-                artifact_key="turn-intent-plan:1",
-                artifact_type="DBA_INTENT_PLAN",
-                schema_version=intent_plan.schema_version,
-                payload=intent_plan.model_dump(mode="json"),
-                producer="aiops.intent-router",
+            contains_user_evidence = any(
+                item.contains_user_evidence
+                for item in investigation.input_envelope.materials
             )
-            skill_artifact = self._artifact(
+            input_artifact = self._artifact(
                 ops_run_id=run.ops_run_id,
-                artifact_key="turn-skill-plan:1",
-                artifact_type="DBA_SKILL_PLAN",
-                schema_version=skill_plan.schema_version,
-                payload=skill_plan.model_dump(mode="json"),
-                producer="aiops.skill-planner",
+                artifact_key="turn-user-input:1",
+                artifact_type="USER_PROVIDED_INPUT",
+                schema_version="USER_PROVIDED_INPUT.v1",
+                payload={
+                    "text": context.question,
+                    "content": list(context.content),
+                    "contains_evidence": contains_user_evidence,
+                    "received_at": datetime.now(UTC).isoformat(),
+                },
+                producer="aiops.input-understanding",
+                trust_level="USER_PROVIDED",
             )
-            await uow.runs.add_artifact(intent_artifact)
-            await uow.runs.add_artifact(skill_artifact)
+            input_analysis_artifact = self._artifact(
+                ops_run_id=run.ops_run_id,
+                artifact_key="turn-input-analysis:1",
+                artifact_type="TURN_INPUT_ENVELOPE",
+                schema_version=investigation.input_envelope.schema_version,
+                payload=investigation.input_envelope.model_dump(mode="json"),
+                producer="aiops.input-understanding",
+            )
+            task_frame_artifact = self._artifact(
+                ops_run_id=run.ops_run_id,
+                artifact_key="turn-task-frame:1",
+                artifact_type="DBA_TASK_FRAME",
+                schema_version=investigation.task_frame.schema_version,
+                payload=investigation.task_frame.model_dump(mode="json"),
+                producer="aiops.task-framer",
+            )
+            plan_artifact = self._artifact(
+                ops_run_id=run.ops_run_id,
+                artifact_key="turn-investigation-plan:1",
+                artifact_type="DBA_INVESTIGATION_PLAN",
+                schema_version=investigation.plan.schema_version,
+                payload=investigation.plan.model_dump(mode="json"),
+                producer="aiops.investigation-planner",
+            )
+            playbook_artifact = self._artifact(
+                ops_run_id=run.ops_run_id,
+                artifact_key="turn-playbook-plan:1",
+                artifact_type="DBA_PLAYBOOK_PLAN",
+                schema_version=playbook_plan.schema_version,
+                payload=playbook_plan.model_dump(mode="json"),
+                producer="aiops.playbook-selector",
+            )
+            for artifact in (
+                input_artifact,
+                input_analysis_artifact,
+                task_frame_artifact,
+                plan_artifact,
+                playbook_artifact,
+            ):
+                await uow.runs.add_artifact(artifact)
+
+            revision = OpsInvestigationRevisionEntity(
+                revision_id=uuid7(),
+                turn_id=turn.turn_id,
+                revision_no=1,
+                revision_type="INITIAL",
+                trigger_reason="完成用户输入理解并形成首轮调查计划",
+                task_frame_artifact_id=task_frame_artifact.artifact_id,
+                plan_artifact_id=plan_artifact.artifact_id,
+                created_by="aiops.investigation-planner",
+            )
+            await uow.turns.add_investigation_revision(revision)
+            input_rows = await uow.turns.list_input_items(
+                turn_id=turn.turn_id
+            )
+            materials_by_no = {
+                item.item_no: item
+                for item in investigation.input_envelope.materials
+            }
+            for input_row in input_rows:
+                material = materials_by_no.get(int(input_row.item_no))
+                if material is None:
+                    continue
+                input_row.detected_kind = str(material.material_kind)
+                input_row.detection_confidence = material.confidence
+            if contains_user_evidence:
+                await uow.turns.add_evidence(
+                    OpsTurnEvidenceEntity(
+                        turn_evidence_id=uuid7(),
+                        turn_id=turn.turn_id,
+                        artifact_id=input_artifact.artifact_id,
+                        source_kind="USER",
+                        evidence_kind="USER_PROVIDED",
+                        confidence=1,
+                        evidence_role="USER_PROVIDED",
+                        measurement_semantics="NOT_APPLICABLE",
+                        freshness_status="UNKNOWN",
+                        usage_reason="用户在本轮对话中直接提供的日志、查询或命令结果",
+                        linked_by="aiops.input-understanding",
+                    )
+                )
 
             task_ids = {
                 task.task_key: uuid7() for task in compiled.tasks
@@ -453,23 +710,27 @@ class TurnPlanningService:
                 for spec in compiled.tasks
             ]
             await uow.runs.add_tasks(tasks)
+            playbook_invocation_ids: dict[tuple[str, str], UUID] = {}
             for item, task_key in zip(
-                skill_plan.items,
+                playbook_plan.items,
                 compiled.invocation_task_keys,
                 strict=True,
             ):
-                await uow.turns.add_skill_invocation(
-                    OpsSkillInvocationEntity(
-                        skill_invocation_id=uuid7(),
+                playbook_invocation_id = uuid7()
+                playbook_invocation_ids[(item.skill_id, item.skill_version)] = (
+                    playbook_invocation_id
+                )
+                await uow.turns.add_playbook_invocation(
+                    OpsPlaybookInvocationEntity(
+                        playbook_invocation_id=playbook_invocation_id,
                         turn_id=turn.turn_id,
+                        revision_id=revision.revision_id,
                         ops_run_id=run.ops_run_id,
                         ops_task_id=task_ids[task_key],
                         ordinal=item.ordinal,
-                        skill_id=item.skill_id,
-                        skill_version=item.skill_version,
+                        playbook_id=item.skill_id,
+                        playbook_version=item.skill_version,
                         manifest_hash=item.manifest_hash,
-                        primary_intent=intent_plan.primary_intent,
-                        primary_domain=intent_plan.primary_domain,
                         status="PLANNED",
                         input_schema_version=task_specs[
                             task_key
@@ -478,25 +739,93 @@ class TurnPlanningService:
                     )
                 )
 
-            turn.primary_intent = intent_plan.primary_intent
-            turn.primary_domain = intent_plan.primary_domain
-            turn.subject = intent_plan.subject
-            turn.intent_schema_version = intent_plan.schema_version
-            turn.intent_plan_json = intent_plan.model_dump(mode="json")
-            turn.intent_plan_artifact_id = intent_artifact.artifact_id
-            turn.skill_plan_schema_version = skill_plan.schema_version
-            turn.skill_plan_json = skill_plan.model_dump(mode="json")
-            turn.skill_plan_artifact_id = skill_artifact.artifact_id
+            playbook_context_by_tool = {
+                step.tool_id: (
+                    task_ids[task_key],
+                    playbook_invocation_ids[
+                        (item.skill_id, item.skill_version)
+                    ],
+                )
+                for item, task_key in zip(
+                    playbook_plan.items,
+                    compiled.invocation_task_keys,
+                    strict=True,
+                )
+                for step in self._playbook_registry.resolve(
+                    item.skill_id, item.skill_version
+                ).tool_dag
+            }
+            monitoring_task_id = (
+                task_ids[compiled.monitoring_task_keys[0]]
+                if compiled.monitoring_task_keys
+                else None
+            )
+            log_task_id = (
+                task_ids[compiled.log_task_keys[0]]
+                if compiled.log_task_keys
+                else None
+            )
+            for ordinal, action in enumerate(
+                investigation.plan.actions, start=1
+            ):
+                playbook_context = playbook_context_by_tool.get(action.tool_id)
+                task_id = playbook_context[0] if playbook_context else None
+                playbook_invocation_id = (
+                    playbook_context[1] if playbook_context else None
+                )
+                if action.tool_id == "monitor.query_range":
+                    task_id = monitoring_task_id
+                elif action.tool_id == "loki.query_range":
+                    task_id = log_task_id
+                await uow.turns.add_tool_invocation(
+                    OpsToolInvocationEntity(
+                        tool_invocation_id=uuid7(),
+                        turn_id=turn.turn_id,
+                        revision_id=revision.revision_id,
+                        playbook_invocation_id=playbook_invocation_id,
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=task_id,
+                        ordinal=ordinal,
+                        action_id=action.action_id,
+                        tool_id=action.tool_id,
+                        tool_version="1.0.0",
+                        tool_class=(
+                            "PROMETHEUS" if action.tool_id == "monitor.query_range"
+                            else "LOKI" if action.tool_id == "loki.query_range"
+                            else "ORACLE_SQL"
+                        ),
+                        status="PLANNED",
+                        input_json=dict(action.input),
+                        policy_hash=canonical_hash(
+                            {
+                                "capabilities": context.capabilities.model_dump(
+                                    mode="json"
+                                ),
+                                "readonly": True,
+                                "tool_id": action.tool_id,
+                            }
+                        ),
+                    )
+                )
+
+            turn.input_analysis_artifact_id = input_analysis_artifact.artifact_id
+            turn.task_frame_artifact_id = task_frame_artifact.artifact_id
+            turn.current_plan_artifact_id = plan_artifact.artifact_id
+            turn.current_plan_revision = 1
+            turn.investigation_round = 1
+            turn.tool_call_count = len(investigation.plan.actions)
             turn.status = "COLLECTING"
             run.plan_snapshot_json = {
                 **dict(run.plan_snapshot_json or {}),
                 "capability_snapshot": context.capabilities.model_dump(
                     mode="json"
                 ),
-                "intent_plan_artifact_id": str(intent_artifact.artifact_id),
-                "skill_plan_artifact_id": str(skill_artifact.artifact_id),
-                "skill_catalog_hash": skill_plan.catalog_hash,
-                "intent_model_receipt": intent_receipt.model_dump(mode="json"),
+                "input_analysis_artifact_id": str(input_analysis_artifact.artifact_id),
+                "task_frame_artifact_id": str(task_frame_artifact.artifact_id),
+                "investigation_plan_artifact_id": str(plan_artifact.artifact_id),
+                "playbook_plan_artifact_id": str(playbook_artifact.artifact_id),
+                "playbook_catalog_hash": playbook_plan.catalog_hash,
+                "investigation_model_receipt": planning_receipt.model_dump(mode="json"),
                 "skill_execution": execution_snapshot,
                 **(
                     {"monitoring": monitoring_execution}
@@ -505,27 +834,39 @@ class TurnPlanningService:
                 ),
                 "answer_context": {
                     "question": context.question,
-                    "intent": intent_plan.model_dump(mode="json"),
+                    "input_envelope": investigation.input_envelope.model_dump(mode="json"),
+                    "task_frame": investigation.task_frame.model_dump(mode="json"),
                     "model": dict(model_snapshot),
                 },
             }
             await self._append_event(
                 uow,
                 turn,
-                event_type="intent.updated",
+                event_type="input.analysis.completed",
                 payload={
-                    "primary_intent": intent_plan.primary_intent,
-                    "primary_domain": intent_plan.primary_domain,
-                    "subject": intent_plan.subject,
+                    "material_count": len(investigation.input_envelope.materials),
+                    "contains_user_evidence": contains_user_evidence,
+                    "public_summary": "已识别输入材料，正在形成调查任务",
                 },
             )
             await self._append_event(
                 uow,
                 turn,
-                event_type="skill.plan.created",
+                event_type="task.frame.completed",
                 payload={
-                    "catalog_hash": skill_plan.catalog_hash,
-                    "skill_count": len(skill_plan.items),
+                    "objective": str(investigation.task_frame.objective),
+                    "public_summary": "已明确本轮问题、已知事实和待验证项",
+                },
+            )
+            await self._append_event(
+                uow,
+                turn,
+                event_type="investigation.planned",
+                payload={
+                    "revision_no": 1,
+                    "action_count": len(investigation.plan.actions),
+                    "playbook_count": len(playbook_plan.items),
+                    "public_summary": "调查计划已建立，正在调用只读工具取证",
                 },
             )
             await self._append_event(
@@ -534,7 +875,7 @@ class TurnPlanningService:
                 event_type="turn.status",
                 payload={
                     "status": "COLLECTING",
-                    "public_summary": "已理解问题，正在采集最小充分证据",
+                    "public_summary": "已理解输入材料，正在执行首轮调查",
                 },
             )
             await uow.commit()
@@ -553,6 +894,7 @@ class TurnPlanningService:
         schema_version: str,
         payload: dict,
         producer: str,
+        trust_level: str = "MODEL_INFERENCE",
     ) -> OpsArtifactEntity:
         encoded = json.dumps(
             payload,
@@ -570,7 +912,7 @@ class TurnPlanningService:
             content_hash=canonical_hash(payload),
             byte_size=len(encoded),
             provenance_json={"producer": producer},
-            trust_level="MODEL_INFERENCE",
+            trust_level=trust_level,
             security_level=1,
         )
 

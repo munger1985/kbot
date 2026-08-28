@@ -34,9 +34,10 @@ from .conversation import (
     EvidenceRequestEntity, ImageEvidenceProcessingEntity,
     OpsAnswerBlockEntity, OpsAnswerCitationEntity,
     OpsConversationEntity, OpsConversationMessageEntity,
-    OpsConversationTurnEntity,
-    OpsSkillInvocationEntity, OpsTurnEventEntity,
-    OpsTurnEvidenceEntity, OpsTurnRunEntity,
+    OpsConversationTurnEntity, OpsInvestigationRevisionEntity,
+    OpsPlaybookInvocationEntity, OpsToolInvocationEntity,
+    OpsTurnEventEntity, OpsTurnEvidenceEntity, OpsTurnInputItemEntity,
+    OpsTurnRunEntity,
 )
 
 __all__ = [
@@ -47,9 +48,12 @@ __all__ = [
     "OpsConversationEntity",
     "OpsConversationMessageEntity",
     "OpsConversationTurnEntity",
-    "OpsSkillInvocationEntity",
+    "OpsInvestigationRevisionEntity",
+    "OpsPlaybookInvocationEntity",
+    "OpsToolInvocationEntity",
     "OpsTurnEventEntity",
     "OpsTurnEvidenceEntity",
+    "OpsTurnInputItemEntity",
     "OpsTurnRunEntity",
     "AIOpsAgentEntity",
     "AIOpsAgentGrantEntity",

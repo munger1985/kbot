@@ -92,8 +92,11 @@ class _ProjectionTurns:
         self.citations = []
         self.events = []
 
-    async def get_skill_invocation_by_task(self, **_):
+    async def get_playbook_invocation_by_task(self, **_):
         return self.invocation
+
+    async def list_tool_invocations(self, **_):
+        return []
 
     async def get_evidence_by_artifact(self, *, turn_id, artifact_id):
         return next(
@@ -214,23 +217,12 @@ class _ProgressUow:
 
 
 def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
-    intent = {
-        "primary_intent": "OBSERVE",
-        "primary_domain": "SQL_PERFORMANCE",
-        "subject": "TOP_SQL",
-        "candidates": [
-            {
-                "intent": "OBSERVE",
-                "confidence": 0.95,
-                "reason": "问题明确",
-            }
-        ],
+    task_frame = {
+        "objective": "ASSESS",
+        "problem_statement": "分析最近十五分钟的 Top SQL",
+        "success_criteria": ["识别主要 SQL 负载"],
+        "time_scope": "最近十五分钟" if recent else None,
     }
-    if recent:
-        intent["time_window"] = {
-            "mode": "RECENT",
-            "duration_seconds": 900,
-        }
     return TaskExecutionContext(
         run_id=str(uuid7()),
         task_id=str(uuid7()),
@@ -244,7 +236,7 @@ def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
         plan_snapshot={
             "answer_context": {
                 "question": "分析最近十五分钟的 Top SQL",
-                "intent": intent,
+                "task_frame": task_frame,
                 "model": {"technical_name": "test-model", "revision": "1"},
             }
         },
@@ -910,7 +902,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         invocation = SimpleNamespace(
             turn_id=turn.turn_id,
-            skill_invocation_id=uuid7(),
+            playbook_invocation_id=uuid7(),
             status="PLANNED",
             output_artifact_id=None,
             attempt_count=0,

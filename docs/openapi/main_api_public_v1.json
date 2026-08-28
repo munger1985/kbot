@@ -438,11 +438,14 @@
       "AIOpsConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
-          "message": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/InputContent"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Content",
+            "type": "array"
           },
           "source_run_id": {
             "anyOf": [
@@ -470,7 +473,7 @@
           }
         },
         "required": [
-          "message"
+          "content"
         ],
         "title": "AIOpsConversationTurnPayload",
         "type": "object"
@@ -2547,11 +2550,14 @@
             "title": "Agent Id",
             "type": "string"
           },
-          "message": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/InputContent"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Content",
+            "type": "array"
           },
           "source_run_id": {
             "anyOf": [
@@ -2593,7 +2599,7 @@
         },
         "required": [
           "agent_id",
-          "message"
+          "content"
         ],
         "title": "ConversationStartPayload",
         "type": "object"
@@ -3460,19 +3466,6 @@
           "POSTGRESQL"
         ],
         "title": "DatabaseType",
-        "type": "string"
-      },
-      "DbaIntent": {
-        "enum": [
-          "OBSERVE",
-          "DIAGNOSE",
-          "EXPLAIN",
-          "PLAN",
-          "CHANGE",
-          "VERIFY",
-          "INSPECT"
-        ],
-        "title": "DbaIntent",
         "type": "string"
       },
       "DiagnosticSourceConnectionTestResult": {
@@ -4381,6 +4374,67 @@
         ],
         "title": "InitialAppAdminPayload",
         "type": "object"
+      },
+      "InputContent": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "$ref": "#/components/schemas/InputContentType"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 128000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "upload_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Id"
+          }
+        },
+        "required": [
+          "content_type"
+        ],
+        "title": "InputContent",
+        "type": "object"
+      },
+      "InputContentType": {
+        "enum": [
+          "TEXT",
+          "IMAGE",
+          "FILE",
+          "SQL_OUTPUT",
+          "COMMAND_OUTPUT",
+          "LOG"
+        ],
+        "title": "InputContentType",
+        "type": "string"
       },
       "InspectionFirePage": {
         "additionalProperties": false,
@@ -9819,6 +9873,67 @@
         "title": "TriggerType",
         "type": "string"
       },
+      "TurnEvidenceGapView": {
+        "additionalProperties": false,
+        "description": "对话页可安全展示的未取证摘要，不包含原始证据行。",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "step_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          }
+        },
+        "title": "TurnEvidenceGapView",
+        "type": "object"
+      },
       "TurnReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -9871,9 +9986,11 @@
         "enum": [
           "QUEUED",
           "ACCEPTED",
+          "UNDERSTANDING",
           "PLANNING",
           "COLLECTING",
           "ASSESSING",
+          "REPLANNING",
           "ANSWERING",
           "WAITING_USER",
           "PROPOSAL_PENDING",
@@ -9909,6 +10026,12 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "current_plan_revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Current Plan Revision",
+            "type": "integer"
           },
           "error_code": {
             "anyOf": [
@@ -9951,27 +10074,19 @@
             "title": "Event Cursor",
             "type": "integer"
           },
-          "primary_domain": {
-            "anyOf": [
-              {
-                "maxLength": 48,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Primary Domain"
+          "evidence_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnEvidenceGapView"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
           },
-          "primary_intent": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DbaIntent"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "investigation_round": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Investigation Round",
+            "type": "integer"
           },
           "resolved_target_id": {
             "anyOf": [
@@ -9988,18 +10103,6 @@
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
           },
-          "subject": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
           "sufficiency_status": {
             "anyOf": [
               {
@@ -10009,6 +10112,12 @@
                 "type": "null"
               }
             ]
+          },
+          "tool_call_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Tool Call Count",
+            "type": "integer"
           },
           "turn_id": {
             "format": "uuid",
@@ -10065,6 +10174,12 @@
             "title": "Created At",
             "type": "string"
           },
+          "current_plan_revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Current Plan Revision",
+            "type": "integer"
+          },
           "error_code": {
             "anyOf": [
               {
@@ -10106,6 +10221,20 @@
             "title": "Event Cursor",
             "type": "integer"
           },
+          "evidence_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnEvidenceGapView"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
+          },
+          "investigation_round": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Investigation Round",
+            "type": "integer"
+          },
           "messages": {
             "default": [],
             "items": {
@@ -10113,28 +10242,6 @@
             },
             "title": "Messages",
             "type": "array"
-          },
-          "primary_domain": {
-            "anyOf": [
-              {
-                "maxLength": 48,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Primary Domain"
-          },
-          "primary_intent": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DbaIntent"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "resolved_target_id": {
             "anyOf": [
@@ -10156,18 +10263,6 @@
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
           },
-          "subject": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
           "sufficiency_status": {
             "anyOf": [
               {
@@ -10177,6 +10272,12 @@
                 "type": "null"
               }
             ]
+          },
+          "tool_call_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Tool Call Count",
+            "type": "integer"
           },
           "turn_id": {
             "format": "uuid",

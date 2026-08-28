@@ -20,7 +20,6 @@ from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.skill_handlers import DbaSkillInvocationHandler
 from aiops_agent.skills import (
     CapabilityUnavailableError,
-    DbaIntentRouter,
     DbaSkillPlanner,
     DbaSkillRegistry,
     SkillCatalogError,
@@ -32,6 +31,15 @@ from aiops_agent.skills import (
 from platform_core.contracts.aiops.conversation import (
     DbaIntent,
     MeasurementSemantics,
+)
+from platform_core.contracts.aiops.investigation import (
+    InputMaterial,
+    InvestigationPlan,
+    InvestigationPlanningOutput,
+    MaterialKind,
+    TaskFrame,
+    TaskObjective,
+    TurnInputEnvelope,
 )
 from platform_core.contracts.aiops.skills import (
     DbaCapabilitySnapshot,
@@ -156,6 +164,14 @@ class _PlanningUow:
             domain_id=7,
             status="PLANNING",
             event_cursor=2,
+            input_analysis_artifact_id=None,
+            task_frame_artifact_id=None,
+            current_plan_artifact_id=None,
+            assessment_artifact_id=None,
+            current_plan_revision=0,
+            investigation_round=0,
+            tool_call_count=0,
+            no_progress_count=0,
             intent_plan_artifact_id=None,
             skill_plan_artifact_id=None,
             primary_intent=None,
@@ -195,11 +211,29 @@ class _PlanningUow:
         self.message = SimpleNamespace(
             sequence_no=1,
             message_type="USER_MESSAGE",
-            payload_json={"text": "查看当前 Top SQL"},
+            payload_json={
+                "text": "分析这段 ORA-27157 日志",
+                "content": [
+                    {
+                        "content_type": "TEXT",
+                        "text": "ORA-27157: OS post/wait facility removed",
+                    }
+                ],
+            },
         )
+        self.input_items = [
+            SimpleNamespace(
+                item_no=1,
+                detected_kind=None,
+                detection_confidence=None,
+            )
+        ]
         self.artifacts = []
         self.tasks = []
         self.invocations = []
+        self.tool_invocations = []
+        self.revisions = []
+        self.evidence = []
         self.events = []
         self.commit_count = 0
         self.turns = SimpleNamespace(
@@ -209,6 +243,11 @@ class _PlanningUow:
             list_messages=self._list_messages,
             list_recent_conversation_messages=self._recent,
             add_skill_invocation=self._add_invocation,
+            add_playbook_invocation=self._add_invocation,
+            add_tool_invocation=self._add_tool_invocation,
+            add_investigation_revision=self._add_revision,
+            list_input_items=self._list_input_items,
+            add_evidence=self._add_evidence,
             add_event=self._add_event,
         )
         self.runs = SimpleNamespace(
@@ -284,6 +323,21 @@ class _PlanningUow:
         self.invocations.append(row)
         return row
 
+    async def _add_tool_invocation(self, row):
+        self.tool_invocations.append(row)
+        return row
+
+    async def _add_revision(self, row):
+        self.revisions.append(row)
+        return row
+
+    async def _list_input_items(self, **_):
+        return self.input_items
+
+    async def _add_evidence(self, row):
+        self.evidence.append(row)
+        return row
+
     async def _add_event(self, row):
         row.created_at = datetime.now(UTC)
         self.events.append(row)
@@ -293,6 +347,56 @@ class _PlanningUow:
 class _AgentCatalog:
     async def resolve_diagnosis_model(self, **_):
         return {"technical_name": "test-model", "revision": "1"}
+
+
+class _PastedLogReasoner:
+    async def plan(self, **kwargs):
+        self.available_tools = kwargs["available_tools"]
+        output = InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.ORACLE_ALERT_LOG,
+                        summary="用户提供了 ORA-27157 Alert Log 片段",
+                        key_facts=("ORA-27157",),
+                        confidence=0.99,
+                        contains_user_evidence=True,
+                    ),
+                ),
+                explicit_question="分析这段 ORA-27157 日志",
+                supplied_evidence_summary=("Oracle Alert Log 包含 ORA-27157",),
+            ),
+            task_frame=TaskFrame(
+                objective=TaskObjective.EXPLAIN,
+                problem_statement="解释 ORA-27157 的含义和可能原因",
+                known_facts=("Oracle 后台进程报告 OS post/wait facility removed",),
+                unknowns=("操作系统 IPC 资源是否被人为移除",),
+                success_criteria=("基于现有日志给出可审计解释",),
+            ),
+            plan=InvestigationPlan(
+                revision_no=1,
+                actions=(),
+                answer_if_no_more_evidence=True,
+                stop_reason="用户证据足以先解释错误机制",
+            ),
+        )
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.investigation-plan",
+                schema_id="InvestigationPlanningOutput",
+                model_technical_name="test-model",
+                model_revision="1",
+                prompt_id="aiops.investigation-planner",
+                prompt_version="1",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
 
 
 class _FrozenToolExecutor:
@@ -365,36 +469,20 @@ class _GapExecutorClient:
         )
 
 
-class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
-    async def test_all_seven_primary_intents_pass_structured_router(self) -> None:
-        for intent in DbaIntent:
-            with self.subTest(intent=intent.value):
-                plan = _intent_plan(intent)
-                result = await DbaIntentRouter(_FakeModel(plan)).route(
-                    question="测试问题",
-                    conversation_context=(),
-                    model_snapshot={
-                        "technical_name": "test-model",
-                        "revision": "1",
-                    },
-                    deadline=None,
-                    idempotency_key=f"intent:{intent.value}",
-                )
-                self.assertEqual(intent, result.output.primary_intent)
-
-    async def test_turn_planning_persists_frozen_plans_tasks_and_invocations(self) -> None:
+class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_pasted_oracle_log_reaches_evidence_assessment_without_tool(self) -> None:
+        """用户已提供日志时，不需要 Skill 也必须进入证据评估和回答。"""
         uow = _PlanningUow()
-        intent = _intent_plan(DbaIntent.OBSERVE)
-        manifest = _manifest(
-            skill_id="oracle.sql.current",
-            intent=DbaIntent.OBSERVE,
-            domain=DbaDomain.SQL_PERFORMANCE,
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
         )
-        registry = DbaSkillRegistry((manifest,))
         service = TurnPlanningService(
             uow_factory=lambda: uow,
-            intent_router=DbaIntentRouter(_FakeModel(intent)),
-            skill_planner=DbaSkillPlanner(registry),
+            investigation_reasoner=_PastedLogReasoner(),
+            playbook_registry=registry,
             skill_compiler=SkillPlanCompiler(registry),
             execution_snapshot_builder=SkillExecutionSnapshotBuilder(
                 skill_registry=registry,
@@ -408,43 +496,24 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual("COLLECTING", result["status"])
-        self.assertEqual("COLLECTING", uow.turn.status)
-        self.assertEqual(2, len(uow.artifacts))
-        self.assertEqual(3, len(uow.tasks))
-        self.assertEqual(1, len(uow.invocations))
+        self.assertEqual("ORACLE_ALERT_LOG", uow.input_items[0].detected_kind)
+        self.assertEqual(1, len(uow.evidence))
+        self.assertEqual("USER_PROVIDED", uow.evidence[0].evidence_role)
+        self.assertEqual([], uow.invocations)
+        self.assertEqual([], uow.tool_invocations)
         self.assertEqual(
-            "test-model",
-            uow.run.plan_snapshot_json["answer_context"]["model"][
-                "technical_name"
-            ],
+            ["evidence:assess", "answer:compose"],
+            [task.task_key for task in uow.tasks],
         )
-        self.assertEqual(
-            uow.invocations[0].manifest_hash,
-            uow.turn.skill_plan_json["items"][0]["manifest_hash"],
-        )
-        self.assertEqual(
-            ["intent.updated", "skill.plan.created", "turn.status"],
-            [event.event_type for event in uow.events],
-        )
-        replay = await service.execute(
-            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
-        )
-        self.assertEqual(result, replay)
-        self.assertEqual(2, len(uow.artifacts))
-        self.assertEqual(3, len(uow.tasks))
+        self.assertEqual("READY", uow.tasks[0].status)
+        self.assertEqual(("turn-user-input:1",), tuple(uow.tasks[0].input_artifacts_json))
+        self.assertEqual(1, len(uow.revisions))
+        self.assertEqual(1, uow.commit_count)
 
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
         uow = _PlanningUow()
-        service = TurnPlanningService(
-            uow_factory=lambda: uow,
-            intent_router=DbaIntentRouter(
-                _FakeModel(_intent_plan(DbaIntent.OBSERVE))
-            ),
-            skill_planner=DbaSkillPlanner(DbaSkillRegistry(())),
-            skill_compiler=SkillPlanCompiler(DbaSkillRegistry(())),
-            execution_snapshot_builder=SimpleNamespace(),
-            agent_catalog=_AgentCatalog(),
-        )
+        service = object.__new__(TurnPlanningService)
+        service._uow_factory = lambda: uow
 
         result = await service.fail_terminal(
             {"domain_id": 7, "turn_id": str(uow.turn.turn_id)},
@@ -688,6 +757,8 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 "oracle.session.active",
                 "oracle.session.blocking_chain",
                 "oracle.storage.tablespace",
+                "oracle.transaction.long_running",
+                "oracle.replication.status",
             },
             {item.skill_id for item in registry.manifests()},
         )
@@ -836,10 +907,11 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 "oracle.instance.archive",
                 "oracle.sql.top_current",
                 "oracle.storage.tablespace",
+                "oracle.transaction.long_running",
             },
             {item.skill_id for item in plan.items},
         )
-        self.assertEqual(7, len(compiled.invocation_task_keys))
+        self.assertEqual(8, len(compiled.invocation_task_keys))
 
     def test_database_handler_consumes_frozen_tool_version(self) -> None:
         codec = _CapturingGrantCodec()

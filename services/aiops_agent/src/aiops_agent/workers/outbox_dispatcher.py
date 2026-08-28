@@ -8,11 +8,8 @@ from typing import Protocol
 
 from loguru import logger
 
-from aiops_agent.skills import (
-    CapabilityUnavailableError,
-    IntentPlanValidationError,
-    SkillUnavailableError,
-)
+from aiops_agent.investigation import InvestigationPlanValidationError
+from aiops_agent.skills import SkillUnavailableError
 from platform_core.contracts.aiops import CreateOpsRunCommand
 from platform_core.contracts.aiops.executor import (
     MutationExecutionRequest,
@@ -66,23 +63,22 @@ class AIOpsDomainOutboxSink:
             await self._turn_queue_service.accept_created(payload)
             return
         if (
-            event_type == "aiops.turn.planning_requested"
+            event_type == "aiops.turn.understanding_requested"
             and self._turn_planner_service is not None
         ):
             result = await self._turn_planner_service.begin(payload)
             if (
-                result.get("status") == "PLANNING"
+                result.get("status") == "UNDERSTANDING"
                 and self._turn_planning_service is not None
             ):
                 try:
                     await self._turn_planning_service.execute(payload)
                 except (
-                    CapabilityUnavailableError,
-                    IntentPlanValidationError,
+                    InvestigationPlanValidationError,
                     SkillUnavailableError,
                 ) as exc:
                     error_code = getattr(
-                        exc, "code", "AIOPS_TURN_PLANNING_INVALID"
+                        exc, "code", "AIOPS_INVESTIGATION_PLAN_INVALID"
                     )
                     logger.warning(
                         "AIOps Turn 规划无法执行：turn_id={} code={} type={}",
@@ -245,11 +241,11 @@ class AIOpsDomainOutboxSink:
     ) -> None:
         """在 Outbox 重试耗尽后收敛关联业务状态。"""
         if (
-            event_type != "aiops.turn.planning_requested"
+            event_type != "aiops.turn.understanding_requested"
             or self._turn_planning_service is None
         ):
             return
-        error_code = getattr(exc, "code", "AIOPS_TURN_PLANNING_FAILED")
+        error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
         logger.error(
             "AIOps Turn 规划重试耗尽：turn_id={} code={} type={}",
             payload.get("turn_id"),

@@ -29,9 +29,11 @@ class ConversationSourceType(StrEnum):
 class TurnStatus(StrEnum):
     QUEUED = "QUEUED"
     ACCEPTED = "ACCEPTED"
+    UNDERSTANDING = "UNDERSTANDING"
     PLANNING = "PLANNING"
     COLLECTING = "COLLECTING"
     ASSESSING = "ASSESSING"
+    REPLANNING = "REPLANNING"
     ANSWERING = "ANSWERING"
     WAITING_USER = "WAITING_USER"
     PROPOSAL_PENDING = "PROPOSAL_PENDING"
@@ -163,7 +165,7 @@ class ConversationSummary(AIOpsContract):
 
 class TurnCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
-    message: str = Field(min_length=1, max_length=32000)
+    content: tuple["InputContent", ...] = Field(min_length=1, max_length=16)
     idempotency_key: str = Field(min_length=1, max_length=128)
     target_id: UUIDv7 | None = None
     source_run_id: UUIDv7 | None = None
@@ -222,9 +224,9 @@ class TurnSummary(AIOpsContract):
     turn_no: int = Field(ge=1)
     status: TurnStatus
     resolved_target_id: UUIDv7 | None = None
-    primary_intent: DbaIntent | None = None
-    primary_domain: str | None = Field(default=None, max_length=48)
-    subject: str | None = Field(default=None, max_length=64)
+    current_plan_revision: int = Field(default=0, ge=0)
+    investigation_round: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
     sufficiency_status: SufficiencyStatus | None = None
     evidence_gaps: tuple[TurnEvidenceGapView, ...] = ()
     event_cursor: int = Field(ge=0)
@@ -278,3 +280,8 @@ class TurnEventPage(AIOpsContract):
     events: tuple[TurnEventView, ...] = ()
     next_sequence: int = Field(ge=0)
     terminal: bool = False
+
+
+from .investigation import InputContent  # noqa: E402
+
+TurnCreate.model_rebuild()

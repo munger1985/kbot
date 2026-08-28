@@ -17,6 +17,7 @@ from aiops_agent.entities import (
     OpsConversationEntity,
     OpsConversationMessageEntity,
     OpsConversationTurnEntity,
+    OpsTurnInputItemEntity,
     OpsTurnEventEntity,
     OutboxEntity,
 )
@@ -416,9 +417,18 @@ class ConversationTurnService:
         trace_id: str,
         source_run,
     ) -> dict[str, Any]:
-        message = command.message.strip()
+        unsupported = tuple(item for item in command.content if item.upload_id)
+        if unsupported:
+            raise self._error(
+                "AIOPS_TURN_UPLOAD_NOT_READY",
+                "首轮图片和文件输入尚未接入受控 Artifact，请先粘贴文字、日志或查询结果",
+            )
+        content = tuple(
+            item for item in command.content if item.text and item.text.strip()
+        )
+        message = "\n\n".join(str(item.text).strip() for item in content)
         if not message:
-            raise self._error("AIOPS_TURN_MESSAGE_REQUIRED", "诊断问题不能为空")
+            raise self._error("AIOPS_TURN_CONTENT_REQUIRED", "诊断输入不能为空")
         target_id = await self._resolve_target(
             uow=uow,
             domain_id=int(conversation.domain_id),
@@ -449,8 +459,11 @@ class ConversationTurnService:
             sequence_no=conversation.last_message_no,
             role="USER",
             message_type="USER_MESSAGE",
-            payload_schema="AIOPS_USER_MESSAGE.v1",
-            payload_json={"text": message},
+            payload_schema="AIOPS_USER_MESSAGE.v2",
+            payload_json={
+                "text": message,
+                "content": [item.model_dump(mode="json") for item in content],
+            },
             created_by=actor_id,
         )
         event = OpsTurnEventEntity(
@@ -486,6 +499,18 @@ class ConversationTurnService:
         )
         await uow.turns.add_turn(turn)
         await uow.turns.add_message(user_message)
+        for item_no, item in enumerate(content, start=1):
+            await uow.turns.add_input_item(
+                OpsTurnInputItemEntity(
+                    input_item_id=uuid7(),
+                    turn_id=turn.turn_id,
+                    message_id=user_message.message_id,
+                    item_no=item_no,
+                    content_type=str(item.content_type),
+                    media_type=item.media_type,
+                    content_text=item.text,
+                )
+            )
         await uow.turns.add_event(event)
         await uow.outbox.add(outbox)
         return self._receipt(turn)
@@ -621,9 +646,9 @@ class ConversationTurnService:
             "resolved_target_id": (
                 str(row.resolved_target_id) if row.resolved_target_id else None
             ),
-            "primary_intent": row.primary_intent,
-            "primary_domain": row.primary_domain,
-            "subject": row.subject,
+            "current_plan_revision": int(row.current_plan_revision or 0),
+            "investigation_round": int(row.investigation_round or 0),
+            "tool_call_count": int(row.tool_call_count or 0),
             "sufficiency_status": row.sufficiency_status,
             "evidence_gaps": [
                 {

@@ -56,15 +56,22 @@ class OpsConversationTurnEntity(BaseEntity):
         String(24), nullable=False, default="QUEUED"
     )
     resolved_target_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    primary_intent: Mapped[str | None] = mapped_column(String(24))
-    primary_domain: Mapped[str | None] = mapped_column(String(48))
-    subject: Mapped[str | None] = mapped_column(String(64))
-    intent_schema_version: Mapped[str | None] = mapped_column(String(64))
-    intent_plan_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
-    intent_plan_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
-    skill_plan_schema_version: Mapped[str | None] = mapped_column(String(64))
-    skill_plan_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
-    skill_plan_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    input_analysis_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    task_frame_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    current_plan_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    assessment_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    current_plan_revision: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
+    investigation_round: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
+    tool_call_count: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
+    no_progress_count: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
     sufficiency_status: Mapped[str | None] = mapped_column(String(32))
     sufficiency_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     sufficiency_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
@@ -116,6 +123,29 @@ class OpsConversationMessageEntity(BaseEntity):
     created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
 
 
+class OpsTurnInputItemEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_TURN_INPUT_ITEM"
+    __table_args__ = (
+        UniqueConstraint("turn_id", "item_no", name="UK_OPS_INPUT_ITEM_NO"),
+    )
+    input_item_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    message_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    item_no: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    media_type: Mapped[str | None] = mapped_column(String(128))
+    content_text: Mapped[str | None] = mapped_column(Text)
+    source_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    extracted_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    detected_kind: Mapped[str | None] = mapped_column(String(32))
+    detection_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OpsTurnRunEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_TURN_RUN"
     __table_args__ = (
@@ -134,24 +164,44 @@ class OpsTurnRunEntity(BaseEntity):
     )
 
 
-class OpsSkillInvocationEntity(BaseEntity):
-    __tablename__ = "KBOT_OPS_SKILL_INVOCATION"
+class OpsInvestigationRevisionEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_INVESTIGATION_REVISION"
     __table_args__ = (
-        UniqueConstraint("turn_id", "ordinal", name="UK_OPS_SKILL_INV_ORD"),
+        UniqueConstraint("turn_id", "revision_no", name="UK_OPS_INV_REV_NO"),
     )
-    skill_invocation_id: Mapped[UUID] = mapped_column(
+    revision_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    revision_no: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
+    revision_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    trigger_reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    task_frame_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    plan_artifact_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    assessment_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class OpsPlaybookInvocationEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_PLAYBOOK_INVOCATION"
+    __table_args__ = (
+        UniqueConstraint("revision_id", "ordinal", name="UK_OPS_PLAY_INV_ORD"),
+    )
+    playbook_invocation_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    revision_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     parent_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     ops_task_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     ordinal: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
-    skill_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    skill_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    playbook_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    playbook_version: Mapped[str] = mapped_column(String(64), nullable=False)
     manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    primary_intent: Mapped[str] = mapped_column(String(24), nullable=False)
-    primary_domain: Mapped[str] = mapped_column(String(48), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     input_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     input_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
@@ -183,6 +233,48 @@ class OpsSkillInvocationEntity(BaseEntity):
     __mapper_args__ = {"version_id_col": row_version}
 
 
+class OpsToolInvocationEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_TOOL_INVOCATION"
+    __table_args__ = (
+        UniqueConstraint("revision_id", "ordinal", name="UK_OPS_TOOL_INV_ORD"),
+        UniqueConstraint(
+            "revision_id", "action_id", name="UK_OPS_TOOL_INV_ACTION"
+        ),
+    )
+    tool_invocation_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    revision_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    playbook_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    ops_task_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    ordinal: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
+    action_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    tool_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    tool_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    input_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    attempt_count: Mapped[int] = mapped_column(Numeric(8, 0), nullable=False, default=0)
+    error_domain: Mapped[str | None] = mapped_column(String(32))
+    error_code: Mapped[str | None] = mapped_column(String(128))
+    error_message: Mapped[str | None] = mapped_column(String(2000))
+    started_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False
+    )
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": row_version}
+
+
 class OpsTurnEvidenceEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_TURN_EVIDENCE"
     __table_args__ = (
@@ -196,7 +288,11 @@ class OpsTurnEvidenceEntity(BaseEntity):
     )
     turn_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     artifact_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    skill_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    tool_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    extraction_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     evidence_role: Mapped[str] = mapped_column(String(24), nullable=False)
     measurement_semantics: Mapped[str] = mapped_column(String(32), nullable=False)
     observed_at: Mapped[datetime | None] = mapped_column(
@@ -264,7 +360,8 @@ class OpsTurnEventEntity(BaseEntity):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     event_key: Mapped[str | None] = mapped_column(String(128))
     visibility: Mapped[str] = mapped_column(String(16), nullable=False)
-    skill_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    playbook_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    tool_invocation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     answer_block_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     payload_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

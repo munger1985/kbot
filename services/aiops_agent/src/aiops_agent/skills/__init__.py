@@ -13,14 +13,11 @@ from .registry import (
     SkillCatalogError,
     canonical_hash,
 )
-from .router import DbaIntentRouter, IntentPlanValidationError
 
 __all__ = [
     "CapabilityUnavailableError",
     "DbaSkillPlanner",
     "DbaSkillRegistry",
-    "DbaIntentRouter",
-    "IntentPlanValidationError",
     "SkillCatalogError",
     "SkillPlanCompiler",
     "SkillExecutionSnapshotBuilder",

@@ -88,7 +88,8 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
             self.upper_sql,
             r"CREATE\s+UNIQUE\s+INDEX\s+UX_OPS_TURN_ACTIVE\s+ON\s+"
             r"KBOT_OPS_CONVERSATION_TURN\s*\(\s*CASE\s+WHEN\s+STATUS\s+IN\s*\(\s*"
-            r"'PLANNING'\s*,\s*'COLLECTING'\s*,\s*'ASSESSING'\s*,\s*'ANSWERING'\s*\)\s*"
+            r"'UNDERSTANDING'\s*,\s*'PLANNING'\s*,\s*'COLLECTING'\s*,\s*"
+            r"'ASSESSING'\s*,\s*'REPLANNING'\s*,\s*'ANSWERING'\s*\)\s*"
             r"THEN\s+CONVERSATION_ID\s+END\s*\)",
         )
         self.assertRegex(

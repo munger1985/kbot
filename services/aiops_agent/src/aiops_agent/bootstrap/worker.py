@@ -38,9 +38,8 @@ from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
 )
+from aiops_agent.investigation import InvestigationReasoner
 from aiops_agent.skills import (
-    DbaIntentRouter,
-    DbaSkillPlanner,
     DbaSkillRegistry,
     SkillExecutionSnapshotBuilder,
     SkillPlanCompiler,
@@ -246,8 +245,10 @@ def create_aiops_worker_probe(
                 ),
                 turn_planning_service=TurnPlanningService(
                     uow_factory=runtime.uow_factory,
-                    intent_router=DbaIntentRouter(diagnosis_model_client),
-                    skill_planner=DbaSkillPlanner(skill_registry),
+                    investigation_reasoner=InvestigationReasoner(
+                        diagnosis_model_client
+                    ),
+                    playbook_registry=skill_registry,
                     skill_compiler=SkillPlanCompiler(skill_registry),
                     execution_snapshot_builder=(
                         execution_snapshot_builder

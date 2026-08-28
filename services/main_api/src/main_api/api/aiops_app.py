@@ -23,6 +23,7 @@ from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.contracts.aiops import (
     ConversationSummary,
+    InputContent,
     TurnReceipt,
     TurnSummary,
     TurnView,
@@ -133,14 +134,14 @@ class AIOpsAgentGrantStatusPayload(_Payload):
 
 class ConversationStartPayload(_Payload):
     agent_id: UUID
-    message: str = Field(min_length=1, max_length=32000)
+    content: list[InputContent] = Field(min_length=1, max_length=16)
     title: str | None = Field(default=None, min_length=1, max_length=256)
     target_id: UUID | None = None
     source_run_id: UUID | None = None
 
 
 class AIOpsConversationTurnPayload(_Payload):
-    message: str = Field(min_length=1, max_length=32000)
+    content: list[InputContent] = Field(min_length=1, max_length=16)
     target_id: UUID | None = None
     source_run_id: UUID | None = None
 
@@ -546,7 +547,9 @@ async def start_conversation(
                 "source": source,
             },
             "first_turn": {
-                "message": payload.message,
+                "content": [
+                    item.model_dump(mode="json") for item in payload.content
+                ],
                 "idempotency_key": idempotency_key,
                 "target_id": (
                     str(payload.target_id) if payload.target_id else None
@@ -642,7 +645,9 @@ async def create_conversation_turn(
     return await _client(request).create_conversation_turn(
         conversation_id,
         {
-            "message": payload.message,
+            "content": [
+                item.model_dump(mode="json") for item in payload.content
+            ],
             "idempotency_key": idempotency_key,
             "target_id": str(payload.target_id) if payload.target_id else None,
             "source_run_id": (

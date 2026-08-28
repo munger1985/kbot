@@ -11,9 +11,12 @@ from aiops_agent.entities import (
     OpsAnswerCitationEntity,
     OpsConversationMessageEntity,
     OpsConversationTurnEntity,
-    OpsSkillInvocationEntity,
+    OpsInvestigationRevisionEntity,
+    OpsPlaybookInvocationEntity,
+    OpsToolInvocationEntity,
     OpsTurnEventEntity,
     OpsTurnEvidenceEntity,
+    OpsTurnInputItemEntity,
     OpsTurnRunEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
@@ -56,20 +59,78 @@ class TurnRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def add_skill_invocation(
-        self, row: OpsSkillInvocationEntity
-    ) -> OpsSkillInvocationEntity:
+    async def add_input_item(
+        self, row: OpsTurnInputItemEntity
+    ) -> OpsTurnInputItemEntity:
         return await self._add(row)
 
-    async def get_skill_invocation_by_task(
+    async def list_input_items(
+        self, *, turn_id: UUID
+    ) -> list[OpsTurnInputItemEntity]:
+        rows = await self._session.scalars(
+            select(OpsTurnInputItemEntity)
+            .where(OpsTurnInputItemEntity.turn_id == turn_id)
+            .order_by(OpsTurnInputItemEntity.item_no)
+        )
+        return list(rows)
+
+    async def add_investigation_revision(
+        self, row: OpsInvestigationRevisionEntity
+    ) -> OpsInvestigationRevisionEntity:
+        return await self._add(row)
+
+    async def list_investigation_revisions(
+        self, *, turn_id: UUID
+    ) -> list[OpsInvestigationRevisionEntity]:
+        rows = await self._session.scalars(
+            select(OpsInvestigationRevisionEntity)
+            .where(OpsInvestigationRevisionEntity.turn_id == turn_id)
+            .order_by(OpsInvestigationRevisionEntity.revision_no)
+        )
+        return list(rows)
+
+    async def add_playbook_invocation(
+        self, row: OpsPlaybookInvocationEntity
+    ) -> OpsPlaybookInvocationEntity:
+        return await self._add(row)
+
+    async def get_playbook_invocation_by_task(
         self, *, ops_task_id: UUID, lock: bool = False
-    ) -> OpsSkillInvocationEntity | None:
-        statement = select(OpsSkillInvocationEntity).where(
-            OpsSkillInvocationEntity.ops_task_id == ops_task_id
+    ) -> OpsPlaybookInvocationEntity | None:
+        statement = select(OpsPlaybookInvocationEntity).where(
+            OpsPlaybookInvocationEntity.ops_task_id == ops_task_id
         )
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def add_tool_invocation(
+        self, row: OpsToolInvocationEntity
+    ) -> OpsToolInvocationEntity:
+        return await self._add(row)
+
+    async def get_tool_invocation_by_task(
+        self, *, ops_task_id: UUID, lock: bool = False
+    ) -> OpsToolInvocationEntity | None:
+        statement = select(OpsToolInvocationEntity).where(
+            OpsToolInvocationEntity.ops_task_id == ops_task_id
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_tool_invocations(
+        self, *, turn_id: UUID, lock: bool = False
+    ) -> list[OpsToolInvocationEntity]:
+        statement = (
+            select(OpsToolInvocationEntity)
+            .where(OpsToolInvocationEntity.turn_id == turn_id)
+            .order_by(OpsToolInvocationEntity.ordinal)
+        )
+        if lock:
+            statement = statement.with_for_update()
+        rows = await self._session.scalars(statement)
+        return list(rows)
 
     async def add_evidence(
         self, row: OpsTurnEvidenceEntity

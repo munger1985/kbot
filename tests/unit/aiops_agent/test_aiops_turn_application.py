@@ -96,7 +96,7 @@ class _TerminalOutboxRepository:
     def __init__(self, turn_id) -> None:
         self.message = SimpleNamespace(
             outbox_id=uuid7(),
-            event_type="aiops.turn.planning_requested",
+            event_type="aiops.turn.understanding_requested",
             payload_json={"domain_id": 7, "turn_id": str(turn_id)},
             attempt_count=3,
             max_attempts=3,
@@ -138,6 +138,7 @@ class _TurnRepository:
     def __init__(self) -> None:
         self.turns = []
         self.messages = []
+        self.input_items = []
         self.events = []
         self.run_links = []
         self.answer_blocks = []
@@ -152,6 +153,10 @@ class _TurnRepository:
         row.message_id = row.message_id or uuid7()
         row.created_at = datetime.now(UTC)
         self.messages.append(row)
+        return row
+
+    async def add_input_item(self, row):
+        self.input_items.append(row)
         return row
 
     async def add_event(self, row):
@@ -351,18 +356,20 @@ class _RollbackUow(_Uow):
             len(self.conversation_rows),
             len(self.turns.turns),
             len(self.turns.messages),
+            len(self.turns.input_items),
             len(self.turns.events),
         )
         return await super().__aenter__()
 
     async def __aexit__(self, exc_type, exc, traceback):
         if exc_type is not None:
-            conversation_count, turn_count, message_count, event_count = (
+            conversation_count, turn_count, message_count, input_count, event_count = (
                 self._snapshot
             )
             del self.conversation_rows[conversation_count:]
             del self.turns.turns[turn_count:]
             del self.turns.messages[message_count:]
+            del self.turns.input_items[input_count:]
             del self.turns.events[event_count:]
         return await super().__aexit__(exc_type, exc, traceback)
 
@@ -403,9 +410,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             turn_no=1,
             status="PARTIAL",
             resolved_target_id=uuid7(),
-            primary_intent="DIAGNOSE",
-            primary_domain="PERFORMANCE",
-            subject="Top SQL",
+            current_plan_revision=1,
+            investigation_round=2,
+            tool_call_count=3,
             sufficiency_status="PARTIAL",
             sufficiency_json={
                 "gaps": [
@@ -444,7 +451,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
-                message="检查当前数据库负载",
+                content=({"content_type": "TEXT", "text": "检查当前数据库负载"},),
                 idempotency_key="request-start",
             ),
         )
@@ -463,7 +470,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
-                message="  分析当前数据库 Top SQL  ",
+                content=({"content_type": "TEXT", "text": "  分析当前数据库 Top SQL  "},),
                 idempotency_key="request-1",
             ),
         )
@@ -526,13 +533,13 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(uow.turns.events))
         self.assertEqual(1, len(uow.outbox.rows))
         self.assertEqual(
-            "aiops.turn.planning_requested",
+            "aiops.turn.understanding_requested",
             uow.outbox.rows[0].event_type,
         )
         self.assertEqual(1, uow.commit_count)
 
     async def test_planning_outbox_runs_both_transaction_stages(self) -> None:
-        begin = _PlannerStage(result={"status": "PLANNING"})
+        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
         planning = _PlannerStage()
         sink = AIOpsDomainOutboxSink(
             runtime_service=object(),
@@ -542,7 +549,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         )
         payload = {"domain_id": 7, "turn_id": str(uuid7())}
 
-        await sink.publish("aiops.turn.planning_requested", payload)
+        await sink.publish("aiops.turn.understanding_requested", payload)
 
         self.assertEqual([payload], begin.calls)
         self.assertEqual([payload], planning.calls)
@@ -550,7 +557,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
     async def test_unsupported_planning_is_terminal_without_outbox_retry(
         self,
     ) -> None:
-        begin = _PlannerStage(result={"status": "PLANNING"})
+        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
         planning = _UnsupportedPlanningStage()
         sink = AIOpsDomainOutboxSink(
             runtime_service=object(),
@@ -560,7 +567,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         )
         payload = {"domain_id": 7, "turn_id": str(uuid7())}
 
-        await sink.publish("aiops.turn.planning_requested", payload)
+        await sink.publish("aiops.turn.understanding_requested", payload)
 
         self.assertEqual(1, len(planning.calls))
         self.assertEqual(1, len(planning.failures))
@@ -590,7 +597,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [
                 (
-                    "aiops.turn.planning_requested",
+                    "aiops.turn.understanding_requested",
                     {"domain_id": 7, "turn_id": str(turn_id)},
                     "RuntimeError",
                 )
@@ -611,7 +618,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="dba@example.com",
                 trace_id="trace-2",
                 command=TurnCreate(
-                    message="查看活跃会话",
+                    content=({"content_type": "TEXT", "text": "查看活跃会话"},),
                     idempotency_key="request-2",
                 ),
             ),
@@ -621,7 +628,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="dba@example.com",
                 trace_id="trace-3",
                 command=TurnCreate(
-                    message="查看阻塞链",
+                    content=({"content_type": "TEXT", "text": "查看阻塞链"},),
                     idempotency_key="request-3",
                 ),
             ),
@@ -646,7 +653,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                     actor_id="dba@example.com",
                     trace_id=f"trace-retry-{index}",
                     command=TurnCreate(
-                        message="查看表空间使用率",
+                        content=({"content_type": "TEXT", "text": "查看表空间使用率"},),
                         idempotency_key="same-request",
                     ),
                 )
@@ -673,7 +680,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                     source=ConversationSourceContext(),
                 ),
                 first_turn=TurnCreate(
-                    message="检查数据库负载",
+                    content=({"content_type": "TEXT", "text": "检查数据库负载"},),
                     idempotency_key="request-failed",
                 ),
             )

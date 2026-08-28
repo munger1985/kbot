@@ -23,13 +23,19 @@ from platform_core.identity import uuid7
 
 class AIOpsConversationContractTest(unittest.TestCase):
     def test_turn_create_requires_explicit_idempotency_key(self) -> None:
-        turn = TurnCreate(message="分析当前数据库上的 Top SQL", idempotency_key="turn-1")
+        turn = TurnCreate(
+            content=({"content_type": "TEXT", "text": "分析当前数据库上的 Top SQL"},),
+            idempotency_key="turn-1",
+        )
 
-        self.assertTrue(turn.message.endswith("Top SQL"))
+        self.assertTrue(turn.content[0].text.endswith("Top SQL"))
         self.assertIsNone(turn.target_id)
 
         with self.assertRaises(ValidationError):
-            TurnCreate(message="分析当前数据库上的 Top SQL", idempotency_key="")
+            TurnCreate(
+                content=({"content_type": "TEXT", "text": "分析当前数据库上的 Top SQL"},),
+                idempotency_key="",
+            )
 
 
     def test_conversation_source_accepts_only_matching_resource(self) -> None:

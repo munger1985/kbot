@@ -1862,16 +1862,31 @@ class AIOpsRuntimeService:
                 artifact=artifact,
                 payload=payload,
             )
+        elif artifact.schema_version == "LOG_EVIDENCE_SET.v1":
+            await self._project_log_result(
+                uow=uow,
+                turn=turn,
+                artifact=artifact,
+                payload=payload,
+            )
         elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
             assessment = DbaSufficiencyAssessment.model_validate(payload)
             turn.sufficiency_status = str(assessment.status)
             turn.sufficiency_json = assessment.model_dump(mode="json")
             turn.sufficiency_artifact_id = artifact.artifact_id
+            turn.assessment_artifact_id = artifact.artifact_id
+            if not assessment.evidence:
+                turn.no_progress_count = int(turn.no_progress_count or 0) + 1
+            revisions = await uow.turns.list_investigation_revisions(
+                turn_id=turn.turn_id
+            )
+            if revisions:
+                revisions[-1].assessment_artifact_id = artifact.artifact_id
             turn.status = "ANSWERING"
             await self._append_turn_event(
                 uow,
                 turn,
-                event_type="evidence.assessed",
+                event_type="assessment.completed",
                 payload={
                     "sufficiency_status": str(assessment.status),
                     "evidence_count": len(assessment.evidence),
@@ -1948,7 +1963,7 @@ class AIOpsRuntimeService:
         now: datetime,
     ) -> None:
         result = DbaSkillResult.model_validate(payload)
-        invocation = await uow.turns.get_skill_invocation_by_task(
+        invocation = await uow.turns.get_playbook_invocation_by_task(
             ops_task_id=task.ops_task_id,
             lock=True,
         )
@@ -1958,6 +1973,42 @@ class AIOpsRuntimeService:
         invocation.output_artifact_id = artifact.artifact_id
         invocation.attempt_count = int(task.attempt_count)
         invocation.completed_at = now
+        tool_rows = await uow.turns.list_tool_invocations(
+            turn_id=turn.turn_id,
+            lock=True,
+        )
+        outcomes_by_tool = {item.tool_id: item for item in result.tool_outcomes}
+        for tool_row in tool_rows:
+            outcome = outcomes_by_tool.get(tool_row.tool_id)
+            if outcome is None:
+                continue
+            tool_row.status = (
+                "SUCCEEDED" if outcome.observation is not None
+                else "FAILED" if outcome.gap is not None
+                else "NO_DATA"
+            )
+            tool_row.output_artifact_id = artifact.artifact_id
+            tool_row.attempt_count = int(task.attempt_count)
+            tool_row.completed_at = now
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type=(
+                    "tool.completed"
+                    if outcome.observation is not None
+                    else "tool.gap"
+                ),
+                payload={
+                    "tool_invocation_id": str(tool_row.tool_invocation_id),
+                    "tool_id": tool_row.tool_id,
+                    "status": tool_row.status,
+                    "public_summary": (
+                        "数据库只读观测已经完成"
+                        if outcome.observation is not None
+                        else "数据库只读观测未取得有效证据"
+                    ),
+                },
+            )
         observations = tuple(
             item.observation
             for item in result.tool_outcomes
@@ -1970,12 +2021,29 @@ class AIOpsRuntimeService:
         )
         if observations and existing is None:
             observed_at = max(item.captured_at for item in observations)
+            evidence_tool_ids = {
+                item.tool_id
+                for item in result.tool_outcomes
+                if item.observation is not None
+                and item.tool_id != "db.instance.identity"
+            }
+            evidence_tool_row = next(
+                (row for row in tool_rows if row.tool_id in evidence_tool_ids),
+                None,
+            )
             await uow.turns.add_evidence(
                 OpsTurnEvidenceEntity(
                     turn_evidence_id=uuid7(),
                     turn_id=turn.turn_id,
                     artifact_id=artifact.artifact_id,
-                    skill_invocation_id=invocation.skill_invocation_id,
+                    tool_invocation_id=(
+                        evidence_tool_row.tool_invocation_id
+                        if evidence_tool_row is not None
+                        else None
+                    ),
+                    source_kind="DATABASE",
+                    evidence_kind="OBSERVATION",
+                    confidence=1,
                     evidence_role="SUPPORTS",
                     measurement_semantics=str(
                         result.measurement_semantics
@@ -1988,16 +2056,27 @@ class AIOpsRuntimeService:
                     linked_by="aiops.turn-projector",
                 )
             )
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="evidence.added",
+                payload={
+                    "source_kind": "DATABASE",
+                    "evidence_kind": "OBSERVATION",
+                    "public_summary": "新的数据库诊断依据已加入本轮调查",
+                },
+            )
         await self._append_turn_event(
             uow,
             turn,
-            event_type="skill.completed",
+            event_type="playbook.completed",
             payload={
-                "skill_invocation_id": str(
-                    invocation.skill_invocation_id
+                "playbook_invocation_id": str(
+                    invocation.playbook_invocation_id
                 ),
-                "skill_id": result.skill_id,
+                "playbook_id": result.skill_id,
                 "status": result.status,
+                "public_summary": "一组数据库只读观测已经完成",
             },
         )
 
@@ -2011,6 +2090,18 @@ class AIOpsRuntimeService:
     ) -> None:
         """把本轮 Prometheus 观测登记为可引用的 Turn 证据。"""
         result = ObservationSet.model_validate(payload)
+        monitoring_tool_row = None
+        for tool_row in await uow.turns.list_tool_invocations(
+            turn_id=turn.turn_id,
+            lock=True,
+        ):
+            if tool_row.tool_id == "monitor.query_range":
+                monitoring_tool_row = tool_row
+                tool_row.status = (
+                    "SUCCEEDED" if result.observations else "NO_DATA"
+                )
+                tool_row.output_artifact_id = artifact.artifact_id
+                tool_row.completed_at = result.collected_at
         existing = await uow.turns.get_evidence_by_artifact(
             turn_id=turn.turn_id,
             artifact_id=artifact.artifact_id,
@@ -2027,7 +2118,14 @@ class AIOpsRuntimeService:
                     turn_evidence_id=uuid7(),
                     turn_id=turn.turn_id,
                     artifact_id=artifact.artifact_id,
-                    skill_invocation_id=None,
+                    tool_invocation_id=(
+                        monitoring_tool_row.tool_invocation_id
+                        if monitoring_tool_row is not None
+                        else None
+                    ),
+                    source_kind="MONITORING",
+                    evidence_kind="TIME_SERIES",
+                    confidence=1,
                     evidence_role="SUPPORTS",
                     measurement_semantics="HISTORICAL_SAMPLES",
                     observed_at=result.collected_at,
@@ -2038,14 +2136,97 @@ class AIOpsRuntimeService:
                     linked_by="aiops.turn-projector",
                 )
             )
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="evidence.added",
+                payload={
+                    "source_kind": "MONITORING",
+                    "evidence_kind": "TIME_SERIES",
+                    "public_summary": "新的监控诊断依据已加入本轮调查",
+                },
+            )
         await self._append_turn_event(
             uow,
             turn,
-            event_type="monitor.completed",
+            event_type="tool.completed",
             payload={
                 "source_id": result.source_id,
                 "observation_count": len(result.observations),
                 "gap_count": len(result.gaps),
+                "public_summary": "监控时间序列查询已经完成",
+            },
+        )
+
+    async def _project_log_result(
+        self,
+        *,
+        uow,
+        turn,
+        artifact,
+        payload: dict[str, Any],
+    ) -> None:
+        """把 Loki 日志查询登记为可引用的 Turn 证据。"""
+        from aiops_agent.contracts.evidence import LogEvidenceSet
+
+        result = LogEvidenceSet.model_validate(payload)
+        log_tool_row = None
+        for tool_row in await uow.turns.list_tool_invocations(
+            turn_id=turn.turn_id,
+            lock=True,
+        ):
+            if tool_row.tool_id == "loki.query_range":
+                log_tool_row = tool_row
+                tool_row.status = "SUCCEEDED" if result.entries else "NO_DATA"
+                tool_row.output_artifact_id = artifact.artifact_id
+                tool_row.completed_at = result.collected_at
+        existing = await uow.turns.get_evidence_by_artifact(
+            turn_id=turn.turn_id,
+            artifact_id=artifact.artifact_id,
+        )
+        if result.entries and existing is None:
+            await uow.turns.add_evidence(
+                OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(),
+                    turn_id=turn.turn_id,
+                    artifact_id=artifact.artifact_id,
+                    tool_invocation_id=(
+                        log_tool_row.tool_invocation_id
+                        if log_tool_row is not None
+                        else None
+                    ),
+                    source_kind="LOG",
+                    evidence_kind="ALERT_LOG",
+                    confidence=1,
+                    evidence_role="SUPPORTS",
+                    measurement_semantics="HISTORICAL_SAMPLES",
+                    observed_at=result.collected_at,
+                    window_start_at=result.window_start,
+                    window_end_at=result.window_end,
+                    freshness_status="FRESH",
+                    usage_reason="用于回答本轮问题的 Oracle Alert Log",
+                    linked_by="aiops.turn-projector",
+                )
+            )
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="evidence.added",
+                payload={
+                    "source_kind": "LOG",
+                    "evidence_kind": "ALERT_LOG",
+                    "public_summary": "新的 Oracle Alert Log 依据已加入本轮调查",
+                },
+            )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="tool.completed",
+            payload={
+                "source_id": result.source_id,
+                "entry_count": len(result.entries),
+                "gap_count": len(result.gaps),
+                "public_summary": "Oracle Alert Log 查询已经完成",
             },
         )
 

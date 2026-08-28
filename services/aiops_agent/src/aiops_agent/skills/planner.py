@@ -39,6 +39,7 @@ class CompiledSkillPlan:
     tasks: tuple[TaskSpec, ...]
     invocation_task_keys: tuple[str, ...]
     monitoring_task_keys: tuple[str, ...]
+    log_task_keys: tuple[str, ...]
 
 
 class DbaSkillPlanner:
@@ -266,6 +267,8 @@ class SkillPlanCompiler:
         plan: DbaSkillPlan,
         *,
         monitoring_binding_ids: tuple[str, ...] = (),
+        log_binding_ids: tuple[str, ...] = (),
+        user_evidence_artifact_keys: tuple[str, ...] = (),
     ) -> CompiledSkillPlan:
         if plan.catalog_hash != self._registry.catalog_hash:
             raise SkillUnavailableError("Skill Plan 的目录 Hash 已失效")
@@ -315,7 +318,32 @@ class SkillPlanCompiler:
                     priority=45,
                 )
             )
-        evidence_keys = (*invocation_keys, *monitoring_keys)
+        log_keys: list[str] = []
+        for binding_id in dict.fromkeys(log_binding_ids):
+            task_key = f"log:{binding_id}"
+            log_keys.append(task_key)
+            tasks.append(
+                TaskSpec(
+                    task_key=task_key,
+                    task_type="SKILL_INVOKE",
+                    handler_id="evidence.log-query",
+                    handler_version="1",
+                    input_schema_version="DIAGNOSIS_SCOPE.v1",
+                    output_schema_version="LOG_EVIDENCE_SET.v1",
+                    timeout_seconds=120,
+                    max_attempts=3,
+                    priority=46,
+                )
+            )
+        evidence_task_keys = (
+            *invocation_keys,
+            *monitoring_keys,
+            *log_keys,
+        )
+        evidence_artifact_keys = (
+            *user_evidence_artifact_keys,
+            *evidence_task_keys,
+        )
         tasks.append(
             TaskSpec(
                 task_key="evidence:assess",
@@ -324,8 +352,8 @@ class SkillPlanCompiler:
                 handler_version="1",
                 input_schema_version="DBA_EVIDENCE_ASSESS_INPUT.v1",
                 output_schema_version="DBA_SUFFICIENCY.v1",
-                depends_on=evidence_keys,
-                input_artifact_keys=evidence_keys,
+                depends_on=evidence_task_keys,
+                input_artifact_keys=evidence_artifact_keys,
                 timeout_seconds=30,
                 max_attempts=2,
                 priority=90,
@@ -350,4 +378,5 @@ class SkillPlanCompiler:
             tasks=tuple(tasks),
             invocation_task_keys=invocation_keys,
             monitoring_task_keys=tuple(monitoring_keys),
+            log_task_keys=tuple(log_keys),
         )
