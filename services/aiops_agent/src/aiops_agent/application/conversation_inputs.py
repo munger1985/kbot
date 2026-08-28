@@ -24,6 +24,19 @@ class ResolvedConversationUpload:
     extraction_error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ConversationUploadSource:
+    """在任何图片模型调用前冻结的原始上传文件描述。"""
+
+    item_no: int
+    upload_id: str
+    file_name: str
+    media_type: str
+    byte_size: int
+    content_hash: str
+    payload_uri: str
+
+
 class ConversationInputResolver:
     """解析文本或图片附件；单个附件失败只形成可见缺口。"""
 
@@ -83,6 +96,38 @@ class ConversationInputResolver:
                 }
             )
         return tuple(normalized), tuple(uploads)
+
+    def describe_sources(
+        self,
+        *,
+        domain_id: int,
+        actor_id: str,
+        content: tuple[dict, ...],
+    ) -> tuple[ConversationUploadSource, ...]:
+        """只读取受控上传元数据，不执行文本提取或模型调用。"""
+        sources = []
+        for item_no, item in enumerate(content, start=1):
+            upload_id = item.get("upload_id")
+            if not upload_id:
+                continue
+            stored = self._upload_store.get(
+                upload_id=str(upload_id),
+                domain_id=domain_id,
+                actor_id=actor_id,
+            )
+            stored = self._upload_store.preserve(stored)
+            sources.append(
+                ConversationUploadSource(
+                    item_no=item_no,
+                    upload_id=stored.upload_id,
+                    file_name=stored.file_name,
+                    media_type=stored.media_type,
+                    byte_size=stored.byte_size,
+                    content_hash=stored.content_hash,
+                    payload_uri=stored.payload_uri,
+                )
+            )
+        return tuple(sources)
 
     async def _extract(
         self, *, item_no: int, stored, raw: bytes, image_capabilities: dict
@@ -169,4 +214,8 @@ class ConversationInputResolver:
         )
 
 
-__all__ = ["ConversationInputResolver", "ResolvedConversationUpload"]
+__all__ = [
+    "ConversationInputResolver",
+    "ConversationUploadSource",
+    "ResolvedConversationUpload",
+]

@@ -458,18 +458,6 @@
               }
             ],
             "title": "Source Run Id"
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Id"
           }
         },
         "required": [
@@ -2570,18 +2558,6 @@
               }
             ],
             "title": "Source Run Id"
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Id"
           },
           "title": {
             "anyOf": [

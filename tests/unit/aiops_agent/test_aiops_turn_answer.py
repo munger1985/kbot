@@ -29,6 +29,7 @@ from platform_core.contracts.aiops import (
     AppendOpsTaskProgressCommand,
     AnswerBlockType,
     SufficiencyStatus,
+    InvestigationAssessment,
 )
 from platform_core.identity import uuid7
 
@@ -73,6 +74,36 @@ class _StreamAnswerModel:
         midpoint = max(1, len(answer) // 2)
         yield answer[:midpoint]
         yield answer[midpoint:]
+
+
+class _AssessmentModel:
+    async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=InvestigationAssessment(
+                round_no=1,
+                sufficiency_status="PARTIAL",
+                verified_facts=("已取得Top SQL累计统计",),
+                remaining_unknowns=("最近十五分钟增量",),
+                hypothesis_updates={"h1": "SUPPORTED"},
+                evidence_gaps=("缺少时间窗口增量",),
+                next_action="ANSWER",
+                progress_made=True,
+                reason="现有证据足以给出有边界的回答",
+            ),
+            receipt=ModelInvocationReceipt(
+                purpose=kwargs["purpose"],
+                schema_id="aiops.investigation-assessment.v1",
+                model_technical_name="test-model",
+                model_revision="1",
+                prompt_id=kwargs["prompt_ref"]["prompt_id"],
+                prompt_version=kwargs["prompt_ref"]["prompt_version"],
+                prompt_sha256=kwargs["prompt_ref"]["prompt_sha256"],
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
 
 
 class _ProgressService:
@@ -360,6 +391,62 @@ def _monitoring_artifact() -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_runtime_projects_direct_tool_without_playbook_parent(self) -> None:
+        service = object.__new__(AIOpsRuntimeService)
+        turn = SimpleNamespace(
+            turn_id=uuid7(),
+            conversation_id=uuid7(),
+            domain_id=7,
+            created_by="dba@example.com",
+            event_cursor=0,
+            status="COLLECTING",
+        )
+        turns = _ProjectionTurns(invocation=None)
+        uow = SimpleNamespace(turns=turns)
+        skill_input = _skill_artifact(semantics="CURRENT_ACTIVITY")
+        artifact = SimpleNamespace(
+            artifact_id=uuid7(), payload_json=skill_input["payload"]
+        )
+
+        asyncio.run(
+            service._project_skill_result(
+                uow=uow,
+                turn=turn,
+                task=SimpleNamespace(ops_task_id=uuid7(), attempt_count=1),
+                artifact=artifact,
+                payload=artifact.payload_json,
+                now=datetime.now(UTC),
+            )
+        )
+
+        self.assertEqual(1, len(turns.evidence))
+        self.assertNotIn(
+            "playbook.completed", {event.event_type for event in turns.events}
+        )
+
+    def test_assessment_model_updates_hypotheses_and_next_action(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=_AssessmentModel()
+            ).execute(
+                _context(
+                    artifacts=(
+                        _skill_artifact(
+                            semantics="CUMULATIVE_SINCE_LOAD"
+                        ),
+                    ),
+                    recent=True,
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertIsNotNone(result.investigation)
+        self.assertEqual("ANSWER", result.investigation.next_action)
+        self.assertEqual(
+            "SUPPORTED", result.investigation.hypothesis_updates["h1"]
+        )
+
     def test_chat_monitor_health_uses_run_domain(self) -> None:
         source_id = uuid7()
         binding_id = uuid7()

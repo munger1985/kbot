@@ -25,6 +25,7 @@ from platform_core.contracts.aiops import (
     AnswerBlockType,
     MeasurementSemantics,
     SufficiencyStatus,
+    InvestigationAssessment,
 )
 
 from .handlers import TaskExecutionContext
@@ -41,7 +42,17 @@ def _fact_trust_level(value: object) -> str:
 
 
 class DbaEvidenceAssessmentHandler:
-    """只按本轮 Skill Artifact 判断证据，不读取历史 Turn。"""
+    """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
+
+    _PROMPT = """
+你是一名资深Oracle DBA调查评估者。根据Task Frame、调查计划和本轮真实Evidence，逐项更新
+假设与剩余未知项，判断证据是否足以回答，并选择ANSWER、REPLAN、ASK_USER或STOP_UNSAFE。
+不得虚构证据。系统仍有授权Tool可以补证时优先REPLAN；只有系统无法取得关键证据时才
+ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失否定全部已验证事实。
+""".strip()
+
+    def __init__(self, *, model_client=None) -> None:
+        self._model = model_client
 
     async def execute(
         self, context: TaskExecutionContext
@@ -51,6 +62,17 @@ class DbaEvidenceAssessmentHandler:
         reasons: list[str] = []
         database_gap_found = False
         monitoring_gap_found = False
+        user_input_is_evidence = any(
+            artifact.get("schema_version") == "aiops.input-envelope.v1"
+            and any(
+                bool(item.get("contains_user_evidence"))
+                for item in dict(artifact.get("payload") or {}).get(
+                    "materials", ()
+                )
+                if isinstance(item, dict)
+            )
+            for artifact in context.input_artifacts
+        )
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
             if schema_version == "SOURCE_RUN_EVIDENCE.v1":
@@ -87,7 +109,10 @@ class DbaEvidenceAssessmentHandler:
             if schema_version == "USER_PROVIDED_INPUT.v1":
                 payload = dict(artifact.get("payload") or {})
                 text = str(payload.get("text", "")).strip()
-                if text and bool(payload.get("contains_evidence")):
+                if text and (
+                    bool(payload.get("contains_evidence"))
+                    or user_input_is_evidence
+                ):
                     artifact_id = str(artifact["artifact_id"])
                     facts.append(
                         TurnEvidenceFact(
@@ -267,11 +292,67 @@ class DbaEvidenceAssessmentHandler:
             status = SufficiencyStatus.PARTIAL
         else:
             status = SufficiencyStatus.ANSWERABLE
-        return DbaSufficiencyAssessment(
+        deterministic = DbaSufficiencyAssessment(
             status=status,
             evidence=tuple(facts),
             gaps=tuple(gaps),
             reasons=tuple(reasons),
+        )
+        if self._model is None:
+            return deterministic
+        model_snapshot = dict(answer_context.get("model") or {})
+        if not model_snapshot:
+            return deterministic
+        prompt_ref = {
+            "prompt_id": "aiops.investigation-assessor",
+            "prompt_version": "1",
+            "prompt_sha256": hashlib.sha256(
+                self._PROMPT.encode("utf-8")
+            ).hexdigest(),
+            "content": self._PROMPT,
+        }
+        result = await self._model.generate_structured(
+            purpose="aiops.investigation-assessment",
+            output_model=InvestigationAssessment,
+            model_snapshot=model_snapshot,
+            prompt_ref=prompt_ref,
+            input_payload={
+                "task_frame": task_frame,
+                "investigation_plan": dict(
+                    answer_context.get("investigation_plan") or {}
+                ),
+                "deterministic_sufficiency": deterministic.model_dump(
+                    mode="json"
+                ),
+            },
+            deadline=(
+                datetime.fromisoformat(context.deadline_at)
+                if context.deadline_at
+                else None
+            ),
+            idempotency_key=(
+                f"turn:{context.run_id}:assessment:{context.attempt}"
+            ),
+        )
+        investigation = InvestigationAssessment.model_validate(result.output)
+        assessed_status = {
+            "ANSWERABLE": SufficiencyStatus.ANSWERABLE,
+            "PARTIAL": SufficiencyStatus.PARTIAL,
+            "NEEDS_EVIDENCE": SufficiencyStatus.NEEDS_EVIDENCE,
+            "NEEDS_CLARIFICATION": SufficiencyStatus.NEEDS_CLARIFICATION,
+            "CAPABILITY_UNAVAILABLE": SufficiencyStatus.CAPABILITY_UNAVAILABLE,
+            "UNSAFE": SufficiencyStatus.UNSAFE,
+        }.get(investigation.sufficiency_status, deterministic.status)
+        return deterministic.model_copy(
+            update={
+                "status": assessed_status,
+                "reasons": tuple(
+                    dict.fromkeys(
+                        (*deterministic.reasons, investigation.reason)
+                    )
+                ),
+                "investigation": investigation,
+            }
         )
 
     @staticmethod

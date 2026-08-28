@@ -41,8 +41,8 @@
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 84,
-      "sha256": "e7f49c122a11c7de3e559f4b260693c9dbb4d5aa0656207bb02f89b7b3d4077f"
+      "statements": 81,
+      "sha256": "6fddd4f7dad890bf876f76bcec34f5a166d94987c6d44eeb5255c98e2d2a9adb"
     }
   ],
   "tables": [
@@ -154,7 +154,6 @@
     {"constraint": "FK_OPS_INV_REV_FRAME", "index": "IX_OPS_INV_REV_FRAME", "table": "KBOT_OPS_INVESTIGATION_REVISION", "columns": ["TASK_FRAME_ARTIFACT_ID"]},
     {"constraint": "FK_OPS_INV_REV_PLAN", "index": "IX_OPS_INV_REV_PLAN", "table": "KBOT_OPS_INVESTIGATION_REVISION", "columns": ["PLAN_ARTIFACT_ID"]},
     {"constraint": "FK_OPS_INV_REV_ASSESS", "index": "IX_OPS_INV_REV_ASSESS", "table": "KBOT_OPS_INVESTIGATION_REVISION", "columns": ["ASSESSMENT_ARTIFACT_ID"]},
-    {"constraint": "FK_OPS_PLAY_INV_REV", "index": "IX_OPS_PLAY_INV_REV", "table": "KBOT_OPS_PLAYBOOK_INVOCATION", "columns": ["REVISION_ID", "ORDINAL"]},
     {"constraint": "FK_OPS_PLAY_INV_PARENT", "index": "IX_OPS_PLAY_INV_PARENT", "table": "KBOT_OPS_PLAYBOOK_INVOCATION", "columns": ["PARENT_INVOCATION_ID"]},
     {"constraint": "FK_OPS_PLAY_INV_TASK", "index": "IX_OPS_PLAY_INV_TASK", "table": "KBOT_OPS_PLAYBOOK_INVOCATION", "columns": ["OPS_TASK_ID"]},
     {"constraint": "FK_OPS_PLAY_INV_OUTPUT", "index": "IX_OPS_PLAY_INV_OUTPUT", "table": "KBOT_OPS_PLAYBOOK_INVOCATION", "columns": ["OUTPUT_ARTIFACT_ID"]},

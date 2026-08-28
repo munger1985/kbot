@@ -286,6 +286,17 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('["reports", "报告中心"]', shell)
         self.assertNotIn('["report-templates", "报告模板"]', shell)
         self.assertIn("source_run_id", workspace)
+        self.assertNotIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
+        self.assertNotIn("target_id: targetId", workspace)
+        self.assertIn("当前 Agent 尚未绑定诊断 Target", workspace)
+        self.assertIn(
+            'content: [{ content_type: "TEXT", text: fields.message }]',
+            workspace,
+        )
+        self.assertNotIn(
+            "JSON.stringify({ ...body, source_run_id: run.ops_run_id })",
+            workspace,
+        )
         self.assertIn("KBotAIOpsAuth.stream", workspace)
         self.assertIn('event === "answer.delta"', workspace)
         self.assertIn("enqueueAnswerDelta", workspace)

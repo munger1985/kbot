@@ -1875,7 +1875,13 @@ class AIOpsRuntimeService:
             turn.sufficiency_json = assessment.model_dump(mode="json")
             turn.sufficiency_artifact_id = artifact.artifact_id
             turn.assessment_artifact_id = artifact.artifact_id
-            if not assessment.evidence:
+            if (
+                assessment.investigation is not None
+                and not assessment.investigation.progress_made
+            ) or (
+                assessment.investigation is None
+                and not assessment.evidence
+            ):
                 turn.no_progress_count = int(turn.no_progress_count or 0) + 1
             revisions = await uow.turns.list_investigation_revisions(
                 turn_id=turn.turn_id
@@ -1892,9 +1898,16 @@ class AIOpsRuntimeService:
                     "gap_count": len(assessment.gaps),
                 },
             )
-            should_replan = (
+            deterministic_replan = (
                 str(assessment.status) in {"NEEDS_EVIDENCE", "PARTIAL"}
                 and any(gap.retryable for gap in assessment.gaps)
+            )
+            should_replan = (
+                (
+                    assessment.investigation.next_action == "REPLAN"
+                    if assessment.investigation is not None
+                    else deterministic_replan
+                )
                 and int(turn.investigation_round or 1) < 2
                 and int(turn.no_progress_count or 0) < 2
             )
@@ -2058,18 +2071,21 @@ class AIOpsRuntimeService:
             ops_task_id=task.ops_task_id,
             lock=True,
         )
-        if invocation is None or invocation.turn_id != turn.turn_id:
-            raise state_conflict("Skill Task 缺少当前 Turn Invocation")
-        invocation.status = result.status
-        invocation.output_artifact_id = artifact.artifact_id
-        invocation.attempt_count = int(task.attempt_count)
-        invocation.completed_at = now
+        if invocation is not None:
+            if invocation.turn_id != turn.turn_id:
+                raise state_conflict("Playbook Task 不属于当前 Turn")
+            invocation.status = result.status
+            invocation.output_artifact_id = artifact.artifact_id
+            invocation.attempt_count = int(task.attempt_count)
+            invocation.completed_at = now
         tool_rows = await uow.turns.list_tool_invocations(
             turn_id=turn.turn_id,
             lock=True,
         )
         outcomes_by_tool = {item.tool_id: item for item in result.tool_outcomes}
         for tool_row in tool_rows:
+            if tool_row.ops_task_id != task.ops_task_id:
+                continue
             outcome = outcomes_by_tool.get(tool_row.tool_id)
             if outcome is None:
                 continue
@@ -2157,19 +2173,20 @@ class AIOpsRuntimeService:
                     "public_summary": "新的数据库诊断依据已加入本轮调查",
                 },
             )
-        await self._append_turn_event(
-            uow,
-            turn,
-            event_type="playbook.completed",
-            payload={
-                "playbook_invocation_id": str(
-                    invocation.playbook_invocation_id
-                ),
-                "playbook_id": result.skill_id,
-                "status": result.status,
-                "public_summary": "一组数据库只读观测已经完成",
-            },
-        )
+        if invocation is not None:
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="playbook.completed",
+                payload={
+                    "playbook_invocation_id": str(
+                        invocation.playbook_invocation_id
+                    ),
+                    "playbook_id": result.skill_id,
+                    "status": result.status,
+                    "public_summary": "一组数据库只读观测已经完成",
+                },
+            )
 
     async def _project_monitoring_result(
         self,

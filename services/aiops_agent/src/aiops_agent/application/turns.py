@@ -463,7 +463,6 @@ class ConversationTurnService:
             uow=uow,
             domain_id=int(conversation.domain_id),
             version=version,
-            requested_target_id=command.target_id,
             source_run=source_run,
         )
         conversation.last_turn_no = int(conversation.last_turn_no) + 1
@@ -555,68 +554,27 @@ class ConversationTurnService:
         uow,
         domain_id: int,
         version,
-        requested_target_id: UUID | None,
         source_run,
     ) -> UUID:
+        """Turn只能继承Agent版本冻结的唯一Target。"""
         fixed_target_id = version.target_id
         source_target_id = source_run.target_id if source_run is not None else None
-        source_ids = await uow.agents.version_source_ids(
-            agent_version_id=version.agent_version_id
-        )
-        candidates = await uow.targets.target_ids_shared_by_sources(
-            domain_id=domain_id,
-            source_ids=source_ids,
-        )
-        allowed = set(candidates)
-        if fixed_target_id is not None:
-            allowed.add(fixed_target_id)
-        if source_target_id is not None:
-            if source_target_id not in allowed:
-                raise self._error(
-                    "AIOPS_SOURCE_TARGET_FORBIDDEN",
-                    "来源 Run 的 Target 不在当前 Agent 允许范围内",
-                )
-            if requested_target_id not in (None, source_target_id):
-                raise self._error(
-                    "AIOPS_TARGET_SCOPE_CONFLICT",
-                    "显式 Target 与来源 Run 的 Target 不一致",
-                )
-            await self._require_existing_target(
-                uow=uow,
-                domain_id=domain_id,
-                target_id=source_target_id,
-            )
-            return source_target_id
-        if requested_target_id is not None:
-            if requested_target_id not in allowed:
-                raise self._error(
-                    "AIOPS_TARGET_SCOPE_FORBIDDEN",
-                    "所选 Target 不在当前 Agent 允许范围内",
-                )
-            await self._require_existing_target(
-                uow=uow,
-                domain_id=domain_id,
-                target_id=requested_target_id,
-            )
-            return requested_target_id
-        if fixed_target_id is not None:
-            await self._require_existing_target(
-                uow=uow,
-                domain_id=domain_id,
-                target_id=fixed_target_id,
-            )
-            return fixed_target_id
-        if len(candidates) == 1:
-            return candidates[0]
-        if len(candidates) > 1:
+        if fixed_target_id is None:
             raise self._error(
-                "AIOPS_TARGET_SELECTION_REQUIRED",
-                "当前 Agent 可诊断多个 Target，请先明确选择数据库",
+                "AIOPS_AGENT_TARGET_REQUIRED",
+                "当前 Agent 尚未绑定诊断 Target，请先完成 Agent 配置",
             )
-        raise self._error(
-            "AIOPS_TARGET_SCOPE_UNRESOLVED",
-            "当前监控源未映射到可诊断 Target，请先配置 Target Source Binding",
+        if source_target_id is not None and source_target_id != fixed_target_id:
+            raise self._error(
+                "AIOPS_SOURCE_TARGET_CONFLICT",
+                "来源 Run 的 Target 与当前 Agent 绑定的 Target 不一致",
+            )
+        await self._require_existing_target(
+            uow=uow,
+            domain_id=domain_id,
+            target_id=fixed_target_id,
         )
+        return fixed_target_id
 
     async def _require_existing_target(
         self,

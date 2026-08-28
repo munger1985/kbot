@@ -10,6 +10,7 @@ from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.application.conversation_inputs import (
+    ConversationUploadSource,
     ConversationInputResolver,
     ResolvedConversationUpload,
 )
@@ -52,7 +53,6 @@ from aiops_agent.skills import (
 from platform_core.contracts.aiops.skills import (
     DbaCapabilitySnapshot,
     DbaSkillPlan,
-    SkillPlanItem,
 )
 from platform_core.identity import uuid7
 
@@ -77,7 +77,10 @@ class TurnPlanningContext:
     database_execution: dict
     change_context: dict
     source_run_evidence: dict | None = None
+    raw_uploads: tuple[ConversationUploadSource, ...] = ()
     resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()
+    input_artifact_id: UUID | None = None
+    upload_artifact_ids: tuple[tuple[int, UUID, UUID | None], ...] = ()
 
 
 class _PlanningAlreadyApplied(Exception):
@@ -115,6 +118,16 @@ class TurnPlanningService:
             context = await self._prepare(payload)
         except _PlanningAlreadyApplied as applied:
             return applied.result
+        if self._conversation_input_resolver is not None:
+            context = replace(
+                context,
+                raw_uploads=self._conversation_input_resolver.describe_sources(
+                    domain_id=context.domain_id,
+                    actor_id=context.actor_id,
+                    content=context.content,
+                ),
+            )
+        context = await self._persist_raw_input(context)
         if self._conversation_input_resolver is not None and any(
             item.get("upload_id") for item in context.content
         ):
@@ -127,6 +140,7 @@ class TurnPlanningService:
             context = replace(
                 context, content=content, resolved_uploads=uploads
             )
+            context = await self._persist_input_extractions(context)
         model_snapshot = await self._agent_catalog.resolve_diagnosis_model(
             agent_id=context.agent_id,
             domain_id=context.domain_id,
@@ -189,6 +203,7 @@ class TurnPlanningService:
             log_binding_ids=log_binding_ids,
             user_evidence_artifact_keys=(
                 "turn-user-input:1",
+                "turn-input-analysis:1",
                 *(
                     ("turn-source-run-evidence:1",)
                     if context.source_run_evidence is not None
@@ -204,6 +219,16 @@ class TurnPlanningService:
             capabilities=context.capabilities,
             database_execution=context.database_execution,
             dynamic_queries=dynamic_queries,
+            direct_actions=tuple(
+                action
+                for action in investigation.plan.actions
+                if action.tool_id
+                not in {
+                    "monitor.query_range",
+                    "loki.query_range",
+                    "db.oracle.readonly_query",
+                }
+            ),
         )
         return await self._persist(
             context=context,
@@ -221,18 +246,12 @@ class TurnPlanningService:
         self, capabilities: DbaCapabilitySnapshot
     ) -> tuple[dict, ...]:
         """向模型暴露当前数据库类型可用的原子只读工具，不暴露 SQL 模板。"""
-        tools: dict[tuple[str, str], dict] = {}
-        for manifest in self._playbook_registry.manifests():
-            if not self._manifest_applicable(manifest, capabilities):
-                continue
-            for step in manifest.tool_dag:
-                tools[(step.tool_id, step.tool_version)] = {
-                    "tool_id": step.tool_id,
-                    "version": step.tool_version,
-                    "tool_class": "ORACLE_SQL",
-                    "description": f"受控只读数据库观测：{step.tool_id}",
-                    "input": dict(step.input),
-                }
+        tools = {
+            (item["tool_id"], item["version"]): item
+            for item in self._execution_snapshot_builder.discover_tools(
+                capabilities
+            )
+        }
         if CAPABILITY_METRIC_QUERY_RANGE in capabilities.available_source_capabilities:
             tools[("monitor.query_range", "1.0.0")] = {
                 "tool_id": "monitor.query_range",
@@ -477,71 +496,11 @@ class TurnPlanningService:
     def _build_playbook_plan(
         self, *, investigation, capabilities: DbaCapabilitySnapshot
     ) -> DbaSkillPlan:
-        """为每个数据库Action选择一个Playbook，但不扩大实际Tool范围。"""
-        suggested = set(investigation.suggested_playbook_ids)
-        candidates = tuple(
-            manifest
-            for manifest in self._playbook_registry.manifests()
-            if self._manifest_applicable(manifest, capabilities)
-        )
-        items = []
-        action_ordinals: dict[str, int] = {}
-        database_actions = tuple(
-            action
-            for action in investigation.plan.actions
-            if action.tool_id not in {
-                "monitor.query_range",
-                "loki.query_range",
-            }
-        )
-        for action in database_actions:
-            ranked = sorted(
-                (
-                    manifest
-                    for manifest in candidates
-                    if action.tool_id in {
-                        step.tool_id for step in manifest.tool_dag
-                    }
-                ),
-                key=lambda manifest: (
-                    manifest.skill_id not in suggested,
-                    manifest.limits.cost_units,
-                    manifest.skill_id,
-                    manifest.version,
-                ),
-            )
-            if not ranked:
-                continue
-            manifest = ranked[0]
-            ordinal = len(items) + 1
-            items.append(
-                SkillPlanItem(
-                    ordinal=ordinal,
-                    skill_id=manifest.skill_id,
-                    skill_version=manifest.version,
-                    manifest_hash=self._playbook_registry.manifest_hash(
-                        manifest.skill_id, manifest.version
-                    ),
-                    reason=(
-                        f"调查Action {action.action_id} 选择了"
-                        f" {action.tool_id}，Playbook仅提供受控默认值"
-                    ),
-                    evidence_question=action.question,
-                    measurement_semantics=manifest.measurement_semantics,
-                    input={**dict(manifest.defaults), **dict(action.input)},
-                    depends_on=tuple(
-                        action_ordinals[value]
-                        for value in action.depends_on
-                        if value in action_ordinals
-                    ),
-                    action_id=action.action_id,
-                    selected_tool_id=action.tool_id,
-                )
-            )
-            action_ordinals[action.action_id] = ordinal
+        """保存Playbook目录快照；原子Tool执行不再要求隶属Playbook。"""
+        del investigation, capabilities
         return DbaSkillPlan(
             catalog_hash=self._playbook_registry.catalog_hash,
-            items=tuple(items),
+            items=(),
         )
 
     async def execute_replan(self, payload: dict) -> dict:
@@ -668,6 +627,16 @@ class TurnPlanningService:
             capabilities=context.capabilities,
             database_execution=context.database_execution,
             dynamic_queries=dynamic_queries,
+            direct_actions=tuple(
+                action
+                for action in investigation.plan.actions
+                if action.tool_id
+                not in {
+                    "monitor.query_range",
+                    "loki.query_range",
+                    "db.oracle.readonly_query",
+                }
+            ),
         )
         return await self._persist_replan(
             context=context,
@@ -836,6 +805,23 @@ class TurnPlanningService:
                     strict=True,
                 )
             }
+            diagnostic_task_by_action = {
+                action.action_id: task_ids[task_key]
+                for action, task_key in zip(
+                    (
+                        item
+                        for item in investigation.plan.actions
+                        if item.tool_id
+                        not in {
+                            "monitor.query_range",
+                            "loki.query_range",
+                            "db.oracle.readonly_query",
+                        }
+                    ),
+                    compiled.diagnostic_task_keys,
+                    strict=True,
+                )
+            }
             for ordinal, action in enumerate(
                 investigation.plan.actions,
                 start=1,
@@ -850,6 +836,8 @@ class TurnPlanningService:
                     task_id = log_task_id
                 elif action.tool_id == "db.oracle.readonly_query":
                     task_id = dynamic_task_by_action[action.action_id]
+                else:
+                    task_id = diagnostic_task_by_action[action.action_id]
                 await uow.turns.add_tool_invocation(
                     OpsToolInvocationEntity(
                         tool_invocation_id=uuid7(),
@@ -931,6 +919,14 @@ class TurnPlanningService:
                 **dict(old_execution.get("invocations", {})),
                 **dict(execution_snapshot.get("invocations", {})),
             }
+            execution_snapshot["direct_invocations"] = {
+                **dict(old_execution.get("direct_invocations", {})),
+                **dict(execution_snapshot.get("direct_invocations", {})),
+            }
+            execution_snapshot["dynamic_invocations"] = {
+                **dict(old_execution.get("dynamic_invocations", {})),
+                **dict(execution_snapshot.get("dynamic_invocations", {})),
+            }
             run.plan_snapshot_json = {
                 **dict(run.plan_snapshot_json or {}),
                 "skill_execution": execution_snapshot,
@@ -941,6 +937,9 @@ class TurnPlanningService:
                         mode="json"
                     ),
                     "task_frame": investigation.task_frame.model_dump(
+                        mode="json"
+                    ),
+                    "investigation_plan": investigation.plan.model_dump(
                         mode="json"
                     ),
                     "model": dict(model_snapshot),
@@ -1356,7 +1355,6 @@ class TurnPlanningService:
                     "automatic_access_enabled": (
                         readonly_allowed
                         and target_enabled
-                        and target_reachable
                         and target.diagnostic_credential_id is not None
                         and bool(target.endpoint_json)
                     ),
@@ -1444,6 +1442,199 @@ class TurnPlanningService:
                 )
             return snapshot
 
+    async def _persist_raw_input(
+        self, context: TurnPlanningContext
+    ) -> TurnPlanningContext:
+        """在任何模型调用前保存原始输入和上传文件定位。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(
+                domain_id=context.domain_id,
+                turn_id=context.turn_id,
+                lock=True,
+            )
+            run = await uow.runs.get_run(
+                ops_run_id=context.ops_run_id,
+                lock=True,
+            )
+            if turn is None or run is None:
+                raise resource_not_found("Turn Primary Run")
+            input_artifact = await uow.runs.get_artifact_by_key(
+                ops_run_id=run.ops_run_id,
+                artifact_key="turn-user-input:1",
+            )
+            created = input_artifact is None
+            if input_artifact is None:
+                input_artifact = self._artifact(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key="turn-user-input:1",
+                    artifact_type="USER_PROVIDED_INPUT",
+                    schema_version="USER_PROVIDED_INPUT.v1",
+                    payload={
+                        "text": context.question,
+                        "content": list(context.content),
+                        "received_at": datetime.now(UTC).isoformat(),
+                    },
+                    producer="aiops.turn-intake",
+                    trust_level="USER_PROVIDED",
+                )
+                await uow.runs.add_artifact(input_artifact)
+
+            upload_ids = []
+            input_rows = {
+                int(item.item_no): item
+                for item in await uow.turns.list_input_items(
+                    turn_id=turn.turn_id
+                )
+            }
+            for upload in context.raw_uploads:
+                artifact_key = f"turn-upload-source:{upload.item_no}"
+                source_artifact = await uow.runs.get_artifact_by_key(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=artifact_key,
+                )
+                if source_artifact is None:
+                    source_artifact = self._uri_artifact(
+                        ops_run_id=run.ops_run_id,
+                        artifact_key=artifact_key,
+                        artifact_type="USER_UPLOAD_SOURCE",
+                        schema_version="USER_UPLOAD_SOURCE.v1",
+                        payload_uri=upload.payload_uri,
+                        content_hash=upload.content_hash,
+                        byte_size=upload.byte_size,
+                        provenance={
+                            "producer": "aiops.conversation-upload",
+                            "upload_id": upload.upload_id,
+                            "file_name": upload.file_name,
+                            "media_type": upload.media_type,
+                        },
+                        trust_level="USER_PROVIDED",
+                    )
+                    await uow.runs.add_artifact(source_artifact)
+                row = input_rows.get(upload.item_no)
+                if row is not None:
+                    row.source_artifact_id = source_artifact.artifact_id
+                upload_ids.append(
+                    (upload.item_no, source_artifact.artifact_id, None)
+                )
+            if created:
+                await self._append_event(
+                    uow,
+                    turn,
+                    event_type="input.analysis.started",
+                    payload={
+                        "content_count": len(context.content),
+                        "upload_count": len(context.raw_uploads),
+                        "public_summary": "输入材料已安全保存，正在识别内容",
+                    },
+                )
+            await uow.commit()
+            return replace(
+                context,
+                input_artifact_id=input_artifact.artifact_id,
+                upload_artifact_ids=tuple(upload_ids),
+            )
+
+    async def _persist_input_extractions(
+        self, context: TurnPlanningContext
+    ) -> TurnPlanningContext:
+        """在调查规划前保存文件解析结果，原始Artifact保持不变。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(
+                domain_id=context.domain_id,
+                turn_id=context.turn_id,
+                lock=True,
+            )
+            run = await uow.runs.get_run(
+                ops_run_id=context.ops_run_id,
+                lock=True,
+            )
+            if turn is None or run is None:
+                raise resource_not_found("Turn Primary Run")
+            source_ids = {
+                item_no: source_id
+                for item_no, source_id, _ in context.upload_artifact_ids
+            }
+            input_rows = {
+                int(item.item_no): item
+                for item in await uow.turns.list_input_items(
+                    turn_id=turn.turn_id
+                )
+            }
+            persisted = []
+            for upload in context.resolved_uploads:
+                artifact_key = f"turn-upload-extract:{upload.item_no}"
+                extracted = await uow.runs.get_artifact_by_key(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=artifact_key,
+                )
+                if extracted is None:
+                    extracted = self._artifact(
+                        ops_run_id=run.ops_run_id,
+                        artifact_key=artifact_key,
+                        artifact_type="USER_UPLOAD_EXTRACT",
+                        schema_version="USER_UPLOAD_EXTRACT.v1",
+                        payload={
+                            "item_no": upload.item_no,
+                            "file_name": upload.file_name,
+                            "media_type": upload.media_type,
+                            "text": upload.extracted_text,
+                            "extraction_mode": upload.extraction_mode,
+                            "model_id": (
+                                str(upload.model_id)
+                                if upload.model_id
+                                else None
+                            ),
+                            "model_revision": upload.model_revision,
+                            "extraction_error": upload.extraction_error,
+                        },
+                        producer="aiops.input-extraction",
+                        trust_level="USER_PROVIDED",
+                    )
+                    await uow.runs.add_artifact(extracted)
+                row = input_rows.get(upload.item_no)
+                if row is not None:
+                    row.extracted_artifact_id = extracted.artifact_id
+                existing = await uow.turns.get_evidence_by_artifact(
+                    turn_id=turn.turn_id,
+                    artifact_id=extracted.artifact_id,
+                )
+                if existing is None:
+                    await uow.turns.add_evidence(
+                        OpsTurnEvidenceEntity(
+                            turn_evidence_id=uuid7(),
+                            turn_id=turn.turn_id,
+                            artifact_id=extracted.artifact_id,
+                            source_kind="USER",
+                            evidence_kind=(
+                                "SCREENSHOT"
+                                if upload.media_type.startswith("image/")
+                                else "USER_FILE"
+                            ),
+                            confidence=(
+                                0.8
+                                if upload.extraction_mode in {"OCR", "VLM"}
+                                else 1
+                            ),
+                            extraction_artifact_id=extracted.artifact_id,
+                            evidence_role="USER_PROVIDED",
+                            measurement_semantics="NOT_APPLICABLE",
+                            freshness_status="UNKNOWN",
+                            usage_reason=(
+                                f"用户上传的 {upload.file_name} 已作为本轮诊断材料"
+                            ),
+                            linked_by="aiops.input-extraction",
+                        )
+                    )
+                persisted.append(
+                    (
+                        upload.item_no,
+                        source_ids[upload.item_no],
+                        extracted.artifact_id,
+                    )
+                )
+            await uow.commit()
+            return replace(context, upload_artifact_ids=tuple(persisted))
+
     async def _persist(
         self,
         *,
@@ -1482,20 +1673,11 @@ class TurnPlanningService:
                 item.contains_user_evidence
                 for item in investigation.input_envelope.materials
             )
-            input_artifact = self._artifact(
-                ops_run_id=run.ops_run_id,
-                artifact_key="turn-user-input:1",
-                artifact_type="USER_PROVIDED_INPUT",
-                schema_version="USER_PROVIDED_INPUT.v1",
-                payload={
-                    "text": context.question,
-                    "content": list(context.content),
-                    "contains_evidence": contains_user_evidence,
-                    "received_at": datetime.now(UTC).isoformat(),
-                },
-                producer="aiops.input-understanding",
-                trust_level="USER_PROVIDED",
+            input_artifact = await uow.runs.get_artifact(
+                artifact_id=context.input_artifact_id
             )
+            if input_artifact is None:
+                raise state_conflict("Turn 原始输入Artifact尚未持久化")
             input_analysis_artifact = self._artifact(
                 ops_run_id=run.ops_run_id,
                 artifact_key="turn-input-analysis:1",
@@ -1545,52 +1727,7 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else None
             )
-            upload_artifacts: dict[
-                int, tuple[OpsArtifactEntity, OpsArtifactEntity]
-            ] = {}
-            for upload in context.resolved_uploads:
-                source_artifact = self._uri_artifact(
-                    ops_run_id=run.ops_run_id,
-                    artifact_key=f"turn-upload-source:{upload.item_no}",
-                    artifact_type="USER_UPLOAD_SOURCE",
-                    schema_version="USER_UPLOAD_SOURCE.v1",
-                    payload_uri=upload.payload_uri,
-                    content_hash=upload.content_hash,
-                    byte_size=upload.byte_size,
-                    provenance={
-                        "producer": "aiops.conversation-upload",
-                        "upload_id": upload.upload_id,
-                        "file_name": upload.file_name,
-                        "media_type": upload.media_type,
-                    },
-                    trust_level="USER_PROVIDED",
-                )
-                extracted_artifact = self._artifact(
-                    ops_run_id=run.ops_run_id,
-                    artifact_key=f"turn-upload-extract:{upload.item_no}",
-                    artifact_type="USER_UPLOAD_EXTRACT",
-                    schema_version="USER_UPLOAD_EXTRACT.v1",
-                    payload={
-                        "item_no": upload.item_no,
-                        "file_name": upload.file_name,
-                        "media_type": upload.media_type,
-                        "text": upload.extracted_text,
-                        "extraction_mode": upload.extraction_mode,
-                        "model_id": (
-                            str(upload.model_id) if upload.model_id else None
-                        ),
-                        "model_revision": upload.model_revision,
-                        "extraction_error": upload.extraction_error,
-                    },
-                    producer="aiops.input-extraction",
-                    trust_level="USER_PROVIDED",
-                )
-                upload_artifacts[upload.item_no] = (
-                    source_artifact,
-                    extracted_artifact,
-                )
             for artifact in (
-                input_artifact,
                 input_analysis_artifact,
                 task_frame_artifact,
                 plan_artifact,
@@ -1599,9 +1736,6 @@ class TurnPlanningService:
             ):
                 if artifact is not None:
                     await uow.runs.add_artifact(artifact)
-            for source_artifact, extracted_artifact in upload_artifacts.values():
-                await uow.runs.add_artifact(source_artifact)
-                await uow.runs.add_artifact(extracted_artifact)
 
             revision = OpsInvestigationRevisionEntity(
                 revision_id=uuid7(),
@@ -1622,52 +1756,18 @@ class TurnPlanningService:
                 for item in investigation.input_envelope.materials
             }
             for input_row in input_rows:
-                attachment_artifacts = upload_artifacts.get(
-                    int(input_row.item_no)
-                )
-                if attachment_artifacts is not None:
-                    input_row.source_artifact_id = attachment_artifacts[0].artifact_id
-                    input_row.extracted_artifact_id = attachment_artifacts[1].artifact_id
                 material = materials_by_no.get(int(input_row.item_no))
                 if material is None:
                     continue
                 input_row.detected_kind = str(material.material_kind)
                 input_row.detection_confidence = material.confidence
-            for item_no, (_, extracted_artifact) in upload_artifacts.items():
-                upload = next(
-                    item
-                    for item in context.resolved_uploads
-                    if item.item_no == item_no
-                )
-                await uow.turns.add_evidence(
-                    OpsTurnEvidenceEntity(
-                        turn_evidence_id=uuid7(),
-                        turn_id=turn.turn_id,
-                        artifact_id=extracted_artifact.artifact_id,
-                        source_kind="USER",
-                        evidence_kind=(
-                            "SCREENSHOT"
-                            if upload.media_type.startswith("image/")
-                            else "USER_FILE"
-                        ),
-                        confidence=(
-                            0.8
-                            if upload.extraction_mode in {"OCR", "VLM"}
-                            else 1
-                        ),
-                        extraction_artifact_id=extracted_artifact.artifact_id,
-                        evidence_role="USER_PROVIDED",
-                        measurement_semantics="NOT_APPLICABLE",
-                        freshness_status="UNKNOWN",
-                        usage_reason=(
-                            f"用户上传的 {upload.file_name} 已作为本轮诊断材料"
-                        ),
-                        linked_by="aiops.input-extraction",
-                    )
-                )
             if contains_user_evidence:
-                await uow.turns.add_evidence(
-                    OpsTurnEvidenceEntity(
+                existing = await uow.turns.get_evidence_by_artifact(
+                    turn_id=turn.turn_id,
+                    artifact_id=input_artifact.artifact_id,
+                )
+                if existing is None:
+                    await uow.turns.add_evidence(OpsTurnEvidenceEntity(
                         turn_evidence_id=uuid7(),
                         turn_id=turn.turn_id,
                         artifact_id=input_artifact.artifact_id,
@@ -1679,8 +1779,7 @@ class TurnPlanningService:
                         freshness_status="UNKNOWN",
                         usage_reason="用户在本轮对话中直接提供的日志、查询或命令结果",
                         linked_by="aiops.input-understanding",
-                    )
-                )
+                    ))
             if source_run_artifact is not None:
                 await uow.turns.add_evidence(
                     OpsTurnEvidenceEntity(
@@ -1806,6 +1905,25 @@ class TurnPlanningService:
                     task_id = log_task_id
                 elif action.tool_id == "db.oracle.readonly_query":
                     task_id = dynamic_task_by_action[action.action_id]
+                else:
+                    task_id = next(
+                        task_ids[task_key]
+                        for candidate, task_key in zip(
+                            (
+                                item
+                                for item in investigation.plan.actions
+                                if item.tool_id
+                                not in {
+                                    "monitor.query_range",
+                                    "loki.query_range",
+                                    "db.oracle.readonly_query",
+                                }
+                            ),
+                            compiled.diagnostic_task_keys,
+                            strict=True,
+                        )
+                        if candidate.action_id == action.action_id
+                    )
                 await uow.turns.add_tool_invocation(
                     OpsToolInvocationEntity(
                         tool_invocation_id=uuid7(),
@@ -1867,6 +1985,9 @@ class TurnPlanningService:
                     "question": context.question,
                     "input_envelope": investigation.input_envelope.model_dump(mode="json"),
                     "task_frame": investigation.task_frame.model_dump(mode="json"),
+                    "investigation_plan": investigation.plan.model_dump(
+                        mode="json"
+                    ),
                     "model": dict(model_snapshot),
                 },
                 "change_context": dict(context.change_context),

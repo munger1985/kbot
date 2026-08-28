@@ -266,12 +266,14 @@ class _PlanningUow:
             add_tool_invocation=self._add_tool_invocation,
             add_investigation_revision=self._add_revision,
             list_input_items=self._list_input_items,
+            get_evidence_by_artifact=self._get_evidence_by_artifact,
             add_evidence=self._add_evidence,
             add_event=self._add_event,
         )
         self.runs = SimpleNamespace(
             get_run=self._get_run,
             get_artifact=self._get_artifact,
+            get_artifact_by_key=self._get_artifact_by_key,
             add_artifact=self._add_artifact,
             add_tasks=self._add_tasks,
         )
@@ -323,7 +325,25 @@ class _PlanningUow:
     async def _get_artifact(self, *, artifact_id):
         if artifact_id == self.source_artifact.artifact_id:
             return self.source_artifact
-        return None
+        return next(
+            (
+                artifact
+                for artifact in self.artifacts
+                if artifact.artifact_id == artifact_id
+            ),
+            None,
+        )
+
+    async def _get_artifact_by_key(self, *, ops_run_id, artifact_key):
+        return next(
+            (
+                artifact
+                for artifact in self.artifacts
+                if artifact.ops_run_id == ops_run_id
+                and artifact.artifact_key == artifact_key
+            ),
+            None,
+        )
 
     async def _get_version(self, *, agent_id, agent_version_id):
         if agent_id == self.run.agent_id and agent_version_id == self.version.agent_version_id:
@@ -373,6 +393,17 @@ class _PlanningUow:
         self.evidence.append(row)
         return row
 
+    async def _get_evidence_by_artifact(self, *, turn_id, artifact_id):
+        return next(
+            (
+                evidence
+                for evidence in self.evidence
+                if evidence.turn_id == turn_id
+                and evidence.artifact_id == artifact_id
+            ),
+            None,
+        )
+
     async def _add_event(self, row):
         row.created_at = datetime.now(UTC)
         self.events.append(row)
@@ -385,7 +416,15 @@ class _AgentCatalog:
 
 
 class _PastedLogReasoner:
+    def __init__(self, uow=None) -> None:
+        self._uow = uow
+
     async def plan(self, **kwargs):
+        if self._uow is not None:
+            self.raw_input_persisted_before_model = any(
+                artifact.artifact_key == "turn-user-input:1"
+                for artifact in self._uow.artifacts
+            )
         self.available_tools = kwargs["available_tools"]
         output = InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
@@ -505,9 +544,12 @@ class _GapExecutorClient:
 
 
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_pasted_oracle_log_reaches_evidence_assessment_without_tool(self) -> None:
-        """用户已提供日志时，不需要 Skill 也必须进入证据评估和回答。"""
+    async def test_enabled_unreachable_target_is_attemptable_in_turn_budget(
+        self,
+    ) -> None:
+        """上一轮连接健康失败不能提前禁用本Turn的只读尝试。"""
         uow = _PlanningUow()
+        uow.target.connectivity_status = "UNREACHABLE"
         registry = DbaSkillRegistry.load(
             allowed_tools=frozenset(
                 (item.definition.tool_id, item.definition.version)
@@ -526,11 +568,45 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             agent_catalog=_AgentCatalog(),
         )
 
+        await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        database = uow.run.plan_snapshot_json["skill_execution"]["database"]
+        self.assertTrue(database["automatic_access_enabled"])
+        self.assertIn(
+            "TARGET_CONNECTIVITY_UNAVAILABLE",
+            {item["code"] for item in database["initial_gaps"]},
+        )
+
+    async def test_pasted_oracle_log_reaches_evidence_assessment_without_tool(self) -> None:
+        """用户已提供日志时，不需要 Skill 也必须进入证据评估和回答。"""
+        uow = _PlanningUow()
+        reasoner = _PastedLogReasoner(uow)
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            skill_compiler=SkillPlanCompiler(registry),
+            execution_snapshot_builder=SkillExecutionSnapshotBuilder(
+                skill_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
         result = await service.execute(
             {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
         )
 
         self.assertEqual("COLLECTING", result["status"])
+        self.assertTrue(reasoner.raw_input_persisted_before_model)
         self.assertEqual("ORACLE_ALERT_LOG", uow.input_items[0].detected_kind)
         self.assertEqual(1, len(uow.evidence))
         self.assertEqual("USER_PROVIDED", uow.evidence[0].evidence_role)
@@ -541,9 +617,12 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             [task.task_key for task in uow.tasks],
         )
         self.assertEqual("READY", uow.tasks[0].status)
-        self.assertEqual(("turn-user-input:1",), tuple(uow.tasks[0].input_artifacts_json))
+        self.assertEqual(
+            ("turn-user-input:1", "turn-input-analysis:1"),
+            tuple(uow.tasks[0].input_artifacts_json),
+        )
         self.assertEqual(1, len(uow.revisions))
-        self.assertEqual(1, uow.commit_count)
+        self.assertEqual(2, uow.commit_count)
 
     async def test_source_run_final_artifact_is_inherited_as_current_evidence(self) -> None:
         """告警或巡检继续对话必须继承来源Run结果，不只保存关联ID。"""
@@ -667,6 +746,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                         tool_id="db.sql.top_current",
                         input={"limit": 5},
                         depends_on=(),
+                        measurement_semantics="CUMULATIVE_SINCE_LOAD",
                     ),
                 )
             ),
@@ -676,7 +756,10 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             investigation=investigation,
             capabilities=capabilities,
         )
-        compiled = SkillPlanCompiler(registry).compile(plan)
+        compiled = SkillPlanCompiler(registry).compile(
+            plan,
+            investigation_actions=investigation.plan.actions,
+        )
         snapshot = SkillExecutionSnapshotBuilder(
             skill_registry=registry,
             diagnostic_registry=diagnostic_registry,
@@ -685,15 +768,16 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             compiled=compiled,
             capabilities=capabilities,
             database_execution={"automatic_access_enabled": True},
+            direct_actions=investigation.plan.actions,
         )
 
-        invocation = snapshot["invocations"][
-            compiled.invocation_task_keys[0]
+        invocation = snapshot["direct_invocations"][
+            compiled.diagnostic_task_keys[0]
         ]
         self.assertEqual("a1", invocation["action_id"])
         self.assertEqual(
-            ["db.sql.top_current"],
-            [item["tool_id"] for item in invocation["tools"]],
+            "db.sql.top_current",
+            invocation["tool"]["tool_id"],
         )
 
     def test_disabled_target_keeps_diagnostic_plan_with_access_gap(self) -> None:
@@ -1336,7 +1420,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                     diagnostic_source_id="source-1",
                     source_type="PROMETHEUS",
                     status="ENABLED",
-                    connectivity_status="CONNECTED",
+                    connectivity_status="UNREACHABLE",
                     declared_capabilities_json={
                         "capabilities": ["PROMETHEUS_QUERY"]
                     },
@@ -1368,6 +1452,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),
             snapshot.available_source_capabilities,
         )
+        self.assertFalse(snapshot.source_snapshots[0].reachable)
 
     def test_registry_hash_is_independent_of_registration_order(self) -> None:
         first = _manifest(

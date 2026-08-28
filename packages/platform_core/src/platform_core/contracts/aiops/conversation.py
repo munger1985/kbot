@@ -167,7 +167,6 @@ class TurnCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     content: tuple["InputContent", ...] = Field(min_length=1, max_length=16)
     idempotency_key: str = Field(min_length=1, max_length=128)
-    target_id: UUIDv7 | None = None
     source_run_id: UUIDv7 | None = None
 
 

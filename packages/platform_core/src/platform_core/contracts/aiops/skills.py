@@ -190,10 +190,11 @@ class DbaCapabilitySnapshot(AIOpsContract):
 
     @property
     def available_source_capabilities(self) -> frozenset[str]:
+        """返回已授权Source能力；瞬时健康不作为规划准入条件。"""
         return frozenset(
             capability
             for source in self.source_snapshots
-            if source.enabled and source.reachable
+            if source.enabled
             for capability in source.capabilities
         )
 

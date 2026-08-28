@@ -85,15 +85,8 @@ class MonitoringSnapshotBuilder:
                     )
                 )
                 continue
-            if source.connectivity_status not in {"CONNECTED", "DEGRADED"}:
-                initial_gaps.append(
-                    self._gap(
-                        monitor,
-                        "DIAGNOSTIC_SOURCE_UNAVAILABLE",
-                        "监控源当前不可连接",
-                    )
-                )
-                continue
+            # 健康状态只是上一轮探测快照。已启用且已授权的Source仍允许
+            # 在本Turn预算内真实尝试一次，由执行结果形成Evidence Gap。
             requested = (monitor.capability_scope_json or {}).get(
                 "metric_codes", DEFAULT_BASELINE_METRICS
             )
@@ -162,6 +155,9 @@ class MonitoringSnapshotBuilder:
                         "adapter_id": source.adapter_id,
                         "adapter_version": source.adapter_version,
                         "config_version": int(source.row_version),
+                        "connectivity_status_at_plan": (
+                            source.connectivity_status
+                        ),
                         "endpoint": source.endpoint,
                         "secret_ref": (
                             AIOpsManagedCredentialService.reference(

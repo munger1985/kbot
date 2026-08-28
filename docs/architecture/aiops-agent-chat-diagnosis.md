@@ -54,7 +54,7 @@ Conversation
 | Conversation | Agent维度的持续会话和历史 |
 | Turn | 一轮用户输入、调查、回答和事件边界 |
 | Input Item | 用户本轮提供的独立内容项 |
-| Task Frame | 多目标问题定义、范围和约束 |
+| Task Frame | 单一Target内多任务目标的问题定义、范围和约束 |
 | Investigation Revision | 一版不可变调查计划及评估结果 |
 | Playbook Invocation | 可选专业DBA调查套路 |
 | Tool Invocation | 一次受控原子能力调用 |
@@ -97,7 +97,6 @@ ANSWERING → COMPLETED / PARTIAL
       "text": "2026-08-28...ORA-27157..."
     }
   ],
-  "target_id": null,
   "source_run_id": null
 }
 ```
@@ -113,11 +112,15 @@ Domain和当前用户，默认24小时内可提交；被Turn接收后原文进�
 `target_hints`、`time_anchors`、`error_codes`、`stated_facts`、`user_hypotheses`、
 `desired_outcomes`和`clarification_need`。原始输入先持久化，解析错误形成Gap，不删除原文。
 
+Target不由Turn请求选择。一个Agent版本固定绑定一个Target，创建Turn时从Agent版本快照继承
+`target_id`并写入Primary Run；Task Frame、Tool Discovery、授权和Evidence范围均使用该冻结
+Target。用户诊断其他Target时必须切换Agent，不能在同一Turn中追加或切换Target。
+
 `DBA_TASK_FRAME.v1`替代单一Intent Plan：
 
 - `objectives[]`；
 - `intent_tags[]`和`domain_tags[]`；
-- `systems[]`和`target_scope`；
+- `systems[]`和从Agent版本继承的单一`target_context`；
 - `supplied_evidence_ids[]`；
 - `constraints[]`和`desired_outputs[]`；
 - `risk_context`和`clarification_question`。
@@ -332,7 +335,8 @@ Proposal Hash、Target版本、策略和模板Hash复核，模型始终不能直
 - 并发Turn和重试不产生重复业务记录；
 - 粘贴Alert Log形成用户证据并完成诊断；
 - 无专用Playbook仍进入通用调查；
-- 多目标问题不被单一Intent截断；
+- 单一Target内的多任务目标不被单一Intent截断；
+- Turn请求不能覆盖Agent版本绑定的Target；
 - Target离线时继续使用Prometheus、Loki和用户证据；
 - Tool失败触发Gap、替代来源或Replan；
 - 动态SQL安全围栏和跨Domain授权测试通过；

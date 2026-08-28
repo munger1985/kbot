@@ -10,6 +10,7 @@ from platform_core.contracts.aiops import (
     AnswerBlockType,
     MeasurementSemantics,
     SufficiencyStatus,
+    InvestigationAssessment,
 )
 from platform_core.contracts.aiops.skills import PresentationPreference
 
@@ -56,6 +57,7 @@ class DbaSufficiencyAssessment(BaseModel):
     gaps: tuple[TurnEvidenceGap, ...] = ()
     reasons: tuple[str, ...] = ()
     clarification_question: str | None = Field(default=None, max_length=2000)
+    investigation: InvestigationAssessment | None = None
 
     @model_validator(mode="after")
     def validate_status(self) -> "DbaSufficiencyAssessment":

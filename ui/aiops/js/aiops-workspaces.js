@@ -87,17 +87,18 @@
     return state.agents;
   }
 
-  function syncTargetOptions({ lockedTargetId = null } = {}) {
+  function syncAgentTargetContext() {
     const agentId = document.getElementById("agent-select").value;
-    const targetSelect = document.getElementById("target-select");
+    const context = document.getElementById("agent-target-context");
     const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
-    const candidates = values(agent?.target_candidates);
-    targetSelect.innerHTML = candidates.length
-      ? '<option value="">选择诊断数据库</option>' + candidates.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name || shell.short(item.target_id))} · ${esc(item.connectivity_status || "UNKNOWN")}</option>`).join("")
-      : '<option value="">当前 Agent 没有可诊断数据库</option>';
-    const preferred = lockedTargetId || agent?.target_id || (candidates.length === 1 ? candidates[0].target_id : "");
-    targetSelect.value = preferred ? String(preferred) : "";
-    targetSelect.disabled = Boolean(lockedTargetId) || !agentId || !candidates.length;
+    const target = values(agent?.target_candidates).find(
+      (item) => String(item.target_id) === String(agent?.target_id),
+    );
+    context.textContent = !agentId
+      ? "Target由Agent配置决定"
+      : target
+        ? `诊断Target：${target.display_name || shell.short(target.target_id)} · ${target.connectivity_status || "UNKNOWN"}`
+        : "当前Agent尚未绑定诊断Target";
   }
 
   async function proposalAction(button) {
@@ -215,7 +216,7 @@
     const turnRows = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns?limit=200`);
     const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
-    syncTargetOptions({ lockedTargetId: turns[0]?.resolved_target_id });
+    syncAgentTargetContext();
     await renderConversation(conversation, turns);
     history.replaceState(null, "", `./chat.html?conversation=${encodeURIComponent(id)}`);
     document.querySelectorAll(".ops-workspace-item").forEach((button) => { button.setAttribute("aria-current", String(button.dataset.id === id)); });
@@ -223,7 +224,7 @@
 
   function resetConversationView({ agentSelected = false } = {}) {
     state.conversation = null;
-    syncTargetOptions();
+    syncAgentTargetContext();
     document.getElementById("conversation-title").textContent = agentSelected
       ? "开始一次数据库诊断"
       : "请先选择 Agent";
@@ -412,11 +413,11 @@
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
     const agentId = document.getElementById("agent-select").value;
-    const targetId = document.getElementById("target-select").value;
+    const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
     const text = form.elements.message.value.trim();
     const selectedFile = state.selectedFile;
     if (!agentId) return shell.toast("请先选择 Agent");
-    if (!targetId) return shell.toast("请选择本次诊断的数据库");
+    if (!agent?.target_id) return shell.toast("当前 Agent 尚未绑定诊断 Target");
     if (!text && !selectedFile) return shell.toast("请输入问题或上传诊断材料");
     button.disabled = true;
     try {
@@ -440,8 +441,8 @@
         });
       }
       const body = state.conversation
-        ? { content, target_id: targetId }
-        : { agent_id: agentId, target_id: targetId, content };
+        ? { content }
+        : { agent_id: agentId, content };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
@@ -468,7 +469,7 @@
     select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
     select.onchange = () => {
       clearConversationUrl();
-      syncTargetOptions();
+      syncAgentTargetContext();
       resetConversationView({ agentSelected: Boolean(select.value) });
       loadConversationList().catch((error) => shell.toast(error.message));
     };
@@ -501,9 +502,14 @@
     if (!form) return;
     form.onsubmit = async (event) => {
       event.preventDefault();
-      const body = Object.fromEntries(new FormData(form));
+      const fields = Object.fromEntries(new FormData(form));
+      const body = {
+        agent_id: fields.agent_id,
+        content: [{ content_type: "TEXT", text: fields.message }],
+        source_run_id: run.ops_run_id,
+      };
       try {
-        const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ ...body, source_run_id: run.ops_run_id }) });
+        const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify(body) });
         location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
       } catch (error) { shell.toast(error.message); }
     };

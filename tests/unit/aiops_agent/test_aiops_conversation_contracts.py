@@ -29,7 +29,14 @@ class AIOpsConversationContractTest(unittest.TestCase):
         )
 
         self.assertTrue(turn.content[0].text.endswith("Top SQL"))
-        self.assertIsNone(turn.target_id)
+        self.assertNotIn("target_id", TurnCreate.model_fields)
+
+        with self.assertRaises(ValidationError):
+            TurnCreate(
+                content=({"content_type": "TEXT", "text": "检查负载"},),
+                idempotency_key="turn-target-override",
+                target_id=uuid7(),
+            )
 
         with self.assertRaises(ValidationError):
             TurnCreate(

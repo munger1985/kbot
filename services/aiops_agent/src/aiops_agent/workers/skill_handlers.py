@@ -96,3 +96,52 @@ class DbaSkillInvocationHandler:
             status=status,
             tool_outcomes=tuple(outcomes),
         )
+
+
+class DbaDiagnosticInvocationHandler:
+    """直接执行调查计划中的原子数据库Tool，不要求Playbook父对象。"""
+
+    def __init__(self, *, database_handler) -> None:
+        self._database_handler = database_handler
+
+    async def execute(self, context: TaskExecutionContext) -> DbaSkillResult:
+        execution = context.plan_snapshot["skill_execution"]
+        invocation = dict(execution["direct_invocations"][context.task_key])
+        tool = dict(invocation["tool"])
+        database_snapshot = {
+            **dict(execution["database"]),
+            "catalog_hash": execution["diagnostic_catalog_hash"],
+            "capability_snapshot_hash": execution[
+                "capability_snapshot_hash"
+            ],
+            "tools": [tool],
+        }
+        result = await self._database_handler.execute(
+            replace(
+                context,
+                task_key=f"diagnostic:{tool['tool_id']}",
+                plan_snapshot={
+                    **context.plan_snapshot,
+                    "database_diagnostics": database_snapshot,
+                },
+            )
+        )
+        return DbaSkillResult(
+            skill_id=f"tool.{tool['tool_id']}",
+            skill_version=tool["tool_version"],
+            manifest_hash=invocation["catalog_hash"],
+            output_schema="DBA_TOOL_RESULT.v1",
+            measurement_semantics=invocation["measurement_semantics"],
+            presentation_kind=invocation["presentation_kind"],
+            status=("SUCCEEDED" if result.status == "SUCCEEDED" else "FAILED"),
+            tool_outcomes=(
+                SkillToolOutcome(
+                    step_id=tool["step_id"],
+                    tool_id=tool["tool_id"],
+                    tool_version=tool["tool_version"],
+                    status=result.status,
+                    observation=result.observation,
+                    gap=result.gap,
+                ),
+            ),
+        )

@@ -44,8 +44,9 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 截至2026-08-28，Schema 14纵向切片已进一步完成以下闭环：用户提供的Artifact可按Artifact
 Key或ID进入评估器；数据库访问决定由Agent Policy、Target状态、连接状态、凭据和Endpoint在
 规划时冻结，执行阶段不得覆盖；模型Action与数据库Tool按一对一关系冻结和审计，Playbook不再
-扩大实际执行范围；Task Frame支持多个目标；告警或巡检来源Run的最终Artifact会复制为当前
-Turn的继承Evidence；多Target Agent在聊天页面显式选择Target。
+扩大实际执行范围；Task Frame支持单一Target内的多个任务目标；告警或巡检来源Run的最终
+Artifact会复制为当前Turn的继承Evidence。一个Agent版本固定绑定一个Target，聊天页面不再
+提供Target选择，也不接受Turn级Target覆盖。
 
 首轮Assessment若存在可重试的关键缺口，系统会冻结回答Task，通过Outbox可靠生成第二版
 Investigation Revision和Task DAG；无参数变化的重复Tool调用会被拒绝。第二轮结束后统一回答，
@@ -81,6 +82,14 @@ Artifact保存、UTF-8文本提取、按Agent能力选择VLM/OCR、独立提取A
 Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
 Schema字段或类名判断功能已经交付。
 
+本轮审计整改进一步完成：Turn原始文字和上传定位会在输入理解/VLM/OCR与调查模型之前以独立
+事务保存；固定Oracle Tool直接从Diagnostic Registry发现并编译为原子Task，不再要求存在
+Playbook父调用；`DBA_SUFFICIENCY.v1`内嵌`aiops.investigation-assessment.v1`，由诊断模型更新
+假设、未知项、Evidence Gap、进展和`ANSWER/REPLAN/ASK_USER/STOP_UNSAFE`决策；已启用但上次
+健康检查失败的Target或Source允许在本Turn预算内尝试一次。聊天公开契约已删除Turn级
+`target_id`，只继承Agent版本绑定的唯一Target。专业评测集覆盖停库、Top SQL、锁、容量、归档、
+权限、监控健康陈旧、动态只读、来源Run、单Target多任务目标和变更安全。
+
 ## 4. 阶段1：Schema 14和共享契约
 
 - 修改`008_ops_conversations_reports.sql`；
@@ -113,7 +122,7 @@ Prompt Injection不能改变权限。
 
 ## 6. 阶段3：Task Frame和调查计划
 
-- 实现多目标`DbaTaskFramingService`；
+- 实现单一Target内支持多任务目标的`DbaTaskFramingService`；
 - 实现`DbaInvestigationPlanner`和Plan Validator；
 - 建立Tool Discovery和Playbook候选检索；
 - 持久化Task Frame和Plan Revision；
@@ -121,8 +130,8 @@ Prompt Injection不能改变权限。
 - 删除`AIOPS_SKILL_UNAVAILABLE`聊天终止语义；
 - 无Playbook时进入通用调查。
 
-门槛：多目标保留；目录外问题可规划；模型提出未知Tool、越权Target或循环依赖时被确定性
-拒绝并安全重试。
+门槛：单一Target内的多任务目标保留；目录外问题可规划；模型提出未知Tool、试图覆盖Agent
+Target或循环依赖时被确定性拒绝并安全重试。
 
 ## 7. 阶段4：Tool执行和Assess–Replan
 
@@ -177,8 +186,8 @@ Oracle Tool优先级：
 - 展示理解、规划、取证、评估、重规划和回答；
 - Evidence统一折叠，补证自然呈现，SSE断线恢复；
 - 变更意图在证据评估后单独编译Action Plan；页面展示Proposal摘要并逐条批准或拒绝；
-- 建立停库、日志、离线、口径冲突、权限、网络、SQL、锁、容量、归档、内存、多目标、错误
-  假设、无Playbook、全来源不可用和变更审批评测集。
+- 建立停库、日志、离线、口径冲突、权限、网络、SQL、锁、容量、归档、内存、单Target多任务
+  目标、错误假设、无Playbook、全来源不可用和变更审批评测集。
 
 评价输入理解、假设、Tool选择、无效调用、Evidence引用、结论边界、补证质量和安全性。
 

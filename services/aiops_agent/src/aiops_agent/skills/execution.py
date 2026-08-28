@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from aiops_agent.diagnostics import DiagnosticRegistry
 from platform_core.contracts.aiops.skills import (
     DbaCapabilitySnapshot,
@@ -61,6 +63,62 @@ class SkillExecutionSnapshotBuilder:
                         ),
                     )
 
+    def discover_tools(
+        self, capabilities: DbaCapabilitySnapshot
+    ) -> tuple[dict, ...]:
+        """直接从原子Tool目录发现能力，Playbook不参与准入。"""
+        version = capabilities.database_version or ""
+        match = re.search(r"\d+", version)
+        if match is None:
+            return ()
+        major = int(match.group(0))
+        configured_privileges = set(capabilities.privileges)
+        discovered = []
+        for item in self._tools.tools:
+            definition = item.definition
+            if definition.db_type != str(capabilities.database_type):
+                continue
+            if not (
+                definition.supported_version_min
+                <= major
+                < definition.supported_version_max_exclusive
+            ):
+                continue
+            if not set(definition.required_capabilities) <= set(
+                capabilities.target_capabilities
+            ):
+                continue
+            if not set(definition.required_entitlements) <= set(
+                capabilities.entitlements
+            ):
+                continue
+            if configured_privileges and not set(
+                definition.required_privileges
+            ) <= configured_privileges:
+                continue
+            discovered.append(
+                {
+                    "tool_id": definition.tool_id,
+                    "version": definition.version,
+                    "tool_class": "ORACLE_SQL",
+                    "description": f"受控只读数据库观测：{definition.tool_id}",
+                    "input": {
+                        parameter.name: {
+                            "type": parameter.type,
+                            "required": parameter.required,
+                            "default": parameter.default,
+                        }
+                        for parameter in definition.parameters
+                    },
+                }
+            )
+        return tuple(
+            sorted(
+                discovered,
+                key=lambda value: (value["tool_id"], value["version"]),
+            )
+        )
+
     def build(
         self,
         *,
@@ -69,6 +127,7 @@ class SkillExecutionSnapshotBuilder:
         capabilities: DbaCapabilitySnapshot,
         database_execution: dict,
         dynamic_queries: tuple[dict, ...] = (),
+        direct_actions: tuple[object, ...] = (),
     ) -> dict:
         capability_payload = capabilities.model_dump(mode="json")
         invocations = {}
@@ -184,6 +243,60 @@ class SkillExecutionSnapshotBuilder:
                 strict=True,
             )
         }
+        direct_invocations = {}
+        for action, task_key in zip(
+            direct_actions, compiled.diagnostic_task_keys, strict=True
+        ):
+            resolved = self._tools.resolve(
+                tool_id=action.tool_id,
+                tool_version="1.0.0",
+                db_type=str(capabilities.database_type),
+                db_version=capabilities.database_version or "",
+                capabilities=set(capabilities.target_capabilities),
+                entitlements=set(capabilities.entitlements),
+            )
+            definition = resolved.definition
+            direct_invocations[task_key] = {
+                "action_id": action.action_id,
+                "question": action.question,
+                "measurement_semantics": action.measurement_semantics,
+                "presentation_kind": "TABLE",
+                "catalog_hash": self._tools.catalog_hash,
+                "tool": {
+                    "step_id": action.action_id,
+                    "depends_on": [],
+                    "tool_id": definition.tool_id,
+                    "tool_version": definition.version,
+                    "variant": definition.variant,
+                    "template_sha256": definition.template_sha256,
+                    "manual_sql": resolved.sql,
+                    "required_privileges": list(
+                        definition.required_privileges
+                    ),
+                    "supported_version_min": (
+                        definition.supported_version_min
+                    ),
+                    "supported_version_max_exclusive": (
+                        definition.supported_version_max_exclusive
+                    ),
+                    "parameters": self._tools.validate_parameters(
+                        resolved, dict(action.input)
+                    ),
+                    "output_columns": [
+                        column.model_dump(mode="json")
+                        for column in definition.output_columns
+                    ],
+                    "limits": {
+                        "statement_timeout_seconds": (
+                            definition.timeout_seconds
+                        ),
+                        "max_result_rows": definition.max_rows,
+                        "max_result_bytes": definition.max_bytes,
+                        "max_columns": 128,
+                        "max_cell_chars": 32768,
+                    },
+                },
+            }
         return {
             "schema_version": "DBA_SKILL_EXECUTION_SNAPSHOT.v1",
             "catalog_hash": plan.catalog_hash,
@@ -193,6 +306,7 @@ class SkillExecutionSnapshotBuilder:
             "database": dict(database_execution),
             "invocations": invocations,
             "dynamic_invocations": dynamic_invocations,
+            "direct_invocations": direct_invocations,
         }
 
     @staticmethod

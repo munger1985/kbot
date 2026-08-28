@@ -138,13 +138,11 @@ class ConversationStartPayload(_Payload):
     agent_id: UUID
     content: list[InputContent] = Field(min_length=1, max_length=16)
     title: str | None = Field(default=None, min_length=1, max_length=256)
-    target_id: UUID | None = None
     source_run_id: UUID | None = None
 
 
 class AIOpsConversationTurnPayload(_Payload):
     content: list[InputContent] = Field(min_length=1, max_length=16)
-    target_id: UUID | None = None
     source_run_id: UUID | None = None
 
 
@@ -580,9 +578,6 @@ async def start_conversation(
                     item.model_dump(mode="json") for item in payload.content
                 ],
                 "idempotency_key": idempotency_key,
-                "target_id": (
-                    str(payload.target_id) if payload.target_id else None
-                ),
                 "source_run_id": (
                     str(payload.source_run_id)
                     if payload.source_run_id
@@ -678,7 +673,6 @@ async def create_conversation_turn(
                 item.model_dump(mode="json") for item in payload.content
             ],
             "idempotency_key": idempotency_key,
-            "target_id": str(payload.target_id) if payload.target_id else None,
             "source_run_id": (
                 str(payload.source_run_id) if payload.source_run_id else None
             ),

@@ -38,6 +38,7 @@ class CapabilityUnavailableError(ValueError):
 class CompiledSkillPlan:
     tasks: tuple[TaskSpec, ...]
     invocation_task_keys: tuple[str, ...]
+    diagnostic_task_keys: tuple[str, ...]
     monitoring_task_keys: tuple[str, ...]
     log_task_keys: tuple[str, ...]
     dynamic_task_keys: tuple[str, ...]
@@ -352,6 +353,47 @@ class SkillPlanCompiler:
             for item in plan.items
             if item.action_id is not None
         }
+        direct_actions = tuple(
+            action
+            for action in investigation_actions
+            if action.tool_id
+            not in {
+                "monitor.query_range",
+                "loki.query_range",
+                "db.oracle.readonly_query",
+            }
+        )
+        direct_key_by_action = {
+            action.action_id: f"diagnostic:{action.action_id}{suffix}"
+            for action in direct_actions
+        }
+        diagnostic_keys: list[str] = []
+        for action in direct_actions:
+            task_key = direct_key_by_action[action.action_id]
+            diagnostic_keys.append(task_key)
+            dependencies = tuple(
+                dict.fromkeys(
+                    task
+                    for action_id in action.depends_on
+                    for task in action_task_keys.get(action_id, ())
+                )
+            )
+            tasks.append(
+                TaskSpec(
+                    task_key=task_key,
+                    task_type="TOOL_INVOKE",
+                    handler_id="dba.diagnostic.invoke",
+                    handler_version="1",
+                    input_schema_version="DIAGNOSTIC_TOOL_INPUT.v1",
+                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    depends_on=dependencies,
+                    input_artifact_keys=dependencies,
+                    timeout_seconds=45,
+                    max_attempts=2,
+                    priority=47,
+                )
+            )
+            action_task_keys[action.action_id] = (task_key,)
         for action in investigation_actions:
             if action.tool_id == "monitor.query_range":
                 action_task_keys[action.action_id] = tuple(monitoring_keys)
@@ -400,6 +442,7 @@ class SkillPlanCompiler:
             )
         evidence_task_keys = (
             *invocation_keys,
+            *diagnostic_keys,
             *monitoring_keys,
             *log_keys,
             *dynamic_keys,
@@ -483,6 +526,7 @@ class SkillPlanCompiler:
         return CompiledSkillPlan(
             tasks=tuple(tasks),
             invocation_task_keys=invocation_keys,
+            diagnostic_task_keys=tuple(diagnostic_keys),
             monitoring_task_keys=tuple(monitoring_keys),
             log_task_keys=tuple(log_keys),
             dynamic_task_keys=tuple(dynamic_keys),

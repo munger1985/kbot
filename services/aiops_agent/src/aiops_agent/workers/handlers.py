@@ -228,7 +228,10 @@ def create_runtime_handler_registry(
             grant_audience=diagnostic_grant_audience or "",
             grant_ttl_seconds=diagnostic_grant_ttl_seconds,
         )
-        from .skill_handlers import DbaSkillInvocationHandler
+        from .skill_handlers import (
+            DbaDiagnosticInvocationHandler,
+            DbaSkillInvocationHandler,
+        )
         from .turn_answer_handlers import DbaEvidenceAssessmentHandler
 
         manifests.extend(
@@ -239,6 +242,15 @@ def create_runtime_handler_registry(
                     output_schema_version="DBA_SKILL_RESULT.v1",
                     idempotent=True,
                     implementation=DbaSkillInvocationHandler(
+                        database_handler=database_diagnostic_handler
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="dba.diagnostic.invoke",
+                    version="1",
+                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    idempotent=True,
+                    implementation=DbaDiagnosticInvocationHandler(
                         database_handler=database_diagnostic_handler
                     ),
                 ),
@@ -254,7 +266,9 @@ def create_runtime_handler_registry(
                     version="1",
                     output_schema_version="DBA_SUFFICIENCY.v1",
                     idempotent=True,
-                    implementation=DbaEvidenceAssessmentHandler(),
+                    implementation=DbaEvidenceAssessmentHandler(
+                        model_client=diagnosis_model_client
+                    ),
                 ),
                 HandlerManifest(
                     handler_id="database.scope",
