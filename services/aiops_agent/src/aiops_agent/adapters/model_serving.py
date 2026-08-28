@@ -39,6 +39,18 @@ def _canonical_hash(value: Any) -> str:
     ).hexdigest()
 
 
+def _output_schema_id(output_model: type[BaseModel]) -> str:
+    """返回稳定输出契约标识，组合契约可不声明顶层版本字段。"""
+    schema_field = output_model.model_fields.get("schema_version")
+    if (
+        schema_field is not None
+        and isinstance(schema_field.default, str)
+        and schema_field.default.strip()
+    ):
+        return schema_field.default
+    return output_model.__name__
+
+
 class AIOpsStructuredModelClient:
     def __init__(
         self,
@@ -167,9 +179,7 @@ class AIOpsStructuredModelClient:
         duration_ms = int((time.monotonic() - started) * 1000)
         receipt = ModelInvocationReceipt(
             purpose=purpose,
-            schema_id=output_model.model_fields[
-                "schema_version"
-            ].default,
+            schema_id=_output_schema_id(output_model),
             model_technical_name=technical_name,
             model_revision=str(model_snapshot["revision"]),
             prompt_id=prompt_ref["prompt_id"],

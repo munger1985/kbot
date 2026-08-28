@@ -16,6 +16,10 @@ class _StructuredOutput(BaseModel):
     answer: str
 
 
+class _CompositeStructuredOutput(BaseModel):
+    answer: str
+
+
 class _Response:
     status = 200
 
@@ -101,6 +105,50 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result.receipt.schema_id,
             "TEST_OUTPUT.v1",
+        )
+
+    async def test_uses_model_name_when_top_level_schema_version_is_absent(
+        self,
+    ) -> None:
+        """组合输出契约没有顶层版本字段时仍须生成可审计回执。"""
+        session = _Session()
+        client = AIOpsStructuredModelClient(
+            base_url="http://model-serving",
+            audience="model-serving",
+            caller_service="aiops-agent",
+            timeout_seconds=30,
+            session=session,
+        )
+        prompt = "只根据证据回答。"
+        with patch(
+            "aiops_agent.adapters.model_serving."
+            "build_internal_auth_headers",
+            return_value={"Authorization": "Bearer test"},
+        ):
+            result = await client.generate_structured(
+                purpose="diagnosis.composite-test",
+                output_model=_CompositeStructuredOutput,
+                model_snapshot={
+                    "technical_name": "deepseek-chat",
+                    "revision": "test-revision",
+                },
+                prompt_ref={
+                    "content": prompt,
+                    "prompt_id": "test",
+                    "prompt_version": "1.0.0",
+                    "prompt_sha256": hashlib.sha256(
+                        prompt.encode()
+                    ).hexdigest(),
+                },
+                input_payload={"question": "数据库慢"},
+                deadline=None,
+                idempotency_key="test",
+            )
+
+        self.assertEqual(result.output.answer, "正常")
+        self.assertEqual(
+            result.receipt.schema_id,
+            "_CompositeStructuredOutput",
         )
 
 
