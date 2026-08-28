@@ -45,8 +45,8 @@ Schema。规范初始化脚本不包含 `DROP`、旧表查询、旧数据导入�
 KBot 4.0 不保留一次性升级、字段修复或数据补种脚本；结构变化直接更新规范 DDL，
 并在新的空白 Schema 重新初始化。
 
-AIOps Schema 14 已产生需要保留的监控接入与 Webhook 凭据数据，因此提供一个明确的
-例外：`aiops_agent/upgrade_14_to_15_preserve_data.sql`。它只用于 14→15 原位升级，
+AIOps Schema 13 已产生需要保留的监控接入与 Webhook 凭据数据，因此提供一个明确的
+例外：`aiops_agent/upgrade_13_to_15_preserve_data.sql`。它只用于 13→15 原位升级，
 不属于空 Schema 初始化序列，也不会由应用或初始化工具自动执行；其他版本和服务仍遵循
 全量规范 Schema 规则。
 

@@ -11,7 +11,7 @@ UPGRADE = (
     / "database"
     / "oracle"
     / "aiops_agent"
-    / "upgrade_14_to_15_preserve_data.sql"
+    / "upgrade_13_to_15_preserve_data.sql"
 )
 
 
@@ -21,15 +21,17 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
         cls.sql = UPGRADE.read_text(encoding="utf-8").upper()
 
     def test_upgrade_is_strictly_scoped_from_14_to_15(self) -> None:
-        self.assertIn("V_SCHEMA_VERSION <> 14", self.sql)
-        self.assertIn("AIOPS-ORACLE-V4", self.sql)
+        self.assertIn("V_SCHEMA_VERSION <> 13", self.sql)
+        self.assertIn("AIOPS-ORACLE-V3", self.sql)
         self.assertIn("15 AS SCHEMA_VERSION", self.sql)
         self.assertIn("'AIOPS-ORACLE-V5' AS CONTRACT_VERSION", self.sql)
         self.assertIn("WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK", self.sql)
 
     def test_upgrade_preserves_monitoring_and_secret_rows(self) -> None:
-        for operation in ("DELETE FROM", "TRUNCATE TABLE", "DROP TABLE"):
+        for operation in ("DELETE FROM", "TRUNCATE TABLE"):
             self.assertNotIn(operation, self.sql)
+        drops = re.findall(r"\bDROP\s+TABLE\s+([A-Z][A-Z0-9_]*)", self.sql)
+        self.assertEqual(["KBOT_OPS_SKILL_INVOCATION"], drops)
         for table in (
             "KBOT_OPS_DIAGNOSTIC_SOURCE",
             "KBOT_MANAGED_CREDENTIAL",
@@ -46,13 +48,18 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
             "ALTER TABLE KBOT_OPS_CONVERSATION ADD (TARGET_ID RAW(16))",
             "ALTER TABLE KBOT_OPS_CONVERSATION MODIFY (TARGET_ID NOT NULL)",
             "ALTER TABLE KBOT_OPS_AGENT_VERSION DROP COLUMN TARGET_ID",
+            "CREATE TABLE KBOT_OPS_INVESTIGATION_REVISION",
+            "CREATE TABLE KBOT_OPS_PLAYBOOK_INVOCATION",
+            "CREATE TABLE KBOT_OPS_TOOL_INVOCATION",
         ):
             self.assertIn(fragment, self.sql)
         self.assertNotIn("SET C.TARGET_ID", self.sql)
 
     def test_upgrade_checks_mapping_before_first_ddl(self) -> None:
-        preflight = self.sql.index("PROMPT [1/9]")
-        first_ddl = self.sql.index("ALTER TABLE KBOT_OPS_TARGET ADD")
+        preflight = self.sql.index("PROMPT [1/11]")
+        first_ddl = self.sql.index(
+            "ALTER TABLE KBOT_OPS_CONVERSATION_TURN ADD"
+        )
         unresolved_agent = self.sql.index("-20002")
         unresolved_conversation = self.sql.index("-20003")
         self.assertLess(preflight, unresolved_agent)
