@@ -47,7 +47,7 @@ class CreateAIOpsAgentCommand(_Model):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     allow_change_execution: bool = False
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -67,8 +67,8 @@ class CreateAIOpsAgentCommand(_Model):
     def validate_resources(self):
         if len(set(self.diagnostic_source_ids)) != len(self.diagnostic_source_ids):
             raise ValueError("diagnostic_source_ids 不能重复")
-        if self.allow_change_execution and self.target_id is None:
-            raise ValueError("允许执行变更前必须选择数据库直连 Target")
+        if len(set(self.target_ids)) != len(self.target_ids):
+            raise ValueError("target_ids 不能重复")
         return self
 
 
@@ -81,7 +81,9 @@ class UpdateAIOpsAgentCommand(_Model):
     diagnostic_source_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=16
     )
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     allow_change_execution: bool | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
@@ -103,6 +105,10 @@ class UpdateAIOpsAgentCommand(_Model):
             != len(self.diagnostic_source_ids)
         ):
             raise ValueError("diagnostic_source_ids 不能重复")
+        if self.target_ids is not None and len(set(self.target_ids)) != len(
+            self.target_ids
+        ):
+            raise ValueError("target_ids 不能重复")
         return self
 
 
@@ -169,6 +175,10 @@ class AIOpsAgentService:
                     version_id=version_id,
                     source_ids=command.diagnostic_source_ids,
                 )
+                await uow.agents.add_version_targets(
+                    version_id=version_id,
+                    target_ids=command.target_ids,
+                )
                 agent.current_version_id = version_id
                 await uow.commit()
             except IntegrityError as exc:
@@ -211,6 +221,9 @@ class AIOpsAgentService:
             current_sources = await uow.agents.version_source_ids(
                 agent_version_id=current.agent_version_id
             )
+            current_targets = await uow.agents.version_target_ids(
+                agent_version_id=current.agent_version_id
+            )
             current_policy = await uow.policies.get_scoped(
                 policy_id=current.policy_id, domain_id=command.domain_id
             )
@@ -228,7 +241,7 @@ class AIOpsAgentService:
                 "diagnostic_source_ids": changes.get(
                     "diagnostic_source_ids", tuple(current_sources)
                 ),
-                "target_id": changes.get("target_id", current.target_id),
+                "target_ids": changes.get("target_ids", tuple(current_targets)),
                 "allow_change_execution": changes.get(
                     "allow_change_execution",
                     bool(current_rules.get("allow_agent_execution", False)),
@@ -257,7 +270,7 @@ class AIOpsAgentService:
             )
             version_fields = {
                 "diagnostic_source_ids",
-                "target_id",
+                "target_ids",
                 "allow_change_execution",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
@@ -298,6 +311,10 @@ class AIOpsAgentService:
                     version_id=version_id,
                     source_ids=effective["diagnostic_source_ids"],
                 )
+                await uow.agents.add_version_targets(
+                    version_id=version_id,
+                    target_ids=effective["target_ids"],
+                )
                 agent.current_version_id = version_id
             for field in ("display_name", "description", "status"):
                 if field in changes:
@@ -327,7 +344,7 @@ class AIOpsAgentService:
             "resource_context": {
                 "policy_id": row["policy_id"],
                 "diagnostic_source_ids": row["diagnostic_source_ids"],
-                "target_id": row["target_id"],
+                "target_ids": row["target_ids"],
                 "allow_change_execution": row["allow_change_execution"],
                 "auto_alert_enabled": row["auto_alert_enabled"],
                 "auto_observe_min_severity": row["auto_observe_min_severity"],
@@ -480,57 +497,63 @@ class AIOpsAgentService:
             )
         if status == "ACTIVE" and any(
             source.status != "ENABLED"
-            or source.connectivity_status not in {"CONNECTED", "DEGRADED"}
             for source in sources
         ):
             raise AIOpsAgentError(
                 "AIOPS_AGENT_SOURCE_UNAVAILABLE",
-                "启用 Agent 前，所选监控源必须已启用且连接健康",
+                "启用 Agent 前，所选监控源必须已启用",
                 status_code=422,
             )
-        target_id = values.get("target_id")
-        target = None
-        if target_id is not None:
-            target = await uow.targets.get_scoped(
-                target_id=target_id, domain_id=domain_id
+        target_ids = tuple(values.get("target_ids") or ())
+        if not target_ids:
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_TARGET_REQUIRED", "Agent 至少需要选择一个逻辑 Target",
+                status_code=422,
             )
-            if target is None:
-                raise AIOpsAgentError(
-                    "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的 Target 不存在"
-                )
-            if status == "ACTIVE" and (
-                target.status != "ENABLED"
-                or target.connectivity_status not in {"CONNECTED", "DEGRADED"}
-            ):
-                raise AIOpsAgentError(
-                    "AIOPS_AGENT_TARGET_UNAVAILABLE",
-                    "启用 Agent 前，数据库直连 Target 必须已启用且连接健康",
-                    status_code=422,
-                )
-            if status == "ACTIVE":
+        targets = [
+            await uow.targets.get_scoped(target_id=target_id, domain_id=domain_id)
+            for target_id in target_ids
+        ]
+        if any(target is None for target in targets):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的 Target 不存在"
+            )
+        if status == "ACTIVE" and any(target.status != "ENABLED" for target in targets):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_TARGET_DISABLED",
+                "启用 Agent 前，所选逻辑 Target 必须已启用",
+                status_code=422,
+            )
+        if status == "ACTIVE":
+            for target in targets:
                 bindings = await uow.targets.list_source_bindings(
-                    target_id=target_id,
+                    target_id=target.target_id,
                     domain_id=domain_id,
                     active_only=True,
                 )
-                bound_source_ids = {
-                    binding.diagnostic_source_id for binding in bindings
-                }
-                if not set(source_ids) <= bound_source_ids:
+                if not ({binding.diagnostic_source_id for binding in bindings} & set(source_ids)):
                     raise AIOpsAgentError(
                         "AIOPS_AGENT_SOURCE_NOT_BOUND",
-                        "启用 Agent 前，所选监控源必须与数据库直连 Target 建立有效映射",
+                        f"Target“{target.display_name}”至少需要映射一个所选监控源",
                         status_code=422,
                     )
         if values.get("allow_change_execution"):
-            if target is None:
+            change_targets = [
+                target for target in targets
+                if target.controlled_change_enabled
+                and target.execution_credential_id is not None
+            ]
+            if not change_targets:
                 raise AIOpsAgentError(
-                    "AIOPS_AGENT_TARGET_REQUIRED",
-                    "允许执行变更前必须选择数据库直连 Target",
+                    "AIOPS_AGENT_CHANGE_TARGET_REQUIRED",
+                    "允许执行变更前，至少一个 Target 必须允许受控变更并配置执行凭据",
                     status_code=422,
                 )
-            actions = self._compatible_action_ids(target)
-            values["_allowed_action_types"] = actions
+            values["_allowed_action_types"] = sorted({
+                action
+                for target in change_targets
+                for action in self._compatible_action_ids(target)
+            })
 
     def _compatible_action_ids(self, target) -> list[str]:
         if self._action_registry is None:
@@ -570,7 +593,7 @@ class AIOpsAgentService:
         now = datetime.now(UTC)
         rules = {
             "schema_version": "ops.policy.v1",
-            "readonly_database_enabled": values.get("target_id") is not None,
+            "readonly_database_enabled": True,
             "allow_agent_execution": bool(
                 values.get("allow_change_execution", False)
             ),
@@ -610,7 +633,6 @@ class AIOpsAgentService:
             agent_id=agent_id,
             version_no=version_no,
             policy_id=values["policy_id"],
-            target_id=values.get("target_id"),
             models_json={
                 key: str(value)
                 for key, value in dict(values.get("models") or {}).items()
@@ -642,14 +664,9 @@ class AIOpsAgentService:
         source_ids = await uow.agents.version_source_ids(
             agent_version_id=version.agent_version_id
         )
-        candidate_ids = set(
-            await uow.targets.target_ids_shared_by_sources(
-                domain_id=int(agent.domain_id),
-                source_ids=source_ids,
-            )
-        )
-        if version.target_id is not None:
-            candidate_ids.add(version.target_id)
+        candidate_ids = set(await uow.agents.version_target_ids(
+            agent_version_id=version.agent_version_id
+        ))
         target_candidates = []
         for target_id in sorted(candidate_ids, key=str):
             target = await uow.targets.get_scoped(
@@ -665,6 +682,12 @@ class AIOpsAgentService:
                     "db_type": target.db_type,
                     "status": target.status,
                     "connectivity_status": target.connectivity_status,
+                    "readonly_connection_enabled": bool(
+                        target.readonly_connection_enabled
+                    ),
+                    "controlled_change_enabled": bool(
+                        target.controlled_change_enabled
+                    ),
                 }
             )
         policy = await uow.policies.get_scoped(
@@ -681,10 +704,13 @@ class AIOpsAgentService:
             "version_no": int(version.version_no),
             "policy_id": str(version.policy_id),
             "diagnostic_source_ids": [str(item) for item in source_ids],
-            "target_id": str(version.target_id) if version.target_id else None,
+            "target_ids": [str(item) for item in sorted(candidate_ids, key=str)],
             "target_candidates": target_candidates,
             "allow_change_execution": bool(
                 rules.get("allow_agent_execution", False)
+            ),
+            "allowed_action_types": list(
+                rules.get("allowed_action_types") or []
             ),
             "auto_alert_enabled": bool(rules.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": rules.get(

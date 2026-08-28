@@ -18,6 +18,7 @@ class _AgentRepository:
         self.versions = {}
         self.current_version_at_agent_insert = "NOT_CAPTURED"
         self.version_sources = {}
+        self.version_targets = {}
 
     async def resource_states(self, **kwargs):
         del kwargs
@@ -39,6 +40,12 @@ class _AgentRepository:
 
     async def version_source_ids(self, *, agent_version_id):
         return self.version_sources.get(agent_version_id, [])
+
+    async def add_version_targets(self, *, version_id, target_ids):
+        self.version_targets[version_id] = list(target_ids)
+
+    async def version_target_ids(self, *, agent_version_id):
+        return self.version_targets.get(agent_version_id, [])
 
     async def get(self, *, domain_id, agent_id, lock=False):
         del lock
@@ -62,7 +69,14 @@ class _UnitOfWork:
         )
         self.policies = _PolicyRepository()
         self.source_id = source_id
-        self.target = target
+        self.target = target or SimpleNamespace(
+            target_id=uuid7(), display_name="逻辑测试库", db_type="ORACLE",
+            status="ENABLED", connectivity_status="UNKNOWN",
+            readonly_connection_enabled=False,
+            controlled_change_enabled=False, execution_credential_id=None,
+            version_code=None, capabilities_json={},
+        )
+        self.targets.list_source_bindings = self._list_source_bindings
         self.commit_count = 0
 
     async def _get_source(self, *, diagnostic_source_id, domain_id):
@@ -80,6 +94,10 @@ class _UnitOfWork:
     async def _target_ids_shared_by_sources(self, **kwargs):
         del kwargs
         return [self.target.target_id] if self.target is not None else []
+
+    async def _list_source_bindings(self, **kwargs):
+        del kwargs
+        return [SimpleNamespace(diagnostic_source_id=self.source_id)]
 
     async def __aenter__(self):
         return self
@@ -115,6 +133,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(source_id,),
+                target_ids=(unit_of_work.target.target_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -126,7 +145,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             str(repository.agents[next(iter(repository.agents))].current_version_id),
         )
 
-    async def test_active_agent_exposes_selected_sources_without_target(self):
+    async def test_active_agent_exposes_selected_sources_and_logical_target(self):
         source_id = uuid7()
         unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
         service = AIOpsAgentService(
@@ -138,6 +157,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(source_id,),
+                target_ids=(unit_of_work.target.target_id,),
                 models={"diagnosis_llm": uuid7()},
                 status="ACTIVE",
                 actor_id="kbotui_dev",
@@ -145,13 +165,16 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual("ACTIVE", result["status"])
-        self.assertIsNone(result["target_id"])
+        self.assertEqual([str(unit_of_work.target.target_id)], result["target_ids"])
         self.assertEqual([str(source_id)], result["diagnostic_source_ids"])
         self.assertFalse(result["allow_change_execution"])
+        self.assertFalse(
+            result["target_candidates"][0]["readonly_connection_enabled"]
+        )
         policy = next(iter(unit_of_work.policies.rows.values()))
         self.assertEqual(f"agent.{result['agent_id']}", policy.policy_key)
         self.assertEqual("ACTIVE", policy.status)
-        self.assertFalse(policy.rules_json["readonly_database_enabled"])
+        self.assertTrue(policy.rules_json["readonly_database_enabled"])
         self.assertTrue(policy.rules_json["auto_alert_enabled"])
         self.assertEqual(900, policy.rules_json["alert_cooldown_seconds"])
 
@@ -166,6 +189,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="缺少模型的诊断助手",
                     diagnostic_source_ids=(source_id,),
+                    target_ids=(unit_of_work.target.target_id,),
                     status="ACTIVE",
                     actor_id="kbotui_dev",
                 )
@@ -185,6 +209,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="待配置模型的诊断助手",
                 diagnostic_source_ids=(source_id,),
+                target_ids=(unit_of_work.target.target_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -204,17 +229,16 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED", raised.exception.code
         )
 
-    async def test_change_execution_requires_selected_target(self):
+    async def test_agent_requires_selected_logical_target(self):
         with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(uuid7(),),
-                allow_change_execution=True,
                 actor_id="kbotui_dev",
             )
 
-    async def test_change_permission_can_be_saved_before_execution_credential(self):
+    async def test_change_permission_requires_change_capable_target(self):
         source_id = uuid7()
         target_id = uuid7()
         target = SimpleNamespace(
@@ -223,6 +247,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             status="ENABLED",
             connectivity_status="CONNECTED",
+            controlled_change_enabled=False,
             execution_credential_id=None,
             version_code=None,
             capabilities_json={},
@@ -232,21 +257,18 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
 
-        result = await service.create(
-            CreateAIOpsAgentCommand(
-                domain_id=100,
-                display_name="数据库变更助手",
-                diagnostic_source_ids=(source_id,),
-                target_id=target_id,
-                allow_change_execution=True,
-                actor_id="kbotui_dev",
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.create(
+                CreateAIOpsAgentCommand(
+                    domain_id=100,
+                    display_name="数据库变更助手",
+                    diagnostic_source_ids=(source_id,),
+                    target_ids=(target_id,),
+                    allow_change_execution=True,
+                    actor_id="kbotui_dev",
+                )
             )
-        )
-
-        self.assertTrue(result["allow_change_execution"])
-        policy = next(iter(unit_of_work.policies.rows.values()))
-        self.assertTrue(policy.rules_json["allow_agent_execution"])
-        self.assertEqual([], policy.rules_json["allowed_action_types"])
+        self.assertEqual("AIOPS_AGENT_CHANGE_TARGET_REQUIRED", raised.exception.code)
 
 
 if __name__ == "__main__":

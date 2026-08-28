@@ -17,6 +17,7 @@ class OpsConversationEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     title: Mapped[str | None] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     source_type: Mapped[str] = mapped_column(String(24), nullable=False, default="CHAT")

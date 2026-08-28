@@ -192,6 +192,8 @@ class _PlanningUow:
             version_code="19c",
             status="ENABLED",
             connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=False,
             diagnostic_credential_id=uuid7(),
             execution_credential_id=None,
             endpoint_json={
@@ -796,6 +798,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 "service": "PDB1",
             },
             diagnostic_credential_id=uuid7(),
+            readonly_connection_enabled=True,
             connectivity_status="UNREACHABLE",
             capabilities_json={},
         )
@@ -1403,6 +1406,8 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 version_code="19c",
                 status="ENABLED",
                 connectivity_status="CONNECTED",
+                readonly_connection_enabled=True,
+                controlled_change_enabled=False,
                 diagnostic_credential_id="credential-1",
                 execution_credential_id=None,
                 endpoint_json={

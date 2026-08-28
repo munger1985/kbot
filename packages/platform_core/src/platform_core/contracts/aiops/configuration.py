@@ -77,6 +77,8 @@ class TargetCreate(AIOpsContract):
     environment: Literal["PROD", "STG", "DEV"]
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
     endpoint: TargetEndpoint | None = None
+    readonly_connection_enabled: bool = False
+    controlled_change_enabled: bool = False
     diagnostic_credential: DatabaseCredentialInput | None = None
     execution_credential: DatabaseCredentialInput | None = None
     security_level: int = Field(default=1, ge=0, le=999)
@@ -84,6 +86,23 @@ class TargetCreate(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetCreate":
+        if self.readonly_connection_enabled and (
+            self.endpoint is None or self.diagnostic_credential is None
+        ):
+            raise ValueError("启用只读数据库连接时必须配置 Endpoint 和诊断凭据")
+        if self.controlled_change_enabled and (
+            not self.readonly_connection_enabled
+            or self.endpoint is None
+            or self.execution_credential is None
+        ):
+            raise ValueError("允许受控变更时必须启用只读连接并配置执行凭据")
+        if not self.readonly_connection_enabled and (
+            self.endpoint is not None
+            or self.diagnostic_credential is not None
+            or self.execution_credential is not None
+            or self.controlled_change_enabled
+        ):
+            raise ValueError("仅监控 Target 不能携带数据库连接或执行凭据")
         if self.endpoint is None:
             return self
         if self.db_type == DatabaseType.ORACLE:
@@ -124,6 +143,8 @@ class TargetPatch(AIOpsContract):
     environment: Literal["PROD", "STG", "DEV"] | None = None
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
     endpoint: TargetEndpoint | None = None
+    readonly_connection_enabled: bool | None = None
+    controlled_change_enabled: bool | None = None
     security_level: int | None = Field(default=None, ge=0, le=999)
     capabilities: JsonObject | None = None
 
@@ -137,6 +158,8 @@ class TargetSummary(AIOpsContract):
     status: TargetStatus
     connectivity_status: ConnectivityStatus
     observed_status: ObservedStatus
+    readonly_connection_enabled: bool
+    controlled_change_enabled: bool
     connectivity_check_pending: bool
     diagnostic_credential_configured: bool
     execution_credential_configured: bool

@@ -2,7 +2,7 @@
 
 版本：2.0
 状态：已批准，实施中
-目标数据库契约：Schema 14 / `aiops-oracle-v4`
+目标数据库契约：Schema 15 / `aiops-oracle-v5`
 
 ## 1. 范围和替换原则
 
@@ -112,15 +112,21 @@ Domain和当前用户，默认24小时内可提交；被Turn接收后原文进�
 `target_hints`、`time_anchors`、`error_codes`、`stated_facts`、`user_hypotheses`、
 `desired_outcomes`和`clarification_need`。原始输入先持久化，解析错误形成Gap，不删除原文。
 
-Target不由Turn请求选择。一个Agent版本固定绑定一个Target，创建Turn时从Agent版本快照继承
-`target_id`并写入Primary Run；Task Frame、Tool Discovery、授权和Evidence范围均使用该冻结
-Target。用户诊断其他Target时必须切换Agent，不能在同一Turn中追加或切换Target。
+Target不由后续Turn请求覆盖。一个Agent版本可以绑定多个逻辑Target；创建Conversation时必须
+从该集合选择一个`target_id`并冻结到Conversation和Primary Run。Task Frame、Tool Discovery、
+授权和Evidence范围均使用该冻结Target。用户诊断其他Target时必须新建Conversation，不能在
+既有Conversation中追加或切换Target。
+
+逻辑Target是数据库对象身份，不等同于连接配置。`display_name`、`db_type`、环境和角色描述对象；
+`readonly_connection_enabled`控制是否存在数据库只读取证能力，`controlled_change_enabled`控制
+是否允许在Agent授权和人工审批后使用独立执行凭据。两者都关闭时，Target仍可依靠Target–Source
+映射使用Prometheus、Loki、Alertmanager和用户证据。
 
 `DBA_TASK_FRAME.v1`替代单一Intent Plan：
 
 - `objectives[]`；
 - `intent_tags[]`和`domain_tags[]`；
-- `systems[]`和从Agent版本继承的单一`target_context`；
+- `systems[]`和从Conversation继承的单一`target_context`；
 - `supplied_evidence_ids[]`；
 - `constraints[]`和`desired_outputs[]`；
 - `risk_context`和`clarification_question`。
@@ -212,7 +218,7 @@ Evidence来源为`USER_PROVIDED`、`TOOL_OBSERVED`、`SOURCE_OBSERVED`、`KNOWLE
 口径、新鲜度、使用原因、信任等级及支持/反证/上下文角色。Answer Citation只能指向当前
 Turn显式关联的Evidence；历史证据需重新建立Link。
 
-## 11. Oracle Schema 14
+## 11. Oracle Schema 15
 
 ### 11.1 Turn
 
@@ -249,7 +255,7 @@ Policy Hash、状态、重试、错误和时间戳；`(REVISION_ID, ACTION_ID)`�
 - Turn Event增加可选Tool Invocation和Playbook Invocation关联；
 - Message Payload升级为内容项摘要，大对象进入Artifact。
 
-目标为43张表、10个视图，Manifest版本14、契约`aiops-oracle-v4`。规范DDL、自包含重建文件、
+目标为44张表、10个视图，Manifest版本15、契约`aiops-oracle-v5`。规范DDL、自包含重建文件、
 Entity、Repository、UoW、Manifest、视图和验收脚本必须同步更新。
 
 ## 12. 事务与Outbox
@@ -330,13 +336,13 @@ Proposal Hash、Target版本、策略和模板Hash复核，模型始终不能直
 
 ## 16. 验收矩阵
 
-- Schema 14、43张表、Manifest、Entity和自包含重建文件一致；
+- Schema 15、44张表、Manifest、Entity和自包含重建文件一致；
 - 输入、计划Revision、Tool调用和Evidence全部可审计；
 - 并发Turn和重试不产生重复业务记录；
 - 粘贴Alert Log形成用户证据并完成诊断；
 - 无专用Playbook仍进入通用调查；
 - 单一Target内的多任务目标不被单一Intent截断；
-- Turn请求不能覆盖Agent版本绑定的Target；
+- Conversation创建时必须选择Agent版本已绑定的一个Target，后续Turn不能覆盖该Target；
 - Target离线时继续使用Prometheus、Loki和用户证据；
 - Tool失败触发Gap、替代来源或Replan；
 - 动态SQL安全围栏和跨Domain授权测试通过；

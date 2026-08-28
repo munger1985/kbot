@@ -152,15 +152,23 @@ class TargetConfigurationMixin:
                     if request.endpoint is not None
                     else None
                 ),
+                readonly_connection_enabled=request.readonly_connection_enabled,
+                controlled_change_enabled=request.controlled_change_enabled,
                 diagnostic_credential_id=diagnostic_id,
                 execution_credential_id=execution_id,
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
                 status="DISABLED",
-                connectivity_status="CHECKING",
+                connectivity_status=(
+                    "CHECKING" if request.readonly_connection_enabled else "UNKNOWN"
+                ),
                 observed_status="UNKNOWN",
-                connectivity_check_request_id=(request_id := uuid7()),
-                connectivity_check_requested_at=now,
+                connectivity_check_request_id=(
+                    request_id := uuid7()
+                ) if request.readonly_connection_enabled else None,
+                connectivity_check_requested_at=(
+                    now if request.readonly_connection_enabled else None
+                ),
                 row_version=1,
                 connectivity_version=1,
                 created_by=scope.actor_id,
@@ -177,18 +185,19 @@ class TargetConfigurationMixin:
                 event_type="TARGET_CREATED",
                 row_version=1,
             )
-            await add_configuration_event(
-                uow=uow,
-                scope=scope,
-                aggregate_type="TARGET",
-                aggregate_id=entity.target_id,
-                event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
-                row_version=1,
-                details={
-                    "connectivity_check_request_id": str(request_id),
-                    "connectivity_version": 1,
-                },
-            )
+            if request.readonly_connection_enabled:
+                await add_configuration_event(
+                    uow=uow,
+                    scope=scope,
+                    aggregate_type="TARGET",
+                    aggregate_id=entity.target_id,
+                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
+                    row_version=1,
+                    details={
+                        "connectivity_check_request_id": str(request_id),
+                        "connectivity_version": 1,
+                    },
+                )
             return _target_detail(entity)
 
         return await self._idempotent(
@@ -272,7 +281,7 @@ class TargetConfigurationMixin:
         if not fields:
             raise validation_failed("PATCH 至少需要一个可修改字段")
         connectivity_changed = bool(
-            {"endpoint"} & fields.keys()
+            {"endpoint", "readonly_connection_enabled"} & fields.keys()
         )
         async with self._uow_factory() as uow:
             assert uow.targets is not None
@@ -284,6 +293,23 @@ class TargetConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Target")
             self._check_version(entity.row_version, expected_version)
+            effective_readonly = fields.get(
+                "readonly_connection_enabled", entity.readonly_connection_enabled
+            )
+            effective_change = fields.get(
+                "controlled_change_enabled", entity.controlled_change_enabled
+            )
+            effective_endpoint = request.endpoint if "endpoint" in fields else entity.endpoint_json
+            if effective_readonly and not effective_endpoint:
+                raise validation_failed("启用只读数据库连接时必须配置 Endpoint")
+            if effective_readonly and entity.diagnostic_credential_id is None:
+                raise validation_failed("启用只读数据库连接时必须配置诊断凭据")
+            if effective_change and (
+                not effective_readonly or entity.execution_credential_id is None
+            ):
+                raise validation_failed("允许受控变更时必须启用只读连接并配置执行凭据")
+            if not effective_readonly and effective_change:
+                raise validation_failed("仅监控 Target 不能允许受控变更")
             if "endpoint" in fields:
                 endpoint = request.endpoint
                 if endpoint is None:
@@ -301,13 +327,18 @@ class TargetConfigurationMixin:
                 fields["endpoint_json"] = fields.pop("endpoint")
             for name, value in fields.items():
                 setattr(entity, name, value)
-            if connectivity_changed:
+            if connectivity_changed and effective_readonly:
                 entity.status = "DISABLED"
                 entity.connectivity_status = "CHECKING"
                 entity.connectivity_version = int(entity.connectivity_version) + 1
                 entity.connectivity_check_request_id = uuid7()
                 entity.connectivity_check_requested_at = datetime.now(UTC)
                 entity.last_connectivity_check_at = None
+                entity.last_error_code = None
+            elif connectivity_changed:
+                entity.connectivity_status = "UNKNOWN"
+                entity.connectivity_check_request_id = None
+                entity.connectivity_check_requested_at = None
                 entity.last_error_code = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
@@ -320,7 +351,7 @@ class TargetConfigurationMixin:
                 event_type="TARGET_UPDATED",
                 row_version=int(entity.row_version),
             )
-            if connectivity_changed:
+            if connectivity_changed and effective_readonly:
                 await add_configuration_event(
                     uow=uow,
                     scope=scope,
@@ -393,7 +424,9 @@ class TargetConfigurationMixin:
                     credential_id=target.execution_credential_id,
                     credential_kind="target_execution", actor_id=scope.actor_id,
                 )
-            target.execution_credential_id, target.updated_by, target.updated_at = None, scope.actor_id, now
+            target.execution_credential_id = None
+            target.controlled_change_enabled = False
+            target.updated_by, target.updated_at = scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
             return _target_detail(target)
         return await self._idempotent(scope=scope, operation="TARGET_EXECUTION_CREDENTIAL_REMOVE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
@@ -411,11 +444,15 @@ class TargetConfigurationMixin:
                     credential_kind="target_diagnostic", actor_id=scope.actor_id,
                 )
             target.diagnostic_credential_id = None
+            target.readonly_connection_enabled = False
+            target.controlled_change_enabled = False
             target.status = "DISABLED"
-            target.connectivity_status = "UNREACHABLE"
+            target.connectivity_status = "UNKNOWN"
             target.connectivity_version = int(target.connectivity_version) + 1
-            target.last_connectivity_check_at = now
-            target.last_error_code = "TARGET_CREDENTIAL_REQUIRED"
+            target.connectivity_check_request_id = None
+            target.connectivity_check_requested_at = None
+            target.last_connectivity_check_at = None
+            target.last_error_code = None
             target.updated_by, target.updated_at = scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
             return _target_detail(target)
@@ -479,11 +516,13 @@ class TargetConfigurationMixin:
                 )
             if (
                 destination == "ENABLED"
+                and entity.readonly_connection_enabled
                 and entity.connectivity_status not in {"CONNECTED", "DEGRADED"}
             ):
                 raise state_conflict("Target 连通性检查通过后才能启用")
             if (
                 destination == "ENABLED"
+                and entity.readonly_connection_enabled
                 and (
                     entity.last_connectivity_success_at is None
                     or entity.last_connectivity_success_at
@@ -534,6 +573,8 @@ class TargetConfigurationMixin:
             )
             if entity is None:
                 raise resource_not_found("Target")
+            if not entity.readonly_connection_enabled:
+                raise validation_failed("仅监控 Target 不执行数据库连通性检查")
             self._check_version(entity.row_version, expected_version)
             request_id = uuid7()
             entity.connectivity_status = "CHECKING"

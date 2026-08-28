@@ -257,6 +257,7 @@ class _Uow:
             get=self._get_agent,
             version=self._get_version,
             version_source_ids=self._source_ids,
+            version_has_target=self._version_has_target,
         )
         self.targets = SimpleNamespace(
             target_ids_shared_by_sources=self._target_candidates,
@@ -288,6 +289,10 @@ class _Uow:
     async def _source_ids(self, *, agent_version_id):
         self.assert_version(agent_version_id)
         return []
+
+    async def _version_has_target(self, *, agent_version_id, target_id):
+        self.assert_version(agent_version_id)
+        return target_id == self.target.target_id
 
     async def _target_candidates(self, *, domain_id, source_ids):
         self.assertEqual_values(domain_id, 7)
@@ -322,12 +327,13 @@ class _Uow:
         )
 
     async def _list_conversations(
-        self, *, domain_id, created_by, agent_id=None, limit=50
+        self, *, domain_id, created_by, agent_id=None, target_id=None, limit=50
     ):
         rows = [
             row for row in reversed(self.conversation_rows)
             if int(row.domain_id) == domain_id
             and row.created_by == created_by
+            and (target_id is None or row.target_id == target_id)
             and row.status != "ARCHIVED"
             and (agent_id is None or row.agent_id == agent_id)
         ]
@@ -448,6 +454,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-start",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
+                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -467,6 +474,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-1",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
+                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -677,6 +685,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 trace_id="trace-failed",
                 conversation_create=ConversationCreate(
                     agent_id=uow.agent.agent_id,
+                    target_id=uow.target.target_id,
                     source=ConversationSourceContext(),
                 ),
                 first_turn=TurnCreate(

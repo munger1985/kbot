@@ -103,6 +103,7 @@ async def start_conversation(
 async def list_conversations(
     request: Request,
     agent_id: UUID | None = None,
+    target_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=50),
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
@@ -111,6 +112,7 @@ async def list_conversations(
         domain_id=domain_id,
         actor_id=actor_id,
         agent_id=agent_id,
+        target_id=target_id,
         limit=limit,
     )
 

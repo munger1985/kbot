@@ -66,19 +66,29 @@ class AIOpsAgentValidator:
         *,
         agent_id: UUID,
         domain_id: int,
+        target_id: UUID,
     ) -> AgentRuntimeBinding:
         """将私有 Agent 当前版本转换为 Run 的唯一配置绑定。"""
         agent = await self._get_active(
             agent_id=agent_id, domain_id=domain_id
         )
-        target_id = agent.get("target_id")
+        target_ids = {str(item) for item in agent.get("target_ids") or ()}
         policy_id = agent.get("policy_id")
         version_id = agent.get("agent_version_id")
-        if not target_id:
-            raise validation_failed("AIOps Agent 必须绑定诊断目标")
+        if str(target_id) not in target_ids:
+            raise validation_failed("AIOps Agent 未绑定当前诊断目标")
+        target = next(
+            (
+                item
+                for item in agent.get("target_candidates") or ()
+                if str(item.get("target_id")) == str(target_id)
+            ),
+            None,
+        )
+        if target is None:
+            raise validation_failed("AIOps Agent 当前诊断目标配置不完整")
         if not policy_id or not version_id:
             raise validation_failed("AIOps Agent 当前版本配置不完整")
-        config = dict(agent.get("config") or {})
         return AgentRuntimeBinding(
             binding_id=UUID(str(version_id)),
             agent_id=agent_id,
@@ -86,9 +96,12 @@ class AIOpsAgentValidator:
             policy_id=UUID(str(policy_id)),
             status="ACTIVE",
             row_version=int(agent.get("row_version") or 1),
-            allow_mutation=bool(config.get("allow_mutation", False)),
+            allow_mutation=(
+                bool(agent.get("allow_change_execution", False))
+                and bool(target.get("controlled_change_enabled", False))
+            ),
             allowed_actions_json=tuple(
-                str(item) for item in config.get("allowed_actions", [])
+                str(item) for item in agent.get("allowed_action_types", [])
             ),
         )
 

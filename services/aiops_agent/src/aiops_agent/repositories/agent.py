@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -12,6 +12,7 @@ from aiops_agent.entities import (
     AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
+    AIOpsAgentVersionTargetEntity,
     PolicyEntity,
 )
 
@@ -44,6 +45,19 @@ class AIOpsAgentRepository:
         )
         await self._session.flush()
 
+    async def add_version_targets(
+        self, *, version_id: UUID, target_ids: tuple[UUID, ...]
+    ) -> None:
+        self._write_guard()
+        self._session.add_all(
+            AIOpsAgentVersionTargetEntity(
+                agent_version_id=version_id,
+                target_id=target_id,
+            )
+            for target_id in target_ids
+        )
+        await self._session.flush()
+
     async def version_source_ids(self, *, agent_version_id: UUID) -> list[UUID]:
         rows = await self._session.scalars(
             select(AIOpsAgentVersionSourceEntity.diagnostic_source_id)
@@ -54,6 +68,29 @@ class AIOpsAgentRepository:
             .order_by(AIOpsAgentVersionSourceEntity.diagnostic_source_id)
         )
         return list(rows)
+
+    async def version_target_ids(self, *, agent_version_id: UUID) -> list[UUID]:
+        rows = await self._session.scalars(
+            select(AIOpsAgentVersionTargetEntity.target_id)
+            .where(
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == agent_version_id
+            )
+            .order_by(AIOpsAgentVersionTargetEntity.target_id)
+        )
+        return list(rows)
+
+    async def version_has_target(
+        self, *, agent_version_id: UUID, target_id: UUID
+    ) -> bool:
+        value = await self._session.scalar(
+            select(AIOpsAgentVersionTargetEntity.target_id).where(
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == agent_version_id,
+                AIOpsAgentVersionTargetEntity.target_id == target_id,
+            )
+        )
+        return value is not None
 
     async def add_grant(self, row: AIOpsAgentGrantEntity) -> None:
         self._write_guard()
@@ -209,7 +246,8 @@ class AIOpsAgentRepository:
         return value is not None
 
     async def get_active(
-        self, *, domain_id: int, agent_id: UUID, lock: bool = False
+        self, *, domain_id: int, agent_id: UUID,
+        target_id: UUID | None = None, lock: bool = False
     ):
         statement = (
             select(AIOpsAgentEntity, AIOpsAgentVersionEntity)
@@ -233,13 +271,21 @@ class AIOpsAgentRepository:
         source_ids = await self.version_source_ids(
             agent_version_id=version.agent_version_id
         )
+        target_ids = await self.version_target_ids(
+            agent_version_id=version.agent_version_id
+        )
+        if target_id is not None and target_id not in target_ids:
+            return None
         policy = await self._session.get(PolicyEntity, version.policy_id)
-        return _execution_binding(agent, version, source_ids, policy)
+        return _execution_binding(
+            agent, version, source_ids, target_ids, policy,
+            selected_target_id=target_id,
+        )
 
     async def resolve_auto_alert(
         self, *, domain_id: int, source_id: UUID, target_id: UUID
     ):
-        """选择一个明确订阅该监控源的启用 Agent，精确 Target 优先。"""
+        """选择一个同时订阅监控源并管理该 Target 的启用 Agent。"""
         rows = await self._session.execute(
             select(AIOpsAgentEntity, AIOpsAgentVersionEntity, PolicyEntity)
             .join(
@@ -252,31 +298,33 @@ class AIOpsAgentRepository:
                 AIOpsAgentVersionSourceEntity.agent_version_id
                 == AIOpsAgentVersionEntity.agent_version_id,
             )
+            .join(
+                AIOpsAgentVersionTargetEntity,
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == AIOpsAgentVersionEntity.agent_version_id,
+            )
             .join(PolicyEntity, PolicyEntity.policy_id == AIOpsAgentVersionEntity.policy_id)
             .where(
                 AIOpsAgentEntity.domain_id == domain_id,
                 AIOpsAgentEntity.status == "ACTIVE",
                 AIOpsAgentVersionSourceEntity.diagnostic_source_id == source_id,
-                or_(
-                    AIOpsAgentVersionEntity.target_id == target_id,
-                    AIOpsAgentVersionEntity.target_id.is_(None),
-                ),
+                AIOpsAgentVersionTargetEntity.target_id == target_id,
                 PolicyEntity.status == "ACTIVE",
             )
-            .order_by(
-                case(
-                    (AIOpsAgentVersionEntity.target_id == target_id, 0),
-                    else_=1,
-                ),
-                AIOpsAgentEntity.agent_id,
-            )
+            .order_by(AIOpsAgentEntity.agent_id)
         )
         for agent, version, policy in rows:
             if bool(policy.rules_json.get("auto_alert_enabled", True)):
                 source_ids = await self.version_source_ids(
                     agent_version_id=version.agent_version_id
                 )
-                return _execution_binding(agent, version, source_ids, policy), policy
+                target_ids = await self.version_target_ids(
+                    agent_version_id=version.agent_version_id
+                )
+                return _execution_binding(
+                    agent, version, source_ids, target_ids, policy,
+                    selected_target_id=target_id,
+                ), policy
         return None
 
 
@@ -286,6 +334,7 @@ class AIOpsAgentExecutionBinding:
     agent_id: UUID
     policy_id: UUID
     target_id: UUID | None
+    target_ids: tuple[UUID, ...]
     diagnostic_source_ids: tuple[UUID, ...]
     status: str
     row_version: int
@@ -298,14 +347,18 @@ def _execution_binding(
     agent: AIOpsAgentEntity,
     version: AIOpsAgentVersionEntity,
     source_ids: list[UUID],
+    target_ids: list[UUID],
     policy: PolicyEntity | None,
+    *,
+    selected_target_id: UUID | None = None,
 ):
     rules: dict[str, Any] = dict(policy.rules_json or {}) if policy else {}
     return AIOpsAgentExecutionBinding(
         binding_id=version.agent_version_id,
         agent_id=agent.agent_id,
         policy_id=version.policy_id,
-        target_id=version.target_id,
+        target_id=selected_target_id,
+        target_ids=tuple(target_ids),
         diagnostic_source_ids=tuple(source_ids),
         status=agent.status,
         row_version=int(agent.row_version),

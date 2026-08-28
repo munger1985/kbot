@@ -4,7 +4,7 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   const markdown = globalThis.KBotMarkdown;
-  const state = { agents: [], conversation: null, selectedFile: null };
+  const state = { agents: [], targets: [], conversation: null, selectedFile: null };
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
   const terminalTurnStatuses = new Set([
@@ -82,23 +82,28 @@
   }
 
   async function agents() {
-    const rows = await KBotAIOpsAuth.request(`${api}/agents`);
+    const [rows, targetPage] = await Promise.all([
+      KBotAIOpsAuth.request(`${api}/agents`),
+      KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
+    ]);
     state.agents = values(rows).filter((item) => item.status === "ACTIVE");
+    state.targets = values(targetPage?.items);
     return state.agents;
   }
 
   function syncAgentTargetContext() {
     const agentId = document.getElementById("agent-select").value;
+    const targetId = document.getElementById("target-select").value;
     const context = document.getElementById("agent-target-context");
     const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
-    const target = values(agent?.target_candidates).find(
-      (item) => String(item.target_id) === String(agent?.target_id),
-    );
-    context.textContent = !agentId
-      ? "Target由Agent配置决定"
+    const target = state.targets.find((item) => String(item.target_id) === String(targetId));
+    context.textContent = !targetId
+      ? "先选择要运维的数据库对象。"
+      : !agentId
+        ? `已选择 ${target?.display_name || shell.short(targetId)}，请选择 Agent。`
       : target
-        ? `诊断Target：${target.display_name || shell.short(target.target_id)} · ${target.connectivity_status || "UNKNOWN"}`
-        : "当前Agent尚未绑定诊断Target";
+        ? `诊断 Target：${target.display_name || shell.short(target.target_id)} · ${target.readonly_connection_enabled ? (target.connectivity_status || "UNKNOWN") : "仅监控模式"}`
+        : "当前 Target 不可用";
   }
 
   async function proposalAction(button) {
@@ -216,6 +221,8 @@
     const turnRows = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns?limit=200`);
     const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
+    document.getElementById("target-select").value = conversation.target_id;
+    renderAgentOptions(conversation.agent_id);
     syncAgentTargetContext();
     await renderConversation(conversation, turns);
     history.replaceState(null, "", `./chat.html?conversation=${encodeURIComponent(id)}`);
@@ -227,13 +234,13 @@
     syncAgentTargetContext();
     document.getElementById("conversation-title").textContent = agentSelected
       ? "开始一次数据库诊断"
-      : "请先选择 Agent";
+      : "请先选择 Target 和 Agent";
     document.getElementById("conversation-context").textContent = agentSelected
       ? "可以选择历史会话，或在下方发起一次新诊断。"
-      : "选择 Agent 后，才会显示该 Agent 的会话历史。";
+      : "选择 Target 和 Agent 后，才会显示对应的会话历史。";
     document.getElementById("message-list").innerHTML = agentSelected
       ? '<div class="ops-empty">请在下方描述需要诊断的问题。</div>'
-      : '<div class="ops-empty">请选择 Agent 以查看历史并开始诊断。</div>';
+      : '<div class="ops-empty">请选择 Target 和 Agent 以查看历史并开始诊断。</div>';
   }
 
   function setComposerAvailability(enabled) {
@@ -275,15 +282,16 @@
     const requestedId = preferredId || new URLSearchParams(location.search).get("conversation");
     if (!select.value && requestedId) await loadConversation(requestedId);
     const selectedAgent = select.value;
+    const selectedTarget = document.getElementById("target-select").value;
     const list = document.getElementById("conversation-list");
-    if (!selectedAgent) {
-      list.innerHTML = '<div class="ops-empty">请先选择 Agent 查看其会话历史</div>';
+    if (!selectedAgent || !selectedTarget) {
+      list.innerHTML = '<div class="ops-empty">请先选择 Target 和 Agent 查看会话历史</div>';
       setComposerAvailability(false);
       resetConversationView();
       return;
     }
     setComposerAvailability(true);
-    const rows = await KBotAIOpsAuth.request(`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}`);
+    const rows = await KBotAIOpsAuth.request(`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}&target_id=${encodeURIComponent(selectedTarget)}`);
     renderConversationList(rows);
     if (requestedId && String(state.conversation?.conversation_id) !== String(requestedId)) {
       await loadConversation(requestedId);
@@ -413,11 +421,13 @@
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
     const agentId = document.getElementById("agent-select").value;
+    const targetId = document.getElementById("target-select").value;
     const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
     const text = form.elements.message.value.trim();
     const selectedFile = state.selectedFile;
     if (!agentId) return shell.toast("请先选择 Agent");
-    if (!agent?.target_id) return shell.toast("当前 Agent 尚未绑定诊断 Target");
+    if (!targetId) return shell.toast("请先选择逻辑 Target");
+    if (!values(agent?.target_ids).includes(targetId)) return shell.toast("当前 Agent 未绑定所选 Target");
     if (!text && !selectedFile) return shell.toast("请输入问题或上传诊断材料");
     button.disabled = true;
     try {
@@ -442,7 +452,7 @@
       }
       const body = state.conversation
         ? { content }
-        : { agent_id: agentId, content };
+        : { agent_id: agentId, target_id: targetId, content };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
@@ -465,8 +475,17 @@
 
   async function initChat() {
     const select = document.getElementById("agent-select");
-    const rows = await agents();
-    select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
+    await agents();
+    const targetSelect = document.getElementById("target-select");
+    targetSelect.innerHTML = '<option value="">选择逻辑 Target</option>' + state.targets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · ${esc(item.db_type)}${item.readonly_connection_enabled ? "" : " · 仅监控"}</option>`).join("");
+    targetSelect.onchange = () => {
+      clearConversationUrl();
+      state.conversation = null;
+      renderAgentOptions();
+      syncAgentTargetContext();
+      resetConversationView();
+      loadConversationList().catch((error) => shell.toast(error.message));
+    };
     select.onchange = () => {
       clearConversationUrl();
       syncAgentTargetContext();
@@ -492,8 +511,17 @@
     await loadConversationList();
   }
 
+  function renderAgentOptions(preferredId = "") {
+    const targetId = document.getElementById("target-select").value;
+    const select = document.getElementById("agent-select");
+    const rows = state.agents.filter((item) => values(item.target_ids).includes(targetId));
+    select.disabled = !targetId;
+    select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
+    if (rows.some((item) => String(item.agent_id) === String(preferredId))) select.value = preferredId;
+  }
+
   function continueForm(run, title) {
-    const allowed = state.agents.filter((item) => !item.target_id || String(item.target_id) === String(run.target_id));
+    const allowed = state.agents.filter((item) => values(item.target_ids).includes(String(run.target_id)));
     return `<div class="ops-inline-dialog"><h3>继续深入诊断</h3><p>系统会在服务端继承本次自动诊断证据；后续人工对话才可能按 Agent 权限产生审批待办。</p><form id="continue-form" class="ops-form"><div class="ops-field span-12"><label>Agent</label><select name="agent_id" required><option value="">请选择</option>${allowed.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("")}</select></div><div class="ops-field span-12"><label>继续追问</label><textarea name="message" required>${esc(`请基于“${title}”的自动诊断结果继续分析：`)}</textarea></div><div class="ops-filter-actions"><button class="primary" type="submit">进入对话</button></div></form></div>`;
   }
 
@@ -505,6 +533,7 @@
       const fields = Object.fromEntries(new FormData(form));
       const body = {
         agent_id: fields.agent_id,
+        target_id: run.target_id,
         content: [{ content_type: "TEXT", text: fields.message }],
         source_run_id: run.ops_run_id,
       };

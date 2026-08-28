@@ -61,6 +61,7 @@ class AIOpsContractTest(unittest.TestCase):
             "version_code": "19c",
             "environment": "PROD",
             "db_role": "PRIMARY",
+            "readonly_connection_enabled": True,
             "endpoint": {
                 "host": "db.internal",
                 "port": 1521,

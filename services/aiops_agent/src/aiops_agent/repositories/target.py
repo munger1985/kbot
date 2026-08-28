@@ -150,6 +150,7 @@ class TargetRepository(AIOpsRepository):
         statement = (
             select(TargetEntity)
             .where(
+                TargetEntity.readonly_connection_enabled == 1,
                 or_(
                     and_(
                         TargetEntity.last_connectivity_check_at.is_(None),

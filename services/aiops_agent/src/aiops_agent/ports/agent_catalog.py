@@ -41,4 +41,5 @@ class AgentCatalogPort(Protocol):
         *,
         agent_id: UUID,
         domain_id: int,
+        target_id: UUID,
     ) -> AgentRuntimeBinding: ...

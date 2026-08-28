@@ -21,6 +21,8 @@ def build_capability_snapshot(
     target_payload = dict(getattr(target, "capabilities_json", None) or {})
     target_capabilities = set(_capability_names(target_payload))
     if (
+        bool(getattr(target, "readonly_connection_enabled", False))
+        and
         getattr(target, "diagnostic_credential_id", None) is not None
         and bool(getattr(target, "endpoint_json", None))
     ):
@@ -34,7 +36,10 @@ def build_capability_snapshot(
                     "replication_views",
                 }
             )
-    if getattr(target, "execution_credential_id", None) is not None:
+    if (
+        bool(getattr(target, "controlled_change_enabled", False))
+        and getattr(target, "execution_credential_id", None) is not None
+    ):
         target_capabilities.add("DB_MUTATION_CREDENTIAL")
 
     source_snapshots = tuple(

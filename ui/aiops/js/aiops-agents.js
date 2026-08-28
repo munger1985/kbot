@@ -9,6 +9,8 @@
   let models = [];
   let sourceBindings = [];
   let bindingTargetId = "";
+  const bindingsByTarget = new Map();
+  const draftsByTarget = new Map();
   let editing = null;
 
   const escape = (value) => shell.escape(value ?? "—");
@@ -39,13 +41,13 @@
     }
     body.innerHTML = agents.map((agent) => {
       const sourceNames = (agent.diagnostic_source_ids || []).map((id) => escape(sourceName(id)));
-      const target = agent.target_id ? escape(targetName(agent.target_id)) : "不直连数据库";
-      const access = agent.allow_change_execution ? "只读诊断 + 审批后变更" : (agent.target_id ? "只读诊断" : "仅监控证据");
+      const targetNames = (agent.target_ids || []).map((id) => escape(targetName(id)));
+      const access = agent.allow_change_execution ? "诊断 + 审批后受控变更" : "诊断";
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
         <td><strong>${sourceNames.length} 个监控源</strong><small class="agent-row-description">${sourceNames.join("、") || "—"}</small></td>
-        <td><strong>${access}</strong><small class="agent-row-description">${target}</small></td>
+        <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
         <td><button type="button" data-agent-id="${escape(agent.agent_id)}">编辑</button></td>
       </tr>`;
@@ -120,8 +122,10 @@
   function renderResources() {
     document.getElementById("agent-sources").innerHTML = sources.length
       ? sources.map(sourceCard).join("")
-      : '<div class="ops-error">没有已启用且可连接的监控源，请先完成监控源配置。</div>';
-    document.getElementById("agent-target").innerHTML = '<option value="">不允许数据库直连诊断</option>' + targets.map((target) => `<option value="${escape(target.target_id)}">${escape(target.display_name)} · ${escape(target.db_type)}${target.execution_credential_configured ? " · 执行凭据就绪" : " · 执行凭据待配置"}</option>`).join("");
+      : '<div class="ops-error">没有已启用的监控源，请先完成监控源配置。</div>';
+    document.getElementById("agent-targets").innerHTML = targets.length
+      ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
+      : '<div class="ops-error">没有已启用的逻辑 Target，请先创建并启用运维目标。</div>';
     const diagnosisModels = models.filter((model) => Number(model.category) === 1);
     document.getElementById("agent-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
@@ -179,6 +183,7 @@
   }
 
   async function loadBindings(targetId) {
+    captureMappingDraft();
     resetMappingInputs();
     sourceBindings = [];
     bindingTargetId = "";
@@ -188,16 +193,20 @@
     }
     const expectedTarget = targetId;
     document.getElementById("agent-binding-summary").textContent = "正在读取该 Target 的监控源映射…";
-    const bindings = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`);
-    if (document.getElementById("agent-target").value !== expectedTarget) return;
+    const bindings = bindingsByTarget.has(targetId)
+      ? bindingsByTarget.get(targetId)
+      : await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`);
+    if (document.getElementById("agent-mapping-target").value !== expectedTarget) return;
     sourceBindings = Array.isArray(bindings) ? bindings : [];
+    bindingsByTarget.set(targetId, sourceBindings);
     bindingTargetId = targetId;
     applyBindings();
+    applyMappingDraft(targetId);
     syncSourceMappingVisibility();
   }
 
   function syncSourceMappingVisibility() {
-    const targetId = document.getElementById("agent-target").value;
+    const targetId = document.getElementById("agent-mapping-target").value;
     let selectedCount = 0;
     let mappedCount = 0;
     document.querySelectorAll(".agent-source-card").forEach((card) => {
@@ -209,23 +218,77 @@
       if (show && bindingFor(card.dataset.sourceId)?.status === "ACTIVE") mappedCount += 1;
     });
     const summary = document.getElementById("agent-binding-summary");
-    if (!targetId) summary.textContent = "当前只使用监控证据；选择 Target 后可同时配置数据库只读诊断。";
+    if (!targetId) summary.textContent = "请先选择至少一个逻辑 Target。";
     else if (!selectedCount) summary.textContent = "请选择监控源，随后填写该 Target 在监控系统中的标识。";
     else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；保存时会补齐或更新。`;
   }
 
   function toggleTargetFields() {
-    const targetId = document.getElementById("agent-target").value;
-    const target = targets.find((item) => item.target_id === targetId);
-    const executionConfigured = Boolean(target?.execution_credential_configured);
+    const selected = selectedTargetIds();
+    const changeTargets = targets.filter((item) => selected.includes(item.target_id) && item.controlled_change_enabled);
     const executionToggle = document.querySelector('[name="allow_change_execution"]');
-    document.getElementById("agent-change-field").hidden = !targetId;
-    executionToggle.disabled = !targetId;
-    if (!targetId) executionToggle.checked = false;
-    document.getElementById("agent-change-help").textContent = executionConfigured
-      ? "只开放系统支持的受控动作，仍必须进入人工审批链，不代表无人审批自动执行。"
-      : "可以先保存允许变更；实际执行前仍必须在运维目标中配置独立的执行凭据，并通过人工审批。";
+    executionToggle.disabled = !changeTargets.length;
+    if (!changeTargets.length) executionToggle.checked = false;
+    document.getElementById("agent-change-help").textContent = changeTargets.length
+      ? `当前有 ${changeTargets.length} 个 Target 允许受控变更；实际执行仍逐条审批。`
+      : "所选 Target 均未启用受控变更；请先在运维目标中配置。";
+    syncMappingTargetOptions();
     syncSourceMappingVisibility();
+  }
+
+  function selectedTargetIds() {
+    return [...document.querySelectorAll('[name="target_ids"]:checked')].map((input) => input.value);
+  }
+
+  function captureMappingDraft() {
+    if (!bindingTargetId) return;
+    const draft = {};
+    document.querySelectorAll(".agent-source-card").forEach((card) => {
+      const labels = {};
+      const job = card.querySelector("[data-loki-job]");
+      const label = card.querySelector("[data-loki-target-label]");
+      const value = card.querySelector("[data-loki-target-value]");
+      if (job && label && value && job.value.trim() && label.value.trim()) {
+        labels.job = job.value.trim();
+        labels[label.value.trim()] = value.value.trim();
+      }
+      draft[card.dataset.sourceId] = {
+        locatorKey: card.querySelector("[data-locator-key]").value.trim(),
+        sourceLocator: labels.job ? { labels } : (card.querySelector("[data-prometheus-host-target]") ? { host_target_key: card.querySelector("[data-prometheus-host-target]").value.trim() } : {}),
+      };
+    });
+    draftsByTarget.set(bindingTargetId, draft);
+  }
+
+  function applyMappingDraft(targetId) {
+    const draft = draftsByTarget.get(targetId);
+    if (!draft) return;
+    document.querySelectorAll(".agent-source-card").forEach((card) => {
+      const item = draft[card.dataset.sourceId];
+      if (!item) return;
+      card.querySelector("[data-locator-key]").value = item.locatorKey || "";
+      const host = card.querySelector("[data-prometheus-host-target]");
+      if (host) host.value = item.sourceLocator?.host_target_key || "";
+      const labels = item.sourceLocator?.labels || {};
+      const job = card.querySelector("[data-loki-job]");
+      const label = card.querySelector("[data-loki-target-label]");
+      const value = card.querySelector("[data-loki-target-value]");
+      if (job && label && value) {
+        const targetLabel = Object.keys(labels).find((name) => name !== "job") || "target_key";
+        job.value = labels.job || "oracle_alert";
+        label.value = targetLabel;
+        value.value = labels[targetLabel] || "";
+      }
+    });
+  }
+
+  function syncMappingTargetOptions() {
+    const select = document.getElementById("agent-mapping-target");
+    const selected = selectedTargetIds();
+    const previous = selected.includes(select.value) ? select.value : selected[0] || "";
+    select.innerHTML = '<option value="">请选择</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("");
+    select.value = previous;
+    if (previous && previous !== bindingTargetId) loadBindings(previous).catch((error) => showResult(error.message, "bad"));
   }
 
   function toggleAlertSettings() {
@@ -239,6 +302,8 @@
     editing = null;
     sourceBindings = [];
     bindingTargetId = "";
+    bindingsByTarget.clear();
+    draftsByTarget.clear();
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -258,6 +323,10 @@
   async function openEdit(agentId) {
     editing = agents.find((item) => item.agent_id === agentId);
     if (!editing) return;
+    sourceBindings = [];
+    bindingTargetId = "";
+    bindingsByTarget.clear();
+    draftsByTarget.clear();
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -265,7 +334,6 @@
     form.elements.display_name.value = editing.display_name;
     form.elements.description.value = editing.description || "";
     form.elements.status.value = editing.status;
-    form.elements.target_id.value = editing.target_id || "";
     form.elements.allow_change_execution.checked = Boolean(editing.allow_change_execution);
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
@@ -275,16 +343,21 @@
     form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => {
       input.checked = (editing.diagnostic_source_ids || []).includes(input.value);
     });
-    document.getElementById("agent-status-help").textContent = "启用前会检查监控源、Target 连通性以及两者之间的有效映射。";
+    form.querySelectorAll('[name="target_ids"]').forEach((input) => {
+      input.checked = (editing.target_ids || []).includes(input.value);
+    });
+    document.getElementById("agent-status-help").textContent = "启用前会检查逻辑 Target、监控源及至少一条有效映射；运行时连接异常不会阻止 Agent 诊断。";
     toggleTargetFields();
     toggleAlertSettings();
     showResult();
     document.getElementById("agent-dialog-title").textContent = "修改 Agent";
     document.getElementById("save-agent").textContent = "保存修改";
     document.getElementById("agent-dialog").showModal();
-    if (editing.target_id) {
+    const firstTargetId = editing.target_ids?.[0];
+    if (firstTargetId) {
       try {
-        await loadBindings(editing.target_id);
+        document.getElementById("agent-mapping-target").value = firstTargetId;
+        await loadBindings(firstTargetId);
       } catch (error) {
         showResult(`读取 Target 映射失败：${error.message}`, "bad");
       }
@@ -293,7 +366,9 @@
 
   function payload(form) {
     const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
+    const targetIds = selectedTargetIds();
     if (!selectedSources.length) throw new Error("至少选择一个监控源。");
+    if (!targetIds.length) throw new Error("至少选择一个逻辑 Target。");
     const modelId = form.elements.diagnosis_model_id.value.trim();
     if (!modelId) throw new Error("请选择诊断模型。");
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
@@ -302,7 +377,7 @@
       description: form.elements.description.value.trim() || null,
       status: editing ? form.elements.status.value : "DRAFT",
       diagnostic_source_ids: selectedSources,
-      target_id: form.elements.target_id.value || null,
+      target_ids: targetIds,
       allow_change_execution: form.elements.allow_change_execution.checked,
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
@@ -387,6 +462,7 @@
       sourceBindings.push(current);
     }
     applyBindings();
+    bindingsByTarget.set(targetId, sourceBindings);
   }
 
   async function save(event) {
@@ -398,8 +474,13 @@
     showResult(editing ? "正在校验 Agent 配置…" : "正在创建 Agent…");
     try {
       const body = payload(event.currentTarget);
-      const plans = collectBindingPlans(body.target_id, body.diagnostic_source_ids);
-      await ensureSourceBindings(body.target_id, plans);
+      captureMappingDraft();
+      for (const targetId of body.target_ids) {
+        document.getElementById("agent-mapping-target").value = targetId;
+        await loadBindings(targetId);
+        const plans = collectBindingPlans(targetId, body.diagnostic_source_ids);
+        await ensureSourceBindings(targetId, plans);
+      }
       if (editing) body.expected_row_version = editing.row_version;
       await KBotAIOpsAuth.request(editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`, {
         method: editing ? "PATCH" : "POST",
@@ -425,8 +506,8 @@
       KBotAIOpsAuth.request(`${api}/model-catalog`),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
-    sources = (sourcePage.items || []).filter((item) => ["CONNECTED", "DEGRADED"].includes(item.connectivity_status));
-    targets = (targetPage.items || []).filter((item) => ["CONNECTED", "DEGRADED"].includes(item.connectivity_status));
+    sources = sourcePage.items || [];
+    targets = targetPage.items || [];
     models = Array.isArray(modelRows) ? modelRows : [];
     renderResources();
     renderRows();
@@ -436,8 +517,8 @@
     const dialog = document.getElementById("agent-dialog");
     dialog.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => dialog.close()));
     document.getElementById("create-agent").addEventListener("click", openCreate);
-    document.getElementById("agent-target").addEventListener("change", async (event) => {
-      toggleTargetFields();
+    document.getElementById("agent-targets").addEventListener("change", () => toggleTargetFields());
+    document.getElementById("agent-mapping-target").addEventListener("change", async (event) => {
       try {
         await loadBindings(event.currentTarget.value);
       } catch (error) {

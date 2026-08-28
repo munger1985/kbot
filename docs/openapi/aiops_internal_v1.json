@@ -889,6 +889,11 @@
           "source": {
             "$ref": "#/components/schemas/ConversationSourceContext"
           },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
           "title": {
             "anyOf": [
               {
@@ -904,7 +909,8 @@
           }
         },
         "required": [
-          "agent_id"
+          "agent_id",
+          "target_id"
         ],
         "title": "ConversationCreate",
         "type": "object"
@@ -1138,6 +1144,11 @@
           "status": {
             "$ref": "#/components/schemas/ConversationStatus"
           },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
           "title": {
             "anyOf": [
               {
@@ -1160,6 +1171,7 @@
           "conversation_id",
           "agent_id",
           "agent_version_id",
+          "target_id",
           "status",
           "source_type",
           "last_turn_no",
@@ -6542,6 +6554,11 @@
             "title": "Capabilities",
             "type": "object"
           },
+          "controlled_change_enabled": {
+            "default": false,
+            "title": "Controlled Change Enabled",
+            "type": "boolean"
+          },
           "db_role": {
             "default": "UNKNOWN",
             "enum": [
@@ -6599,6 +6616,11 @@
                 "type": "null"
               }
             ]
+          },
+          "readonly_connection_enabled": {
+            "default": false,
+            "title": "Readonly Connection Enabled",
+            "type": "boolean"
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -6660,6 +6682,10 @@
             "minimum": 1.0,
             "title": "Connectivity Version",
             "type": "integer"
+          },
+          "controlled_change_enabled": {
+            "title": "Controlled Change Enabled",
+            "type": "boolean"
           },
           "created_at": {
             "format": "date-time",
@@ -6766,6 +6792,10 @@
             "title": "Observed Status",
             "type": "string"
           },
+          "readonly_connection_enabled": {
+            "title": "Readonly Connection Enabled",
+            "type": "boolean"
+          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -6822,6 +6852,8 @@
           "status",
           "connectivity_status",
           "observed_status",
+          "readonly_connection_enabled",
+          "controlled_change_enabled",
           "connectivity_check_pending",
           "diagnostic_credential_configured",
           "execution_credential_configured",
@@ -6947,6 +6979,17 @@
             ],
             "title": "Capabilities"
           },
+          "controlled_change_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlled Change Enabled"
+          },
           "db_role": {
             "anyOf": [
               {
@@ -7002,6 +7045,17 @@
             ],
             "title": "Environment"
           },
+          "readonly_connection_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readonly Connection Enabled"
+          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
@@ -7054,6 +7108,10 @@
             "title": "Connectivity Status",
             "type": "string"
           },
+          "controlled_change_enabled": {
+            "title": "Controlled Change Enabled",
+            "type": "boolean"
+          },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
@@ -7082,6 +7140,10 @@
             ],
             "title": "Observed Status",
             "type": "string"
+          },
+          "readonly_connection_enabled": {
+            "title": "Readonly Connection Enabled",
+            "type": "boolean"
           },
           "row_version": {
             "minimum": 1.0,
@@ -7120,6 +7182,8 @@
           "status",
           "connectivity_status",
           "observed_status",
+          "readonly_connection_enabled",
+          "controlled_change_enabled",
           "connectivity_check_pending",
           "diagnostic_credential_configured",
           "execution_credential_configured",
@@ -11098,6 +11162,23 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
             }
           },
           {

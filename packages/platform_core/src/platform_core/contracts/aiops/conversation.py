@@ -125,6 +125,7 @@ class ConversationSourceContext(AIOpsContract):
 class ConversationCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     agent_id: UUIDv7
+    target_id: UUIDv7
     title: str | None = Field(default=None, min_length=1, max_length=256)
     source: ConversationSourceContext = Field(
         default_factory=ConversationSourceContext
@@ -142,6 +143,7 @@ class ConversationReceipt(AIOpsContract):
     conversation_id: UUIDv7
     agent_id: UUIDv7
     agent_version_id: UUIDv7
+    target_id: UUIDv7
     status: ConversationStatus
     title: str | None = None
     created_at: UtcDatetime
@@ -152,6 +154,7 @@ class ConversationSummary(AIOpsContract):
     conversation_id: UUIDv7
     agent_id: UUIDv7
     agent_version_id: UUIDv7
+    target_id: UUIDv7
     title: str | None = Field(default=None, max_length=256)
     status: ConversationStatus
     source_type: ConversationSourceType

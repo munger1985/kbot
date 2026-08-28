@@ -28,7 +28,7 @@ class AgentCreateRequest(_Request):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     allow_change_execution: bool = False
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -51,7 +51,9 @@ class AgentUpdateRequest(_Request):
     diagnostic_source_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=16
     )
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     allow_change_execution: bool | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[

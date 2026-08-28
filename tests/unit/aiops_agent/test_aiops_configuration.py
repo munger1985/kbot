@@ -158,18 +158,22 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             "agent_version_id": str(version_id),
             "domain_id": 100,
             "status": "ACTIVE",
-            "target_id": str(target_id),
+            "target_ids": [str(target_id)],
+            "target_candidates": [
+                {
+                    "target_id": str(target_id),
+                    "controlled_change_enabled": True,
+                }
+            ],
             "policy_id": str(policy_id),
             "row_version": 3,
-            "config": {
-                "allow_mutation": True,
-                "allowed_actions": ["db.session.terminate"],
-            },
+            "allow_change_execution": True,
+            "allowed_action_types": ["db.session.terminate"],
         }
         resolver = AIOpsAgentValidator(agent_service)
 
         binding = await resolver.resolve_runtime_binding(
-            agent_id=agent_id, domain_id=100
+            agent_id=agent_id, domain_id=100, target_id=target_id
         )
 
         self.assertEqual(version_id, binding.binding_id)
@@ -294,6 +298,9 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         service = object.__new__(AIOpsConfigurationService)
         service._managed_credentials = AsyncMock()
+        service._managed_credentials.put.return_value = SimpleNamespace(
+            credential_id=uuid7()
+        )
 
         async def execute_handler(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))
@@ -305,11 +312,15 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
                 display_name="Oracle Dev",
                 db_type="ORACLE",
                 environment="DEV",
+                readonly_connection_enabled=True,
                 endpoint={
                     "host": "10.0.0.190",
                     "port": 1521,
                     "service": "PDB01",
                     "tls_enabled": False,
+                },
+                diagnostic_credential={
+                    "username": "kbot_monitor", "password": "secret"
                 },
             ),
             idempotency_key="create-target-1",
@@ -458,6 +469,7 @@ class ConfigurationContractTest(unittest.TestCase):
             "display_name": "ERP 生产库",
             "db_type": "ORACLE",
             "environment": "PROD",
+            "readonly_connection_enabled": True,
             "endpoint": {
                 "host": "erp-db.internal",
                 "port": 1521,
@@ -472,6 +484,54 @@ class ConfigurationContractTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             TargetCreate.model_validate(
                 {**payload, "domain_id": 100, "password": "secret"}
+            )
+
+    def test_target_contract_supports_monitor_only_logical_database(self) -> None:
+        target = TargetCreate.model_validate(
+            {
+                "display_name": "仅监控 Oracle",
+                "db_type": "ORACLE",
+                "environment": "PROD",
+            }
+        )
+
+        self.assertFalse(target.readonly_connection_enabled)
+        self.assertIsNone(target.endpoint)
+        self.assertIsNone(target.diagnostic_credential)
+
+    def test_target_contract_requires_credentials_for_selected_access(self) -> None:
+        with self.assertRaises(ValidationError):
+            TargetCreate.model_validate(
+                {
+                    "display_name": "缺少凭据的 Oracle",
+                    "db_type": "ORACLE",
+                    "environment": "PROD",
+                    "readonly_connection_enabled": True,
+                    "endpoint": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB01",
+                    },
+                }
+            )
+        with self.assertRaises(ValidationError):
+            TargetCreate.model_validate(
+                {
+                    "display_name": "缺少执行凭据的 Oracle",
+                    "db_type": "ORACLE",
+                    "environment": "PROD",
+                    "readonly_connection_enabled": True,
+                    "controlled_change_enabled": True,
+                    "endpoint": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB01",
+                    },
+                    "diagnostic_credential": {
+                        "username": "readonly",
+                        "password": "secret",
+                    },
+                }
             )
 
     def test_diagnostic_source_endpoint_rejects_embedded_credentials(self) -> None:

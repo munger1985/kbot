@@ -34,6 +34,14 @@
       </header>
       <div class="ops-dialog-body">
         <div class="ops-form">
+          <div class="ops-field span-12">
+            <label><input id="target-readonly-enabled" name="readonly_connection_enabled" type="checkbox"> 启用数据库只读连接</label>
+            <small>关闭时该 Target 仍可通过 Prometheus、Loki、告警和用户材料诊断，主机、端口和凭据均无需填写。</small>
+          </div>
+          <div class="ops-field span-12">
+            <label><input id="target-change-enabled" name="controlled_change_enabled" type="checkbox"> 允许人工审批后的受控变更</label>
+            <small>需要数据库连接和独立执行凭据；每次变更仍必须通过审批。</small>
+          </div>
           <div class="ops-field span-6">
             <label for="target-display-name">目标名称</label>
             <input id="target-display-name" name="display_name" maxlength="256" required>
@@ -70,39 +78,39 @@
             <label for="target-security-level">安全级别</label>
             <input id="target-security-level" name="security_level" type="number" min="0" max="999" value="1" required>
           </div>
-          <div class="ops-field span-8">
+          <div class="ops-field span-8 target-connection-field">
             <label for="target-host">数据库主机名或 IP</label>
             <input id="target-host" name="host" maxlength="253" required placeholder="db.example.internal">
           </div>
-          <div class="ops-field span-4">
+          <div class="ops-field span-4 target-connection-field">
             <label for="target-port">端口</label>
             <input id="target-port" name="port" type="number" min="1" max="65535" value="1521" required>
           </div>
-          <div id="target-service-field" class="ops-field span-6">
+          <div id="target-service-field" class="ops-field span-6 target-connection-field">
             <label for="target-service">Oracle Service Name</label>
             <input id="target-service" name="service" maxlength="256" required placeholder="ORCLPDB1">
           </div>
-          <div id="target-database-field" class="ops-field span-6" hidden>
+          <div id="target-database-field" class="ops-field span-6 target-connection-field" hidden>
             <label for="target-database">Database</label>
             <input id="target-database" name="database" maxlength="256" placeholder="postgres">
           </div>
-          <div class="ops-field span-6">
+          <div class="ops-field span-6 target-connection-field">
             <label for="target-diagnostic-username">只读诊断用户名</label>
             <input id="target-diagnostic-username" name="diagnostic_username" maxlength="256" required autocomplete="off">
           </div>
-          <div class="ops-field span-6">
+          <div class="ops-field span-6 target-connection-field">
             <label for="target-diagnostic-password">只读诊断密码</label>
             <input id="target-diagnostic-password" name="diagnostic_password" type="password" maxlength="4096" required autocomplete="new-password">
           </div>
-          <div class="ops-field span-6">
+          <div class="ops-field span-6 target-change-field">
             <label for="target-execution-username">变更执行用户名（可选）</label>
             <input id="target-execution-username" name="execution_username" maxlength="256" autocomplete="off" placeholder="仅在允许人工审批后执行变更时配置">
           </div>
-          <div class="ops-field span-6">
+          <div class="ops-field span-6 target-change-field">
             <label for="target-execution-password">变更执行密码（可选）</label>
             <input id="target-execution-password" name="execution_password" type="password" maxlength="4096" autocomplete="new-password" placeholder="用户名和密码必须同时填写">
           </div>
-          <div class="ops-field span-12">
+          <div class="ops-field span-12 target-connection-field">
             <label><input name="tls_enabled" type="checkbox" checked> 数据库连接启用 TLS</label>
           </div>
         </div>

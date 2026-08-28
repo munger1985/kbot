@@ -62,6 +62,18 @@ class ConversationTurnService:
             )
             if version is None:
                 raise resource_not_found("Agent Version")
+            target_id = conversation_create.target_id
+            if not await uow.agents.version_has_target(
+                agent_version_id=version.agent_version_id,
+                target_id=target_id,
+            ):
+                raise self._error(
+                    "AIOPS_AGENT_TARGET_NOT_BOUND",
+                    "所选 Target 不属于当前 Agent 版本",
+                )
+            await self._require_existing_target(
+                uow=uow, domain_id=domain_id, target_id=target_id
+            )
             source = conversation_create.source
             source_run = None
             if source.source_type == ConversationSourceType.RUN:
@@ -74,10 +86,16 @@ class ConversationTurnService:
                         "AIOPS_SOURCE_RUN_INVALID",
                         "来源 Run 必须存在且已经产生可用结果",
                     )
+                if source_run.target_id != target_id:
+                    raise self._error(
+                        "AIOPS_SOURCE_TARGET_CONFLICT",
+                        "来源 Run 的 Target 与新会话选择的 Target 不一致",
+                    )
             conversation = OpsConversationEntity(
                 domain_id=domain_id,
                 agent_id=agent.agent_id,
                 agent_version_id=version.agent_version_id,
+                target_id=target_id,
                 title=conversation_create.title,
                 status="ACTIVE",
                 source_type=str(source.source_type),
@@ -162,6 +180,7 @@ class ConversationTurnService:
         domain_id: int,
         actor_id: str,
         agent_id: UUID | None = None,
+        target_id: UUID | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
@@ -169,6 +188,7 @@ class ConversationTurnService:
                 domain_id=domain_id,
                 created_by=actor_id,
                 agent_id=agent_id,
+                target_id=target_id,
                 limit=limit,
             )
             return [self._conversation_summary(row) for row in rows]
@@ -462,6 +482,7 @@ class ConversationTurnService:
         target_id = await self._resolve_target(
             uow=uow,
             domain_id=int(conversation.domain_id),
+            conversation=conversation,
             version=version,
             source_run=source_run,
         )
@@ -553,16 +574,20 @@ class ConversationTurnService:
         *,
         uow,
         domain_id: int,
+        conversation,
         version,
         source_run,
     ) -> UUID:
-        """Turn只能继承Agent版本冻结的唯一Target。"""
-        fixed_target_id = version.target_id
+        """Turn只能继承 Conversation 冻结的单一逻辑 Target。"""
+        fixed_target_id = conversation.target_id
         source_target_id = source_run.target_id if source_run is not None else None
-        if fixed_target_id is None:
+        if not await uow.agents.version_has_target(
+            agent_version_id=version.agent_version_id,
+            target_id=fixed_target_id,
+        ):
             raise self._error(
-                "AIOPS_AGENT_TARGET_REQUIRED",
-                "当前 Agent 尚未绑定诊断 Target，请先完成 Agent 配置",
+                "AIOPS_AGENT_TARGET_NOT_BOUND",
+                "会话 Target 已不属于其冻结的 Agent 版本",
             )
         if source_target_id is not None and source_target_id != fixed_target_id:
             raise self._error(
@@ -612,6 +637,7 @@ class ConversationTurnService:
             "conversation_id": str(row.conversation_id),
             "agent_id": str(row.agent_id),
             "agent_version_id": str(row.agent_version_id),
+            "target_id": str(row.target_id),
             "title": row.title,
             "status": row.status,
             "source_type": row.source_type,

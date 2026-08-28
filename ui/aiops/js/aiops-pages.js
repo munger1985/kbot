@@ -25,16 +25,21 @@
     if (type === "target-actions") {
       const checking = item.connectivity_check_pending;
       const detailButton = '<button type="button" data-target-action="detail">详情</button>';
-      const checkButton = `<button type="button" data-target-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`;
+      const checkButton = item.readonly_connection_enabled
+        ? `<button type="button" data-target-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`
+        : "";
       const buttons = item.status === "ENABLED"
         ? ['<button type="button" data-target-action="disable">停用</button>']
-        : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status)
+        : (!item.readonly_connection_enabled || ["CONNECTED", "DEGRADED"].includes(item.connectivity_status))
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
       return `<div class="ops-actions">${detailButton}${checkButton}${buttons.join("")}</div>`;
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
+    }
+    if (key === "connectivity_status" && !item.readonly_connection_enabled) {
+      return "仅监控";
     }
     if (type === "badge") return shell.badge(value);
     if (type === "date") return shell.escape(shell.fmt(value));

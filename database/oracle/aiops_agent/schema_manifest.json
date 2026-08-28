@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
-  "schema_version": 14,
-  "contract_version": "aiops-oracle-v4",
+  "schema_version": 15,
+  "contract_version": "aiops-oracle-v5",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 25,
-      "sha256": "ce4cd2bbef05ef94d90fad1b3b17ec71f82ea007a56d7ac7c6f355d9b6083666"
+      "sha256": "1bc844b50eb44945d3cdbe351fb891b2b2d76463a90a304ce0b7bdb857551192"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,17 +32,17 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 35,
-      "sha256": "7c3581f1d298b71f1c1b1e94db52609c871571753c8bf7a80cf266fdc76dbc49"
+      "sha256": "37b8f1b8d32d7d2ec5d202285ab39f72185becd4dcc8053be8dcf0acdaa2980b"
     },
     {
       "name": "007_ops_agents.sql",
-      "statements": 13,
-      "sha256": "ef6151b464eee2ae7e9be28f161d990c978dcac2c5307a2f78e26111b7176433"
+      "statements": 14,
+      "sha256": "77ae2a89766aa52255e49e00580afd57f8b8bfc01d05e39e52805f93947068be"
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 81,
-      "sha256": "6fddd4f7dad890bf876f76bcec34f5a166d94987c6d44eeb5255c98e2d2a9adb"
+      "statements": 82,
+      "sha256": "261126d9e6d6f6fcdb681988411460063fbab69ff35b714b9dc1c9b6e66aef04"
     }
   ],
   "tables": [
@@ -72,6 +72,7 @@
     "KBOT_OPS_AGENT",
     "KBOT_OPS_AGENT_VERSION",
     "KBOT_OPS_AGENT_VERSION_SOURCE",
+    "KBOT_OPS_AGENT_VERSION_TARGET",
     "KBOT_OPS_AGENT_GRANT",
     "KBOT_OPS_REPORT_TEMPLATE",
     "KBOT_OPS_REPORT_TEMPLATE_VER",
@@ -129,13 +130,14 @@
     {"constraint": "FK_OPS_SOURCE_WEBHOOK_CRED", "index": "IX_OPS_SOURCE_WEBHOOK_CRED", "table": "KBOT_OPS_DIAGNOSTIC_SOURCE", "columns": ["WEBHOOK_CREDENTIAL_ID", "DOMAIN_ID"]},
     {"constraint": "FK_OPS_RUN_AGENT_VERSION", "index": "IX_OPS_RUN_AGENT_VERSION", "table": "KBOT_OPS_RUN", "columns": ["AGENT_VERSION_ID", "STATUS", "CREATED_AT"]},
     {"constraint": "FK_OPS_AGENT_VERSION_POLICY", "index": "IX_OPS_AGENT_VERSION_POLICY", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["POLICY_ID"]},
-    {"constraint": "FK_OPS_AGENT_VERSION_TARGET", "index": "IX_OPS_AGENT_VERSION_TARGET", "table": "KBOT_OPS_AGENT_VERSION", "columns": ["TARGET_ID"]},
     {"constraint": "FK_OPS_AGENT_VER_SOURCE_SRC", "index": "IX_OPS_AGENT_VER_SOURCE_SRC", "table": "KBOT_OPS_AGENT_VERSION_SOURCE", "columns": ["DIAGNOSTIC_SOURCE_ID"]},
+    {"constraint": "FK_OPS_AGENT_VER_TARGET_TARGET", "index": "IX_OPS_AGENT_VER_TARGET_TARGET", "table": "KBOT_OPS_AGENT_VERSION_TARGET", "columns": ["TARGET_ID"]},
     {"constraint": "FK_OPS_AGENT_CURRENT_VERSION", "index": "IX_OPS_AGENT_CURRENT_VERSION", "table": "KBOT_OPS_AGENT", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_VER_DOMAIN", "index": "IX_OPS_RPT_TPL_VER_DOMAIN", "table": "KBOT_OPS_REPORT_TEMPLATE_VER", "columns": ["DOMAIN_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_CURRENT_VERSION", "index": "IX_OPS_RPT_TPL_CURRENT_VERSION", "table": "KBOT_OPS_REPORT_TEMPLATE", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_CONV_AGENT", "index": "IX_OPS_CONV_AGENT", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_ID"]},
     {"constraint": "FK_OPS_CONV_AGENT_VER_OWNER", "index": "IX_OPS_CONV_AGENT_VER", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_VERSION_ID", "AGENT_ID"]},
+    {"constraint": "FK_OPS_CONV_TARGET", "index": "IX_OPS_CONV_TARGET", "table": "KBOT_OPS_CONVERSATION", "columns": ["TARGET_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_SITUATION", "index": "IX_OPS_CONV_SOURCE_SITUATION", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_SITUATION_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_RUN", "index": "IX_OPS_CONV_SOURCE_RUN", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_RUN_ID"]},
     {"constraint": "FK_OPS_CONV_SOURCE_REPORT", "index": "IX_OPS_CONV_SOURCE_REPORT", "table": "KBOT_OPS_CONVERSATION", "columns": ["SOURCE_REPORT_ID"]},

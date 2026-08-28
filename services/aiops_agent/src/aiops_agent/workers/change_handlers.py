@@ -136,6 +136,7 @@ class ActionPlanHandler:
             self._execution_enabled
             and context.trigger_type == "CHAT"
             and binding.get("allow_mutation") is True
+            and target.get("controlled_change_enabled") is True
             and bool(target.get("execution_secret_configured"))
             and policy.get("allow_agent_execution") is True
             and rendered.execution_capability

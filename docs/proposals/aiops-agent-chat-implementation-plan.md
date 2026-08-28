@@ -32,7 +32,7 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 
 ## 3. 交付原则
 
-1. 目标Schema直接升级到14、`aiops-oracle-v4`，不写增量升级或兼容代码；
+1. 目标Schema直接升级到15、`aiops-oracle-v5`，不写增量升级或兼容代码；
 2. DDL、重建制品、Manifest、Entity、Repository、契约、API、UI、测试和文档同步；
 3. 每阶段形成可运行纵向切片，不以编译通过冒充功能完成；
 4. 模型输出使用版本化结构契约并由服务端校验；
@@ -41,12 +41,12 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 
 ### 3.1 当前落地状态
 
-截至2026-08-28，Schema 14纵向切片已进一步完成以下闭环：用户提供的Artifact可按Artifact
+截至2026-08-28，Schema 15纵向切片已进一步完成以下闭环：用户提供的Artifact可按Artifact
 Key或ID进入评估器；数据库访问决定由Agent Policy、Target状态、连接状态、凭据和Endpoint在
 规划时冻结，执行阶段不得覆盖；模型Action与数据库Tool按一对一关系冻结和审计，Playbook不再
 扩大实际执行范围；Task Frame支持单一Target内的多个任务目标；告警或巡检来源Run的最终
-Artifact会复制为当前Turn的继承Evidence。一个Agent版本固定绑定一个Target，聊天页面不再
-提供Target选择，也不接受Turn级Target覆盖。
+Artifact会复制为当前Turn的继承Evidence。一个Agent版本可绑定多个逻辑Target；聊天创建会话时
+必须先选择其中一个Target，会话冻结该Target，后续Turn不再接受Target覆盖。
 
 首轮Assessment若存在可重试的关键缺口，系统会冻结回答Task，通过Outbox可靠生成第二版
 Investigation Revision和Task DAG；无参数变化的重复Tool调用会被拒绝。第二轮结束后统一回答，
@@ -86,15 +86,16 @@ Schema字段或类名判断功能已经交付。
 事务保存；固定Oracle Tool直接从Diagnostic Registry发现并编译为原子Task，不再要求存在
 Playbook父调用；`DBA_SUFFICIENCY.v1`内嵌`aiops.investigation-assessment.v1`，由诊断模型更新
 假设、未知项、Evidence Gap、进展和`ANSWER/REPLAN/ASK_USER/STOP_UNSAFE`决策；已启用但上次
-健康检查失败的Target或Source允许在本Turn预算内尝试一次。聊天公开契约已删除Turn级
-`target_id`，只继承Agent版本绑定的唯一Target。专业评测集覆盖停库、Top SQL、锁、容量、归档、
+健康检查失败的Target或Source允许在本Turn预算内尝试一次。聊天公开契约不允许后续Turn覆盖
+`target_id`；新建Conversation时从Agent版本绑定的多个逻辑Target中选择一个并冻结。专业评测集覆盖停库、Top SQL、锁、容量、归档、
 权限、监控健康陈旧、动态只读、来源Run、单Target多任务目标和变更安全。
 
-## 4. 阶段1：Schema 14和共享契约
+## 4. 阶段1：Schema 15和共享契约
 
 - 修改`008_ops_conversations_reports.sql`；
 - 更新`006_ops_fks_views.sql`的版本、FK、索引、注释和视图；
 - 更新重建文件、Manifest和README；
+- 新增Agent版本–Target多对多关系、Conversation冻结Target以及Target连接能力开关；
 - 调整Turn列和状态；
 - 新增Input Item、Investigation Revision、Tool Invocation；
 - Skill Invocation重命名为Playbook Invocation；
@@ -103,7 +104,7 @@ Playbook父调用；`DBA_SUFFICIENCY.v1`内嵌`aiops.investigation-assessment.v1
 - 新增输入、Task Frame、Plan、Assessment、Tool和Playbook契约；
 - 删除旧Intent/Skill Plan作为运行控制源的契约。
 
-门槛：14、`aiops-oracle-v4`、43张表、10个视图；FK索引、Entity、Manifest、自包含重建和
+门槛：15、`aiops-oracle-v5`、44张表、10个视图；FK索引、Entity、Manifest、自包含重建和
 UoW回滚测试全部通过。
 
 ## 5. 阶段2：输入理解和用户证据
@@ -210,8 +211,8 @@ Oracle Tool优先级：
 
 ## 12. 切换和数据库部署
 
-完成Schema 14全链后：运行离线测试；停止AIOps API、Worker和Scheduler；备份；执行规范重建
-脚本；验证`AIOPS / 14 / aiops-oracle-v4`；重配Agent、Target、Source和绑定；执行聊天、告警、
+完成Schema 15全链后：运行离线测试；停止AIOps API、Worker和Scheduler；备份；执行规范重建
+脚本；验证`AIOPS / 15 / aiops-oracle-v5`；重配Agent、Target、Source和绑定；执行聊天、告警、
 巡检Smoke；确认审批未被放宽。
 
 不提供Schema 13在线迁移、兼容读取或回滚表。回退使用Git和数据库备份恢复完整版本。

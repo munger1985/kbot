@@ -1234,6 +1234,17 @@ class TurnPlanningService:
                 "DEGRADED",
             }
             access_gaps = []
+            readonly_configured = bool(
+                getattr(target, "readonly_connection_enabled", False)
+            )
+            if not readonly_configured:
+                access_gaps.append(
+                    {
+                        "code": "DB_DIRECT_NOT_CONFIGURED",
+                        "detail": "该逻辑 Target 采用仅监控模式，未配置数据库直连",
+                        "retryable": False,
+                    }
+                )
             if not readonly_allowed:
                 access_gaps.append(
                     {
@@ -1250,7 +1261,7 @@ class TurnPlanningService:
                         "retryable": False,
                     }
                 )
-            if not target_reachable:
+            if readonly_configured and not target_reachable:
                 access_gaps.append(
                     {
                         "code": "TARGET_CONNECTIVITY_UNAVAILABLE",
@@ -1258,7 +1269,7 @@ class TurnPlanningService:
                         "retryable": True,
                     }
                 )
-            if target.diagnostic_credential_id is None:
+            if readonly_configured and target.diagnostic_credential_id is None:
                 access_gaps.append(
                     {
                         "code": "DIAGNOSTIC_SECRET_MISSING",
@@ -1266,7 +1277,7 @@ class TurnPlanningService:
                         "retryable": False,
                     }
                 )
-            if not target.endpoint_json:
+            if readonly_configured and not target.endpoint_json:
                 access_gaps.append(
                     {
                         "code": "TARGET_ENDPOINT_MISSING",
@@ -1354,6 +1365,7 @@ class TurnPlanningService:
                     ),
                     "automatic_access_enabled": (
                         readonly_allowed
+                        and readonly_configured
                         and target_enabled
                         and target.diagnostic_credential_id is not None
                         and bool(target.endpoint_json)
@@ -1376,6 +1388,8 @@ class TurnPlanningService:
                             target.connectivity_status
                         ),
                         "execution_secret_configured": bool(
+                            getattr(target, "controlled_change_enabled", False)
+                            and
                             getattr(
                                 target, "execution_credential_id", None
                             )

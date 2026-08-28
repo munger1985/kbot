@@ -31,6 +31,12 @@ class TargetEntity(BaseEntity):
         String(16), nullable=False, default="UNKNOWN"
     )
     endpoint_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
+    readonly_connection_enabled: Mapped[bool] = mapped_column(
+        Numeric(1, 0), nullable=False, default=False
+    )
+    controlled_change_enabled: Mapped[bool] = mapped_column(
+        Numeric(1, 0), nullable=False, default=False
+    )
     diagnostic_credential_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     execution_credential_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     security_level: Mapped[int] = mapped_column(

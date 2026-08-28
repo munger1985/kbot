@@ -87,7 +87,7 @@ class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     allow_change_execution: bool = False
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -108,7 +108,9 @@ class AIOpsAgentUpdatePayload(_Payload):
     diagnostic_source_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=16
     )
-    target_id: UUID | None = None
+    target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     allow_change_execution: bool | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
@@ -136,6 +138,7 @@ class AIOpsAgentGrantStatusPayload(_Payload):
 
 class ConversationStartPayload(_Payload):
     agent_id: UUID
+    target_id: UUID
     content: list[InputContent] = Field(min_length=1, max_length=16)
     title: str | None = Field(default=None, min_length=1, max_length=256)
     source_run_id: UUID | None = None
@@ -570,6 +573,7 @@ async def start_conversation(
         {
             "conversation": {
                 "agent_id": str(payload.agent_id),
+                "target_id": str(payload.target_id),
                 "title": payload.title,
                 "source": source,
             },
@@ -593,6 +597,7 @@ async def start_conversation(
 async def list_conversations(
     request: Request,
     agent_id: UUID | None = None,
+    target_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=50),
 ):
     _, actor_id, snapshot = await _require(request, "aiops:use")
@@ -601,6 +606,7 @@ async def list_conversations(
         await _authorize_agent(request, agent_id, snapshot, actor_id)
     rows = await _client(request).list_conversations(
         agent_id=agent_id,
+        target_id=target_id,
         limit=limit,
         auth_context=request.state.auth_context,
     )

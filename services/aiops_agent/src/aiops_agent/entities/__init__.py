@@ -59,6 +59,7 @@ __all__ = [
     "AIOpsAgentGrantEntity",
     "AIOpsAgentVersionEntity",
     "AIOpsAgentVersionSourceEntity",
+    "AIOpsAgentVersionTargetEntity",
     "ApprovalTokenEntity",
     "ChangeProposalEntity",
     "ExecutionEntity",
@@ -90,4 +91,5 @@ from .agent import (
     AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
+    AIOpsAgentVersionTargetEntity,
 )

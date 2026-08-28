@@ -263,6 +263,7 @@ class AIOpsRuntimeService:
                 await self._agent_catalog.resolve_runtime_binding(
                     agent_id=command.agent_id,
                     domain_id=command.domain_id,
+                    target_id=command.target_id,
                 )
             )
         async with self._uow_factory() as uow:
@@ -418,6 +419,12 @@ class AIOpsRuntimeService:
                 ),
                 "execution_secret_configured": bool(
                     target.execution_credential_id
+                ),
+                "readonly_connection_enabled": bool(
+                    target.readonly_connection_enabled
+                ),
+                "controlled_change_enabled": bool(
+                    target.controlled_change_enabled
                 ),
                 "security_level": int(target.security_level),
                 "capabilities": dict(target.capabilities_json or {}),
@@ -687,6 +694,10 @@ class AIOpsRuntimeService:
                         (
                             not self._management.agent_execution_enabled,
                             "DEPLOYMENT_MUTATION_DISABLED",
+                        ),
+                        (
+                            not bool(target.controlled_change_enabled),
+                            "TARGET_CONTROLLED_CHANGE_DISABLED",
                         ),
                         (
                             not bool(target.execution_credential_id),
@@ -1169,11 +1180,20 @@ class AIOpsRuntimeService:
         policy_allowed = policy_rules.get(
             "readonly_database_enabled", True
         )
+        readonly_enabled = bool(target.readonly_connection_enabled)
         if not policy_allowed:
             initial_gaps.append(
                 {
                     "code": "DIAGNOSTIC_POLICY_DENIED",
                     "detail": "当前策略禁止数据库直连诊断",
+                    "retryable": False,
+                }
+            )
+        if not readonly_enabled:
+            initial_gaps.append(
+                {
+                    "code": "DB_DIRECT_NOT_CONFIGURED",
+                    "detail": "Target 未启用只读数据库连接",
                     "retryable": False,
                 }
             )
@@ -1220,6 +1240,7 @@ class AIOpsRuntimeService:
         automatic_access_enabled = (
             target_enabled
             and policy_allowed
+            and readonly_enabled
             and bool(target.version_code)
             and bool(target.diagnostic_credential_id)
             and bool(target.endpoint_json)

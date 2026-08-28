@@ -137,8 +137,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('button.textContent = editing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
-        self.assertIn("execution_credential_configured", agent)
-        self.assertIn("可以先保存允许变更", agent)
+        self.assertIn("controlled_change_enabled", agent)
+        self.assertIn("实际执行仍逐条审批", agent)
         self.assertNotIn("selected && !executionConfigured", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
@@ -251,7 +251,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertIn('name="diagnostic_source_ids"', script)
-        self.assertIn('name="target_id"', page)
+        self.assertIn('name="target_ids"', script)
+        self.assertIn('id="agent-targets"', page)
         self.assertIn('name="allow_change_execution"', page)
         self.assertIn('name="auto_alert_enabled"', page)
         self.assertIn('name="diagnosis_model_id" required', page)
@@ -286,9 +287,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('["reports", "报告中心"]', shell)
         self.assertNotIn('["report-templates", "报告模板"]', shell)
         self.assertIn("source_run_id", workspace)
-        self.assertNotIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
-        self.assertNotIn("target_id: targetId", workspace)
-        self.assertIn("当前 Agent 尚未绑定诊断 Target", workspace)
+        self.assertIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
+        self.assertIn("target_id: targetId", workspace)
+        self.assertIn("当前 Agent 未绑定所选 Target", workspace)
         self.assertIn(
             'content: [{ content_type: "TEXT", text: fields.message }]',
             workspace,
@@ -320,7 +321,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("await followTurn(receipt.conversation_id", workspace)
         self.assertIn("await loadConversation(receipt.conversation_id)", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
-        self.assertIn("请先选择 Agent 查看其会话历史", workspace)
+        self.assertIn("请先选择 Target 和 Agent 查看会话历史", workspace)
         self.assertIn("?agent_id=${encodeURIComponent(selectedAgent)}", workspace)
         self.assertIn("archiveConversation", workspace)
         self.assertIn('method: "DELETE"', workspace)

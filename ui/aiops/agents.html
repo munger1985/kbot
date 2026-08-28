@@ -89,22 +89,26 @@
             <div class="agent-section-heading">
               <div>
                 <h3 id="agent-section-evidence">证据与数据库访问</h3>
-                <p>监控源必选；Target 可选，选择后即可使用只读诊断凭据。</p>
+                <p>逻辑 Target 与监控源都必选；一个 Agent 可以管理多个数据库对象。</p>
               </div>
             </div>
             <div class="ops-field agent-target-field">
-              <label for="agent-target">数据库直连 Target</label>
-              <select id="agent-target" name="target_id"><option value="">不允许数据库直连诊断</option></select>
-              <small>不选择 Target 时，Agent 仍可使用下面选择的 Prometheus、Loki 等监控证据。</small>
+              <label>逻辑数据库 Target</label>
+              <div id="agent-targets" class="agent-target-list"></div>
+              <small>必选，可多选。Target 是否支持数据库直连和受控变更由 Target 自身配置决定。</small>
             </div>
 
             <div class="agent-source-heading">
               <div><strong>监控源</strong><span>必选，可多选</span></div>
-              <p id="agent-binding-summary">选择 Target 后，在这里填写它在每个监控系统中的标识。</p>
+              <p id="agent-binding-summary">为每个 Target 配置它在所选监控源中的 instance、target_key 或其他定位标识。</p>
+            </div>
+            <div class="ops-field">
+              <label for="agent-mapping-target">当前配置映射的 Target</label>
+              <select id="agent-mapping-target"><option value="">请先选择逻辑 Target</option></select>
             </div>
             <div id="agent-sources" class="agent-source-list"></div>
 
-            <div id="agent-change-field" class="agent-permission-row" hidden>
+            <div id="agent-change-field" class="agent-permission-row">
               <label class="agent-switch-row">
                 <input name="allow_change_execution" type="checkbox">
                 <span><strong>允许人工审批后执行数据库变更</strong><small id="agent-change-help">只开放系统支持的受控动作，仍必须进入人工审批链。</small></span>

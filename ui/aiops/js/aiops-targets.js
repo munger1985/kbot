@@ -17,6 +17,8 @@
   const executionPassword = document.getElementById("target-execution-password");
   const result = document.getElementById("target-connection-result");
   const submit = document.getElementById("save-target");
+  const readonlyEnabled = document.getElementById("target-readonly-enabled");
+  const changeEnabled = document.getElementById("target-change-enabled");
   let editingTarget = null;
 
   function clearResult() {
@@ -28,12 +30,32 @@
     const oracle = dbType.value === "ORACLE";
     serviceField.hidden = !oracle;
     databaseField.hidden = oracle;
-    service.required = oracle;
-    database.required = !oracle;
+    service.required = readonlyEnabled.checked && oracle;
+    database.required = readonlyEnabled.checked && !oracle;
     if (oracle) database.value = "";
     else service.value = "";
     if (resetPort) port.value = { ORACLE: 1521, MYSQL: 3306, POSTGRESQL: 5432 }[dbType.value];
     clearResult();
+  }
+
+  function toggleAccessFields() {
+    const readonly = readonlyEnabled.checked;
+    if (!readonly) changeEnabled.checked = false;
+    changeEnabled.disabled = !readonly;
+    document.querySelectorAll(".target-connection-field").forEach((field) => {
+      field.hidden = !readonly;
+    });
+    document.querySelectorAll(".target-change-field").forEach((field) => {
+      field.hidden = !changeEnabled.checked;
+    });
+    form.elements.host.required = readonly;
+    port.required = readonly;
+    username.required = readonly && !editingTarget;
+    password.required = readonly && !editingTarget;
+    executionUsername.required = changeEnabled.checked && !editingTarget;
+    executionPassword.required = changeEnabled.checked && !editingTarget;
+    configureEndpoint(false);
+    document.getElementById("test-target-connection").hidden = !readonly;
   }
 
   function setCredentialMode(required) {
@@ -58,7 +80,10 @@
     dbType.disabled = false;
     dbType.value = "ORACLE";
     configureEndpoint();
-    setCredentialMode(true);
+    readonlyEnabled.checked = false;
+    changeEnabled.checked = false;
+    setCredentialMode(false);
+    toggleAccessFields();
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
     submit.textContent = "创建目标";
     dialog.showModal();
@@ -78,6 +103,8 @@
       form.elements.environment.value = target.environment;
       form.elements.db_role.value = target.db_role;
       form.elements.security_level.value = target.security_level;
+      readonlyEnabled.checked = Boolean(target.readonly_connection_enabled);
+      changeEnabled.checked = Boolean(target.controlled_change_enabled);
       form.elements.host.value = target.endpoint?.host || "";
       form.elements.port.value = target.endpoint?.port || "";
       form.elements.tls_enabled.checked = Boolean(target.endpoint?.tls_enabled);
@@ -85,6 +112,7 @@
       else database.value = target.endpoint?.database || "";
       dbType.disabled = true;
       setCredentialMode(false);
+      toggleAccessFields();
       document.getElementById("target-dialog-title").textContent = "编辑运维目标";
       submit.textContent = "保存修改";
       clearResult();
@@ -96,6 +124,7 @@
   }
 
   function endpointPayload() {
+    if (!readonlyEnabled.checked) return null;
     const oracle = dbType.value === "ORACLE";
     const endpoint = {
       host: form.elements.host.value.trim(),
@@ -118,6 +147,7 @@
   }
 
   function connectionFieldsAreValid() {
+    if (!readonlyEnabled.checked) return false;
     if (editingTarget && (!username.value.trim() || !password.value)) {
       result.dataset.tone = "bad";
       result.textContent = "测试连接需要重新输入只读诊断用户名和密码。";
@@ -160,21 +190,24 @@
   }
 
   function targetFields() {
-    return {
+    const fields = {
       display_name: form.elements.display_name.value.trim(),
       version_code: form.elements.version_code.value.trim() || null,
       environment: form.elements.environment.value,
       db_role: form.elements.db_role.value,
-      endpoint: endpointPayload(),
+      readonly_connection_enabled: readonlyEnabled.checked,
+      controlled_change_enabled: changeEnabled.checked,
       security_level: Number(form.elements.security_level.value),
     };
+    if (readonlyEnabled.checked) fields.endpoint = endpointPayload();
+    return fields;
   }
 
   async function saveTarget(event) {
     event.preventDefault();
-    const rotatingCredential = Boolean(username.value.trim() || password.value);
+    const rotatingCredential = readonlyEnabled.checked && Boolean(username.value.trim() || password.value);
     const rotatingExecutionCredential = Boolean(
-      executionUsername.value.trim() || executionPassword.value
+      changeEnabled.checked && (executionUsername.value.trim() || executionPassword.value)
     );
     if (editingTarget && rotatingCredential && (!username.value.trim() || !password.value)) {
       result.dataset.tone = "bad";
@@ -198,8 +231,8 @@
           ...targetFields(),
           db_type: dbType.value,
           capabilities: {},
-          diagnostic_credential: credentialPayload(),
         };
+        if (readonlyEnabled.checked) createPayload.diagnostic_credential = credentialPayload();
         if (rotatingExecutionCredential) {
           createPayload.execution_credential = executionCredentialPayload();
         }
@@ -209,12 +242,7 @@
           body: JSON.stringify(createPayload),
         });
       } else {
-        let updated = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(editingTarget.target_id)}`, {
-          method: "PATCH",
-          headers: { "If-Match": `"rv-${editingTarget.row_version}"` },
-          body: JSON.stringify({ ...targetFields(), capabilities: editingTarget.capabilities || {} }),
-        });
-        baseSaved = true;
+        let updated = editingTarget;
         if (rotatingCredential) {
           updated = await KBotAIOpsAuth.request(
             `${api}/targets/${encodeURIComponent(editingTarget.target_id)}/diagnostic-credential:rotate`,
@@ -235,6 +263,12 @@
             },
           );
         }
+        updated = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(editingTarget.target_id)}`, {
+          method: "PATCH",
+          headers: { "If-Match": `"rv-${updated.row_version}"` },
+          body: JSON.stringify({ ...targetFields(), capabilities: editingTarget.capabilities || {} }),
+        });
+        baseSaved = true;
       }
       dialog.close();
       shell.toast(editingTarget ? "运维目标已更新" : "运维目标已创建");
@@ -257,6 +291,8 @@
     document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
     dbType.addEventListener("change", () => configureEndpoint());
+    readonlyEnabled.addEventListener("change", toggleAccessFields);
+    changeEnabled.addEventListener("change", toggleAccessFields);
     form.addEventListener("input", clearResult);
     form.addEventListener("submit", saveTarget);
   });

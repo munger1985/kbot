@@ -24,6 +24,7 @@ class ConversationRepository(AIOpsRepository):
     async def list_conversations(
         self, *, domain_id: int, created_by: str,
         agent_id: UUID | None = None, limit: int = 50,
+        target_id: UUID | None = None,
     ):
         statement = select(OpsConversationEntity).where(
             OpsConversationEntity.domain_id == domain_id,
@@ -32,6 +33,8 @@ class ConversationRepository(AIOpsRepository):
         )
         if agent_id is not None:
             statement = statement.where(OpsConversationEntity.agent_id == agent_id)
+        if target_id is not None:
+            statement = statement.where(OpsConversationEntity.target_id == target_id)
         rows = await self._session.scalars(statement.order_by(
             OpsConversationEntity.updated_at.desc(),
             OpsConversationEntity.conversation_id.desc(),
