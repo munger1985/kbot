@@ -83,7 +83,9 @@ class TaskObjective(StrEnum):
 
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
-    objective: TaskObjective
+    objectives: tuple[TaskObjective, ...] = Field(
+        min_length=1, max_length=8
+    )
     problem_statement: str = Field(min_length=1, max_length=4000)
     database_context: JsonObject = Field(default_factory=dict)
     time_scope: str | None = Field(default=None, max_length=512)
@@ -92,6 +94,12 @@ class TaskFrame(AIOpsContract):
     constraints: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
     requires_change: bool = False
+
+    @model_validator(mode="after")
+    def validate_objectives(self) -> "TaskFrame":
+        if len(set(self.objectives)) != len(self.objectives):
+            raise ValueError("任务目标不能重复")
+        return self
 
 
 class InvestigationHypothesis(AIOpsContract):
@@ -172,12 +180,15 @@ class InvestigationPlanningOutput(AIOpsContract):
             material.contains_user_evidence
             for material in self.input_envelope.materials
         )
-        requires_observation = self.task_frame.objective in {
-            TaskObjective.DIAGNOSE,
-            TaskObjective.ASSESS,
-            TaskObjective.COMPARE,
-            TaskObjective.VERIFY,
-        }
+        requires_observation = bool(
+            set(self.task_frame.objectives)
+            & {
+                TaskObjective.DIAGNOSE,
+                TaskObjective.ASSESS,
+                TaskObjective.COMPARE,
+                TaskObjective.VERIFY,
+            }
+        )
         if requires_observation and not supplied and not self.plan.actions:
             raise ValueError("诊断或评估任务在没有用户证据时必须安排取证动作")
         return self

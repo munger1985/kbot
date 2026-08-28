@@ -39,7 +39,7 @@ def _output(*, tool_id: str | None = None) -> dict:
             "supplied_evidence_summary": ["Oracle Alert Log"],
         },
         "task_frame": {
-            "objective": "DIAGNOSE",
+            "objectives": ["DIAGNOSE"],
             "problem_statement": "判断 Oracle 实例退出的直接原因和后续核查方向",
             "known_facts": ["操作系统信号量对象被移除"],
             "unknowns": ["谁删除了 IPC 对象"],
@@ -119,6 +119,33 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 model_snapshot={},
                 deadline=None,
                 idempotency_key="turn-2",
+            )
+
+    async def test_replan_rejects_identical_tool_call_without_progress(self) -> None:
+        payload = _output(tool_id="db.instance.identity")
+        payload["plan"]["revision_no"] = 2
+        reasoner = InvestigationReasoner(_Model(payload))
+
+        with self.assertRaisesRegex(ValueError, "不得原样重复"):
+            await reasoner.replan(
+                content=({"content_type": "TEXT", "text": "检查数据库"},),
+                conversation_context=(),
+                source_run_evidence=None,
+                task_frame=payload["task_frame"],
+                prior_plan={
+                    "actions": [
+                        {"tool_id": "db.instance.identity", "input": {}}
+                    ]
+                },
+                assessment={"status": "NEEDS_EVIDENCE"},
+                available_tools=(
+                    {"tool_id": "db.instance.identity", "version": "1.0.0"},
+                ),
+                available_playbooks=(),
+                model_snapshot={},
+                deadline=None,
+                idempotency_key="turn-2-replan",
+                revision_no=2,
             )
 
     def test_plan_rejects_cyclic_tool_dependencies(self) -> None:

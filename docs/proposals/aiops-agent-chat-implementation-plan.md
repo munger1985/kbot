@@ -41,15 +41,20 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 
 ### 3.1 当前落地状态
 
-截至2026-08-28，本轮已完成首个可运行纵向切片：Schema 14及审计实体、内容项契约、
-用户材料理解、Task Frame、首轮调查计划、Tool/Playbook目录发现、用户证据入库、Oracle/
-Prometheus/Loki现有受控能力编排、证据归一、自然回答上下文和新SSE进度事件。纯粘贴Oracle
-Alert Log且不调用外部Tool的路径已经由端到端单元测试覆盖。
+截至2026-08-28，Schema 14纵向切片已进一步完成以下闭环：用户提供的Artifact可按Artifact
+Key或ID进入评估器；数据库访问决定由Agent Policy、Target状态、连接状态、凭据和Endpoint在
+规划时冻结，执行阶段不得覆盖；模型Action与数据库Tool按一对一关系冻结和审计，Playbook不再
+扩大实际执行范围；Task Frame支持多个目标；告警或巡检来源Run的最终Artifact会复制为当前
+Turn的继承Evidence；多Target Agent在聊天页面显式选择Target。
 
-以下项目仍按后续阶段实施，不在首个切片中冒充完成：基于Assessment创建第二轮Task DAG、
-文件和图片上传解析、受控动态只读SQL/PromQL/LogQL、旧Skill内部命名与目录的物理迁移，以及
-dev真实Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，
-不能仅凭Schema字段或类名判断功能已经交付。
+首轮Assessment若存在可重试的关键缺口，系统会冻结回答Task，通过Outbox可靠生成第二版
+Investigation Revision和Task DAG；无参数变化的重复Tool调用会被拒绝。第二轮结束后统一回答，
+重规划失败则回退到首轮真实证据，避免Turn卡在`REPLANNING`。当前调查预算固定为最多两轮。
+
+以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、受控动态只读SQL/PromQL/LogQL、
+聊天变更建议到Proposal审批链的结构化衔接、旧Skill内部命名与目录的物理迁移，以及dev真实
+Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
+Schema字段或类名判断功能已经交付。
 
 ## 4. 阶段1：Schema 14和共享契约
 

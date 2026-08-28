@@ -77,6 +77,19 @@
     return state.agents;
   }
 
+  function syncTargetOptions({ lockedTargetId = null } = {}) {
+    const agentId = document.getElementById("agent-select").value;
+    const targetSelect = document.getElementById("target-select");
+    const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
+    const candidates = values(agent?.target_candidates);
+    targetSelect.innerHTML = candidates.length
+      ? '<option value="">选择诊断数据库</option>' + candidates.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name || shell.short(item.target_id))} · ${esc(item.connectivity_status || "UNKNOWN")}</option>`).join("")
+      : '<option value="">当前 Agent 没有可诊断数据库</option>';
+    const preferred = lockedTargetId || agent?.target_id || (candidates.length === 1 ? candidates[0].target_id : "");
+    targetSelect.value = preferred ? String(preferred) : "";
+    targetSelect.disabled = Boolean(lockedTargetId) || !agentId || !candidates.length;
+  }
+
   async function proposalAction(button) {
     const approving = Boolean(button.dataset.approveProposal);
     const proposalId = button.dataset.approveProposal || button.dataset.rejectProposal;
@@ -184,6 +197,7 @@
     const turnRows = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns?limit=200`);
     const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
+    syncTargetOptions({ lockedTargetId: turns[0]?.resolved_target_id });
     await renderConversation(conversation, turns);
     history.replaceState(null, "", `./chat.html?conversation=${encodeURIComponent(id)}`);
     document.querySelectorAll(".ops-workspace-item").forEach((button) => { button.setAttribute("aria-current", String(button.dataset.id === id)); });
@@ -191,6 +205,7 @@
 
   function resetConversationView({ agentSelected = false } = {}) {
     state.conversation = null;
+    syncTargetOptions();
     document.getElementById("conversation-title").textContent = agentSelected
       ? "开始一次数据库诊断"
       : "请先选择 Agent";
@@ -379,8 +394,10 @@
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
     const agentId = document.getElementById("agent-select").value;
+    const targetId = document.getElementById("target-select").value;
     const text = form.elements.message.value.trim();
     if (!agentId) return shell.toast("请先选择 Agent");
+    if (!targetId) return shell.toast("请选择本次诊断的数据库");
     if (!text) return shell.toast("请输入需要诊断的问题");
     if (state.selectedFile) return shell.toast("截图和文件补证将在补证阶段启用，请先发送文字问题");
     button.disabled = true;
@@ -389,7 +406,9 @@
         ? `${api}/conversations/${state.conversation.conversation_id}/turns`
         : `${api}/conversations`;
       const content = [{ content_type: "TEXT", text }];
-      const body = state.conversation ? { content } : { agent_id: agentId, content };
+      const body = state.conversation
+        ? { content, target_id: targetId }
+        : { agent_id: agentId, target_id: targetId, content };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
@@ -412,6 +431,7 @@
     select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
     select.onchange = () => {
       clearConversationUrl();
+      syncTargetOptions();
       resetConversationView({ agentSelected: Boolean(select.value) });
       loadConversationList().catch((error) => shell.toast(error.message));
     };

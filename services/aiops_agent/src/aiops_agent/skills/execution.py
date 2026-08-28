@@ -78,7 +78,18 @@ class SkillExecutionSnapshotBuilder:
                 item.skill_id, item.skill_version
             )
             tools = []
-            for step in manifest.tool_dag:
+            selected_steps = tuple(
+                step
+                for step in manifest.tool_dag
+                if item.selected_tool_id is None
+                or step.tool_id == item.selected_tool_id
+            )
+            if item.selected_tool_id is not None and len(selected_steps) != 1:
+                raise SkillCatalogError(
+                    f"Playbook {manifest.skill_id} 无法唯一解析所选Tool："
+                    f"{item.selected_tool_id}"
+                )
+            for step in selected_steps:
                 resolved = self._tools.resolve(
                     tool_id=step.tool_id,
                     tool_version=step.tool_version,
@@ -116,7 +127,11 @@ class SkillExecutionSnapshotBuilder:
                 tools.append(
                     {
                         "step_id": step.step_id,
-                        "depends_on": list(step.depends_on),
+                        "depends_on": (
+                            []
+                            if item.selected_tool_id is not None
+                            else list(step.depends_on)
+                        ),
                         "tool_id": definition.tool_id,
                         "tool_version": definition.version,
                         "variant": definition.variant,
@@ -154,6 +169,8 @@ class SkillExecutionSnapshotBuilder:
                 "measurement_semantics": item.measurement_semantics,
                 "presentation_kind": manifest.presentation_kind,
                 "output_schema": manifest.output_schema,
+                "action_id": item.action_id,
+                "selected_tool_id": item.selected_tool_id,
                 "tools": tools,
             }
         return {

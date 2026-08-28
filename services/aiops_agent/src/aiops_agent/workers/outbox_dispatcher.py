@@ -93,6 +93,29 @@ class AIOpsDomainOutboxSink:
                     )
             return
         if (
+            event_type == "aiops.turn.replanning_requested"
+            and self._turn_planning_service is not None
+        ):
+            try:
+                await self._turn_planning_service.execute_replan(payload)
+            except (
+                InvestigationPlanValidationError,
+                SkillUnavailableError,
+            ) as exc:
+                error_code = getattr(
+                    exc, "code", "AIOPS_INVESTIGATION_REPLAN_INVALID"
+                )
+                logger.warning(
+                    "AIOps Turn重规划未形成有效动作：turn_id={} code={}",
+                    payload.get("turn_id"),
+                    error_code,
+                )
+                await self._turn_planning_service.fall_back_from_replan(
+                    payload,
+                    error_code=error_code,
+                )
+            return
+        if (
             event_type == "aiops.turn.cancel_requested"
             and self._turn_planner_service is not None
         ):
@@ -240,10 +263,15 @@ class AIOpsDomainOutboxSink:
         exc: Exception,
     ) -> None:
         """在 Outbox 重试耗尽后收敛关联业务状态。"""
-        if (
-            event_type != "aiops.turn.understanding_requested"
-            or self._turn_planning_service is None
-        ):
+        if self._turn_planning_service is None:
+            return
+        if event_type == "aiops.turn.replanning_requested":
+            await self._turn_planning_service.fall_back_from_replan(
+                payload,
+                error_code="AIOPS_INVESTIGATION_REPLAN_FAILED",
+            )
+            return
+        if event_type != "aiops.turn.understanding_requested":
             return
         error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
         logger.error(

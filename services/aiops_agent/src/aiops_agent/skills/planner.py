@@ -40,6 +40,8 @@ class CompiledSkillPlan:
     invocation_task_keys: tuple[str, ...]
     monitoring_task_keys: tuple[str, ...]
     log_task_keys: tuple[str, ...]
+    assessment_task_key: str
+    answer_task_key: str | None
 
 
 class DbaSkillPlanner:
@@ -269,11 +271,14 @@ class SkillPlanCompiler:
         monitoring_binding_ids: tuple[str, ...] = (),
         log_binding_ids: tuple[str, ...] = (),
         user_evidence_artifact_keys: tuple[str, ...] = (),
+        revision_no: int = 1,
+        include_answer: bool = True,
     ) -> CompiledSkillPlan:
         if plan.catalog_hash != self._registry.catalog_hash:
             raise SkillUnavailableError("Skill Plan 的目录 Hash 已失效")
         task_keys: dict[int, str] = {}
         tasks: list[TaskSpec] = []
+        suffix = "" if revision_no == 1 else f":r{revision_no}"
         for item in plan.items:
             manifest = self._registry.resolve(
                 item.skill_id, item.skill_version
@@ -284,7 +289,9 @@ class SkillPlanCompiler:
                 raise SkillUnavailableError(
                     f"Skill Manifest Hash 已失效：{item.skill_id}"
                 )
-            task_key = f"skill:{item.ordinal}:{item.skill_id}"
+            task_key = (
+                f"skill:{item.ordinal}:{item.skill_id}{suffix}"
+            )
             task_keys[item.ordinal] = task_key
             tasks.append(
                 TaskSpec(
@@ -303,7 +310,7 @@ class SkillPlanCompiler:
         invocation_keys = tuple(task.task_key for task in tasks)
         monitoring_keys: list[str] = []
         for binding_id in dict.fromkeys(monitoring_binding_ids):
-            task_key = f"observe:{binding_id}"
+            task_key = f"observe:{binding_id}{suffix}"
             monitoring_keys.append(task_key)
             tasks.append(
                 TaskSpec(
@@ -320,7 +327,7 @@ class SkillPlanCompiler:
             )
         log_keys: list[str] = []
         for binding_id in dict.fromkeys(log_binding_ids):
-            task_key = f"log:{binding_id}"
+            task_key = f"log:{binding_id}{suffix}"
             log_keys.append(task_key)
             tasks.append(
                 TaskSpec(
@@ -344,9 +351,10 @@ class SkillPlanCompiler:
             *user_evidence_artifact_keys,
             *evidence_task_keys,
         )
+        assessment_task_key = f"evidence:assess{suffix}"
         tasks.append(
             TaskSpec(
-                task_key="evidence:assess",
+                task_key=assessment_task_key,
                 task_type="EVIDENCE_ASSESS",
                 handler_id="dba.evidence.assess",
                 handler_version="1",
@@ -359,24 +367,28 @@ class SkillPlanCompiler:
                 priority=90,
             )
         )
-        tasks.append(
-            TaskSpec(
-                task_key="answer:compose",
-                task_type="ANSWER",
-                handler_id="dba.answer.compose",
-                handler_version="1",
-                input_schema_version="DBA_ANSWER_INPUT.v1",
-                output_schema_version="AIOPS_TURN_RESULT.v1",
-                depends_on=("evidence:assess",),
-                input_artifact_keys=("evidence:assess",),
-                timeout_seconds=120,
-                max_attempts=2,
-                priority=100,
+        answer_task_key = "answer:compose" if include_answer else None
+        if answer_task_key is not None:
+            tasks.append(
+                TaskSpec(
+                    task_key=answer_task_key,
+                    task_type="ANSWER",
+                    handler_id="dba.answer.compose",
+                    handler_version="1",
+                    input_schema_version="DBA_ANSWER_INPUT.v1",
+                    output_schema_version="AIOPS_TURN_RESULT.v1",
+                    depends_on=(assessment_task_key,),
+                    input_artifact_keys=(assessment_task_key,),
+                    timeout_seconds=120,
+                    max_attempts=2,
+                    priority=100,
+                )
             )
-        )
         return CompiledSkillPlan(
             tasks=tuple(tasks),
             invocation_task_keys=invocation_keys,
             monitoring_task_keys=tuple(monitoring_keys),
             log_task_keys=tuple(log_keys),
+            assessment_task_key=assessment_task_key,
+            answer_task_key=answer_task_key,
         )

@@ -208,6 +208,12 @@ class SkillPlanItem(AIOpsContract):
     measurement_semantics: MeasurementSemantics
     input: JsonObject = Field(default_factory=dict)
     depends_on: tuple[int, ...] = ()
+    action_id: str | None = Field(
+        default=None, pattern=r"^a[0-9]+$"
+    )
+    selected_tool_id: str | None = Field(
+        default=None, pattern=r"^[a-z][a-z0-9_.-]{0,127}$"
+    )
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> "SkillPlanItem":

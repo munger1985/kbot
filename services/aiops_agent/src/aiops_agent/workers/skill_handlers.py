@@ -29,8 +29,6 @@ class DbaSkillInvocationHandler:
             "capability_snapshot_hash": execution[
                 "capability_snapshot_hash"
             ],
-            "automatic_access_enabled": True,
-            "initial_gaps": [],
             "tools": list(invocation["tools"]),
         }
         outcomes: list[SkillToolOutcome] = []

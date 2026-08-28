@@ -29,6 +29,16 @@ from platform_core.contracts.aiops import (
 from .handlers import TaskExecutionContext
 
 
+def _fact_trust_level(value: object) -> str:
+    normalized = str(value or "MODEL_INFERENCE")
+    return (
+        normalized
+        if normalized
+        in {"SOURCE_VERIFIED", "USER_PROVIDED", "MODEL_INFERENCE"}
+        else "MODEL_INFERENCE"
+    )
+
+
 class DbaEvidenceAssessmentHandler:
     """只按本轮 Skill Artifact 判断证据，不读取历史 Turn。"""
 
@@ -42,6 +52,37 @@ class DbaEvidenceAssessmentHandler:
         monitoring_gap_found = False
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
+            if schema_version == "SOURCE_RUN_EVIDENCE.v1":
+                payload = dict(artifact.get("payload") or {})
+                artifact_id = str(artifact["artifact_id"])
+                source_payload = payload.get("payload")
+                facts.append(
+                    TurnEvidenceFact(
+                        evidence_ref=f"artifact:{artifact_id}#source-run",
+                        artifact_id=artifact_id,
+                        skill_id="source.run-evidence",
+                        step_id="inherit",
+                        tool_id="source.run.final-artifact",
+                        trust_level=_fact_trust_level(
+                            payload.get("source_trust_level")
+                        ),
+                        measurement_semantics=(
+                            MeasurementSemantics.NOT_APPLICABLE
+                        ),
+                        presentation_kind="MARKDOWN",
+                        captured_at=str(
+                            payload.get("captured_at")
+                            or datetime.now().isoformat()
+                        ),
+                        columns=(
+                            {"name": "source_schema", "logical_type": "STRING"},
+                            {"name": "result", "logical_type": "JSON"},
+                        ),
+                        rows=((payload.get("source_schema_version"), source_payload),),
+                        row_count=1,
+                    )
+                )
+                continue
             if schema_version == "USER_PROVIDED_INPUT.v1":
                 payload = dict(artifact.get("payload") or {})
                 text = str(payload.get("text", "")).strip()
@@ -54,6 +95,7 @@ class DbaEvidenceAssessmentHandler:
                             skill_id="user.provided-evidence",
                             step_id="input",
                             tool_id="user.input",
+                            trust_level="USER_PROVIDED",
                             measurement_semantics=(
                                 MeasurementSemantics.NOT_APPLICABLE
                             ),
@@ -210,8 +252,10 @@ class DbaEvidenceAssessmentHandler:
         if monitoring_gap_found:
             reasons.append("部分监控指标查询失败、无采样或监控源不可用")
 
-        objective = str(task_frame.get("objective", ""))
-        can_answer_from_expertise = objective in {"UNDERSTAND", "EXPLAIN", "PLAN"}
+        objectives = {str(item) for item in task_frame.get("objectives", ())}
+        can_answer_from_expertise = bool(objectives) and objectives <= {
+            "UNDERSTAND", "EXPLAIN", "PLAN"
+        }
         if not facts and can_answer_from_expertise and not gaps:
             status = SufficiencyStatus.ANSWERABLE
             reasons.append("该问题可以依据 DBA 专业知识回答，无需伪造外部证据")

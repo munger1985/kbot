@@ -56,7 +56,10 @@ class _UnitOfWork:
         self.diagnostic_sources = SimpleNamespace(
             get_scoped=self._get_source
         )
-        self.targets = SimpleNamespace(get_scoped=self._get_target)
+        self.targets = SimpleNamespace(
+            get_scoped=self._get_target,
+            target_ids_shared_by_sources=self._target_ids_shared_by_sources,
+        )
         self.policies = _PolicyRepository()
         self.source_id = source_id
         self.target = target
@@ -73,6 +76,10 @@ class _UnitOfWork:
     async def _get_target(self, **kwargs):
         del kwargs
         return self.target
+
+    async def _target_ids_shared_by_sources(self, **kwargs):
+        del kwargs
+        return [self.target.target_id] if self.target is not None else []
 
     async def __aenter__(self):
         return self
@@ -212,6 +219,10 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         target_id = uuid7()
         target = SimpleNamespace(
             target_id=target_id,
+            display_name="测试数据库",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
             execution_credential_id=None,
             version_code=None,
             capabilities_json={},

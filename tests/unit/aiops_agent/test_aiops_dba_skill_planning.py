@@ -178,7 +178,14 @@ class _PlanningUow:
             primary_domain=None,
             subject=None,
         )
-        self.version = SimpleNamespace(agent_version_id=uuid7())
+        self.version = SimpleNamespace(
+            agent_version_id=uuid7(),
+            policy_id=uuid7(),
+        )
+        self.policy = SimpleNamespace(
+            policy_id=self.version.policy_id,
+            rules_json={"readonly_database_enabled": True},
+        )
         self.target = SimpleNamespace(
             target_id=uuid7(),
             db_type="ORACLE",
@@ -207,6 +214,18 @@ class _PlanningUow:
             trace_id="trace-planning",
             deadline_at=None,
             plan_snapshot_json={},
+        )
+        self.source_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+            payload_json={"summary": "数据库不可用，Alert Log出现ORA-27157"},
+            created_at=datetime.now(UTC),
+            trust_level="MODEL_INFERENCE",
+        )
+        self.source_run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            domain_id=7,
+            final_artifact_id=self.source_artifact.artifact_id,
         )
         self.message = SimpleNamespace(
             sequence_no=1,
@@ -252,6 +271,7 @@ class _PlanningUow:
         )
         self.runs = SimpleNamespace(
             get_run=self._get_run,
+            get_artifact=self._get_artifact,
             add_artifact=self._add_artifact,
             add_tasks=self._add_tasks,
         )
@@ -260,6 +280,7 @@ class _PlanningUow:
             version_source_ids=self._source_ids,
         )
         self.targets = SimpleNamespace(get_scoped=self._get_target)
+        self.policies = SimpleNamespace(get_scoped=self._get_policy)
         self.diagnostic_sources = SimpleNamespace(get_scoped=self._get_source)
 
     async def __aenter__(self):
@@ -293,7 +314,16 @@ class _PlanningUow:
 
     async def _get_run(self, *, ops_run_id, lock=False):
         del lock
-        return self.run if ops_run_id == self.run.ops_run_id else None
+        if ops_run_id == self.run.ops_run_id:
+            return self.run
+        if ops_run_id == self.source_run.ops_run_id:
+            return self.source_run
+        return None
+
+    async def _get_artifact(self, *, artifact_id):
+        if artifact_id == self.source_artifact.artifact_id:
+            return self.source_artifact
+        return None
 
     async def _get_version(self, *, agent_id, agent_version_id):
         if agent_id == self.run.agent_id and agent_version_id == self.version.agent_version_id:
@@ -306,6 +336,11 @@ class _PlanningUow:
     async def _get_target(self, *, target_id, domain_id):
         if target_id == self.target.target_id and domain_id == 7:
             return self.target
+        return None
+
+    async def _get_policy(self, *, policy_id, domain_id):
+        if policy_id == self.policy.policy_id and domain_id == 7:
+            return self.policy
         return None
 
     async def _get_source(self, **_):
@@ -368,7 +403,7 @@ class _PastedLogReasoner:
                 supplied_evidence_summary=("Oracle Alert Log 包含 ORA-27157",),
             ),
             task_frame=TaskFrame(
-                objective=TaskObjective.EXPLAIN,
+                objectives=(TaskObjective.EXPLAIN,),
                 problem_statement="解释 ORA-27157 的含义和可能原因",
                 known_facts=("Oracle 后台进程报告 OS post/wait facility removed",),
                 unknowns=("操作系统 IPC 资源是否被人为移除",),
@@ -510,6 +545,49 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(uow.revisions))
         self.assertEqual(1, uow.commit_count)
 
+    async def test_source_run_final_artifact_is_inherited_as_current_evidence(self) -> None:
+        """告警或巡检继续对话必须继承来源Run结果，不只保存关联ID。"""
+        uow = _PlanningUow()
+        uow.run.plan_snapshot_json["source_run_id"] = str(
+            uow.source_run.ops_run_id
+        )
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=_PastedLogReasoner(),
+            playbook_registry=registry,
+            skill_compiler=SkillPlanCompiler(registry),
+            execution_snapshot_builder=SkillExecutionSnapshotBuilder(
+                skill_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        inherited = next(
+            item
+            for item in uow.artifacts
+            if item.artifact_key == "turn-source-run-evidence:1"
+        )
+        self.assertEqual("SOURCE_RUN_EVIDENCE.v1", inherited.schema_version)
+        self.assertEqual(
+            {"USER_PROVIDED", "CONTEXT"},
+            {item.evidence_role for item in uow.evidence},
+        )
+        self.assertIn(
+            "turn-source-run-evidence:1",
+            uow.tasks[0].input_artifacts_json,
+        )
+
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
         uow = _PlanningUow()
         service = object.__new__(TurnPlanningService)
@@ -554,6 +632,70 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaSkillFrameworkTest(unittest.TestCase):
+    def test_investigation_action_freezes_only_its_selected_atomic_tool(self) -> None:
+        """Playbook只能提供默认值，不能扩大模型Action的实际执行范围。"""
+        diagnostic_registry = DiagnosticRegistry.load()
+        registry = DbaSkillRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostic_registry.tools
+            )
+        )
+        service = object.__new__(TurnPlanningService)
+        service._playbook_registry = registry
+        capabilities = DbaCapabilitySnapshot(
+            agent_id=str(uuid7()),
+            agent_version_id=str(uuid7()),
+            target_id=str(uuid7()),
+            database_type="ORACLE",
+            database_version="19c",
+            target_enabled=True,
+            target_reachable=True,
+            target_capabilities=(
+                "DB_READONLY",
+                "dynamic_performance_views",
+                "dba_catalog_views",
+            ),
+        )
+        investigation = SimpleNamespace(
+            suggested_playbook_ids=("oracle.sql.top_current",),
+            plan=SimpleNamespace(
+                actions=(
+                    SimpleNamespace(
+                        action_id="a1",
+                        question="哪些SQL累计消耗最高？",
+                        tool_id="db.sql.top_current",
+                        input={"limit": 5},
+                        depends_on=(),
+                    ),
+                )
+            ),
+        )
+
+        plan = service._build_playbook_plan(
+            investigation=investigation,
+            capabilities=capabilities,
+        )
+        compiled = SkillPlanCompiler(registry).compile(plan)
+        snapshot = SkillExecutionSnapshotBuilder(
+            skill_registry=registry,
+            diagnostic_registry=diagnostic_registry,
+        ).build(
+            plan=plan,
+            compiled=compiled,
+            capabilities=capabilities,
+            database_execution={"automatic_access_enabled": True},
+        )
+
+        invocation = snapshot["invocations"][
+            compiled.invocation_task_keys[0]
+        ]
+        self.assertEqual("a1", invocation["action_id"])
+        self.assertEqual(
+            ["db.sql.top_current"],
+            [item["tool_id"] for item in invocation["tools"]],
+        )
+
     def test_disabled_target_keeps_diagnostic_plan_with_access_gap(self) -> None:
         """Target 停用时保留诊断计划，但禁止自动数据库直连。"""
         runtime = object.__new__(AIOpsRuntimeService)
@@ -660,6 +802,84 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             ],
             executor.task_keys,
         )
+
+    def test_skill_handler_preserves_frozen_database_access_denial(self) -> None:
+        """执行阶段不得覆盖规划时冻结的数据库访问拒绝结论。"""
+        class _AccessSnapshotExecutor:
+            def __init__(self) -> None:
+                self.access_values = []
+
+            async def execute(self, context):
+                snapshot = context.plan_snapshot["database_diagnostics"]
+                self.access_values.append(snapshot["automatic_access_enabled"])
+                return DatabaseDiagnosticResult(
+                    target_id=context.target_id,
+                    tool_id=context.task_key.removeprefix("diagnostic:"),
+                    status="GAP",
+                    gap=EvidenceGap(
+                        code="DIAGNOSTIC_POLICY_DENIED",
+                        detail="当前策略禁止数据库直连诊断",
+                        retryable=False,
+                    ),
+                )
+
+        executor = _AccessSnapshotExecutor()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="skill:1:oracle.sql.top_current",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-skill-denied",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "skill_execution": {
+                    "diagnostic_catalog_hash": "a" * 64,
+                    "capability_snapshot_hash": "b" * 64,
+                    "database": {
+                        "automatic_access_enabled": False,
+                        "initial_gaps": [
+                            {
+                                "code": "DIAGNOSTIC_POLICY_DENIED",
+                                "detail": "当前策略禁止数据库直连诊断",
+                                "retryable": False,
+                            }
+                        ],
+                    },
+                    "invocations": {
+                        "skill:1:oracle.sql.top_current": {
+                            "skill_id": "oracle.sql.top_current",
+                            "skill_version": "1.0.0",
+                            "manifest_hash": "c" * 64,
+                            "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+                            "presentation_kind": "TABLE",
+                            "output_schema": "oracle.sql.top_current.output.v1",
+                            "tools": [
+                                {
+                                    "step_id": "top_sql",
+                                    "depends_on": [],
+                                    "tool_id": "db.sql.top_current",
+                                    "tool_version": "1.0.0",
+                                }
+                            ],
+                        }
+                    },
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+        )
+
+        result = self.run_async(
+            DbaSkillInvocationHandler(
+                database_handler=executor
+            ).execute(context)
+        )
+
+        self.assertEqual("FAILED", result.status)
+        self.assertEqual([False], executor.access_values)
 
     def test_identity_gap_does_not_skip_independent_readonly_tool(self) -> None:
         executor = _IdentityGapToolExecutor()

@@ -2,6 +2,7 @@
 
 import unittest
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from pydantic import ValidationError
@@ -12,6 +13,7 @@ from aiops_agent.domain.operations import (
     ensure_task_transition,
     normalize_task_type,
 )
+from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
     DomainOpsTaskStatus,
@@ -29,6 +31,7 @@ from aiops_agent.workers import (
 )
 from platform_core.contracts.aiops import ArtifactInput
 from platform_core.persistence.orm import UniversalTimestamp
+from platform_core.identity import uuid7
 
 
 class RuntimeStateMachineTest(unittest.TestCase):
@@ -80,6 +83,128 @@ class RuntimeStateMachineTest(unittest.TestCase):
     def test_unknown_task_type_is_rejected_before_persistence(self) -> None:
         with self.assertRaisesRegex(ValueError, "不支持的通用 Task 类型"):
             normalize_task_type("UNKNOWN_TASK")
+
+
+class RuntimeArtifactReferenceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_input_artifacts_accepts_task_key_artifact_key_and_id(self) -> None:
+        """用户证据没有生产Task，也必须能够按Artifact引用传入Handler。"""
+        produced_task_id = uuid7()
+        direct_artifact_id = uuid7()
+        artifacts = [
+            SimpleNamespace(
+                artifact_id=uuid7(),
+                artifact_key="tool-result:1",
+                ops_task_id=produced_task_id,
+                artifact_type="TOOL_RESULT",
+                schema_version="TOOL_RESULT.v1",
+                payload_json={"value": 1},
+                payload_uri=None,
+                content_hash="a" * 64,
+                provenance_json={},
+                trust_level="OBSERVED",
+                security_level=1,
+            ),
+            SimpleNamespace(
+                artifact_id=direct_artifact_id,
+                artifact_key="turn-user-input:1",
+                ops_task_id=None,
+                artifact_type="USER_PROVIDED_INPUT",
+                schema_version="USER_PROVIDED_INPUT.v1",
+                payload_json={"text": "ORA-27157"},
+                payload_uri=None,
+                content_hash="b" * 64,
+                provenance_json={},
+                trust_level="USER_PROVIDED",
+                security_level=1,
+            ),
+        ]
+
+        class _Runs:
+            async def list_tasks(self, *, ops_run_id):
+                del ops_run_id
+                return [
+                    SimpleNamespace(
+                        ops_task_id=produced_task_id,
+                        task_key="tool:1",
+                    )
+                ]
+
+            async def list_artifacts(self, *, ops_run_id):
+                del ops_run_id
+                return artifacts
+
+        runtime = object.__new__(AIOpsRuntimeService)
+        leased = await runtime._input_artifacts(
+            SimpleNamespace(runs=_Runs()),
+            run_id=uuid7(),
+            task=SimpleNamespace(
+                input_artifacts_json=[
+                    "tool:1",
+                    "turn-user-input:1",
+                    str(direct_artifact_id),
+                ]
+            ),
+        )
+
+        self.assertEqual(
+            {"tool-result:1", "turn-user-input:1"},
+            {item.artifact_key for item in leased},
+        )
+
+    async def test_replan_freezes_answer_and_writes_outbox_command(self) -> None:
+        """首轮可重试缺口必须可靠触发重规划，不能提前释放回答Task。"""
+        answer = SimpleNamespace(
+            task_key="answer:compose",
+            status="PENDING",
+            depends_on_json=["evidence:assess"],
+            input_artifacts_json=["evidence:assess"],
+        )
+        outbox_rows = []
+        events = []
+
+        class _Runs:
+            async def list_tasks(self, **kwargs):
+                del kwargs
+                return [answer]
+
+        class _Outbox:
+            async def add(self, row):
+                outbox_rows.append(row)
+
+        class _Turns:
+            async def add_event(self, row):
+                events.append(row)
+
+        runtime = object.__new__(AIOpsRuntimeService)
+        turn = SimpleNamespace(
+            turn_id=uuid7(),
+            current_plan_revision=1,
+            status="ASSESSING",
+            event_cursor=3,
+        )
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            domain_id=7,
+            trace_id="trace-replan",
+        )
+        await runtime._schedule_turn_replan(
+            uow=SimpleNamespace(
+                runs=_Runs(),
+                outbox=_Outbox(),
+                turns=_Turns(),
+            ),
+            run=run,
+            turn=turn,
+            assessment_artifact=SimpleNamespace(artifact_id=uuid7()),
+        )
+
+        self.assertEqual(["evidence:assess:r2"], answer.depends_on_json)
+        self.assertEqual("REPLANNING", turn.status)
+        self.assertEqual(
+            "aiops.turn.replanning_requested",
+            outbox_rows[0].event_type,
+        )
+        self.assertEqual("turn.status", events[-1].event_type)
 
 
 class BlueprintRegistryTest(unittest.TestCase):

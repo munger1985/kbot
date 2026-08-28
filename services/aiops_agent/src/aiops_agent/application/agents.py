@@ -642,6 +642,31 @@ class AIOpsAgentService:
         source_ids = await uow.agents.version_source_ids(
             agent_version_id=version.agent_version_id
         )
+        candidate_ids = set(
+            await uow.targets.target_ids_shared_by_sources(
+                domain_id=int(agent.domain_id),
+                source_ids=source_ids,
+            )
+        )
+        if version.target_id is not None:
+            candidate_ids.add(version.target_id)
+        target_candidates = []
+        for target_id in sorted(candidate_ids, key=str):
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=int(agent.domain_id),
+            )
+            if target is None:
+                continue
+            target_candidates.append(
+                {
+                    "target_id": str(target.target_id),
+                    "display_name": target.display_name,
+                    "db_type": target.db_type,
+                    "status": target.status,
+                    "connectivity_status": target.connectivity_status,
+                }
+            )
         policy = await uow.policies.get_scoped(
             policy_id=version.policy_id, domain_id=int(agent.domain_id)
         )
@@ -657,6 +682,7 @@ class AIOpsAgentService:
             "policy_id": str(version.policy_id),
             "diagnostic_source_ids": [str(item) for item in source_ids],
             "target_id": str(version.target_id) if version.target_id else None,
+            "target_candidates": target_candidates,
             "allow_change_execution": bool(
                 rules.get("allow_agent_execution", False)
             ),

@@ -1882,7 +1882,6 @@ class AIOpsRuntimeService:
             )
             if revisions:
                 revisions[-1].assessment_artifact_id = artifact.artifact_id
-            turn.status = "ANSWERING"
             await self._append_turn_event(
                 uow,
                 turn,
@@ -1893,6 +1892,21 @@ class AIOpsRuntimeService:
                     "gap_count": len(assessment.gaps),
                 },
             )
+            should_replan = (
+                str(assessment.status) in {"NEEDS_EVIDENCE", "PARTIAL"}
+                and any(gap.retryable for gap in assessment.gaps)
+                and int(turn.investigation_round or 1) < 2
+                and int(turn.no_progress_count or 0) < 2
+            )
+            if should_replan:
+                await self._schedule_turn_replan(
+                    uow=uow,
+                    run=run,
+                    turn=turn,
+                    assessment_artifact=artifact,
+                )
+                return
+            turn.status = "ANSWERING"
             await self._append_turn_event(
                 uow,
                 turn,
@@ -1910,6 +1924,69 @@ class AIOpsRuntimeService:
                 payload=payload,
                 now=now,
             )
+
+    async def _schedule_turn_replan(
+        self,
+        *,
+        uow,
+        run,
+        turn,
+        assessment_artifact,
+    ) -> None:
+        """冻结回答Task并可靠投递下一轮调查规划。"""
+        revision_no = int(turn.current_plan_revision or 1) + 1
+        tasks = await uow.runs.list_tasks(
+            ops_run_id=run.ops_run_id,
+            lock=True,
+        )
+        answer = next(
+            (item for item in tasks if item.task_key == "answer:compose"),
+            None,
+        )
+        if answer is None or answer.status != "PENDING":
+            raise state_conflict("重规划时回答Task状态无效")
+        assessment_key = f"evidence:assess:r{revision_no}"
+        answer.depends_on_json = [assessment_key]
+        answer.input_artifacts_json = [assessment_key]
+        payload = {
+            "schema_version": "aiops.turn-replan-command.v1",
+            "domain_id": int(run.domain_id),
+            "turn_id": str(turn.turn_id),
+            "ops_run_id": str(run.ops_run_id),
+            "assessment_artifact_id": str(
+                assessment_artifact.artifact_id
+            ),
+            "revision_no": revision_no,
+            "trace_id": run.trace_id,
+        }
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        await uow.outbox.add(
+            OutboxEntity(
+                aggregate_type="CONVERSATION_TURN",
+                aggregate_id=turn.turn_id,
+                event_type="aiops.turn.replanning_requested",
+                idempotency_key=(
+                    f"turn-replan:{turn.turn_id}:{revision_no}"
+                ),
+                payload_json=payload,
+                payload_hash=hashlib.sha256(encoded).hexdigest(),
+                trace_id=run.trace_id,
+            )
+        )
+        turn.status = "REPLANNING"
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="turn.status",
+            payload={
+                "status": "REPLANNING",
+                "public_summary": "首轮证据仍有关键缺口，正在调整调查计划",
+            },
+        )
 
     async def _project_chat_turn_failure(
         self,
@@ -5577,7 +5654,11 @@ class AIOpsRuntimeService:
                 security_level=int(item.security_level),
             )
             for item in artifacts
-            if item.ops_task_id in producer_ids
+            if (
+                item.ops_task_id in producer_ids
+                or item.artifact_key in required
+                or str(item.artifact_id) in required
+            )
         )
 
     def _task_lease(

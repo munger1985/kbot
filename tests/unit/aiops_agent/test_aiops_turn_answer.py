@@ -218,7 +218,7 @@ class _ProgressUow:
 
 def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
     task_frame = {
-        "objective": "ASSESS",
+        "objectives": ["ASSESS"],
         "problem_statement": "分析最近十五分钟的 Top SQL",
         "success_criteria": ["识别主要 SQL 负载"],
         "time_scope": "最近十五分钟" if recent else None,
