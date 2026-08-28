@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import traceback
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
@@ -89,6 +90,57 @@ class _PlanningAlreadyApplied(Exception):
         self.result = result
 
 
+class TurnPlanningStageError(RuntimeError):
+    """保留规划内部故障的安全阶段信息，不携带用户输入或凭据。"""
+
+    code = "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR"
+
+    _STAGE_BY_FUNCTION = {
+        "_prepare": "PREPARE_CONTEXT",
+        "_persist_raw_input": "PERSIST_RAW_INPUT",
+        "_persist_input_extractions": "PERSIST_INPUT_EXTRACTIONS",
+        "plan": "MODEL_PLANNING",
+        "_prepare_dynamic_queries": "VALIDATE_DYNAMIC_SQL",
+        "_prepare_source_queries": "VALIDATE_MONITORING_QUERY",
+        "_build_playbook_plan": "BUILD_PLAYBOOK_PLAN",
+        "_prepare_monitoring": "PREPARE_MONITORING",
+        "compile": "COMPILE_TASK_PLAN",
+        "build": "BUILD_EXECUTION_SNAPSHOT",
+        "_persist": "PERSIST_INVESTIGATION_PLAN",
+    }
+
+    def __init__(self, cause: Exception) -> None:
+        frames = traceback.extract_tb(cause.__traceback__)
+        frame = frames[-1] if frames else None
+        stage = "PROCESS_INVESTIGATION_PLAN"
+        for candidate in reversed(frames):
+            mapped = self._STAGE_BY_FUNCTION.get(candidate.name)
+            if mapped is not None:
+                stage = mapped
+                break
+        location = (
+            f"{frame.name}:{frame.lineno}" if frame is not None else "unknown"
+        )
+        detail = self._safe_detail(cause)
+        super().__init__(
+            f"stage={stage}; cause={type(cause).__name__}; "
+            f"detail={detail}; location={location}"
+        )
+        self.stage = stage
+        self.cause_type = type(cause).__name__
+        self.safe_detail = detail
+        self.location = location
+
+    @staticmethod
+    def _safe_detail(cause: Exception) -> str:
+        if not isinstance(cause, KeyError) or not cause.args:
+            return "not-recorded"
+        key = str(cause.args[0])
+        if re.fullmatch(r"[A-Za-z0-9_.:@/-]{1,120}", key):
+            return f"missing-key:{key}"
+        return "missing-key:<non-identifier>"
+
+
 class TurnPlanningService:
     """在外部模型调用两侧使用短事务冻结并持久化计划。"""
 
@@ -114,6 +166,15 @@ class TurnPlanningService:
         self._conversation_input_resolver = conversation_input_resolver
 
     async def execute(self, payload: dict) -> dict:
+        """执行首轮规划，并把未预期异常转换为可审计的阶段错误。"""
+        try:
+            return await self._execute_once(payload)
+        except (InvestigationPlanValidationError, TurnPlanningStageError):
+            raise
+        except Exception as exc:
+            raise TurnPlanningStageError(exc) from exc
+
+    async def _execute_once(self, payload: dict) -> dict:
         try:
             context = await self._prepare(payload)
         except _PlanningAlreadyApplied as applied:
@@ -1141,6 +1202,16 @@ class TurnPlanningService:
 
     @staticmethod
     def _terminal_failure_summary(error_code: str) -> str:
+        if error_code == "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR":
+            return (
+                "调查计划处理发生内部错误，本轮没有执行诊断工具。"
+                "请重试；若仍然失败，请将错误编号提供给管理员。"
+            )
+        if error_code == "AIOPS_SKILL_UNAVAILABLE":
+            return (
+                "当前 Agent 暂时没有可用于本轮问题的诊断工具。"
+                "请补充问题范围或检查 Agent 的 Target 与监控源配置。"
+            )
         return (
             "本轮输入未能形成通过安全校验的调查计划。"
             "系统没有执行越界工具，请重试或补充问题范围。"

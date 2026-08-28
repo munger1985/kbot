@@ -274,11 +274,15 @@ class AIOpsDomainOutboxSink:
         if event_type != "aiops.turn.understanding_requested":
             return
         error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
-        logger.error(
-            "AIOps Turn 规划重试耗尽：turn_id={} code={} type={}",
+        logger.opt(exception=exc).error(
+            "AIOps Turn 规划重试耗尽：turn_id={} code={} type={} "
+            "stage={} detail={} location={}",
             payload.get("turn_id"),
             error_code,
             type(exc).__name__,
+            getattr(exc, "stage", "UNKNOWN"),
+            getattr(exc, "safe_detail", "not-recorded"),
+            getattr(exc, "location", "unknown"),
         )
         await self._turn_planning_service.fail_terminal(
             payload,
@@ -384,7 +388,12 @@ class AIOpsOutboxDispatcher:
                     available_at=now
                     + timedelta(seconds=min(2 ** snapshot["attempt"], 60)),
                     error_code="OUTBOX_PUBLISH_FAILED",
-                    error_message=type(exc).__name__,
+                    error_message=(
+                        str(exc)[:1000]
+                        if getattr(exc, "code", None)
+                        == "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR"
+                        else type(exc).__name__
+                    ),
                 )
                 if changed:
                     await uow.commit()

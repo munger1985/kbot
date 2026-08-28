@@ -13,7 +13,10 @@ from aiops_agent.contracts.artifacts.database import (
     EvidenceGap,
 )
 from aiops_agent.diagnostics import DiagnosticRegistry
-from aiops_agent.application.turn_planning import TurnPlanningService
+from aiops_agent.application.turn_planning import (
+    TurnPlanningService,
+    TurnPlanningStageError,
+)
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.workers.database_handlers import DatabaseDiagnosticHandler
 from aiops_agent.workers.handlers import TaskExecutionContext
@@ -690,6 +693,42 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("turn.status", uow.events[-1].event_type)
         self.assertEqual("FAILED", uow.events[-1].payload_json["status"])
         self.assertEqual(1, uow.commit_count)
+
+    async def test_unexpected_planning_key_error_keeps_safe_stage_detail(self) -> None:
+        """未预期的缺键错误必须保留安全定位信息，不能伪装成策略拒绝。"""
+        service = object.__new__(TurnPlanningService)
+
+        async def fail_after_model(_payload):
+            raise KeyError("diagnostic-task:missing")
+
+        service._execute_once = fail_after_model
+
+        with self.assertRaises(TurnPlanningStageError) as raised:
+            await service.execute({"domain_id": 7, "turn_id": str(uuid7())})
+
+        self.assertEqual(
+            "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR",
+            raised.exception.code,
+        )
+        self.assertEqual("KeyError", raised.exception.cause_type)
+        self.assertEqual(
+            "missing-key:diagnostic-task:missing",
+            raised.exception.safe_detail,
+        )
+        self.assertNotIn("安全校验", str(raised.exception))
+
+    def test_terminal_failure_summary_distinguishes_internal_error(self) -> None:
+        """内部错误与模型计划安全校验失败使用不同的用户文案。"""
+        internal = TurnPlanningService._terminal_failure_summary(
+            "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR"
+        )
+        invalid = TurnPlanningService._terminal_failure_summary(
+            "AIOPS_INVESTIGATION_PLAN_INVALID"
+        )
+
+        self.assertIn("内部错误", internal)
+        self.assertNotIn("安全校验", internal)
+        self.assertIn("安全校验", invalid)
 
     async def test_terminal_task_failure_updates_chat_turn(self) -> None:
         uow = _PlanningUow()
