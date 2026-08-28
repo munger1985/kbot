@@ -483,6 +483,22 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(turn.turn_id), receipt["turn_id"])
         TurnReceipt.model_validate(receipt)
 
+    async def test_start_accepts_disabled_target_for_degraded_diagnosis(
+        self,
+    ) -> None:
+        """Target 停用只降低本轮取证能力，不应阻止 Agent 接收问题。"""
+        uow = _Uow()
+        uow.target.status = "DISABLED"
+
+        _, receipt = await self._start(uow)
+
+        self.assertEqual("QUEUED", receipt["status"])
+        self.assertEqual(
+            uow.target.target_id,
+            uow.turns.turns[0].resolved_target_id,
+        )
+        self.assertEqual(1, len(uow.outbox.rows))
+
     async def test_queue_accept_is_idempotent(self) -> None:
         uow = _Uow()
         turn = SimpleNamespace(

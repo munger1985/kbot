@@ -485,6 +485,44 @@ class DbaIntentRouterTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaSkillFrameworkTest(unittest.TestCase):
+    def test_disabled_target_keeps_diagnostic_plan_with_access_gap(self) -> None:
+        """Target 停用时保留诊断计划，但禁止自动数据库直连。"""
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._diagnostic_registry = DiagnosticRegistry.load()
+        target = SimpleNamespace(
+            domain_id=7,
+            status="DISABLED",
+            db_type="ORACLE",
+            version_code="19c",
+            row_version=3,
+            endpoint_json={
+                "host": "db.internal",
+                "port": 1521,
+                "service": "PDB1",
+            },
+            diagnostic_credential_id=uuid7(),
+            connectivity_status="UNREACHABLE",
+            capabilities_json={},
+        )
+
+        _, snapshot = runtime._database_diagnostic_blueprint_snapshot(
+            command=SimpleNamespace(blueprint_version="1"),
+            target=target,
+            binding=SimpleNamespace(),
+            policy=None,
+        )
+
+        self.assertFalse(snapshot["automatic_access_enabled"])
+        self.assertTrue(snapshot["tools"])
+        self.assertEqual(
+            {"TARGET_INACTIVE", "TARGET_CONNECTIVITY_UNAVAILABLE"},
+            {
+                item["code"]
+                for item in snapshot["initial_gaps"]
+                if item["code"].startswith("TARGET_")
+            },
+        )
+
     def test_skill_handler_executes_only_frozen_tool_dag(self) -> None:
         executor = _FrozenToolExecutor()
         context = TaskExecutionContext(

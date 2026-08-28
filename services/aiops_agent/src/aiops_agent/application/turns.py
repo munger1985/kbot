@@ -522,7 +522,7 @@ class ConversationTurnService:
                     "AIOPS_TARGET_SCOPE_CONFLICT",
                     "显式 Target 与来源 Run 的 Target 不一致",
                 )
-            await self._require_available_target(
+            await self._require_existing_target(
                 uow=uow,
                 domain_id=domain_id,
                 target_id=source_target_id,
@@ -534,14 +534,14 @@ class ConversationTurnService:
                     "AIOPS_TARGET_SCOPE_FORBIDDEN",
                     "所选 Target 不在当前 Agent 允许范围内",
                 )
-            await self._require_available_target(
+            await self._require_existing_target(
                 uow=uow,
                 domain_id=domain_id,
                 target_id=requested_target_id,
             )
             return requested_target_id
         if fixed_target_id is not None:
-            await self._require_available_target(
+            await self._require_existing_target(
                 uow=uow,
                 domain_id=domain_id,
                 target_id=fixed_target_id,
@@ -559,7 +559,7 @@ class ConversationTurnService:
             "当前监控源未映射到可诊断 Target，请先配置 Target Source Binding",
         )
 
-    async def _require_available_target(
+    async def _require_existing_target(
         self,
         *,
         uow,
@@ -570,11 +570,8 @@ class ConversationTurnService:
             target_id=target_id,
             domain_id=domain_id,
         )
-        if target is None or target.status != "ENABLED":
-            raise self._error(
-                "AIOPS_TARGET_NOT_AVAILABLE",
-                "所选 Target 不存在或未启用",
-            )
+        if target is None:
+            raise resource_not_found("Target")
 
     @staticmethod
     def _title(message: str) -> str:

@@ -49,7 +49,7 @@ class TargetRepository(AIOpsRepository):
         domain_id: int,
         source_ids: Collection[UUID],
     ) -> list[UUID]:
-        """返回所有指定监控源共同映射的可用 Target。"""
+        """返回所有指定监控源共同映射的授权 Target，不以运行健康拦截对话。"""
         normalized = tuple(dict.fromkeys(source_ids))
         if not normalized:
             return []
@@ -61,7 +61,6 @@ class TargetRepository(AIOpsRepository):
             )
             .where(
                 TargetEntity.domain_id == domain_id,
-                TargetEntity.status == "ENABLED",
                 TargetSourceBindingEntity.status == "ACTIVE",
                 TargetSourceBindingEntity.diagnostic_source_id.in_(normalized),
             )

@@ -84,7 +84,11 @@ Agent创建时Target仍可不选，这表示Agent没有数据库直连能力，�
 5. 从告警或巡检续聊时，来源Situation/Run/Report的Target优先，且必须属于Agent允许范围。
 
 因此`KBOT_OPS_RUN.TARGET_ID`继续保持非空。数据库直连是否可用由Target诊断凭据和
-连接状态决定，不通过把Run的Target设为空来表达。
+连接状态决定，不通过把Run的Target设为空来表达。Target或Diagnostic Source的人工状态、
+连接健康和绑定健康都不是创建Conversation、Turn或PRIMARY Run的同步准入条件：只要Target
+仍存在且属于Agent授权范围，系统就接收问题。运行时对未启用、不可连接或无权限的能力写入
+结构化Evidence Gap，并继续使用其余监控源、来源Run证据和模型能力完成可行动回答；这些降级
+不放宽变更审批和执行前的健康校验。
 
 ## 5. Oracle表结构目标态
 
@@ -480,7 +484,7 @@ Snapshot和Source Capability Snapshot；输出`DBA_SKILL_PLAN.v1`，其中每个
 单个UoW内完成：
 
 1. 校验Domain、Agent授权、Agent状态和版本；
-2. 解析或校验Target候选；
+2. 解析或校验Target候选，只校验存在性和Agent授权范围，不检查启停或连接健康；
 3. 锁定Conversation，分别按`LAST_TURN_NO + 1`和`LAST_MESSAGE_NO + 1`分配Turn与
    Message序号；
 4. 写入Turn、User Message、`turn.created`和Outbox任务；
@@ -706,12 +710,12 @@ PENDING_PROPOSAL_COUNT, UPDATED_AT
 | `AIOPS_TURN_ALREADY_RUNNING` | 409 | 不允许立即执行，服务端无法排队时使用 |
 | `AIOPS_TURN_VERSION_CONFLICT` | 409 | 取消或状态操作版本冲突 |
 | `AIOPS_SKILL_UNAVAILABLE` | 422 | 当前目录没有支持该任务的Skill |
-| `AIOPS_CAPABILITY_UNAVAILABLE` | 422 | 缺少来源、权限、连接或授权能力 |
 | `AIOPS_EVIDENCE_REQUEST_CLOSED` | 409 | 补证请求已完成、过期或取消 |
 | `AIOPS_TURN_CANCELLED` | 409 | Turn已取消，不能继续提交 |
 
-外部依赖失败一般不把创建Turn的HTTP改成5xx，而是在Turn内形成`skill.failed`、充分性和
-可行动回答。只有无法持久化Turn、鉴权失败或契约非法时同步失败。
+监控源、数据库连接、只读权限或单项Skill能力不足，不得把创建Turn的HTTP改成4xx/5xx，
+而是在Turn内形成Evidence Gap、`skill.failed`、充分性和可行动回答。只有无法持久化Turn、
+鉴权失败、Target不存在或越过Agent授权范围、无法唯一解析Target以及请求契约非法时同步失败。
 
 ## 17. 数据库实施方式
 
@@ -757,6 +761,8 @@ KBot 4.0采用直接重建，不提供在线迁移、旧表兼容视图或历史
 - Evidence Request文字、文件、截图、跳过、过期和重复提交；
 - 取消Turn后没有新Skill启动，已经完成的证据仍可审计；
 - Conversation和Turn分页不泄露其他Domain或未授权Agent数据。
+- Target或监控源处于`DISABLED`、`UNREACHABLE`、`DEGRADED`时仍能创建Turn并进入终态；
+  可用来源继续取证，不可用来源显示结构化缺口，不能同步返回422。
 
 ### 18.4 真实Oracle验证
 

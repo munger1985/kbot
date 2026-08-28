@@ -297,8 +297,8 @@ class AIOpsRuntimeService:
                 domain_id=command.domain_id,
                 lock=True,
             )
-            if target is None or target.status != "ENABLED":
-                raise resource_not_found("可用 Target")
+            if target is None:
+                raise resource_not_found("Target")
             agent = await uow.agents.get(
                 domain_id=command.domain_id,
                 agent_id=command.agent_id,
@@ -410,6 +410,8 @@ class AIOpsRuntimeService:
                 "version_code": target.version_code,
                 "environment": target.environment,
                 "db_role": target.db_role,
+                "status": getattr(target, "status", "ENABLED"),
+                "connectivity_status": target.connectivity_status,
                 "database_endpoint_configured": bool(target.endpoint_json),
                 "diagnostic_secret_configured": bool(
                     target.diagnostic_credential_id
@@ -1162,6 +1164,7 @@ class AIOpsRuntimeService:
         capability_hash = sha256_json(capability_snapshot)
         initial_gaps: list[dict[str, Any]] = []
         selected = []
+        target_enabled = getattr(target, "status", "ENABLED") == "ENABLED"
         policy_rules = dict(policy.rules_json) if policy is not None else {}
         policy_allowed = policy_rules.get(
             "readonly_database_enabled", True
@@ -1171,6 +1174,14 @@ class AIOpsRuntimeService:
                 {
                     "code": "DIAGNOSTIC_POLICY_DENIED",
                     "detail": "当前策略禁止数据库直连诊断",
+                    "retryable": False,
+                }
+            )
+        if not target_enabled:
+            initial_gaps.append(
+                {
+                    "code": "TARGET_INACTIVE",
+                    "detail": "Target 当前未启用，跳过数据库直连诊断",
                     "retryable": False,
                 }
             )
@@ -1207,7 +1218,8 @@ class AIOpsRuntimeService:
                 }
             )
         automatic_access_enabled = (
-            policy_allowed
+            target_enabled
+            and policy_allowed
             and bool(target.version_code)
             and bool(target.diagnostic_credential_id)
             and bool(target.endpoint_json)
