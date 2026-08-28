@@ -69,13 +69,17 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
         self.assertIn("IX_OPS_PROPOSAL_TURN", self.sql)
 
     def test_upgrade_checks_mapping_before_first_ddl(self) -> None:
-        preflight = self.sql.index("PROMPT [1/12]")
+        preflight = self.sql.index("PROMPT [1/13]")
+        mapping_preflight = self.sql.index("PROMPT [2/13]")
         first_ddl = self.sql.index(
             "ALTER TABLE KBOT_OPS_AGENT_VERSION ADD (TARGET_ID RAW(16))"
         )
+        wrong_version = self.sql.index("-20001")
         unresolved_agent = self.sql.index("-20002")
         unresolved_conversation = self.sql.index("-20003")
         unresolved_proposal = self.sql.index("-20006")
+        self.assertLess(preflight, wrong_version)
+        self.assertLess(wrong_version, mapping_preflight)
         self.assertLess(preflight, unresolved_agent)
         self.assertLess(unresolved_agent, first_ddl)
         self.assertLess(unresolved_conversation, first_ddl)
