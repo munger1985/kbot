@@ -183,6 +183,11 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。
 
+Oracle动态SQL的解析实现固定使用SQLGlot Oracle方言，并在规划端和执行端消费同一份
+`ORACLE_DYNAMIC_QUERY_POLICY.v1`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
+投影列、函数、bind、Database Link和锁语义，注入服务端行数上限并绑定Query/Policy Hash。
+执行端仍必须开启只读事务、使用诊断凭据并强制超时、行数、列数、字节和单元格长度限制。
+
 ## 10. Evidence模型
 
 Evidence来源为`USER_PROVIDED`、`TOOL_OBSERVED`、`SOURCE_OBSERVED`、`KNOWLEDGE_CONTEXT`和

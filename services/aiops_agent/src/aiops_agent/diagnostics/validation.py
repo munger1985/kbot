@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sqlglot import exp, parse
+from sqlglot.errors import ParseError
+
 from .contracts import DiagnosticParameter, DiagnosticToolDefinition
 
 
@@ -97,6 +100,31 @@ def validate_readonly_template(
         )
     if re.search(r"[%][(][a-zA-Z_]", code) or "{{" in code or "${" in code:
         raise ValueError("SQL 模板禁止动态字符串插值")
+    validate_readonly_ast(sql, db_type=str(definition.db_type))
+
+
+def validate_readonly_ast(sql: str, *, db_type: str) -> None:
+    """使用显式数据库方言复核固定目录 SQL 的只读结构。"""
+    dialect = {
+        "ORACLE": "oracle",
+        "MYSQL": "mysql",
+        "POSTGRESQL": "postgres",
+    }.get(db_type)
+    if dialect is None:
+        raise ValueError("数据库 SQL 方言不受支持")
+    try:
+        statements = parse(sql, read=dialect)
+    except ParseError as exc:
+        raise ValueError("SQL 模板无法按声明方言解析") from exc
+    if len(statements) != 1 or not isinstance(statements[0], exp.Select):
+        raise ValueError("SQL 模板 AST 必须是单条 SELECT")
+    expression = statements[0]
+    if expression.find(exp.Lock) is not None:
+        raise ValueError("SQL 模板禁止锁语义")
+    if expression.find(exp.Dot) is not None:
+        raise ValueError("SQL 模板禁止包函数或不透明点表达式")
+    if any("@" in str(table.name or "") for table in expression.find_all(exp.Table)):
+        raise ValueError("SQL 模板禁止数据库链路")
 
 
 def validate_parameters(

@@ -57,8 +57,13 @@ PROPOSAL_OUTCOME.v1 → PROPOSAL_SUMMARY`。只有当前Turn内`SOURCE_VERIFIED`
 `PENDING_APPROVAL`；自然语言、用户粘贴证据和模型推断均不能直接授权动作。审批后仍复用原有
 Proposal Hash、策略复核、执行凭据和效果验证链路。
 
-以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、受控动态只读SQL/PromQL/LogQL、
-旧Skill内部命名与目录的物理迁移，以及dev真实
+受控动态查询已完成第一层安全基础：项目固定使用`sqlglot==30.0.2`按Oracle方言解析AST，动态
+SQL策略只接受单条显式投影SELECT，限制诊断对象、函数、bind、Schema、Database Link、锁和
+返回行数，并生成Query Hash与Policy Hash；固定目录SQL也增加方言AST复核。该能力尚未接入
+模型Tool Discovery、签名Grant和隔离Executor，因此当前运行时仍不会执行模型生成的SQL。
+
+以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、动态SQL的Grant/Executor执行链、
+PromQL/LogQL语法围栏、旧Skill内部命名与目录的物理迁移，以及dev真实
 Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
 Schema字段或类名判断功能已经交付。
 
