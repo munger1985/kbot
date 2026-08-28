@@ -63,6 +63,18 @@ _SAFE_FUNCTIONS = frozenset(
         "VARIANCE",
     }
 )
+_SENSITIVE_SOURCE_COLUMNS = frozenset(
+    {
+        "auth_vfr_data",
+        "bind_data",
+        "other_xml",
+        "password",
+        "password_hash",
+        "spare4",
+        "sql_fulltext",
+        "sql_text",
+    }
+)
 
 
 class DynamicQueryRejected(ValueError):
@@ -217,6 +229,12 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
                 "动态 SQL 禁止包函数、成员调用或不透明点表达式",
             )
+        for column in expression.find_all(exp.Column):
+            if str(column.name or "").lower() in _SENSITIVE_SOURCE_COLUMNS:
+                raise DynamicQueryRejected(
+                    "DYNAMIC_SQL_SENSITIVE_COLUMN_FORBIDDEN",
+                    "动态 SQL 禁止读取可能包含凭据、绑定值或 SQL 文本的列",
+                )
         for function in expression.find_all(exp.Func):
             name = function.sql_name().upper()
             if name == "ANONYMOUS":

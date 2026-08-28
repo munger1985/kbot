@@ -13,6 +13,10 @@ from aiops_agent.contracts.artifacts import (
     DatabaseScopeResult,
     EvidenceGap,
 )
+from aiops_agent.contracts.skill_execution import (
+    DbaSkillResult,
+    SkillToolOutcome,
+)
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
     canonical_sha256,
@@ -23,6 +27,9 @@ from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
     DiagnosticExecutionGrant,
     DiagnosticLimits,
+    DynamicDiagnosticExecutionGrant,
+    DynamicReadDiagnosticRequest,
+    OracleDynamicQueryPolicyGrant,
     ReadDiagnosticRequest,
 )
 from platform_core.identity import uuid7
@@ -239,6 +246,176 @@ class DatabaseDiagnosticHandler:
                 tool_id=tool_id,
                 detail=details.get(code, "该数据库诊断证据本次不可用"),
                 retryable=retryable,
+            ),
+        )
+
+
+class DynamicQueryInvocationHandler:
+    """只消费规划时冻结的动态查询，并签发一次性执行 Grant。"""
+
+    def __init__(
+        self,
+        *,
+        executor_client: DatabaseExecutorClientPort,
+        grant_codec: DiagnosticGrantCodec,
+        grant_issuer: str,
+        grant_audience: str,
+        grant_ttl_seconds: int,
+    ) -> None:
+        self._client = executor_client
+        self._codec = grant_codec
+        self._issuer = grant_issuer
+        self._audience = grant_audience
+        self._ttl = grant_ttl_seconds
+
+    async def execute(self, context: TaskExecutionContext) -> DbaSkillResult:
+        execution = context.plan_snapshot["skill_execution"]
+        invocation = dict(
+            execution["dynamic_invocations"][context.task_key]
+        )
+        database = dict(execution["database"])
+        validated = dict(invocation["validated_query"])
+        tool_id = "db.oracle.readonly_query"
+        if not database.get("automatic_access_enabled", True):
+            return self._result(
+                invocation,
+                gap=self._evidence_gap(
+                    database,
+                    tool_id,
+                    default_code="DATABASE_ACCESS_DISABLED",
+                ),
+            )
+        now = datetime.now(UTC)
+        expires_at = min(
+            _utc(context.lease_until),
+            now + timedelta(seconds=self._ttl),
+        )
+        if expires_at <= now + timedelta(seconds=1):
+            return self._result(
+                invocation,
+                gap=EvidenceGap(
+                    code="GRANT_EXPIRED",
+                    tool_id=tool_id,
+                    detail="动态只读查询的任务租约已过期",
+                    retryable=True,
+                ),
+            )
+        parameters = dict(validated["parameters"])
+        grant = DynamicDiagnosticExecutionGrant(
+            issuer=self._issuer,
+            audience=self._audience,
+            grant_id=uuid7(),
+            issued_at=now,
+            expires_at=expires_at,
+            run_id=UUID(context.run_id),
+            task_id=UUID(context.task_id),
+            lease_token_hash=hashlib.sha256(
+                context.lease_token.encode()
+            ).hexdigest(),
+            target_id=UUID(context.target_id),
+            domain_id=int(database["domain_id"]),
+            target_row_version=int(database["target_row_version"]),
+            connection_profile=DiagnosticConnectionProfile.model_validate(
+                database["connection_profile"]
+            ),
+            diagnostic_credential_id=UUID(
+                database["diagnostic_credential_id"]
+            ),
+            query_sha256=validated["query_sha256"],
+            policy_sha256=validated["policy_sha256"],
+            policy_snapshot=OracleDynamicQueryPolicyGrant.model_validate(
+                invocation["policy_snapshot"]
+            ),
+            parameters_sha256=canonical_sha256(parameters),
+            projected_columns=tuple(validated["projected_columns"]),
+            capability_snapshot_hash=execution[
+                "capability_snapshot_hash"
+            ],
+            limits=DiagnosticLimits.model_validate(invocation["limits"]),
+            trace_id=context.trace_id,
+        )
+        request = DynamicReadDiagnosticRequest(
+            executor_request_id=uuid7(),
+            grant=self._codec.issue_dynamic(grant),
+            sql=validated["normalized_sql"],
+            parameters=parameters,
+            idempotency_key=(
+                f"{context.task_id}:{context.attempt}:{tool_id}"
+            ),
+        )
+        try:
+            result = await self._client.execute_dynamic_diagnostic(
+                request, trace_id=context.trace_id
+            )
+        except Exception:
+            return self._result(
+                invocation,
+                gap=EvidenceGap(
+                    code="TARGET_UNREACHABLE",
+                    tool_id=tool_id,
+                    detail="动态只读查询执行器当前不可用",
+                    retryable=True,
+                ),
+            )
+        if result.status == "SUCCEEDED" and result.observation is not None:
+            return self._result(invocation, observation=result.observation)
+        return self._result(
+            invocation,
+            gap=EvidenceGap(
+                code=result.error_code or "EXECUTOR_INTERNAL_ERROR",
+                tool_id=tool_id,
+                detail="动态只读查询本次未取得可验证结果",
+                retryable=result.retryable,
+            ),
+        )
+
+    @staticmethod
+    def _evidence_gap(database, tool_id: str, *, default_code: str):
+        blocking = next(
+            (
+                item
+                for item in database.get("initial_gaps", ())
+                if item.get("code")
+                in {
+                    "DIAGNOSTIC_ACCESS_DENIED",
+                    "DIAGNOSTIC_POLICY_DENIED",
+                    "DIAGNOSTIC_SECRET_MISSING",
+                    "TARGET_ENDPOINT_MISSING",
+                    "TARGET_CONNECTIVITY_UNAVAILABLE",
+                }
+            ),
+            {},
+        )
+        return EvidenceGap(
+            code=str(blocking.get("code") or default_code),
+            tool_id=tool_id,
+            detail=str(
+                blocking.get("detail")
+                or "Target 当前不允许自动执行动态只读查询"
+            ),
+            retryable=bool(blocking.get("retryable", False)),
+        )
+
+    @staticmethod
+    def _result(invocation, *, observation=None, gap=None) -> DbaSkillResult:
+        succeeded = observation is not None
+        return DbaSkillResult(
+            skill_id="dynamic.oracle.readonly_query",
+            skill_version="1.0.0",
+            manifest_hash=invocation["validated_query"]["policy_sha256"],
+            output_schema="DYNAMIC_DATABASE_OBSERVATION.v1",
+            measurement_semantics=invocation["measurement_semantics"],
+            presentation_kind="TABLE",
+            status="SUCCEEDED" if succeeded else "FAILED",
+            tool_outcomes=(
+                SkillToolOutcome(
+                    step_id=invocation["action_id"],
+                    tool_id="db.oracle.readonly_query",
+                    tool_version="1.0.0",
+                    status="SUCCEEDED" if succeeded else "GAP",
+                    observation=observation,
+                    gap=gap,
+                ),
             ),
         )
 

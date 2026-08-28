@@ -277,6 +277,10 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
         self.assertIn(
             "/internal/v1/db-executor/diagnostics", executor_paths
         )
+        self.assertIn(
+            "/internal/v1/db-executor/dynamic-diagnostics",
+            executor_paths,
+        )
         self.assertFalse(
             any(path.startswith("/api/v1/") for path in executor_paths)
         )

@@ -10,11 +10,15 @@ from typing import Any
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
 
-from platform_core.contracts.aiops.executor import DiagnosticExecutionGrant
+from platform_core.contracts.aiops.executor import (
+    DiagnosticExecutionGrant,
+    DynamicDiagnosticExecutionGrant,
+)
 
 
 GRANT_ALGORITHM = "HS256"
 GRANT_TOKEN_TYPE = "kbot-diagnostic-grant"
+DYNAMIC_GRANT_TOKEN_TYPE = "kbot-dynamic-diagnostic-grant"
 
 
 def canonical_sha256(value: Any) -> str:
@@ -51,6 +55,13 @@ class DiagnosticGrantCodec:
         self._clock_skew = clock_skew_seconds
 
     def issue(self, grant: DiagnosticExecutionGrant) -> str:
+        return self._issue(grant, token_type=GRANT_TOKEN_TYPE)
+
+    def issue_dynamic(self, grant: DynamicDiagnosticExecutionGrant) -> str:
+        """签发与固定目录查询隔离的动态查询 Grant。"""
+        return self._issue(grant, token_type=DYNAMIC_GRANT_TOKEN_TYPE)
+
+    def _issue(self, grant, *, token_type: str) -> str:
         if grant.issuer != self._issuer or grant.audience != self._audience:
             raise ValueError("诊断 Grant issuer 或 audience 与签发器不匹配")
         claims = grant.model_dump(mode="json")
@@ -62,7 +73,7 @@ class DiagnosticGrantCodec:
                 "nbf": int(grant.issued_at.timestamp()),
                 "exp": int(grant.expires_at.timestamp()),
                 "jti": str(grant.grant_id),
-                "typ": GRANT_TOKEN_TYPE,
+                "typ": token_type,
             }
         )
         return jwt.encode(claims, self._secret, algorithm=GRANT_ALGORITHM)
@@ -70,6 +81,25 @@ class DiagnosticGrantCodec:
     def verify(
         self, token: str, *, now: datetime | None = None
     ) -> DiagnosticExecutionGrant:
+        return self._verify(
+            token,
+            contract=DiagnosticExecutionGrant,
+            token_type=GRANT_TOKEN_TYPE,
+            now=now,
+        )
+
+    def verify_dynamic(
+        self, token: str, *, now: datetime | None = None
+    ) -> DynamicDiagnosticExecutionGrant:
+        """验证动态查询 Grant，并拒绝固定目录 Grant 混用。"""
+        return self._verify(
+            token,
+            contract=DynamicDiagnosticExecutionGrant,
+            token_type=DYNAMIC_GRANT_TOKEN_TYPE,
+            now=now,
+        )
+
+    def _verify(self, token: str, *, contract, token_type: str, now):
         try:
             claims = jwt.decode(
                 token,
@@ -87,14 +117,14 @@ class DiagnosticGrantCodec:
                     "leeway": self._clock_skew,
                 },
             )
-            if claims.get("typ") != GRANT_TOKEN_TYPE:
+            if claims.get("typ") != token_type:
                 raise DiagnosticGrantError(
                     "GRANT_INVALID", "诊断 Grant 类型无效"
                 )
             payload = dict(claims)
             for key in ("iss", "aud", "iat", "nbf", "exp", "jti", "typ"):
                 payload.pop(key, None)
-            grant = DiagnosticExecutionGrant.model_validate(payload)
+            grant = contract.model_validate(payload)
             current = now or datetime.now(UTC)
             if current >= grant.expires_at:
                 raise DiagnosticGrantError(

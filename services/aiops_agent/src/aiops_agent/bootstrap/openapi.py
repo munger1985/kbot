@@ -14,6 +14,7 @@ from aiops_agent.api.executions import (
     router as internal_executions_router,
 )
 from platform_core.contracts.aiops.executor import (
+    DynamicReadDiagnosticRequest,
     ExecutionResultRef,
     MutationExecutionRequest,
     ReadDiagnosticRequest,
@@ -56,6 +57,15 @@ def create_executor_contract_app() -> FastAPI:
         response_model=ReadDiagnosticResult,
     )
     async def execute_diagnostic(payload: ReadDiagnosticRequest):
+        _not_implemented()
+
+    @app.post(
+        "/internal/v1/db-executor/dynamic-diagnostics",
+        response_model=ReadDiagnosticResult,
+    )
+    async def execute_dynamic_diagnostic(
+        payload: DynamicReadDiagnosticRequest,
+    ):
         _not_implemented()
 
     @app.post(

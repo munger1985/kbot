@@ -19,6 +19,14 @@ from aiops_agent.entities import (
     OpsTurnEvidenceEntity,
 )
 from aiops_agent.investigation import InvestigationReasoner
+from aiops_agent.investigation.reasoner import (
+    InvestigationPlanValidationError,
+)
+from aiops_agent.diagnostics import (
+    DynamicQueryPolicySnapshot,
+    DynamicQueryRejected,
+    OracleDynamicQueryPolicy,
+)
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
@@ -106,7 +114,9 @@ class TurnPlanningService:
             deadline=context.deadline,
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
-        investigation = planned.output
+        investigation, dynamic_queries = self._prepare_dynamic_queries(
+            planned.output
+        )
         playbook_plan = self._build_playbook_plan(
             investigation=investigation,
             capabilities=context.capabilities,
@@ -150,12 +160,14 @@ class TurnPlanningService:
                 ),
             ),
             include_change=bool(investigation.task_frame.requires_change),
+            investigation_actions=investigation.plan.actions,
         )
         execution_snapshot = self._execution_snapshot_builder.build(
             plan=playbook_plan,
             compiled=compiled,
             capabilities=context.capabilities,
             database_execution=context.database_execution,
+            dynamic_queries=dynamic_queries,
         )
         return await self._persist(
             context=context,
@@ -201,7 +213,86 @@ class TurnPlanningService:
                 "description": "查询绑定 Target 的 Oracle Alert Log",
                 "input": {"window": "RECENT"},
             }
+        if (
+            str(capabilities.database_type) == "ORACLE"
+            and "DB_READONLY" in capabilities.target_capabilities
+        ):
+            tools[("db.oracle.readonly_query", "1.0.0")] = {
+                "tool_id": "db.oracle.readonly_query",
+                "version": "1.0.0",
+                "tool_class": "ORACLE_SQL_DYNAMIC",
+                "description": (
+                    "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
+                    "仅在固定目录工具不能回答问题时使用，必须显式投影并使用 bind 参数"
+                ),
+                "input": {
+                    "sql": "Oracle SELECT，必须为每个计算表达式提供别名",
+                    "parameters": "与 SQL bind 名称完全一致的标量对象",
+                },
+            }
         return tuple(tools[key] for key in sorted(tools))
+
+    @staticmethod
+    def _prepare_dynamic_queries(investigation):
+        """规划端先验证并规范化动态 SQL，再冻结供 Executor 重放。"""
+        snapshot = DynamicQueryPolicySnapshot()
+        policy = OracleDynamicQueryPolicy(snapshot)
+        actions = []
+        frozen = []
+        for action in investigation.plan.actions:
+            if action.tool_id != "db.oracle.readonly_query":
+                actions.append(action)
+                continue
+            payload = dict(action.input)
+            if set(payload) != {"sql", "parameters"}:
+                raise InvestigationPlanValidationError(
+                    "动态查询输入必须且只能包含 sql 与 parameters"
+                )
+            sql = payload.get("sql")
+            parameters = payload.get("parameters")
+            if not isinstance(sql, str) or not isinstance(parameters, dict):
+                raise InvestigationPlanValidationError(
+                    "动态查询 sql 或 parameters 类型无效"
+                )
+            try:
+                validated = policy.validate(sql, parameters)
+            except DynamicQueryRejected as exc:
+                raise InvestigationPlanValidationError(
+                    f"动态查询未通过策略：{exc.code}"
+                ) from exc
+            actions.append(
+                action.model_copy(
+                    update={
+                        "input": {
+                            "sql": validated.normalized_sql,
+                            "parameters": dict(validated.parameters),
+                        }
+                    }
+                )
+            )
+            frozen.append(
+                {
+                    "action_id": action.action_id,
+                    "question": action.question,
+                    "measurement_semantics": action.measurement_semantics,
+                    "policy_snapshot": snapshot.model_dump(mode="json"),
+                    "validated_query": validated.model_dump(mode="json"),
+                    "limits": {
+                        "statement_timeout_seconds": 20,
+                        "max_result_rows": validated.max_rows,
+                        "max_result_bytes": 1048576,
+                        "max_columns": 64,
+                        "max_cell_chars": 32768,
+                    },
+                }
+            )
+        updated_plan = investigation.plan.model_copy(
+            update={"actions": tuple(actions)}
+        )
+        return (
+            investigation.model_copy(update={"plan": updated_plan}),
+            tuple(frozen),
+        )
 
     def _available_playbooks(
         self, capabilities: DbaCapabilitySnapshot
@@ -391,7 +482,9 @@ class TurnPlanningService:
             ),
             revision_no=revision_no,
         )
-        investigation = planned.output
+        investigation, dynamic_queries = self._prepare_dynamic_queries(
+            planned.output
+        )
         playbook_plan = self._build_playbook_plan(
             investigation=investigation,
             capabilities=context.capabilities,
@@ -433,12 +526,14 @@ class TurnPlanningService:
             user_evidence_artifact_keys=evidence_keys,
             revision_no=revision_no,
             include_answer=False,
+            investigation_actions=investigation.plan.actions,
         )
         execution_snapshot = self._execution_snapshot_builder.build(
             plan=playbook_plan,
             compiled=compiled,
             capabilities=context.capabilities,
             database_execution=context.database_execution,
+            dynamic_queries=dynamic_queries,
         )
         return await self._persist_replan(
             context=context,
@@ -595,6 +690,18 @@ class TurnPlanningService:
                 if compiled.log_task_keys
                 else None
             )
+            dynamic_task_by_action = {
+                action.action_id: task_ids[task_key]
+                for action, task_key in zip(
+                    (
+                        item
+                        for item in investigation.plan.actions
+                        if item.tool_id == "db.oracle.readonly_query"
+                    ),
+                    compiled.dynamic_task_keys,
+                    strict=True,
+                )
+            }
             for ordinal, action in enumerate(
                 investigation.plan.actions,
                 start=1,
@@ -607,6 +714,8 @@ class TurnPlanningService:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
+                elif action.tool_id == "db.oracle.readonly_query":
+                    task_id = dynamic_task_by_action[action.action_id]
                 await uow.turns.add_tool_invocation(
                     OpsToolInvocationEntity(
                         tool_invocation_id=uuid7(),
@@ -624,6 +733,8 @@ class TurnPlanningService:
                             if action.tool_id == "monitor.query_range"
                             else "LOKI"
                             if action.tool_id == "loki.query_range"
+                            else "ORACLE_SQL_DYNAMIC"
+                            if action.tool_id == "db.oracle.readonly_query"
                             else "ORACLE_SQL"
                         ),
                         status="PLANNED",
@@ -1439,6 +1550,18 @@ class TurnPlanningService:
                 if compiled.log_task_keys
                 else None
             )
+            dynamic_task_by_action = {
+                action.action_id: task_ids[task_key]
+                for action, task_key in zip(
+                    (
+                        item
+                        for item in investigation.plan.actions
+                        if item.tool_id == "db.oracle.readonly_query"
+                    ),
+                    compiled.dynamic_task_keys,
+                    strict=True,
+                )
+            }
             for ordinal, action in enumerate(
                 investigation.plan.actions, start=1
             ):
@@ -1453,6 +1576,8 @@ class TurnPlanningService:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
+                elif action.tool_id == "db.oracle.readonly_query":
+                    task_id = dynamic_task_by_action[action.action_id]
                 await uow.turns.add_tool_invocation(
                     OpsToolInvocationEntity(
                         tool_invocation_id=uuid7(),
@@ -1468,6 +1593,8 @@ class TurnPlanningService:
                         tool_class=(
                             "PROMETHEUS" if action.tool_id == "monitor.query_range"
                             else "LOKI" if action.tool_id == "loki.query_range"
+                            else "ORACLE_SQL_DYNAMIC"
+                            if action.tool_id == "db.oracle.readonly_query"
                             else "ORACLE_SQL"
                         ),
                         status="PLANNED",

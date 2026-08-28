@@ -71,12 +71,76 @@ class DiagnosticExecutionGrant(AIOpsContract):
     trace_id: str = Field(min_length=1, max_length=128)
 
 
+class OracleDynamicQueryPolicyGrant(AIOpsContract):
+    """随 Grant 冻结并由 Executor 重放的 Oracle 动态查询策略。"""
+
+    schema_version: Literal["ORACLE_DYNAMIC_QUERY_POLICY.v1"] = (
+        "ORACLE_DYNAMIC_QUERY_POLICY.v1"
+    )
+    allowed_objects: tuple[str, ...] = ()
+    allowed_functions: tuple[str, ...]
+    max_rows: int = Field(ge=1, le=1000)
+    max_sql_chars: int = Field(ge=1, le=100_000)
+    max_bind_count: int = Field(ge=0, le=128)
+    allow_catalog_object_families: bool
+
+
+class DynamicDiagnosticExecutionGrant(AIOpsContract):
+    """Oracle 动态只读查询的短期签名执行授权。"""
+
+    schema_version: Literal["dynamic-diagnostic-execution-grant.v1"] = (
+        "dynamic-diagnostic-execution-grant.v1"
+    )
+    issuer: str = Field(min_length=1, max_length=128)
+    audience: str = Field(min_length=1, max_length=128)
+    grant_id: UUIDv7
+    issued_at: UtcDatetime
+    expires_at: UtcDatetime
+    run_id: UUIDv7
+    task_id: UUIDv7
+    lease_token_hash: Sha256Digest
+    target_id: UUIDv7
+    domain_id: int = Field(ge=1)
+    target_row_version: int = Field(ge=1)
+    db_type: Literal["ORACLE"] = "ORACLE"
+    connection_profile: DiagnosticConnectionProfile
+    diagnostic_credential_id: UUIDv7
+    tool_id: Literal["db.oracle.readonly_query"] = (
+        "db.oracle.readonly_query"
+    )
+    tool_version: Literal["1.0.0"] = "1.0.0"
+    variant: Literal["oracle-dynamic-readonly-v1"] = (
+        "oracle-dynamic-readonly-v1"
+    )
+    query_sha256: Sha256Digest
+    policy_sha256: Sha256Digest
+    policy_snapshot: OracleDynamicQueryPolicyGrant
+    parameters_sha256: Sha256Digest
+    projected_columns: tuple[str, ...] = Field(min_length=1, max_length=128)
+    capability_snapshot_hash: Sha256Digest
+    limits: DiagnosticLimits
+    trace_id: str = Field(min_length=1, max_length=128)
+
+
 class ReadDiagnosticRequest(AIOpsContract):
     schema_version: Literal["diagnostic-execution-request.v1"] = (
         "diagnostic-execution-request.v1"
     )
     executor_request_id: UUIDv7
     grant: str = Field(min_length=64, max_length=16384)
+    parameters: JsonObject
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
+class DynamicReadDiagnosticRequest(AIOpsContract):
+    """动态 SQL 只在专用入口出现，不能混入固定目录请求。"""
+
+    schema_version: Literal["dynamic-diagnostic-execution-request.v1"] = (
+        "dynamic-diagnostic-execution-request.v1"
+    )
+    executor_request_id: UUIDv7
+    grant: str = Field(min_length=64, max_length=32768)
+    sql: str = Field(min_length=1, max_length=100_000)
     parameters: JsonObject
     idempotency_key: str = Field(min_length=1, max_length=256)
 

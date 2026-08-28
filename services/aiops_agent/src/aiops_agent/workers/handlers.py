@@ -211,9 +211,17 @@ def create_runtime_handler_registry(
             DatabaseDiagnosticHandler,
             DatabaseReportHandler,
             DatabaseScopeHandler,
+            DynamicQueryInvocationHandler,
         )
 
         database_diagnostic_handler = DatabaseDiagnosticHandler(
+            executor_client=db_executor_client,
+            grant_codec=diagnostic_grant_codec,
+            grant_issuer=diagnostic_grant_issuer or "",
+            grant_audience=diagnostic_grant_audience or "",
+            grant_ttl_seconds=diagnostic_grant_ttl_seconds,
+        )
+        dynamic_query_handler = DynamicQueryInvocationHandler(
             executor_client=db_executor_client,
             grant_codec=diagnostic_grant_codec,
             grant_issuer=diagnostic_grant_issuer or "",
@@ -233,6 +241,13 @@ def create_runtime_handler_registry(
                     implementation=DbaSkillInvocationHandler(
                         database_handler=database_diagnostic_handler
                     ),
+                ),
+                HandlerManifest(
+                    handler_id="dba.dynamic-query.invoke",
+                    version="1",
+                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    idempotent=True,
+                    implementation=dynamic_query_handler,
                 ),
                 HandlerManifest(
                     handler_id="dba.evidence.assess",

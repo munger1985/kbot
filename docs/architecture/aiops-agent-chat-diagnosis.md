@@ -178,7 +178,8 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 `db.oracle.readonly_query`执行前必须解析Oracle SQL AST，仅接受单条`SELECT`或只读`WITH`，
 禁止DDL、DML、PL/SQL、DB Link、外部过程和副作用函数；校验Schema、对象、列和诊断用户
 权限；强制行数、耗时、返回字节和并发限制；绑定参数；保存SQL Hash、策略Hash、参数和结果；
-对敏感列服务端脱敏。
+当前策略直接拒绝凭据、绑定值、SQL正文等高风险源列，后续只有在具备确定性列级分类时才允许
+服务端脱敏后返回。
 
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。

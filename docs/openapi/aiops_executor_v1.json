@@ -176,6 +176,55 @@
         "title": "DatabaseObservation",
         "type": "object"
       },
+      "DynamicReadDiagnosticRequest": {
+        "additionalProperties": false,
+        "description": "动态 SQL 只在专用入口出现，不能混入固定目录请求。",
+        "properties": {
+          "executor_request_id": {
+            "format": "uuid",
+            "title": "Executor Request Id",
+            "type": "string"
+          },
+          "grant": {
+            "maxLength": 32768,
+            "minLength": 64,
+            "title": "Grant",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "schema_version": {
+            "const": "dynamic-diagnostic-execution-request.v1",
+            "default": "dynamic-diagnostic-execution-request.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sql": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "executor_request_id",
+          "grant",
+          "sql",
+          "parameters",
+          "idempotency_key"
+        ],
+        "title": "DynamicReadDiagnosticRequest",
+        "type": "object"
+      },
       "ExecutionResultRef": {
         "additionalProperties": false,
         "properties": {
@@ -479,6 +528,44 @@
           }
         },
         "summary": "Execute Diagnostic"
+      }
+    },
+    "/internal/v1/db-executor/dynamic-diagnostics": {
+      "post": {
+        "operationId": "execute_dynamic_diagnostic_internal_v1_db_executor_dynamic_diagnostics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DynamicReadDiagnosticRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadDiagnosticResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Dynamic Diagnostic"
       }
     },
     "/internal/v1/db-executor/executions": {

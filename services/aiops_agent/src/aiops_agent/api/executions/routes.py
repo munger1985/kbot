@@ -82,8 +82,12 @@ async def issue_credential(body: CredentialIssueRequest, request: Request) -> Cr
             grant = request.app.state.diagnostic_grant_codec.verify(body.grant)
             kind, credential_id, target_version = "DIAGNOSTIC", grant.diagnostic_credential_id, grant.target_row_version
         except DiagnosticGrantError:
-            grant = request.app.state.mutation_grant_codec.verify(body.grant)
-            kind, credential_id, target_version = "EXECUTION", grant.execution_credential_id, grant.target_version
+            try:
+                grant = request.app.state.diagnostic_grant_codec.verify_dynamic(body.grant)
+                kind, credential_id, target_version = "DIAGNOSTIC", grant.diagnostic_credential_id, grant.target_row_version
+            except DiagnosticGrantError:
+                grant = request.app.state.mutation_grant_codec.verify(body.grant)
+                kind, credential_id, target_version = "EXECUTION", grant.execution_credential_id, grant.target_version
     except (DiagnosticGrantError, MutationGrantError) as exc:
         raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"}) from exc
     if grant.audience != "kbot-aiops-db-executor" or grant.expires_at <= datetime.now(UTC):

@@ -43,6 +43,17 @@ class ReadonlyDatabaseDriver(Protocol):
         trace_id: str,
     ) -> DriverQueryResult: ...
 
+    async def execute_dynamic(
+        self,
+        *,
+        profile: DiagnosticConnectionProfile,
+        secret: ResolvedSecret,
+        sql: str,
+        parameters: dict[str, Any],
+        limits: DiagnosticLimits,
+        trace_id: str,
+    ) -> DriverQueryResult: ...
+
 
 class MutationDriverError(RuntimeError):
     def __init__(self, code: str, *, outcome_unknown: bool = False):

@@ -40,6 +40,7 @@ class CompiledSkillPlan:
     invocation_task_keys: tuple[str, ...]
     monitoring_task_keys: tuple[str, ...]
     log_task_keys: tuple[str, ...]
+    dynamic_task_keys: tuple[str, ...]
     assessment_task_key: str
     action_plan_task_key: str | None
     proposal_task_key: str | None
@@ -276,6 +277,7 @@ class SkillPlanCompiler:
         revision_no: int = 1,
         include_answer: bool = True,
         include_change: bool = False,
+        investigation_actions: tuple[object, ...] = (),
     ) -> CompiledSkillPlan:
         if plan.catalog_hash != self._registry.catalog_hash:
             raise SkillUnavailableError("Skill Plan 的目录 Hash 已失效")
@@ -345,10 +347,62 @@ class SkillPlanCompiler:
                     priority=46,
                 )
             )
+        action_task_keys: dict[str, tuple[str, ...]] = {
+            str(item.action_id): (task_keys[item.ordinal],)
+            for item in plan.items
+            if item.action_id is not None
+        }
+        for action in investigation_actions:
+            if action.tool_id == "monitor.query_range":
+                action_task_keys[action.action_id] = tuple(monitoring_keys)
+            elif action.tool_id == "loki.query_range":
+                action_task_keys[action.action_id] = tuple(log_keys)
+        dynamic_actions = tuple(
+            action
+            for action in investigation_actions
+            if action.tool_id == "db.oracle.readonly_query"
+        )
+        dynamic_key_by_action = {
+            action.action_id: f"dynamic:{action.action_id}{suffix}"
+            for action in dynamic_actions
+        }
+        action_task_keys.update(
+            {
+                action_id: (task_key,)
+                for action_id, task_key in dynamic_key_by_action.items()
+            }
+        )
+        dynamic_keys: list[str] = []
+        for action in dynamic_actions:
+            task_key = dynamic_key_by_action[action.action_id]
+            dynamic_keys.append(task_key)
+            dependencies = tuple(
+                dict.fromkeys(
+                    task
+                    for action_id in action.depends_on
+                    for task in action_task_keys.get(action_id, ())
+                )
+            )
+            tasks.append(
+                TaskSpec(
+                    task_key=task_key,
+                    task_type="SKILL_INVOKE",
+                    handler_id="dba.dynamic-query.invoke",
+                    handler_version="1",
+                    input_schema_version="DYNAMIC_QUERY_INPUT.v1",
+                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    depends_on=dependencies,
+                    input_artifact_keys=dependencies,
+                    timeout_seconds=45,
+                    max_attempts=2,
+                    priority=48,
+                )
+            )
         evidence_task_keys = (
             *invocation_keys,
             *monitoring_keys,
             *log_keys,
+            *dynamic_keys,
         )
         evidence_artifact_keys = (
             *user_evidence_artifact_keys,
@@ -431,6 +485,7 @@ class SkillPlanCompiler:
             invocation_task_keys=invocation_keys,
             monitoring_task_keys=tuple(monitoring_keys),
             log_task_keys=tuple(log_keys),
+            dynamic_task_keys=tuple(dynamic_keys),
             assessment_task_key=assessment_task_key,
             action_plan_task_key=action_plan_task_key,
             proposal_task_key=proposal_task_key,

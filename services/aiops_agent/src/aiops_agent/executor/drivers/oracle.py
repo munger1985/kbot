@@ -39,6 +39,47 @@ class OracleDiagnosticDriver:
         limits: DiagnosticLimits,
         trace_id: str,
     ) -> DriverQueryResult:
+        del trace_id
+        return await self._execute_query(
+            profile=profile,
+            secret=secret,
+            sql=tool.sql,
+            parameters=parameters,
+            limits=limits,
+            operation_id=tool.definition.tool_id,
+        )
+
+    async def execute_dynamic(
+        self,
+        *,
+        profile: DiagnosticConnectionProfile,
+        secret: ResolvedSecret,
+        sql: str,
+        parameters: dict[str, Any],
+        limits: DiagnosticLimits,
+        trace_id: str,
+    ) -> DriverQueryResult:
+        """执行已经由规划端和 Executor 双重验证的动态只读查询。"""
+        del trace_id
+        return await self._execute_query(
+            profile=profile,
+            secret=secret,
+            sql=sql,
+            parameters=parameters,
+            limits=limits,
+            operation_id="db.oracle.readonly_query",
+        )
+
+    async def _execute_query(
+        self,
+        *,
+        profile: DiagnosticConnectionProfile,
+        secret: ResolvedSecret,
+        sql: str,
+        parameters: dict[str, Any],
+        limits: DiagnosticLimits,
+        operation_id: str,
+    ) -> DriverQueryResult:
         username = secret.values.get("username")
         password = secret.values.get("password")
         if not username or not password:
@@ -68,12 +109,12 @@ class OracleDiagnosticDriver:
                 )
             logger.debug(
                 "Oracle 诊断连接建立：tool_id={} duration_ms={}",
-                tool.definition.tool_id,
+                operation_id,
                 int((time.monotonic() - started) * 1000),
             )
             connection.call_timeout = limits.statement_timeout_seconds * 1000
             connection.module = "kbot-aiops-db-executor"
-            connection.action = tool.definition.tool_id
+            connection.action = operation_id
             cursor = connection.cursor()
             try:
                 async with asyncio.timeout(
@@ -83,14 +124,14 @@ class OracleDiagnosticDriver:
                     await cursor.execute("SET TRANSACTION READ ONLY")
                     query_started = time.monotonic()
                     phase = "QUERY"
-                    await cursor.execute(tool.sql, parameters)
+                    await cursor.execute(sql, parameters)
                     columns = tuple(
                         str(item[0]).lower() for item in cursor.description
                     )
                     rows = await cursor.fetchmany(limits.max_result_rows + 1)
                 logger.debug(
                     "Oracle 诊断查询完成：tool_id={} duration_ms={} rows={}",
-                    tool.definition.tool_id,
+                    operation_id,
                     int((time.monotonic() - query_started) * 1000),
                     len(rows),
                 )
@@ -110,7 +151,7 @@ class OracleDiagnosticDriver:
         except TimeoutError as exc:
             logger.warning(
                 "Oracle 诊断超时：tool_id={} phase={}",
-                tool.definition.tool_id,
+                operation_id,
                 phase,
             )
             raise DiagnosticDriverError("TIMEOUT", retryable=True) from exc
@@ -128,7 +169,7 @@ class OracleDiagnosticDriver:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
             logger.warning(
                 "Oracle诊断查询失败：tool_id={} phase={} oracle_code={} mapped_code={}",
-                tool.definition.tool_id,
+                operation_id,
                 phase,
                 code,
                 mapped,

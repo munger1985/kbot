@@ -68,6 +68,7 @@ class SkillExecutionSnapshotBuilder:
         compiled: CompiledSkillPlan,
         capabilities: DbaCapabilitySnapshot,
         database_execution: dict,
+        dynamic_queries: tuple[dict, ...] = (),
     ) -> dict:
         capability_payload = capabilities.model_dump(mode="json")
         invocations = {}
@@ -173,6 +174,16 @@ class SkillExecutionSnapshotBuilder:
                 "selected_tool_id": item.selected_tool_id,
                 "tools": tools,
             }
+        if len(dynamic_queries) != len(compiled.dynamic_task_keys):
+            raise SkillCatalogError("动态查询快照与编译任务数量不一致")
+        dynamic_invocations = {
+            task_key: dict(query)
+            for task_key, query in zip(
+                compiled.dynamic_task_keys,
+                dynamic_queries,
+                strict=True,
+            )
+        }
         return {
             "schema_version": "DBA_SKILL_EXECUTION_SNAPSHOT.v1",
             "catalog_hash": plan.catalog_hash,
@@ -181,6 +192,7 @@ class SkillExecutionSnapshotBuilder:
             "capability_snapshot_hash": canonical_hash(capability_payload),
             "database": dict(database_execution),
             "invocations": invocations,
+            "dynamic_invocations": dynamic_invocations,
         }
 
     @staticmethod
