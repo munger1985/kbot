@@ -13,9 +13,18 @@ from aiops_agent.contracts.diagnosis import (
     RootCauseAssessment,
     SolutionDraft,
 )
+from aiops_agent.contracts.turn_answer import (
+    DbaSufficiencyAssessment,
+    TurnEvidenceFact,
+)
 from aiops_agent.workers.change_handlers import (
     ActionPlanHandler,
+    ChatActionPlanHandler,
     ProposalSnapshotHandler,
+)
+from platform_core.contracts.aiops import (
+    MeasurementSemantics,
+    SufficiencyStatus,
 )
 from aiops_agent.workers.handlers import TaskExecutionContext
 
@@ -215,6 +224,137 @@ class ActionPlanHandlerTest(unittest.TestCase):
                 {
                     "schema_version": "SOLUTION_DRAFT.v1",
                     "payload": solution.model_dump(mode="json"),
+                },
+            ),
+        )
+
+
+class ChatActionPlanHandlerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.registry = ActionRegistry.load()
+
+    def test_verified_turn_facts_create_approval_action(self) -> None:
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(self._context())
+        )
+        self.assertEqual(plan.decision, "AGENT_EXECUTE")
+        self.assertEqual(
+            plan.actions[0].canonical_parameters,
+            {"session_id": 42, "serial_number": 9, "instance_id": 1},
+        )
+
+    def test_user_provided_turn_facts_never_authorize_action(self) -> None:
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(self._context(trust_level="USER_PROVIDED"))
+        )
+        self.assertEqual(plan.decision, "NO_ACTION")
+        self.assertIn(
+            "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE",
+            plan.decision_reasons,
+        )
+
+    def test_readonly_agent_never_creates_approval_action(self) -> None:
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(self._context(allow_execution=False))
+        )
+        self.assertEqual(plan.decision, "NO_ACTION")
+        self.assertIn("AGENT_EXECUTION_NOT_ALLOWED", plan.decision_reasons)
+
+    def _context(
+        self,
+        *,
+        trust_level: str = "SOURCE_VERIFIED",
+        allow_execution: bool = True,
+    ) -> TaskExecutionContext:
+        facts = (
+            TurnEvidenceFact(
+                evidence_ref="artifact:blocking#blocking",
+                artifact_id="blocking",
+                skill_id="oracle.session.blocking_chain",
+                step_id="blocking",
+                tool_id="db.session.blocking_chain",
+                trust_level=trust_level,
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                presentation_kind="TABLE",
+                captured_at="2026-08-28T00:00:00+00:00",
+                columns=(
+                    {"name": "blocking_instance_id"},
+                    {"name": "blocking_session_id"},
+                ),
+                rows=((1, 42),),
+                row_count=1,
+            ),
+            TurnEvidenceFact(
+                evidence_ref="artifact:active#active",
+                artifact_id="active",
+                skill_id="oracle.session.active",
+                step_id="active",
+                tool_id="db.session.active",
+                trust_level=trust_level,
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                presentation_kind="TABLE",
+                captured_at="2026-08-28T00:00:00+00:00",
+                columns=(
+                    {"name": "instance_id"},
+                    {"name": "session_id"},
+                    {"name": "serial_number"},
+                ),
+                rows=((1, 42, 9),),
+                row_count=1,
+            ),
+        )
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=facts,
+        )
+        return TaskExecutionContext(
+            run_id="run-chat",
+            task_id="action-chat",
+            task_key="change:action-plan",
+            target_id="target-1",
+            agent_id="agent-1",
+            trigger_type="CHAT",
+            trace_id="trace-chat",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "capability_snapshot": {
+                    "target_capabilities": ["session_management"]
+                },
+                "answer_context": {
+                    "task_frame": {"requires_change": True}
+                },
+                "change_context": {
+                    "target": {
+                        "db_type": "ORACLE",
+                        "version_code": "19.0.0",
+                        "environment": "PROD",
+                        "status": "ENABLED",
+                        "connectivity_status": "CONNECTED",
+                        "execution_secret_configured": True,
+                        "capabilities": {"session_management": True},
+                    },
+                    "policy": {
+                        "rules": {
+                            "allow_agent_execution": allow_execution
+                        }
+                    },
+                },
+            },
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
                 },
             ),
         )

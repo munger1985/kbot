@@ -41,6 +41,8 @@ class CompiledSkillPlan:
     monitoring_task_keys: tuple[str, ...]
     log_task_keys: tuple[str, ...]
     assessment_task_key: str
+    action_plan_task_key: str | None
+    proposal_task_key: str | None
     answer_task_key: str | None
 
 
@@ -273,6 +275,7 @@ class SkillPlanCompiler:
         user_evidence_artifact_keys: tuple[str, ...] = (),
         revision_no: int = 1,
         include_answer: bool = True,
+        include_change: bool = False,
     ) -> CompiledSkillPlan:
         if plan.catalog_hash != self._registry.catalog_hash:
             raise SkillUnavailableError("Skill Plan 的目录 Hash 已失效")
@@ -367,6 +370,45 @@ class SkillPlanCompiler:
                 priority=90,
             )
         )
+        action_plan_task_key = None
+        proposal_task_key = None
+        answer_dependency = assessment_task_key
+        answer_inputs = (assessment_task_key,)
+        if include_change:
+            action_plan_task_key = "change:action-plan"
+            proposal_task_key = "change:proposal"
+            tasks.extend(
+                (
+                    TaskSpec(
+                        task_key=action_plan_task_key,
+                        task_type="ACTION_PLAN",
+                        handler_id="change.chat-action-plan",
+                        handler_version="1",
+                        input_schema_version="CHAT_ACTION_PLAN_INPUT.v1",
+                        output_schema_version="ACTION_PLAN.v1",
+                        depends_on=(assessment_task_key,),
+                        input_artifact_keys=(assessment_task_key,),
+                        timeout_seconds=30,
+                        max_attempts=2,
+                        priority=95,
+                    ),
+                    TaskSpec(
+                        task_key=proposal_task_key,
+                        task_type="PROPOSAL",
+                        handler_id="change.proposal",
+                        handler_version="1",
+                        input_schema_version="ACTION_PLAN.v1",
+                        output_schema_version="PROPOSAL_OUTCOME.v1",
+                        depends_on=(action_plan_task_key,),
+                        input_artifact_keys=(action_plan_task_key,),
+                        timeout_seconds=30,
+                        max_attempts=2,
+                        priority=98,
+                    ),
+                )
+            )
+            answer_dependency = proposal_task_key
+            answer_inputs = (assessment_task_key, proposal_task_key)
         answer_task_key = "answer:compose" if include_answer else None
         if answer_task_key is not None:
             tasks.append(
@@ -377,8 +419,8 @@ class SkillPlanCompiler:
                     handler_version="1",
                     input_schema_version="DBA_ANSWER_INPUT.v1",
                     output_schema_version="AIOPS_TURN_RESULT.v1",
-                    depends_on=(assessment_task_key,),
-                    input_artifact_keys=(assessment_task_key,),
+                    depends_on=(answer_dependency,),
+                    input_artifact_keys=answer_inputs,
                     timeout_seconds=120,
                     max_attempts=2,
                     priority=100,
@@ -390,5 +432,7 @@ class SkillPlanCompiler:
             monitoring_task_keys=tuple(monitoring_keys),
             log_task_keys=tuple(log_keys),
             assessment_task_key=assessment_task_key,
+            action_plan_task_key=action_plan_task_key,
+            proposal_task_key=proposal_task_key,
             answer_task_key=answer_task_key,
         )

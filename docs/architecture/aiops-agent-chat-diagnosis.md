@@ -300,6 +300,13 @@ playbooks/
 - 变更继续使用独立Action、Policy、审批令牌和执行凭据；
 - Answer事实引用Evidence，推断标明不确定性。
 
+聊天中的变更建议不得从回答Markdown反向解析。Task Frame明确`requires_change=true`后，系统在
+Sufficiency Assessment之后运行独立的Action Plan编译器，只接受当前Turn中
+`SOURCE_VERIFIED`且字段完整的数据库事实，把参数绑定到已发布Action Template。用户粘贴结果、
+模型推断、监控推断、目录外动作或缺少参数时均输出`NO_ACTION`。只有Agent策略允许执行、Target
+启用且可连接、执行凭据存在、全局Mutation开关开启时才生成`PENDING_APPROVAL`；批准时再次按
+Proposal Hash、Target版本、策略和模板Hash复核，模型始终不能直接调用变更执行器。
+
 ## 16. 验收矩阵
 
 - Schema 14、43张表、Manifest、Entity和自包含重建文件一致；

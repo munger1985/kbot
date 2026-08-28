@@ -51,8 +51,14 @@ Turn的继承Evidence；多Target Agent在聊天页面显式选择Target。
 Investigation Revision和Task DAG；无参数变化的重复Tool调用会被拒绝。第二轮结束后统一回答，
 重规划失败则回退到首轮真实证据，避免Turn卡在`REPLANNING`。当前调查预算固定为最多两轮。
 
+聊天中的变更意图现已进入独立的确定性链路：`DBA_SUFFICIENCY.v1 → ACTION_PLAN.v1 →
+PROPOSAL_OUTCOME.v1 → PROPOSAL_SUMMARY`。只有当前Turn内`SOURCE_VERIFIED`数据库事实能够完整
+绑定已发布Action Template参数、Agent允许执行、Target可连接且配置执行凭据时，才生成
+`PENDING_APPROVAL`；自然语言、用户粘贴证据和模型推断均不能直接授权动作。审批后仍复用原有
+Proposal Hash、策略复核、执行凭据和效果验证链路。
+
 以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、受控动态只读SQL/PromQL/LogQL、
-聊天变更建议到Proposal审批链的结构化衔接、旧Skill内部命名与目录的物理迁移，以及dev真实
+旧Skill内部命名与目录的物理迁移，以及dev真实
 Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
 Schema字段或类名判断功能已经交付。
 
@@ -151,6 +157,7 @@ Oracle Tool优先级：
 - 会话按Agent隔离；
 - 展示理解、规划、取证、评估、重规划和回答；
 - Evidence统一折叠，补证自然呈现，SSE断线恢复；
+- 变更意图在证据评估后单独编译Action Plan；页面展示Proposal摘要并逐条批准或拒绝；
 - 建立停库、日志、离线、口径冲突、权限、网络、SQL、锁、容量、归档、内存、多目标、错误
   假设、无Playbook、全来源不可用和变更审批评测集。
 

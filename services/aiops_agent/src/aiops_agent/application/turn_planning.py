@@ -54,6 +54,7 @@ class TurnPlanningContext:
     deadline: datetime | None
     capabilities: DbaCapabilitySnapshot
     database_execution: dict
+    change_context: dict
     source_run_evidence: dict | None = None
 
 
@@ -148,6 +149,7 @@ class TurnPlanningService:
                     else ()
                 ),
             ),
+            include_change=bool(investigation.task_frame.requires_change),
         )
         execution_snapshot = self._execution_snapshot_builder.build(
             plan=playbook_plan,
@@ -651,8 +653,30 @@ class TurnPlanningService:
             )
             if answer is None or answer.status != "PENDING":
                 raise state_conflict("重规划缺少待执行回答Task")
-            answer.depends_on_json = [compiled.assessment_task_key]
-            answer.input_artifacts_json = [compiled.assessment_task_key]
+            action_plan = next(
+                (
+                    item
+                    for item in existing_tasks
+                    if item.task_key == "change:action-plan"
+                ),
+                None,
+            )
+            if action_plan is not None:
+                if action_plan.status != "PENDING":
+                    raise state_conflict("重规划缺少待执行动作计划Task")
+                action_plan.depends_on_json = [compiled.assessment_task_key]
+                action_plan.input_artifacts_json = [
+                    compiled.assessment_task_key
+                ]
+                answer.input_artifacts_json = [
+                    compiled.assessment_task_key,
+                    "change:proposal",
+                ]
+            else:
+                answer.depends_on_json = [compiled.assessment_task_key]
+                answer.input_artifacts_json = [
+                    compiled.assessment_task_key
+                ]
             old_execution = dict(
                 dict(run.plan_snapshot_json or {}).get(
                     "skill_execution", {}
@@ -826,10 +850,27 @@ class TurnPlanningService:
             )
             if assessment is None or answer is None:
                 raise state_conflict("重规划回退缺少评估或回答Task")
-            answer.depends_on_json = [assessment.task_key]
-            answer.input_artifacts_json = [assessment.task_key]
-            answer.status = "READY"
-            answer.available_at = await uow.runs.database_now()
+            action_plan = next(
+                (
+                    item
+                    for item in tasks
+                    if item.task_key == "change:action-plan"
+                ),
+                None,
+            )
+            ready_task = action_plan or answer
+            if action_plan is not None:
+                action_plan.depends_on_json = [assessment.task_key]
+                action_plan.input_artifacts_json = [assessment.task_key]
+                answer.input_artifacts_json = [
+                    assessment.task_key,
+                    "change:proposal",
+                ]
+            else:
+                answer.depends_on_json = [assessment.task_key]
+                answer.input_artifacts_json = [assessment.task_key]
+            ready_task.status = "READY"
+            ready_task.available_at = await uow.runs.database_now()
             turn.status = "ANSWERING"
             await self._append_event(
                 uow,
@@ -1066,6 +1107,48 @@ class TurnPlanningService:
                         and bool(target.endpoint_json)
                     ),
                     "initial_gaps": access_gaps,
+                },
+                change_context={
+                    "target": {
+                        "target_id": str(target.target_id),
+                        "row_version": int(target.row_version),
+                        "db_type": str(target.db_type),
+                        "version_code": target.version_code,
+                        "environment": str(
+                            getattr(target, "environment", "PROD")
+                        ),
+                        "status": str(
+                            getattr(target, "status", "DISABLED")
+                        ),
+                        "connectivity_status": str(
+                            target.connectivity_status
+                        ),
+                        "execution_secret_configured": bool(
+                            getattr(
+                                target, "execution_credential_id", None
+                            )
+                        ),
+                        "security_level": int(
+                            getattr(target, "security_level", 1)
+                        ),
+                        "capabilities": dict(
+                            getattr(target, "capabilities_json", None) or {}
+                        ),
+                    },
+                    "policy": {
+                        "policy_id": (
+                            str(getattr(policy, "policy_id"))
+                            if policy is not None
+                            and getattr(policy, "policy_id", None) is not None
+                            else None
+                        ),
+                        "policy_hash": (
+                            getattr(policy, "policy_hash", None)
+                            if policy is not None
+                            else None
+                        ),
+                        "rules": policy_rules,
+                    },
                 },
                 source_run_evidence=source_run_evidence,
             )
@@ -1431,7 +1514,11 @@ class TurnPlanningService:
                     "task_frame": investigation.task_frame.model_dump(mode="json"),
                     "model": dict(model_snapshot),
                 },
+                "change_context": dict(context.change_context),
             }
+            run.policy_snapshot_json = dict(
+                context.change_context.get("policy", {})
+            )
             await self._append_event(
                 uow,
                 turn,

@@ -189,6 +189,11 @@ class AIOpsChangeService:
             now = await uow.runs.database_now()
             proposal.status = "REJECTED"
             proposal.updated_at = now
+            await self._update_chat_proposal_block(
+                uow=uow,
+                proposal=proposal,
+                status="REJECTED",
+            )
             approval_hitl = await uow.changes.get_pending_hitl(
                 ops_task_id=proposal.ops_task_id,
                 request_type="CHANGE_APPROVAL",
@@ -509,6 +514,11 @@ class AIOpsChangeService:
             )
             proposal.status = "APPROVED"
             proposal.updated_at = now
+            await self._update_chat_proposal_block(
+                uow=uow,
+                proposal=proposal,
+                status="APPROVED",
+            )
             hitl.status = "APPROVED"
             hitl.responded_by = actor_id
             hitl.responded_at = now
@@ -1250,6 +1260,29 @@ class AIOpsChangeService:
         if outcome.proposal is None:
             raise state_conflict("Proposal Snapshot 内容无效")
         return outcome.proposal
+
+    @staticmethod
+    async def _update_chat_proposal_block(
+        *, uow, proposal, status: str
+    ) -> None:
+        """审批状态同步回聊天投影，页面刷新后不得重复展示待审批按钮。"""
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=proposal.ops_run_id
+        )
+        if link is None:
+            return
+        blocks = await uow.turns.list_answer_blocks(turn_id=link.turn_id)
+        for block in blocks:
+            payload = dict(block.payload_json or {})
+            if (
+                block.block_type != "PROPOSAL_SUMMARY"
+                or payload.get("proposal_id") != str(proposal.proposal_id)
+            ):
+                continue
+            payload["status"] = status
+            payload["row_version"] = int(proposal.row_version) + 1
+            block.payload_json = payload
+            block.content_hash = _hash(payload)
 
     @staticmethod
     def _view(proposal, snapshot) -> ProposalView:

@@ -1946,8 +1946,22 @@ class AIOpsRuntimeService:
         if answer is None or answer.status != "PENDING":
             raise state_conflict("重规划时回答Task状态无效")
         assessment_key = f"evidence:assess:r{revision_no}"
-        answer.depends_on_json = [assessment_key]
-        answer.input_artifacts_json = [assessment_key]
+        action_plan = next(
+            (item for item in tasks if item.task_key == "change:action-plan"),
+            None,
+        )
+        if action_plan is not None:
+            if action_plan.status != "PENDING":
+                raise state_conflict("重规划时动作计划Task状态无效")
+            action_plan.depends_on_json = [assessment_key]
+            action_plan.input_artifacts_json = [assessment_key]
+            answer.input_artifacts_json = [
+                assessment_key,
+                "change:proposal",
+            ]
+        else:
+            answer.depends_on_json = [assessment_key]
+            answer.input_artifacts_json = [assessment_key]
         payload = {
             "schema_version": "aiops.turn-replan-command.v1",
             "domain_id": int(run.domain_id),
@@ -3390,6 +3404,12 @@ class AIOpsRuntimeService:
             baseline_evidence_refs=tuple(snapshot.evidence_refs),
         )
         comparison_plan_payload = comparison_plan.model_dump(mode="json")
+        target_snapshot = dict(
+            (run.plan_snapshot_json or {}).get("target")
+            or dict(
+                (run.plan_snapshot_json or {}).get("change_context", {})
+            ).get("target", {})
+        )
         comparison_plan_artifact = await uow.runs.add_artifact(
             OpsArtifactEntity(
                 ops_run_id=run.ops_run_id,
@@ -3410,9 +3430,7 @@ class AIOpsRuntimeService:
                 },
                 trust_level="SOURCE_VERIFIED",
                 security_level=int(
-                    (run.plan_snapshot_json or {})["target"][
-                        "security_level"
-                    ]
+                    target_snapshot.get("security_level", 1)
                 ),
             )
         )

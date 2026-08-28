@@ -22,6 +22,7 @@ from aiops_agent.contracts.diagnosis import (
     RootCauseAssessment,
     SolutionDraft,
 )
+from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment
 from platform_core.identity import uuid7
 
 from .handlers import TaskExecutionContext
@@ -241,6 +242,186 @@ class ActionPlanHandler:
         )
 
 
+class ChatActionPlanHandler:
+    """只把当前 Turn 的可信结构化事实编译成目录内动作。"""
+
+    def __init__(
+        self,
+        *,
+        registry: ActionRegistry,
+        execution_enabled: bool,
+    ) -> None:
+        self._registry = registry
+        self._renderer = ActionRenderer()
+        self._execution_enabled = execution_enabled
+
+    async def execute(self, context: TaskExecutionContext) -> ActionPlan:
+        assessment = DbaSufficiencyAssessment.model_validate(
+            _artifact(context, "DBA_SUFFICIENCY.v1")
+        )
+        change_context = dict(context.plan_snapshot.get("change_context", {}))
+        target = dict(change_context.get("target", {}))
+        policy = dict(change_context.get("policy", {}))
+        rules = dict(policy.get("rules", {}))
+        policy_hash = _hash(
+            {
+                "change_context": change_context,
+                "trigger_type": context.trigger_type,
+                "execution_enabled": self._execution_enabled,
+            }
+        )
+        task_frame = dict(
+            dict(context.plan_snapshot.get("answer_context", {})).get(
+                "task_frame", {}
+            )
+        )
+        if not bool(task_frame.get("requires_change")):
+            return self._empty(context, policy_hash, "CHANGE_NOT_REQUESTED")
+        candidate = self._session_candidate(
+            assessment, str(target.get("db_type"))
+        )
+        if candidate is None:
+            return self._empty(
+                context,
+                policy_hash,
+                "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE",
+            )
+        parameters, fact_refs = candidate
+        capabilities = set(
+            dict(context.plan_snapshot.get("capability_snapshot", {})).get(
+                "target_capabilities", ()
+            )
+        )
+        try:
+            template = self._registry.resolve(
+                action_template_id="db.session.terminate",
+                version="1.0.0",
+                db_type=str(target["db_type"]),
+                db_version=target.get("version_code") or "UNKNOWN",
+                capabilities=capabilities,
+                entitlements=set(rules.get("entitlements", ())),
+                environment=str(target["environment"]),
+            )
+            rendered = self._renderer.render(template, parameters)
+        except (KeyError, LookupError, ValueError):
+            return self._empty(
+                context, policy_hash, "ACTION_TEMPLATE_UNAVAILABLE"
+            )
+        can_execute = (
+            self._execution_enabled
+            and context.trigger_type == "CHAT"
+            and rules.get("allow_agent_execution") is True
+            and target.get("status") == "ENABLED"
+            and target.get("connectivity_status") in {"CONNECTED", "DEGRADED"}
+            and bool(target.get("execution_secret_configured"))
+            and rendered.execution_capability
+            == "EXECUTABLE_AFTER_APPROVAL"
+        )
+        if not can_execute:
+            return self._empty(
+                context, policy_hash, "AGENT_EXECUTION_NOT_ALLOWED"
+            )
+        action = ActionPlanItem(
+            ordinal=1,
+            action_template_id=rendered.action_template_id,
+            action_template_version=rendered.action_template_version,
+            variant=rendered.variant,
+            mode="AGENT_EXECUTE",
+            canonical_parameters=rendered.typed_parameters,
+            parameter_fact_refs=fact_refs,
+            rationale="动作参数全部来自本轮数据库直连的可信会话事实",
+            expected_effects=rendered.expected_effects,
+            precondition_tool_refs=rendered.precondition_tool_refs,
+            verification_tool_refs=rendered.verification_tool_refs,
+            rollback_description=rendered.rollback_description,
+            rendered_action=rendered.model_dump(mode="json"),
+        )
+        return ActionPlan(
+            solution_group_key=f"turn:{context.run_id}:change",
+            target_id=context.target_id,
+            root_cause_level="EVIDENCE_VERIFIED",
+            actions=(action,),
+            decision="AGENT_EXECUTE",
+            decision_reasons=("MUTATION_POLICY_ALLOWED",),
+            policy_decision_hash=policy_hash,
+            action_catalog_hash=self._registry.catalog_hash,
+        )
+
+    def _empty(
+        self, context: TaskExecutionContext, policy_hash: str, reason: str
+    ) -> ActionPlan:
+        return ActionPlan(
+            solution_group_key=f"turn:{context.run_id}:change",
+            target_id=context.target_id,
+            root_cause_level="INCONCLUSIVE",
+            decision="NO_ACTION",
+            decision_reasons=(reason,),
+            policy_decision_hash=policy_hash,
+            action_catalog_hash=self._registry.catalog_hash,
+        )
+
+    @classmethod
+    def _session_candidate(
+        cls,
+        assessment: DbaSufficiencyAssessment,
+        db_type: str,
+    ) -> tuple[dict[str, int], dict[str, str]] | None:
+        blocking_rows = cls._verified_rows(
+            assessment, "db.session.blocking_chain"
+        )
+        active_rows = cls._verified_rows(assessment, "db.session.active")
+        for blocking, blocking_ref in blocking_rows:
+            session_id = blocking.get("blocking_session_id")
+            if session_id is None:
+                continue
+            if db_type == "MYSQL":
+                return (
+                    {"session_id": int(session_id)},
+                    {"session_id": blocking_ref},
+                )
+            for active, active_ref in active_rows:
+                if int(active.get("session_id", -1)) != int(session_id):
+                    continue
+                serial_number = active.get("serial_number")
+                instance_id = active.get("instance_id")
+                if serial_number is None or instance_id is None:
+                    continue
+                return (
+                    {
+                        "session_id": int(session_id),
+                        "serial_number": int(serial_number),
+                        "instance_id": int(instance_id),
+                    },
+                    {
+                        "session_id": blocking_ref,
+                        "serial_number": active_ref,
+                        "instance_id": active_ref,
+                    },
+                )
+        return None
+
+    @staticmethod
+    def _verified_rows(
+        assessment: DbaSufficiencyAssessment, tool_id: str
+    ) -> tuple[tuple[dict[str, Any], str], ...]:
+        rows: list[tuple[dict[str, Any], str]] = []
+        for fact in assessment.evidence:
+            if (
+                fact.trust_level != "SOURCE_VERIFIED"
+                or fact.tool_id != tool_id
+            ):
+                continue
+            names = [str(item.get("name", "")).lower() for item in fact.columns]
+            for values in fact.rows:
+                rows.append(
+                    (
+                        dict(zip(names, values, strict=True)),
+                        fact.evidence_ref,
+                    )
+                )
+        return tuple(rows)
+
+
 class ProposalSnapshotHandler:
     async def execute(
         self, context: TaskExecutionContext
@@ -261,13 +442,19 @@ class ProposalSnapshotHandler:
         rendered = action.rendered_action
         now = datetime.now(UTC)
         proposal_id = uuid7()
+        target_snapshot = dict(
+            context.plan_snapshot.get("target")
+            or dict(context.plan_snapshot.get("change_context", {})).get(
+                "target", {}
+            )
+        )
         body = {
             "proposal_id": str(proposal_id),
             "run_id": context.run_id,
             "task_id": context.task_id,
             "target_id": context.target_id,
             "target_version": int(
-                context.plan_snapshot["target"]["row_version"]
+                target_snapshot["row_version"]
             ),
             "solution_group_key": plan.solution_group_key,
             "command_ordinal": action.ordinal,

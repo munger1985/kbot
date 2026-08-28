@@ -71,6 +71,13 @@
 .ops-chart-row > strong { text-align: right; font-variant-numeric: tabular-nums; }
 .ops-chart-track { height: 8px; overflow: hidden; background: #e5e9f0; }
 .ops-chart-track i { display: block; height: 100%; background: var(--accent); }
+.ops-proposal { margin: 18px 0 4px; padding: 16px; border: 1px solid #d9c48d; background: #fffaf0; }
+.ops-proposal header strong, .ops-proposal header small { display: block; }
+.ops-proposal header small { margin-top: 3px; color: var(--warn); font-size: 11px; }
+.ops-proposal-parameters { display: grid; gap: 5px; margin: 12px 0; padding: 0; list-style: none; }
+.ops-proposal-parameters li { display: flex; justify-content: space-between; gap: 18px; padding: 6px 8px; background: rgba(255,255,255,.75); }
+.ops-proposal-actions { display: flex; gap: 8px; margin-top: 14px; }
+.ops-proposal-status { color: var(--muted); font-size: 12px; }
 .ops-inline-dialog { margin-top: 18px; padding: 16px; border: 1px solid var(--line); background: #f8f9fb; }
 .agent-code-block { margin: 12px 0; border: 1px solid #39445a; background: #20283a; color: #eef2fa; }
 .agent-code-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #2b3549; font-size: 11px; }

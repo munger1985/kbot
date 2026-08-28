@@ -424,11 +424,22 @@ def create_runtime_handler_registry(
                 ActionPlanHandler,
                 ActionVerificationHandler,
                 AdvisoryVerificationScopeHandler,
+                ChatActionPlanHandler,
                 ProposalSnapshotHandler,
             )
 
             manifests.extend(
                 (
+                    HandlerManifest(
+                        handler_id="change.chat-action-plan",
+                        version="1",
+                        output_schema_version="ACTION_PLAN.v1",
+                        idempotent=True,
+                        implementation=ChatActionPlanHandler(
+                            registry=action_registry,
+                            execution_enabled=action_execution_enabled,
+                        ),
+                    ),
                     HandlerManifest(
                         handler_id="change.action-plan",
                         version="1",

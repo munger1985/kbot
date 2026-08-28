@@ -9,6 +9,7 @@ import re
 import time
 from typing import Any
 
+from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
 from aiops_agent.contracts.skill_execution import DbaSkillResult
 from aiops_agent.contracts.turn_answer import (
@@ -400,6 +401,9 @@ class DbaAnswerComposeHandler:
             )
         ]
         blocks.extend(self._data_blocks(assessment.evidence))
+        proposal_block = self._proposal_block(context.input_artifacts)
+        if proposal_block is not None:
+            blocks.append(proposal_block)
         evidence_request = self._evidence_request_block(
             assessment, context
         )
@@ -532,6 +536,9 @@ class DbaAnswerComposeHandler:
             )
         ]
         blocks.extend(self._data_blocks(assessment.evidence))
+        proposal_block = self._proposal_block(context.input_artifacts)
+        if proposal_block is not None:
+            blocks.append(proposal_block)
         evidence_request = self._evidence_request_block(
             assessment, context
         )
@@ -571,6 +578,42 @@ class DbaAnswerComposeHandler:
         if len(matches) != 1:
             raise ValueError("回答任务必须且只能接收一个充分性 Artifact")
         return DbaSufficiencyAssessment.model_validate(matches[0])
+
+    @staticmethod
+    def _proposal_block(
+        artifacts: tuple[dict[str, Any], ...]
+    ) -> TurnAnswerBlock | None:
+        payload = next(
+            (
+                item["payload"]
+                for item in artifacts
+                if item.get("schema_version") == "PROPOSAL_OUTCOME.v1"
+            ),
+            None,
+        )
+        if payload is None:
+            return None
+        outcome = ProposalOutcome.model_validate(payload)
+        if outcome.status != "CREATED" or outcome.proposal is None:
+            return None
+        proposal = outcome.proposal
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.PROPOSAL_SUMMARY,
+            schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
+            payload={
+                "proposal_id": proposal.proposal_id,
+                "proposal_hash": proposal.proposal_hash,
+                "row_version": 1,
+                "status": "PENDING_APPROVAL",
+                "action_template_id": proposal.action_template_id,
+                "risk_level": proposal.risk_level,
+                "rationale": proposal.rationale,
+                "impact": proposal.impact,
+                "parameters": proposal.canonical_parameters,
+                "expires_at": proposal.expires_at.isoformat(),
+            },
+            evidence_refs=proposal.evidence_refs,
+        )
 
     @staticmethod
     def _waiting_result(

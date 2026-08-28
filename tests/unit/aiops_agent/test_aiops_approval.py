@@ -23,6 +23,39 @@ from platform_core.identity import uuid7
 
 
 class ApprovalServiceTest(unittest.TestCase):
+    def test_chat_proposal_block_tracks_approval_status(self) -> None:
+        proposal_id = uuid7()
+        run_id = uuid7()
+        block = SimpleNamespace(
+            block_type="PROPOSAL_SUMMARY",
+            payload_json={
+                "proposal_id": str(proposal_id),
+                "status": "PENDING_APPROVAL",
+                "row_version": 1,
+            },
+            content_hash="a" * 64,
+        )
+        turns = SimpleNamespace(
+            get_run_link_by_ops_run_id=AsyncMock(
+                return_value=SimpleNamespace(turn_id=uuid7())
+            ),
+            list_answer_blocks=AsyncMock(return_value=[block]),
+        )
+        asyncio.run(
+            AIOpsChangeService._update_chat_proposal_block(
+                uow=SimpleNamespace(turns=turns),
+                proposal=SimpleNamespace(
+                    proposal_id=proposal_id,
+                    ops_run_id=run_id,
+                    row_version=1,
+                ),
+                status="APPROVED",
+            )
+        )
+        self.assertEqual(block.payload_json["status"], "APPROVED")
+        self.assertEqual(block.payload_json["row_version"], 2)
+        self.assertNotEqual(block.content_hash, "a" * 64)
+
     def test_closed_kill_switch_never_opens_transaction(self) -> None:
         factory = unittest.mock.Mock()
         service = AIOpsChangeService(
@@ -170,6 +203,10 @@ class ApprovalServiceTest(unittest.TestCase):
             ),
             platform_notifications=SimpleNamespace(
                 emit_proposal_event=AsyncMock()
+            ),
+            turns=SimpleNamespace(
+                get_run_link_by_ops_run_id=AsyncMock(return_value=None),
+                list_answer_blocks=AsyncMock(return_value=[]),
             ),
             commit=AsyncMock(),
             rollback=AsyncMock(),

@@ -128,6 +128,14 @@
       const maximum = Math.max(0, ...series.map((item) => Number(item.value)).filter(Number.isFinite));
       return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
     }
+    if (block.block_type === "PROPOSAL_SUMMARY") {
+      const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(value)}</span></li>`).join("");
+      const pending = payload.status === "PENDING_APPROVAL";
+      const actions = pending
+        ? `<div class="ops-proposal-actions"><button type="button" class="primary" data-approve-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}" data-hash="${esc(payload.proposal_hash)}">批准并执行</button><button type="button" data-reject-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">拒绝</button></div>`
+        : `<p class="ops-proposal-status">当前状态：${esc(payload.status || "UNKNOWN")}</p>`;
+      return `<section class="ops-proposal"><header><div><strong>受控变更待审批</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(payload.risk_level || "UNKNOWN")}</small></div></header><p>${esc(payload.rationale || "")}</p><p><strong>影响范围：</strong>${esc(payload.impact || "-")}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${actions}</section>`;
+    }
     if (block.block_type === "EVIDENCE_REFERENCES") return "";
     return markdown.render(payload.markdown || payload.text || payload.instruction || "");
   }
