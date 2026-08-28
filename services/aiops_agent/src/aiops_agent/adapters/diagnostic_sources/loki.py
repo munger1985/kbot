@@ -88,10 +88,15 @@ class LokiAdapter(BaseDiagnosticSourceAdapter):
         self, request: LogEvidenceRequest
     ) -> LogEvidenceSet:
         selector = _selector(request.selector_labels)
+        query = selector + "".join(
+            f" {operator} {json.dumps(value, ensure_ascii=False)}"
+            for operator, value in request.line_filters
+        )
         query_fingerprint = hashlib.sha256(
             json.dumps(
                 {
                     "selector": request.selector_labels,
+                    "line_filters": request.line_filters,
                     "window_start": request.window_start.isoformat(),
                     "window_end": request.window_end.isoformat(),
                     "max_entries": request.max_entries,
@@ -108,7 +113,7 @@ class LokiAdapter(BaseDiagnosticSourceAdapter):
                 f"{self._endpoint().rstrip('/')}/loki/api/v1/query_range",
                 headers=self._headers(),
                 params={
-                    "query": selector,
+                    "query": query,
                     "start": int(request.window_start.timestamp() * 1_000_000_000),
                     "end": int(request.window_end.timestamp() * 1_000_000_000),
                     "limit": request.max_entries,

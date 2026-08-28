@@ -65,8 +65,15 @@ Target具有`DB_READONLY`能力时进入模型Tool Discovery；规划端规范�
 只读事务中执行。成功结果进入`DBA_SKILL_RESULT.v1`成为`SOURCE_VERIFIED` Evidence，失败只形成
 Evidence Gap；固定目录Grant与动态Grant不能串用。固定目录SQL也继续执行方言AST复核。
 
-以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、PromQL/LogQL语法围栏、旧Skill
-内部命名与目录的物理迁移，以及动态查询在dev真实
+受控监控查询也已接入调查运行时。PromQL使用`promql-parser==0.10.0`解析官方语法AST，每个
+Vector Selector都必须以`instance="${external_target}"`或
+`target_key="${host_target}"`精确约束当前Target，并限制Range、时间窗、采样点、Series数量、
+响应字节和`@`/`offset`时间逃逸；规划端和Worker都会复核Query/Policy Hash。LogQL不允许模型
+提供任意Selector，只能使用`${binding_selector}`引用冻结Binding标签，并附加有限个`|=`或`!=`
+字面量过滤；查询结果沿现有`OBSERVATION_SET.v1`和`LOG_EVIDENCE_SET.v1`进入Evidence链。
+
+以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、旧Skill内部命名与目录的物理
+迁移，以及动态查询在dev真实
 Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
 Schema字段或类名判断功能已经交付。
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -158,6 +158,7 @@ class LogEvidenceRequest(BaseModel):
     binding_id: str
     source_locator_key: str
     selector_labels: dict[str, str]
+    line_filters: tuple[tuple[Literal["|=", "!="], str], ...] = ()
     window_start: UtcDatetime
     window_end: UtcDatetime
     max_entries: int = Field(ge=1, le=5000)

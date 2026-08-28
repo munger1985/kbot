@@ -27,6 +27,13 @@ from aiops_agent.diagnostics import (
     DynamicQueryRejected,
     OracleDynamicQueryPolicy,
 )
+from aiops_agent.monitoring import (
+    LogQueryPolicy,
+    LogQueryPolicySnapshot,
+    MonitoringQueryRejected,
+    PromQueryPolicy,
+    PromQueryPolicySnapshot,
+)
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
@@ -117,6 +124,9 @@ class TurnPlanningService:
         investigation, dynamic_queries = self._prepare_dynamic_queries(
             planned.output
         )
+        investigation, source_queries = self._prepare_source_queries(
+            investigation
+        )
         playbook_plan = self._build_playbook_plan(
             investigation=investigation,
             capabilities=context.capabilities,
@@ -132,6 +142,11 @@ class TurnPlanningService:
             if monitoring_requested
             else {}
         )
+        if monitoring_requested:
+            monitoring_execution = {
+                **monitoring_execution,
+                **source_queries,
+            }
         monitoring_binding_ids = (
             tuple(
                 item["binding_id"]
@@ -202,16 +217,29 @@ class TurnPlanningService:
                 "tool_id": "monitor.query_range",
                 "version": "1.0.0",
                 "tool_class": "PROMETHEUS",
-                "description": "查询绑定 Target 的 Prometheus 时间序列",
-                "input": {"window": "RECENT"},
+                "description": (
+                    "执行受控 PromQL 时间序列查询；每个向量选择器必须用"
+                    " instance=\"${external_target}\" 或"
+                    " target_key=\"${host_target}\" 精确绑定当前 Target"
+                ),
+                "input": {
+                    "query": "带 Target 占位符的 PromQL",
+                    "window_seconds": "60 到 3600 秒",
+                },
             }
         if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
             tools[("loki.query_range", "1.0.0")] = {
                 "tool_id": "loki.query_range",
                 "version": "1.0.0",
                 "tool_class": "LOKI",
-                "description": "查询绑定 Target 的 Oracle Alert Log",
-                "input": {"window": "RECENT"},
+                "description": (
+                    "执行受控 LogQL；必须以 ${binding_selector} 开始，"
+                    "仅允许 |= 或 != 字面量行过滤"
+                ),
+                "input": {
+                    "query": "${binding_selector} 加字面量过滤",
+                    "window_seconds": "60 到 3600 秒",
+                },
             }
         if (
             str(capabilities.database_type) == "ORACLE"
@@ -292,6 +320,83 @@ class TurnPlanningService:
         return (
             investigation.model_copy(update={"plan": updated_plan}),
             tuple(frozen),
+        )
+
+    @staticmethod
+    def _prepare_source_queries(investigation):
+        """校验并冻结模型提出的临时 PromQL 与 LogQL。"""
+        prom_policy = PromQueryPolicy(PromQueryPolicySnapshot())
+        log_policy = LogQueryPolicy(LogQueryPolicySnapshot())
+        actions = []
+        prom_queries = []
+        log_queries = []
+        for action in investigation.plan.actions:
+            if action.tool_id not in {
+                "monitor.query_range",
+                "loki.query_range",
+            }:
+                actions.append(action)
+                continue
+            payload = dict(action.input)
+            if (
+                set(payload) - {"query", "window_seconds"}
+                or "query" not in payload
+            ):
+                raise InvestigationPlanValidationError(
+                    "监控查询输入只能包含 query 与 window_seconds"
+                )
+            query = payload.get("query")
+            window = payload.get("window_seconds")
+            if not isinstance(query, str) or (
+                "window_seconds" in payload
+                and not isinstance(window, int)
+            ):
+                raise InvestigationPlanValidationError(
+                    "监控查询 query 或 window_seconds 类型无效"
+                )
+            try:
+                if action.tool_id == "monitor.query_range":
+                    validated = prom_policy.validate(
+                        query, window_seconds=window
+                    )
+                    target = prom_queries
+                else:
+                    validated = log_policy.validate(
+                        query, window_seconds=window
+                    )
+                    target = log_queries
+            except MonitoringQueryRejected as exc:
+                raise InvestigationPlanValidationError(
+                    f"监控查询未通过策略：{exc.code}"
+                ) from exc
+            normalized_input = {
+                "query": validated.normalized_query,
+                "window_seconds": validated.window_seconds,
+            }
+            actions.append(
+                action.model_copy(update={"input": normalized_input})
+            )
+            target.append(
+                {
+                    "action_id": action.action_id,
+                    "question": action.question,
+                    "measurement_semantics": action.measurement_semantics,
+                    "validated_query": validated.model_dump(mode="json"),
+                }
+            )
+        updated_plan = investigation.plan.model_copy(
+            update={"actions": tuple(actions)}
+        )
+        if len(prom_queries) > 4 or len(log_queries) > 4:
+            raise InvestigationPlanValidationError(
+                "单轮临时 PromQL 或 LogQL 查询不能超过 4 条"
+            )
+        return (
+            investigation.model_copy(update={"plan": updated_plan}),
+            {
+                "ad_hoc_prometheus_queries": prom_queries,
+                "ad_hoc_log_queries": log_queries,
+            },
         )
 
     def _available_playbooks(
@@ -485,6 +590,9 @@ class TurnPlanningService:
         investigation, dynamic_queries = self._prepare_dynamic_queries(
             planned.output
         )
+        investigation, source_queries = self._prepare_source_queries(
+            investigation
+        )
         playbook_plan = self._build_playbook_plan(
             investigation=investigation,
             capabilities=context.capabilities,
@@ -498,6 +606,11 @@ class TurnPlanningService:
             if monitoring_requested
             else {}
         )
+        if monitoring_requested:
+            monitoring_execution = {
+                **monitoring_execution,
+                **source_queries,
+            }
         monitoring_binding_ids = tuple(
             item["binding_id"]
             for item in monitoring_execution.get("bindings", ())

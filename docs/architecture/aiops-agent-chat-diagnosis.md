@@ -184,6 +184,12 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。
 
+PromQL使用语法AST检查所有Vector Selector；数据库指标必须精确包含
+`instance="${external_target}"`，主机指标必须精确包含
+`target_key="${host_target}"`。禁止`@`与`offset`绕开调查窗口，并限制Range Selector、查询
+窗口、Step、采样点和Series。LogQL不接受模型自定义标签Selector，只允许
+`${binding_selector}`引用已冻结的Binding精确标签，后面附加有限个字面量包含或排除过滤。
+
 Oracle动态SQL的解析实现固定使用SQLGlot Oracle方言，并在规划端和执行端消费同一份
 `ORACLE_DYNAMIC_QUERY_POLICY.v1`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
 投影列、函数、bind、Database Link和锁语义，注入服务端行数上限并绑定Query/Policy Hash。

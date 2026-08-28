@@ -5,6 +5,7 @@ elasticsearch==9.2.1
 pydantic==2.12.5
 pydantic-settings==2.14.2
 sqlglot==30.0.2
+promql-parser==0.10.0
 SQLAlchemy==2.0.46
 tomli==2.4.0
 python-dotenv==1.2.2

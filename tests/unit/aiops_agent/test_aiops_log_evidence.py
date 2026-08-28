@@ -95,6 +95,7 @@ class LokiEvidenceTest(unittest.IsolatedAsyncioTestCase):
                     "job": "oracle-alert",
                     "instance": 'oracle-dev-01"}',
                 },
+                line_filters=(("|=", "ORA-"),),
                 window_start=now - timedelta(minutes=5),
                 window_end=now,
                 max_entries=100,
@@ -107,6 +108,7 @@ class LokiEvidenceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("password=[已脱敏]", result.entries[0].line)
         self.assertNotIn("plain-secret", result.model_dump_json())
         self.assertIn(r'instance="oracle-dev-01\"}"', session.params["query"])
+        self.assertIn('|= "ORA-"', session.params["query"])
 
     async def test_invalid_label_name_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
