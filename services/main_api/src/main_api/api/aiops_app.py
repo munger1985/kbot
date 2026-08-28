@@ -3,6 +3,7 @@
 import asyncio
 import json
 from typing import Annotated, Any, Literal, cast
+from urllib.parse import unquote
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
@@ -22,6 +23,7 @@ from platform_clients import KnowledgeCoreClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.contracts.aiops import (
+    ConversationUploadReceipt,
     ConversationSummary,
     InputContent,
     TurnReceipt,
@@ -514,6 +516,33 @@ async def update_agent_grant(
     await _require(request, "aiops:agent_manage")
     return await _client(request).update_private_agent_grant(
         grant_id, payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/conversation-uploads",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ConversationUploadReceipt,
+)
+async def upload_conversation_input(request: Request):
+    """把浏览器原始文件流转发给 AIOps，不在 Main API 落盘。"""
+    await _require(request, "aiops:use")
+    require_app_api_scope(request, "aiops:chat:write")
+    file_name = unquote(request.headers.get("X-File-Name", "").strip())
+    media_type = request.headers.get("Content-Type", "").strip()
+    if not file_name or not media_type:
+        raise HTTPException(
+            422,
+            {
+                "code": "AIOPS_UPLOAD_METADATA_REQUIRED",
+                "message": "上传必须提供 X-File-Name 和 Content-Type",
+            },
+        )
+    return await _client(request).upload_conversation_input(
+        file_name=file_name,
+        media_type=media_type,
+        body=request.stream(),
         auth_context=request.state.auth_context,
     )
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import Field, model_validator
@@ -36,7 +37,26 @@ class InputContent(AIOpsContract):
             raise ValueError("输入内容必须且只能提供文字或上传文件")
         if self.content_type == InputContentType.TEXT and self.text is None:
             raise ValueError("TEXT 输入必须提供文字")
+        if self.content_type in {
+            InputContentType.IMAGE,
+            InputContentType.FILE,
+        } and self.upload_id is None:
+            raise ValueError("IMAGE 和 FILE 输入必须提供上传文件引用")
+        if self.content_type not in {
+            InputContentType.IMAGE,
+            InputContentType.FILE,
+        } and self.text is None:
+            raise ValueError("粘贴材料必须提供文字正文")
         return self
+
+
+class ConversationUploadReceipt(AIOpsContract):
+    upload_id: str = Field(min_length=1, max_length=64)
+    file_name: str = Field(min_length=1, max_length=256)
+    media_type: str = Field(min_length=1, max_length=128)
+    byte_size: int = Field(ge=1)
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expires_at: datetime
 
 
 class MaterialKind(StrEnum):

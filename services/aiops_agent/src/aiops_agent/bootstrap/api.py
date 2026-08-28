@@ -24,6 +24,7 @@ from aiops_agent.adapters.diagnostic_sources import (
     DiagnosticSourceAdapterRegistry,
 )
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
+from aiops_agent.adapters.conversation_uploads import LocalConversationUploadStore
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.adapters.diagnostic_sources.payload_store import (
     LocalSignalPayloadStore,
@@ -105,8 +106,15 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             action_registry=action_registry,
         )
+        conversation_upload_store = LocalConversationUploadStore(
+            Path(resolved.limits.conversation_upload_store_root),
+            max_bytes=resolved.limits.max_artifact_bytes,
+            ttl_seconds=resolved.limits.conversation_upload_ttl_seconds,
+        )
+        app.state.conversation_upload_store = conversation_upload_store
         app.state.conversation_turn_service = ConversationTurnService(
             uow_factory=runtime.uow_factory,
+            upload_store=conversation_upload_store,
         )
         app.state.report_template_service = InspectionReportTemplateService(
             uow_factory=runtime.uow_factory

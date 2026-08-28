@@ -145,6 +145,10 @@ class AIOpsLimitsConfig(BaseModel):
     max_tasks_per_run: int = Field(default=64, ge=1, le=512)
     run_timeout_seconds: int = Field(default=3600, ge=60, le=86400)
     max_targets_per_inspection_fire: int = Field(default=100, ge=1, le=1000)
+    conversation_upload_ttl_seconds: int = Field(
+        default=86_400, ge=300, le=604_800
+    )
+    conversation_upload_store_root: str = "/tmp/kbot-aiops-conversation-uploads"
 
 
 class AIOpsMonitoringConfig(BaseModel):
@@ -231,6 +235,10 @@ class AIOpsSettings(Settings):
             self.monitoring.payload_store_root
         ).resolve().is_relative_to(Path("/tmp")):
             raise ValueError("生产环境监控正文存储不能位于 /tmp")
+        if self.is_production() and Path(
+            self.limits.conversation_upload_store_root
+        ).resolve().is_relative_to(Path("/tmp")):
+            raise ValueError("生产环境对话上传存储不能位于 /tmp")
         for dependency in (
             self.clients.model_serving,
             self.clients.knowledge_core,

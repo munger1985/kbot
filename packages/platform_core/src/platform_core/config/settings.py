@@ -441,6 +441,11 @@ def load_settings(
                 "embedding": {"cache_dir": str(data_dir / "models")}
             },
             "aiops_agent": {
+                "limits": {
+                    "conversation_upload_store_root": str(
+                        data_dir / "aiops" / "conversation_uploads"
+                    )
+                },
                 "monitoring": {
                     "payload_store_root": str(
                         data_dir / "aiops" / "monitor_payloads"

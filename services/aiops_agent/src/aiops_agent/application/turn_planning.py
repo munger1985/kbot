@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict
+from aiops_agent.application.conversation_inputs import (
+    ConversationInputResolver,
+    ResolvedConversationUpload,
+)
 from aiops_agent.entities import (
     OpsArtifactEntity,
     OpsInvestigationRevisionEntity,
@@ -62,8 +66,10 @@ class TurnPlanningContext:
     agent_id: UUID
     target_id: UUID
     source_ids: tuple[UUID, ...]
+    actor_id: str
     question: str
     content: tuple[dict, ...]
+    image_capabilities: dict
     recent_context: tuple[str, ...]
     trace_id: str
     deadline: datetime | None
@@ -71,6 +77,7 @@ class TurnPlanningContext:
     database_execution: dict
     change_context: dict
     source_run_evidence: dict | None = None
+    resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()
 
 
 class _PlanningAlreadyApplied(Exception):
@@ -92,6 +99,7 @@ class TurnPlanningService:
         execution_snapshot_builder: SkillExecutionSnapshotBuilder,
         agent_catalog,
         monitoring_snapshot_builder=None,
+        conversation_input_resolver: ConversationInputResolver | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._investigation_reasoner = investigation_reasoner
@@ -100,12 +108,25 @@ class TurnPlanningService:
         self._execution_snapshot_builder = execution_snapshot_builder
         self._agent_catalog = agent_catalog
         self._monitoring_snapshot_builder = monitoring_snapshot_builder
+        self._conversation_input_resolver = conversation_input_resolver
 
     async def execute(self, payload: dict) -> dict:
         try:
             context = await self._prepare(payload)
         except _PlanningAlreadyApplied as applied:
             return applied.result
+        if self._conversation_input_resolver is not None and any(
+            item.get("upload_id") for item in context.content
+        ):
+            content, uploads = await self._conversation_input_resolver.resolve(
+                domain_id=context.domain_id,
+                actor_id=context.actor_id,
+                content=context.content,
+                image_capabilities=context.image_capabilities,
+            )
+            context = replace(
+                context, content=content, resolved_uploads=uploads
+            )
         model_snapshot = await self._agent_catalog.resolve_diagnosis_model(
             agent_id=context.agent_id,
             domain_id=context.domain_id,
@@ -1299,8 +1320,17 @@ class TurnPlanningService:
                 agent_id=run.agent_id,
                 target_id=target.target_id,
                 source_ids=tuple(source_ids),
+                actor_id=str(
+                    getattr(turn, "created_by", None)
+                    or getattr(user_message, "created_by", None)
+                    or ""
+                ),
                 question=str(user_message.payload_json["text"]),
                 content=tuple(user_message.payload_json["content"]),
+                image_capabilities=dict(
+                    getattr(agent_version, "image_capabilities_json", None)
+                    or {}
+                ),
                 recent_context=tuple(
                     str(row.payload_json.get("text", ""))
                     for row in recent
@@ -1515,6 +1545,50 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else None
             )
+            upload_artifacts: dict[
+                int, tuple[OpsArtifactEntity, OpsArtifactEntity]
+            ] = {}
+            for upload in context.resolved_uploads:
+                source_artifact = self._uri_artifact(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=f"turn-upload-source:{upload.item_no}",
+                    artifact_type="USER_UPLOAD_SOURCE",
+                    schema_version="USER_UPLOAD_SOURCE.v1",
+                    payload_uri=upload.payload_uri,
+                    content_hash=upload.content_hash,
+                    byte_size=upload.byte_size,
+                    provenance={
+                        "producer": "aiops.conversation-upload",
+                        "upload_id": upload.upload_id,
+                        "file_name": upload.file_name,
+                        "media_type": upload.media_type,
+                    },
+                    trust_level="USER_PROVIDED",
+                )
+                extracted_artifact = self._artifact(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key=f"turn-upload-extract:{upload.item_no}",
+                    artifact_type="USER_UPLOAD_EXTRACT",
+                    schema_version="USER_UPLOAD_EXTRACT.v1",
+                    payload={
+                        "item_no": upload.item_no,
+                        "file_name": upload.file_name,
+                        "media_type": upload.media_type,
+                        "text": upload.extracted_text,
+                        "extraction_mode": upload.extraction_mode,
+                        "model_id": (
+                            str(upload.model_id) if upload.model_id else None
+                        ),
+                        "model_revision": upload.model_revision,
+                        "extraction_error": upload.extraction_error,
+                    },
+                    producer="aiops.input-extraction",
+                    trust_level="USER_PROVIDED",
+                )
+                upload_artifacts[upload.item_no] = (
+                    source_artifact,
+                    extracted_artifact,
+                )
             for artifact in (
                 input_artifact,
                 input_analysis_artifact,
@@ -1525,6 +1599,9 @@ class TurnPlanningService:
             ):
                 if artifact is not None:
                     await uow.runs.add_artifact(artifact)
+            for source_artifact, extracted_artifact in upload_artifacts.values():
+                await uow.runs.add_artifact(source_artifact)
+                await uow.runs.add_artifact(extracted_artifact)
 
             revision = OpsInvestigationRevisionEntity(
                 revision_id=uuid7(),
@@ -1545,11 +1622,49 @@ class TurnPlanningService:
                 for item in investigation.input_envelope.materials
             }
             for input_row in input_rows:
+                attachment_artifacts = upload_artifacts.get(
+                    int(input_row.item_no)
+                )
+                if attachment_artifacts is not None:
+                    input_row.source_artifact_id = attachment_artifacts[0].artifact_id
+                    input_row.extracted_artifact_id = attachment_artifacts[1].artifact_id
                 material = materials_by_no.get(int(input_row.item_no))
                 if material is None:
                     continue
                 input_row.detected_kind = str(material.material_kind)
                 input_row.detection_confidence = material.confidence
+            for item_no, (_, extracted_artifact) in upload_artifacts.items():
+                upload = next(
+                    item
+                    for item in context.resolved_uploads
+                    if item.item_no == item_no
+                )
+                await uow.turns.add_evidence(
+                    OpsTurnEvidenceEntity(
+                        turn_evidence_id=uuid7(),
+                        turn_id=turn.turn_id,
+                        artifact_id=extracted_artifact.artifact_id,
+                        source_kind="USER",
+                        evidence_kind=(
+                            "SCREENSHOT"
+                            if upload.media_type.startswith("image/")
+                            else "USER_FILE"
+                        ),
+                        confidence=(
+                            0.8
+                            if upload.extraction_mode in {"OCR", "VLM"}
+                            else 1
+                        ),
+                        extraction_artifact_id=extracted_artifact.artifact_id,
+                        evidence_role="USER_PROVIDED",
+                        measurement_semantics="NOT_APPLICABLE",
+                        freshness_status="UNKNOWN",
+                        usage_reason=(
+                            f"用户上传的 {upload.file_name} 已作为本轮诊断材料"
+                        ),
+                        linked_by="aiops.input-extraction",
+                    )
+                )
             if contains_user_evidence:
                 await uow.turns.add_evidence(
                     OpsTurnEvidenceEntity(
@@ -1835,6 +1950,33 @@ class TurnPlanningService:
             content_hash=canonical_hash(payload),
             byte_size=len(encoded),
             provenance_json={"producer": producer},
+            trust_level=trust_level,
+            security_level=1,
+        )
+
+    @staticmethod
+    def _uri_artifact(
+        *,
+        ops_run_id: UUID,
+        artifact_key: str,
+        artifact_type: str,
+        schema_version: str,
+        payload_uri: str,
+        content_hash: str,
+        byte_size: int,
+        provenance: dict,
+        trust_level: str,
+    ) -> OpsArtifactEntity:
+        return OpsArtifactEntity(
+            artifact_id=uuid7(),
+            ops_run_id=ops_run_id,
+            artifact_key=artifact_key,
+            artifact_type=artifact_type,
+            schema_version=schema_version,
+            payload_uri=payload_uri,
+            content_hash=content_hash,
+            byte_size=byte_size,
+            provenance_json=provenance,
             trust_level=trust_level,
             security_level=1,
         )

@@ -90,11 +90,11 @@ ANSWERING → COMPLETED / PARTIAL
 ```json
 {
   "content": [
-    {"type": "TEXT", "text": "数据库现在停了，分析原因"},
+    {"content_type": "TEXT", "text": "数据库现在停了，分析原因"},
     {
-      "type": "PASTED_CONTENT",
+      "content_type": "LOG",
       "media_type": "text/plain",
-      "content": "2026-08-28...ORA-27157..."
+      "text": "2026-08-28...ORA-27157..."
     }
   ],
   "target_id": null,
@@ -102,8 +102,12 @@ ANSWERING → COMPLETED / PARTIAL
 }
 ```
 
-内容类型为`TEXT`、`PASTED_CONTENT`、`FILE`、`IMAGE`、`SOURCE_RUN_REFERENCE`。文件和图片
-使用受控上传Artifact，不在JSON中传输无界Base64。
+内容类型为`TEXT`、`LOG`、`SQL_OUTPUT`、`COMMAND_OUTPUT`、`FILE`和`IMAGE`；来源Run由
+Turn顶层`source_run_id`引用。文件和图片先调用`POST /api/v1/apps/aiops/conversation-uploads`
+上传原始有界文件流，再以`upload_id`提交Turn，不在JSON中传输无界Base64。上传引用绑定
+Domain和当前用户，默认24小时内可提交；被Turn接收后原文进入长期Artifact区，文本按UTF-8
+提取，图片按Agent配置优先使用VLM、其次OCR。提取失败保留原始Artifact并形成可审计解析缺口，
+不能丢弃同一Turn中的其他问题或证据。
 
 输入理解输出`TURN_INPUT_ENVELOPE.v1`：`request_fragments`、`material_items`、`systems`、
 `target_hints`、`time_anchors`、`error_codes`、`stated_facts`、`user_hypotheses`、
@@ -264,7 +268,9 @@ Invocation具有业务唯一键。
 ## 13. API与SSE
 
 公开Main API保持`/api/v1/apps/aiops`前缀，但Conversation和Turn采用新内容契约，不保留旧
-`message`兼容字段。文件先上传得到Artifact引用，再提交Turn。
+`message`兼容字段。文件先上传得到Artifact引用，再提交Turn。Main API只流式转发正文，不
+落盘；AIOps API校验媒体类型、大小、Hash和用户归属，Worker解析后分别保存原始Artifact与
+提取Artifact，并以`USER_PROVIDED`关联当前Turn Evidence。
 
 新增事件：`input.analysis.started/completed`、`task.frame.completed`、
 `investigation.planned/replanned`、`tool.started/completed/gap`、`evidence.added`、

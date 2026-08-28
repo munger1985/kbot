@@ -20,6 +20,16 @@
     ? values(items).map((item) => `- ${typeof item === "string" ? item : item.fact_summary || item.summary || item.title || "已记录"}`).join("\n")
     : "- 无";
 
+  function uploadMediaType(file) {
+    const suffix = String(file.name || "").toLowerCase().split(".").pop();
+    if (["log", "txt"].includes(suffix)) return "text/plain";
+    if (suffix === "csv") return "text/csv";
+    if (suffix === "json") return "application/json";
+    if (suffix === "sql") return "application/sql";
+    if (file.type) return file.type;
+    return "application/octet-stream";
+  }
+
   function inspectionMarkdown(result) {
     const payload = result?.payload || {};
     if (!result?.final_artifact) {
@@ -404,16 +414,31 @@
     const agentId = document.getElementById("agent-select").value;
     const targetId = document.getElementById("target-select").value;
     const text = form.elements.message.value.trim();
+    const selectedFile = state.selectedFile;
     if (!agentId) return shell.toast("请先选择 Agent");
     if (!targetId) return shell.toast("请选择本次诊断的数据库");
-    if (!text) return shell.toast("请输入需要诊断的问题");
-    if (state.selectedFile) return shell.toast("截图和文件补证将在补证阶段启用，请先发送文字问题");
+    if (!text && !selectedFile) return shell.toast("请输入问题或上传诊断材料");
     button.disabled = true;
     try {
       const path = state.conversation
         ? `${api}/conversations/${state.conversation.conversation_id}/turns`
         : `${api}/conversations`;
-      const content = [{ content_type: "TEXT", text }];
+      const content = text ? [{ content_type: "TEXT", text }] : [];
+      if (selectedFile) {
+        const uploaded = await KBotAIOpsAuth.request(`${api}/conversation-uploads`, {
+          method: "POST",
+          headers: {
+            "Content-Type": uploadMediaType(selectedFile),
+            "X-File-Name": encodeURIComponent(selectedFile.name),
+          },
+          body: selectedFile,
+        });
+        content.push({
+          content_type: uploaded.media_type.startsWith("image/") ? "IMAGE" : "FILE",
+          upload_id: uploaded.upload_id,
+          media_type: uploaded.media_type,
+        });
+      }
       const body = state.conversation
         ? { content, target_id: targetId }
         : { agent_id: agentId, target_id: targetId, content };
@@ -424,7 +449,11 @@
       });
       form.reset(); state.selectedFile = null; document.getElementById("upload-preview").textContent = "";
       const panel = document.getElementById("message-list");
-      panel.insertAdjacentHTML("beforeend", messageHtml("USER", text));
+      const submittedText = [
+        text,
+        selectedFile ? `已上传诊断材料：${selectedFile.name}` : "",
+      ].filter(Boolean).join("\n\n");
+      panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedText));
       panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">正在建立诊断计划…</div>');
       const progress = document.getElementById("live-progress");
       await followTurn(receipt.conversation_id, receipt.turn_id, progress);
@@ -449,7 +478,16 @@
       resetConversationView({ agentSelected: true });
     };
     document.getElementById("conversation-form").onsubmit = submitConversation;
-    document.getElementById("evidence-file").onchange = (event) => { state.selectedFile = event.target.files[0] || null; document.getElementById("upload-preview").textContent = state.selectedFile ? `待上传：${state.selectedFile.name}` : ""; };
+    document.getElementById("evidence-file").onchange = (event) => {
+      const file = event.target.files[0] || null;
+      if (file && file.size > 20 * 1024 * 1024) {
+        event.target.value = "";
+        state.selectedFile = null;
+        return shell.toast("诊断材料不能超过 20 MiB");
+      }
+      state.selectedFile = file;
+      document.getElementById("upload-preview").textContent = file ? `待上传：${file.name}` : "";
+    };
     await loadConversationList();
   }
 

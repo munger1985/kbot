@@ -32,8 +32,9 @@ from platform_core.identity import uuid7
 class ConversationTurnService:
     """在单一 UoW 内接收一轮用户问题并可靠投递规划任务。"""
 
-    def __init__(self, *, uow_factory):
+    def __init__(self, *, uow_factory, upload_store=None):
         self._uow_factory = uow_factory
+        self._upload_store = upload_store
 
     async def start(
         self,
@@ -417,16 +418,45 @@ class ConversationTurnService:
         trace_id: str,
         source_run,
     ) -> dict[str, Any]:
-        unsupported = tuple(item for item in command.content if item.upload_id)
-        if unsupported:
-            raise self._error(
-                "AIOPS_TURN_UPLOAD_NOT_READY",
-                "首轮图片和文件输入尚未接入受控 Artifact，请先粘贴文字、日志或查询结果",
-            )
-        content = tuple(
-            item for item in command.content if item.text and item.text.strip()
+        upload_metadata = {}
+        for item in command.content:
+            if not item.upload_id:
+                continue
+            if self._upload_store is None:
+                raise self._error(
+                    "AIOPS_UPLOAD_STORE_UNAVAILABLE",
+                    "对话上传存储当前不可用",
+                )
+            try:
+                stored = self._upload_store.get(
+                    upload_id=item.upload_id,
+                    domain_id=int(conversation.domain_id),
+                    actor_id=actor_id,
+                )
+            except PermissionError as exc:
+                raise self._error(
+                    "AIOPS_UPLOAD_FORBIDDEN", "不能引用其他用户的上传文件"
+                ) from exc
+            except ValueError as exc:
+                raise self._error("AIOPS_UPLOAD_INVALID", str(exc)) from exc
+            stored = self._upload_store.preserve(stored)
+            if item.media_type and item.media_type != stored.media_type:
+                raise self._error(
+                    "AIOPS_UPLOAD_MEDIA_TYPE_MISMATCH",
+                    "上传引用的媒体类型与登记信息不一致",
+                )
+            upload_metadata[item.upload_id] = stored
+        content = tuple(command.content)
+        text_parts = [
+            str(item.text).strip()
+            for item in content
+            if item.text and item.text.strip()
+        ]
+        text_parts.extend(
+            f"[用户上传文件：{stored.file_name}]"
+            for stored in upload_metadata.values()
         )
-        message = "\n\n".join(str(item.text).strip() for item in content)
+        message = "\n\n".join(text_parts)
         if not message:
             raise self._error("AIOPS_TURN_CONTENT_REQUIRED", "诊断输入不能为空")
         target_id = await self._resolve_target(
@@ -507,7 +537,11 @@ class ConversationTurnService:
                     message_id=user_message.message_id,
                     item_no=item_no,
                     content_type=str(item.content_type),
-                    media_type=item.media_type,
+                    media_type=(
+                        upload_metadata[item.upload_id].media_type
+                        if item.upload_id
+                        else item.media_type
+                    ),
                     content_text=item.text,
                 )
             )

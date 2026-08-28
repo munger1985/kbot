@@ -1169,6 +1169,54 @@
         "title": "ConversationSummary",
         "type": "object"
       },
+      "ConversationUploadReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "minimum": 1.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "upload_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "file_name",
+          "media_type",
+          "byte_size",
+          "content_hash",
+          "expires_at"
+        ],
+        "title": "ConversationUploadReceipt",
+        "type": "object"
+      },
       "CreateOpsRunCommand": {
         "additionalProperties": false,
         "properties": {
@@ -11144,6 +11192,28 @@
           }
         },
         "summary": "Start Conversation",
+        "tags": [
+          "AIOps Conversations"
+        ]
+      }
+    },
+    "/internal/v1/aiops/conversations/uploads": {
+      "post": {
+        "description": "接收有界原始文件流，返回只能由当前用户引用的上传 ID。",
+        "operationId": "upload_conversation_input_internal_v1_aiops_conversations_uploads_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationUploadReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Conversation Input",
         "tags": [
           "AIOps Conversations"
         ]

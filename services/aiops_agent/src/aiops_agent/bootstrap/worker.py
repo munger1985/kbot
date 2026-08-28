@@ -11,6 +11,8 @@ from aiops_agent.adapters.diagnostic_sources import DiagnosticSourceAdapterRegis
 from aiops_agent.actions import ActionRegistry
 from aiops_agent.adapters.db_executor_client import DatabaseExecutorClient
 from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
+from aiops_agent.adapters.conversation_uploads import LocalConversationUploadStore
+from aiops_agent.adapters.image_evidence import ImageEvidenceModelClient
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.bootstrap.common import (
@@ -24,6 +26,7 @@ from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turn_planning import TurnPlanningService
+from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
@@ -144,6 +147,19 @@ def create_aiops_worker_probe(
             timeout_seconds=resolved.clients.model_serving.timeout_seconds,
             session=client_session,
         )
+        conversation_input_resolver = ConversationInputResolver(
+            upload_store=LocalConversationUploadStore(
+                Path(resolved.limits.conversation_upload_store_root),
+                max_bytes=resolved.limits.max_artifact_bytes,
+                ttl_seconds=resolved.limits.conversation_upload_ttl_seconds,
+            ),
+            image_model_client=ImageEvidenceModelClient(
+                caller_service=config.service_name,
+                ocr_config=resolved.clients.model_ocr,
+                vlm_config=resolved.clients.model_vlm,
+            ),
+            max_extracted_chars=resolved.limits.max_input_chars,
+        )
         knowledge_core_client = KnowledgeCoreClient(
             base_url=resolved.clients.knowledge_core.base_url,
             caller_service=config.service_name,
@@ -256,6 +272,9 @@ def create_aiops_worker_probe(
                     agent_catalog=agent_catalog,
                     monitoring_snapshot_builder=(
                         monitoring_snapshot_builder
+                    ),
+                    conversation_input_resolver=(
+                        conversation_input_resolver
                     ),
                 ),
             ),

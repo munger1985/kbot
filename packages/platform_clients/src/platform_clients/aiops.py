@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
+from urllib.parse import quote
 from uuid import UUID
 
 import aiohttp
@@ -139,6 +140,43 @@ class _BaseAIOpsClient:
                 status_code=503,
                 code="OPS_UPSTREAM_UNAVAILABLE",
                 message="AIOps 服务暂时不可用",
+                retryable=True,
+            ) from exc
+
+    async def _upload(
+        self,
+        path: str,
+        *,
+        auth_context: AuthContext,
+        file_name: str,
+        media_type: str,
+        body,
+    ) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": media_type,
+            "X-File-Name": quote(file_name, safe=""),
+            **self._auth.headers(auth_context),
+        }
+        session = await self._get_session()
+        try:
+            async with session.post(
+                f"{self._base_url}{path}",
+                headers=headers,
+                data=body,
+                timeout=self._timeout,
+            ) as response:
+                payload = await self._response_payload(response)
+                if response.status >= 400:
+                    self._raise_error(response.status, payload)
+                return payload
+        except AIOpsClientError:
+            raise
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise AIOpsClientError(
+                status_code=503,
+                code="OPS_UPSTREAM_UNAVAILABLE",
+                message="AIOps 上传服务暂时不可用",
                 retryable=True,
             ) from exc
 
@@ -1239,6 +1277,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             f"{INTERNAL_API_V1}/aiops/conversations",
             payload=payload,
             auth_context=auth_context,
+        )
+
+    async def upload_conversation_input(
+        self,
+        *,
+        file_name: str,
+        media_type: str,
+        body,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._upload(
+            f"{INTERNAL_API_V1}/aiops/conversations/uploads",
+            auth_context=auth_context,
+            file_name=file_name,
+            media_type=media_type,
+            body=body,
         )
 
     async def list_conversations(

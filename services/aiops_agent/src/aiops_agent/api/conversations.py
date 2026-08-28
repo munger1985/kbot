@@ -1,6 +1,7 @@
 """AIOps 专业 DBA Conversation 与 Turn 内部 API。"""
 
 from uuid import UUID
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -10,6 +11,7 @@ from aiops_agent.api.dependencies import (
 )
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
+    ConversationUploadReceipt,
     ConversationStart,
     ConversationSummary,
     TurnCreate,
@@ -34,6 +36,50 @@ def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
             {"code": "AIOPS_DOMAIN_CONTEXT_REQUIRED"},
         )
     return int(context.domain_id), context.asserted_user_id or context.client_id
+
+
+@router.post(
+    "/uploads",
+    status_code=201,
+    response_model=ConversationUploadReceipt,
+)
+async def upload_conversation_input(
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    """接收有界原始文件流，返回只能由当前用户引用的上传 ID。"""
+    domain_id, actor_id = _scope(request, context)
+    file_name = unquote(request.headers.get("X-File-Name", "").strip())
+    media_type = request.headers.get("Content-Type", "").strip()
+    if not file_name or not media_type:
+        raise HTTPException(
+            422,
+            {
+                "code": "AIOPS_UPLOAD_METADATA_REQUIRED",
+                "message": "上传必须提供 X-File-Name 和 Content-Type",
+            },
+        )
+    try:
+        stored = await request.app.state.conversation_upload_store.store(
+            domain_id=domain_id,
+            actor_id=actor_id,
+            file_name=file_name,
+            media_type=media_type,
+            chunks=request.stream(),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_UPLOAD_INVALID", "message": str(exc)},
+        ) from exc
+    return ConversationUploadReceipt(
+        upload_id=stored.upload_id,
+        file_name=stored.file_name,
+        media_type=stored.media_type,
+        byte_size=stored.byte_size,
+        content_hash=stored.content_hash,
+        expires_at=stored.expires_at,
+    )
 
 
 @router.post("", status_code=201, response_model=TurnReceipt)

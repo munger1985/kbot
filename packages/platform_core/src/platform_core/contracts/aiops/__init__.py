@@ -31,6 +31,7 @@ from .conversation import (
 )
 from .events import AIOpsEvent, SafeAIOpsEvent, UnknownEvent
 from .investigation import (
+    ConversationUploadReceipt,
     InputContent,
     InputContentType,
     InvestigationAction,
@@ -211,6 +212,7 @@ __all__ = [
     "FailOpsTaskCommand",
     "FreshnessStatus",
     "ConnectivityCheckReceipt",
+    "ConversationUploadReceipt",
     "HitlResponse",
     "HitlResult",
     "HitlSkipCommand",

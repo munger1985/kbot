@@ -72,8 +72,11 @@ Vector Selector都必须以`instance="${external_target}"`或
 提供任意Selector，只能使用`${binding_selector}`引用冻结Binding标签，并附加有限个`|=`或`!=`
 字面量过滤；查询结果沿现有`OBSERVATION_SET.v1`和`LOG_EVIDENCE_SET.v1`进入Evidence链。
 
-以下项目仍按后续阶段实施，不冒充完成：文件和图片上传解析、旧Skill内部命名与目录的物理
-迁移，以及动态查询在dev真实
+文件和图片输入链路已经完成：受控原始流上传、Domain/用户归属、大小和Hash校验、长期
+Artifact保存、UTF-8文本提取、按Agent能力选择VLM/OCR、独立提取Artifact以及
+`USER_PROVIDED` Evidence关联均已接入；单个附件解析失败不会抹掉原始证据或阻止其他材料
+继续诊断。以下项目仍按后续阶段实施，不冒充完成：旧Skill内部命名与目录的物理迁移，以及
+动态查询在dev真实
 Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
 Schema字段或类名判断功能已经交付。
 
@@ -168,7 +171,7 @@ Oracle Tool优先级：
 
 ## 10. 阶段7：UI、API和专业评测
 
-- 聊天支持文本、粘贴材料、文件、图片和来源Run；
+- 聊天已支持文本、粘贴材料、文件、图片和来源Run；
 - 会话按Agent隔离；
 - 展示理解、规划、取证、评估、重规划和回答；
 - Evidence统一折叠，补证自然呈现，SSE断线恢复；
