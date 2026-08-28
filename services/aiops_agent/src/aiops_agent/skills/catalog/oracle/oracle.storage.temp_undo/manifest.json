@@ -1,0 +1,31 @@
+{
+  "schema_version": "DBA_SKILL_MANIFEST.v1",
+  "skill_id": "oracle.storage.temp_undo",
+  "version": "1.0.0",
+  "database_types": ["ORACLE"],
+  "version_range": {"minimum": "19", "maximum": "26"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE", "EXPLAIN"],
+  "domains": ["STORAGE_AND_CAPACITY", "INSTANCE_PERFORMANCE"],
+  "subjects": ["TEMP_UNDO"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views", "dba_catalog_views"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "DBA_TEMP_FILES", "V_$TEMP_SPACE_HEADER", "DBA_DATA_FILES", "DBA_TABLESPACES", "DBA_UNDO_EXTENTS"],
+  "required_entitlements": [],
+  "input_schema": "oracle.storage.temp_undo.input.v1",
+  "defaults": {},
+  "limits": {"max_rows": 64, "timeout_seconds": 30, "max_attempts": 2, "cost_units": 3},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "temp", "tool_id": "db.storage.temp_usage", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "undo", "tool_id": "db.storage.undo_usage", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+  ],
+  "output_schema": "oracle.storage.temp_undo.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_skills": ["oracle.storage.tablespace"],
+  "manual_evidence_template": "oracle.storage.temp_undo.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

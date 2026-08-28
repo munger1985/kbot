@@ -74,6 +74,16 @@ GRANT SELECT ON SYS.V_$SGA                        TO kbot_monitor;
 GRANT SELECT ON SYS.V_$PGASTAT                    TO kbot_monitor;
 GRANT SELECT ON SYS.V_$RECOVERY_FILE_DEST         TO kbot_monitor;
 
+-- KBot AIOps TEMP/UNDO、Redo、维护、备份和Data Guard诊断。
+GRANT SELECT ON SYS.DBA_TEMP_FILES                TO kbot_monitor;
+GRANT SELECT ON SYS.V_$TEMP_SPACE_HEADER          TO kbot_monitor;
+GRANT SELECT ON SYS.DBA_UNDO_EXTENTS              TO kbot_monitor;
+GRANT SELECT ON SYS.V_$LOG                        TO kbot_monitor;
+GRANT SELECT ON SYS.DBA_SCHEDULER_JOB_RUN_DETAILS TO kbot_monitor;
+GRANT SELECT ON SYS.DBA_OBJECTS                   TO kbot_monitor;
+GRANT SELECT ON SYS.V_$RMAN_BACKUP_JOB_DETAILS    TO kbot_monitor;
+GRANT SELECT ON SYS.V_$DATAGUARD_STATS            TO kbot_monitor;
+
 -- KBot Oracle Alert Collector。
 GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT             TO kbot_monitor;
 
@@ -120,10 +130,18 @@ BEGIN
           'V_$SGA',
           'V_$PGASTAT',
           'V_$RECOVERY_FILE_DEST',
+          'DBA_TEMP_FILES',
+          'V_$TEMP_SPACE_HEADER',
+          'DBA_UNDO_EXTENTS',
+          'V_$LOG',
+          'DBA_SCHEDULER_JOB_RUN_DETAILS',
+          'DBA_OBJECTS',
+          'V_$RMAN_BACKUP_JOB_DETAILS',
+          'V_$DATAGUARD_STATS',
           'V_$DIAG_ALERT_EXT'
       );
 
-    IF session_grant_count <> 1 OR object_grant_count <> 24 THEN
+    IF session_grant_count <> 1 OR object_grant_count <> 32 THEN
         RAISE_APPLICATION_ERROR(-20003, 'kbot_monitor授权清单验证失败');
     END IF;
 END;

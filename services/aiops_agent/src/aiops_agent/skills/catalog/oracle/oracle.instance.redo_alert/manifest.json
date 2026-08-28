@@ -1,0 +1,31 @@
+{
+  "schema_version": "DBA_SKILL_MANIFEST.v1",
+  "skill_id": "oracle.instance.redo_alert",
+  "version": "1.0.0",
+  "database_types": ["ORACLE"],
+  "version_range": {"minimum": "19", "maximum": "26"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["ALERT_AND_LOG", "BACKUP_AND_RECOVERY", "INSTANCE_PERFORMANCE"],
+  "subjects": ["DATABASE_OVERVIEW"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["LOKI_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$LOG", "V_$DIAG_ALERT_EXT"],
+  "required_entitlements": [],
+  "input_schema": "oracle.instance.redo_alert.input.v1",
+  "defaults": {"hours": 24, "limit": 50},
+  "limits": {"max_rows": 200, "timeout_seconds": 30, "max_attempts": 2, "cost_units": 3},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "redo", "tool_id": "db.redo.status", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "alert", "tool_id": "db.alert.recent", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"hours": 24, "limit": 50}}
+  ],
+  "output_schema": "oracle.instance.redo_alert.output.v1",
+  "measurement_semantics": "HISTORICAL_SAMPLES",
+  "presentation_kind": "TABLE",
+  "fallback_skills": ["oracle.instance.archive"],
+  "manual_evidence_template": "oracle.instance.redo_alert.manual.v1",
+  "sensitive_fields": ["problem_key", "message_text"],
+  "redaction_rules": ["MASK_DIAGNOSTIC_TEXT"],
+  "freshness": {"max_age_seconds": 300, "requires_observed_at": true}
+}

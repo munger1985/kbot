@@ -196,6 +196,14 @@ environment = production
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
+        "SYS.DBA_TEMP_FILES",
+        "SYS.V_$TEMP_SPACE_HEADER",
+        "SYS.DBA_UNDO_EXTENTS",
+        "SYS.V_$LOG",
+        "SYS.DBA_SCHEDULER_JOB_RUN_DETAILS",
+        "SYS.DBA_OBJECTS",
+        "SYS.V_$RMAN_BACKUP_JOB_DETAILS",
+        "SYS.V_$DATAGUARD_STATS",
         "SYS.V_$DIAG_ALERT_EXT",
         "SYS.GV_$TRANSACTION",
     ):
@@ -229,8 +237,16 @@ environment = production
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
+        "SYS.DBA_TEMP_FILES",
+        "SYS.V_$TEMP_SPACE_HEADER",
+        "SYS.DBA_UNDO_EXTENTS",
+        "SYS.V_$LOG",
+        "SYS.DBA_SCHEDULER_JOB_RUN_DETAILS",
+        "SYS.DBA_OBJECTS",
+        "SYS.V_$RMAN_BACKUP_JOB_DETAILS",
+        "SYS.V_$DATAGUARD_STATS",
         "SYS.V_$DIAG_ALERT_EXT",
-        "object_grant_count <> 24",
+        "object_grant_count <> 32",
     ):
         if required_text not in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本缺少约束：{required_text}")

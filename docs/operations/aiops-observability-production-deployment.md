@@ -149,7 +149,11 @@ SHOW CON_NAME;
 `GV_$SESSION`用于当前活跃会话和阻塞链；`DBA_DATA_FILES`、`DBA_FREE_SPACE`用于
 表空间容量诊断；`GV_$TRANSACTION`用于长事务诊断；`V_$SYSMETRIC`用于实时
 性能指标；`V_$SGA`、`V_$PGASTAT`用于内存诊断；`V_$RECOVERY_FILE_DEST`用于
-归档/FRA容量诊断。脚本不读取AWR历史视图，也不隐含
+归档/FRA容量诊断；`DBA_TEMP_FILES`、`V_$TEMP_SPACE_HEADER`和`DBA_UNDO_EXTENTS`用于
+TEMP/UNDO容量诊断；`V_$LOG`用于Redo状态；`V_$DIAG_ALERT_EXT`用于近期数据库告警；
+`DBA_SCHEDULER_JOB_RUN_DETAILS`和`DBA_OBJECTS`用于调度失败及无效对象；
+`V_$RMAN_BACKUP_JOB_DETAILS`用于近期RMAN作业；`V_$DATAGUARD_STATS`用于备库延迟。
+脚本不读取AWR历史视图，也不隐含
 Diagnostics Pack许可。用户已存在时不要重复执行初始化脚本，改为执行完整授权脚本：
 
 ```sql

@@ -979,6 +979,10 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 "oracle.storage.tablespace",
                 "oracle.transaction.long_running",
                 "oracle.replication.status",
+                "oracle.configuration.parameters",
+                "oracle.storage.temp_undo",
+                "oracle.instance.redo_alert",
+                "oracle.maintenance.health",
             },
             {item.skill_id for item in registry.manifests()},
         )
@@ -1128,10 +1132,14 @@ class DbaSkillFrameworkTest(unittest.TestCase):
                 "oracle.sql.top_current",
                 "oracle.storage.tablespace",
                 "oracle.transaction.long_running",
+                "oracle.configuration.parameters",
+                "oracle.storage.temp_undo",
+                "oracle.instance.redo_alert",
+                "oracle.maintenance.health",
             },
             {item.skill_id for item in plan.items},
         )
-        self.assertEqual(8, len(compiled.invocation_task_keys))
+        self.assertEqual(12, len(compiled.invocation_task_keys))
 
     def test_database_handler_consumes_frozen_tool_version(self) -> None:
         codec = _CapturingGrantCodec()
@@ -1354,6 +1362,7 @@ class DbaSkillFrameworkTest(unittest.TestCase):
             "dynamic_performance_views", snapshot.target_capabilities
         )
         self.assertIn("dba_catalog_views", snapshot.target_capabilities)
+        self.assertIn("replication_views", snapshot.target_capabilities)
         self.assertIn("DB_SQL_STATS", snapshot.target_capabilities)
         self.assertEqual(
             frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),

@@ -77,7 +77,7 @@ class FailingDriver:
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(24, len(registry.tools))
+        self.assertEqual(33, len(registry.tools))
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools
@@ -95,6 +95,18 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
         )
+        for tool_id in (
+            "db.instance.parameters",
+            "db.storage.temp_usage",
+            "db.storage.undo_usage",
+            "db.redo.status",
+            "db.alert.recent",
+            "db.scheduler.failed_jobs",
+            "db.objects.invalid_summary",
+            "db.backup.recent_jobs",
+            "db.replication.lag",
+        ):
+            self.assertIn(("ORACLE", tool_id), pairs)
 
     def test_oracle_top_sql_uses_only_v_sqlstats_columns(self) -> None:
         registry = DiagnosticRegistry.load()
