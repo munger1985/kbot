@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+from pydantic import TypeAdapter
+
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
@@ -441,7 +443,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-    def test_turn_summary_exposes_only_sanitized_evidence_gaps(self) -> None:
+    def test_historical_turn_exposes_sanitized_evidence_gaps(self) -> None:
         now = datetime.now(UTC)
         row = SimpleNamespace(
             turn_id=uuid7(),
@@ -477,7 +479,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("OUTPUT_SCHEMA_INVALID", summary["evidence_gaps"][0]["code"])
         self.assertNotIn("evidence", summary)
-        TurnSummary.model_validate(summary)
+        validated = TypeAdapter(list[TurnSummary]).validate_python([summary])
+        self.assertEqual(
+            "OUTPUT_SCHEMA_INVALID",
+            validated[0].evidence_gaps[0].code,
+        )
 
     async def _start(self, uow: _Uow) -> tuple[ConversationTurnService, dict]:
         service = ConversationTurnService(uow_factory=lambda: uow)

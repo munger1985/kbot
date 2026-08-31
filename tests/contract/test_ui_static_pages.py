@@ -95,7 +95,8 @@ class UiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("bindAuthForm", script)
         self.assertNotIn("localStorage", shared)
         self.assertNotIn("X-KBot-Domain-ID", shared)
-        self.assertIn('"X-KBot-Test-Auth": "true"', shared)
+        self.assertNotIn("X-KBot-Test-Auth", shared)
+        self.assertNotIn("X-KBot-User-ID", shared)
         self.assertNotIn("Authorization:", shared)
         self.assertNotIn("apiKey", shared)
 

@@ -24,8 +24,6 @@
   async function developmentLogApi(path, options) {
     const requestOptions = { ...(options || {}) };
     const headers = {
-      "X-KBot-Test-Auth": "true",
-      "X-KBot-User-ID": "development-log-console",
       "X-Request-ID": uuid(),
       ...(requestOptions.headers || {}),
     };

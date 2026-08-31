@@ -152,13 +152,18 @@ def create_main_api_app(
     """构造只发布公开契约的 Main API 应用。"""
     settings = get_main_api_settings()
     config = settings.api
+    development_logs_enabled = (
+        settings.is_development() and settings.platform.debug
+    )
+    if settings.platform.debug and not settings.is_development():
+        raise RuntimeError("开发日志接口只能在 development 环境启用")
     if test_authenticator is not None and not settings.is_development():
         raise RuntimeError("测试认证器只允许在 development 环境注入")
     if config.test_auth_bypass_enabled and not settings.is_development():
         raise RuntimeError("测试认证绕过只允许在 development 环境启用")
     if config.test_auth_bypass_enabled:
         logger.warning(
-            "Main API 测试认证绕过已启用；仅供本地测试页面使用"
+            "Main API 测试认证绕过已启用；仅供开发测试请求使用"
         )
     app_kwargs: dict[str, Any] = {}
     if lifespan is not None:
@@ -232,42 +237,44 @@ def create_main_api_app(
         "/api/v1/model-catalog",
     }
     domainless_prefixes = {"/api/v1/platform/"}
-    if settings.platform.debug:
-        domainless_paths.update(
+    public_paths = {
+        "/health",
+        "/healthz",
+        "/readyz",
+        "/live",
+        "/ready",
+        "/metrics",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/api/v1/auth/platform/login",
+        "/api/v1/auth/apps",
+        "/api/v1/apps/km-asset/auth/login",
+        "/api/v1/apps/aiops/auth/login",
+    }
+    public_prefixes = {
+        "/api/v1/auth/apps/",
+        "/api/v1/integrations/aiops/signals/",
+        "/api/v1/integrations/slack/",
+        "/static-offline-docs/",
+    }
+    if development_logs_enabled:
+        public_paths.update(
             {
                 "/api/v1/development/logs/services",
                 "/api/v1/development/logs/events",
             }
         )
-        domainless_prefixes.add("/api/v1/development/logs/events/")
+        public_prefixes.add("/api/v1/development/logs/events/")
     app.middleware("http")(
         create_public_auth_middleware(
             domain_validator=validate_domain,
             allow_test_bypass=config.test_auth_bypass_enabled,
             alternate_authenticator=authenticate_user,
-            public_paths={
-                "/health",
-                "/healthz",
-                "/readyz",
-                "/live",
-                "/ready",
-                "/metrics",
-                "/docs",
-                "/redoc",
-                "/openapi.json",
-                "/api/v1/auth/platform/login",
-                "/api/v1/auth/apps",
-                "/api/v1/apps/km-asset/auth/login",
-                "/api/v1/apps/aiops/auth/login",
-            },
+            public_paths=public_paths,
             domainless_paths=domainless_paths,
             domainless_prefixes=domainless_prefixes,
-            public_prefixes={
-                "/api/v1/auth/apps/",
-                "/api/v1/integrations/aiops/signals/",
-                "/api/v1/integrations/slack/",
-                "/static-offline-docs/",
-            },
+            public_prefixes=public_prefixes,
         )
     )
     # CORS 必须位于最外层，确保认证及业务错误响应也携带跨域响应头。
@@ -314,7 +321,7 @@ def create_main_api_app(
     app.include_router(ops_router)
     app.include_router(integration_router)
     app.include_router(slack_router)
-    if settings.platform.debug:
+    if development_logs_enabled:
         log_config = settings.development_logs
         app.state.development_log_root = _repository_path(settings.log.dir)
         app.state.development_log_search_service = LocalLogSearchService(

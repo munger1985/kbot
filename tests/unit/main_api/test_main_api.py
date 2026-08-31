@@ -1081,28 +1081,26 @@ class MainApiTest(unittest.TestCase):
             self.domain_management.last_actor_id,
         )
 
-    def test_development_logs_do_not_require_domain(self) -> None:
-        response = self.client.get(
-            "/api/v1/development/logs/services",
-            headers={
-                TEST_AUTH_BYPASS_HEADER: "true",
-                USER_ID_HEADER: "developer",
-            },
-        )
+    def test_development_logs_are_anonymous_and_domainless(self) -> None:
+        response = self.client.get("/api/v1/development/logs/services")
         self.assertEqual(200, response.status_code)
         self.assertIn("services", response.json())
         detail = self.client.get(
             "/api/v1/development/logs/events/not-an-event-id",
-            headers={
-                TEST_AUTH_BYPASS_HEADER: "true",
-                USER_ID_HEADER: "developer",
-            },
         )
         self.assertEqual(422, detail.status_code)
         self.assertEqual(
             "DEVELOPMENT_LOG_QUERY_INVALID",
             detail.json()["code"],
         )
+
+    def test_other_development_routes_still_require_authentication(
+        self,
+    ) -> None:
+        response = self.client.get("/api/v1/development/agent-runs")
+
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("AUTH_REQUIRED", response.json()["code"])
 
     def test_development_agent_run_console_is_domain_scoped(self) -> None:
         response = self.client.get(

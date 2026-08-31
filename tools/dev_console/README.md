@@ -15,11 +15,12 @@ python3 tools/dev_console/server.py --port 8080
 
 日志页面根据当前浏览器主机自动连接 Main API 的 `18099` 端口，不在页面配置
 Main API URL、Domain ID 或 User ID。页面只调用 development 环境开放的
-`/api/v1/development/logs/*`，并使用受控的开发认证绕过。
+`/api/v1/development/logs/*`。这些只读端点匿名开放，页面不保存、发送或要求用户
+Token、App API Key 和测试身份 Header。
 
 执行 `./start_kbot.sh` 时，静态服务在 `ENVIRONMENT=development` 下默认随 KBot
 启动，并由 `./stop_kbot.sh` 一并停止。可通过
 `KBOT_UI_ENABLED=false ./start_kbot.sh` 临时关闭；非 development 环境即使显式
 开启该变量也不会启动。
 
-测试认证绕过和日志接口只允许在 development 环境启用，生产环境必须关闭。
+匿名日志接口只允许在 development 环境启用，生产环境不会注册这些路由。
