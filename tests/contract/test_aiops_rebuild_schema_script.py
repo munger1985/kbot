@@ -69,7 +69,16 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn(" CASCADE CONSTRAINTS PURGE", self.sql)
         self.assertIn("KBOT\\_OPS\\_%", self.sql)
         self.assertIn("KBOT\\_V\\_OPS\\_%", self.sql)
+        self.assertIn("Worker、Scheduler 和 DB Executor", self.sql)
         self.assertNotIn("DROP USER", self.sql.upper())
+
+    def test_turn_status_check_is_closed_before_next_constraint(self) -> None:
+        self.assertIn(
+            "'PROPOSAL_PENDING', 'COMPLETED', 'PARTIAL', 'FAILED', "
+            "'CANCELLED'\n    )),\n"
+            "    CONSTRAINT CK_OPS_TURN_SUFFICIENCY CHECK (",
+            self.sql,
+        )
 
 
 if __name__ == "__main__":
