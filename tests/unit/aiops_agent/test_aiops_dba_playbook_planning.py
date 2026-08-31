@@ -40,6 +40,7 @@ from platform_core.contracts.aiops.conversation import (
 )
 from platform_core.contracts.aiops.investigation import (
     InputMaterial,
+    InvestigationAction,
     InvestigationPlan,
     InvestigationPlanningOutput,
     MaterialKind,
@@ -201,8 +202,11 @@ class _PlanningUow:
         )
         self.target = SimpleNamespace(
             target_id=uuid7(),
+            display_name="订单生产库",
             db_type="ORACLE",
             version_code="19c",
+            environment="PROD",
+            db_role="PRIMARY",
             status="ENABLED",
             connectivity_status="CONNECTED",
             readonly_connection_enabled=True,
@@ -466,6 +470,7 @@ class _PastedLogReasoner:
                 for artifact in self._uow.artifacts
             )
         self.available_tools = kwargs["available_tools"]
+        self.target_context = kwargs.get("target_context", {})
         output = InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
                 materials=(
@@ -516,7 +521,10 @@ class _PastedLogReasoner:
 class _ReplanReasoner(_PastedLogReasoner):
     async def replan(self, **kwargs):
         self.replan_inputs = dict(kwargs)
-        planned = await self.plan(available_tools=())
+        planned = await self.plan(
+            available_tools=(),
+            target_context=kwargs["target_context"],
+        )
         output = planned.output.model_copy(
             update={
                 "plan": planned.output.plan.model_copy(
@@ -793,6 +801,10 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("COLLECTING", result["status"])
         self.assertTrue(reasoner.raw_input_persisted_before_model)
+        self.assertEqual("订单生产库", reasoner.target_context["display_name"])
+        self.assertEqual("BOUND", reasoner.target_context["selection_status"])
+        self.assertNotIn("connection_profile", reasoner.target_context)
+        self.assertNotIn("diagnostic_credential_id", reasoner.target_context)
         self.assertEqual("ORACLE_ALERT_LOG", uow.input_items[0].detected_kind)
         self.assertEqual(1, len(uow.evidence))
         self.assertEqual("USER_PROVIDED", uow.evidence[0].evidence_role)
@@ -1016,6 +1028,137 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaPlaybookFrameworkTest(unittest.TestCase):
+    def test_bound_target_is_frozen_and_identity_precedes_top_sql(self) -> None:
+        investigation = InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary="用户要求分析 Top SQL",
+                        key_facts=("分析当前数据库中的 Top SQL",),
+                        confidence=1,
+                    ),
+                ),
+                explicit_question="分析下数据库中的 Top SQL",
+            ),
+            task_frame=TaskFrame(
+                objectives=(TaskObjective.DIAGNOSE,),
+                problem_statement="分析当前数据库中的高负载 SQL",
+                database_context={"selection_status": "UNKNOWN"},
+                unknowns=("当前连接的是哪个数据库",),
+                success_criteria=("定位累计资源消耗排名靠前的 SQL",),
+            ),
+            plan=InvestigationPlan(
+                revision_no=1,
+                actions=(
+                    InvestigationAction(
+                        action_id="a1",
+                        question="当前数据库中排名靠前的 SQL 是哪些？",
+                        tool_id="db.sql.top_current",
+                        expected_evidence_kind="TOP_SQL",
+                        measurement_semantics=(
+                            MeasurementSemantics.CUMULATIVE_SINCE_LOAD
+                        ),
+                    ),
+                ),
+            ),
+        )
+        target_context = {
+            "target_id": "target-1",
+            "display_name": "订单生产库",
+            "db_type": "ORACLE",
+            "configured_version": "19c",
+            "environment": "PROD",
+            "db_role": "PRIMARY",
+            "status": "ENABLED",
+            "connectivity_status": "CONNECTED",
+            "selection_status": "BOUND",
+        }
+
+        bound = TurnPlanningService._bind_target_to_plan(
+            investigation=investigation,
+            target_context=target_context,
+            available_tools=(
+                {"tool_id": "db.instance.identity", "version": "1.0.0"},
+                {"tool_id": "db.sql.top_current", "version": "1.0.0"},
+            ),
+        )
+
+        self.assertEqual(target_context, bound.task_frame.database_context)
+        self.assertEqual(
+            ["db.instance.identity", "db.sql.top_current"],
+            [action.tool_id for action in bound.plan.actions],
+        )
+        self.assertEqual(("a1",), bound.plan.actions[1].depends_on)
+        self.assertIn("订单生产库", bound.plan.actions[0].question)
+        self.assertNotIn("哪个", bound.plan.actions[0].question)
+
+    def test_existing_identity_action_is_normalized_without_duplication(
+        self,
+    ) -> None:
+        investigation = InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary="用户要求分析 Top SQL",
+                        key_facts=("分析当前数据库中的 Top SQL",),
+                        confidence=1,
+                    ),
+                ),
+                explicit_question="分析下数据库中的 Top SQL",
+            ),
+            task_frame=TaskFrame(
+                objectives=(TaskObjective.DIAGNOSE,),
+                problem_statement="分析当前数据库中的高负载 SQL",
+                success_criteria=("定位累计资源消耗排名靠前的 SQL",),
+            ),
+            plan=InvestigationPlan(
+                revision_no=1,
+                actions=(
+                    InvestigationAction(
+                        action_id="a1",
+                        question="正在分析的是哪个 Oracle 数据库实例？",
+                        tool_id="db.instance.identity",
+                        expected_evidence_kind="DATABASE_IDENTITY",
+                        measurement_semantics=(
+                            MeasurementSemantics.CURRENT_ACTIVITY
+                        ),
+                    ),
+                    InvestigationAction(
+                        action_id="a2",
+                        question="当前数据库中排名靠前的 SQL 是哪些？",
+                        tool_id="db.sql.top_current",
+                        expected_evidence_kind="TOP_SQL",
+                        measurement_semantics=(
+                            MeasurementSemantics.CUMULATIVE_SINCE_LOAD
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        bound = TurnPlanningService._bind_target_to_plan(
+            investigation=investigation,
+            target_context={
+                "target_id": "target-1",
+                "display_name": "订单生产库",
+                "db_type": "ORACLE",
+                "selection_status": "BOUND",
+            },
+            available_tools=(
+                {"tool_id": "db.instance.identity", "version": "1.0.0"},
+            ),
+        )
+
+        self.assertEqual(2, len(bound.plan.actions))
+        self.assertEqual("db.instance.identity", bound.plan.actions[0].tool_id)
+        self.assertIn("已绑定 Target", bound.plan.actions[0].question)
+        self.assertIn("订单生产库", bound.plan.actions[0].question)
+        self.assertEqual(("a1",), bound.plan.actions[1].depends_on)
+
     def test_compiler_enforces_identity_and_resolves_later_actions(self) -> None:
         registry = PlaybookRegistry.load()
         actions = (

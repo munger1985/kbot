@@ -46,12 +46,18 @@ from aiops_agent.entities import (
     OpsTurnEventEntity,
     OpsTurnEvidenceEntity,
 )
+from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 from aiops_agent.playbooks import PlaybookRegistry, canonical_hash
 from aiops_agent.tools import (
     InvestigationTaskCompiler,
     ToolExecutionSnapshotBuilder,
     build_capability_snapshot,
+)
+from platform_core.contracts.aiops import (
+    InvestigationAction,
+    InvestigationPlanningOutput,
+    MeasurementSemantics,
 )
 from platform_core.identity import uuid7
 
@@ -156,6 +162,7 @@ class TurnPlanningService:
         planned = await self._investigation_reasoner.plan(
             content=context.content,
             conversation_context=context.recent_context,
+            target_context=context.target_context,
             source_run_evidence=context.source_run_evidence,
             available_tools=discovered_tools,
             available_playbooks=discovered_playbooks,
@@ -276,6 +283,7 @@ class TurnPlanningService:
         planned = await self._investigation_reasoner.replan(
             content=context.content,
             conversation_context=context.recent_context,
+            target_context=context.target_context,
             source_run_evidence=context.source_run_evidence,
             task_frame=inputs.task_frame,
             prior_plan=inputs.prior_plan,
@@ -436,6 +444,14 @@ class TurnPlanningService:
         revision_no: int,
     ):
         """Tool 输入首稿越界时，带策略反馈执行一次受控修正。"""
+        planned = StructuredModelResult(
+            output=self._bind_target_to_plan(
+                investigation=planned.output,
+                target_context=context.target_context,
+                available_tools=available_tools,
+            ),
+            receipt=planned.receipt,
+        )
         try:
             investigation, dynamic_queries, source_queries = (
                 self._prepare_query_inputs(
@@ -456,6 +472,7 @@ class TurnPlanningService:
                 await self._investigation_reasoner.repair_policy_invalid_plan(
                     content=context.content,
                     conversation_context=context.recent_context,
+                    target_context=context.target_context,
                     source_run_evidence=context.source_run_evidence,
                     invalid_output=planned.output,
                     validation_error=str(exc),
@@ -469,6 +486,14 @@ class TurnPlanningService:
                     ),
                 )
             )
+            repaired = StructuredModelResult(
+                output=self._bind_target_to_plan(
+                    investigation=repaired.output,
+                    target_context=context.target_context,
+                    available_tools=available_tools,
+                ),
+                receipt=repaired.receipt,
+            )
             investigation, dynamic_queries, source_queries = (
                 self._prepare_query_inputs(
                     investigation=repaired.output,
@@ -476,6 +501,103 @@ class TurnPlanningService:
                 )
             )
             return repaired, investigation, dynamic_queries, source_queries
+
+    @staticmethod
+    def _bind_target_to_plan(
+        *,
+        investigation: InvestigationPlanningOutput,
+        target_context: dict[str, object],
+        available_tools: tuple[dict, ...],
+    ) -> InvestigationPlanningOutput:
+        """冻结目标语义，并为数据库调查补充可审计的实例身份前置步骤。"""
+        task_frame = investigation.task_frame.model_copy(
+            update={"database_context": dict(target_context)}
+        )
+        actions = list(investigation.plan.actions)
+        database_actions = [
+            action for action in actions if action.tool_id.startswith("db.")
+        ]
+        identity_available = any(
+            str(tool.get("tool_id")) == "db.instance.identity"
+            for tool in available_tools
+        )
+        if not database_actions or not identity_available:
+            return investigation.model_copy(update={"task_frame": task_frame})
+
+        identity_actions = [
+            action
+            for action in actions
+            if action.tool_id == "db.instance.identity"
+        ]
+        retained = [
+            action
+            for action in actions
+            if action.tool_id != "db.instance.identity"
+        ]
+        display_name = str(
+            target_context.get("display_name")
+            or target_context.get("target_id")
+            or "当前 Target"
+        )
+        database_type = str(target_context.get("db_type") or "数据库")
+        identity_question = (
+            f"核验已绑定 Target“{display_name}”当前实际连接的"
+            f"{database_type}实例、数据库容器、版本及启动上下文。"
+        )
+        identity = (
+            identity_actions[0].model_copy(
+                update={
+                    "question": identity_question,
+                    "input": {},
+                    "depends_on": (),
+                    "optional": False,
+                }
+            )
+            if identity_actions
+            else InvestigationAction(
+                action_id="a1",
+                question=identity_question,
+                tool_id="db.instance.identity",
+                input={},
+                expected_evidence_kind="DATABASE_IDENTITY",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                depends_on=(),
+                optional=False,
+            )
+        )
+        ordered = [identity, *retained]
+        action_id_map = {
+            action.action_id: f"a{index}"
+            for index, action in enumerate(ordered, start=1)
+        }
+        action_id_map.update(
+            {action.action_id: "a1" for action in identity_actions}
+        )
+        normalized = []
+        for index, action in enumerate(ordered, start=1):
+            dependencies = tuple(
+                dict.fromkeys(
+                    action_id_map[value]
+                    for value in action.depends_on
+                    if value in action_id_map
+                )
+            )
+            if action.tool_id.startswith("db.") and index != 1:
+                dependencies = tuple(dict.fromkeys(("a1", *dependencies)))
+            normalized.append(
+                action.model_copy(
+                    update={
+                        "action_id": f"a{index}",
+                        "depends_on": dependencies,
+                    }
+                )
+            )
+        plan = investigation.plan.model_copy(
+            update={"actions": tuple(normalized)}
+        )
+        return investigation.model_copy(
+            update={"task_frame": task_frame, "plan": plan}
+        )
 
     def _prepare_query_inputs(
         self,
@@ -1236,6 +1358,17 @@ class TurnPlanningService:
                 ),
                 trace_id=run.trace_id,
                 deadline=run.deadline_at,
+                target_context={
+                    "target_id": str(target.target_id),
+                    "display_name": str(target.display_name),
+                    "db_type": str(target.db_type),
+                    "configured_version": target.version_code,
+                    "environment": str(target.environment),
+                    "db_role": str(target.db_role),
+                    "status": str(target.status),
+                    "connectivity_status": str(target.connectivity_status),
+                    "selection_status": "BOUND",
+                },
                 capabilities=build_capability_snapshot(
                     agent_id=run.agent_id,
                     agent_version=agent_version,

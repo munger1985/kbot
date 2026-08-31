@@ -618,6 +618,12 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             turn_id=uuid7(),
             content=(),
             recent_context=(),
+            target_context={
+                "target_id": "target-1",
+                "display_name": "订单生产库",
+                "db_type": "ORACLE",
+                "selection_status": "BOUND",
+            },
             source_run_evidence=None,
             deadline=None,
         )
@@ -655,6 +661,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         call = reasoner.repair_policy_invalid_plan.await_args.kwargs
         self.assertIn("CUSTOM_FUNCTION", call["validation_error"])
+        self.assertEqual(context.target_context, call["target_context"])
         reasoner.repair_policy_invalid_plan.assert_awaited_once()
 
     async def test_fixed_tool_parameter_rejection_triggers_repair(self) -> None:
@@ -705,6 +712,12 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             turn_id=uuid7(),
             content=(),
             recent_context=(),
+            target_context={
+                "target_id": "target-1",
+                "display_name": "订单生产库",
+                "db_type": "ORACLE",
+                "selection_status": "BOUND",
+            },
             source_run_evidence=None,
             deadline=None,
             capabilities=DbaCapabilitySnapshot(
@@ -740,7 +753,11 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual("repaired", planned.receipt.name)
-        self.assertEqual(20, investigation.plan.actions[0].input["limit"])
+        self.assertEqual(
+            ["db.instance.identity", "db.sql.top_current"],
+            [action.tool_id for action in investigation.plan.actions],
+        )
+        self.assertEqual(20, investigation.plan.actions[1].input["limit"])
         self.assertEqual((), frozen)
         self.assertEqual(
             {

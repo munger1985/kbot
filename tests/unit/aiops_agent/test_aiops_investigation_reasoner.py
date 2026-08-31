@@ -10,6 +10,19 @@ from aiops_agent.ports.model import StructuredModelResult
 from platform_core.contracts.aiops import InvestigationPlanningOutput
 
 
+TARGET_CONTEXT = {
+    "target_id": "target-1",
+    "display_name": "订单生产库",
+    "db_type": "ORACLE",
+    "configured_version": "19c",
+    "environment": "PROD",
+    "db_role": "PRIMARY",
+    "status": "ENABLED",
+    "connectivity_status": "CONNECTED",
+    "selection_status": "BOUND",
+}
+
+
 def _output(*, tool_id: str | None = None) -> dict:
     actions = []
     if tool_id is not None:
@@ -91,11 +104,13 @@ class _Model:
 
 class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     async def test_user_alert_log_can_be_answered_without_external_tool(self) -> None:
-        reasoner = InvestigationReasoner(_Model(_output()))
+        model = _Model(_output())
+        reasoner = InvestigationReasoner(model)
 
         result = await reasoner.plan(
             content=({"content_type": "LOG", "text": "ORA-27157"},),
             conversation_context=(),
+            target_context=TARGET_CONTEXT,
             available_tools=(),
             available_playbooks=(),
             model_snapshot={},
@@ -108,6 +123,15 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             result.output.input_envelope.materials[0].contains_user_evidence
         )
         self.assertEqual((), result.output.plan.actions)
+        request = model.calls[0]
+        self.assertEqual(
+            TARGET_CONTEXT,
+            request["input_payload"]["target_context"],
+        )
+        self.assertIn(
+            "不得再把“目标是哪一个”",
+            request["prompt_ref"]["content"],
+        )
 
     async def test_plan_rejects_tool_outside_current_catalog(self) -> None:
         reasoner = InvestigationReasoner(_Model(_output(tool_id="shell.exec")))
@@ -116,6 +140,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             await reasoner.plan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
+                target_context=TARGET_CONTEXT,
                 available_tools=(),
                 available_playbooks=(),
                 model_snapshot={},
@@ -132,6 +157,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             await reasoner.replan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
+                target_context=TARGET_CONTEXT,
                 source_run_evidence=None,
                 task_frame=payload["task_frame"],
                 prior_plan={
@@ -212,6 +238,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         result = await reasoner.repair_policy_invalid_plan(
             content=({"content_type": "TEXT", "text": "检查数据库"},),
             conversation_context=(),
+            target_context=TARGET_CONTEXT,
             source_run_evidence=None,
             invalid_output=rejected,
             validation_error=(
@@ -242,6 +269,10 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 "allowed_functions"
             ],
         )
+        self.assertEqual(
+            TARGET_CONTEXT,
+            request["input_payload"]["target_context"],
+        )
 
     async def test_policy_repair_cannot_rewrite_task_frame(self) -> None:
         rejected_payload = _output(tool_id="db.oracle.readonly_query")
@@ -260,6 +291,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             await reasoner.repair_policy_invalid_plan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
+                target_context=TARGET_CONTEXT,
                 source_run_evidence=None,
                 invalid_output=rejected,
                 validation_error="DYNAMIC_SQL_FUNCTION_FORBIDDEN",

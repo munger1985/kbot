@@ -22,6 +22,10 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有
 确实能区分假设或补齐回答所需事实时才安排工具。工具只能从 available_tools 中选择；
 Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook 不能阻止分析。
+target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
+列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
+不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
+区分已配置的逻辑 Target 与查询后才能确认的实际实例、PDB、版本和启动上下文。
 调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
 必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
@@ -42,6 +46,7 @@ InvestigationPlanningOutput。
 available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
 数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
 函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的全部 input 和 policy 约束。
+target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
 系统诊断视图的星号投影允许自动执行；敏感系统列属于需要审批的有效调查动作，不要仅因
 它们需要审批而删除动作。
 如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
@@ -55,6 +60,8 @@ _REPLAN_PROMPT = """
 不要把不可重试的权限、配置或授权缺口再次安排给系统。若可用工具已经无法取得关键证据，
 应返回空动作并允许系统依据现有证据回答或向用户提出明确补证请求。Playbook仅提供经验，
 不是能力白名单。不得虚构工具、证据或执行结果。
+target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
+查询所需的实例身份前置证据。
 """.strip()
 
 
@@ -81,6 +88,7 @@ class InvestigationReasoner:
         *,
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
+        target_context: dict[str, Any],
         available_tools: tuple[dict[str, Any], ...],
         available_playbooks: tuple[dict[str, Any], ...],
         model_snapshot: dict[str, Any],
@@ -96,6 +104,7 @@ class InvestigationReasoner:
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),
+                "target_context": dict(target_context),
                 "source_run_evidence": source_run_evidence,
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
@@ -121,6 +130,7 @@ class InvestigationReasoner:
         *,
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
+        target_context: dict[str, Any],
         source_run_evidence: dict[str, Any] | None,
         invalid_output: InvestigationPlanningOutput,
         validation_error: str,
@@ -147,6 +157,7 @@ class InvestigationReasoner:
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),
+                "target_context": dict(target_context),
                 "source_run_evidence": source_run_evidence,
                 "validation_error": validation_error,
                 "rejected_output": invalid_output.model_dump(mode="json"),
@@ -194,6 +205,7 @@ class InvestigationReasoner:
         *,
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
+        target_context: dict[str, Any],
         source_run_evidence: dict[str, Any] | None,
         task_frame: dict[str, Any],
         prior_plan: dict[str, Any],
@@ -222,6 +234,7 @@ class InvestigationReasoner:
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),
+                "target_context": dict(target_context),
                 "source_run_evidence": source_run_evidence,
                 "task_frame": task_frame,
                 "prior_plan": prior_plan,

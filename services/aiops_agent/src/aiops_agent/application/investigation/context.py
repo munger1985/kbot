@@ -29,6 +29,7 @@ class TurnPlanningContext:
     recent_context: tuple[str, ...]
     trace_id: str
     deadline: datetime | None
+    target_context: dict
     capabilities: DbaCapabilitySnapshot
     database_execution: dict
     change_context: dict
