@@ -8,8 +8,8 @@ from typing import Protocol
 
 from loguru import logger
 
-from aiops_agent.investigation import InvestigationPlanValidationError
-from aiops_agent.skills import SkillUnavailableError
+from aiops_agent.application.investigation import InvestigationPlanValidationError
+from aiops_agent.tools import InvestigationCatalogChangedError
 from platform_core.contracts.aiops import CreateOpsRunCommand
 from platform_core.contracts.aiops.executor import (
     MutationExecutionRequest,
@@ -75,7 +75,7 @@ class AIOpsDomainOutboxSink:
                     await self._turn_planning_service.execute(payload)
                 except (
                     InvestigationPlanValidationError,
-                    SkillUnavailableError,
+                    InvestigationCatalogChangedError,
                 ) as exc:
                     error_code = getattr(
                         exc, "code", "AIOPS_INVESTIGATION_PLAN_INVALID"
@@ -100,7 +100,7 @@ class AIOpsDomainOutboxSink:
                 await self._turn_planning_service.execute_replan(payload)
             except (
                 InvestigationPlanValidationError,
-                SkillUnavailableError,
+                InvestigationCatalogChangedError,
             ) as exc:
                 error_code = getattr(
                     exc, "code", "AIOPS_INVESTIGATION_REPLAN_INVALID"

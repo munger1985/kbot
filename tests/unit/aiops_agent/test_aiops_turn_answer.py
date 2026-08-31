@@ -276,17 +276,18 @@ def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
     )
 
 
-def _skill_artifact(*, semantics: str, row_count: int = 1) -> dict:
+def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
     artifact_id = str(uuid7())
     rows = [["abc123", 120.5]] if row_count else []
     return {
         "artifact_id": artifact_id,
-        "schema_version": "DBA_SKILL_RESULT.v1",
+        "schema_version": "DBA_TOOL_RESULT.v1",
         "payload": {
-            "schema_version": "DBA_SKILL_RESULT.v1",
-            "skill_id": "oracle.sql.top_current",
-            "skill_version": "1.0.0",
-            "manifest_hash": "b" * 64,
+            "schema_version": "DBA_TOOL_RESULT.v1",
+            "source_type": "PLAYBOOK",
+            "source_id": "oracle.sql.top_current",
+            "source_version": "1.0.0",
+            "definition_hash": "b" * 64,
             "output_schema": "oracle.sql.top_current.output.v1",
             "measurement_semantics": semantics,
             "presentation_kind": "TABLE_AND_CHART",
@@ -403,13 +404,13 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         turns = _ProjectionTurns(invocation=None)
         uow = SimpleNamespace(turns=turns)
-        skill_input = _skill_artifact(semantics="CURRENT_ACTIVITY")
+        tool_input = _tool_artifact(semantics="CURRENT_ACTIVITY")
         artifact = SimpleNamespace(
-            artifact_id=uuid7(), payload_json=skill_input["payload"]
+            artifact_id=uuid7(), payload_json=tool_input["payload"]
         )
 
         asyncio.run(
-            service._project_skill_result(
+            service._project_tool_result(
                 uow=uow,
                 turn=turn,
                 task=SimpleNamespace(ops_task_id=uuid7(), attempt_count=1),
@@ -431,7 +432,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             ).execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(
+                        _tool_artifact(
                             semantics="CUMULATIVE_SINCE_LOAD"
                         ),
                     ),
@@ -514,7 +515,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
         self.assertEqual(1, len(result.evidence))
         fact = result.evidence[0]
-        self.assertEqual("monitoring.overview", fact.skill_id)
+        self.assertEqual("monitoring.overview", fact.source_id)
         self.assertEqual("HISTORICAL_SAMPLES", fact.measurement_semantics)
         self.assertEqual("host.cpu.utilization", fact.rows[0][0])
         self.assertEqual(15.5, fact.rows[0][3])
@@ -524,7 +525,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             status=SufficiencyStatus.NEEDS_EVIDENCE,
             gaps=(
                 TurnEvidenceGap(
-                    skill_id="oracle.sql.top_current",
+                    source_id="oracle.sql.top_current",
                     step_id="top_sql",
                     code="PRIVILEGE_MISSING",
                     detail="Target 只读凭据缺少对象查询权限",
@@ -545,10 +546,10 @@ class DbaTurnAnswerTest(unittest.TestCase):
             context,
             plan_snapshot={
                 **context.plan_snapshot,
-                "skill_execution": {
+                "investigation_execution": {
                     "invocations": {
-                        "skill:1:oracle.sql.top_current": {
-                            "skill_id": "oracle.sql.top_current",
+                        "playbook:1:oracle.sql.top_current": {
+                            "playbook_id": "oracle.sql.top_current",
                             "tools": [
                                 {
                                     "step_id": "top_sql",
@@ -584,7 +585,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
     def test_recent_request_with_cumulative_evidence_is_partial(self) -> None:
         context = _context(
             artifacts=(
-                _skill_artifact(semantics="CUMULATIVE_SINCE_LOAD"),
+                _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD"),
             ),
             recent=True,
         )
@@ -600,7 +601,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
                     )
                 )
             )
@@ -610,7 +611,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 "status": SufficiencyStatus.PARTIAL,
                 "gaps": (
                     TurnEvidenceGap(
-                        skill_id="monitoring.overview",
+                        source_id="monitoring.overview",
                         step_id="host.cpu.utilization",
                         code="SOURCE_NO_DATA",
                         detail="Prometheus 未返回采样",
@@ -680,7 +681,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
     def test_empty_current_result_is_still_answerable_fact(self) -> None:
         context = _context(
             artifacts=(
-                _skill_artifact(
+                _tool_artifact(
                     semantics="CURRENT_ACTIVITY",
                     row_count=0,
                 ),
@@ -697,7 +698,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
                     )
                 )
             )
@@ -732,7 +733,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
                     )
                 )
             )
@@ -759,7 +760,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
                     )
                 )
             )
@@ -803,7 +804,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             DbaEvidenceAssessmentHandler().execute(
                 _context(
                     artifacts=(
-                        _skill_artifact(semantics="CURRENT_ACTIVITY"),
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
                     )
                 )
             )
@@ -970,7 +971,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         self.assertIn("幂等键对应的内容不一致", str(raised.exception))
 
-    def test_runtime_projects_skill_evidence_answer_and_citation(self) -> None:
+    def test_runtime_projects_tool_evidence_answer_and_citation(self) -> None:
         service = object.__new__(AIOpsRuntimeService)
         turn = SimpleNamespace(
             turn_id=uuid7(),
@@ -1000,21 +1001,21 @@ class DbaTurnAnswerTest(unittest.TestCase):
             turns=turns,
             conversations=_ProjectionConversations(conversation),
         )
-        skill_input = _skill_artifact(semantics="CURRENT_ACTIVITY")
-        skill_artifact = SimpleNamespace(
+        tool_input = _tool_artifact(semantics="CURRENT_ACTIVITY")
+        tool_artifact = SimpleNamespace(
             artifact_id=uuid7(),
-            payload_json=skill_input["payload"],
+            payload_json=tool_input["payload"],
         )
         task = SimpleNamespace(ops_task_id=uuid7(), attempt_count=1)
         now = datetime.now(UTC)
 
         asyncio.run(
-            service._project_skill_result(
+            service._project_tool_result(
                 uow=uow,
                 turn=turn,
                 task=task,
-                artifact=skill_artifact,
-                payload=skill_artifact.payload_json,
+                artifact=tool_artifact,
+                payload=tool_artifact.payload_json,
                 now=now,
             )
         )
@@ -1031,7 +1032,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 payload=monitoring_artifact.payload_json,
             )
         )
-        evidence_ref = f"artifact:{skill_artifact.artifact_id}#top_sql"
+        evidence_ref = f"artifact:{tool_artifact.artifact_id}#top_sql"
         monitoring_ref = (
             f"artifact:{monitoring_artifact.artifact_id}#prometheus"
         )
@@ -1064,7 +1065,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
 
         self.assertEqual("SUCCEEDED", invocation.status)
-        self.assertEqual(skill_artifact.artifact_id, invocation.output_artifact_id)
+        self.assertEqual(tool_artifact.artifact_id, invocation.output_artifact_id)
         self.assertEqual(2, len(turns.evidence))
         self.assertEqual(
             "HISTORICAL_SAMPLES",

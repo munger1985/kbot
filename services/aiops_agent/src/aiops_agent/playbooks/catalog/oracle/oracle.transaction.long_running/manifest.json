@@ -1,0 +1,30 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "oracle.transaction.long_running",
+  "version": "1.0.0",
+  "database_types": ["ORACLE"],
+  "version_range": {"minimum": "19", "maximum": "26"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["SESSION_AND_LOCK", "INSTANCE_PERFORMANCE"],
+  "subjects": [],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": [],
+  "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "GV_$TRANSACTION", "GV_$SESSION"],
+  "required_entitlements": [],
+  "input_schema": "oracle.transaction.long-running.input.v1",
+  "defaults": {"min_seconds": 300},
+  "limits": {"max_rows": 100, "timeout_seconds": 20, "max_attempts": 2, "cost_units": 2},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "transactions", "tool_id": "db.transaction.long_running", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"min_seconds": 300}}
+  ],
+  "output_schema": "oracle.transaction.long-running.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "oracle.transaction.long-running.manual.v1",
+  "sensitive_fields": ["sql_id"],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 90, "requires_observed_at": true}
+}

@@ -27,17 +27,18 @@ from platform_core.contracts.aiops.executor import (
     OracleDynamicQueryPolicyGrant,
     ReadDiagnosticResult,
 )
-from aiops_agent.application.turn_planning import TurnPlanningService
-from aiops_agent.investigation.reasoner import (
+from aiops_agent.application.investigation import prepare_dynamic_queries
+from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
-from aiops_agent.skills import DbaSkillRegistry, SkillPlanCompiler
+from aiops_agent.playbooks import PlaybookRegistry
+from aiops_agent.tools import InvestigationTaskCompiler
 from aiops_agent.workers.database_handlers import (
     DynamicQueryInvocationHandler,
 )
 from aiops_agent.workers.handlers import TaskExecutionContext
 from platform_core.contracts.aiops import InvestigationPlanningOutput
-from platform_core.contracts.aiops.skills import DbaSkillPlan
+from platform_core.contracts.aiops.playbooks import DbaPlaybookPlan
 from platform_core.identity import uuid7
 
 
@@ -340,7 +341,7 @@ class DynamicQueryPlanningTest(unittest.TestCase):
         )
 
     def test_planning_normalizes_and_compiles_dynamic_task(self) -> None:
-        investigation, frozen = TurnPlanningService._prepare_dynamic_queries(
+        investigation, frozen = prepare_dynamic_queries(
             self._investigation(
                 sql=(
                     "SELECT sid, event FROM v$session "
@@ -348,9 +349,9 @@ class DynamicQueryPlanningTest(unittest.TestCase):
                 )
             )
         )
-        registry = DbaSkillRegistry.load()
-        compiled = SkillPlanCompiler(registry).compile(
-            DbaSkillPlan(
+        registry = PlaybookRegistry.load()
+        compiled = InvestigationTaskCompiler(registry).compile(
+            DbaPlaybookPlan(
                 catalog_hash=registry.catalog_hash,
                 items=(),
             ),
@@ -372,7 +373,7 @@ class DynamicQueryPlanningTest(unittest.TestCase):
 
     def test_planning_rejects_unsafe_dynamic_query(self) -> None:
         with self.assertRaises(InvestigationPlanValidationError):
-            TurnPlanningService._prepare_dynamic_queries(
+            prepare_dynamic_queries(
                 self._investigation(sql="SELECT * FROM v$session")
             )
 
@@ -423,7 +424,7 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
             attempt=1,
             deadline_at=None,
             plan_snapshot={
-                "skill_execution": {
+                "investigation_execution": {
                     "capability_snapshot_hash": "c" * 64,
                     "database": {
                         "domain_id": 100,

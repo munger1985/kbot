@@ -670,7 +670,7 @@ class ConversationTurnService:
             "sufficiency_status": row.sufficiency_status,
             "evidence_gaps": [
                 {
-                    "skill_id": item.get("skill_id"),
+                    "source_id": item.get("source_id"),
                     "step_id": item.get("step_id"),
                     "code": item.get("code"),
                     "detail": item.get("detail"),

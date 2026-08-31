@@ -1,8 +1,8 @@
 # AIOps Agent 专业 DBA 调查改造方案与实施计划
 
-版本：2.0
+版本：2.2
 状态：实施中
-基准日期：2026-08-28
+基准日期：2026-08-31
 
 ## 1. 目标与基准
 
@@ -23,7 +23,7 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 
 - 单文本输入；
 - `DbaIntentRouter`第一道硬路由；
-- `DbaSkillPlanner`精确匹配；
+- 旧Skill Planner精确匹配；
 - 普通问题只选一个Skill；
 - `AIOPS_SKILL_UNAVAILABLE`规划终止；
 - 一次规划且不能Replan；
@@ -58,12 +58,12 @@ PROPOSAL_OUTCOME.v1 → PROPOSAL_SUMMARY`。只有当前Turn内`SOURCE_VERIFIED`
 `PENDING_APPROVAL`；自然语言、用户粘贴证据和模型推断均不能直接授权动作。审批后仍复用原有
 Proposal Hash、策略复核、执行凭据和效果验证链路。
 
-受控动态查询已形成运行时纵向链路：项目固定使用`sqlglot==30.0.2`按Oracle方言解析AST，动态
+受控动态查询已形成运行时纵向链路：项目固定使用`sqlglot==30.17.0`按Oracle方言解析AST，动态
 SQL策略只接受单条显式投影SELECT，限制诊断对象、敏感源列、函数、bind、Schema、Database
 Link、锁和返回行数，并生成Query Hash与Policy Hash。`db.oracle.readonly_query`仅在Oracle
 Target具有`DB_READONLY`能力时进入模型Tool Discovery；规划端规范化SQL并冻结策略，Worker签发
 短期动态Grant，隔离Executor在领取一次性诊断凭据前重新验证SQL、参数、策略和投影列，并在
-只读事务中执行。成功结果进入`DBA_SKILL_RESULT.v1`成为`SOURCE_VERIFIED` Evidence，失败只形成
+只读事务中执行。成功结果进入`DBA_TOOL_RESULT.v1`成为`SOURCE_VERIFIED` Evidence，失败只形成
 Evidence Gap；固定目录Grant与动态Grant不能串用。固定目录SQL也继续执行方言AST复核。
 
 受控监控查询也已接入调查运行时。PromQL使用`promql-parser==0.10.0`解析官方语法AST，每个
@@ -78,9 +78,24 @@ Artifact保存、UTF-8文本提取、按Agent能力选择VLM/OCR、独立提取A
 `USER_PROVIDED` Evidence关联均已接入；单个附件解析失败不会抹掉原始证据或阻止其他材料
 继续诊断。Oracle固定工具目录已进一步覆盖参数、TEMP/UNDO、Redo、近期Alert Log、失败调度
 任务、无效对象、RMAN作业和Data Guard延迟，并同步逐对象最小授权。以下项目仍按后续阶段
-实施，不冒充完成：旧Skill内部命名与目录的物理迁移，以及动态查询在dev真实
-Oracle、Prometheus、Loki和Alertmanager联调。阶段完成情况以本节和验收记录为准，不能仅凭
-Schema字段或类名判断功能已经交付。
+实施，不冒充完成：动态查询在dev真实Oracle、Prometheus、Loki和Alertmanager联调。阶段完成
+情况以本节和验收记录为准，不能仅凭Schema字段或类名判断功能已经交付。
+
+2026-08-31恢复实施时已完成第一批基线收口：工作区根依赖和AIOps服务包统一固定
+`sqlglot==30.17.0`；诊断目录验收按各数据库必备Tool集合检查，不再错误要求Oracle、MySQL和
+PostgreSQL工具数量相等。该调整只修复依赖与验收契约漂移，不代表真实环境联调已经完成。
+
+同日完成旧Skill物理迁移：调查应用迁入`application/investigation/`并拆出上下文、错误映射、
+Tool/Playbook发现和动态查询冻结模块；Playbook目录、Tool编译与执行快照、Worker Handler和共享
+合同均采用Playbook/Tool命名，执行快照改为`investigation_execution`，结果合同改为
+`DBA_TOOL_RESULT.v1`，旧`AIOPS_SKILL_UNAVAILABLE`不再参与运行时终态语义。
+
+专业评测Runner现会在云端Main API逐场景创建真实Conversation，消费Turn SSE，读取最终Tool、
+Evidence、引用、回答和安全事件并评分；完整模式再调用独立OpenAI兼容裁判复核正向与反向行为。
+Runner会按`tool.completed`或`tool.gap`中的具体数据库`tool_id`验证Top SQL、阻塞链、容量、归档、
+FRA和长尾只读场景，兼容SSE结束帧、裁判Markdown JSON代码块和文字包裹，并拒绝未知场景、非法
+超时与分数门槛。本地只保留数据集和生成物静态校验，真实评测结果必须来自云端运行及在线
+Operations Logs。
 
 本轮审计整改进一步完成：Turn原始文字和上传定位会在输入理解/VLM/OCR与调查模型之前以独立
 事务保存；固定Oracle Tool直接从Diagnostic Registry发现并编译为原子Task，不再要求存在
@@ -89,6 +104,50 @@ Playbook父调用；`DBA_SUFFICIENCY.v1`内嵌`aiops.investigation-assessment.v1
 健康检查失败的Target或Source允许在本Turn预算内尝试一次。聊天公开契约不允许后续Turn覆盖
 `target_id`；新建Conversation时从Agent版本绑定的多个逻辑Target中选择一个并冻结。专业评测集覆盖停库、Top SQL、锁、容量、归档、
 权限、监控健康陈旧、动态只读、来源Run、单Target多任务目标和变更安全。
+
+### 3.2 2026-08-31静态验收与云端待执行
+
+本次恢复实施未在本机运行任何Python单测、契约测试、数据库测试或真实评测。本机Oracle不可达，
+所有代码、Schema和外部依赖测试必须在云端`kbot4` Conda环境执行；失败取证只使用
+`http://140.238.44.208:8080/operations-logs.html`及其在线Logs API，不使用本地或历史日志。
+
+本次已完成且仅能视为静态证据的检查：
+
+- `git diff --check`通过；
+- AIOps OpenAPI、Schema Manifest、Playbook Manifest和评测数据集均可由`jq`解析；
+- `002_ops_runtime.sql` SHA-256为
+  `66eed35dd7f89910c45398a9313e9bbf77c5c32ea08bc9b5b1e6e3c81a04a2cc`，与Manifest一致；
+- `rebuild_aiops_schema.sql`内嵌的`002_ops_runtime.sql`与规范源文件逐字一致；
+- AIOps活跃Python、JSON和SQL中不存在旧Skill模块导入、旧类型或旧运行字段；历史升级脚本和评测
+  负向断言保留旧名称用于迁移与回归验证。
+
+云端代码基线验收命令：
+
+```bash
+conda run -n kbot4 python -m unittest discover \
+  -s tests/unit/aiops_agent -t . -p 'test_*.py'
+conda run -n kbot4 python -m unittest \
+  tests.contract.test_aiops_dba_evaluation_dataset \
+  tests.contract.test_aiops_rebuild_schema_script \
+  tests.contract.test_aiops_schema_upgrade \
+  tests.contract.test_aiops_ui_static_pages
+conda run -n kbot4 python tests/acceptance/check_aiops_diagnostic_catalog.py
+conda run -n kbot4 python tests/acceptance/check_oracle_schema.py
+conda run -n kbot4 python scripts/db/render_aiops_rebuild_schema.py --check
+```
+
+云端12场景真实评测命令使用环境变量提供Main API、Agent、Target和裁判参数，不在命令行或报告中
+写入密钥。完整模式需要`KBOT_AIOPS_EVAL_BASE_URL`、`KBOT_AIOPS_EVAL_API_KEY`、
+`KBOT_AIOPS_EVAL_AGENT_ID`、`KBOT_AIOPS_EVAL_TARGET_ID`、`KBOT_AIOPS_EVAL_JUDGE_URL`、
+`KBOT_AIOPS_EVAL_JUDGE_KEY`和`KBOT_AIOPS_EVAL_JUDGE_MODEL`：
+
+```bash
+conda run -n kbot4 python tests/evaluation/evaluate_aiops_dba_chat.py \
+  --report /tmp/aiops-dba-chat-evaluation.json
+```
+
+来源Run续查场景还必须提供`KBOT_AIOPS_EVAL_SOURCE_RUN_ID`。真实联调完成前，文档状态保持
+“实施中”。
 
 ## 4. 阶段1：Schema 15和共享契约
 
@@ -198,12 +257,12 @@ Oracle Tool优先级：
 | --- | --- |
 | `application/turns.py` | 接收内容项并创建Input Item摘要 |
 | `application/turn_planner.py` | 保留Primary Run骨架，改投递UNDERSTANDING |
-| `application/turn_planning.py` | 拆分后删除 |
-| `skills/router.py` | 删除，由Input Understanding和Task Framing替代 |
-| `skills/planner.py` | 删除，由Investigation Planner替代 |
-| `skills/execution.py` | Tool执行和Playbook编排分别接管 |
-| `skills/registry.py` | 迁移为Playbook Registry |
-| `workers/skill_handlers.py` | 迁移Playbook Handler |
+| `application/investigation/service.py` | 调查上下文冻结、计划编译和持久化 |
+| 旧Skill Router | 已删除，由Input Understanding和Task Framing替代 |
+| `tools/compiler.py` | 将已验证的Investigation Plan编译为Task DAG |
+| `tools/execution_snapshot.py` | 冻结原子Tool与可选Playbook执行快照 |
+| `playbooks/registry.py` | 加载可选Playbook Manifest并生成目录Hash |
+| `workers/tool_handlers.py` | 分别执行Playbook和原子Tool |
 | `workers/evidence_handlers.py` | 统一Tool Evidence归一 |
 | `workers/turn_answer_handlers.py` | 使用Task Frame、Assessment和Evidence |
 | `application/runtime/service.py` | 继续提供Run/Task内核，接收新Plan DAG |

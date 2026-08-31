@@ -25,7 +25,10 @@ from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
-from aiops_agent.application.turn_planning import TurnPlanningService
+from aiops_agent.application.investigation import (
+    InvestigationReasoner,
+    TurnPlanningService,
+)
 from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
@@ -41,11 +44,10 @@ from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
 )
-from aiops_agent.investigation import InvestigationReasoner
-from aiops_agent.skills import (
-    DbaSkillRegistry,
-    SkillExecutionSnapshotBuilder,
-    SkillPlanCompiler,
+from aiops_agent.playbooks import PlaybookRegistry
+from aiops_agent.tools import (
+    InvestigationTaskCompiler,
+    ToolExecutionSnapshotBuilder,
 )
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
@@ -113,17 +115,17 @@ def create_aiops_worker_probe(
             else None
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
-        skill_registry = DbaSkillRegistry.load(
+        playbook_registry = PlaybookRegistry.load(
             allowed_tools=frozenset(
                 (tool.definition.tool_id, tool.definition.version)
                 for tool in diagnostic_registry.tools
             )
         )
-        execution_snapshot_builder = SkillExecutionSnapshotBuilder(
-            skill_registry=skill_registry,
+        tool_snapshot_builder = ToolExecutionSnapshotBuilder(
+            playbook_registry=playbook_registry,
             diagnostic_registry=diagnostic_registry,
         )
-        execution_snapshot_builder.validate_catalog()
+        tool_snapshot_builder.validate_catalog()
         diagnosis_prompts = DiagnosisPromptRegistry.load(
             Path(resolved.diagnosis.prompt_catalog_path)
             if resolved.diagnosis.prompt_catalog_path
@@ -264,10 +266,12 @@ def create_aiops_worker_probe(
                     investigation_reasoner=InvestigationReasoner(
                         diagnosis_model_client
                     ),
-                    playbook_registry=skill_registry,
-                    skill_compiler=SkillPlanCompiler(skill_registry),
-                    execution_snapshot_builder=(
-                        execution_snapshot_builder
+                    playbook_registry=playbook_registry,
+                    task_compiler=InvestigationTaskCompiler(
+                        playbook_registry
+                    ),
+                    tool_snapshot_builder=(
+                        tool_snapshot_builder
                     ),
                     agent_catalog=agent_catalog,
                     monitoring_snapshot_builder=(

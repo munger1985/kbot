@@ -1,4 +1,4 @@
-"""验证专业 DBA 对话、Turn 和 Skill 计划的共享契约。"""
+"""验证专业 DBA 对话、Turn 和 Playbook 计划的共享契约。"""
 
 from datetime import UTC, datetime
 import unittest
@@ -8,13 +8,10 @@ from pydantic import ValidationError
 from platform_core.contracts.aiops import (
     ConversationSourceContext,
     ConversationSourceType,
-    DbaIntent,
-    DbaIntentPlan,
-    DbaSkillPlan,
+    DbaPlaybookPlan,
     EvidenceResponseCreate,
-    IntentCandidate,
     MeasurementSemantics,
-    SkillPlanItem,
+    PlaybookPlanItem,
     TurnCreate,
     TurnEventView,
 )
@@ -40,10 +37,14 @@ class AIOpsConversationContractTest(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             TurnCreate(
-                content=({"content_type": "TEXT", "text": "分析当前数据库上的 Top SQL"},),
+                content=(
+                    {
+                        "content_type": "TEXT",
+                        "text": "分析当前数据库上的 Top SQL",
+                    },
+                ),
                 idempotency_key="",
             )
-
 
     def test_conversation_source_accepts_only_matching_resource(self) -> None:
         source_run_id = uuid7()
@@ -60,40 +61,24 @@ class AIOpsConversationContractTest(unittest.TestCase):
                 report_id=uuid7(),
             )
 
-
-    def test_intent_plan_requires_primary_intent_in_candidates(self) -> None:
-        with self.assertRaises(ValidationError):
-            DbaIntentPlan(
-                primary_intent=DbaIntent.OBSERVE,
-                candidates=(
-                    IntentCandidate(
-                        intent=DbaIntent.DIAGNOSE,
-                        confidence=0.8,
-                        reason="用户要求解释异常原因",
-                    ),
-                ),
-                primary_domain="sql_performance",
-            )
-
-
-    def test_skill_plan_requires_contiguous_forward_only_dag(self) -> None:
+    def test_playbook_plan_requires_contiguous_forward_only_dag(self) -> None:
         digest = "a" * 64
-        valid = DbaSkillPlan(
+        valid = DbaPlaybookPlan(
             catalog_hash=digest,
             items=(
-                SkillPlanItem(
+                PlaybookPlanItem(
                     ordinal=1,
-                    skill_id="oracle.sql.top_current",
-                    skill_version="1.0.0",
+                    playbook_id="oracle.sql.top_current",
+                    playbook_version="1.0.0",
                     manifest_hash=digest,
                     reason="回答当前 Top SQL",
                     evidence_question="哪些 SQL 的累计资源消耗最高",
                     measurement_semantics=MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
                 ),
-                SkillPlanItem(
+                PlaybookPlanItem(
                     ordinal=2,
-                    skill_id="oracle.sql.detail",
-                    skill_version="1.0.0",
+                    playbook_id="oracle.sql.detail",
+                    playbook_version="1.0.0",
                     manifest_hash=digest,
                     reason="补充最高负载 SQL 的详情",
                     evidence_question="最高负载 SQL 的执行统计是什么",
@@ -106,11 +91,10 @@ class AIOpsConversationContractTest(unittest.TestCase):
         self.assertEqual(len(valid.items), 2)
 
         with self.assertRaises(ValidationError):
-            DbaSkillPlan(
+            DbaPlaybookPlan(
                 catalog_hash=digest,
                 items=(valid.items[1],),
             )
-
 
     def test_evidence_response_is_explicit_and_exclusive(self) -> None:
         response = EvidenceResponseCreate(
@@ -128,7 +112,6 @@ class AIOpsConversationContractTest(unittest.TestCase):
                 upload_id=uuid7(),
             )
 
-
     def test_turn_event_contract_has_monotonic_cursor_field(self) -> None:
         event = TurnEventView(
             turn_id=uuid7(),
@@ -139,7 +122,6 @@ class AIOpsConversationContractTest(unittest.TestCase):
         )
 
         self.assertEqual(event.sequence_no, 1)
-
 
 if __name__ == "__main__":
     unittest.main()

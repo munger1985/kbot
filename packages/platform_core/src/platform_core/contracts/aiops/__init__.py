@@ -162,11 +162,9 @@ from .runtime import (
     TaskLease,
     TaskMutationReceipt,
 )
-from .skills import (
-    DbaIntentPlan,
-    DbaSkillPlan,
-    IntentCandidate,
-    SkillPlanItem,
+from .playbooks import (
+    DbaPlaybookPlan,
+    PlaybookPlanItem,
 )
 
 __all__ = [
@@ -205,8 +203,7 @@ __all__ = [
     "DiagnosticExecutionGrant",
     "DiagnosticLimits",
     "DbaIntent",
-    "DbaIntentPlan",
-    "DbaSkillPlan",
+    "DbaPlaybookPlan",
     "EvidenceResponseCreate",
     "EvidenceRole",
     "FailOpsTaskCommand",
@@ -249,8 +246,7 @@ __all__ = [
     "SourceBindingCreate",
     "SourceBindingPatch",
     "SourceBindingView",
-    "SkillPlanItem",
-    "IntentCandidate",
+    "PlaybookPlanItem",
     "SufficiencyStatus",
     "SignalEventReceipt",
     "DiagnosticSourceCreate",

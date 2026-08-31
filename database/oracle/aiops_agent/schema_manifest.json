@@ -12,7 +12,7 @@
     {
       "name": "002_ops_runtime.sql",
       "statements": 35,
-      "sha256": "db86bc6317fffcdf2e3c1999a673103c72459fa9f65fe28856eb7e50b75c74ec"
+      "sha256": "66eed35dd7f89910c45398a9313e9bbf77c5c32ea08bc9b5b1e6e3c81a04a2cc"
     },
     {
       "name": "003_ops_change.sql",

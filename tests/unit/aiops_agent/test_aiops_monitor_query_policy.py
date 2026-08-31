@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from aiops_agent.application.turn_planning import TurnPlanningService
-from aiops_agent.investigation.reasoner import (
+from aiops_agent.application.investigation import prepare_source_queries
+from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
 from aiops_agent.monitoring import (
@@ -136,7 +136,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
         )
 
     def test_planning_freezes_normalized_promql(self) -> None:
-        investigation, frozen = TurnPlanningService._prepare_source_queries(
+        investigation, frozen = prepare_source_queries(
             self._investigation(
                 "monitor.query_range",
                 'up{instance="${external_target}"}',
@@ -153,7 +153,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
 
     def test_planning_rejects_unscoped_promql(self) -> None:
         with self.assertRaises(InvestigationPlanValidationError):
-            TurnPlanningService._prepare_source_queries(
+            prepare_source_queries(
                 self._investigation("monitor.query_range", "up")
             )
 

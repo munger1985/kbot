@@ -11,7 +11,7 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
-from aiops_agent.skills import SkillUnavailableError
+from aiops_agent.tools import InvestigationCatalogChangedError
 from aiops_agent.workers.outbox_dispatcher import (
     AIOpsDomainOutboxSink,
     AIOpsOutboxDispatcher,
@@ -67,7 +67,7 @@ class _UnsupportedPlanningStage(_PlannerStage):
 
     async def execute(self, payload):
         self.calls.append(dict(payload))
-        raise SkillUnavailableError("当前目录没有匹配的 Skill")
+        raise InvestigationCatalogChangedError("Playbook目录版本已经变化")
 
     async def fail_terminal(self, payload, *, error_code, error_message):
         self.failures.append(
@@ -423,7 +423,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             sufficiency_json={
                 "gaps": [
                     {
-                        "skill_id": "oracle.sql.top_current",
+                        "source_id": "oracle.sql.top_current",
                         "step_id": "top-sql",
                         "code": "OUTPUT_SCHEMA_INVALID",
                         "detail": "数据库返回列与受控诊断目录不一致",
@@ -580,7 +580,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(planning.calls))
         self.assertEqual(1, len(planning.failures))
         self.assertEqual(
-            "AIOPS_SKILL_UNAVAILABLE",
+            "AIOPS_INVESTIGATION_CATALOG_CHANGED",
             planning.failures[0]["error_code"],
         )
 

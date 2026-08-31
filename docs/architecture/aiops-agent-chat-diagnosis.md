@@ -314,8 +314,8 @@ playbooks/
   catalog/oracle/
 ```
 
-删除现役`skills/router.py`、`skills/planner.py`和`skills/execution.py`；所需Manifest加载和Hash
-逻辑迁入Playbook。现有`turn_planning.py`拆分后删除，不保留旧Planner入口。
+现役调查链使用`application/investigation/`、`tools/`和`playbooks/`；Manifest加载与Hash逻辑
+由Playbook目录负责，Tool发现、计划编译和执行快照由Tool目录负责，不保留旧Skill Planner入口。
 
 ## 15. 安全边界
 

@@ -279,7 +279,7 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
             TurnEvidenceFact(
                 evidence_ref="artifact:blocking#blocking",
                 artifact_id="blocking",
-                skill_id="oracle.session.blocking_chain",
+                source_id="oracle.session.blocking_chain",
                 step_id="blocking",
                 tool_id="db.session.blocking_chain",
                 trust_level=trust_level,
@@ -296,7 +296,7 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
             TurnEvidenceFact(
                 evidence_ref="artifact:active#active",
                 artifact_id="active",
-                skill_id="oracle.session.active",
+                source_id="oracle.session.active",
                 step_id="active",
                 tool_id="db.session.active",
                 trust_level=trust_level,

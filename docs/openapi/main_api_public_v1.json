@@ -9998,7 +9998,7 @@
             "title": "Retryable",
             "type": "boolean"
           },
-          "skill_id": {
+          "source_id": {
             "anyOf": [
               {
                 "maxLength": 128,
@@ -10008,7 +10008,7 @@
                 "type": "null"
               }
             ],
-            "title": "Skill Id"
+            "title": "Source Id"
           },
           "step_id": {
             "anyOf": [

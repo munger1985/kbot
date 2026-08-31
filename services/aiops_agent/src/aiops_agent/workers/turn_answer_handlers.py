@@ -11,7 +11,7 @@ from typing import Any
 
 from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
-from aiops_agent.contracts.skill_execution import DbaSkillResult
+from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
@@ -83,7 +83,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                     TurnEvidenceFact(
                         evidence_ref=f"artifact:{artifact_id}#source-run",
                         artifact_id=artifact_id,
-                        skill_id="source.run-evidence",
+                        source_id="source.run-evidence",
                         step_id="inherit",
                         tool_id="source.run.final-artifact",
                         trust_level=_fact_trust_level(
@@ -118,7 +118,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                         TurnEvidenceFact(
                             evidence_ref=f"artifact:{artifact_id}#user-input",
                             artifact_id=artifact_id,
-                            skill_id="user.provided-evidence",
+                            source_id="user.provided-evidence",
                             step_id="input",
                             tool_id="user.input",
                             trust_level="USER_PROVIDED",
@@ -150,7 +150,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                     monitoring_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
-                            skill_id="monitoring.overview",
+                            source_id="monitoring.overview",
                             step_id=gap.metric_code or gap.binding_id,
                             code=gap.code,
                             detail=gap.detail,
@@ -166,7 +166,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                         TurnEvidenceFact(
                             evidence_ref=f"artifact:{artifact_id}#loki",
                             artifact_id=artifact_id,
-                            skill_id="oracle.alert-log",
+                            source_id="oracle.alert-log",
                             step_id="loki",
                             tool_id="loki.query_range",
                             measurement_semantics=(
@@ -195,7 +195,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                     monitoring_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
-                            skill_id="oracle.alert-log",
+                            source_id="oracle.alert-log",
                             step_id="loki",
                             code=gap.code,
                             detail=gap.detail,
@@ -203,9 +203,9 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                         )
                     )
                 continue
-            if schema_version != "DBA_SKILL_RESULT.v1":
+            if schema_version != "DBA_TOOL_RESULT.v1":
                 continue
-            result = DbaSkillResult.model_validate(artifact["payload"])
+            result = DbaToolResult.model_validate(artifact["payload"])
             artifact_id = str(artifact["artifact_id"])
             for outcome in result.tool_outcomes:
                 if outcome.observation is not None:
@@ -218,7 +218,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                                     f"{outcome.step_id}"
                                 ),
                                 artifact_id=artifact_id,
-                                skill_id=result.skill_id,
+                                source_id=result.source_id,
                                 step_id=outcome.step_id,
                                 tool_id=outcome.tool_id,
                                 measurement_semantics=(
@@ -240,7 +240,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
                     database_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
-                            skill_id=result.skill_id,
+                            source_id=result.source_id,
                             step_id=outcome.step_id,
                             code=outcome.gap.code,
                             detail=outcome.gap.detail,
@@ -254,7 +254,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
             monitoring_gap_found = True
             gaps.append(
                 TurnEvidenceGap(
-                    skill_id="monitoring.overview",
+                    source_id="monitoring.overview",
                     step_id=str(gap.get("binding_id", "source")),
                     code=str(gap.get("code", "MONITORING_UNAVAILABLE")),
                     detail=str(gap.get("detail", "监控源不可用")),
@@ -419,7 +419,7 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",
             artifact_id=artifact_id,
-            skill_id="monitoring.overview",
+            source_id="monitoring.overview",
             step_id="prometheus",
             tool_id="metric.query_range",
             measurement_semantics=MeasurementSemantics.HISTORICAL_SAMPLES,
@@ -733,22 +733,24 @@ class DbaAnswerComposeHandler:
         assessment: DbaSufficiencyAssessment,
         context: TaskExecutionContext,
     ) -> TurnAnswerBlock | None:
-        execution = dict(context.plan_snapshot.get("skill_execution", {}))
+        execution = dict(
+            context.plan_snapshot.get("investigation_execution", {})
+        )
         invocations = dict(execution.get("invocations", {}))
         tools_by_step: dict[tuple[str, str], dict[str, Any]] = {}
         for invocation in invocations.values():
-            skill_id = str(invocation.get("skill_id", ""))
+            source_id = str(invocation.get("playbook_id", ""))
             for tool in invocation.get("tools", ()):
-                tools_by_step[(skill_id, str(tool.get("step_id", "")))] = tool
+                tools_by_step[(source_id, str(tool.get("step_id", "")))] = tool
         requests: list[tuple[TurnEvidenceGap, dict[str, Any]]] = []
         monitoring_gaps = [
             gap
             for gap in assessment.gaps
-            if gap.skill_id == "monitoring.overview"
+            if gap.source_id == "monitoring.overview"
         ]
         seen_tools: set[str] = set()
         for gap in assessment.gaps:
-            tool = tools_by_step.get((gap.skill_id, gap.step_id))
+            tool = tools_by_step.get((gap.source_id, gap.step_id))
             tool_id = str((tool or {}).get("tool_id", ""))
             if tool is None or not tool_id or tool_id in seen_tools:
                 continue

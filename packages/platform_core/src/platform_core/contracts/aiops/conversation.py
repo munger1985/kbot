@@ -213,7 +213,7 @@ class ConversationMessageView(AIOpsContract):
 class TurnEvidenceGapView(AIOpsContract):
     """对话页可安全展示的未取证摘要，不包含原始证据行。"""
 
-    skill_id: str | None = Field(default=None, max_length=128)
+    source_id: str | None = Field(default=None, max_length=128)
     step_id: str | None = Field(default=None, max_length=128)
     code: str | None = Field(default=None, max_length=128)
     detail: str | None = Field(default=None, max_length=2000)

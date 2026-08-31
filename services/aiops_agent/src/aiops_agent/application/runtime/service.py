@@ -54,7 +54,7 @@ from aiops_agent.entities import (
     ReportEntity,
 )
 from aiops_agent.contracts.evidence import ObservationSet
-from aiops_agent.contracts.skill_execution import DbaSkillResult
+from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaSufficiencyAssessment,
@@ -1768,7 +1768,7 @@ class AIOpsRuntimeService:
         if command.event_type not in {
             "answer.delta",
             "thinking.delta",
-            "skill.progress",
+            "tool.progress",
         }:
             raise validation_failed("不允许写入该类型的Task增量事件")
         if len(
@@ -1867,8 +1867,8 @@ class AIOpsRuntimeService:
         if turn is None:
             raise resource_not_found("Conversation Turn")
         payload = dict(artifact.payload_json or {})
-        if artifact.schema_version == "DBA_SKILL_RESULT.v1":
-            await self._project_skill_result(
+        if artifact.schema_version == "DBA_TOOL_RESULT.v1":
+            await self._project_tool_result(
                 uow=uow,
                 turn=turn,
                 task=task,
@@ -2077,7 +2077,7 @@ class AIOpsRuntimeService:
             },
         )
 
-    async def _project_skill_result(
+    async def _project_tool_result(
         self,
         *,
         uow,
@@ -2087,7 +2087,7 @@ class AIOpsRuntimeService:
         payload: dict[str, Any],
         now: datetime,
     ) -> None:
-        result = DbaSkillResult.model_validate(payload)
+        result = DbaToolResult.model_validate(payload)
         invocation = await uow.turns.get_playbook_invocation_by_task(
             ops_task_id=task.ops_task_id,
             lock=True,
@@ -2179,7 +2179,7 @@ class AIOpsRuntimeService:
                     observed_at=observed_at,
                     freshness_status="FRESH",
                     usage_reason=(
-                        f"用于回答本轮问题的 {result.skill_id} 受控观测"
+                        f"用于回答本轮问题的 {result.source_id} 受控观测"
                     ),
                     linked_by="aiops.turn-projector",
                 )
@@ -2203,7 +2203,7 @@ class AIOpsRuntimeService:
                     "playbook_invocation_id": str(
                         invocation.playbook_invocation_id
                     ),
-                    "playbook_id": result.skill_id,
+                    "playbook_id": result.source_id,
                     "status": result.status,
                     "public_summary": "一组数据库只读观测已经完成",
                 },

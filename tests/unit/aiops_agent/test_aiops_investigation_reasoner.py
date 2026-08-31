@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from aiops_agent.investigation import InvestigationReasoner
+from aiops_agent.application.investigation import InvestigationReasoner
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.ports.model import StructuredModelResult
 from platform_core.contracts.aiops import InvestigationPlanningOutput

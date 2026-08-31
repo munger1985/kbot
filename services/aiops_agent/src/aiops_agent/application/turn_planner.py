@@ -196,8 +196,8 @@ class TurnPlannerService:
         turn_id: UUID,
         ops_run_id: UUID,
     ) -> dict:
-        """完成无外部依赖的验收流；阶段3会由 Intent Planner 替代此入口。"""
-        markdown = "诊断调度链路已经建立，但本轮没有配置需要执行的 DBA Skill。"
+        """完成无外部依赖且没有调查Tool的验收流。"""
+        markdown = "诊断调度链路已经建立，但本轮没有需要执行的调查Tool。"
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
                 domain_id=domain_id,

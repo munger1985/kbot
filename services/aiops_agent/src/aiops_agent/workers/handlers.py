@@ -228,36 +228,36 @@ def create_runtime_handler_registry(
             grant_audience=diagnostic_grant_audience or "",
             grant_ttl_seconds=diagnostic_grant_ttl_seconds,
         )
-        from .skill_handlers import (
-            DbaDiagnosticInvocationHandler,
-            DbaSkillInvocationHandler,
+        from .tool_handlers import (
+            DbaDiagnosticToolHandler,
+            DbaPlaybookInvocationHandler,
         )
         from .turn_answer_handlers import DbaEvidenceAssessmentHandler
 
         manifests.extend(
             (
                 HandlerManifest(
-                    handler_id="dba.skill.invoke",
+                    handler_id="dba.playbook.invoke",
                     version="1",
-                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    output_schema_version="DBA_TOOL_RESULT.v1",
                     idempotent=True,
-                    implementation=DbaSkillInvocationHandler(
+                    implementation=DbaPlaybookInvocationHandler(
                         database_handler=database_diagnostic_handler
                     ),
                 ),
                 HandlerManifest(
                     handler_id="dba.diagnostic.invoke",
                     version="1",
-                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    output_schema_version="DBA_TOOL_RESULT.v1",
                     idempotent=True,
-                    implementation=DbaDiagnosticInvocationHandler(
+                    implementation=DbaDiagnosticToolHandler(
                         database_handler=database_diagnostic_handler
                     ),
                 ),
                 HandlerManifest(
                     handler_id="dba.dynamic-query.invoke",
                     version="1",
-                    output_schema_version="DBA_SKILL_RESULT.v1",
+                    output_schema_version="DBA_TOOL_RESULT.v1",
                     idempotent=True,
                     implementation=dynamic_query_handler,
                 ),

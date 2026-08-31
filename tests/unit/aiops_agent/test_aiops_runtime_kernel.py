@@ -73,9 +73,9 @@ class RuntimeStateMachineTest(unittest.TestCase):
                 DomainOpsTaskStatus.RUNNING,
             )
 
-    def test_legacy_blueprint_task_types_are_normalized_for_schema_13(self) -> None:
-        self.assertEqual("INTENT_ROUTE", normalize_task_type("SCOPE"))
-        self.assertEqual("SKILL_INVOKE", normalize_task_type("OBSERVE"))
+    def test_blueprint_task_types_are_normalized_for_schema_15(self) -> None:
+        self.assertEqual("CONTEXT_BUILD", normalize_task_type("SCOPE"))
+        self.assertEqual("TOOL_INVOKE", normalize_task_type("OBSERVE"))
         self.assertEqual("EVIDENCE_ASSESS", normalize_task_type("DIAGNOSE"))
         self.assertEqual("VERIFY", normalize_task_type("COMPARE"))
         self.assertEqual("REPORT", normalize_task_type("REPORT"))

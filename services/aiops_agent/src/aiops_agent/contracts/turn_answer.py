@@ -12,7 +12,7 @@ from platform_core.contracts.aiops import (
     SufficiencyStatus,
     InvestigationAssessment,
 )
-from platform_core.contracts.aiops.skills import PresentationPreference
+from platform_core.contracts.aiops.playbooks import PresentationPreference
 
 
 class TurnEvidenceFact(BaseModel):
@@ -22,7 +22,7 @@ class TurnEvidenceFact(BaseModel):
 
     evidence_ref: str = Field(min_length=1, max_length=512)
     artifact_id: str = Field(min_length=1, max_length=64)
-    skill_id: str = Field(min_length=1, max_length=128)
+    source_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
     tool_id: str = Field(min_length=1, max_length=128)
     trust_level: Literal[
@@ -41,7 +41,7 @@ class TurnEvidenceFact(BaseModel):
 class TurnEvidenceGap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    skill_id: str = Field(min_length=1, max_length=128)
+    source_id: str = Field(min_length=1, max_length=128)
     step_id: str = Field(min_length=1, max_length=128)
     code: str = Field(min_length=1, max_length=128)
     detail: str = Field(min_length=1, max_length=2000)

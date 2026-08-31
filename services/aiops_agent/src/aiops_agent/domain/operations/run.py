@@ -72,10 +72,12 @@ for _status in TERMINAL_RUN_STATUSES:
 
 
 TASK_TYPE_TO_RUN_PHASE: dict[str, DomainOpsRunStatus | None] = {
-    "INTENT_ROUTE": DomainOpsRunStatus.RUNNING,
-    "SKILL_PLAN": DomainOpsRunStatus.RUNNING,
-    "SKILL_INVOKE": DomainOpsRunStatus.RUNNING,
+    "CONTEXT_BUILD": DomainOpsRunStatus.RUNNING,
+    "PLAYBOOK_INVOKE": DomainOpsRunStatus.RUNNING,
+    "TOOL_INVOKE": DomainOpsRunStatus.RUNNING,
     "EVIDENCE_ASSESS": DomainOpsRunStatus.RUNNING,
+    "ACTION_PLAN": DomainOpsRunStatus.RUNNING,
+    "PROPOSAL": DomainOpsRunStatus.RUNNING,
     "ANSWER": DomainOpsRunStatus.RUNNING,
     "REQUEST_INPUT": DomainOpsRunStatus.WAITING_INPUT,
     "PROPOSE": DomainOpsRunStatus.RUNNING,
@@ -87,17 +89,18 @@ TASK_TYPE_TO_RUN_PHASE: dict[str, DomainOpsRunStatus | None] = {
 }
 
 
-LEGACY_TASK_TYPE_MAP: dict[str, str] = {
-    "SCOPE": "INTENT_ROUTE",
-    "OBSERVE": "SKILL_INVOKE",
+BLUEPRINT_TASK_TYPE_MAP: dict[str, str] = {
+    "SCOPE": "CONTEXT_BUILD",
+    "OBSERVE": "TOOL_INVOKE",
     "DIAGNOSE": "EVIDENCE_ASSESS",
+    "PROPOSE": "PROPOSAL",
     "COMPARE": "VERIFY",
 }
 
 
 def normalize_task_type(task_type: str) -> str:
-    """把 Blueprint 业务步骤映射到 Schema 13 通用 Task 类型。"""
-    normalized = LEGACY_TASK_TYPE_MAP.get(task_type, task_type)
+    """把 Blueprint 业务步骤映射到 Schema 15 通用 Task 类型。"""
+    normalized = BLUEPRINT_TASK_TYPE_MAP.get(task_type, task_type)
     if normalized not in TASK_TYPE_TO_RUN_PHASE:
         raise ValueError(f"不支持的通用 Task 类型：{task_type}")
     return normalized

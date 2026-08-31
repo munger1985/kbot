@@ -13,9 +13,9 @@ from aiops_agent.contracts.artifacts import (
     DatabaseScopeResult,
     EvidenceGap,
 )
-from aiops_agent.contracts.skill_execution import (
-    DbaSkillResult,
-    SkillToolOutcome,
+from aiops_agent.contracts.tool_execution import (
+    DbaToolResult,
+    ToolOutcome,
 )
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
@@ -268,8 +268,8 @@ class DynamicQueryInvocationHandler:
         self._audience = grant_audience
         self._ttl = grant_ttl_seconds
 
-    async def execute(self, context: TaskExecutionContext) -> DbaSkillResult:
-        execution = context.plan_snapshot["skill_execution"]
+    async def execute(self, context: TaskExecutionContext) -> DbaToolResult:
+        execution = context.plan_snapshot["investigation_execution"]
         invocation = dict(
             execution["dynamic_invocations"][context.task_key]
         )
@@ -397,18 +397,19 @@ class DynamicQueryInvocationHandler:
         )
 
     @staticmethod
-    def _result(invocation, *, observation=None, gap=None) -> DbaSkillResult:
+    def _result(invocation, *, observation=None, gap=None) -> DbaToolResult:
         succeeded = observation is not None
-        return DbaSkillResult(
-            skill_id="dynamic.oracle.readonly_query",
-            skill_version="1.0.0",
-            manifest_hash=invocation["validated_query"]["policy_sha256"],
+        return DbaToolResult(
+            source_type="TOOL",
+            source_id="db.oracle.readonly_query",
+            source_version="1.0.0",
+            definition_hash=invocation["validated_query"]["policy_sha256"],
             output_schema="DYNAMIC_DATABASE_OBSERVATION.v1",
             measurement_semantics=invocation["measurement_semantics"],
             presentation_kind="TABLE",
             status="SUCCEEDED" if succeeded else "FAILED",
             tool_outcomes=(
-                SkillToolOutcome(
+                ToolOutcome(
                     step_id=invocation["action_id"],
                     tool_id="db.oracle.readonly_query",
                     tool_version="1.0.0",

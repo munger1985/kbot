@@ -1,0 +1,32 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "oracle.instance.performance",
+  "version": "1.0.0",
+  "database_types": ["ORACLE"],
+  "version_range": {"minimum": "19", "maximum": "26"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["INSTANCE_PERFORMANCE", "HOST_AND_OS"],
+  "subjects": ["DATABASE_OVERVIEW"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "dynamic_performance_views"],
+  "required_privileges": ["V_$INSTANCE", "V_$DATABASE", "V_$SYSMETRIC", "V_$SGA", "V_$PGASTAT", "V_$SESSION", "V_$PARAMETER"],
+  "required_entitlements": [],
+  "input_schema": "oracle.instance.performance.input.v1",
+  "defaults": {},
+  "limits": {"max_rows": 40, "timeout_seconds": 20, "max_attempts": 2, "cost_units": 2},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "performance", "tool_id": "db.instance.performance", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "memory", "tool_id": "db.memory.summary", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "session_capacity", "tool_id": "db.resource.session_utilization", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+  ],
+  "output_schema": "oracle.instance.performance.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "oracle.instance.performance.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 90, "requires_observed_at": true}
+}
