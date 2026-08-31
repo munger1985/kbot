@@ -268,7 +268,10 @@ def create_aiops_worker_probe(
                     ),
                     playbook_registry=playbook_registry,
                     task_compiler=InvestigationTaskCompiler(
-                        playbook_registry
+                        playbook_registry,
+                        model_timeout_seconds=(
+                            resolved.clients.model_serving.timeout_seconds
+                        ),
                     ),
                     tool_snapshot_builder=(
                         tool_snapshot_builder

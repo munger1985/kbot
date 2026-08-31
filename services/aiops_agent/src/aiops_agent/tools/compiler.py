@@ -31,8 +31,16 @@ class CompiledInvestigationPlan:
 class InvestigationTaskCompiler:
     """将验证后的调查计划编译为通用运行内核 Task DAG。"""
 
-    def __init__(self, registry: PlaybookRegistry) -> None:
+    def __init__(
+        self,
+        registry: PlaybookRegistry,
+        *,
+        model_timeout_seconds: int = 300,
+    ) -> None:
+        if model_timeout_seconds < 1:
+            raise ValueError("模型调用超时必须大于零")
         self._registry = registry
+        self._model_timeout_seconds = int(model_timeout_seconds)
 
     def compile(
         self,
@@ -248,7 +256,7 @@ class InvestigationTaskCompiler:
                 output_schema_version="DBA_SUFFICIENCY.v1",
                 depends_on=evidence_task_keys,
                 input_artifact_keys=evidence_artifact_keys,
-                timeout_seconds=30,
+                timeout_seconds=self._model_timeout_seconds + 15,
                 max_attempts=2,
                 priority=90,
             )
@@ -304,7 +312,9 @@ class InvestigationTaskCompiler:
                     output_schema_version="AIOPS_TURN_RESULT.v1",
                     depends_on=(answer_dependency,),
                     input_artifact_keys=answer_inputs,
-                    timeout_seconds=120,
+                    timeout_seconds=(
+                        self._model_timeout_seconds * 2 + 30
+                    ),
                     max_attempts=2,
                     priority=100,
                 )

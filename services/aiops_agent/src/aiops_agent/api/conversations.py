@@ -22,6 +22,27 @@ from platform_core.contracts.aiops import (
 )
 
 
+def _require_turn_contract(
+    summary_contract=TurnSummary,
+    view_contract=TurnView,
+) -> None:
+    """在启动阶段拒绝加载缺少当前字段的共享合同。"""
+    missing = sorted(
+        {
+            *{"evidence_gaps"}.difference(summary_contract.model_fields),
+            *{"investigation_plan"}.difference(view_contract.model_fields),
+        }
+    )
+    if missing:
+        raise RuntimeError(
+            "AIOps Turn 共享合同版本不一致，缺少字段："
+            + ",".join(missing)
+        )
+
+
+_require_turn_contract()
+
+
 router = APIRouter(
     prefix="/internal/v1/aiops/conversations",
     tags=["AIOps Conversations"],

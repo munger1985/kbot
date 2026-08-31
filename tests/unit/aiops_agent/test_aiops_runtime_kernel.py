@@ -1,7 +1,7 @@
 """AIOps 步骤 4 确定性运行内核测试。"""
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -14,6 +14,7 @@ from aiops_agent.domain.operations import (
     normalize_task_type,
 )
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.domain.states import (
     DomainOpsRunStatus,
     DomainOpsTaskStatus,
@@ -159,6 +160,8 @@ class RuntimeArtifactReferenceTest(unittest.IsolatedAsyncioTestCase):
             {item.artifact_key for item in leased},
         )
 
+
+class RuntimeArtifactReplanTest(unittest.IsolatedAsyncioTestCase):
     async def test_replan_freezes_answer_and_writes_outbox_command(self) -> None:
         """首轮可重试缺口必须可靠触发重规划，不能提前释放回答Task。"""
         answer = SimpleNamespace(
@@ -213,6 +216,50 @@ class RuntimeArtifactReferenceTest(unittest.IsolatedAsyncioTestCase):
             outbox_rows[0].event_type,
         )
         self.assertEqual("turn.status", events[-1].event_type)
+
+
+class RuntimeLeaseValidationTest(unittest.TestCase):
+    def test_failure_can_be_persisted_after_owned_lease_expires(self) -> None:
+        runtime = object.__new__(AIOpsRuntimeService)
+        now = datetime.now(UTC)
+        token = uuid7()
+        run = SimpleNamespace(cancel_requested_at=None, deadline_at=None)
+        task = SimpleNamespace(
+            status="RUNNING",
+            lease_owner="worker-test",
+            lease_token=token,
+            lease_until=now - timedelta(seconds=1),
+        )
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            runtime._ensure_lease(
+                run=run,
+                task=task,
+                worker_id="worker-test",
+                lease_token=token,
+                now=now,
+            )
+        self.assertEqual("OPS_STALE_LEASE", raised.exception.code)
+
+        runtime._ensure_lease(
+            run=run,
+            task=task,
+            worker_id="worker-test",
+            lease_token=token,
+            now=now,
+            allow_expired=True,
+        )
+
+        task.lease_owner = "other-worker"
+        with self.assertRaises(AIOpsApplicationError):
+            runtime._ensure_lease(
+                run=run,
+                task=task,
+                worker_id="worker-test",
+                lease_token=token,
+                now=now,
+                allow_expired=True,
+            )
 
 
 class BlueprintRegistryTest(unittest.TestCase):

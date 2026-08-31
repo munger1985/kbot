@@ -1519,6 +1519,27 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             ),
             evidence_task.depends_on,
         )
+
+    def test_model_tasks_outlive_configured_model_request_timeout(self) -> None:
+        registry = PlaybookRegistry(
+            (
+                _manifest(
+                    playbook_id="oracle.sql.current",
+                    intent=DbaIntent.OBSERVE,
+                    domain=DbaDomain.SQL_PERFORMANCE,
+                ),
+            )
+        )
+        manifest = registry.latest("oracle.sql.current")
+        compiled = InvestigationTaskCompiler(
+            registry,
+            model_timeout_seconds=90,
+        ).compile(_playbook_plan(registry, (manifest,)))
+        tasks = {item.task_key: item for item in compiled.tasks}
+
+        self.assertEqual(105, tasks["evidence:assess"].timeout_seconds)
+        self.assertEqual(210, tasks["answer:compose"].timeout_seconds)
+
     def test_database_handler_consumes_frozen_tool_version(self) -> None:
         codec = _CapturingGrantCodec()
         context = TaskExecutionContext(

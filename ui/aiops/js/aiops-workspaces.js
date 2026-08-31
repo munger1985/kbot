@@ -490,11 +490,13 @@
       }
     };
     for (let attempt = 0; attempt < streamRecoveryAttempts && !completed; attempt += 1) {
+      let streamFailed = false;
       try {
         await KBotAIOpsAuth.stream(path, onEvent, {
           headers: lastEventId ? { "Last-Event-ID": lastEventId } : {},
         });
       } catch (_) {
+        streamFailed = true;
         // 临时断流统一由权威 Turn 状态与续传游标恢复。
       }
       if (completed) break;
@@ -509,7 +511,9 @@
       } catch (_) {
         // 状态回读也可能遇到同一次短暂网络抖动，下一轮继续恢复。
       }
-      progress.textContent = "事件流暂时中断，正在恢复诊断进度…";
+      progress.textContent = streamFailed
+        ? "事件流暂时中断，正在恢复诊断进度…"
+        : "诊断仍在后台运行，正在继续获取进度…";
       await new Promise((resolve) => window.setTimeout(resolve, Math.min(5000, 1000 * (attempt + 1))));
     }
     if (!completed) throw new Error("诊断仍在后台运行，请稍后刷新会话查看结果");

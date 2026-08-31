@@ -11,6 +11,7 @@ from uuid import UUID
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.api.conversations import _require_turn_contract
 from aiops_agent.tools import InvestigationCatalogChangedError
 from aiops_agent.workers.outbox_dispatcher import (
     AIOpsDomainOutboxSink,
@@ -427,6 +428,19 @@ class _RunRepository:
 
 
 class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
+    def test_api_rejects_stale_turn_summary_contract(self) -> None:
+        stale_contract = SimpleNamespace(
+            model_fields={"investigation_plan": object()}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "evidence_gaps"):
+            _require_turn_contract(
+                stale_contract,
+                SimpleNamespace(
+                    model_fields={"investigation_plan": object()}
+                ),
+            )
+
     def test_turn_summary_exposes_only_sanitized_evidence_gaps(self) -> None:
         now = datetime.now(UTC)
         row = SimpleNamespace(

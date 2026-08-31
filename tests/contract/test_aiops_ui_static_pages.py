@@ -328,6 +328,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("followTurn", workspace)
         self.assertIn('"Last-Event-ID": lastEventId', workspace)
         self.assertIn("terminalTurnStatuses.has(turn.status)", workspace)
+        self.assertIn("let streamFailed = false", workspace)
+        self.assertIn("诊断仍在后台运行，正在继续获取进度", workspace)
         self.assertIn('"WAITING_USER", "COMPLETED"', workspace)
         self.assertIn("await followTurn(receipt.conversation_id", workspace)
         self.assertIn("await loadConversation(receipt.conversation_id)", workspace)

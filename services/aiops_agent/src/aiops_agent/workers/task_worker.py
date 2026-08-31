@@ -108,15 +108,11 @@ class AIOpsTaskWorker:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if not done:
-                    execution.cancel()
+                    await self._cancel_execution(execution)
                     error_code = "HANDLER_TIMEOUT"
                     raise TimeoutError("Handler 执行超过 Task 超时")
                 if heartbeat in done:
-                    execution.cancel()
-                    try:
-                        await execution
-                    except asyncio.CancelledError:
-                        pass
+                    await self._cancel_execution(execution)
                     error_code = "HANDLER_RETRYABLE_FAILURE"
                     raise heartbeat.exception() or RuntimeError(
                         "Task 续租失败"
@@ -232,11 +228,28 @@ class AIOpsTaskWorker:
                     )
                 )
             except Exception as persist_error:
-                logger.error(
-                    "AIOps Task 失败状态写回未成功：task_id={} type={}",
+                logger.opt(exception=persist_error).error(
+                    "AIOps Task 失败状态写回未成功：task_id={} "
+                    "code={} type={} detail={}",
                     latest.task_id,
+                    getattr(persist_error, "code", "UNEXPECTED_ERROR"),
                     type(persist_error).__name__,
+                    getattr(persist_error, "message", "not-recorded"),
                 )
+
+    @staticmethod
+    async def _cancel_execution(execution: asyncio.Task) -> None:
+        """等待 Handler 完成取消清理，避免清理与失败写回并发。"""
+        execution.cancel()
+        try:
+            await execution
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning(
+                "AIOps Handler 取消清理异常：type={}",
+                type(exc).__name__,
+            )
 
     async def _invoke_handler(self, *, manifest, context, current):
         stream_handler = getattr(

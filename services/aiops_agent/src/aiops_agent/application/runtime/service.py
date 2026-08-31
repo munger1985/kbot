@@ -3786,6 +3786,8 @@ class AIOpsRuntimeService:
                 worker_id=command.worker_id,
                 lease_token=command.lease_token,
                 now=now,
+                # Task 超时与租约截止时间相同；失败回写仍须校验状态、Owner 和 Token。
+                allow_expired=True,
             )
             try:
                 manifest = self._handlers.resolve(
@@ -6106,13 +6108,14 @@ class AIOpsRuntimeService:
         worker_id: str,
         lease_token: UUID,
         now: datetime,
+        allow_expired: bool = False,
     ) -> None:
         if (
             task.status != DomainOpsTaskStatus.RUNNING.value
             or task.lease_owner != worker_id
             or task.lease_token != lease_token
             or task.lease_until is None
-            or task.lease_until <= now
+            or (not allow_expired and task.lease_until <= now)
         ):
             raise self._stale_lease()
         if run.cancel_requested_at is not None:
