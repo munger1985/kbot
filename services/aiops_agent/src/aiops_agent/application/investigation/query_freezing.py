@@ -44,7 +44,7 @@ def prepare_dynamic_queries(investigation):
             validated = policy.validate(sql, parameters)
         except DynamicQueryRejected as exc:
             raise InvestigationPlanValidationError(
-                f"动态查询未通过策略：{exc.code}"
+                f"动态查询未通过策略：{exc.code}；{exc}"
             ) from exc
         actions.append(
             action.model_copy(

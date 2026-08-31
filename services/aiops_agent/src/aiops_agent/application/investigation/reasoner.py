@@ -22,9 +22,22 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有
 确实能区分假设或补齐回答所需事实时才安排工具。工具只能从 available_tools 中选择；
 Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook 不能阻止分析。
+调用工具时必须完整遵循 available_tools 中的 input 和 policy。对于
+db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
+清单外的同义函数、系统函数或自定义函数；固定目录工具能够回答时优先使用固定工具。
 
 可用工具无法取得某项证据时，应判断现有证据能否部分或完整回答；只有缺失信息会实质
 改变结论且系统无法自动获取时，才准备向用户提出具体补证请求。不要虚构工具结果。
+""".strip()
+
+_POLICY_REPAIR_PROMPT = """
+你是一名资深 Oracle DBA 调查规划者。上一份调查计划中的动态只读 SQL 未通过确定性
+安全策略。请依据 validation_error 修正计划，再返回完整的 InvestigationPlanningOutput。
+
+必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
+available_tools 中选择。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
+函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的全部 input 和 policy 约束。
+如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称 SQL 已执行。
 """.strip()
 
 _REPLAN_PROMPT = """
@@ -93,6 +106,79 @@ class InvestigationReasoner:
         if unknown:
             raise InvestigationPlanValidationError(
                 f"调查计划引用了未注册工具：{', '.join(unknown)}"
+            )
+        return StructuredModelResult(output=output, receipt=result.receipt)
+
+    async def repair_policy_invalid_plan(
+        self,
+        *,
+        content: tuple[dict[str, Any], ...],
+        conversation_context: tuple[str, ...],
+        source_run_evidence: dict[str, Any] | None,
+        invalid_output: InvestigationPlanningOutput,
+        validation_error: str,
+        available_tools: tuple[dict[str, Any], ...],
+        available_playbooks: tuple[dict[str, Any], ...],
+        model_snapshot: dict[str, Any],
+        deadline: datetime | None,
+        idempotency_key: str,
+    ) -> StructuredModelResult:
+        """携带确定性策略反馈，修正尚未执行的调查计划。"""
+        prompt_ref = {
+            "prompt_id": "aiops.investigation-policy-repair",
+            "prompt_version": "1",
+            "prompt_sha256": hashlib.sha256(
+                _POLICY_REPAIR_PROMPT.encode("utf-8")
+            ).hexdigest(),
+            "content": _POLICY_REPAIR_PROMPT,
+        }
+        result = await self._model.generate_structured(
+            purpose="aiops.investigation-policy-repair",
+            output_model=InvestigationPlanningOutput,
+            model_snapshot=model_snapshot,
+            prompt_ref=prompt_ref,
+            input_payload={
+                "content": list(content),
+                "recent_context": list(conversation_context[-8:]),
+                "source_run_evidence": source_run_evidence,
+                "validation_error": validation_error,
+                "rejected_output": invalid_output.model_dump(mode="json"),
+                "available_tools": list(available_tools),
+                "available_playbooks": list(available_playbooks),
+            },
+            deadline=deadline,
+            idempotency_key=idempotency_key,
+        )
+        output = InvestigationPlanningOutput.model_validate(result.output)
+        if output.input_envelope != invalid_output.input_envelope:
+            raise InvestigationPlanValidationError(
+                "策略修正规划不得改变输入材料理解"
+            )
+        if output.task_frame != invalid_output.task_frame:
+            raise InvestigationPlanValidationError(
+                "策略修正规划不得改变任务框架"
+            )
+        if output.suggested_playbook_ids != invalid_output.suggested_playbook_ids:
+            raise InvestigationPlanValidationError(
+                "策略修正规划不得改变建议 Playbook"
+            )
+        output_plan_context = output.plan.model_copy(update={"actions": ()})
+        invalid_plan_context = invalid_output.plan.model_copy(
+            update={"actions": ()}
+        )
+        if output_plan_context != invalid_plan_context:
+            raise InvestigationPlanValidationError(
+                "策略修正规划只能修改调查动作"
+            )
+        known_tools = {str(item["tool_id"]) for item in available_tools}
+        unknown = tuple(
+            action.tool_id
+            for action in output.plan.actions
+            if action.tool_id not in known_tools
+        )
+        if unknown:
+            raise InvestigationPlanValidationError(
+                f"策略修正规划引用了未注册工具：{', '.join(unknown)}"
             )
         return StructuredModelResult(output=output, receipt=result.receipt)
 

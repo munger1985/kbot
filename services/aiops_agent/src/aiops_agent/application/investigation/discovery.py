@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from aiops_agent.diagnostics import DynamicQueryPolicySnapshot
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
@@ -58,17 +59,27 @@ def available_tools(
         str(capabilities.database_type) == "ORACLE"
         and "DB_READONLY" in capabilities.target_capabilities
     ):
+        dynamic_policy = DynamicQueryPolicySnapshot()
         tools[("db.oracle.readonly_query", "1.0.0")] = {
             "tool_id": "db.oracle.readonly_query",
             "version": "1.0.0",
             "tool_class": "ORACLE_SQL_DYNAMIC",
             "description": (
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
-                "仅在固定目录工具不能回答问题时使用，必须显式投影并使用 bind 参数"
+                "仅在固定目录工具不能回答问题时使用，必须显式投影并使用 bind 参数；"
+                "SQL 只能使用 policy.allowed_functions 中列出的函数"
             ),
             "input": {
                 "sql": "Oracle SELECT，必须为每个计算表达式提供别名",
                 "parameters": "与 SQL bind 名称完全一致的标量对象",
+            },
+            "policy": {
+                "allowed_functions": list(dynamic_policy.allowed_functions),
+                "max_rows": dynamic_policy.max_rows,
+                "max_sql_chars": dynamic_policy.max_sql_chars,
+                "max_bind_count": dynamic_policy.max_bind_count,
+                "require_explicit_projection": True,
+                "require_bind_parameters": True,
             },
         }
     return tuple(tools[key] for key in sorted(tools))

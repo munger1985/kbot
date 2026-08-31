@@ -67,8 +67,10 @@ def _output(*, tool_id: str | None = None) -> dict:
 class _Model:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
+        self.calls = []
 
     async def generate_structured(self, **kwargs):
+        self.calls.append(kwargs)
         output = kwargs["output_model"].model_validate(self.payload)
         return StructuredModelResult(
             output=output,
@@ -180,6 +182,95 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ValueError, "measurement_semantics"):
             InvestigationPlanningOutput.model_validate(payload)
+
+    async def test_policy_repair_receives_allowlist_and_rejection_detail(
+        self,
+    ) -> None:
+        rejected_payload = _output(tool_id="db.oracle.readonly_query")
+        rejected_payload["plan"]["actions"][0]["input"] = {
+            "sql": "SELECT custom_function(sid) AS result FROM v$session",
+            "parameters": {},
+        }
+        rejected = InvestigationPlanningOutput.model_validate(
+            rejected_payload
+        )
+        repaired_payload = _output(tool_id="db.instance.identity")
+        model = _Model(repaired_payload)
+        reasoner = InvestigationReasoner(model)
+        tools = (
+            {
+                "tool_id": "db.instance.identity",
+                "version": "1.0.0",
+            },
+            {
+                "tool_id": "db.oracle.readonly_query",
+                "version": "1.0.0",
+                "policy": {"allowed_functions": ["COUNT", "ROUND"]},
+            },
+        )
+
+        result = await reasoner.repair_policy_invalid_plan(
+            content=({"content_type": "TEXT", "text": "检查数据库"},),
+            conversation_context=(),
+            source_run_evidence=None,
+            invalid_output=rejected,
+            validation_error=(
+                "动态查询未通过策略：DYNAMIC_SQL_FUNCTION_FORBIDDEN；"
+                "动态 SQL 函数不在允许清单：CUSTOM_FUNCTION"
+            ),
+            available_tools=tools,
+            available_playbooks=(),
+            model_snapshot={},
+            deadline=None,
+            idempotency_key="turn-3-policy-repair",
+        )
+
+        self.assertEqual(
+            "db.instance.identity", result.output.plan.actions[0].tool_id
+        )
+        request = model.calls[0]
+        self.assertEqual(
+            "aiops.investigation-policy-repair", request["purpose"]
+        )
+        self.assertIn(
+            "CUSTOM_FUNCTION",
+            request["input_payload"]["validation_error"],
+        )
+        self.assertEqual(
+            ["COUNT", "ROUND"],
+            request["input_payload"]["available_tools"][1]["policy"][
+                "allowed_functions"
+            ],
+        )
+
+    async def test_policy_repair_cannot_rewrite_task_frame(self) -> None:
+        rejected_payload = _output(tool_id="db.oracle.readonly_query")
+        rejected_payload["plan"]["actions"][0]["input"] = {
+            "sql": "SELECT custom_function(sid) AS result FROM v$session",
+            "parameters": {},
+        }
+        rejected = InvestigationPlanningOutput.model_validate(
+            rejected_payload
+        )
+        repaired_payload = _output(tool_id="db.instance.identity")
+        repaired_payload["task_frame"]["problem_statement"] = "改写后的问题"
+        reasoner = InvestigationReasoner(_Model(repaired_payload))
+
+        with self.assertRaisesRegex(ValueError, "不得改变任务框架"):
+            await reasoner.repair_policy_invalid_plan(
+                content=({"content_type": "TEXT", "text": "检查数据库"},),
+                conversation_context=(),
+                source_run_evidence=None,
+                invalid_output=rejected,
+                validation_error="DYNAMIC_SQL_FUNCTION_FORBIDDEN",
+                available_tools=(
+                    {"tool_id": "db.instance.identity", "version": "1.0.0"},
+                ),
+                available_playbooks=(),
+                model_snapshot={},
+                deadline=None,
+                idempotency_key="turn-4-policy-repair",
+            )
 
 
 if __name__ == "__main__":

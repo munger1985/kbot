@@ -7,6 +7,12 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiops_agent.application.investigation import prepare_dynamic_queries
+from aiops_agent.application.investigation.discovery import available_tools
+from aiops_agent.application.investigation.reasoner import (
+    InvestigationPlanValidationError,
+)
+from aiops_agent.application.investigation.service import TurnPlanningService
 from aiops_agent.diagnostics.dynamic_query import (
     DynamicQueryPolicySnapshot,
     DynamicQueryRejected,
@@ -19,6 +25,14 @@ from aiops_agent.diagnostics.grants import (
 )
 from aiops_agent.executor import DynamicDiagnosticExecutorService
 from aiops_agent.executor.drivers import DriverQueryResult
+from aiops_agent.playbooks import PlaybookRegistry
+from aiops_agent.ports.model import StructuredModelResult
+from aiops_agent.tools import InvestigationTaskCompiler
+from aiops_agent.workers.database_handlers import (
+    DynamicQueryInvocationHandler,
+)
+from aiops_agent.workers.handlers import TaskExecutionContext
+from platform_core.contracts.aiops import InvestigationPlanningOutput
 from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
     DiagnosticLimits,
@@ -27,18 +41,10 @@ from platform_core.contracts.aiops.executor import (
     OracleDynamicQueryPolicyGrant,
     ReadDiagnosticResult,
 )
-from aiops_agent.application.investigation import prepare_dynamic_queries
-from aiops_agent.application.investigation.reasoner import (
-    InvestigationPlanValidationError,
+from platform_core.contracts.aiops.playbooks import (
+    DbaCapabilitySnapshot,
+    DbaPlaybookPlan,
 )
-from aiops_agent.playbooks import PlaybookRegistry
-from aiops_agent.tools import InvestigationTaskCompiler
-from aiops_agent.workers.database_handlers import (
-    DynamicQueryInvocationHandler,
-)
-from aiops_agent.workers.handlers import TaskExecutionContext
-from platform_core.contracts.aiops import InvestigationPlanningOutput
-from platform_core.contracts.aiops.playbooks import DbaPlaybookPlan
 from platform_core.identity import uuid7
 
 
@@ -372,10 +378,104 @@ class DynamicQueryPlanningTest(unittest.TestCase):
         self.assertIn("dynamic:a1", assessment.depends_on)
 
     def test_planning_rejects_unsafe_dynamic_query(self) -> None:
-        with self.assertRaises(InvestigationPlanValidationError):
+        with self.assertRaises(InvestigationPlanValidationError) as raised:
             prepare_dynamic_queries(
-                self._investigation(sql="SELECT * FROM v$session")
+                self._investigation(
+                    sql=(
+                        "SELECT custom_function(sid) AS result "
+                        "FROM v$session"
+                    )
+                )
             )
+        self.assertIn("DYNAMIC_SQL_FUNCTION_FORBIDDEN", str(raised.exception))
+        self.assertIn("CUSTOM_FUNCTION", str(raised.exception))
+
+    def test_dynamic_tool_exposes_exact_function_allowlist(self) -> None:
+        snapshot_builder = SimpleNamespace(discover_tools=lambda _: ())
+        capabilities = DbaCapabilitySnapshot(
+            agent_id=str(uuid7()),
+            agent_version_id=str(uuid7()),
+            target_id=str(uuid7()),
+            database_type="ORACLE",
+            database_version="19c",
+            target_enabled=True,
+            target_reachable=True,
+            target_capabilities=("DB_READONLY",),
+        )
+
+        tools = available_tools(snapshot_builder, capabilities)
+        dynamic_tool = next(
+            item
+            for item in tools
+            if item["tool_id"] == "db.oracle.readonly_query"
+        )
+
+        self.assertEqual(
+            list(DynamicQueryPolicySnapshot().allowed_functions),
+            dynamic_tool["policy"]["allowed_functions"],
+        )
+        self.assertIn(
+            "policy.allowed_functions", dynamic_tool["description"]
+        )
+
+
+class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
+    async def test_policy_rejection_triggers_one_corrective_plan(self) -> None:
+        factory = DynamicQueryPlanningTest()
+        rejected = factory._investigation(
+            sql="SELECT custom_function(sid) AS result FROM v$session"
+        )
+        repaired = factory._investigation(
+            sql=(
+                "SELECT COUNT(sid) AS session_count FROM v$session "
+                "WHERE status = :status"
+            )
+        )
+        reasoner = SimpleNamespace(
+            repair_policy_invalid_plan=AsyncMock(
+                return_value=StructuredModelResult(
+                    output=repaired,
+                    receipt=SimpleNamespace(name="repaired"),
+                )
+            )
+        )
+        service = object.__new__(TurnPlanningService)
+        service._investigation_reasoner = reasoner
+        context = SimpleNamespace(
+            turn_id=uuid7(),
+            content=(),
+            recent_context=(),
+            source_run_evidence=None,
+            deadline=None,
+        )
+
+        planned, investigation, frozen = (
+            await service._prepare_dynamic_queries_with_repair(
+                context=context,
+                planned=StructuredModelResult(
+                    output=rejected,
+                    receipt=SimpleNamespace(name="rejected"),
+                ),
+                available_tools=(
+                    {
+                        "tool_id": "db.oracle.readonly_query",
+                        "policy": {"allowed_functions": ["COUNT"]},
+                    },
+                ),
+                available_playbooks=(),
+                model_snapshot={"technical_name": "test"},
+                revision_no=1,
+            )
+        )
+
+        self.assertEqual("repaired", planned.receipt.name)
+        self.assertIn(
+            "COUNT(sid)", investigation.plan.actions[0].input["sql"]
+        )
+        self.assertEqual("a1", frozen[0]["action_id"])
+        call = reasoner.repair_policy_invalid_plan.await_args.kwargs
+        self.assertIn("CUSTOM_FUNCTION", call["validation_error"])
+        reasoner.repair_policy_invalid_plan.assert_awaited_once()
 
 
 class GapDynamicExecutorClient:

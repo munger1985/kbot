@@ -7,12 +7,14 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
+from loguru import logger
+
+from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.errors import (
     AIOpsSchemaNotReadyError,
     resource_not_found,
     state_conflict,
 )
-from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.investigation.context import (
     PlanningAlreadyApplied,
     TurnPlanningContext,
@@ -27,6 +29,10 @@ from aiops_agent.application.investigation.query_freezing import (
     prepare_dynamic_queries,
     prepare_source_queries,
 )
+from aiops_agent.application.investigation.reasoner import (
+    InvestigationPlanValidationError,
+    InvestigationReasoner,
+)
 from aiops_agent.entities import (
     OpsArtifactEntity,
     OpsInvestigationRevisionEntity,
@@ -35,10 +41,6 @@ from aiops_agent.entities import (
     OpsToolInvocationEntity,
     OpsTurnEventEntity,
     OpsTurnEvidenceEntity,
-)
-from aiops_agent.application.investigation.reasoner import (
-    InvestigationPlanValidationError,
-    InvestigationReasoner,
 )
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 from aiops_agent.playbooks import PlaybookRegistry, canonical_hash
@@ -130,22 +132,31 @@ class TurnPlanningService:
             domain_id=context.domain_id,
             trace_id=context.trace_id,
         )
+        discovered_tools = available_tools(
+            self._tool_snapshot_builder, context.capabilities
+        )
+        discovered_playbooks = available_playbooks(
+            self._playbook_registry, context.capabilities
+        )
         planned = await self._investigation_reasoner.plan(
             content=context.content,
             conversation_context=context.recent_context,
             source_run_evidence=context.source_run_evidence,
-            available_tools=available_tools(
-                self._tool_snapshot_builder, context.capabilities
-            ),
-            available_playbooks=available_playbooks(
-                self._playbook_registry, context.capabilities
-            ),
+            available_tools=discovered_tools,
+            available_playbooks=discovered_playbooks,
             model_snapshot=model_snapshot,
             deadline=context.deadline,
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
-        investigation, dynamic_queries = prepare_dynamic_queries(
-            planned.output
+        planned, investigation, dynamic_queries = (
+            await self._prepare_dynamic_queries_with_repair(
+                context=context,
+                planned=planned,
+                available_tools=discovered_tools,
+                available_playbooks=discovered_playbooks,
+                model_snapshot=model_snapshot,
+                revision_no=1,
+            )
         )
         investigation, source_queries = prepare_source_queries(
             investigation
@@ -273,6 +284,12 @@ class TurnPlanningService:
             trace_id=context.trace_id,
         )
         prior_plan = dict(plan_artifact.payload_json or {})
+        discovered_tools = available_tools(
+            self._tool_snapshot_builder, context.capabilities
+        )
+        discovered_playbooks = available_playbooks(
+            self._playbook_registry, context.capabilities
+        )
         planned = await self._investigation_reasoner.replan(
             content=context.content,
             conversation_context=context.recent_context,
@@ -280,12 +297,8 @@ class TurnPlanningService:
             task_frame=dict(task_frame_artifact.payload_json or {}),
             prior_plan=prior_plan,
             assessment=dict(assessment_artifact.payload_json or {}),
-            available_tools=available_tools(
-                self._tool_snapshot_builder, context.capabilities
-            ),
-            available_playbooks=available_playbooks(
-                self._playbook_registry, context.capabilities
-            ),
+            available_tools=discovered_tools,
+            available_playbooks=discovered_playbooks,
             model_snapshot=model_snapshot,
             deadline=context.deadline,
             idempotency_key=(
@@ -293,8 +306,15 @@ class TurnPlanningService:
             ),
             revision_no=revision_no,
         )
-        investigation, dynamic_queries = prepare_dynamic_queries(
-            planned.output
+        planned, investigation, dynamic_queries = (
+            await self._prepare_dynamic_queries_with_repair(
+                context=context,
+                planned=planned,
+                available_tools=discovered_tools,
+                available_playbooks=discovered_playbooks,
+                model_snapshot=model_snapshot,
+                revision_no=revision_no,
+            )
         )
         investigation, source_queries = prepare_source_queries(
             investigation
@@ -372,6 +392,52 @@ class TurnPlanningService:
             model_snapshot=model_snapshot,
             monitoring_execution=monitoring_execution,
         )
+
+    async def _prepare_dynamic_queries_with_repair(
+        self,
+        *,
+        context: TurnPlanningContext,
+        planned,
+        available_tools: tuple[dict, ...],
+        available_playbooks: tuple[dict, ...],
+        model_snapshot: dict,
+        revision_no: int,
+    ):
+        """动态 SQL 首稿越界时，带策略反馈执行一次受控修正。"""
+        try:
+            investigation, dynamic_queries = prepare_dynamic_queries(
+                planned.output
+            )
+            return planned, investigation, dynamic_queries
+        except InvestigationPlanValidationError as exc:
+            logger.warning(
+                "AIOps 动态查询计划未通过策略，正在请求模型修正："
+                "turn_id={} revision_no={} reason={}",
+                context.turn_id,
+                revision_no,
+                str(exc),
+            )
+            repaired = (
+                await self._investigation_reasoner.repair_policy_invalid_plan(
+                    content=context.content,
+                    conversation_context=context.recent_context,
+                    source_run_evidence=context.source_run_evidence,
+                    invalid_output=planned.output,
+                    validation_error=str(exc),
+                    available_tools=available_tools,
+                    available_playbooks=available_playbooks,
+                    model_snapshot=model_snapshot,
+                    deadline=context.deadline,
+                    idempotency_key=(
+                        f"turn:{context.turn_id}:investigation:"
+                        f"{revision_no}:policy-repair"
+                    ),
+                )
+            )
+            investigation, dynamic_queries = prepare_dynamic_queries(
+                repaired.output
+            )
+            return repaired, investigation, dynamic_queries
 
     async def _persist_replan(
         self,
