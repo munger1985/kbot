@@ -144,17 +144,16 @@ SHOW CON_NAME;
 @scripts/deployment/aiops_observability/oracle/create_kbot_monitor.sql
 ```
 
-脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证完整授权清单。其中
-`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`用于实例确认及当前累计Top SQL；
-`GV_$SESSION`用于当前活跃会话和阻塞链；`DBA_DATA_FILES`、`DBA_FREE_SPACE`用于
-表空间容量诊断；`GV_$TRANSACTION`用于长事务诊断；`V_$SYSMETRIC`用于实时
-性能指标；`V_$SGA`、`V_$PGASTAT`用于内存诊断；`V_$RECOVERY_FILE_DEST`用于
-归档/FRA容量诊断；`DBA_TEMP_FILES`、`V_$TEMP_SPACE_HEADER`和`DBA_UNDO_EXTENTS`用于
-TEMP/UNDO容量诊断；`V_$LOG`用于Redo状态；`V_$DIAG_ALERT_EXT`用于近期数据库告警；
-`DBA_SCHEDULER_JOB_RUN_DETAILS`和`DBA_OBJECTS`用于调度失败及无效对象；
-`V_$RMAN_BACKUP_JOB_DETAILS`用于近期RMAN作业；`V_$DATAGUARD_STATS`用于备库延迟。
-脚本不读取AWR历史视图，也不隐含
-Diagnostics Pack许可。用户已存在时不要重复执行初始化脚本，改为执行完整授权脚本：
+脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证99项直接对象授权。配置诊断
+同时读取`V_$PARAMETER`、`V_$SYSTEM_PARAMETER`、`V_$SPPARAMETER`和
+`V_$PARAMETER_VALID_VALUES`，区分当前会话值、实例值、持久化值和有效值，禁止仅凭默认值
+或文档猜测实际配置。其余授权覆盖实例/PDB身份、RAC会话与锁、当前SQL执行计划、等待与
+I/O、SGA/PGA、表空间与对象统计、归档/FRA、备份恢复、Data Guard、调度维护、无效对象、
+账号状态及授权缺口等常用只读诊断面。
+
+脚本只进行逐对象`SELECT`授权，不授予`DBA`、`SELECT ANY TABLE`或
+`SELECT_CATALOG_ROLE`，也不授权`DBA_HIST_*`、`V_$ACTIVE_SESSION_HISTORY`等需要额外
+许可的AWR/ASH历史视图。用户已存在时不要重复执行初始化脚本，改为执行完整授权脚本：
 
 ```sql
 ALTER SESSION SET CONTAINER = PDB01;

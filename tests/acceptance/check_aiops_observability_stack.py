@@ -193,6 +193,17 @@ environment = production
         "SYS.V_$SYSMETRIC",
         "SYS.V_$RSRCPDBMETRIC",
         "SYS.V_$PARAMETER",
+        "SYS.V_$SPPARAMETER",
+        "SYS.V_$PARAMETER_VALID_VALUES",
+        "SYS.GV_$INSTANCE",
+        "SYS.GV_$LOCK",
+        "SYS.V_$SESSION_LONGOPS",
+        "SYS.V_$SQL_PLAN",
+        "SYS.DBA_SEGMENTS",
+        "SYS.V_$ARCHIVE_DEST_STATUS",
+        "SYS.V_$DATABASE_BLOCK_CORRUPTION",
+        "SYS.DBA_USERS",
+        "SYS.DBA_TAB_PRIVS",
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
@@ -234,6 +245,17 @@ environment = production
         "SYS.V_$SYSMETRIC",
         "SYS.V_$RSRCPDBMETRIC",
         "SYS.V_$PARAMETER",
+        "SYS.V_$SPPARAMETER",
+        "SYS.V_$PARAMETER_VALID_VALUES",
+        "SYS.GV_$INSTANCE",
+        "SYS.GV_$LOCK",
+        "SYS.V_$SESSION_LONGOPS",
+        "SYS.V_$SQL_PLAN",
+        "SYS.DBA_SEGMENTS",
+        "SYS.V_$ARCHIVE_DEST_STATUS",
+        "SYS.V_$DATABASE_BLOCK_CORRUPTION",
+        "SYS.DBA_USERS",
+        "SYS.DBA_TAB_PRIVS",
         "SYS.V_$SGA",
         "SYS.V_$PGASTAT",
         "SYS.V_$RECOVERY_FILE_DEST",
@@ -246,7 +268,7 @@ environment = production
         "SYS.V_$RMAN_BACKUP_JOB_DETAILS",
         "SYS.V_$DATAGUARD_STATS",
         "SYS.V_$DIAG_ALERT_EXT",
-        "object_grant_count <> 32",
+        "object_grant_count <> 99",
     ):
         if required_text not in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本缺少约束：{required_text}")
@@ -269,6 +291,16 @@ environment = production
         for tool in oracle_catalog["tools"]
         for privilege in tool.get("required_privileges", [])
     }
+    playbook_privileges = {
+        privilege
+        for manifest_path in (
+            ROOT
+            / "services/aiops_agent/src/aiops_agent/playbooks/catalog/oracle"
+        ).glob("*/manifest.json")
+        for privilege in json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        ).get("required_privileges", [])
+    }
     grant_pattern = re.compile(
         r"GRANT\s+SELECT\s+ON\s+SYS\.([A-Z0-9_$]+)\s+TO\s+kbot_monitor\s*;",
         re.IGNORECASE,
@@ -283,11 +315,40 @@ environment = production
         ("Oracle建用户脚本", create_grants),
         ("Oracle完整授权脚本", existing_user_grants),
     ):
-        missing = catalog_privileges - granted
+        missing = (catalog_privileges | playbook_privileges) - granted
         if missing:
             raise RuntimeError(
-                f"{script_name}未覆盖当前诊断目录权限：{', '.join(sorted(missing))}"
+                f"{script_name}未覆盖诊断目录或Playbook权限："
+                f"{', '.join(sorted(missing))}"
             )
+        verification_match = re.search(
+            r"AND\s+table_name\s+IN\s*\((.*?)\)\s*;",
+            oracle_user_script
+            if script_name == "Oracle建用户脚本"
+            else oracle_grant_script,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if verification_match is None:
+            raise RuntimeError(f"{script_name}缺少对象授权验证清单")
+        verified = {
+            value.upper()
+            for value in re.findall(
+                r"'([A-Z0-9_$]+)'", verification_match.group(1)
+            )
+        }
+        if verified != granted:
+            raise RuntimeError(f"{script_name}授权语句与验证清单不一致")
+        expected_count_match = re.search(
+            r"object_grant_count\s*<>\s*(\d+)",
+            oracle_user_script
+            if script_name == "Oracle建用户脚本"
+            else oracle_grant_script,
+        )
+        if (
+            expected_count_match is None
+            or int(expected_count_match.group(1)) != len(granted)
+        ):
+            raise RuntimeError(f"{script_name}授权数量断言不准确")
     if create_grants != existing_user_grants:
         raise RuntimeError("Oracle建用户脚本与完整授权脚本的对象权限不一致")
     datasource_config = (

@@ -206,16 +206,16 @@ SHOW CON_NAME;
 ```
 
 脚本会隐藏密码输入，拒绝在`CDB$ROOT`运行，并创建固定用户`kbot_monitor`及当前
-Exporter、补充指标、Alert Collector和AIOps诊断所需的逐对象最小授权。当前累计Top SQL
-读取`V_$INSTANCE`、`V_$DATABASE`和`V_$SQLSTATS`；当前活跃会话和阻塞链读取
-`GV_$SESSION`；长事务读取`GV_$TRANSACTION`；表空间容量读取`DBA_DATA_FILES`和
-`DBA_FREE_SPACE`；实时性能读取`V_$SYSMETRIC`和`V_$RSRCPDBMETRIC`；内存读取`V_$SGA`和
-`V_$PGASTAT`；归档/FRA容量读取`V_$RECOVERY_FILE_DEST`；TEMP/UNDO读取
-`DBA_TEMP_FILES`、`V_$TEMP_SPACE_HEADER`和`DBA_UNDO_EXTENTS`；Redo读取`V_$LOG`；
-近期数据库告警读取`V_$DIAG_ALERT_EXT`；调度失败和无效对象读取
-`DBA_SCHEDULER_JOB_RUN_DETAILS`、`DBA_OBJECTS`；RMAN与Data Guard状态读取
-`V_$RMAN_BACKUP_JOB_DETAILS`、`V_$DATAGUARD_STATS`。脚本不授予AWR
-历史视图，也不隐含Diagnostics Pack许可。
+Exporter、补充指标、Alert Collector和AIOps诊断所需的99项直接对象授权。配置诊断同时
+读取`V_$PARAMETER`、`V_$SYSTEM_PARAMETER`、`V_$SPPARAMETER`和
+`V_$PARAMETER_VALID_VALUES`，区分当前会话值、实例值、持久化值和有效值。其余授权覆盖
+实例/PDB身份、RAC会话与锁、当前SQL执行计划、等待与I/O、SGA/PGA、表空间与对象统计、
+归档/FRA、备份恢复、Data Guard、调度维护、无效对象、账号状态及授权缺口等常用只读
+诊断面。
+
+脚本只进行逐对象`SELECT`授权，不授予`DBA`、`SELECT ANY TABLE`或
+`SELECT_CATALOG_ROLE`，也不授权`DBA_HIST_*`、`V_$ACTIVE_SESSION_HISTORY`等需要额外
+许可的AWR/ASH历史视图。
 建用户脚本只用于首次创建。用户已存在时不要重复执行`CREATE USER`，应执行以下完整
 授权脚本补齐并验证授权：
 
@@ -502,7 +502,8 @@ Binding时，应审核后把其中 `prometheus_queries` 内容配置为该绑定
 
 ## 11. 准备 Oracle Alert Collector账号
 
-由 DBA在实际 PDB中创建独立监控账号，并审核后授予：
+用于AIOps诊断和Exporter的`kbot_monitor`必须执行第7节完整授权脚本。只有账号被明确限定为
+“仅运行Alert Collector”且不会被诊断执行器或Exporter复用时，DBA才可审核后缩减为：
 
 ```sql
 GRANT CREATE SESSION TO kbot_monitor;

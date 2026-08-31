@@ -16,6 +16,8 @@ Oracle DBA在目标PDB创建最小权限监控用户时，使用
 `oracle/create_kbot_monitor.sql`。该脚本必须以SYSDBA执行，并会拒绝在`CDB$ROOT`
 创建用户。用户已经存在但授权不完整时，使用
 `oracle/grant_kbot_monitor.sql`补齐并验证完整授权，不要重复创建用户。
+两份脚本使用相同的99项逐对象只读清单，覆盖当前/持久化参数、性能、锁、存储、恢复、
+维护和账号授权诊断；不授予目录角色、任意表权限或AWR/ASH历史视图。
 
 OEM不属于此安装包，部署完成后在AIOps App内配置。
 
