@@ -149,20 +149,34 @@ class OracleDiagnosticDriver:
                 cursor.close()
                 await connection.rollback()
         except TimeoutError as exc:
+            error_code = (
+                "TARGET_CONNECTION_TIMEOUT"
+                if phase == "CONNECT"
+                else "QUERY_TIMEOUT"
+            )
             logger.warning(
-                "Oracle 诊断超时：tool_id={} phase={}",
+                "Oracle 诊断超时：tool_id={} phase={} error_code={}",
                 operation_id,
                 phase,
+                error_code,
             )
-            raise DiagnosticDriverError("TIMEOUT", retryable=True) from exc
+            raise DiagnosticDriverError(error_code, retryable=True) from exc
         except oracledb.Error as exc:
-            code = getattr(getattr(exc, "args", [None])[0], "code", None)
+            driver_error = getattr(exc, "args", [None])[0]
+            code = getattr(driver_error, "code", None)
+            full_code = getattr(driver_error, "full_code", None)
             if code in {1017, 28000, 28001}:
                 mapped = "AUTH_FAILED"
             elif code in {942, 1031}:
                 mapped = "PRIVILEGE_MISSING"
             elif code in {904, 918, 933, 936}:
                 mapped = "QUERY_INCOMPATIBLE"
+            elif code in {12170, 12535} or full_code == "DPY-4024":
+                mapped = (
+                    "TARGET_CONNECTION_TIMEOUT"
+                    if phase == "CONNECT"
+                    else "QUERY_TIMEOUT"
+                )
             elif code in {12154, 12514, 12541, 12545}:
                 mapped = "TARGET_UNREACHABLE"
             else:
@@ -176,7 +190,12 @@ class OracleDiagnosticDriver:
             )
             raise DiagnosticDriverError(
                 mapped,
-                retryable=mapped in {"TARGET_UNREACHABLE", "TIMEOUT"},
+                retryable=mapped
+                in {
+                    "TARGET_UNREACHABLE",
+                    "TARGET_CONNECTION_TIMEOUT",
+                    "QUERY_TIMEOUT",
+                },
             ) from exc
         finally:
             if connection is not None:

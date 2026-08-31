@@ -32,6 +32,7 @@ class TaskExecutionContext:
     original_request: str = ""
     lease_token: str = ""
     lease_until: str = ""
+    max_attempts: int = 1
 
 
 class TaskHandler(Protocol):

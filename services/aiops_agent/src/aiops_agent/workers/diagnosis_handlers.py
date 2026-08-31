@@ -746,6 +746,8 @@ class InteractiveDiagnosisHandler:
     _CONNECTIVITY_GAPS = {
         "TARGET_UNREACHABLE",
         "TIMEOUT",
+        "TARGET_CONNECTION_TIMEOUT",
+        "QUERY_TIMEOUT",
         "SECRET_UNAVAILABLE",
         "SECRET_NOT_CONFIGURED",
         "DATABASE_ACCESS_DISABLED",

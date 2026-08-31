@@ -34,6 +34,7 @@ from platform_core.contracts.aiops.executor import (
 )
 from platform_core.identity import uuid7
 
+from .errors import RetryableTaskError
 from .handlers import TaskExecutionContext
 
 
@@ -148,11 +149,14 @@ class DatabaseDiagnosticHandler:
         lease_until = _utc(context.lease_until)
         expires_at = min(lease_until, now + timedelta(seconds=self._ttl))
         if expires_at <= now + timedelta(seconds=1):
-            return self._gap(
+            return self._finish(
                 context,
-                tool_id,
-                "GRANT_EXPIRED",
-                retryable=True,
+                self._gap(
+                    context,
+                    tool_id,
+                    "GRANT_EXPIRED",
+                    retryable=True,
+                ),
             )
         parameters = dict(tool.get("parameters", {}))
         grant = DiagnosticExecutionGrant(
@@ -199,11 +203,14 @@ class DatabaseDiagnosticHandler:
                 request, trace_id=context.trace_id
             )
         except Exception:
-            return self._gap(
+            return self._finish(
                 context,
-                tool_id,
-                "TARGET_UNREACHABLE",
-                retryable=True,
+                self._gap(
+                    context,
+                    tool_id,
+                    "TARGET_UNREACHABLE",
+                    retryable=True,
+                ),
             )
         if result.status == "SUCCEEDED" and result.observation is not None:
             return DatabaseDiagnosticResult(
@@ -212,12 +219,28 @@ class DatabaseDiagnosticHandler:
                 status="SUCCEEDED",
                 observation=result.observation,
             )
-        return self._gap(
+        return self._finish(
             context,
-            tool_id,
-            result.error_code or "EXECUTOR_INTERNAL_ERROR",
-            retryable=result.retryable,
+            self._gap(
+                context,
+                tool_id,
+                result.error_code or "EXECUTOR_INTERNAL_ERROR",
+                retryable=result.retryable,
+            ),
         )
+
+    @staticmethod
+    def _finish(
+        context: TaskExecutionContext,
+        result: DatabaseDiagnosticResult,
+    ) -> DatabaseDiagnosticResult:
+        if (
+            result.gap is not None
+            and result.gap.retryable
+            and context.attempt < context.max_attempts
+        ):
+            raise RetryableTaskError(result.gap.code)
+        return result
 
     @staticmethod
     def _gap(
@@ -232,6 +255,8 @@ class DatabaseDiagnosticHandler:
             "AUTH_FAILED": "Target 只读凭据认证失败",
             "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
             "TIMEOUT": "受控只读查询执行超时",
+            "TARGET_CONNECTION_TIMEOUT": "Target 数据库只读连接建立超时",
+            "QUERY_TIMEOUT": "受控只读查询执行超时",
             "OUTPUT_SCHEMA_INVALID": "数据库返回列与受控诊断目录不一致",
             "QUERY_INCOMPATIBLE": "受控查询与当前 Oracle 视图列定义不兼容",
             "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
@@ -277,12 +302,15 @@ class DynamicQueryInvocationHandler:
         validated = dict(invocation["validated_query"])
         tool_id = "db.oracle.readonly_query"
         if not database.get("automatic_access_enabled", True):
-            return self._result(
-                invocation,
-                gap=self._evidence_gap(
-                    database,
-                    tool_id,
-                    default_code="DATABASE_ACCESS_DISABLED",
+            return self._finish(
+                context,
+                self._result(
+                    invocation,
+                    gap=self._evidence_gap(
+                        database,
+                        tool_id,
+                        default_code="DATABASE_ACCESS_DISABLED",
+                    ),
                 ),
             )
         now = datetime.now(UTC)
@@ -291,13 +319,16 @@ class DynamicQueryInvocationHandler:
             now + timedelta(seconds=self._ttl),
         )
         if expires_at <= now + timedelta(seconds=1):
-            return self._result(
-                invocation,
-                gap=EvidenceGap(
-                    code="GRANT_EXPIRED",
-                    tool_id=tool_id,
-                    detail="动态只读查询的任务租约已过期",
-                    retryable=True,
+            return self._finish(
+                context,
+                self._result(
+                    invocation,
+                    gap=EvidenceGap(
+                        code="GRANT_EXPIRED",
+                        tool_id=tool_id,
+                        detail="动态只读查询的任务租约已过期",
+                        retryable=True,
+                    ),
                 ),
             )
         parameters = dict(validated["parameters"])
@@ -348,26 +379,52 @@ class DynamicQueryInvocationHandler:
                 request, trace_id=context.trace_id
             )
         except Exception:
-            return self._result(
-                invocation,
-                gap=EvidenceGap(
-                    code="TARGET_UNREACHABLE",
-                    tool_id=tool_id,
-                    detail="动态只读查询执行器当前不可用",
-                    retryable=True,
+            return self._finish(
+                context,
+                self._result(
+                    invocation,
+                    gap=EvidenceGap(
+                        code="TARGET_UNREACHABLE",
+                        tool_id=tool_id,
+                        detail="动态只读查询执行器当前不可用",
+                        retryable=True,
+                    ),
                 ),
             )
         if result.status == "SUCCEEDED" and result.observation is not None:
             return self._result(invocation, observation=result.observation)
-        return self._result(
-            invocation,
-            gap=EvidenceGap(
-                code=result.error_code or "EXECUTOR_INTERNAL_ERROR",
-                tool_id=tool_id,
-                detail="动态只读查询本次未取得可验证结果",
-                retryable=result.retryable,
+        return self._finish(
+            context,
+            self._result(
+                invocation,
+                gap=EvidenceGap(
+                    code=result.error_code or "EXECUTOR_INTERNAL_ERROR",
+                    tool_id=tool_id,
+                    detail="动态只读查询本次未取得可验证结果",
+                    retryable=result.retryable,
+                ),
             ),
         )
+
+    @staticmethod
+    def _finish(
+        context: TaskExecutionContext,
+        result: DbaToolResult,
+    ) -> DbaToolResult:
+        retryable_gap = next(
+            (
+                outcome.gap
+                for outcome in result.tool_outcomes
+                if outcome.gap is not None and outcome.gap.retryable
+            ),
+            None,
+        )
+        if (
+            retryable_gap is not None
+            and context.attempt < context.max_attempts
+        ):
+            raise RetryableTaskError(retryable_gap.code)
+        return result
 
     @staticmethod
     def _evidence_gap(database, tool_id: str, *, default_code: str):

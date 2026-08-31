@@ -6,7 +6,7 @@ import hashlib
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 from fastapi.testclient import TestClient
@@ -24,7 +24,9 @@ from aiops_agent.config import AIOpsSettings
 from aiops_agent.executor.drivers import (
     DiagnosticDriverError,
     DriverQueryResult,
+    OracleDiagnosticDriver,
 )
+from aiops_agent.ports.secret_store import ResolvedSecret
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_database_diagnostic_blueprint,
@@ -72,6 +74,97 @@ class FailingDriver:
         raise DiagnosticDriverError(
             "PRIVILEGE_MISSING", retryable=False
         )
+
+
+class _TimeoutCursor:
+    description = (("SID",),)
+
+    def __init__(self) -> None:
+        self.execute_count = 0
+
+    async def execute(self, _sql, _parameters=None):
+        self.execute_count += 1
+        if self.execute_count == 2:
+            raise TimeoutError
+
+    async def fetchmany(self, _limit):
+        return ()
+
+    def close(self):
+        return None
+
+
+class _TimeoutConnection:
+    version = "19.24.0.0.0"
+    call_timeout = 0
+    module = ""
+    action = ""
+
+    def __init__(self) -> None:
+        self._cursor = _TimeoutCursor()
+
+    def cursor(self):
+        return self._cursor
+
+    async def rollback(self):
+        return None
+
+    async def close(self):
+        return None
+
+
+class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _profile() -> DiagnosticConnectionProfile:
+        return DiagnosticConnectionProfile(
+            host="db.internal",
+            port=1521,
+            service="PDB1",
+            tls_enabled=False,
+        )
+
+    @staticmethod
+    def _limits() -> DiagnosticLimits:
+        return DiagnosticLimits(
+            statement_timeout_seconds=10,
+            max_result_rows=10,
+            max_result_bytes=65536,
+        )
+
+    async def _execute(self):
+        return await OracleDiagnosticDriver().execute_dynamic(
+            profile=self._profile(),
+            secret=ResolvedSecret(
+                values={"username": "readonly", "password": "hidden"},
+                fingerprint="test",
+            ),
+            sql="SELECT sid FROM v$session",
+            parameters={},
+            limits=self._limits(),
+            trace_id="trace-timeout",
+        )
+
+    async def test_connect_timeout_has_distinct_error_code(self) -> None:
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(side_effect=TimeoutError),
+        ):
+            with self.assertRaises(DiagnosticDriverError) as raised:
+                await self._execute()
+
+        self.assertEqual("TARGET_CONNECTION_TIMEOUT", raised.exception.code)
+        self.assertTrue(raised.exception.retryable)
+
+    async def test_query_timeout_has_distinct_error_code(self) -> None:
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_TimeoutConnection()),
+        ):
+            with self.assertRaises(DiagnosticDriverError) as raised:
+                await self._execute()
+
+        self.assertEqual("QUERY_TIMEOUT", raised.exception.code)
+        self.assertTrue(raised.exception.retryable)
 
 
 class DiagnosticCatalogTest(unittest.TestCase):

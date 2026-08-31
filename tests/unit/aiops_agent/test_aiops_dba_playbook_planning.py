@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -27,6 +28,7 @@ from aiops_agent.tools import (
     build_capability_snapshot,
 )
 from aiops_agent.workers.database_handlers import DatabaseDiagnosticHandler
+from aiops_agent.workers.errors import RetryableTaskError
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.tool_handlers import DbaPlaybookInvocationHandler
 from platform_core.contracts.aiops.conversation import (
@@ -592,6 +594,18 @@ class _GapExecutorClient:
         )
 
 
+class _RetryableGapExecutorClient(_GapExecutorClient):
+    async def execute_diagnostic(self, request, *, trace_id):
+        del trace_id
+        self.calls.append(request)
+        return ReadDiagnosticResult(
+            executor_request_id=request.executor_request_id,
+            status="GAP",
+            error_code="TARGET_CONNECTION_TIMEOUT",
+            retryable=True,
+        )
+
+
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_replan_uses_snapshots_and_persists_supported_revision(
         self,
@@ -920,6 +934,50 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DbaPlaybookFrameworkTest(unittest.TestCase):
+    def test_compiler_enforces_identity_and_resolves_later_actions(self) -> None:
+        registry = PlaybookRegistry.load()
+        actions = (
+            SimpleNamespace(
+                action_id="a1",
+                tool_id="db.sql.top_current",
+                depends_on=(),
+            ),
+            SimpleNamespace(
+                action_id="a2",
+                tool_id="db.instance.identity",
+                depends_on=(),
+            ),
+            SimpleNamespace(
+                action_id="a3",
+                tool_id="db.oracle.readonly_query",
+                depends_on=(),
+            ),
+            SimpleNamespace(
+                action_id="a4",
+                tool_id="custom.inspect",
+                depends_on=("a5",),
+            ),
+            SimpleNamespace(
+                action_id="a5",
+                tool_id="custom.collect",
+                depends_on=(),
+            ),
+        )
+
+        compiled = InvestigationTaskCompiler(registry).compile(
+            DbaPlaybookPlan(catalog_hash=registry.catalog_hash, items=()),
+            investigation_actions=actions,
+        )
+        tasks = {item.task_key: item for item in compiled.tasks}
+
+        self.assertEqual(
+            ("diagnostic:a2",), tasks["diagnostic:a1"].depends_on
+        )
+        self.assertEqual(("diagnostic:a2",), tasks["dynamic:a3"].depends_on)
+        self.assertEqual(
+            ("diagnostic:a5",), tasks["diagnostic:a4"].depends_on
+        )
+
     def test_investigation_action_freezes_only_its_selected_atomic_tool(self) -> None:
         """Playbook只能提供默认值，不能扩大模型Action的实际执行范围。"""
         diagnostic_registry = DiagnosticRegistry.load()
@@ -1440,6 +1498,75 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
 
         self.assertEqual("GAP", result.status)
         self.assertEqual("1.0.0", codec.grant.tool_version)
+
+    def test_database_handler_retries_then_returns_final_gap(self) -> None:
+        codec = _CapturingGrantCodec()
+        client = _RetryableGapExecutorClient()
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="diagnostic:db.instance.identity",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-retryable-gap",
+            attempt=1,
+            max_attempts=2,
+            deadline_at=None,
+            plan_snapshot={
+                "database_diagnostics": {
+                    "domain_id": 7,
+                    "target_row_version": 1,
+                    "db_type": "ORACLE",
+                    "configured_version": "19c",
+                    "connection_profile": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB1",
+                        "tls_enabled": False,
+                    },
+                    "diagnostic_credential_id": str(uuid7()),
+                    "capability_snapshot_hash": "a" * 64,
+                    "tools": [
+                        {
+                            "tool_id": "db.instance.identity",
+                            "tool_version": "1.0.0",
+                            "variant": "oracle.default",
+                            "template_sha256": "b" * 64,
+                            "parameters": {},
+                            "limits": {
+                                "statement_timeout_seconds": 10,
+                                "max_result_rows": 10,
+                                "max_result_bytes": 1024,
+                                "max_columns": 16,
+                                "max_cell_chars": 1024,
+                            },
+                        }
+                    ],
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+            lease_token="lease-token",
+            lease_until=(datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+        )
+        handler = DatabaseDiagnosticHandler(
+            executor_client=client,
+            grant_codec=codec,
+            grant_issuer="aiops-worker",
+            grant_audience="aiops-db-executor",
+            grant_ttl_seconds=30,
+        )
+
+        with self.assertRaises(RetryableTaskError):
+            self.run_async(handler.execute(context))
+        final = self.run_async(
+            handler.execute(replace(context, attempt=2))
+        )
+
+        self.assertEqual("GAP", final.status)
+        self.assertEqual("TARGET_CONNECTION_TIMEOUT", final.gap.code)
+        self.assertEqual(2, len(client.calls))
 
     def test_database_handler_uses_configured_version_when_identity_is_gap(
         self,

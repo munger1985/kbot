@@ -10,6 +10,7 @@ from aiops_agent.workers.handlers import (
     HandlerRegistry,
     TaskExecutionContext,
 )
+from aiops_agent.workers.errors import RetryableTaskError
 from aiops_agent.contracts.hitl import InputSuspension
 from platform_core.contracts.aiops import (
     AppendOpsTaskProgressCommand,
@@ -206,6 +207,8 @@ class AIOpsTaskWorker:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if isinstance(exc, RetryableTaskError):
+                error_code = "HANDLER_RETRYABLE_FAILURE"
             latest = current["lease"]
             logger.exception(
                 "AIOps Task 执行失败：task_id={} error_code={} "
@@ -308,6 +311,7 @@ class AIOpsTaskWorker:
             original_request=lease.original_request,
             trace_id=lease.trace_id,
             attempt=lease.attempt,
+            max_attempts=lease.max_attempts,
             deadline_at=(
                 lease.deadline_at.isoformat()
                 if lease.deadline_at is not None

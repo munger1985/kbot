@@ -127,6 +127,7 @@ class TaskLease(AIOpsContract):
     lease_token: UUIDv7
     lease_until: UtcDatetime
     attempt: int = Field(ge=1)
+    max_attempts: int = Field(ge=1)
     timeout_seconds: int = Field(ge=1)
     row_version: int = Field(ge=1)
     target_id: UUIDv7

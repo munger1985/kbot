@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -36,6 +37,7 @@ from aiops_agent.workers.database_handlers import (
     DynamicQueryInvocationHandler,
 )
 from aiops_agent.workers.handlers import TaskExecutionContext
+from aiops_agent.workers.errors import RetryableTaskError
 from platform_core.contracts.aiops import InvestigationPlanningOutput
 from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
@@ -622,16 +624,21 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
 
 
 class GapDynamicExecutorClient:
-    def __init__(self) -> None:
+    def __init__(self, *, retryable: bool = False) -> None:
         self.request = None
+        self.retryable = retryable
 
     async def execute_dynamic_diagnostic(self, request, *, trace_id):
         self.request = request
         return ReadDiagnosticResult(
             executor_request_id=request.executor_request_id,
             status="GAP",
-            error_code="PRIVILEGE_MISSING",
-            retryable=False,
+            error_code=(
+                "TARGET_CONNECTION_TIMEOUT"
+                if self.retryable
+                else "PRIVILEGE_MISSING"
+            ),
+            retryable=self.retryable,
         )
 
 
@@ -719,6 +726,24 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
         assert client.request is not None
         grant = codec.verify_dynamic(client.request.grant)
         self.assertEqual(validated.query_sha256, grant.query_sha256)
+
+        retryable_handler = DynamicQueryInvocationHandler(
+            executor_client=GapDynamicExecutorClient(retryable=True),
+            grant_codec=codec,
+            grant_issuer="kbot-aiops-worker",
+            grant_audience="kbot-aiops-db-executor",
+            grant_ttl_seconds=45,
+        )
+        retry_context = replace(context, attempt=1, max_attempts=2)
+        with self.assertRaises(RetryableTaskError):
+            await retryable_handler.execute(retry_context)
+        final = await retryable_handler.execute(
+            replace(retry_context, attempt=2)
+        )
+        self.assertEqual(
+            "TARGET_CONNECTION_TIMEOUT",
+            final.tool_outcomes[0].gap.code,
+        )
 
 
 if __name__ == "__main__":

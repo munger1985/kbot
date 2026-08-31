@@ -5733,6 +5733,7 @@ class AIOpsRuntimeService:
             lease_token=lease_token,
             lease_until=task.lease_until,
             attempt=int(task.attempt_count),
+            max_attempts=int(task.max_attempts),
             timeout_seconds=int(task.timeout_seconds),
             row_version=int(task.row_version),
             target_id=run.target_id,

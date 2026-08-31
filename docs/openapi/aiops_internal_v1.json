@@ -7252,6 +7252,11 @@
             "title": "Lease Until",
             "type": "string"
           },
+          "max_attempts": {
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
           "original_request": {
             "title": "Original Request",
             "type": "string"
@@ -7325,6 +7330,7 @@
           "lease_token",
           "lease_until",
           "attempt",
+          "max_attempts",
           "timeout_seconds",
           "row_version",
           "target_id",

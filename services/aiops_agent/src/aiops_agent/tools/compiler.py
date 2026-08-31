@@ -116,11 +116,6 @@ class InvestigationTaskCompiler:
                     priority=46,
                 )
             )
-        action_task_keys: dict[str, tuple[str, ...]] = {
-            str(item.action_id): (task_keys[item.ordinal],)
-            for item in plan.items
-            if item.action_id is not None
-        }
         direct_actions = tuple(
             action
             for action in investigation_actions
@@ -135,16 +130,66 @@ class InvestigationTaskCompiler:
             action.action_id: f"diagnostic:{action.action_id}{suffix}"
             for action in direct_actions
         }
+        dynamic_actions = tuple(
+            action
+            for action in investigation_actions
+            if action.tool_id == "db.oracle.readonly_query"
+        )
+        dynamic_key_by_action = {
+            action.action_id: f"dynamic:{action.action_id}{suffix}"
+            for action in dynamic_actions
+        }
+        action_task_keys: dict[str, tuple[str, ...]] = {
+            str(item.action_id): (task_keys[item.ordinal],)
+            for item in plan.items
+            if item.action_id is not None
+        }
+        for action in investigation_actions:
+            if action.tool_id == "monitor.query_range":
+                action_task_keys[action.action_id] = tuple(monitoring_keys)
+            elif action.tool_id == "loki.query_range":
+                action_task_keys[action.action_id] = tuple(log_keys)
+        action_task_keys.update(
+            {
+                action_id: (task_key,)
+                for action_id, task_key in direct_key_by_action.items()
+            }
+        )
+        action_task_keys.update(
+            {
+                action_id: (task_key,)
+                for action_id, task_key in dynamic_key_by_action.items()
+            }
+        )
+        identity_task_keys = tuple(
+            direct_key_by_action[action.action_id]
+            for action in direct_actions
+            if action.tool_id == "db.instance.identity"
+        )
+
+        def dependencies_for(action, *, require_identity: bool):
+            model_dependencies = (
+                task
+                for action_id in action.depends_on
+                for task in action_task_keys.get(action_id, ())
+            )
+            enforced_dependencies = (
+                identity_task_keys
+                if require_identity
+                and action.tool_id != "db.instance.identity"
+                else ()
+            )
+            return tuple(
+                dict.fromkeys((*enforced_dependencies, *model_dependencies))
+            )
+
         diagnostic_keys: list[str] = []
         for action in direct_actions:
             task_key = direct_key_by_action[action.action_id]
             diagnostic_keys.append(task_key)
-            dependencies = tuple(
-                dict.fromkeys(
-                    task
-                    for action_id in action.depends_on
-                    for task in action_task_keys.get(action_id, ())
-                )
+            dependencies = dependencies_for(
+                action,
+                require_identity=action.tool_id.startswith("db."),
             )
             tasks.append(
                 TaskSpec(
@@ -161,38 +206,11 @@ class InvestigationTaskCompiler:
                     priority=47,
                 )
             )
-            action_task_keys[action.action_id] = (task_key,)
-        for action in investigation_actions:
-            if action.tool_id == "monitor.query_range":
-                action_task_keys[action.action_id] = tuple(monitoring_keys)
-            elif action.tool_id == "loki.query_range":
-                action_task_keys[action.action_id] = tuple(log_keys)
-        dynamic_actions = tuple(
-            action
-            for action in investigation_actions
-            if action.tool_id == "db.oracle.readonly_query"
-        )
-        dynamic_key_by_action = {
-            action.action_id: f"dynamic:{action.action_id}{suffix}"
-            for action in dynamic_actions
-        }
-        action_task_keys.update(
-            {
-                action_id: (task_key,)
-                for action_id, task_key in dynamic_key_by_action.items()
-            }
-        )
         dynamic_keys: list[str] = []
         for action in dynamic_actions:
             task_key = dynamic_key_by_action[action.action_id]
             dynamic_keys.append(task_key)
-            dependencies = tuple(
-                dict.fromkeys(
-                    task
-                    for action_id in action.depends_on
-                    for task in action_task_keys.get(action_id, ())
-                )
-            )
+            dependencies = dependencies_for(action, require_identity=True)
             tasks.append(
                 TaskSpec(
                     task_key=task_key,
