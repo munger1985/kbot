@@ -36,3 +36,17 @@ class DbaToolResult(BaseModel):
     presentation_kind: PresentationPreference
     status: Literal["SUCCEEDED", "PARTIAL", "FAILED"]
     tool_outcomes: tuple[ToolOutcome, ...]
+
+
+def is_turn_evidence_outcome(
+    result: DbaToolResult,
+    outcome: ToolOutcome,
+) -> bool:
+    """判断工具结果是否应作为当前 Turn 的可引用证据。"""
+    return (
+        outcome.observation is not None
+        and (
+            outcome.tool_id != "db.instance.identity"
+            or result.source_type == "TOOL"
+        )
+    )

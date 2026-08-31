@@ -54,7 +54,10 @@ from aiops_agent.entities import (
     ReportEntity,
 )
 from aiops_agent.contracts.evidence import ObservationSet
-from aiops_agent.contracts.tool_execution import DbaToolResult
+from aiops_agent.contracts.tool_execution import (
+    DbaToolResult,
+    is_turn_evidence_outcome,
+)
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaSufficiencyAssessment,
@@ -2142,8 +2145,7 @@ class AIOpsRuntimeService:
         observations = tuple(
             item.observation
             for item in result.tool_outcomes
-            if item.observation is not None
-            and item.tool_id != "db.instance.identity"
+            if is_turn_evidence_outcome(result, item)
         )
         existing = await uow.turns.get_evidence_by_artifact(
             turn_id=turn.turn_id,
@@ -2154,8 +2156,7 @@ class AIOpsRuntimeService:
             evidence_tool_ids = {
                 item.tool_id
                 for item in result.tool_outcomes
-                if item.observation is not None
-                and item.tool_id != "db.instance.identity"
+                if is_turn_evidence_outcome(result, item)
             }
             evidence_tool_row = next(
                 (row for row in tool_rows if row.tool_id in evidence_tool_ids),

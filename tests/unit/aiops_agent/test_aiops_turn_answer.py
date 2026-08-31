@@ -500,6 +500,92 @@ class DbaTurnAnswerTest(unittest.TestCase):
             "playbook.completed", {event.event_type for event in turns.events}
         )
 
+    def test_runtime_projects_direct_identity_for_answer_citation(self) -> None:
+        service = object.__new__(AIOpsRuntimeService)
+        turn = SimpleNamespace(
+            turn_id=uuid7(),
+            conversation_id=uuid7(),
+            domain_id=7,
+            created_by="dba@example.com",
+            event_cursor=0,
+            status="COLLECTING",
+            sufficiency_status=None,
+            completed_at=None,
+        )
+        conversation = SimpleNamespace(
+            last_message_no=1,
+            updated_by=None,
+            updated_at=None,
+        )
+        turns = _ProjectionTurns(invocation=None)
+        uow = SimpleNamespace(
+            turns=turns,
+            conversations=_ProjectionConversations(conversation),
+        )
+        identity_input = _identity_tool_artifact(source_type="TOOL")
+        identity_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            payload_json=identity_input["payload"],
+        )
+        now = datetime.now(UTC)
+
+        asyncio.run(
+            service._project_tool_result(
+                uow=uow,
+                turn=turn,
+                task=SimpleNamespace(
+                    ops_task_id=uuid7(), attempt_count=1
+                ),
+                artifact=identity_artifact,
+                payload=identity_artifact.payload_json,
+                now=now,
+            )
+        )
+        identity_ref = (
+            f"artifact:{identity_artifact.artifact_id}#instance_identity"
+        )
+        answer_artifact = SimpleNamespace(
+            artifact_id=uuid7(),
+            payload_json={},
+        )
+        asyncio.run(
+            service._project_turn_answer(
+                uow=uow,
+                turn=turn,
+                artifact=answer_artifact,
+                payload={
+                    "schema_version": "AIOPS_TURN_RESULT.v1",
+                    "status": "COMPLETED",
+                    "sufficiency_status": "ANSWERABLE",
+                    "blocks": [
+                        {
+                            "block_type": "TABLE",
+                            "schema_version": "AIOPS_TABLE_BLOCK.v1",
+                            "payload": {
+                                "title": "db.instance.identity",
+                                "columns": [],
+                                "rows": [],
+                            },
+                            "evidence_refs": [identity_ref],
+                        }
+                    ],
+                },
+                now=now,
+            )
+        )
+
+        self.assertEqual(1, len(turns.evidence))
+        self.assertEqual(
+            identity_artifact.artifact_id,
+            turns.evidence[0].artifact_id,
+        )
+        self.assertEqual(1, len(turns.citations))
+        self.assertEqual(
+            turns.evidence[0].turn_evidence_id,
+            turns.citations[0].turn_evidence_id,
+        )
+        self.assertEqual("COMPLETED", turn.status)
+
     def test_assessment_model_updates_hypotheses_and_next_action(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler(

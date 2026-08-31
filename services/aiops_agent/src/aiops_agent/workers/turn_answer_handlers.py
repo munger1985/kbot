@@ -14,7 +14,10 @@ from loguru import logger
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
-from aiops_agent.contracts.tool_execution import DbaToolResult
+from aiops_agent.contracts.tool_execution import (
+    DbaToolResult,
+    is_turn_evidence_outcome,
+)
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
@@ -213,37 +216,34 @@ CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状
             result = DbaToolResult.model_validate(artifact["payload"])
             artifact_id = str(artifact["artifact_id"])
             for outcome in result.tool_outcomes:
-                if outcome.observation is not None:
+                if is_turn_evidence_outcome(result, outcome):
                     observation = outcome.observation
-                    if (
-                        outcome.tool_id != "db.instance.identity"
-                        or result.source_type == "TOOL"
-                    ):
-                        facts.append(
-                            TurnEvidenceFact(
-                                evidence_ref=(
-                                    f"artifact:{artifact_id}#"
-                                    f"{outcome.step_id}"
-                                ),
-                                artifact_id=artifact_id,
-                                source_id=result.source_id,
-                                step_id=outcome.step_id,
-                                tool_id=outcome.tool_id,
-                                measurement_semantics=(
-                                    result.measurement_semantics
-                                ),
-                                presentation_kind=result.presentation_kind,
-                                captured_at=observation.captured_at.isoformat(),
-                                columns=tuple(
-                                    column.model_dump(mode="json")
-                                    for column in observation.columns
-                                ),
-                                rows=observation.rows,
-                                row_count=observation.row_count,
-                                truncated=observation.truncated,
-                                warnings=observation.warnings,
-                            )
+                    assert observation is not None
+                    facts.append(
+                        TurnEvidenceFact(
+                            evidence_ref=(
+                                f"artifact:{artifact_id}#"
+                                f"{outcome.step_id}"
+                            ),
+                            artifact_id=artifact_id,
+                            source_id=result.source_id,
+                            step_id=outcome.step_id,
+                            tool_id=outcome.tool_id,
+                            measurement_semantics=(
+                                result.measurement_semantics
+                            ),
+                            presentation_kind=result.presentation_kind,
+                            captured_at=observation.captured_at.isoformat(),
+                            columns=tuple(
+                                column.model_dump(mode="json")
+                                for column in observation.columns
+                            ),
+                            rows=observation.rows,
+                            row_count=observation.row_count,
+                            truncated=observation.truncated,
+                            warnings=observation.warnings,
                         )
+                    )
                 if outcome.gap is not None:
                     database_gap_found = True
                     gaps.append(
