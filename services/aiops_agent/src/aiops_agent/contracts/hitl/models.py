@@ -64,12 +64,50 @@ class DataRequiredRequest(_HitlContract):
     expires_at: UtcDatetime
 
 
+class DiagnosticQueryApprovalRequest(_HitlContract):
+    """用户只授权执行一条已经冻结的动态只读查询。"""
+
+    schema_version: Literal["DIAGNOSTIC_QUERY_APPROVAL_REQUEST.v1"] = (
+        "DIAGNOSTIC_QUERY_APPROVAL_REQUEST.v1"
+    )
+    hitl_id: str
+    run_id: str
+    task_id: str
+    target_id: str
+    target_display_name: str
+    purpose: str = Field(min_length=1, max_length=2000)
+    sql_text: str = Field(min_length=1, max_length=20000)
+    query_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    policy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    referenced_objects: tuple[str, ...] = Field(min_length=1)
+    projected_columns: tuple[str, ...] = Field(min_length=1)
+    column_sensitivities: tuple[
+        Literal["PUBLIC", "MASKED", "HASHED"], ...
+    ] = Field(min_length=1)
+    parameters: dict[str, str | int | float | bool | None]
+    reason_codes: tuple[str, ...] = Field(min_length=1)
+    max_rows: int = Field(ge=1, le=1000)
+    timeout_seconds: int = Field(ge=1, le=600)
+    max_result_bytes: int = Field(ge=1, le=100 * 1024 * 1024)
+    expires_at: UtcDatetime
+
+    @model_validator(mode="after")
+    def validate_columns(self) -> "DiagnosticQueryApprovalRequest":
+        if len(self.projected_columns) != len(self.column_sensitivities):
+            raise ValueError("查询投影列与敏感等级数量必须一致")
+        return self
+
+
 class InputSuspension(_HitlContract):
     """Handler 返回该对象时，Worker 改为原子挂起 Task。"""
 
     schema_version: Literal["INPUT_SUSPENSION.v1"] = "INPUT_SUSPENSION.v1"
     hitl_id: str
-    request_type: Literal["DATA_REQUIRED", "MANUAL_DIAGNOSTIC_SQL"]
+    request_type: Literal[
+        "DATA_REQUIRED",
+        "MANUAL_DIAGNOSTIC_SQL",
+        "DIAGNOSTIC_QUERY_APPROVAL",
+    ]
     assignee_user_id: str
     prompt_text: str
     response_schema: dict[str, Any]

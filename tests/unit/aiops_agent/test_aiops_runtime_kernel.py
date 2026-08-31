@@ -60,6 +60,14 @@ class RuntimeStateMachineTest(unittest.TestCase):
             DomainOpsTaskStatus.RUNNING,
             DomainOpsTaskStatus.SUCCEEDED,
         )
+        ensure_task_transition(
+            DomainOpsTaskStatus.RUNNING,
+            DomainOpsTaskStatus.WAITING_APPROVAL,
+        )
+        ensure_task_transition(
+            DomainOpsTaskStatus.WAITING_APPROVAL,
+            DomainOpsTaskStatus.READY,
+        )
 
     def test_terminal_state_cannot_restart(self) -> None:
         with self.assertRaises(InvalidOperationTransition):
@@ -73,7 +81,7 @@ class RuntimeStateMachineTest(unittest.TestCase):
                 DomainOpsTaskStatus.RUNNING,
             )
 
-    def test_blueprint_task_types_are_normalized_for_schema_15(self) -> None:
+    def test_blueprint_task_types_are_normalized_for_schema_16(self) -> None:
         self.assertEqual("CONTEXT_BUILD", normalize_task_type("SCOPE"))
         self.assertEqual("TOOL_INVOKE", normalize_task_type("OBSERVE"))
         self.assertEqual("EVIDENCE_ASSESS", normalize_task_type("DIAGNOSE"))

@@ -19,6 +19,7 @@ from platform_core.contracts.aiops import (
     CompleteOpsTaskCommand,
     CreateOpsRunCommand,
     DelegationEventPage,
+    DiagnosticQueryApprovalDecision,
     FailOpsTaskCommand,
     HeartbeatOpsTaskCommand,
     HitlResponse,
@@ -444,6 +445,28 @@ async def respond_hitl(
         domain_id=domain_id,
         actor_id=context.asserted_user_id or context.client_id,
         response=body,
+        idempotency_key=request.headers.get(
+            "Idempotency-Key", str(body.expected_row_version)
+        ),
+        trace_id=context.trace_id,
+    )
+
+
+@router.post("/hitl/{hitl_id}/decision", response_model=HitlResult)
+async def decide_diagnostic_query(
+    hitl_id: UUID,
+    body: DiagnosticQueryApprovalDecision,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> HitlResult:
+    require_service_scope(request, "aiops.hitl")
+    domain_id = _scope(request, context)
+    return await service.decide_diagnostic_query(
+        hitl_id=hitl_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        decision=body,
         idempotency_key=request.headers.get(
             "Idempotency-Key", str(body.expected_row_version)
         ),

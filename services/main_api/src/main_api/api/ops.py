@@ -30,6 +30,7 @@ from platform_core.contracts.aiops import (
     ApprovalReceipt,
     CancelRunCommand,
     ConnectivityCheckReceipt,
+    DiagnosticQueryApprovalDecision,
     HitlResponse,
     HitlResult,
     HitlSkipCommand,
@@ -478,6 +479,23 @@ async def skip_hitl(
         ) from exc
     body = HitlSkipCommand(expected_row_version=expected)
     payload = await _client(request).skip_hitl(
+        hitl_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(HitlResult, payload, response)
+
+
+@router.post("/hitl/{hitl_id}/decision", response_model=HitlResult)
+async def decide_diagnostic_query(
+    hitl_id: UUID,
+    body: DiagnosticQueryApprovalDecision,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> HitlResult:
+    payload = await _client(request).decide_diagnostic_query(
         hitl_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,

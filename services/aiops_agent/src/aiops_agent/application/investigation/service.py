@@ -103,9 +103,10 @@ class TurnPlanningService:
             raise TurnPlanningStageError(exc) from exc
 
     async def _require_schema_ready(self) -> None:
-        if self._schema_ready_check is None:
+        schema_ready_check = getattr(self, "_schema_ready_check", None)
+        if schema_ready_check is None:
             return
-        checks = await self._schema_ready_check()
+        checks = await schema_ready_check()
         if not checks or any(status != "ok" for status in checks.values()):
             raise AIOpsSchemaNotReadyError(checks)
 

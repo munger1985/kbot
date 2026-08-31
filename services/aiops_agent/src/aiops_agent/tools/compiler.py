@@ -222,7 +222,7 @@ class InvestigationTaskCompiler:
                     depends_on=dependencies,
                     input_artifact_keys=dependencies,
                     timeout_seconds=45,
-                    max_attempts=2,
+                    max_attempts=3,
                     priority=48,
                 )
             )

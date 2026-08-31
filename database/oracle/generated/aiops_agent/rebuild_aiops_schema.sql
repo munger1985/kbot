@@ -921,6 +921,8 @@ CREATE TABLE KBOT_OPS_HITL (
         REFERENCES KBOT_OPS_CHANGE_PROPOSAL (PROPOSAL_ID),
     CONSTRAINT CK_OPS_HITL_REQUEST CHECK (
         REQUEST_TYPE IN (
+            'DATA_REQUIRED', 'MANUAL_DIAGNOSTIC_SQL',
+            'DIAGNOSTIC_QUERY_APPROVAL',
             'MANUAL_ACTION_RESULT', 'CHANGE_APPROVAL'
         )
     ),
@@ -1873,8 +1875,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    15 AS SCHEMA_VERSION,
-    'aiops-oracle-v5' AS CONTRACT_VERSION
+    16 AS SCHEMA_VERSION,
+    'aiops-oracle-v6' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2931,14 +2933,14 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 7 THEN
-        raise_application_error(-20008, 'Schema 15 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 16 必需列缺失或允许为空。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 15 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 16 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 15
-       OR l_contract_version <> 'aiops-oracle-v5' THEN
+       OR l_schema_version <> 16
+       OR l_contract_version <> 'aiops-oracle-v6' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -2948,7 +2950,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：44 张表、10 个视图，Schema Version '
-        || '15，合同 aiops-oracle-v5。'
+        || '16，合同 aiops-oracle-v6。'
     );
 END;
 /

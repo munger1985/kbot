@@ -397,12 +397,12 @@ class AIOpsOutboxDispatcher:
                     error_code=(
                         "OUTBOX_PUBLISH_FAILED"
                         if retryable
-                        else getattr(
-                            exc,
-                            "code",
-                            None,
+                        else (
+                            "AIOPS_SCHEMA_INTEGRITY_ERROR"
+                            if is_schema_or_integrity_error(exc)
+                            else getattr(exc, "code", None)
+                            or "OUTBOX_PUBLISH_FAILED"
                         )
-                        or "AIOPS_SCHEMA_INTEGRITY_ERROR"
                     ),
                     error_message=(
                         str(exc)[:1000]

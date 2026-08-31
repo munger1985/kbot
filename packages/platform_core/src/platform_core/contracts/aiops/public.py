@@ -247,6 +247,13 @@ class HitlSkipCommand(AIOpsContract):
     expected_row_version: int = Field(ge=1)
 
 
+class DiagnosticQueryApprovalDecision(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    expected_row_version: int = Field(ge=1)
+    decision: Literal["APPROVE", "REJECT"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class HitlResult(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     hitl_id: UUIDv7

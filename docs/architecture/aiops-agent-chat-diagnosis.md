@@ -2,7 +2,7 @@
 
 版本：2.0
 状态：已批准，实施中
-目标数据库契约：Schema 15 / `aiops-oracle-v5`
+目标数据库契约：Schema 16 / `aiops-oracle-v6`
 
 ## 1. 范围和替换原则
 
@@ -190,9 +190,15 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 
 `db.oracle.readonly_query`执行前必须解析Oracle SQL AST，仅接受单条`SELECT`或只读`WITH`，
 禁止DDL、DML、PL/SQL、DB Link、外部过程和副作用函数；校验Schema、对象、列和诊断用户
-权限；强制行数、耗时、返回字节和并发限制；绑定参数；保存SQL Hash、策略Hash、参数和结果；
-当前策略直接拒绝凭据、绑定值、SQL正文等高风险源列，后续只有在具备确定性列级分类时才允许
-服务端脱敏后返回。
+权限；强制行数、耗时、返回字节和并发限制；绑定参数；保存SQL Hash、策略Hash、参数和结果。
+策略输出`AUTO_EXECUTE`或`APPROVAL_REQUIRED`：宽泛投影以及凭据、绑定值、SQL正文、客户端
+身份等敏感系统列转入`DIAGNOSTIC_QUERY_APPROVAL`，不得把Turn标记为规划失败。DDL、DML、
+PL/SQL、DB Link、锁和无法证明无副作用的函数仍为不可审批的越界动作。
+
+审批请求展示冻结SQL、对象、投影、列级敏感标记、参数摘要及执行上限。批准只把同一Task恢复
+为`READY`，执行器仍重新验证Query/Policy Hash并签发短期动态诊断Grant；拒绝和过期写入
+Evidence Gap后继续证据评估。`SELECT *`保留为宽泛投影并要求审批，`COUNT(*)`不属于宽泛
+结果投影，可按普通聚合自动执行。
 
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。
@@ -204,7 +210,7 @@ PromQL使用语法AST检查所有Vector Selector；数据库指标必须精确�
 `${binding_selector}`引用已冻结的Binding精确标签，后面附加有限个字面量包含或排除过滤。
 
 Oracle动态SQL的解析实现固定使用SQLGlot Oracle方言，并在规划端和执行端消费同一份
-`ORACLE_DYNAMIC_QUERY_POLICY.v1`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
+`ORACLE_DYNAMIC_QUERY_POLICY.v2`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
 投影列、函数、bind、Database Link和锁语义，注入服务端行数上限并绑定Query/Policy Hash。
 执行端仍必须开启只读事务、使用诊断凭据并强制超时、行数、列数、字节和单元格长度限制。
 
@@ -218,7 +224,7 @@ Evidence来源为`USER_PROVIDED`、`TOOL_OBSERVED`、`SOURCE_OBSERVED`、`KNOWLE
 口径、新鲜度、使用原因、信任等级及支持/反证/上下文角色。Answer Citation只能指向当前
 Turn显式关联的Evidence；历史证据需重新建立Link。
 
-## 11. Oracle Schema 15
+## 11. Oracle Schema 16
 
 ### 11.1 Turn
 
@@ -255,7 +261,7 @@ Policy Hash、状态、重试、错误和时间戳；`(REVISION_ID, ACTION_ID)`�
 - Turn Event增加可选Tool Invocation和Playbook Invocation关联；
 - Message Payload升级为内容项摘要，大对象进入Artifact。
 
-目标为44张表、10个视图，Manifest版本15、契约`aiops-oracle-v5`。规范DDL、自包含重建文件、
+目标为44张表、10个视图，Manifest版本16、契约`aiops-oracle-v6`。规范DDL、自包含重建文件、
 Entity、Repository、UoW、Manifest、视图和验收脚本必须同步更新。
 
 ## 12. 事务与Outbox

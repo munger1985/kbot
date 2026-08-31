@@ -101,6 +101,7 @@ class DynamicDiagnosticExecutorService:
             observation = self._normalize(
                 request=request,
                 grant=grant,
+                validated=validated,
                 raw=raw,
                 captured_at=captured_at,
                 duration_ms=max(
@@ -167,10 +168,11 @@ class DynamicDiagnosticExecutorService:
 
     @staticmethod
     def _normalize(
-        *, request, grant, raw, captured_at, duration_ms, limits
+        *, request, grant, validated, raw, captured_at, duration_ms, limits
     ) -> DatabaseObservation:
+        wildcard_projection = grant.projected_columns == ("*",)
         if (
-            raw.columns != grant.projected_columns
+            (not wildcard_projection and raw.columns != grant.projected_columns)
             or len(raw.columns) > limits.max_columns
         ):
             raise ValueError("动态查询输出列与 Grant 不一致")
@@ -204,14 +206,19 @@ class DynamicDiagnosticExecutorService:
                     "RESULT_LIMIT_EXCEEDED", retryable=False
                 )
             normalized_rows.append(normalized)
+        sensitivities = (
+            ("MASKED",) * len(raw.columns)
+            if wildcard_projection
+            else validated.column_sensitivities
+        )
         columns = tuple(
             DatabaseColumn(
                 name=name,
                 logical_type=logical_type,
-                sensitivity="PUBLIC",
+                sensitivity=sensitivity,
             )
-            for name, logical_type in zip(
-                raw.columns, logical_types, strict=True
+            for name, logical_type, sensitivity in zip(
+                raw.columns, logical_types, sensitivities, strict=True
             )
         )
         body = {

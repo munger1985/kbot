@@ -66,7 +66,8 @@ def available_tools(
             "tool_class": "ORACLE_SQL_DYNAMIC",
             "description": (
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
-                "仅在固定目录工具不能回答问题时使用，必须显式投影并使用 bind 参数；"
+                "仅在固定目录工具不能回答问题时使用，优先显式投影并使用 bind 参数；"
+                "宽泛投影或敏感系统列不会终止调查，而会转为用户审批；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数"
             ),
             "input": {
@@ -78,7 +79,8 @@ def available_tools(
                 "max_rows": dynamic_policy.max_rows,
                 "max_sql_chars": dynamic_policy.max_sql_chars,
                 "max_bind_count": dynamic_policy.max_bind_count,
-                "require_explicit_projection": True,
+                "star_projection_behavior": "REQUIRE_APPROVAL",
+                "sensitive_column_behavior": "REQUIRE_APPROVAL",
                 "require_bind_parameters": True,
             },
         }

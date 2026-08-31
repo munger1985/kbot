@@ -35,6 +35,7 @@ TASK_TRANSITIONS: dict[
     DomainOpsTaskStatus.RUNNING: frozenset(
         {
             DomainOpsTaskStatus.WAITING_INPUT,
+            DomainOpsTaskStatus.WAITING_APPROVAL,
             DomainOpsTaskStatus.SUCCEEDED,
             DomainOpsTaskStatus.RETRY_WAIT,
             DomainOpsTaskStatus.FAILED,
@@ -59,6 +60,7 @@ TASK_TRANSITIONS: dict[
     ),
     DomainOpsTaskStatus.WAITING_APPROVAL: frozenset(
         {
+            DomainOpsTaskStatus.READY,
             DomainOpsTaskStatus.SUCCEEDED,
             DomainOpsTaskStatus.FAILED,
             DomainOpsTaskStatus.CANCELLED,

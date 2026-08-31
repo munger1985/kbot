@@ -79,6 +79,7 @@ from aiops_agent.orchestration import (
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.orchestration.hitl import normalize_raw_response
 from aiops_agent.contracts.hitl import (
+    DiagnosticQueryApprovalRequest,
     HitlOutcome,
     ManualSqlRequest,
     UserDiagnosticSubmission,
@@ -110,6 +111,7 @@ from platform_core.contracts.aiops.internal import (
     RootDelegationResult,
 )
 from platform_core.contracts.aiops.public import (
+    DiagnosticQueryApprovalDecision,
     HitlResponse,
     HitlResult,
     InspectionFirePage,
@@ -3270,7 +3272,11 @@ class AIOpsRuntimeService:
                 )
             if (
                 command.request_type
-                not in {"DATA_REQUIRED", "MANUAL_DIAGNOSTIC_SQL"}
+                not in {
+                    "DATA_REQUIRED",
+                    "MANUAL_DIAGNOSTIC_SQL",
+                    "DIAGNOSTIC_QUERY_APPROVAL",
+                }
                 or command.assignee_user_id != run.actor_id
             ):
                 raise _runtime_error(
@@ -3332,17 +3338,28 @@ class AIOpsRuntimeService:
                     expires_at=command.expires_at,
                 )
             )
-            ensure_task_transition(
-                DomainOpsTaskStatus(task.status),
-                DomainOpsTaskStatus.WAITING_INPUT,
+            waiting_for_approval = (
+                command.request_type == "DIAGNOSTIC_QUERY_APPROVAL"
             )
-            task.status = DomainOpsTaskStatus.WAITING_INPUT.value
+            task_waiting_status = (
+                DomainOpsTaskStatus.WAITING_APPROVAL
+                if waiting_for_approval
+                else DomainOpsTaskStatus.WAITING_INPUT
+            )
+            run_waiting_status = (
+                DomainOpsRunStatus.WAITING_APPROVAL
+                if waiting_for_approval
+                else DomainOpsRunStatus.WAITING_INPUT
+            )
+            ensure_task_transition(
+                DomainOpsTaskStatus(task.status), task_waiting_status
+            )
+            task.status = task_waiting_status.value
             self._clear_lease(task)
             ensure_run_transition(
-                DomainOpsRunStatus(run.status),
-                DomainOpsRunStatus.WAITING_INPUT,
+                DomainOpsRunStatus(run.status), run_waiting_status
             )
-            run.status = DomainOpsRunStatus.WAITING_INPUT.value
+            run.status = run_waiting_status.value
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -3360,7 +3377,11 @@ class AIOpsRuntimeService:
             event = await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
-                event_type="diagnostic.input_required",
+                event_type=(
+                    "diagnostic.query_approval_required"
+                    if waiting_for_approval
+                    else "diagnostic.input_required"
+                ),
                 event_key=event_key,
                 visibility="USER",
                 payload_json={
@@ -3375,8 +3396,27 @@ class AIOpsRuntimeService:
             await uow.platform_notifications.emit_run_event(
                 run=run,
                 event_type="aiops.diagnostic.input_required",
-                summary="诊断需要补充输入",
+                summary=(
+                    "诊断查询等待用户审批"
+                    if waiting_for_approval
+                    else "诊断需要补充输入"
+                ),
                 actor_id=run.actor_id,
+            )
+            await self._project_chat_interaction_status(
+                uow=uow,
+                run=run,
+                status="WAITING_USER",
+                event_type=(
+                    "diagnostic.query_approval_required"
+                    if waiting_for_approval
+                    else "diagnostic.input_required"
+                ),
+                payload={
+                    "hitl_id": str(command.hitl_id),
+                    "hitl_type": command.request_type,
+                    "expires_at": command.expires_at.isoformat(),
+                },
             )
             await uow.commit()
             return self._mutation_receipt(
@@ -4049,6 +4089,20 @@ class AIOpsRuntimeService:
                     return False
                 task_status = DomainOpsTaskStatus(task.status)
                 run_status = DomainOpsRunStatus(run.status)
+                approval_request = (
+                    getattr(hitl, "request_type", None)
+                    == "DIAGNOSTIC_QUERY_APPROVAL"
+                )
+                expected_task_status = (
+                    DomainOpsTaskStatus.WAITING_APPROVAL
+                    if approval_request
+                    else DomainOpsTaskStatus.WAITING_INPUT
+                )
+                expected_run_status = (
+                    DomainOpsRunStatus.WAITING_APPROVAL
+                    if approval_request
+                    else DomainOpsRunStatus.WAITING_INPUT
+                )
                 if (
                     task_status
                     in {
@@ -4059,10 +4113,8 @@ class AIOpsRuntimeService:
                         DomainOpsTaskStatus.EXPIRED,
                     }
                     or run_status in TERMINAL_RUN_STATUSES
-                    or task_status
-                    != DomainOpsTaskStatus.WAITING_INPUT
-                    or run_status
-                    != DomainOpsRunStatus.WAITING_INPUT
+                    or task_status != expected_task_status
+                    or run_status != expected_run_status
                 ):
                     # Reconciler 必须能够清理旧版本或并发遗留的孤儿 HITL，
                     # 不能尝试把终态 Task/Run 重新推进到诊断态。
@@ -4095,7 +4147,11 @@ class AIOpsRuntimeService:
                 payload = HitlOutcome(
                     hitl_id=str(hitl.hitl_id),
                     status="EXPIRED",
-                    gap_code="MANUAL_DIAGNOSTIC_EXPIRED",
+                    gap_code=(
+                        "DIAGNOSTIC_QUERY_APPROVAL_EXPIRED"
+                        if approval_request
+                        else "MANUAL_DIAGNOSTIC_EXPIRED"
+                    ),
                 ).model_dump(mode="json")
                 artifact = await uow.runs.add_artifact(
                     OpsArtifactEntity(
@@ -4119,7 +4175,11 @@ class AIOpsRuntimeService:
                 hitl.responded_by = "aiops.reconciler"
                 hitl.responded_at = now
                 hitl.response_json = {
-                    "reason": "MANUAL_DIAGNOSTIC_EXPIRED"
+                    "reason": (
+                        "DIAGNOSTIC_QUERY_APPROVAL_EXPIRED"
+                        if approval_request
+                        else "MANUAL_DIAGNOSTIC_EXPIRED"
+                    )
                 }
                 hitl.response_hash = sha256_json(hitl.response_json)
                 ensure_task_transition(
@@ -4148,6 +4208,16 @@ class AIOpsRuntimeService:
                         "hitl_id": str(hitl.hitl_id),
                         "status": "EXPIRED",
                         "trace_id": trace_id,
+                    },
+                )
+                await self._project_chat_interaction_status(
+                    uow=uow,
+                    run=run,
+                    status="COLLECTING",
+                    event_type="diagnostic.input_expired",
+                    payload={
+                        "hitl_id": str(hitl.hitl_id),
+                        "status": "EXPIRED",
                     },
                 )
                 await uow.commit()
@@ -4866,7 +4936,10 @@ class AIOpsRuntimeService:
                 "stage": payload.get("task_type"),
                 "task_status": payload.get("status"),
             }
-        elif source_type == "diagnostic.input_required":
+        elif source_type in {
+            "diagnostic.input_required",
+            "diagnostic.query_approval_required",
+        }:
             projected_type = "interaction.required"
             safe = {
                 "hitl_id": payload.get("hitl_id"),
@@ -5134,6 +5207,8 @@ class AIOpsRuntimeService:
                 or run.actor_id != actor_id
             ):
                 raise resource_not_found("待补充数据")
+            if hitl.request_type == "DIAGNOSTIC_QUERY_APPROVAL":
+                raise validation_failed("诊断查询审批必须提交批准或拒绝决定")
             request_artifact = await self._hitl_request_artifact(
                 uow, hitl
             )
@@ -5301,6 +5376,216 @@ class AIOpsRuntimeService:
                 accepted_artifact=self._artifact_ref(artifact),
             )
 
+    async def decide_diagnostic_query(
+        self,
+        *,
+        hitl_id: UUID,
+        domain_id: int,
+        actor_id: str,
+        decision: DiagnosticQueryApprovalDecision,
+        idempotency_key: str,
+        trace_id: str,
+    ) -> HitlResult:
+        """批准时恢复同一冻结查询，拒绝时记录 Gap 并继续诊断。"""
+        async with self._uow_factory() as uow:
+            now = await uow.runs.database_now()
+            preliminary = await uow.changes.get_hitl_scoped(
+                hitl_id=hitl_id,
+                domain_id=domain_id,
+            )
+            if preliminary is None or preliminary.assignee_user_id != actor_id:
+                raise resource_not_found("诊断查询审批")
+            run = await uow.runs.get_run(
+                ops_run_id=preliminary.ops_run_id, lock=True
+            )
+            task = await uow.runs.get_task(
+                ops_task_id=preliminary.ops_task_id, lock=True
+            )
+            hitl = await uow.changes.get_hitl(hitl_id=hitl_id, lock=True)
+            if (
+                run is None
+                or task is None
+                or hitl is None
+                or run.actor_id != actor_id
+                or hitl.request_type != "DIAGNOSTIC_QUERY_APPROVAL"
+            ):
+                raise resource_not_found("诊断查询审批")
+            target_status = (
+                "APPROVED" if decision.decision == "APPROVE" else "REJECTED"
+            )
+            response_payload = {
+                "decision": decision.decision,
+                "note": decision.note,
+                "idempotency_key": idempotency_key,
+            }
+            response_hash = sha256_json(response_payload)
+            if hitl.status == target_status:
+                if hitl.response_hash != response_hash:
+                    raise _runtime_error(
+                        "OPS_IDEMPOTENCY_CONFLICT",
+                        "该诊断查询审批已经提交不同决定",
+                    )
+                return HitlResult(
+                    hitl_id=hitl.hitl_id,
+                    status=target_status,
+                    row_version=int(hitl.row_version),
+                )
+            if hitl.status != "PENDING":
+                raise state_conflict("诊断查询审批当前不能处理")
+            if int(hitl.row_version) != decision.expected_row_version:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "诊断查询审批版本已变化",
+                    status_code=412,
+                )
+            if hitl.expires_at <= now:
+                raise _runtime_error(
+                    "OPS_HITL_EXPIRED",
+                    "诊断查询审批已经过期",
+                    status_code=410,
+                )
+            if (
+                task.status != DomainOpsTaskStatus.WAITING_APPROVAL.value
+                or run.status != DomainOpsRunStatus.WAITING_APPROVAL.value
+            ):
+                raise state_conflict("诊断查询未处于等待审批状态")
+            request_artifact = await self._hitl_request_artifact(uow, hitl)
+            request = DiagnosticQueryApprovalRequest.model_validate(
+                request_artifact.payload_json
+            )
+            if (
+                request.run_id != str(run.ops_run_id)
+                or request.task_id != str(task.ops_task_id)
+                or request.target_id != str(run.target_id)
+            ):
+                raise state_conflict("诊断查询审批与 Run 上下文不匹配")
+            changed = await uow.changes.answer_hitl(
+                hitl_id=hitl.hitl_id,
+                expected_version=int(hitl.row_version),
+                allowed_statuses=("PENDING",),
+                new_status=target_status,
+                responded_by=actor_id,
+                responded_at=now,
+                response_json=response_payload,
+                response_uri=None,
+                response_hash=response_hash,
+            )
+            if not changed:
+                raise _runtime_error(
+                    "OPS_ROW_VERSION_CHANGED",
+                    "诊断查询审批版本已变化",
+                    status_code=412,
+                )
+            accepted_artifact = None
+            if decision.decision == "APPROVE":
+                plan = dict(run.plan_snapshot_json or {})
+                execution = dict(plan.get("investigation_execution") or {})
+                invocations = dict(execution.get("dynamic_invocations") or {})
+                invocation = dict(invocations.get(task.task_key) or {})
+                validated = dict(invocation.get("validated_query") or {})
+                if (
+                    validated.get("query_sha256") != request.query_sha256
+                    or validated.get("policy_sha256") != request.policy_sha256
+                ):
+                    raise state_conflict("诊断查询审批与冻结查询 Hash 不匹配")
+                invocation["approval"] = {
+                    "status": "APPROVED",
+                    "hitl_id": str(hitl.hitl_id),
+                    "approved_by": actor_id,
+                    "approved_at": now.isoformat(),
+                    "expires_at": request.expires_at.isoformat(),
+                    "query_sha256": request.query_sha256,
+                    "policy_sha256": request.policy_sha256,
+                }
+                invocations[task.task_key] = invocation
+                execution["dynamic_invocations"] = invocations
+                plan["investigation_execution"] = execution
+                run.plan_snapshot_json = plan
+                ensure_task_transition(
+                    DomainOpsTaskStatus(task.status),
+                    DomainOpsTaskStatus.READY,
+                )
+                task.status = DomainOpsTaskStatus.READY.value
+                ensure_run_transition(
+                    DomainOpsRunStatus(run.status),
+                    DomainOpsRunStatus.RUNNING,
+                )
+                run.status = DomainOpsRunStatus.RUNNING.value
+                event_type = "diagnostic.query_approved"
+            else:
+                outcome = HitlOutcome(
+                    hitl_id=str(hitl.hitl_id),
+                    status="SKIPPED",
+                    gap_code="DIAGNOSTIC_QUERY_REJECTED",
+                )
+                payload = outcome.model_dump(mode="json")
+                artifact = await uow.runs.add_artifact(
+                    OpsArtifactEntity(
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=task.ops_task_id,
+                        artifact_key=self._artifact_key(task),
+                        artifact_type="HITL_OUTCOME",
+                        schema_version="HITL_OUTCOME.v1",
+                        payload_json=payload,
+                        content_hash=sha256_json(payload),
+                        byte_size=len(canonical_bytes(payload)),
+                        provenance_json={
+                            "producer": "user",
+                            "producer_version": "query-approval.v1",
+                            "actor_id": actor_id,
+                        },
+                        trust_level="USER_PROVIDED",
+                        security_level=1,
+                    )
+                )
+                ensure_task_transition(
+                    DomainOpsTaskStatus(task.status),
+                    DomainOpsTaskStatus.SUCCEEDED,
+                )
+                task.status = DomainOpsTaskStatus.SUCCEEDED.value
+                task.output_artifact_id = artifact.artifact_id
+                task.completed_at = now
+                ensure_run_transition(
+                    DomainOpsRunStatus(run.status),
+                    DomainOpsRunStatus.RUNNING,
+                )
+                run.status = DomainOpsRunStatus.RUNNING.value
+                tasks = await uow.runs.list_tasks(
+                    ops_run_id=run.ops_run_id, lock=True
+                )
+                self._release_successors(tasks, now=now)
+                accepted_artifact = self._artifact_ref(artifact)
+                event_type = "diagnostic.query_rejected"
+            await uow.runs.append_event(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                event_type=event_type,
+                event_key=f"hitl:{hitl.hitl_id}:{target_status.lower()}",
+                visibility="USER",
+                payload_json={
+                    "hitl_id": str(hitl.hitl_id),
+                    "status": target_status,
+                    "trace_id": trace_id,
+                },
+            )
+            await self._project_chat_interaction_status(
+                uow=uow,
+                run=run,
+                status="COLLECTING",
+                event_type=event_type,
+                payload={
+                    "hitl_id": str(hitl.hitl_id),
+                    "status": target_status,
+                },
+            )
+            await uow.commit()
+            return HitlResult(
+                hitl_id=hitl.hitl_id,
+                status=target_status,
+                row_version=int(hitl.row_version) + 1,
+                accepted_artifact=accepted_artifact,
+            )
+
     async def skip_hitl(
         self,
         *,
@@ -5312,6 +5597,29 @@ class AIOpsRuntimeService:
         trace_id: str,
     ) -> HitlResult:
         """跳过补证时写入受控 Gap，并继续完成同一个 Run。"""
+        async with self._uow_factory() as uow:
+            hitl = await uow.changes.get_hitl_scoped(
+                hitl_id=hitl_id,
+                domain_id=domain_id,
+            )
+            approval_request = (
+                hitl is not None
+                and hitl.assignee_user_id == actor_id
+                and hitl.request_type == "DIAGNOSTIC_QUERY_APPROVAL"
+            )
+        if approval_request:
+            return await self.decide_diagnostic_query(
+                hitl_id=hitl_id,
+                domain_id=domain_id,
+                actor_id=actor_id,
+                decision=DiagnosticQueryApprovalDecision(
+                    expected_row_version=expected_row_version,
+                    decision="REJECT",
+                    note="用户选择不批准该诊断查询",
+                ),
+                idempotency_key=idempotency_key,
+                trace_id=trace_id,
+            )
         response = HitlResponse(
             expected_row_version=expected_row_version,
             responses=(
@@ -5554,13 +5862,55 @@ class AIOpsRuntimeService:
         artifact = await uow.runs.get_artifact(
             artifact_id=UUID(str(references[0]))
         )
+        expected_schema = {
+            "DATA_REQUIRED": "DATA_REQUEST.v1",
+            "MANUAL_DIAGNOSTIC_SQL": "MANUAL_SQL_REQUEST.v1",
+            "DIAGNOSTIC_QUERY_APPROVAL": (
+                "DIAGNOSTIC_QUERY_APPROVAL_REQUEST.v1"
+            ),
+        }.get(hitl.request_type)
         if (
             artifact is None
             or artifact.ops_run_id != hitl.ops_run_id
-            or artifact.schema_version != "MANUAL_SQL_REQUEST.v1"
+            or expected_schema is None
+            or artifact.schema_version != expected_schema
         ):
             raise state_conflict("人工补证请求 Artifact 不存在或类型无效")
         return artifact
+
+    async def _project_chat_interaction_status(
+        self,
+        *,
+        uow,
+        run,
+        status: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """把 Run 的交互暂停或恢复同步到聊天 Turn。"""
+        if getattr(run, "workflow_kind", None) != "CHAT_TURN":
+            return
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=run.ops_run_id
+        )
+        turn = (
+            await uow.turns.get_turn(
+                domain_id=int(run.domain_id),
+                turn_id=link.turn_id,
+                lock=True,
+            )
+            if link is not None
+            else None
+        )
+        if turn is None:
+            raise state_conflict("CHAT_TURN Run 缺少有效 Turn 关联")
+        turn.status = status
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type=event_type,
+            payload=payload,
+        )
 
     @staticmethod
     def _normalize_hitl_response(

@@ -33,6 +33,8 @@ class DomainOpsTaskStatus(StrEnum):
 class DomainHitlStatus(StrEnum):
     PENDING = "PENDING"
     ANSWERED = "ANSWERED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
     SKIPPED = "SKIPPED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"

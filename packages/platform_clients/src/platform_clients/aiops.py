@@ -1118,6 +1118,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def decide_diagnostic_query(
+        self,
+        hitl_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/hitl/{hitl_id}/decision",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def command(
         self,
         command: OpsCommand,

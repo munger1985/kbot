@@ -32,7 +32,7 @@ Target、Source、Agent版本、Policy、凭据、监控Adapter、Oracle诊断�
 
 ## 3. 交付原则
 
-1. 目标Schema直接升级到15、`aiops-oracle-v5`，不写增量升级或兼容代码；
+1. 目标Schema直接升级到16、`aiops-oracle-v6`，不写增量升级或兼容代码；
 2. DDL、重建制品、Manifest、Entity、Repository、契约、API、UI、测试和文档同步；
 3. 每阶段形成可运行纵向切片，不以编译通过冒充功能完成；
 4. 模型输出使用版本化结构契约并由服务端校验；
@@ -163,7 +163,7 @@ conda run -n kbot4 python tests/evaluation/evaluate_aiops_dba_chat.py \
 - 新增输入、Task Frame、Plan、Assessment、Tool和Playbook契约；
 - 删除旧Intent/Skill Plan作为运行控制源的契约。
 
-门槛：15、`aiops-oracle-v5`、44张表、10个视图；FK索引、Entity、Manifest、自包含重建和
+门槛：16、`aiops-oracle-v6`、44张表、10个视图；FK索引、Entity、Manifest、自包含重建和
 UoW回滚测试全部通过。
 
 ## 5. 阶段2：输入理解和用户证据
@@ -271,7 +271,7 @@ Oracle Tool优先级：
 ## 12. 切换和数据库部署
 
 完成Schema 15全链后：运行离线测试；停止AIOps API、Worker和Scheduler；备份；执行规范重建
-脚本；验证`AIOPS / 15 / aiops-oracle-v5`；重配Agent、Target、Source和绑定；执行聊天、告警、
+脚本；验证`AIOPS / 16 / aiops-oracle-v6`；重配Agent、Target、Source和绑定；执行聊天、告警、
 巡检Smoke；确认审批未被放宽。
 
 不提供Schema 13在线迁移、兼容读取或回滚表。回退使用Git和数据库备份恢复完整版本。

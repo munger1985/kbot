@@ -2,6 +2,7 @@
 
 from .models import (
     DataRequiredRequest,
+    DiagnosticQueryApprovalRequest,
     HitlOutcome,
     InputSuspension,
     ManualDiagnosticQuery,
@@ -13,6 +14,7 @@ from .models import (
 
 __all__ = [
     "DataRequiredRequest",
+    "DiagnosticQueryApprovalRequest",
     "HitlOutcome",
     "InputSuspension",
     "ManualDiagnosticQuery",

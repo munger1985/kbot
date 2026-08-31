@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlglot import exp, parse
@@ -73,6 +73,14 @@ _SENSITIVE_SOURCE_COLUMNS = frozenset(
         "spare4",
         "sql_fulltext",
         "sql_text",
+        "text",
+        "value_string",
+        "machine",
+        "program",
+        "client_identifier",
+        "message_text",
+        "job_action",
+        "source",
     }
 )
 
@@ -90,7 +98,7 @@ class DynamicQueryPolicySnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v1"
+    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v2"
     allowed_objects: tuple[str, ...] = ()
     allowed_functions: tuple[str, ...] = tuple(sorted(_SAFE_FUNCTIONS))
     max_rows: int = Field(default=200, ge=1, le=1000)
@@ -104,15 +112,18 @@ class ValidatedDynamicQuery(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "ORACLE_VALIDATED_DYNAMIC_QUERY.v1"
+    schema_version: str = "ORACLE_VALIDATED_DYNAMIC_QUERY.v2"
     normalized_sql: str
     query_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     referenced_objects: tuple[str, ...]
     projected_columns: tuple[str, ...]
+    column_sensitivities: tuple[Literal["PUBLIC", "MASKED", "HASHED"], ...]
     bind_names: tuple[str, ...]
     parameters: dict[str, str | int | float | bool | None]
     max_rows: int
+    execution_decision: Literal["AUTO_EXECUTE", "APPROVAL_REQUIRED"]
+    approval_reason_codes: tuple[str, ...] = ()
 
 
 class OracleDynamicQueryPolicy:
@@ -156,8 +167,9 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_NOT_SELECT",
                 "动态 SQL 只允许单条 SELECT 或带 WITH 的 SELECT",
             )
-        self._reject_unsafe_nodes(expression)
+        approval_reason_codes = self._validate_nodes(expression)
         projected_columns = self._projected_columns(expression)
+        column_sensitivities = self._column_sensitivities(expression)
         referenced_objects = self._referenced_objects(expression)
         bind_names = self._bind_names(expression)
         normalized_parameters = self._parameters(bind_names, parameters or {})
@@ -176,9 +188,16 @@ class OracleDynamicQueryPolicy:
             policy_sha256=self._sha256(policy_payload),
             referenced_objects=referenced_objects,
             projected_columns=projected_columns,
+            column_sensitivities=column_sensitivities,
             bind_names=bind_names,
             parameters=normalized_parameters,
             max_rows=effective_rows,
+            execution_decision=(
+                "APPROVAL_REQUIRED"
+                if approval_reason_codes
+                else "AUTO_EXECUTE"
+            ),
+            approval_reason_codes=approval_reason_codes,
         )
 
     def _effective_row_limit(self, expression: exp.Select) -> int:
@@ -213,17 +232,15 @@ class OracleDynamicQueryPolicy:
             )
         return min(requested, self.snapshot.max_rows)
 
-    def _reject_unsafe_nodes(self, expression: exp.Select) -> None:
+    def _validate_nodes(self, expression: exp.Select) -> tuple[str, ...]:
+        approval_reasons: list[str] = []
         if expression.find(exp.Lock) is not None:
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_LOCK_FORBIDDEN",
                 "动态 SQL 禁止 FOR UPDATE 或其他锁语义",
             )
-        if expression.find(exp.Star) is not None:
-            raise DynamicQueryRejected(
-                "DYNAMIC_SQL_STAR_FORBIDDEN",
-                "动态 SQL 必须显式列出返回列",
-            )
+        if any(projection.is_star for projection in expression.expressions):
+            approval_reasons.append("DYNAMIC_SQL_STAR_FORBIDDEN")
         if expression.find(exp.Dot) is not None:
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
@@ -231,9 +248,8 @@ class OracleDynamicQueryPolicy:
             )
         for column in expression.find_all(exp.Column):
             if str(column.name or "").lower() in _SENSITIVE_SOURCE_COLUMNS:
-                raise DynamicQueryRejected(
-                    "DYNAMIC_SQL_SENSITIVE_COLUMN_FORBIDDEN",
-                    "动态 SQL 禁止读取可能包含凭据、绑定值或 SQL 文本的列",
+                approval_reasons.append(
+                    "DYNAMIC_SQL_SENSITIVE_COLUMN_FORBIDDEN"
                 )
         for function in expression.find_all(exp.Func):
             name = function.sql_name().upper()
@@ -244,10 +260,14 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
                     f"动态 SQL 函数不在允许清单：{name or 'UNKNOWN'}",
                 )
+        return tuple(dict.fromkeys(approval_reasons))
 
     def _projected_columns(self, expression: exp.Select) -> tuple[str, ...]:
         columns: list[str] = []
         for projection in expression.expressions:
+            if projection.is_star:
+                columns.append("*")
+                continue
             name = str(projection.alias_or_name or "").lower()
             if not name or not _IDENTIFIER.fullmatch(name):
                 raise DynamicQueryRejected(
@@ -261,6 +281,26 @@ class OracleDynamicQueryPolicy:
                 "动态 SQL 返回列不能为空或重名",
             )
         return tuple(columns)
+
+    @staticmethod
+    def _column_sensitivities(
+        expression: exp.Select,
+    ) -> tuple[Literal["PUBLIC", "MASKED", "HASHED"], ...]:
+        sensitivities: list[Literal["PUBLIC", "MASKED", "HASHED"]] = []
+        for projection in expression.expressions:
+            if projection.is_star:
+                sensitivities.append("MASKED")
+                continue
+            source_columns = {
+                str(column.name or "").lower()
+                for column in projection.find_all(exp.Column)
+            }
+            sensitivities.append(
+                "MASKED"
+                if source_columns & _SENSITIVE_SOURCE_COLUMNS
+                else "PUBLIC"
+            )
+        return tuple(sensitivities)
 
     def _referenced_objects(self, expression: exp.Select) -> tuple[str, ...]:
         cte_names = {

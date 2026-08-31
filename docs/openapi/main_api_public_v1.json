@@ -3508,6 +3508,47 @@
         "title": "DatabaseType",
         "type": "string"
       },
+      "DiagnosticQueryApprovalDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "decision"
+        ],
+        "title": "DiagnosticQueryApprovalDecision",
+        "type": "object"
+      },
       "DiagnosticSourceConnectionTestResult": {
         "additionalProperties": false,
         "properties": {
@@ -4352,6 +4393,8 @@
         "enum": [
           "PENDING",
           "ANSWERED",
+          "APPROVED",
+          "REJECTED",
           "SKIPPED",
           "EXPIRED",
           "CANCELLED"
@@ -4363,6 +4406,7 @@
         "enum": [
           "DATA_REQUIRED",
           "MANUAL_DIAGNOSTIC_SQL",
+          "DIAGNOSTIC_QUERY_APPROVAL",
           "CHANGE_APPROVAL"
         ],
         "title": "HitlType",
@@ -12092,6 +12136,68 @@
           }
         },
         "summary": "Get Hitl Input",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/hitl/{hitl_id}/decision": {
+      "post": {
+        "operationId": "decide_diagnostic_query_api_v1_apps_aiops_hitl__hitl_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hitl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hitl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosticQueryApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HitlResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Diagnostic Query",
         "tags": [
           "AIOps"
         ]

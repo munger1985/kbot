@@ -284,10 +284,10 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 7 THEN
-        raise_application_error(-20008, 'Schema 15 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 16 必需列缺失或允许为空。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 15 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 16 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}
