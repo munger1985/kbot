@@ -1,6 +1,7 @@
 -- 从当前 Schema 的 KBOT_AI_MODEL 生成可复制到其他环境执行的 INSERT。
 -- 在 SQL Developer 中使用 Run Script（F5）执行，并从 DBMS Output 复制结果。
 -- 输出包含模型凭据和 OCI 私钥，只能在受控环境中使用，不得提交生成结果。
+-- 本脚本只读，不修改当前 Schema；执行失败时无需数据库回滚。
 
 SET SERVEROUTPUT ON SIZE UNLIMITED
 SET LINESIZE 32767

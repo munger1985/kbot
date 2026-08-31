@@ -10,7 +10,7 @@ skip_install=0
 schema_dry_run=0
 start_after_install=0
 config_file="${KBOT_CONFIG_FILE:-configuration/kbot.toml}"
-services_config="scripts/db/init_services.ini"
+services_config="configuration/oracle_schema_services.ini"
 
 usage() {
     echo "Usage: $0 [--production] [--skip-install] [--schema-dry-run] [--start] [--config PATH] [--services-config PATH]"

@@ -12,8 +12,8 @@ class KmInitializerTest(unittest.TestCase):
         statements = load_km_bootstrap_statements()
         sql = "\n".join(statements).upper()
 
-        self.assertEqual(16, len(statements))
-        self.assertEqual(4, sum(row.startswith("DECLARE") for row in statements))
+        self.assertEqual(15, len(statements))
+        self.assertEqual(3, sum(row.startswith("DECLARE") for row in statements))
         self.assertIn("MERGE INTO KBOT_PLATFORM_USER TARGET", sql)
         self.assertIn("MERGE INTO KBOT_PERMISSION TARGET", sql)
         self.assertIn("INSERT INTO KBOT_KC_COLLECTION", sql)

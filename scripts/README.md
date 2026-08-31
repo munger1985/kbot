@@ -1,18 +1,25 @@
 # 运维与发布脚本
 
-本目录只保留部署、初始化、安全配置和发布流程会直接使用的脚本，并按用途分组：
+本目录只保留部署、初始化、安全配置和发布流程会直接调用的操作入口。业务 Schema、
+Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位于 `tools/`；部署
+配置位于 `configuration/`。观测组件专用授权 SQL 随对应部署模块交付。
 
-- `scripts/db/apply_oracle_schema.py`：按同目录 `init_services.ini` 初始化所选服务的 Oracle 表；`--foundation-only` 可幂等补齐平台基础数据和用户安全等级字段。
+- `scripts/db/apply_oracle_schema.py`：按
+  `configuration/oracle_schema_services.ini` 初始化所选服务的 Oracle 表；
+  `--foundation-only` 可幂等补齐平台基础数据。
 - `scripts/db/sync_prompt_catalog.py`：在现有 Oracle Schema 中幂等插入并激活仓库最新 Prompt，不执行 DDL 或修改其他基础数据。
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
   `operations-manuals` KC Collection，并通过 Main API 上传和批准仓库内置数据库运维手册；
   `--check-only` 可只读复查，`--skip-manual-upload` 仅初始化数据库资源。
-- `scripts/db/export_ai_model_inserts.sql`：在 SQL Developer 中从当前 Schema 的模型目录
-  生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到仓库或非受控位置。
-- `scripts/db/init_services.ini`：选择本次初始化包含的业务服务；基础共享表始终创建。
-- `scripts/db/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%` 表和视图，仅用于确认不保留数据的开发 Schema。
+- `database/oracle/operations/model_serving/export_ai_model_inserts.sql`：在 SQL Developer
+  中从当前 Schema 的模型目录生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到
+  仓库或非受控位置。
+- `database/oracle/operations/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%`
+  表和视图，仅用于确认不保留数据的开发 Schema。
+- `tools/db/render_aiops_rebuild_schema.py`：从规范 DDL 生成 AIOps 单文件重建交付物，
+  不连接或修改数据库。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
 - `scripts/deployment/install_workspace.sh`：开发环境安装第三方依赖和内部 editable package；生产环境构建并安装 Wheel。
 - `scripts/deployment/ensure_workspace_packages.py`：启动前比较源码与已安装内部包内容指纹，不一致时加锁自动更新。
@@ -44,5 +51,6 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 Prompt Catalog；不会把 ADMIN 自动加入业务 App，也不会创建模型、Collection、Agent、
 会话或 AIOps 业务数据。
 
-KBot 4.0 不在 `scripts/` 保留一次性升级、修复或补种脚本。Schema 变化直接更新
-`database/oracle/` 的规范 DDL，并通过新的空白 Schema 重新初始化。
+KBot 4.0 不在活动目录保留一次性升级、修复或补种脚本。Schema 变化直接更新
+`database/oracle/<service>/` 的规范定义，并通过新的空白 Schema 重新初始化；已完成使命
+的临时脚本通过 Git 历史恢复。

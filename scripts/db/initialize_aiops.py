@@ -29,7 +29,14 @@ from platform_core.database.oracle import create_database_runtime
 from scripts.db.apply_oracle_schema import split_oracle_statements
 
 
-BOOTSTRAP_SQL = ROOT / "scripts" / "db" / "bootstrap_aiops_initial_admin.sql"
+BOOTSTRAP_SQL = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "bootstrap"
+    / "aiops"
+    / "initial_admin.sql"
+)
 MANUAL_PATH = (
     ROOT / "services" / "aiops_agent" / "resources" / "knowledge"
     / "database-operations-manual.md"

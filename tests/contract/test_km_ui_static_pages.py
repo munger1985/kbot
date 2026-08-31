@@ -321,33 +321,6 @@ class KmUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("collection-page-link", html)
         self.assertNotIn("collectionPageUrl", script)
 
-    def test_existing_schema_permission_script_is_idempotent_and_standalone(self):
-        source = (
-            ROOT / "scripts" / "db" / "bootstrap_km_asset_permissions.sql"
-        ).read_text(encoding="utf-8")
-        self.assertIn("MERGE INTO KBOT_PERMISSION", source)
-        self.assertIn("MERGE INTO KBOT_APP_ROLE", source)
-        self.assertIn("MERGE INTO KBOT_APP_ROLE_PERMISSION", source)
-        self.assertIn("MERGE INTO KBOT_APP_MEMBER_ROLE", source)
-        self.assertIn("km_asset:operations_manage", source)
-        self.assertIn("km_asset:knowledge_manage", source)
-        self.assertIn("km_asset:api_key_manage", source)
-        self.assertIn("member.IS_INITIAL_ADMIN = 'Y'", source)
-        self.assertIn("legacy_role.ROLE_CODE = 'manager'", source)
-        self.assertIn("target.SCOPE_MODE = 'ALL_APP_DOMAINS'", source)
-        self.assertIn("KM Asset App 管理员最终授权", source)
-        self.assertIn("member_role.ROLE_CODE = 'app_admin'", source)
-        self.assertNotIn("@@", source)
-
-    def test_existing_schema_auto_sync_upgrade_defaults_to_off(self):
-        source = (
-            ROOT / "scripts" / "db" / "upgrade_km_source_auto_sync.sql"
-        ).read_text(encoding="utf-8")
-        self.assertIn("AUTO_SYNC_ENABLED NUMBER(1) DEFAULT 0 NOT NULL", source)
-        self.assertIn("CK_KM_SOURCE_AUTO_SYNC", source)
-        self.assertNotIn("&&", source)
-        self.assertNotIn("@@", source)
-
     def test_api_client_key_copy_supports_insecure_http_context(self):
         html = (KM_ROOT / "api-clients.html").read_text(encoding="utf-8")
         script = (KM_ROOT / "js" / "km-api-clients.js").read_text(
@@ -374,7 +347,12 @@ class KmUiStaticPagesTest(unittest.TestCase):
 
     def test_initial_admin_script_bootstraps_full_km_access(self):
         source = (
-            ROOT / "scripts" / "db" / "bootstrap_km_initial_admin.sql"
+            ROOT
+            / "database"
+            / "oracle"
+            / "bootstrap"
+            / "km_asset"
+            / "initial_admin.sql"
         ).read_text(encoding="utf-8")
         for statement in (
             "MERGE INTO KBOT_PLATFORM_DOMAIN",

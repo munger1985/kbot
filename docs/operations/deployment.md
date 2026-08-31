@@ -228,30 +228,15 @@ python3 scripts/db/apply_oracle_schema.py --foundation-only
 python3 scripts/db/apply_oracle_schema.py --check-foundation
 ```
 
-旧授权结构升级到平台/App 分层结构时，先停掉 Main API 和相关 Worker，备份当前 Schema，
-若旧账号仍为小写 `admin`，先执行
-`scripts/db/migrate_global_admin_to_uppercase.sql`；随后在 SQL Developer 中执行
-`scripts/db/migrate_access_scope_model.sql`。Oracle DDL 会
-自动提交，失败后不能依赖事务整体回滚。升级完成后部署同一版本代码，再运行
-`--check-foundation`。迁移会保留现有用户、角色与 Domain 范围，但不会自行选择每个 App
-的初始管理员；平台管理员登录后必须通过平台接口逐 App 创建。
+旧授权结构和旧字段不提供原位升级入口。结构变化时应停服并备份需要保留的数据，重新
+创建空白 Schema，再按当前规范部署；平台管理员随后通过平台接口逐 App 创建初始管理员。
 
-仅需升级普通登录、用户管理和角色管理权限时，也可在 SQL Developer 中执行：
-
-```text
-scripts/db/bootstrap_platform_access_management.sql
-```
-
-脚本不要求输入参数，不修改 ADMIN 密码；它会幂等创建平台权限目录与
-`platform_admin` 角色，并只在平台层为 ADMIN 授权。全新数据库无需再单独执行
-`bootstrap_global_admin.sql`。
-
-在 `scripts/db/init_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
+在 `configuration/oracle_schema_services.ini` 选择需要部署的业务服务。`platform_core` 基础表
 始终创建。先预检：
 
 ```bash
 python3 scripts/db/apply_oracle_schema.py \
-  --config scripts/db/init_services.ini \
+  --config configuration/oracle_schema_services.ini \
   --dry-run
 ```
 
@@ -265,21 +250,11 @@ GRANT EXECUTE ON SYS.DBMS_ALERT TO {KBOT_USER};
 
 ```bash
 python3 scripts/db/apply_oracle_schema.py \
-  --config scripts/db/init_services.ini
+  --config configuration/oracle_schema_services.ini
 ```
 
-如果全部 DDL 已执行完成，但在最终对象校验、Prompt 同步或基础数据初始化阶段失败，
-修复并更新代码后可执行以下恢复命令。该模式不会重复执行建表 DDL；它只会按 Manifest
-幂等补齐已知缺失的外键索引，然后执行完整结构校验，不接受表、视图或约束不完整的
-Schema：
-
-```bash
-python3 scripts/db/apply_oracle_schema.py \
-  --config scripts/db/init_services.ini \
-  --finalize-existing
-```
-
-初始化器拒绝覆盖已有 `KBOT_%` 对象。4.0 不读取、迁移或兼容 3.x 表和数据。完整
+初始化器拒绝覆盖已有 `KBOT_%` 对象。DDL 执行中断后应修复规范源并重新创建空白
+Schema，不通过存量修复模式补齐对象。4.0 不读取、迁移或兼容 3.x 表和数据。完整
 权限、表空间和执行顺序见 [Oracle 初始化说明](../../database/oracle/README.md)。
 
 ## 启动前检查

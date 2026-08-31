@@ -1,6 +1,7 @@
 """仓库运维脚本与测试工具的目录边界检查。"""
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -18,7 +19,13 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "db/apply_oracle_schema.py",
+                "db/initialize_aiops.py",
+                "db/initialize_km.py",
                 "db/sync_prompt_catalog.py",
+                "deployment/aiops_observability/oracle_alert_collector/collector.py",
+                "deployment/aiops_observability/oracle_alert_collector/healthcheck.py",
+                "deployment/aiops_observability/webhook_signer/healthcheck.py",
+                "deployment/aiops_observability/webhook_signer/signer.py",
                 "deployment/check_deployment.py",
                 "deployment/ensure_workspace_packages.py",
                 "deployment/init_local_env.py",
@@ -37,17 +44,65 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             (SCRIPTS_ROOT / "deployment" / "bootstrap_kbot.sh").is_file()
         )
         self.assertTrue(
-            (SCRIPTS_ROOT / "db" / "init_services.ini").is_file()
+            (ROOT / "configuration" / "oracle_schema_services.ini").is_file()
         )
         self.assertTrue(
             (
-                SCRIPTS_ROOT
-                / "db"
-                / "bootstrap_platform_foundation.sql"
+                ROOT
+                / "database"
+                / "oracle"
+                / "bootstrap"
+                / "platform"
+                / "platform_foundation.sql"
             ).is_file()
         )
-        self.assertFalse(
-            (ROOT / "database" / "oracle" / "init_services.ini").exists()
+
+    def test_oracle_assets_follow_lifecycle_boundaries(self):
+        oracle_root = ROOT / "database" / "oracle"
+        bootstrap_root = oracle_root / "bootstrap"
+        forbidden_prefixes = (
+            "migrate_",
+            "repair_",
+            "upgrade_",
+            "rollback_",
+            "remove_",
+        )
+        active_files = [
+            path
+            for path in [
+                *oracle_root.rglob("*"),
+                *(SCRIPTS_ROOT / "db").rglob("*"),
+            ]
+            if path.is_file() and path.suffix in {".py", ".sql"}
+        ]
+        stale = sorted(
+            str(path.relative_to(ROOT))
+            for path in active_files
+            if path.name.startswith(forbidden_prefixes)
+        )
+        self.assertEqual([], stale)
+
+        for path in bootstrap_root.rglob("*.sql"):
+            source = path.read_text(encoding="utf-8").upper()
+            self.assertNotIn("EXECUTE IMMEDIATE", source, str(path))
+            self.assertIsNone(
+                re.search(
+                    r"\b(?:CREATE|ALTER|DROP)\s+(?:TABLE|VIEW|INDEX)\b",
+                    source,
+                ),
+                str(path),
+            )
+        self.assertEqual([], list((SCRIPTS_ROOT / "db").glob("*.sql")))
+        self.assertEqual([], list((SCRIPTS_ROOT / "db").glob("*.ini")))
+        self.assertTrue(
+            (
+                ROOT
+                / "database"
+                / "oracle"
+                / "generated"
+                / "aiops_agent"
+                / "rebuild_aiops_schema.sql"
+            ).is_file()
         )
 
     def test_workspace_installer_uses_package_boundaries(self):
@@ -102,7 +157,12 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertNotIn("reset_kbot_schema.sql", bootstrap)
 
         foundation = (
-            SCRIPTS_ROOT / "db" / "bootstrap_platform_foundation.sql"
+            ROOT
+            / "database"
+            / "oracle"
+            / "bootstrap"
+            / "platform"
+            / "platform_foundation.sql"
         ).read_text(encoding="utf-8")
         self.assertIn("MERGE INTO KBOT_PLATFORM_DOMAIN", foundation)
         self.assertIn("MERGE INTO KBOT_PLATFORM_USER", foundation)
@@ -123,7 +183,8 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
             SCRIPTS_ROOT / "db" / "apply_oracle_schema.py"
         ).read_text(encoding="utf-8")
         self.assertIn("CK_PLATFORM_USER_SECURITY", schema_runner)
-        self.assertIn("MAX_SECURITY_LEVEL BETWEEN 0 AND 3", schema_runner)
+        self.assertIn("MAX_SECURITY_LEVEL 与规范 Schema 不一致", schema_runner)
+        self.assertNotIn("ALTER TABLE KBOT_PLATFORM_USER", schema_runner)
         self.assertIn("FOUNDATION_VALIDATION_EXIT_CODE = 3", schema_runner)
         self.assertIn("PDB={pdb_name}，Schema={schema_name}", schema_runner)
         self.assertIn("MEMBER_SOURCE <> 'PLATFORM_GRANT'", schema_runner)

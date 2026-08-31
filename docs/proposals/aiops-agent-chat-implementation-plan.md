@@ -133,7 +133,7 @@ conda run -n kbot4 python -m unittest \
   tests.contract.test_aiops_ui_static_pages
 conda run -n kbot4 python tests/acceptance/check_aiops_diagnostic_catalog.py
 conda run -n kbot4 python tests/acceptance/check_oracle_schema.py
-conda run -n kbot4 python scripts/db/render_aiops_rebuild_schema.py --check
+conda run -n kbot4 python tools/db/render_aiops_rebuild_schema.py --check
 ```
 
 云端12场景真实评测命令使用环境变量提供Main API、Agent、Target和裁判参数，不在命令行或报告中

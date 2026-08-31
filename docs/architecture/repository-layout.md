@@ -12,7 +12,7 @@ resources/      进程拓扑等部署级不可变资源
 integrations/   APEX 等外部系统交付物
 tools/          不进入生产构建的开发工具
 tests/          单元、集成、契约、验收、Smoke 与质量评估
-scripts/        数据库、部署、安全和发布操作入口
+scripts/        数据库、部署、安全和发布操作入口，不保存 SQL 资产
 var/            本地日志、上传数据和生成物，Git 整体忽略
 ```
 
@@ -30,6 +30,13 @@ Entity、Repository 或应用服务。
 `database/oracle/` 保持集中，是因为 4.0 使用同一 Schema 并需要统一初始化；
 目录内部仍按表所有者拆分，包括 KM Asset 的 Slack Inbox/Outbox。将来拆库时可直接
 把对应服务的 DDL 目录随服务迁走。
+
+Oracle 资产按生命周期继续拆分：服务目录中的 `NNN_*.sql` 与 Manifest 是空 Schema
+规范定义，`bootstrap/` 是建库后的确定性初始数据，`operations/` 是 DBA 显式执行的
+重置或导出操作，`generated/` 是由工具生成且禁止手改的交付物。连接数据库、选择配置、
+编排执行和校验结果的 CLI 位于 `scripts/db/`；纯生成器位于 `tools/db/`；业务 Schema、
+Bootstrap 和 DBA 操作 SQL 不得放回 `scripts/db/`。观测组件专用授权 SQL 可随对应部署
+模块交付。
 
 文档只保留当前架构、产品说明、部署指南和冻结契约，入口见
 [`docs/README.md`](../README.md)。模型下载等可执行工具属于部署脚本，位于

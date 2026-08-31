@@ -1,7 +1,18 @@
 # KBot 4.0 Oracle 建库脚本
 
-本目录是 KBot 4.0 唯一有效的 Oracle Schema 定义。4.0 从空 Schema
-全量创建，不读取、转换、回填或保留任何 3.x KBot 表和数据。
+本目录是 KBot 4.0 全部 Oracle SQL 资产的唯一位置。服务目录中的规范 DDL 从空
+Schema 全量创建，不读取、转换、回填或保留任何 3.x KBot 表和数据。
+
+目录按生命周期分为：
+
+- `<service>/`：空 Schema 的规范表、约束、索引、视图和 Manifest；
+- `bootstrap/`：规范 Schema 建好后的确定性基础数据，由 `scripts/db/` 操作入口调用；
+- `operations/`：DBA 显式执行的重置、导出等高风险操作；
+- `generated/`：由 `tools/db/` 生成、禁止手工修改的 SQL 交付物。
+
+业务 Schema、Bootstrap 和 DBA 操作 SQL 不得放在 `scripts/db/`。连接、参数、事务编排
+和结果校验属于 `scripts/db/`；纯生成器属于 `tools/db/`；一次性迁移、修复和补种脚本
+不进入活动主干。观测组件随部署模块交付的专用授权 SQL 仍归对应部署目录管理。
 
 脚本按拥有数据的服务拆分：
 
@@ -16,7 +27,7 @@
 9. `aiops_agent/`：私有 Agent、目标、监控、会话、证据、HITL、执行、巡检和报告。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
-`scripts/db/init_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。
+`configuration/oracle_schema_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。
 初始化工具先执行
 基础层，再按上述业务服务依赖顺序和目录内文件名前缀执行。数字前缀仅表示空库
 建表依赖顺序，不是增量 Migration 版本。应用启动时不得自动执行 DDL，也不得读取
@@ -40,7 +51,7 @@ App 目录、完整权限/角色模板、`ADMIN` 凭据及其平台 `platform_ad
 当前 4.0 开发阶段修改字段时直接更新所属服务的规范建库脚本，并重新创建测试
 Schema。规范初始化脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图或回滚逻辑。
 已有开发 Schema 无需保留数据时，先使用 KBot Schema 用户执行
-`scripts/db/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
+`database/oracle/operations/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
 命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。KBot 4.0 不保留一次性升级、
 字段修复或数据补种脚本；结构变化直接更新规范 DDL，并在新的空白 Schema 重新初始化。
 
@@ -49,7 +60,7 @@ Schema。规范初始化脚本不包含 `DROP`、旧表查询、旧数据导入�
 ```bash
 python3 tests/acceptance/check_oracle_schema.py
 python3 scripts/db/apply_oracle_schema.py \
-  --config scripts/db/init_services.ini \
+  --config configuration/oracle_schema_services.ini \
   --dry-run
 ```
 
@@ -67,7 +78,7 @@ GRANT EXECUTE ON SYS.DBMS_ALERT TO KBOTDEV;
 
 ```bash
 python3 scripts/db/apply_oracle_schema.py \
-  --config scripts/db/init_services.ini
+  --config configuration/oracle_schema_services.ini
 ```
 
 初始化工具会校验当前 PDB、Schema、已有 KBot 对象、DDL 权限和表空间额度；只要

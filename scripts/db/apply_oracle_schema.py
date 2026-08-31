@@ -16,9 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "init_services.ini"
+DEFAULT_CONFIG_PATH = ROOT / "configuration" / "oracle_schema_services.ini"
 PLATFORM_FOUNDATION_SCRIPT = (
-    ROOT / "scripts" / "db" / "bootstrap_platform_foundation.sql"
+    ROOT
+    / "database"
+    / "oracle"
+    / "bootstrap"
+    / "platform"
+    / "platform_foundation.sql"
 )
 FOUNDATION_VALIDATION_EXIT_CODE = 3
 
@@ -625,29 +630,17 @@ async def _apply_platform_foundation(
         )
     ).first()
     if security_column is None:
-        await connection.exec_driver_sql(
-            "ALTER TABLE KBOT_PLATFORM_USER ADD ("
-            "MAX_SECURITY_LEVEL NUMBER(3) DEFAULT 1 NOT NULL)"
+        raise FoundationValidationError(
+            "KBOT_PLATFORM_USER.MAX_SECURITY_LEVEL 缺失，请重新创建规范 Schema"
         )
-    else:
-        nullable, data_default = security_column
-        normalized_default = re.sub(
-            r"\s+", "", str(data_default or "")
-        ).strip("()")
-        if normalized_default != "1":
-            await connection.exec_driver_sql(
-                "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
-                "MAX_SECURITY_LEVEL DEFAULT 1)"
-            )
-        if str(nullable).upper() != "N":
-            await connection.exec_driver_sql(
-                "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
-                "WHERE MAX_SECURITY_LEVEL IS NULL"
-            )
-            await connection.exec_driver_sql(
-                "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
-                "MAX_SECURITY_LEVEL NOT NULL)"
-            )
+    nullable, data_default = security_column
+    normalized_default = re.sub(
+        r"\s+", "", str(data_default or "")
+    ).strip("()")
+    if normalized_default != "1" or str(nullable).upper() != "N":
+        raise FoundationValidationError(
+            "KBOT_PLATFORM_USER.MAX_SECURITY_LEVEL 与规范 Schema 不一致"
+        )
 
     security_constraint_status = (
         await connection.execute(
@@ -658,16 +651,9 @@ async def _apply_platform_foundation(
             )
         )
     ).scalar_one_or_none()
-    if security_constraint_status is None:
-        await connection.exec_driver_sql(
-            "ALTER TABLE KBOT_PLATFORM_USER ADD CONSTRAINT "
-            "CK_PLATFORM_USER_SECURITY CHECK "
-            "(MAX_SECURITY_LEVEL BETWEEN 0 AND 3)"
-        )
-    elif str(security_constraint_status).upper() != "ENABLED":
-        await connection.exec_driver_sql(
-            "ALTER TABLE KBOT_PLATFORM_USER ENABLE CONSTRAINT "
-            "CK_PLATFORM_USER_SECURITY"
+    if str(security_constraint_status or "").upper() != "ENABLED":
+        raise FoundationValidationError(
+            "CK_PLATFORM_USER_SECURITY 缺失或未启用，请重新创建规范 Schema"
         )
     statements = split_oracle_statements(
         PLATFORM_FOUNDATION_SCRIPT.read_text(encoding="utf-8")
@@ -791,7 +777,6 @@ async def _validate_schema(
     expected_tables: set[str],
     expected_views: set[str],
     aiops_manifest: dict | None = None,
-    repair_aiops_fk_indexes: bool = False,
 ) -> None:
     rows = (
         await connection.execute(
@@ -911,12 +896,6 @@ async def _validate_schema(
             f"{sorted(expected_function_indexes - function_indexes)}"
         )
 
-    if repair_aiops_fk_indexes:
-        await _repair_aiops_foreign_key_indexes(
-            connection,
-            aiops_manifest=aiops_manifest,
-        )
-
     unindexed_foreign_keys = (
         await connection.execute(
             text(
@@ -985,109 +964,10 @@ async def _validate_schema(
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 
-async def _repair_aiops_foreign_key_indexes(
-    connection: AsyncConnection,
-    *,
-    aiops_manifest: dict,
-) -> None:
-    """按 Manifest 幂等补齐已完成建库中遗漏的 AIOps 外键索引。"""
-    definitions = aiops_manifest.get("foreign_key_indexes") or ()
-    if not definitions:
-        return
-
-    constraint_rows = (
-        await connection.execute(
-            text(
-                """
-                SELECT
-                    c.constraint_name,
-                    c.table_name,
-                    LISTAGG(cc.column_name, ',')
-                        WITHIN GROUP (ORDER BY cc.position) AS columns_csv
-                FROM user_constraints c
-                JOIN user_cons_columns cc
-                  ON cc.constraint_name = c.constraint_name
-                WHERE c.constraint_type = 'R'
-                  AND c.table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
-                GROUP BY c.constraint_name, c.table_name
-                """
-            )
-        )
-    ).all()
-    constraints = {
-        name: (table_name, tuple(columns_csv.split(",")))
-        for name, table_name, columns_csv in constraint_rows
-    }
-    index_rows = (
-        await connection.execute(
-            text(
-                """
-                SELECT
-                    table_name,
-                    index_name,
-                    LISTAGG(column_name, ',')
-                        WITHIN GROUP (ORDER BY column_position) AS columns_csv
-                FROM user_ind_columns
-                WHERE table_name LIKE 'KBOT_OPS\\_%' ESCAPE '\\'
-                GROUP BY table_name, index_name
-                """
-            )
-        )
-    ).all()
-    indexes_by_table: dict[str, list[tuple[str, ...]]] = {}
-    existing_index_names: set[str] = set()
-    for table_name, index_name, columns_csv in index_rows:
-        indexes_by_table.setdefault(table_name, []).append(
-            tuple(columns_csv.split(","))
-        )
-        existing_index_names.add(index_name)
-
-    repaired: list[str] = []
-    identifier_pattern = re.compile(r"^[A-Z][A-Z0-9_$#]{0,127}$")
-    for definition in definitions:
-        constraint_name = str(definition.get("constraint") or "")
-        index_name = str(definition.get("index") or "")
-        table_name = str(definition.get("table") or "")
-        columns = tuple(str(value) for value in definition.get("columns") or ())
-        identifiers = (constraint_name, index_name, table_name, *columns)
-        if not columns or any(
-            identifier_pattern.fullmatch(value) is None
-            for value in identifiers
-        ):
-            raise RuntimeError(
-                f"AIOps 外键索引 Manifest 定义无效：{definition}"
-            )
-        if constraints.get(constraint_name) != (table_name, columns):
-            raise RuntimeError(
-                "AIOps 外键索引修复目标与数据库约束不一致："
-                f"{constraint_name}"
-            )
-        if any(
-            index_columns[: len(columns)] == columns
-            for index_columns in indexes_by_table.get(table_name, ())
-        ):
-            continue
-        if index_name in existing_index_names:
-            raise RuntimeError(
-                f"AIOps 外键索引名称已被其他对象占用：{index_name}"
-            )
-        await connection.exec_driver_sql(
-            f"CREATE INDEX {index_name} ON {table_name} "
-            f"({', '.join(columns)})"
-        )
-        indexes_by_table.setdefault(table_name, []).append(columns)
-        existing_index_names.add(index_name)
-        repaired.append(index_name)
-
-    if repaired:
-        print(f"已补齐 AIOps 外键索引：{', '.join(repaired)}")
-
-
 async def apply_schema(
     *,
     dry_run: bool,
     config_path: Path,
-    finalize_existing: bool = False,
 ) -> None:
     """执行空库检查、DDL 和对象完整性校验。"""
     selection = load_service_selection(config_path)
@@ -1147,39 +1027,32 @@ async def apply_schema(
     try:
         async with runtime.engine.connect() as connection:
             pdb_name, schema_name = await _read_target(connection)
-            if finalize_existing:
-                print(
-                    "恢复目标确认："
-                    f"PDB={pdb_name}，Schema={schema_name}；不重复执行 DDL"
-                )
-            else:
-                await _assert_empty_schema(connection)
-                await _assert_ddl_privileges(connection)
-                if "knowledge_core" in selection.enabled:
-                    await _assert_kc_runtime_privileges(connection)
-                print(f"目标确认：PDB={pdb_name}，Schema={schema_name}")
+            await _assert_empty_schema(connection)
+            await _assert_ddl_privileges(connection)
+            if "knowledge_core" in selection.enabled:
+                await _assert_kc_runtime_privileges(connection)
+            print(f"目标确认：PDB={pdb_name}，Schema={schema_name}")
 
-                for position, statement in enumerate(statements, start=1):
-                    try:
-                        await connection.exec_driver_sql(statement.sql)
-                    except Exception:
-                        print(
-                            "DDL 执行失败："
-                            f"{statement.script} 第 {statement.ordinal} 条，"
-                            f"{statement.label}"
-                        )
-                        raise
+            for position, statement in enumerate(statements, start=1):
+                try:
+                    await connection.exec_driver_sql(statement.sql)
+                except Exception:
                     print(
-                        f"[{position}/{len(statements)}] "
-                        f"{statement.script}: {statement.label}"
+                        "DDL 执行失败："
+                        f"{statement.script} 第 {statement.ordinal} 条，"
+                        f"{statement.label}"
                     )
+                    raise
+                print(
+                    f"[{position}/{len(statements)}] "
+                    f"{statement.script}: {statement.label}"
+                )
 
             await _validate_schema(
                 connection,
                 expected_tables=expected_tables,
                 expected_views=expected_views,
                 aiops_manifest=aiops_manifest,
-                repair_aiops_fk_indexes=finalize_existing,
             )
             prompt_count = await sync_prompt_catalog(
                 connection,
@@ -1220,20 +1093,12 @@ def main() -> int:
     operation_group.add_argument(
         "--foundation-only",
         action="store_true",
-        help="不执行 DDL，仅幂等修复并校验平台首次登录基础数据",
+        help="不执行 DDL，仅幂等同步并校验平台首次登录基础数据",
     )
     operation_group.add_argument(
         "--check-foundation",
         action="store_true",
         help="只读校验平台首次登录基础数据",
-    )
-    operation_group.add_argument(
-        "--finalize-existing",
-        action="store_true",
-        help=(
-            "不重复执行建表 DDL，补齐 Manifest 索引后校验已建对象，"
-            "并完成 Prompt 与基础数据初始化"
-        ),
     )
     args = parser.parse_args()
     try:
@@ -1246,15 +1111,10 @@ def main() -> int:
                 maintain_platform_foundation(repair=args.foundation_only)
             )
         else:
-            if args.dry_run and args.finalize_existing:
-                raise RuntimeError(
-                    "--dry-run 不能与 --finalize-existing 同时使用"
-                )
             asyncio.run(
                 apply_schema(
                     dry_run=args.dry_run,
                     config_path=args.config.expanduser().resolve(),
-                    finalize_existing=args.finalize_existing,
                 )
             )
     except FoundationValidationError as exc:

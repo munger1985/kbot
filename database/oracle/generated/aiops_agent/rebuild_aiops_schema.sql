@@ -1,5 +1,5 @@
 -- KBot 4.0 AIOps Schema 全量重建脚本。
--- 本文件由 scripts/db/render_aiops_rebuild_schema.py 生成，请勿手工复制规范 DDL。
+-- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工复制规范 DDL。
 -- 使用 KBot Schema 所有者在 SQL Developer 中以 Run Script（F5）执行。
 -- 本脚本永久删除当前 Schema 内全部 KBOT_OPS_% 表、KBOT_V_OPS_% 视图及其数据。
 -- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并备份需要保留的数据。

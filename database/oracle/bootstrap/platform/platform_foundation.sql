@@ -1,4 +1,5 @@
--- 幂等初始化平台 ADMIN；不向任何业务 App 自动授权。
+-- 由 scripts/db/apply_oracle_schema.py 调用，幂等初始化平台 ADMIN。
+-- 本资产只写基础数据，不创建或修改 Schema 对象，也不向业务 App 自动授权。
 
 MERGE INTO KBOT_PLATFORM_DOMAIN target
 USING (SELECT 'default' NAME, 'KBot 默认业务域' DESCRIPTION FROM DUAL) source

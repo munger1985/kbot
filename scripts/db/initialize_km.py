@@ -20,7 +20,14 @@ from platform_core.database.oracle import create_database_runtime
 from scripts.db.apply_oracle_schema import split_oracle_statements
 
 
-BOOTSTRAP_SQL = ROOT / "scripts" / "db" / "bootstrap_km_initial_admin.sql"
+BOOTSTRAP_SQL = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "bootstrap"
+    / "km_asset"
+    / "initial_admin.sql"
+)
 
 
 @dataclass(frozen=True)

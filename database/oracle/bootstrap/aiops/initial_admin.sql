@@ -1,33 +1,10 @@
--- AIOps 首次使用的一步初始化脚本。
+-- 由 scripts/db/initialize_aiops.py 调用的 AIOps 首次使用数据资产。
+-- 本资产只写基础数据，不创建或修改 Schema 对象。
 -- 固定资源：aiops_portal Domain、operations-manuals KC Collection、aiopsadmin。
 -- 初始密码：AIOpsAdmin@2026!；重复执行会恢复该密码。
 
 SET SERVEROUTPUT ON
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
-
-DECLARE
-    l_table_count PLS_INTEGER;
-BEGIN
-    SELECT COUNT(*) INTO l_table_count FROM USER_TABLES
-     WHERE TABLE_NAME = 'KBOT_PLATFORM_USER_CREDENTIAL';
-    IF l_table_count = 0 THEN
-        EXECUTE IMMEDIATE q'[
-            CREATE TABLE KBOT_PLATFORM_USER_CREDENTIAL (
-                USER_ID VARCHAR2(256 CHAR) PRIMARY KEY,
-                PASSWORD_HASH VARCHAR2(128 CHAR) NOT NULL,
-                MUST_CHANGE_PASSWORD CHAR(1 CHAR) DEFAULT 'Y' NOT NULL,
-                PASSWORD_UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                CONSTRAINT FK_PLATFORM_USER_CRED_USER FOREIGN KEY (USER_ID)
-                    REFERENCES KBOT_PLATFORM_USER (USER_ID),
-                CONSTRAINT CK_PLATFORM_USER_CRED_CHANGE CHECK (MUST_CHANGE_PASSWORD IN ('Y', 'N'))
-            )
-        ]';
-        dbms_output.put_line('已创建 AIOps 用户凭据表。');
-    END IF;
-END;
-/
 
 DECLARE
     l_table_count PLS_INTEGER;

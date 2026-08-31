@@ -199,20 +199,6 @@ class KmAssetCatalogTest(unittest.TestCase):
         )
         self.assertIsNone(missing["publish_date"])
 
-    def test_existing_asset_date_repair_uses_manifest_priority(self):
-        script = (
-            Path(__file__).resolve().parents[3]
-            / "scripts/db/repair_km_asset_dates.sql"
-        ).read_text(encoding="utf-8")
-
-        self.assertLess(
-            script.index("$.publish_time"),
-            script.index("$.last_update_time"),
-        )
-        self.assertNotIn("SYS_EXTRACT_UTC(CREATED_AT)", script)
-        self.assertIn("DROP COLUMN ASSET_DATE_VALUE", script)
-        self.assertIn("CREATE INDEX IX_KM_ASSET_DATE", script)
-
     def test_km_asset_owns_knowledge_execution_spec(self):
         spec = AgentExecutionSpec(
             schema_version="1.0",

@@ -68,7 +68,7 @@ conda run -n kbot4 python scripts/db/initialize_km.py
 调用 Main API 公开 BFF，不能把 App API Key 或内部身份 Header 写入静态 JavaScript。
 
 既有 Schema 不得重新执行完整的 `main_api/002_access_control.sql`。直接执行
-`scripts/db/initialize_km.py`，它以 `scripts/db/bootstrap_km_initial_admin.sql`
+`scripts/db/initialize_km.py`，它以 `database/oracle/bootstrap/km_asset/initial_admin.sql`
 为唯一数据定义，幂等创建用户凭据表、初始化
 固定 Domain `km_portal` 和 Collection `assets`、初始化 KM 权限和角色、创建
 `kmadmin` 用户，并仅在 `km_portal` 中授予 `km_asset/app_admin`。首次创建
@@ -131,9 +131,8 @@ SharePoint Site Path、`poll_interval_seconds`（10～86400 秒）和 `batch_siz
 省略凭据字段表示保留原凭据。Collection 属于
 Agent 版本的固定资源定位，不能通过该接口修改。
 
-既有数据库升级时，先在 SQL Developer 中执行
-`scripts/db/upgrade_km_source_auto_sync.sql`。脚本会新增持久化开关，并将所有现有来源
-保持为默认关闭；不会因部署或 Worker 重启自动开始轮询。
+`auto_sync_enabled` 属于当前规范 Schema。旧开发库不再通过增量脚本补列；需要启用该
+能力时应在备份后重新创建空白 Schema，并按规范初始化流程部署。
 
 ## 问文与问数
 

@@ -13,8 +13,9 @@
 8. `008_ops_conversations_reports.sql`：Turn、Skill调用、证据、回答块、对话和报告模板。
 
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
-需要保留的数据，然后用 KBot Schema 所有者执行 `rebuild_aiops_schema.sql`。它会
-直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再调用上述八份规范 DDL，避免
+需要保留的数据，然后用 KBot Schema 所有者执行
+`../generated/aiops_agent/rebuild_aiops_schema.sql`。它会
+直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述八份规范 DDL，避免
 维护第二份建表定义。
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用

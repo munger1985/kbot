@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import unittest
 
-from scripts.db.render_aiops_rebuild_schema import (
+from tools.db.render_aiops_rebuild_schema import (
     _analyze_canonical_sql,
     render_rebuild_sql,
 )
@@ -15,7 +15,14 @@ from scripts.db.render_aiops_rebuild_schema import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "database" / "oracle" / "aiops_agent"
-REBUILD_SCRIPT = SCHEMA_DIR / "rebuild_aiops_schema.sql"
+REBUILD_SCRIPT = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "generated"
+    / "aiops_agent"
+    / "rebuild_aiops_schema.sql"
+)
 MANIFEST = SCHEMA_DIR / "schema_manifest.json"
 
 

@@ -3,13 +3,12 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from scripts.db.apply_oracle_schema import (
     FOUNDATION_VALIDATION_EXIT_CODE,
     FoundationValidationError,
     _apply_platform_foundation,
-    _repair_aiops_foreign_key_indexes,
     load_schema_statements,
     load_service_selection,
     main,
@@ -40,16 +39,19 @@ class OracleSchemaRunnerTest(unittest.TestCase):
             "CREATE TABLE KBOT_PLATFORM_DOMAIN",
             statements[0].sql,
         )
-        self.assertIn(
-            "CREATE INDEX IX_OPS_IMG_EVID_OUTPUT",
-            statements[-1].sql,
+        self.assertTrue(
+            any(
+                "CREATE INDEX IX_OPS_IMG_EVID_OUTPUT" in statement.sql
+                for statement in statements
+            )
         )
+        self.assertIn("FK_OPS_PROPOSAL_TURN", statements[-1].sql)
 
     def test_json_fields_use_oracle_native_json(self) -> None:
         sql = "\n".join(
             statement.sql for statement in load_schema_statements()
         )
-        self.assertEqual(109, sql.count(" JSON"))
+        self.assertEqual(122, sql.count(" JSON"))
         self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
         self.assertNotIn(" IS JSON", sql)
 
@@ -167,7 +169,7 @@ class _FoundationConnection:
         self.committed = True
 
 
-class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
+class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
     async def test_existing_not_null_security_column_is_not_modified(self):
         connection = _FoundationConnection(
             column=("N", "1 "),
@@ -192,127 +194,20 @@ class PlatformFoundationRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(connection.committed)
 
-    async def test_nullable_security_column_is_repaired_incrementally(self):
+    async def test_noncanonical_security_column_is_rejected(self):
         connection = _FoundationConnection(
             column=("Y", None),
             constraint_status="DISABLED",
         )
 
-        await _apply_platform_foundation(connection)
-
-        self.assertIn(
-            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
-            "MAX_SECURITY_LEVEL DEFAULT 1)",
-            connection.statements,
-        )
-        self.assertIn(
-            "UPDATE KBOT_PLATFORM_USER SET MAX_SECURITY_LEVEL = 1 "
-            "WHERE MAX_SECURITY_LEVEL IS NULL",
-            connection.statements,
-        )
-        self.assertIn(
-            "ALTER TABLE KBOT_PLATFORM_USER MODIFY ("
-            "MAX_SECURITY_LEVEL NOT NULL)",
-            connection.statements,
-        )
-        self.assertIn(
-            "ALTER TABLE KBOT_PLATFORM_USER ENABLE CONSTRAINT "
-            "CK_PLATFORM_USER_SECURITY",
-            connection.statements,
-        )
-
-
-class _AIOpsIndexConnection:
-    def __init__(self, *, indexes):
-        self._results = iter(
-            (
-                _DictionaryResult(
-                    row=[
-                        (
-                            "FK_OPS_SAMPLE_PARENT",
-                            "KBOT_OPS_SAMPLE",
-                            "PARENT_ID,DOMAIN_ID",
-                        )
-                    ]
-                ),
-                _DictionaryResult(row=indexes),
-            )
-        )
-        self.statements: list[str] = []
-
-    async def execute(self, statement):
-        del statement
-        return next(self._results)
-
-    async def exec_driver_sql(self, statement):
-        self.statements.append(statement)
-
-
-class AIOpsIndexRepairTest(unittest.IsolatedAsyncioTestCase):
-    manifest = {
-        "foreign_key_indexes": [
-            {
-                "constraint": "FK_OPS_SAMPLE_PARENT",
-                "index": "IX_OPS_SAMPLE_PARENT",
-                "table": "KBOT_OPS_SAMPLE",
-                "columns": ["PARENT_ID", "DOMAIN_ID"],
-            }
-        ]
-    }
-
-    async def test_creates_manifest_index_when_foreign_key_is_uncovered(self):
-        connection = _AIOpsIndexConnection(indexes=[])
-
-        await _repair_aiops_foreign_key_indexes(
-            connection,
-            aiops_manifest=self.manifest,
-        )
-
-        self.assertEqual(
-            [
-                "CREATE INDEX IX_OPS_SAMPLE_PARENT ON KBOT_OPS_SAMPLE "
-                "(PARENT_ID, DOMAIN_ID)"
-            ],
-            connection.statements,
-        )
-
-    async def test_keeps_existing_prefix_covering_index(self):
-        connection = _AIOpsIndexConnection(
-            indexes=[
-                (
-                    "KBOT_OPS_SAMPLE",
-                    "IX_CUSTOM_SAMPLE_PARENT",
-                    "PARENT_ID,DOMAIN_ID,STATUS",
-                )
-            ]
-        )
-
-        await _repair_aiops_foreign_key_indexes(
-            connection,
-            aiops_manifest=self.manifest,
-        )
-
-        self.assertEqual([], connection.statements)
+        with self.assertRaisesRegex(
+            FoundationValidationError,
+            "MAX_SECURITY_LEVEL 与规范 Schema 不一致",
+        ):
+            await _apply_platform_foundation(connection)
 
 
 class PlatformFoundationCliTest(unittest.TestCase):
-    @patch(
-        "sys.argv",
-        ["apply_oracle_schema.py", "--finalize-existing"],
-    )
-    @patch(
-        "scripts.db.apply_oracle_schema.apply_schema",
-        new_callable=AsyncMock,
-    )
-    def test_finalize_existing_uses_existing_schema_recovery_mode(
-        self, mocked_apply
-    ):
-        self.assertEqual(0, main())
-        mocked_apply.assert_awaited_once()
-        self.assertTrue(
-            mocked_apply.await_args.kwargs["finalize_existing"]
-        )
-
     @patch(
         "sys.argv",
         ["apply_oracle_schema.py", "--check-foundation"],
