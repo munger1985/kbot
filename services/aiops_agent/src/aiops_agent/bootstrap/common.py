@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 16
-                              AND contract_version = 'aiops-oracle-v6'
+                              AND schema_version = 17
+                              AND contract_version = 'aiops-oracle-v7'
                             """
                         )
                     )
@@ -112,8 +112,29 @@ class AIOpsProcessRuntime:
                         )
                     )
                 ).scalar_one_or_none()
+                tool_class_constraint = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT COUNT(*)
+                            FROM USER_CONSTRAINTS
+                            WHERE TABLE_NAME = 'KBOT_OPS_TOOL_INVOCATION'
+                              AND CONSTRAINT_NAME = 'CK_OPS_TOOL_INV_CLASS'
+                              AND CONSTRAINT_TYPE = 'C'
+                              AND STATUS = 'ENABLED'
+                              AND VALIDATED = 'VALIDATED'
+                              AND SEARCH_CONDITION_VC LIKE '%''PROMETHEUS''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''LOKI''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL_DYNAMIC''%'
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 7 and task_type_constraint == 1
+                    required_columns == 7
+                    and task_type_constraint == 1
+                    and tool_class_constraint == 1
                 )
             return {
                 "aiops_schema": "ok",

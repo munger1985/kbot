@@ -13,6 +13,9 @@ from aiops_agent.application.errors import (
     resource_not_found,
     state_conflict,
 )
+from aiops_agent.application.investigation.projection import (
+    safe_plan_projection,
+)
 from aiops_agent.entities import (
     OpsConversationEntity,
     OpsConversationMessageEntity,
@@ -296,6 +299,37 @@ class ConversationTurnService:
                 citations_by_block.setdefault(
                     citation.answer_block_id, []
                 ).append(citation)
+            plan_artifact = (
+                await uow.runs.get_artifact(
+                    artifact_id=turn.current_plan_artifact_id
+                )
+                if turn.current_plan_artifact_id is not None
+                else None
+            )
+            plan_view = None
+            if plan_artifact is not None:
+                link = await uow.turns.get_run_link(
+                    turn_id=turn.turn_id,
+                    purpose="PRIMARY",
+                )
+                run = (
+                    await uow.runs.get_run(ops_run_id=link.ops_run_id)
+                    if link is not None
+                    else None
+                )
+                execution_snapshot = dict(
+                    dict(getattr(run, "plan_snapshot_json", None) or {}).get(
+                        "investigation_execution", {}
+                    )
+                )
+                tool_invocations = await uow.turns.list_tool_invocations(
+                    turn_id=turn.turn_id
+                )
+                plan_view = safe_plan_projection(
+                    dict(plan_artifact.payload_json or {}),
+                    execution_snapshot=execution_snapshot,
+                    tool_invocations=tool_invocations,
+                )
             return {
                 **self._turn_summary(turn),
                 "messages": [self._message_view(row) for row in messages],
@@ -306,6 +340,7 @@ class ConversationTurnService:
                     )
                     for row in blocks
                 ],
+                "investigation_plan": plan_view,
             }
 
     async def list_events(

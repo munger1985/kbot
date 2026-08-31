@@ -211,6 +211,28 @@ class TurnEvidenceGapView(AIOpsContract):
     retryable: bool = False
 
 
+class TurnInvestigationActionView(AIOpsContract):
+    """不暴露SQL和参数的用户可见调查动作。"""
+
+    ordinal: int = Field(ge=1)
+    action_id: str = Field(pattern=r"^a[0-9]+$")
+    question: str = Field(min_length=1, max_length=2000)
+    tool_id: str = Field(min_length=1, max_length=128)
+    tool_class: str = Field(min_length=1, max_length=32)
+    measurement_semantics: MeasurementSemantics
+    depends_on: tuple[str, ...] = ()
+    optional: bool = False
+    execution_mode: str = Field(pattern=r"^(AUTO_EXECUTE|APPROVAL_REQUIRED)$")
+    status: str = Field(min_length=1, max_length=24)
+
+
+class TurnInvestigationPlanView(AIOpsContract):
+    """当前Turn已经验证并冻结的安全计划摘要。"""
+
+    revision_no: int = Field(ge=1)
+    actions: tuple[TurnInvestigationActionView, ...] = ()
+
+
 class TurnSummary(AIOpsContract):
     turn_id: UUIDv7
     conversation_id: UUIDv7
@@ -234,6 +256,7 @@ class TurnView(TurnSummary):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     messages: tuple[ConversationMessageView, ...] = ()
     answer_blocks: tuple[AnswerBlockView, ...] = ()
+    investigation_plan: TurnInvestigationPlanView | None = None
 
 
 class TurnPage(CursorPage):

@@ -5892,6 +5892,17 @@
         "title": "ManualSchemaDefinitionRequest",
         "type": "object"
       },
+      "MeasurementSemantics": {
+        "enum": [
+          "CURRENT_ACTIVITY",
+          "CUMULATIVE_SINCE_LOAD",
+          "SNAPSHOT_DELTA",
+          "HISTORICAL_SAMPLES",
+          "NOT_APPLICABLE"
+        ],
+        "title": "MeasurementSemantics",
+        "type": "string"
+      },
       "MemoryItemView": {
         "additionalProperties": false,
         "properties": {
@@ -10070,6 +10081,103 @@
         "title": "TurnEvidenceGapView",
         "type": "object"
       },
+      "TurnInvestigationActionView": {
+        "additionalProperties": false,
+        "description": "不暴露SQL和参数的用户可见调查动作。",
+        "properties": {
+          "action_id": {
+            "pattern": "^a[0-9]+$",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "execution_mode": {
+            "pattern": "^(AUTO_EXECUTE|APPROVAL_REQUIRED)$",
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "measurement_semantics": {
+            "$ref": "#/components/schemas/MeasurementSemantics"
+          },
+          "optional": {
+            "default": false,
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "ordinal": {
+            "minimum": 1.0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 24,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_class": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Tool Class",
+            "type": "string"
+          },
+          "tool_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Tool Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "action_id",
+          "question",
+          "tool_id",
+          "tool_class",
+          "measurement_semantics",
+          "execution_mode",
+          "status"
+        ],
+        "title": "TurnInvestigationActionView",
+        "type": "object"
+      },
+      "TurnInvestigationPlanView": {
+        "additionalProperties": false,
+        "description": "当前Turn已经验证并冻结的安全计划摘要。",
+        "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnInvestigationActionView"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "revision_no": {
+            "minimum": 1.0,
+            "title": "Revision No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision_no"
+        ],
+        "title": "TurnInvestigationPlanView",
+        "type": "object"
+      },
       "TurnReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -10364,6 +10472,16 @@
             },
             "title": "Evidence Gaps",
             "type": "array"
+          },
+          "investigation_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnInvestigationPlanView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "investigation_round": {
             "default": 0,

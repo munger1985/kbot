@@ -29,6 +29,10 @@ from aiops_agent.application.investigation.query_freezing import (
     prepare_dynamic_queries,
     prepare_source_queries,
 )
+from aiops_agent.application.investigation.projection import (
+    safe_plan_projection,
+    tool_class_for,
+)
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
     InvestigationReasoner,
@@ -718,15 +722,7 @@ class TurnPlanningService:
                         action_id=action.action_id,
                         tool_id=action.tool_id,
                         tool_version="1.0.0",
-                        tool_class=(
-                            "PROMETHEUS"
-                            if action.tool_id == "monitor.query_range"
-                            else "LOKI"
-                            if action.tool_id == "loki.query_range"
-                            else "ORACLE_SQL_DYNAMIC"
-                            if action.tool_id == "db.oracle.readonly_query"
-                            else "ORACLE_SQL"
-                        ),
+                        tool_class=tool_class_for(action.tool_id),
                         status="PLANNED",
                         input_json=dict(action.input),
                         policy_hash=canonical_hash(
@@ -831,6 +827,10 @@ class TurnPlanningService:
                 payload={
                     "revision_no": revision_no,
                     "action_count": len(investigation.plan.actions),
+                    "plan": safe_plan_projection(
+                        investigation.plan.model_dump(mode="json"),
+                        execution_snapshot=execution_snapshot,
+                    ),
                     "public_summary": "已根据证据缺口调整调查计划，正在补充取证",
                 },
             )
@@ -1009,14 +1009,29 @@ class TurnPlanningService:
 
     @staticmethod
     def _terminal_failure_summary(error_code: str) -> str:
+        if error_code == "AIOPS_INVESTIGATION_PLAN_INVALID":
+            return (
+                "本轮输入未能形成通过安全校验的调查计划。"
+                "系统没有执行越界工具，请重试或补充问题范围。"
+            )
+        if error_code == "AIOPS_SCHEMA_INTEGRITY_ERROR":
+            return (
+                "AIOps数据库结构与当前服务合同不一致，本轮没有执行诊断工具。"
+                "请管理员检查Schema版本和完整性后重试。"
+            )
+        if error_code == "AIOPS_INVESTIGATION_CATALOG_CHANGED":
+            return (
+                "调查能力目录在规划期间发生变化，本轮没有执行诊断工具。"
+                "请刷新后重试。"
+            )
         if error_code == "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR":
             return (
                 "调查计划处理发生内部错误，本轮没有执行诊断工具。"
                 "请重试；若仍然失败，请将错误编号提供给管理员。"
             )
         return (
-            "本轮输入未能形成通过安全校验的调查计划。"
-            "系统没有执行越界工具，请重试或补充问题范围。"
+            "调查计划处理发生内部错误，本轮没有执行诊断工具。"
+            "请重试；若仍然失败，请将错误编号提供给管理员。"
         )
 
     async def _prepare(
@@ -1823,13 +1838,7 @@ class TurnPlanningService:
                         action_id=action.action_id,
                         tool_id=action.tool_id,
                         tool_version="1.0.0",
-                        tool_class=(
-                            "PROMETHEUS" if action.tool_id == "monitor.query_range"
-                            else "LOKI" if action.tool_id == "loki.query_range"
-                            else "ORACLE_SQL_DYNAMIC"
-                            if action.tool_id == "db.oracle.readonly_query"
-                            else "ORACLE_SQL"
-                        ),
+                        tool_class=tool_class_for(action.tool_id),
                         status="PLANNED",
                         input_json=dict(action.input),
                         policy_hash=canonical_hash(
@@ -1912,6 +1921,10 @@ class TurnPlanningService:
                     "revision_no": 1,
                     "action_count": len(investigation.plan.actions),
                     "playbook_count": len(playbook_plan.items),
+                    "plan": safe_plan_projection(
+                        investigation.plan.model_dump(mode="json"),
+                        execution_snapshot=execution_snapshot,
+                    ),
                     "public_summary": "调查计划已建立，正在调用只读工具取证",
                 },
             )

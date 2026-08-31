@@ -98,8 +98,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_15_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 7, 1))
+    async def test_ready_requires_schema_17_contract_integrity(self) -> None:
+        session = _SchemaSession((1, 7, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -115,8 +115,27 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             checks,
         )
 
-    async def test_ready_rejects_partial_schema_15_contract(self) -> None:
-        session = _SchemaSession((1, 6, 1))
+    async def test_ready_rejects_partial_schema_17_contract(self) -> None:
+        session = _SchemaSession((1, 6, 1, 1))
+        runtime = AIOpsProcessRuntime(
+            settings=object(),
+            service_name="test-aiops",
+            database_runtime=SimpleNamespace(
+                session_factory=lambda: session
+            ),
+        )
+
+        checks = await runtime.check_aiops_schema()
+
+        self.assertEqual("ok", checks["aiops_schema"])
+        self.assertEqual(
+            "contract_mismatch", checks["aiops_schema_integrity"]
+        )
+
+    async def test_ready_rejects_dynamic_tool_class_constraint_drift(
+        self,
+    ) -> None:
+        session = _SchemaSession((1, 7, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

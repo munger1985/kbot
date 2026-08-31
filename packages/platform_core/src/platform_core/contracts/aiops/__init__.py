@@ -23,6 +23,8 @@ from .conversation import (
     TurnCreate,
     TurnEventPage,
     TurnEventView,
+    TurnInvestigationActionView,
+    TurnInvestigationPlanView,
     TurnPage,
     TurnReceipt,
     TurnStatus,

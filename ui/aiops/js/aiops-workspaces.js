@@ -81,6 +81,26 @@
     return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
   }
 
+  function investigationPlanHtml(plan) {
+    const actions = values(plan?.actions);
+    if (!actions.length) return "";
+    const rows = actions.map((action) => {
+      const approval = action.execution_mode === "APPROVAL_REQUIRED";
+      const mode = approval ? "需人工审批" : "自动只读执行";
+      const status = action.status || "PLANNED";
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}</small></li>`;
+    }).join("");
+    return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header><ol>${rows}</ol></section>`;
+  }
+
+  function showInvestigationPlan(progress, plan) {
+    const html = investigationPlanHtml(plan);
+    if (!html) return;
+    const existing = progress.parentElement?.querySelector(".ops-investigation-plan.is-live");
+    if (existing) existing.remove();
+    progress.insertAdjacentHTML("beforebegin", html.replace("ops-investigation-plan", "ops-investigation-plan is-live"));
+  }
+
   async function agents() {
     const [rows, targetPage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
@@ -198,10 +218,11 @@
     const answerBlocks = values(turn.answer_blocks);
     const blocks = answerBlocks.map(answerBlockHtml).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
+    const plan = investigationPlanHtml(turn.investigation_plan);
     const terminal = terminalTurnStatuses.has(turn.status);
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const progress = terminal && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${answer}${progress}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${answer}${progress}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -358,6 +379,9 @@
         "investigation.replanned",
       ].includes(event)) {
         progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
+      }
+      if (["investigation.planned", "investigation.replanned"].includes(event)) {
+        showInvestigationPlan(progress, payload.plan);
       }
       if (event === "thinking.delta") {
         progress.textContent = payload.public_summary || payload.delta || "正在组织回答";

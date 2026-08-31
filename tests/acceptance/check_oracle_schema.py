@@ -509,6 +509,24 @@ def main() -> int:
         )
     if re.search(r"\bMODE\s+VARCHAR2\b", aiops_sql):
         errors.append("AIOps 禁止使用 Oracle 26ai 保留字 MODE 作为列名")
+    tool_class_constraint = re.search(
+        r"CONSTRAINT\s+CK_OPS_TOOL_INV_CLASS\s+CHECK\s*\((.*?)\)\s*,",
+        aiops_sql,
+        re.DOTALL,
+    )
+    required_tool_classes = {
+        "'PROMETHEUS'",
+        "'LOKI'",
+        "'ORACLE_SQL'",
+        "'ORACLE_SQL_DYNAMIC'",
+    }
+    if tool_class_constraint is None or not all(
+        value in tool_class_constraint.group(1)
+        for value in required_tool_classes
+    ):
+        errors.append(
+            "AIOps 工具调用分类约束缺少受支持的只读工具分类"
+        )
     if not re.search(
         r"\bSCHEDULED_FOR_UTC\s+TIMESTAMP\s*\(\s*6\s*\)"
         r"\s+GENERATED\s+ALWAYS\s+AS\s*"

@@ -18,6 +18,9 @@ from aiops_agent.application.investigation import (
     TurnPlanningService,
     TurnPlanningStageError,
 )
+from aiops_agent.application.investigation.projection import (
+    safe_plan_projection,
+)
 from aiops_agent.application.investigation.discovery import build_playbook_plan
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.playbooks import PlaybookCatalogError, PlaybookRegistry
@@ -806,6 +809,15 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(1, len(uow.revisions))
         self.assertEqual(2, uow.commit_count)
+        planned_event = next(
+            event
+            for event in uow.events
+            if event.event_type == "investigation.planned"
+        )
+        self.assertEqual(
+            {"revision_no": 1, "actions": []},
+            planned_event.payload_json["plan"],
+        )
 
     async def test_source_run_final_artifact_is_inherited_as_current_evidence(
         self,
@@ -911,6 +923,66 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("内部错误", internal)
         self.assertNotIn("安全校验", internal)
         self.assertIn("安全校验", invalid)
+
+    def test_schema_failure_summary_does_not_claim_policy_rejection(
+        self,
+    ) -> None:
+        """Schema合同漂移必须明确指向数据库结构，不能误报策略拒绝。"""
+        summary = TurnPlanningService._terminal_failure_summary(
+            "AIOPS_SCHEMA_INTEGRITY_ERROR"
+        )
+
+        self.assertIn("数据库结构", summary)
+        self.assertNotIn("安全校验", summary)
+
+    def test_safe_plan_projection_hides_query_and_exposes_approval(
+        self,
+    ) -> None:
+        """用户计划可展示审批语义，但不得泄露SQL、参数或策略快照。"""
+        projection = safe_plan_projection(
+            {
+                "revision_no": 2,
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "查看当前会话明细",
+                        "tool_id": "db.oracle.readonly_query",
+                        "input": {
+                            "sql": "SELECT * FROM v$session",
+                            "parameters": {},
+                        },
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                        "depends_on": [],
+                    }
+                ],
+            },
+            execution_snapshot={
+                "dynamic_invocations": {
+                    "dynamic:a1": {
+                        "action_id": "a1",
+                        "policy_snapshot": {"star_projection_allowed": False},
+                        "validated_query": {
+                            "normalized_sql": "SELECT * FROM v$session",
+                            "parameters": {},
+                            "execution_decision": "APPROVAL_REQUIRED",
+                        },
+                    }
+                }
+            },
+        )
+
+        self.assertEqual(2, projection["revision_no"])
+        self.assertEqual(
+            "ORACLE_SQL_DYNAMIC", projection["actions"][0]["tool_class"]
+        )
+        self.assertEqual(
+            "APPROVAL_REQUIRED",
+            projection["actions"][0]["execution_mode"],
+        )
+        serialized = str(projection)
+        self.assertNotIn("SELECT *", serialized)
+        self.assertNotIn("parameters", serialized)
+        self.assertNotIn("policy_snapshot", serialized)
 
     async def test_terminal_task_failure_updates_chat_turn(self) -> None:
         uow = _PlanningUow()

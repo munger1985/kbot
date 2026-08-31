@@ -22,6 +22,7 @@ from platform_core.contracts.aiops import (
     TurnCreate,
     TurnReceipt,
     TurnSummary,
+    TurnView,
 )
 from platform_core.identity import uuid7
 
@@ -195,6 +196,14 @@ class _TurnRepository:
             row
             for row in self.answer_citations
             if row.answer_block_id in answer_block_ids
+        ]
+
+    async def list_tool_invocations(self, *, turn_id, lock=False):
+        del lock
+        return [
+            row
+            for row in getattr(self, "tool_invocations", [])
+            if row.turn_id == turn_id
         ]
 
     async def list_events(
@@ -406,6 +415,16 @@ class _RunRepository:
         self.artifacts.append(row)
         return row
 
+    async def get_artifact(self, *, artifact_id):
+        return next(
+            (
+                row
+                for row in self.artifacts
+                if row.artifact_id == artifact_id
+            ),
+            None,
+        )
+
 
 class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
     def test_turn_summary_exposes_only_sanitized_evidence_gaps(self) -> None:
@@ -497,6 +516,89 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("aiops.turn.created", uow.outbox.rows[0].event_type)
         self.assertEqual(str(turn.turn_id), receipt["turn_id"])
         TurnReceipt.model_validate(receipt)
+
+    async def test_get_turn_returns_safe_current_investigation_plan(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service, receipt = await self._start(uow)
+        turn = uow.turns.turns[0]
+        run_id = uuid7()
+        artifact_id = uuid7()
+        turn.current_plan_artifact_id = artifact_id
+        uow.turns.run_links.append(
+            SimpleNamespace(
+                turn_id=turn.turn_id,
+                ops_run_id=run_id,
+                purpose="PRIMARY",
+            )
+        )
+        uow.runs.rows.append(
+            SimpleNamespace(
+                ops_run_id=run_id,
+                plan_snapshot_json={
+                    "investigation_execution": {
+                        "dynamic_invocations": {
+                            "dynamic:a1": {
+                                "action_id": "a1",
+                                "validated_query": {
+                                    "normalized_sql": (
+                                        "SELECT * FROM v$session"
+                                    ),
+                                    "parameters": {},
+                                    "execution_decision": (
+                                        "APPROVAL_REQUIRED"
+                                    ),
+                                },
+                            }
+                        }
+                    }
+                },
+            )
+        )
+        uow.runs.artifacts.append(
+            SimpleNamespace(
+                artifact_id=artifact_id,
+                payload_json={
+                    "revision_no": 1,
+                    "actions": [
+                        {
+                            "action_id": "a1",
+                            "question": "检查当前会话明细",
+                            "tool_id": "db.oracle.readonly_query",
+                            "input": {
+                                "sql": "SELECT * FROM v$session",
+                                "parameters": {},
+                            },
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                            "depends_on": [],
+                        }
+                    ],
+                },
+            )
+        )
+        uow.turns.tool_invocations = [
+            SimpleNamespace(
+                turn_id=turn.turn_id,
+                action_id="a1",
+                status="WAITING_APPROVAL",
+            )
+        ]
+
+        result = await service.get_turn(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            turn_id=UUID(receipt["turn_id"]),
+            actor_id="dba@example.com",
+        )
+
+        view = TurnView.model_validate(result)
+        action = view.investigation_plan.actions[0]
+        self.assertEqual("ORACLE_SQL_DYNAMIC", action.tool_class)
+        self.assertEqual("APPROVAL_REQUIRED", action.execution_mode)
+        self.assertEqual("WAITING_APPROVAL", action.status)
+        self.assertNotIn("SELECT *", str(result["investigation_plan"]))
+        self.assertNotIn("parameters", str(result["investigation_plan"]))
 
     async def test_start_accepts_disabled_target_for_degraded_diagnosis(
         self,

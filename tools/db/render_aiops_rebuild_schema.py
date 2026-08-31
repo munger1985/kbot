@@ -155,6 +155,7 @@ DECLARE
     l_workflow_kind_count PLS_INTEGER;
     l_required_column_count PLS_INTEGER;
     l_task_type_constraint_count PLS_INTEGER;
+    l_tool_class_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -254,6 +255,19 @@ BEGIN
        AND search_condition_vc NOT LIKE '%SKILL_PLAN%'
        AND search_condition_vc NOT LIKE '%SKILL_INVOKE%';
 
+    SELECT COUNT(*)
+      INTO l_tool_class_constraint_count
+      FROM user_constraints
+     WHERE table_name = 'KBOT_OPS_TOOL_INVOCATION'
+       AND constraint_name = 'CK_OPS_TOOL_INV_CLASS'
+       AND constraint_type = 'C'
+       AND status = 'ENABLED'
+       AND validated = 'VALIDATED'
+       AND search_condition_vc LIKE '%''PROMETHEUS''%'
+       AND search_condition_vc LIKE '%''LOKI''%'
+       AND search_condition_vc LIKE '%''ORACLE_SQL''%'
+       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%';
+
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
@@ -284,10 +298,13 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 7 THEN
-        raise_application_error(-20008, 'Schema 16 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 16 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema {schema_version} 合同不一致。');
+    END IF;
+    IF l_tool_class_constraint_count <> 1 THEN
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema {schema_version} 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}
