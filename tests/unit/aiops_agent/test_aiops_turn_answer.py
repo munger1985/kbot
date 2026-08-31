@@ -9,14 +9,17 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiops_agent.adapters.model_serving import (
+    AIOpsModelError,
+    AIOpsStructuredModelClient,
+)
+from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.turn_answer import (
     DbaAnswerDraft,
     DbaSufficiencyAssessment,
     TurnEvidenceGap,
 )
-from aiops_agent.application.runtime import AIOpsRuntimeService
-from aiops_agent.adapters.model_serving import AIOpsStructuredModelClient
 from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.workers.handlers import TaskExecutionContext
@@ -28,8 +31,8 @@ from aiops_agent.workers.turn_answer_handlers import (
 from platform_core.contracts.aiops import (
     AppendOpsTaskProgressCommand,
     AnswerBlockType,
-    SufficiencyStatus,
     InvestigationAssessment,
+    SufficiencyStatus,
 )
 from platform_core.identity import uuid7
 
@@ -103,6 +106,14 @@ class _AssessmentModel:
                 output_sha256=digest,
                 duration_ms=1,
             ),
+        )
+
+
+class _InvalidAssessmentModel:
+    async def generate_structured(self, **_) -> StructuredModelResult:
+        raise AIOpsModelError(
+            "MODEL_OUTPUT_INVALID",
+            "sufficiency_status 不在允许集合中",
         )
 
 
@@ -447,6 +458,42 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(
             "SUPPORTED", result.investigation.hypothesis_updates["h1"]
         )
+
+    def test_assessment_status_is_a_closed_contract_enum(self) -> None:
+        payload = {
+            "round_no": 1,
+            "sufficiency_status": "PARTIALLY_ANSWERABLE_NEEDS_EVIDENCE",
+            "verified_facts": (),
+            "remaining_unknowns": (),
+            "hypothesis_updates": {},
+            "evidence_gaps": (),
+            "next_action": "ANSWER",
+            "progress_made": True,
+            "reason": "存在部分可回答证据",
+        }
+
+        with self.assertRaisesRegex(ValueError, "sufficiency_status"):
+            InvestigationAssessment.model_validate(payload)
+
+    def test_invalid_model_assessment_falls_back_to_deterministic_result(
+        self,
+    ) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=_InvalidAssessmentModel()
+            ).execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
+                    ),
+                    recent=True,
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertIsNone(result.investigation)
+        self.assertEqual(1, len(result.evidence))
 
     def test_chat_monitor_health_uses_run_domain(self) -> None:
         source_id = uuid7()

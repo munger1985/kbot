@@ -11,6 +11,7 @@ from .types import (
     CursorPage,
     JsonObject,
     MeasurementSemantics,
+    SufficiencyStatus,
     UUIDv7,
     UtcDatetime,
 )
@@ -58,15 +59,6 @@ class DbaIntent(StrEnum):
     CHANGE = "CHANGE"
     VERIFY = "VERIFY"
     INSPECT = "INSPECT"
-
-
-class SufficiencyStatus(StrEnum):
-    ANSWERABLE = "ANSWERABLE"
-    PARTIAL = "PARTIAL"
-    NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
-    NEEDS_EVIDENCE = "NEEDS_EVIDENCE"
-    CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
-    UNSAFE = "UNSAFE"
 
 
 class AnswerBlockType(StrEnum):

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 import re
 import time
+from datetime import datetime
 from typing import Any
 
+from loguru import logger
+
+from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.change import ProposalOutcome
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
 from aiops_agent.contracts.tool_execution import DbaToolResult
@@ -23,9 +26,9 @@ from aiops_agent.contracts.turn_answer import (
 )
 from platform_core.contracts.aiops import (
     AnswerBlockType,
+    InvestigationAssessment,
     MeasurementSemantics,
     SufficiencyStatus,
-    InvestigationAssessment,
 )
 
 from .handlers import TaskExecutionContext
@@ -49,6 +52,8 @@ class DbaEvidenceAssessmentHandler:
 假设与剩余未知项，判断证据是否足以回答，并选择ANSWER、REPLAN、ASK_USER或STOP_UNSAFE。
 不得虚构证据。系统仍有授权Tool可以补证时优先REPLAN；只有系统无法取得关键证据时才
 ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失否定全部已验证事实。
+sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
+CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状态。
 """.strip()
 
     def __init__(self, *, model_client=None) -> None:
@@ -311,38 +316,39 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
             ).hexdigest(),
             "content": self._PROMPT,
         }
-        result = await self._model.generate_structured(
-            purpose="aiops.investigation-assessment",
-            output_model=InvestigationAssessment,
-            model_snapshot=model_snapshot,
-            prompt_ref=prompt_ref,
-            input_payload={
-                "task_frame": task_frame,
-                "investigation_plan": dict(
-                    answer_context.get("investigation_plan") or {}
+        try:
+            result = await self._model.generate_structured(
+                purpose="aiops.investigation-assessment",
+                output_model=InvestigationAssessment,
+                model_snapshot=model_snapshot,
+                prompt_ref=prompt_ref,
+                input_payload={
+                    "task_frame": task_frame,
+                    "investigation_plan": dict(
+                        answer_context.get("investigation_plan") or {}
+                    ),
+                    "deterministic_sufficiency": deterministic.model_dump(
+                        mode="json"
+                    ),
+                },
+                deadline=(
+                    datetime.fromisoformat(context.deadline_at)
+                    if context.deadline_at
+                    else None
                 ),
-                "deterministic_sufficiency": deterministic.model_dump(
-                    mode="json"
+                idempotency_key=(
+                    f"turn:{context.run_id}:assessment:{context.attempt}"
                 ),
-            },
-            deadline=(
-                datetime.fromisoformat(context.deadline_at)
-                if context.deadline_at
-                else None
-            ),
-            idempotency_key=(
-                f"turn:{context.run_id}:assessment:{context.attempt}"
-            ),
-        )
+            )
+        except AIOpsModelError as exc:
+            logger.warning(
+                "调查证据模型评估降级为确定性结果：task_id={} code={}",
+                context.task_id,
+                exc.code,
+            )
+            return deterministic
         investigation = InvestigationAssessment.model_validate(result.output)
-        assessed_status = {
-            "ANSWERABLE": SufficiencyStatus.ANSWERABLE,
-            "PARTIAL": SufficiencyStatus.PARTIAL,
-            "NEEDS_EVIDENCE": SufficiencyStatus.NEEDS_EVIDENCE,
-            "NEEDS_CLARIFICATION": SufficiencyStatus.NEEDS_CLARIFICATION,
-            "CAPABILITY_UNAVAILABLE": SufficiencyStatus.CAPABILITY_UNAVAILABLE,
-            "UNSAFE": SufficiencyStatus.UNSAFE,
-        }.get(investigation.sufficiency_status, deterministic.status)
+        assessed_status = SufficiencyStatus(investigation.sufficiency_status)
         return deterministic.model_copy(
             update={
                 "status": assessed_status,

@@ -7,7 +7,12 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .types import AIOpsContract, JsonObject, MeasurementSemantics
+from .types import (
+    AIOpsContract,
+    JsonObject,
+    MeasurementSemantics,
+    SufficiencyStatus,
+)
 
 
 INPUT_ENVELOPE_SCHEMA_VERSION = "aiops.input-envelope.v1"
@@ -217,7 +222,7 @@ class InvestigationPlanningOutput(AIOpsContract):
 class InvestigationAssessment(AIOpsContract):
     schema_version: str = INVESTIGATION_ASSESSMENT_SCHEMA_VERSION
     round_no: int = Field(ge=1)
-    sufficiency_status: str = Field(min_length=1, max_length=32)
+    sufficiency_status: SufficiencyStatus
     verified_facts: tuple[str, ...] = ()
     remaining_unknowns: tuple[str, ...] = ()
     hypothesis_updates: JsonObject = Field(default_factory=dict)
