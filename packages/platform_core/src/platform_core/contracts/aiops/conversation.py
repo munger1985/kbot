@@ -6,7 +6,14 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .types import AIOpsContract, CursorPage, JsonObject, UUIDv7, UtcDatetime
+from .types import (
+    AIOpsContract,
+    CursorPage,
+    JsonObject,
+    MeasurementSemantics,
+    UUIDv7,
+    UtcDatetime,
+)
 
 
 CONVERSATION_SCHEMA_VERSION = "aiops.conversation.v1"
@@ -78,14 +85,6 @@ class EvidenceRole(StrEnum):
     CONTRADICTS = "CONTRADICTS"
     CONTEXT = "CONTEXT"
     USER_PROVIDED = "USER_PROVIDED"
-
-
-class MeasurementSemantics(StrEnum):
-    CURRENT_ACTIVITY = "CURRENT_ACTIVITY"
-    CUMULATIVE_SINCE_LOAD = "CUMULATIVE_SINCE_LOAD"
-    SNAPSHOT_DELTA = "SNAPSHOT_DELTA"
-    HISTORICAL_SAMPLES = "HISTORICAL_SAMPLES"
-    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 class FreshnessStatus(StrEnum):

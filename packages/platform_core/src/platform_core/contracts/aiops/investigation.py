@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .types import AIOpsContract, JsonObject
+from .types import AIOpsContract, JsonObject, MeasurementSemantics
 
 
 INPUT_ENVELOPE_SCHEMA_VERSION = "aiops.input-envelope.v1"
@@ -135,7 +135,7 @@ class InvestigationAction(AIOpsContract):
     tool_id: str = Field(min_length=1, max_length=128)
     input: JsonObject = Field(default_factory=dict)
     expected_evidence_kind: str = Field(min_length=1, max_length=64)
-    measurement_semantics: str = Field(min_length=1, max_length=32)
+    measurement_semantics: MeasurementSemantics
     depends_on: tuple[str, ...] = ()
     optional: bool = False
 

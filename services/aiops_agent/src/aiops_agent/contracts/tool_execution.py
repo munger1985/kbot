@@ -7,8 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from aiops_agent.contracts.artifacts.database import EvidenceGap
-from platform_core.contracts.aiops.conversation import MeasurementSemantics
 from platform_core.contracts.aiops.playbooks import PresentationPreference
+from platform_core.contracts.aiops.types import MeasurementSemantics
 from platform_core.contracts.aiops.executor import DatabaseObservation
 
 

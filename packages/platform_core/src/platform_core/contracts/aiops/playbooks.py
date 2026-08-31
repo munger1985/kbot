@@ -6,8 +6,14 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .conversation import DbaIntent, MeasurementSemantics
-from .types import AIOpsContract, DatabaseType, JsonObject, Sha256Digest
+from .conversation import DbaIntent
+from .types import (
+    AIOpsContract,
+    DatabaseType,
+    JsonObject,
+    MeasurementSemantics,
+    Sha256Digest,
+)
 
 
 PLAYBOOK_PLAN_SCHEMA_VERSION = "DBA_PLAYBOOK_PLAN.v1"

@@ -172,6 +172,15 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "不能包含环"):
             InvestigationPlanningOutput.model_validate(payload)
 
+    def test_plan_rejects_unknown_measurement_semantics(self) -> None:
+        payload = _output(tool_id="db.instance.identity")
+        payload["plan"]["actions"][0][
+            "measurement_semantics"
+        ] = "point-in-time"
+
+        with self.assertRaisesRegex(ValueError, "measurement_semantics"):
+            InvestigationPlanningOutput.model_validate(payload)
+
 
 if __name__ == "__main__":
     unittest.main()
