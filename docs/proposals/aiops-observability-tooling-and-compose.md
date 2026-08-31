@@ -195,17 +195,16 @@ Collector和 Alloy共享专用 Volume；Alloy只读挂载。Collector以
 `ORIGINATING_TIMESTAMP + RECORD_ID` 为断点顺序，先持久化 JSONL并执行 `fsync`，再
 原子更新 checkpoint，重启后继续采集。默认不把整个 Oracle ADR目录暴露给容器。
 
-监控账号使用独立最小权限凭据，不能使用 SYS、SYSTEM或应用账号代替。典型授权由
+监控账号使用独立数据库诊断凭据，不能使用 SYS、SYSTEM或应用账号代替。标准授权由
 数据库管理员在目标库审核后执行：
 
 ```sql
 GRANT CREATE SESSION TO kbot_monitor;
-GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO kbot_monitor;
-GRANT SELECT ON SYS.V_$SYSMETRIC TO kbot_monitor;
+GRANT SELECT ANY DICTIONARY TO kbot_monitor;
 ```
 
-不同 Oracle版本、CDB/PDB连接位置及客户许可证策略必须在部署前校验。Collector不会
-自动提权、创建数据库用户或修改目标数据库。
+该权限覆盖AWR/ASH诊断视图，AIOps不根据Oracle许可证裁剪诊断能力。不同Oracle版本及
+CDB/PDB连接位置仍须在部署前校验。Collector不会自动提权、创建数据库用户或修改目标数据库。
 
 如果客户已有日志平台，Alloy可以直接发送到该平台，或省略 Alloy并由 KBot连接现有
 日志源。告警只携带事件和证据定位信息，原始日志保留在日志平台中；KBot仅把本次
@@ -217,7 +216,7 @@ GRANT SELECT ON SYS.V_$SYSMETRIC TO kbot_monitor;
 
 - 数据库类型、主机、端口和数据库/Service标识；
 - 实例、集群、环境和 KBot Target映射；
-- 最小权限监控用户名；
+- 专用数据库诊断用户名；
 - 密码、Wallet、TLS证书或外部 Secret引用；
 - 启用的指标组、自定义指标和采集周期；
 - 是否采集数据库日志及日志来源；

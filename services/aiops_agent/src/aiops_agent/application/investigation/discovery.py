@@ -66,10 +66,27 @@ def available_tools(
             "tool_class": "ORACLE_SQL_DYNAMIC",
             "description": (
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
+                "诊断账号已授予 CREATE SESSION 和 SELECT ANY DICTIONARY，"
+                "可以查询 V$/GV$、DBA_/CDB_/ALL_ 以及 AWR/ASH 系统视图；"
                 "仅在固定目录工具不能回答问题时使用，优先显式投影并使用 bind 参数；"
                 "系统诊断视图的星号投影可自动执行，显式敏感系统列转为用户审批；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数"
             ),
+            "database_access": {
+                "granted_system_privileges": [
+                    "CREATE SESSION",
+                    "SELECT ANY DICTIONARY",
+                ],
+                "queryable_object_families": [
+                    "V$",
+                    "GV$",
+                    "DBA_",
+                    "CDB_",
+                    "ALL_",
+                ],
+                "diagnostic_scopes": ["CURRENT", "AWR", "ASH"],
+                "license_gating": False,
+            },
             "input": {
                 "sql": "Oracle SELECT，必须为每个计算表达式提供别名",
                 "parameters": "与 SQL bind 名称完全一致的标量对象",

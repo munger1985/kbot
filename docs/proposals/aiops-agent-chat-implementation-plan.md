@@ -77,7 +77,9 @@ Vector Selector都必须以`instance="${external_target}"`或
 Artifact保存、UTF-8文本提取、按Agent能力选择VLM/OCR、独立提取Artifact以及
 `USER_PROVIDED` Evidence关联均已接入；单个附件解析失败不会抹掉原始证据或阻止其他材料
 继续诊断。Oracle固定工具目录已进一步覆盖参数、TEMP/UNDO、Redo、近期Alert Log、失败调度
-任务、无效对象、RMAN作业和Data Guard延迟，并同步逐对象最小授权。以下项目仍按后续阶段
+任务、无效对象、RMAN作业和Data Guard延迟。Oracle诊断账号统一使用`CREATE SESSION`和
+`SELECT ANY DICTIONARY`，覆盖动态系统视图以及AWR/ASH调查，不在AIOps运行时执行许可证
+能力门控。以下项目仍按后续阶段
 实施，不冒充完成：动态查询在dev真实Oracle、Prometheus、Loki和Alertmanager联调。阶段完成
 情况以本节和验收记录为准，不能仅凭Schema字段或类名判断功能已经交付。
 
@@ -224,7 +226,7 @@ Oracle Tool优先级：
 8. 参数、Listener和Service；
 9. Data Guard、ASM、RAC、Scheduler、备份、统计信息、对象和权限。
 
-门槛：Tool声明最小权限、版本、口径、超时和脱敏；无AWR许可不调用受限能力；停库案例能
+门槛：Tool声明版本、口径、超时和脱敏；AWR/ASH可按调查需要调用；停库案例能
 关联监控时间线并给出最小主机补证。
 
 ## 9. 阶段6：受控动态查询

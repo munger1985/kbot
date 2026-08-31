@@ -133,8 +133,8 @@ password = 填写实际密码
 配置段可以继续复制。冒号后的Target Key只允许小写字母、数字、连字符和下划线。
 
 Oracle补充指标读取`V$SYSMETRIC`中的最近一分钟主机CPU使用率，以及`V$SYSSTAT`中的
-SQL解析失败累计数。DBA必须按实际视图审核最小权限；不得使用SYS、SYSTEM或应用账号。
-这些指标不采集SQL文本、用户名或业务数据。
+SQL解析失败累计数。必须使用独立的`kbot_monitor`诊断账号，不得使用SYS、SYSTEM或
+应用账号。该账号同时供AIOps动态只读诊断使用。
 
 首次创建监控账号时，以SYSDBA连接目标PDB后执行：
 
@@ -144,16 +144,18 @@ SHOW CON_NAME;
 @scripts/deployment/aiops_observability/oracle/create_kbot_monitor.sql
 ```
 
-脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并验证99项直接对象授权。配置诊断
-同时读取`V_$PARAMETER`、`V_$SYSTEM_PARAMETER`、`V_$SPPARAMETER`和
-`V_$PARAMETER_VALID_VALUES`，区分当前会话值、实例值、持久化值和有效值，禁止仅凭默认值
-或文档猜测实际配置。其余授权覆盖实例/PDB身份、RAC会话与锁、当前SQL执行计划、等待与
-I/O、SGA/PGA、表空间与对象统计、归档/FRA、备份恢复、Data Guard、调度维护、无效对象、
-账号状态及授权缺口等常用只读诊断面。
+脚本会拒绝在`CDB$ROOT`运行，交互隐藏输入密码，并授予及验证以下两个系统权限：
 
-脚本只进行逐对象`SELECT`授权，不授予`DBA`、`SELECT ANY TABLE`或
-`SELECT_CATALOG_ROLE`，也不授权`DBA_HIST_*`、`V_$ACTIVE_SESSION_HISTORY`等需要额外
-许可的AWR/ASH历史视图。用户已存在时不要重复执行初始化脚本，改为执行完整授权脚本：
+```sql
+GRANT CREATE SESSION TO kbot_monitor;
+GRANT SELECT ANY DICTIONARY TO kbot_monitor;
+```
+
+`SELECT ANY DICTIONARY`用于覆盖实例/PDB身份、RAC会话与锁、SQL文本与执行计划、等待与
+I/O、SGA/PGA、存储、恢复、Data Guard、维护任务以及AWR/ASH等数据库诊断信息。
+AIOps不根据Oracle许可证对AWR/ASH查询进行能力门控；许可证管理不属于AIOps运行时职责。
+数据库查询仍由AIOps只读SQL策略、执行超时和结果上限约束。用户已存在时不要重复执行
+初始化脚本，改为执行完整授权脚本：
 
 ```sql
 ALTER SESSION SET CONTAINER = PDB01;

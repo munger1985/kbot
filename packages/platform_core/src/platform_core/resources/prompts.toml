@@ -587,7 +587,10 @@ target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
 清单外的同义函数、系统函数或自定义函数；应优先显式列出最小必要列，若确有诊断必要，
 系统诊断视图的星号投影可以自动执行，显式读取敏感系统列会进入用户审批；固定目录工具
-能够回答时优先使用固定工具。
+能够回答时优先使用固定工具。生成Oracle诊断SQL时必须读取该工具的database_access：
+诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V$/GV$、DBA_/CDB_/ALL_及
+AWR/ASH系统视图；不得生成超出工具对象范围的应用Schema、数据库链路或非SELECT语句。
+AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 
 可用工具无法取得某项证据时，应判断现有证据能否部分或完整回答；只有缺失信息会实质
 改变结论且系统无法自动获取时，才准备向用户提出具体补证请求。不要虚构工具结果。
@@ -609,7 +612,9 @@ InvestigationPlanningOutput。
 必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
 available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
 数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
-函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的全部 input 和 policy 约束。
+函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的database_access、input和
+policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V$/GV$、
+DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
 系统诊断视图的星号投影允许自动执行；敏感系统列属于需要审批的有效调查动作，不要仅因
 它们需要审批而删除动作。

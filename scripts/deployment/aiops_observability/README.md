@@ -12,12 +12,13 @@ Collector、逐目标Secret、Volume和KBot Webhook签名桥由入口脚本生�
 `var/aiops-stack/generated/compose.generated.yaml`。不要手工维护生成文件，也不要从
 本目录直接执行裸`docker compose up`。
 
-Oracle DBA在目标PDB创建最小权限监控用户时，使用
+Oracle DBA在目标PDB创建专用数据库诊断用户时，使用
 `oracle/create_kbot_monitor.sql`。该脚本必须以SYSDBA执行，并会拒绝在`CDB$ROOT`
 创建用户。用户已经存在但授权不完整时，使用
 `oracle/grant_kbot_monitor.sql`补齐并验证完整授权，不要重复创建用户。
-两份脚本使用相同的99项逐对象只读清单，覆盖当前/持久化参数、性能、锁、存储、恢复、
-维护和账号授权诊断；不授予目录角色、任意表权限或AWR/ASH历史视图。
+两份脚本都只授予`CREATE SESSION`和`SELECT ANY DICTIONARY`，使AIOps可以读取
+`V$`/`GV$`、`DBA_`/`CDB_`以及AWR/ASH等系统诊断视图。AIOps不根据Oracle许可证
+裁剪数据库诊断能力；许可证管理由部署和使用该数据库的组织负责。
 
 OEM不属于此安装包，部署完成后在AIOps App内配置。
 

@@ -555,6 +555,15 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             "AUTO_EXECUTE_BOUNDED",
             dynamic_tool["policy"]["star_projection_behavior"],
         )
+        self.assertEqual(
+            ["CREATE SESSION", "SELECT ANY DICTIONARY"],
+            dynamic_tool["database_access"]["granted_system_privileges"],
+        )
+        self.assertEqual(
+            ["CURRENT", "AWR", "ASH"],
+            dynamic_tool["database_access"]["diagnostic_scopes"],
+        )
+        self.assertFalse(dynamic_tool["database_access"]["license_gating"])
 
     def test_fixed_tool_exposes_complete_parameter_constraints(self) -> None:
         diagnostic_registry = DiagnosticRegistry.load()

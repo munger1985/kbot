@@ -190,33 +190,8 @@ environment = production
         "CDB$ROOT",
         "ACCEPT KBOT_MONITOR_PASSWORD",
         "GRANT CREATE SESSION TO kbot_monitor",
-        "SYS.V_$SYSMETRIC",
-        "SYS.V_$RSRCPDBMETRIC",
-        "SYS.V_$PARAMETER",
-        "SYS.V_$SPPARAMETER",
-        "SYS.V_$PARAMETER_VALID_VALUES",
-        "SYS.GV_$INSTANCE",
-        "SYS.GV_$LOCK",
-        "SYS.V_$SESSION_LONGOPS",
-        "SYS.V_$SQL_PLAN",
-        "SYS.DBA_SEGMENTS",
-        "SYS.V_$ARCHIVE_DEST_STATUS",
-        "SYS.V_$DATABASE_BLOCK_CORRUPTION",
-        "SYS.DBA_USERS",
-        "SYS.DBA_TAB_PRIVS",
-        "SYS.V_$SGA",
-        "SYS.V_$PGASTAT",
-        "SYS.V_$RECOVERY_FILE_DEST",
-        "SYS.DBA_TEMP_FILES",
-        "SYS.V_$TEMP_SPACE_HEADER",
-        "SYS.DBA_UNDO_EXTENTS",
-        "SYS.V_$LOG",
-        "SYS.DBA_SCHEDULER_JOB_RUN_DETAILS",
-        "SYS.DBA_OBJECTS",
-        "SYS.V_$RMAN_BACKUP_JOB_DETAILS",
-        "SYS.V_$DATAGUARD_STATS",
-        "SYS.V_$DIAG_ALERT_EXT",
-        "SYS.GV_$TRANSACTION",
+        "GRANT SELECT ANY DICTIONARY TO kbot_monitor",
+        "system_grant_count <> 2",
     ):
         if required_text not in oracle_user_script:
             raise RuntimeError(f"Oracle监控用户脚本缺少约束：{required_text}")
@@ -224,6 +199,7 @@ environment = production
         "GRANT DBA TO",
         "GRANT SELECT ANY TABLE TO",
         "GRANT SELECT_CATALOG_ROLE TO",
+        "GRANT SELECT ON SYS.",
     ):
         if forbidden_text in oracle_user_script:
             raise RuntimeError(f"Oracle监控用户脚本包含过宽授权：{forbidden_text}")
@@ -235,40 +211,8 @@ environment = production
         "CDB$ROOT",
         "DBA_USERS",
         "GRANT CREATE SESSION TO kbot_monitor",
-        "SYS.V_$INSTANCE",
-        "SYS.V_$DATABASE",
-        "SYS.V_$SQLSTATS",
-        "SYS.GV_$SESSION",
-        "SYS.GV_$TRANSACTION",
-        "SYS.DBA_DATA_FILES",
-        "SYS.DBA_FREE_SPACE",
-        "SYS.V_$SYSMETRIC",
-        "SYS.V_$RSRCPDBMETRIC",
-        "SYS.V_$PARAMETER",
-        "SYS.V_$SPPARAMETER",
-        "SYS.V_$PARAMETER_VALID_VALUES",
-        "SYS.GV_$INSTANCE",
-        "SYS.GV_$LOCK",
-        "SYS.V_$SESSION_LONGOPS",
-        "SYS.V_$SQL_PLAN",
-        "SYS.DBA_SEGMENTS",
-        "SYS.V_$ARCHIVE_DEST_STATUS",
-        "SYS.V_$DATABASE_BLOCK_CORRUPTION",
-        "SYS.DBA_USERS",
-        "SYS.DBA_TAB_PRIVS",
-        "SYS.V_$SGA",
-        "SYS.V_$PGASTAT",
-        "SYS.V_$RECOVERY_FILE_DEST",
-        "SYS.DBA_TEMP_FILES",
-        "SYS.V_$TEMP_SPACE_HEADER",
-        "SYS.DBA_UNDO_EXTENTS",
-        "SYS.V_$LOG",
-        "SYS.DBA_SCHEDULER_JOB_RUN_DETAILS",
-        "SYS.DBA_OBJECTS",
-        "SYS.V_$RMAN_BACKUP_JOB_DETAILS",
-        "SYS.V_$DATAGUARD_STATS",
-        "SYS.V_$DIAG_ALERT_EXT",
-        "object_grant_count <> 99",
+        "GRANT SELECT ANY DICTIONARY TO kbot_monitor",
+        "system_grant_count <> 2",
     ):
         if required_text not in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本缺少约束：{required_text}")
@@ -277,80 +221,25 @@ environment = production
         "GRANT DBA TO",
         "GRANT SELECT ANY TABLE TO",
         "GRANT SELECT_CATALOG_ROLE TO",
+        "GRANT SELECT ON SYS.",
     ):
         if forbidden_text in oracle_grant_script:
             raise RuntimeError(f"Oracle完整授权脚本包含禁用内容：{forbidden_text}")
-    oracle_catalog = json.loads(
-        (
-            ROOT
-            / "services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/manifest.json"
-        ).read_text(encoding="utf-8")
-    )
-    catalog_privileges = {
-        privilege
-        for tool in oracle_catalog["tools"]
-        for privilege in tool.get("required_privileges", [])
+    grant_pattern = re.compile(r"^\s*GRANT\s+.+?;", re.IGNORECASE | re.MULTILINE)
+    expected_grants = {
+        "GRANT CREATE SESSION TO KBOT_MONITOR;",
+        "GRANT SELECT ANY DICTIONARY TO KBOT_MONITOR;",
     }
-    playbook_privileges = {
-        privilege
-        for manifest_path in (
-            ROOT
-            / "services/aiops_agent/src/aiops_agent/playbooks/catalog/oracle"
-        ).glob("*/manifest.json")
-        for privilege in json.loads(
-            manifest_path.read_text(encoding="utf-8")
-        ).get("required_privileges", [])
-    }
-    grant_pattern = re.compile(
-        r"GRANT\s+SELECT\s+ON\s+SYS\.([A-Z0-9_$]+)\s+TO\s+kbot_monitor\s*;",
-        re.IGNORECASE,
-    )
-    create_grants = {
-        value.upper() for value in grant_pattern.findall(oracle_user_script)
-    }
-    existing_user_grants = {
-        value.upper() for value in grant_pattern.findall(oracle_grant_script)
-    }
-    for script_name, granted in (
-        ("Oracle建用户脚本", create_grants),
-        ("Oracle完整授权脚本", existing_user_grants),
+    for script_name, script in (
+        ("Oracle建用户脚本", oracle_user_script),
+        ("Oracle完整授权脚本", oracle_grant_script),
     ):
-        missing = (catalog_privileges | playbook_privileges) - granted
-        if missing:
-            raise RuntimeError(
-                f"{script_name}未覆盖诊断目录或Playbook权限："
-                f"{', '.join(sorted(missing))}"
-            )
-        verification_match = re.search(
-            r"AND\s+table_name\s+IN\s*\((.*?)\)\s*;",
-            oracle_user_script
-            if script_name == "Oracle建用户脚本"
-            else oracle_grant_script,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if verification_match is None:
-            raise RuntimeError(f"{script_name}缺少对象授权验证清单")
-        verified = {
-            value.upper()
-            for value in re.findall(
-                r"'([A-Z0-9_$]+)'", verification_match.group(1)
-            )
+        grants = {
+            " ".join(statement.upper().split())
+            for statement in grant_pattern.findall(script)
         }
-        if verified != granted:
-            raise RuntimeError(f"{script_name}授权语句与验证清单不一致")
-        expected_count_match = re.search(
-            r"object_grant_count\s*<>\s*(\d+)",
-            oracle_user_script
-            if script_name == "Oracle建用户脚本"
-            else oracle_grant_script,
-        )
-        if (
-            expected_count_match is None
-            or int(expected_count_match.group(1)) != len(granted)
-        ):
-            raise RuntimeError(f"{script_name}授权数量断言不准确")
-    if create_grants != existing_user_grants:
-        raise RuntimeError("Oracle建用户脚本与完整授权脚本的对象权限不一致")
+        if grants != expected_grants:
+            raise RuntimeError(f"{script_name}必须且只能授予两项数据库诊断权限")
     datasource_config = (
         STACK / "configuration/grafana/provisioning/datasources/aiops.yml"
     ).read_text(encoding="utf-8")
