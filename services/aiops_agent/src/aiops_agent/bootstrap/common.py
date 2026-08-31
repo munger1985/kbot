@@ -40,7 +40,10 @@ class AIOpsProcessRuntime:
 
     async def check_aiops_schema(self) -> dict[str, str]:
         if self.database_runtime is None:
-            return {"aiops_schema": "database_not_configured"}
+            return {
+                "aiops_schema": "database_not_configured",
+                "aiops_schema_integrity": "not_checked",
+            }
         try:
             async with self.database_runtime.session_factory() as session:
                 version_ready = (
@@ -57,10 +60,72 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 if version_ready != 1:
-                    raise RuntimeError("AIOps Schema 版本不匹配")
-            return {"aiops_schema": "ok"}
+                    return {
+                        "aiops_schema": "version_mismatch",
+                        "aiops_schema_integrity": "not_checked",
+                    }
+                required_columns = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT COUNT(*)
+                            FROM USER_TAB_COLUMNS
+                            WHERE NULLABLE = 'N'
+                              AND (
+                                (TABLE_NAME = 'KBOT_OPS_TASK'
+                                 AND COLUMN_NAME = 'TASK_TYPE')
+                                OR (TABLE_NAME = 'KBOT_OPS_CHANGE_PROPOSAL'
+                                    AND COLUMN_NAME = 'TURN_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_CONVERSATION_TURN'
+                                    AND COLUMN_NAME = 'CURRENT_PLAN_REVISION')
+                                OR (TABLE_NAME = 'KBOT_OPS_INVESTIGATION_REVISION'
+                                    AND COLUMN_NAME = 'REVISION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_PLAYBOOK_INVOCATION'
+                                    AND COLUMN_NAME = 'PLAYBOOK_INVOCATION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_TOOL_INVOCATION'
+                                    AND COLUMN_NAME = 'TOOL_INVOCATION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_TURN_EVIDENCE'
+                                    AND COLUMN_NAME = 'EVIDENCE_ROLE')
+                              )
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
+                task_type_constraint = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT COUNT(*)
+                            FROM USER_CONSTRAINTS
+                            WHERE TABLE_NAME = 'KBOT_OPS_TASK'
+                              AND CONSTRAINT_NAME = 'CK_OPS_TASK_TYPE'
+                              AND CONSTRAINT_TYPE = 'C'
+                              AND STATUS = 'ENABLED'
+                              AND VALIDATED = 'VALIDATED'
+                              AND SEARCH_CONDITION_VC LIKE '%CONTEXT_BUILD%'
+                              AND SEARCH_CONDITION_VC LIKE '%PLAYBOOK_INVOKE%'
+                              AND SEARCH_CONDITION_VC LIKE '%PROPOSAL%'
+                              AND SEARCH_CONDITION_VC NOT LIKE '%INTENT_ROUTE%'
+                              AND SEARCH_CONDITION_VC NOT LIKE '%SKILL_PLAN%'
+                              AND SEARCH_CONDITION_VC NOT LIKE '%SKILL_INVOKE%'
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
+                integrity_ready = (
+                    required_columns == 7 and task_type_constraint == 1
+                )
+            return {
+                "aiops_schema": "ok",
+                "aiops_schema_integrity": (
+                    "ok" if integrity_ready else "contract_mismatch"
+                ),
+            }
         except Exception as exc:
-            return {"aiops_schema": type(exc).__name__}
+            return {
+                "aiops_schema": type(exc).__name__,
+                "aiops_schema_integrity": "not_checked",
+            }
 
     async def check_executor_components(self) -> dict[str, str]:
         return {

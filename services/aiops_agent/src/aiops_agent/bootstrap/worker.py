@@ -280,6 +280,7 @@ def create_aiops_worker_probe(
                     conversation_input_resolver=(
                         conversation_input_resolver
                     ),
+                    schema_ready_check=runtime.check_aiops_schema,
                 ),
             ),
             dispatcher_id=f"{config.worker_id}-outbox",

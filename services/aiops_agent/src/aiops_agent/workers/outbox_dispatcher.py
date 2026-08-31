@@ -8,6 +8,7 @@ from typing import Protocol
 
 from loguru import logger
 
+from aiops_agent.application.errors import is_schema_or_integrity_error
 from aiops_agent.application.investigation import InvestigationPlanValidationError
 from aiops_agent.tools import InvestigationCatalogChangedError
 from platform_core.contracts.aiops import CreateOpsRunCommand
@@ -376,7 +377,13 @@ class AIOpsOutboxDispatcher:
                 snapshot["event_type"], snapshot["payload"]
             )
         except Exception as exc:
-            retry = snapshot["attempt"] < snapshot["max_attempts"]
+            retryable = bool(getattr(exc, "retryable", True)) and not (
+                is_schema_or_integrity_error(exc)
+            )
+            retry = (
+                retryable
+                and snapshot["attempt"] < snapshot["max_attempts"]
+            )
             async with self._uow_factory() as uow:
                 now = await uow.runs.database_now()
                 changed = await uow.outbox.release_failed(
@@ -387,7 +394,16 @@ class AIOpsOutboxDispatcher:
                     new_status="RETRY_WAIT" if retry else "FAILED",
                     available_at=now
                     + timedelta(seconds=min(2 ** snapshot["attempt"], 60)),
-                    error_code="OUTBOX_PUBLISH_FAILED",
+                    error_code=(
+                        "OUTBOX_PUBLISH_FAILED"
+                        if retryable
+                        else getattr(
+                            exc,
+                            "code",
+                            None,
+                        )
+                        or "AIOPS_SCHEMA_INTEGRITY_ERROR"
+                    ),
                     error_message=(
                         str(exc)[:1000]
                         if getattr(exc, "code", None)

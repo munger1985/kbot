@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import traceback
 
+from aiops_agent.application.errors import is_schema_or_integrity_error
+
 
 class TurnPlanningStageError(RuntimeError):
     """保留规划内部故障的安全阶段信息，不携带用户输入或凭据。"""
@@ -42,6 +44,9 @@ class TurnPlanningStageError(RuntimeError):
             f"stage={stage}; cause={type(cause).__name__}; "
             f"detail={detail}; location={location}"
         )
+        self.retryable = not is_schema_or_integrity_error(cause)
+        if not self.retryable:
+            self.code = "AIOPS_SCHEMA_INTEGRITY_ERROR"
         self.stage = stage
         self.cause_type = type(cause).__name__
         self.safe_detail = detail
@@ -49,6 +54,8 @@ class TurnPlanningStageError(RuntimeError):
 
     @staticmethod
     def _safe_detail(cause: Exception) -> str:
+        if is_schema_or_integrity_error(cause):
+            return "database-contract-violation"
         if not isinstance(cause, KeyError) or not cause.args:
             return "not-recorded"
         key = str(cause.args[0])
