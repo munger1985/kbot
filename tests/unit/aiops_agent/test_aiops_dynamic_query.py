@@ -624,6 +624,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 "db_type": "ORACLE",
                 "selection_status": "BOUND",
             },
+            prompt_snapshot={"frozen": {}},
             source_run_evidence=None,
             deadline=None,
         )
@@ -718,6 +719,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 "db_type": "ORACLE",
                 "selection_status": "BOUND",
             },
+            prompt_snapshot={"frozen": {}},
             source_run_evidence=None,
             deadline=None,
             capabilities=DbaCapabilitySnapshot(

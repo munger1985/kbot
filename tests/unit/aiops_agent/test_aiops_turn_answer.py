@@ -20,7 +20,6 @@ from aiops_agent.contracts.turn_answer import (
     DbaSufficiencyAssessment,
     TurnEvidenceGap,
 )
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.task_worker import AIOpsTaskWorker
@@ -35,6 +34,28 @@ from platform_core.contracts.aiops import (
     SufficiencyStatus,
 )
 from platform_core.identity import uuid7
+
+
+TEST_PROMPT_SNAPSHOT = {"test": {"prompt_version_id": str(uuid7())}}
+
+
+class _Prompt:
+    content = "测试数据库 Prompt"
+
+    @staticmethod
+    def ref() -> dict[str, str]:
+        return {
+            "prompt_id": "aiops_agent.test",
+            "prompt_version": "1.0.0",
+            "prompt_sha256": "d" * 64,
+            "prompt_version_id": str(uuid7()),
+            "prompt_source": "DATABASE",
+        }
+
+
+class _TestPrompts:
+    async def resolve(self, *_args, **_kwargs):
+        return _Prompt()
 
 
 class _AnswerModel:
@@ -280,6 +301,7 @@ def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
                 "question": "分析最近十五分钟的 Top SQL",
                 "task_frame": task_frame,
                 "model": {"technical_name": "test-model", "revision": "1"},
+                "prompts": TEST_PROMPT_SNAPSHOT,
             }
         },
         policy_snapshot={},
@@ -589,7 +611,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
     def test_assessment_model_updates_hypotheses_and_next_action(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler(
-                model_client=_AssessmentModel()
+                model_client=_AssessmentModel(),
+                prompts=_TestPrompts(),
             ).execute(
                 _context(
                     artifacts=(
@@ -630,7 +653,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
     ) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler(
-                model_client=_InvalidAssessmentModel()
+                model_client=_InvalidAssessmentModel(),
+                prompts=_TestPrompts(),
             ).execute(
                 _context(
                     artifacts=(
@@ -763,7 +787,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         handler = DbaAnswerComposeHandler(
             model_client=_AnswerModel(evidence_refs=()),
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         result = asyncio.run(handler.execute(context))
@@ -861,7 +885,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
             model_client=_AnswerModel(
                 evidence_refs=(assessment.evidence[0].evidence_ref,)
             ),
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         result = asyncio.run(handler.execute(context))
@@ -912,7 +936,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         handler = DbaAnswerComposeHandler(
             model_client=_AnswerModel(evidence_refs=(evidence_ref,)),
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         result = asyncio.run(handler.execute(context))
@@ -946,7 +970,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         handler = DbaAnswerComposeHandler(
             model_client=_AnswerModel(evidence_refs=("artifact:other#fact",)),
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         with self.assertRaisesRegex(ValueError, "批准证据之外"):
@@ -976,7 +1000,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         handler = DbaAnswerComposeHandler(
             model_client=model,
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         async def collect():
@@ -1020,7 +1044,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         handler = DbaAnswerComposeHandler(
             model_client=model,
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         )
 
         async def collect():

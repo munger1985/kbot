@@ -268,7 +268,8 @@ def create_runtime_handler_registry(
                     output_schema_version="DBA_SUFFICIENCY.v1",
                     idempotent=True,
                     implementation=DbaEvidenceAssessmentHandler(
-                        model_client=diagnosis_model_client
+                        model_client=diagnosis_model_client,
+                        prompts=diagnosis_prompt_registry,
                     ),
                 ),
                 HandlerManifest(

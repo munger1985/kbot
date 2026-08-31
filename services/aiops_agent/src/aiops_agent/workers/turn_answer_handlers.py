@@ -50,17 +50,9 @@ def _fact_trust_level(value: object) -> str:
 class DbaEvidenceAssessmentHandler:
     """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
 
-    _PROMPT = """
-你是一名资深Oracle DBA调查评估者。根据Task Frame、调查计划和本轮真实Evidence，逐项更新
-假设与剩余未知项，判断证据是否足以回答，并选择ANSWER、REPLAN、ASK_USER或STOP_UNSAFE。
-不得虚构证据。系统仍有授权Tool可以补证时优先REPLAN；只有系统无法取得关键证据时才
-ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失否定全部已验证事实。
-sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
-CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状态。
-""".strip()
-
-    def __init__(self, *, model_client=None) -> None:
+    def __init__(self, *, model_client=None, prompts=None) -> None:
         self._model = model_client
+        self._prompts = prompts
 
     async def execute(
         self, context: TaskExecutionContext
@@ -306,25 +298,21 @@ CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状
             gaps=tuple(gaps),
             reasons=tuple(reasons),
         )
-        if self._model is None:
+        if self._model is None or self._prompts is None:
             return deterministic
         model_snapshot = dict(answer_context.get("model") or {})
         if not model_snapshot:
             return deterministic
-        prompt_ref = {
-            "prompt_id": "aiops.investigation-assessor",
-            "prompt_version": "1",
-            "prompt_sha256": hashlib.sha256(
-                self._PROMPT.encode("utf-8")
-            ).hexdigest(),
-            "content": self._PROMPT,
-        }
+        prompt = await self._prompts.resolve(
+            "investigation_assessor",
+            frozen_prompts=dict(answer_context["prompts"]),
+        )
         try:
             result = await self._model.generate_structured(
                 purpose="aiops.investigation-assessment",
                 output_model=InvestigationAssessment,
                 model_snapshot=model_snapshot,
-                prompt_ref=prompt_ref,
+                prompt_ref={**prompt.ref(), "content": prompt.content},
                 input_payload={
                     "task_frame": task_frame,
                     "investigation_plan": dict(
@@ -460,7 +448,10 @@ class DbaAnswerComposeHandler:
             return self._waiting_result(assessment, context)
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
-        prompt = self._prompts.resolve("answer_compose", "1")
+        prompt = await self._prompts.resolve(
+            "answer_compose",
+            frozen_prompts=dict(answer_context["prompts"]),
+        )
         result = await self._model.generate_structured(
             purpose="aiops.dba-answer-compose",
             output_model=DbaAnswerDraft,
@@ -534,7 +525,10 @@ class DbaAnswerComposeHandler:
             return
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
-        prompt = self._prompts.resolve("answer_stream", "1")
+        prompt = await self._prompts.resolve(
+            "answer_stream",
+            frozen_prompts=dict(answer_context["prompts"]),
+        )
         labels = {
             f"E{index}": fact.evidence_ref
             for index, fact in enumerate(assessment.evidence, start=1)

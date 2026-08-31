@@ -463,6 +463,17 @@ class _PastedLogReasoner:
     def __init__(self, uow=None) -> None:
         self._uow = uow
 
+    async def freeze_prompts(self, frozen_prompts=None):
+        return frozen_prompts or {
+            "investigation_planner": {
+                "prompt_id": "aiops_agent.investigation_planner",
+                "prompt_version": "1.0.0",
+                "prompt_sha256": "d" * 64,
+                "prompt_version_id": str(uuid7()),
+                "prompt_source": "DATABASE",
+            }
+        }
+
     async def plan(self, **kwargs):
         if self._uow is not None:
             self.raw_input_persisted_before_model = any(

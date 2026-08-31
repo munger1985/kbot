@@ -51,7 +51,7 @@ from platform_clients import (
     MCPDataClient,
 )
 from platform_core.dictionary import ModelCategory
-from platform_core.prompts import PromptResolver, load_prompt_catalog
+from platform_core.prompts import PromptResolver
 from pathlib import Path
 
 
@@ -114,7 +114,6 @@ async def lifespan(app: FastAPIOffline):
     )
     prompt_resolver = PromptResolver(
         session_factory=db_runtime.session_factory,
-        catalog=load_prompt_catalog(),
     )
     try:
         mcp_api_key = settings.ask_data_api.require_api_key()

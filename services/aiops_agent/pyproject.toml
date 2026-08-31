@@ -35,6 +35,5 @@ aiops_agent = [
   "diagnostics/catalog/**/*.json",
   "diagnostics/catalog/**/*.sql",
   "playbooks/catalog/**/*.json",
-  "orchestration/diagnosis/prompt_assets/*.txt",
   "resources/**/*.json",
 ]

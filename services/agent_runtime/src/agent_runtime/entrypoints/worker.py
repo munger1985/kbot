@@ -34,7 +34,7 @@ from platform_clients import (
 from platform_core.database.oracle import create_database_runtime
 from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
-from platform_core.prompts import PromptResolver, load_prompt_catalog
+from platform_core.prompts import PromptResolver
 from platform_core.security import (
     create_auth_context_codec,
     create_service_identity_codec,
@@ -124,7 +124,6 @@ async def main() -> None:
         )
         prompt_resolver = PromptResolver(
             session_factory=db_runtime.session_factory,
-            catalog=load_prompt_catalog(),
         )
         aiops_client = AIOpsDelegationClient(
             base_url=settings.aiops.base_url,

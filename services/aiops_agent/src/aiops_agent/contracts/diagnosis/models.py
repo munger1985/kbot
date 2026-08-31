@@ -211,6 +211,8 @@ class ModelInvocationReceipt(_DiagnosisContract):
     prompt_id: str
     prompt_version: str
     prompt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    prompt_version_id: str | None = None
+    prompt_source: str | None = None
     input_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     output_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     provider_request_id: str | None = None

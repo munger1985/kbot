@@ -83,7 +83,7 @@ class PromptCatalogSyncTest(unittest.IsolatedAsyncioTestCase):
             "platform_core.prompts.sync.load_prompt_catalog",
             return_value=_catalog(sha256="a" * 64),
         ):
-            with self.assertRaisesRegex(RuntimeError, "Hash 冲突"):
+            with self.assertRaisesRegex(RuntimeError, "不能覆盖"):
                 await sync_prompt_catalog(
                     connection,
                     selected_services={"agent_runtime"},
@@ -113,8 +113,28 @@ class PromptCatalogSyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(connection.committed)
         self.assertIn("SET content = :content", sql)
         self.assertNotIn("INSERT INTO KBOT_PLATFORM_PROMPT_VERSION (", sql)
+        self.assertNotIn("SET active_version_id = :prompt_version_id", sql)
 
-    async def test_development_rejects_file_version_upgrade(self):
+    async def test_existing_prompt_without_active_is_not_republished(self):
+        connection = _Connection(
+            prompt_row=(b"p" * 16, None),
+            version_row=(b"v" * 16, "a" * 64, "FILE_SEED"),
+        )
+
+        with patch(
+            "platform_core.prompts.sync.load_prompt_catalog",
+            return_value=_catalog(),
+        ):
+            await sync_prompt_catalog(
+                connection,
+                selected_services={"agent_runtime"},
+                environment="development",
+            )
+
+        sql = "\n".join(statement for statement, _ in connection.statements)
+        self.assertNotIn("SET active_version_id = :prompt_version_id", sql)
+
+    async def test_file_baseline_rejects_version_upgrade(self):
         connection = _Connection()
 
         with patch(
@@ -131,9 +151,9 @@ class PromptCatalogSyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], connection.statements)
         self.assertFalse(connection.committed)
 
-    async def test_development_does_not_overwrite_database_version(self):
+    async def test_development_preserves_database_managed_version(self):
         connection = _Connection(
-            prompt_row=(b"p" * 16, None),
+            prompt_row=(b"p" * 16, b"a" * 16),
             version_row=(b"v" * 16, "b" * 64, "DATABASE"),
         )
 
@@ -141,14 +161,39 @@ class PromptCatalogSyncTest(unittest.IsolatedAsyncioTestCase):
             "platform_core.prompts.sync.load_prompt_catalog",
             return_value=_catalog(sha256="a" * 64),
         ):
-            with self.assertRaisesRegex(RuntimeError, "不是 FILE_SEED"):
-                await sync_prompt_catalog(
-                    connection,
-                    selected_services={"agent_runtime"},
-                    environment="development",
-                )
+            count = await sync_prompt_catalog(
+                connection,
+                selected_services={"agent_runtime"},
+                environment="development",
+            )
 
-        self.assertFalse(connection.committed)
+        sql = "\n".join(statement for statement, _ in connection.statements)
+        self.assertEqual(1, count)
+        self.assertTrue(connection.committed)
+        self.assertNotIn("SET content = :content", sql)
+        self.assertNotIn("SET active_version_id = :prompt_version_id", sql)
+
+    async def test_development_updates_seed_without_replacing_manual_active(
+        self,
+    ):
+        connection = _Connection(
+            prompt_row=(b"p" * 16, b"a" * 16),
+            version_row=(b"v" * 16, "b" * 64, "FILE_SEED"),
+        )
+
+        with patch(
+            "platform_core.prompts.sync.load_prompt_catalog",
+            return_value=_catalog(sha256="a" * 64),
+        ):
+            await sync_prompt_catalog(
+                connection,
+                selected_services={"agent_runtime"},
+                environment="development",
+            )
+
+        sql = "\n".join(statement for statement, _ in connection.statements)
+        self.assertIn("SET content = :content", sql)
+        self.assertNotIn("SET active_version_id = :prompt_version_id", sql)
 
 
 if __name__ == "__main__":

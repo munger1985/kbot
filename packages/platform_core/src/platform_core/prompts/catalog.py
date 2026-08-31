@@ -135,6 +135,10 @@ def load_prompt_catalog(
             raise PromptCatalogError(f"Prompt Owner 无效：{owner}")
         if not _VERSION_PATTERN.fullmatch(version):
             raise PromptCatalogError(f"Prompt Version 无效：{version}")
+        if version != "1.0.0":
+            raise PromptCatalogError(
+                f"文件 Prompt 基准版本必须固定为 1.0.0：{key}@{version}"
+            )
         identity = (key, version)
         if identity in seen:
             raise PromptCatalogError(f"Prompt 版本重复：{key}@{version}")

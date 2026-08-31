@@ -41,7 +41,7 @@ from aiops_agent.domain.diagnosis import (
 )
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.orchestration.hitl import ManualSqlBuilder
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.diagnosis import AIOpsPromptRegistry
 from platform_core.security import create_service_auth_context
 from platform_core.identity import uuid7
 
@@ -230,7 +230,7 @@ class KnowledgeCitationHandler:
 
 
 class DiagnosisRoundDraftHandler:
-    def __init__(self, *, model_client, prompts: DiagnosisPromptRegistry):
+    def __init__(self, *, model_client, prompts: AIOpsPromptRegistry):
         self._model = model_client
         self._prompts = prompts
 
@@ -276,7 +276,10 @@ class DiagnosisRoundDraftHandler:
         diagnosis = context.plan_snapshot["diagnosis"]
         if not diagnosis["model"]["enabled"]:
             return self._fallback(round_no, "MODEL_DISABLED")
-        prompt = self._prompts.resolve("round_draft")
+        prompt = await self._prompts.resolve(
+            "round_draft",
+            frozen_prompts=dict(diagnosis["prompts"]),
+        )
         tool_cards = tuple(
             {
                 "tool_id": item["tool_id"],
@@ -530,7 +533,7 @@ class DiagnosisEvidenceCollectHandler:
 
 
 class DiagnosisRoundAssessmentHandler:
-    def __init__(self, *, model_client, prompts: DiagnosisPromptRegistry):
+    def __init__(self, *, model_client, prompts: AIOpsPromptRegistry):
         self._model = model_client
         self._prompts = prompts
 
@@ -612,7 +615,10 @@ class DiagnosisRoundAssessmentHandler:
             return self._fallback(
                 draft, draft.model_gap_code, round_no=round_no
             )
-        prompt = self._prompts.resolve("round_assess")
+        prompt = await self._prompts.resolve(
+            "round_assess",
+            frozen_prompts=dict(diagnosis["prompts"]),
+        )
         input_payload = {
             "round_no": round_no,
             "facts": [
@@ -936,7 +942,7 @@ class RootCauseAssessmentHandler:
 
 
 class GroundingVerificationHandler:
-    def __init__(self, *, model_client, prompts: DiagnosisPromptRegistry):
+    def __init__(self, *, model_client, prompts: AIOpsPromptRegistry):
         self._model = model_client
         self._prompts = prompts
 
@@ -974,7 +980,10 @@ class GroundingVerificationHandler:
         diagnosis = context.plan_snapshot["diagnosis"]
         if issues or not diagnosis["model"]["enabled"]:
             return deterministic
-        prompt = self._prompts.resolve("grounding_verify")
+        prompt = await self._prompts.resolve(
+            "grounding_verify",
+            frozen_prompts=dict(diagnosis["prompts"]),
+        )
         input_payload = {
             "root_cause": root.model_dump(mode="json"),
             "facts": [

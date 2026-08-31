@@ -27,13 +27,19 @@ from aiops_agent.orchestration import (
     build_diagnosis_blueprint,
     build_multi_round_diagnosis_blueprint,
 )
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.diagnosis.prompts import PROMPT_KEYS
 from aiops_agent.workers.diagnosis_handlers import (
     DiagnosisReportHandler,
     DiagnosisRoundAssessmentHandler,
     DiagnosisRoundDraftHandler,
 )
 from aiops_agent.workers.handlers import TaskExecutionContext
+from platform_core.prompts import load_prompt_catalog
+
+
+class _TestPrompts:
+    async def resolve(self, *_args, **_kwargs):
+        raise AssertionError("当前测试路径不应调用模型 Prompt")
 
 
 def _monitor_artifact() -> dict:
@@ -537,7 +543,7 @@ class DirectAnswerShortCircuitTest(unittest.IsolatedAsyncioTestCase):
 
         draft = await DiagnosisRoundDraftHandler(
             model_client=model,
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         ).execute(context)
 
         self.assertEqual("FINALIZE", draft.stop_recommendation)
@@ -568,7 +574,7 @@ class DirectAnswerShortCircuitTest(unittest.IsolatedAsyncioTestCase):
 
         assessment = await DiagnosisRoundAssessmentHandler(
             model_client=model,
-            prompts=DiagnosisPromptRegistry.load(),
+            prompts=_TestPrompts(),
         ).execute(context)
 
         self.assertEqual("FINALIZE", assessment.recommended_next_step)
@@ -577,11 +583,19 @@ class DirectAnswerShortCircuitTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DiagnosisAssetsTest(unittest.TestCase):
-    def test_prompt_assets_are_versioned_and_hashed(self) -> None:
-        registry = DiagnosisPromptRegistry.load()
-        prompt = registry.resolve("round_draft")
-        self.assertEqual(64, len(prompt.sha256))
-        self.assertNotIn("SELECT", prompt.content)
+    def test_all_aiops_prompts_have_database_seed_baselines(self) -> None:
+        catalog = load_prompt_catalog()
+        entries = {
+            item.prompt_key: item
+            for item in catalog.entries
+            if item.owner_service == "aiops_agent"
+        }
+
+        self.assertEqual(set(PROMPT_KEYS.values()), set(entries))
+        self.assertTrue(
+            all(item.version == "1.0.0" for item in entries.values())
+        )
+        self.assertTrue(all(len(item.sha256) == 64 for item in entries.values()))
 
     def test_blueprint_is_bounded_and_never_calls_mutation(self) -> None:
         blueprint = build_multi_round_diagnosis_blueprint(

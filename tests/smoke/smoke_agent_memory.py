@@ -31,7 +31,7 @@ from agent_runtime.persistence import create_agent_runtime_uow  # noqa: E402
 from main_api.entities import PlatformDomainEntity  # noqa: E402
 from platform_core.database.oracle import create_database_runtime  # noqa: E402
 from platform_core.identity import uuid7  # noqa: E402
-from platform_core.prompts import PromptResolver, load_prompt_catalog  # noqa: E402
+from platform_core.prompts import PromptResolver  # noqa: E402
 
 
 class _MemoryModel:
@@ -250,7 +250,6 @@ async def main() -> None:
 
         resolver = PromptResolver(
             session_factory=runtime.session_factory,
-            catalog=load_prompt_catalog(),
         )
         worker = MemoryConsolidationWorker(
             uow_factory=uow_factory,

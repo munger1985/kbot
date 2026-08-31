@@ -1,4 +1,4 @@
-"""数据库优先、单文件兜底的 Prompt 解析和严格渲染。"""
+"""数据库 Prompt 解析、完整性校验和严格渲染。"""
 
 from __future__ import annotations
 
@@ -9,14 +9,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from loguru import logger
-
-from .catalog import PromptCatalog, PromptCatalogEntry
 from .repository import PlatformPromptRepository
 
 
 class PromptNotFoundError(LookupError):
-    """数据库和文件均不存在目标 Prompt。"""
+    """数据库中不存在目标 Prompt。"""
 
 
 class PromptIntegrityError(RuntimeError):
@@ -80,9 +77,8 @@ class StrictPromptRenderer:
 
 
 class PromptResolver:
-    def __init__(self, *, session_factory, catalog: PromptCatalog):
+    def __init__(self, *, session_factory):
         self._session_factory = session_factory
-        self._catalog = catalog
 
     async def resolve(
         self,
@@ -91,53 +87,33 @@ class PromptResolver:
         version: str | None = None,
         prompt_version_id: UUID | None = None,
     ) -> ResolvedPrompt:
-        try:
-            async with self._session_factory() as session:
-                repository = PlatformPromptRepository(session)
-                if prompt_version_id is not None:
-                    row = await repository.get_version_by_id(
-                        prompt_version_id=prompt_version_id
-                    )
-                elif version is not None:
-                    row = await repository.get_version(
-                        prompt_key=prompt_key, version=version
-                    )
-                else:
-                    row = await repository.get_active(
-                        prompt_key=prompt_key
-                    )
-                if row is not None:
-                    definition, prompt_version = row
-                    if definition.prompt_key != prompt_key:
-                        raise PromptIntegrityError(
-                            "冻结 Prompt Version 与 Key 不匹配"
-                        )
-                    return self._from_database(
-                        definition, prompt_version
-                    )
-        except PromptIntegrityError:
-            raise
-        except Exception as exc:
-            logger.warning(
-                "Prompt 数据库读取失败，准备使用文件兜底："
-                "prompt_key={} error={}",
-                prompt_key,
-                type(exc).__name__,
-            )
-
-        fallback = (
-            self._catalog.exact(prompt_key, version)
-            if version is not None
-            else self._catalog.active_for(prompt_key)
-        )
-        if fallback is None:
-            raise PromptNotFoundError(f"Prompt 不存在：{prompt_key}")
-        logger.warning(
-            "Prompt 使用文件兜底：prompt_key={} version={}",
-            fallback.prompt_key,
-            fallback.version,
-        )
-        return self._from_catalog(fallback)
+        async with self._session_factory() as session:
+            repository = PlatformPromptRepository(session)
+            if prompt_version_id is not None:
+                row = await repository.get_version_by_id(
+                    prompt_version_id=prompt_version_id
+                )
+            elif version is not None:
+                row = await repository.get_version(
+                    prompt_key=prompt_key, version=version
+                )
+            else:
+                row = await repository.get_active(prompt_key=prompt_key)
+            if row is None:
+                identity = (
+                    str(prompt_version_id)
+                    if prompt_version_id is not None
+                    else version or "ACTIVE"
+                )
+                raise PromptNotFoundError(
+                    f"数据库 Prompt 不存在：{prompt_key}@{identity}"
+                )
+            definition, prompt_version = row
+            if definition.prompt_key != prompt_key:
+                raise PromptIntegrityError(
+                    "冻结 Prompt Version 与 Key 不匹配"
+                )
+            return self._from_database(definition, prompt_version)
 
     @staticmethod
     def _from_database(definition, version) -> ResolvedPrompt:
@@ -163,16 +139,4 @@ class PromptResolver:
             output_schema=version.output_schema_ref,
             source="DATABASE",
             prompt_version_id=version.prompt_version_id,
-        )
-
-    @staticmethod
-    def _from_catalog(entry: PromptCatalogEntry) -> ResolvedPrompt:
-        return ResolvedPrompt(
-            prompt_key=entry.prompt_key,
-            version=entry.version,
-            sha256=entry.sha256,
-            content=entry.content,
-            input_variables=entry.input_variables,
-            output_schema=entry.output_schema,
-            source="FILE_FALLBACK",
         )

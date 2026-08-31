@@ -185,6 +185,8 @@ class AIOpsStructuredModelClient:
             prompt_id=prompt_ref["prompt_id"],
             prompt_version=prompt_ref["prompt_version"],
             prompt_sha256=prompt_ref["prompt_sha256"],
+            prompt_version_id=prompt_ref.get("prompt_version_id"),
+            prompt_source=prompt_ref.get("prompt_source"),
             input_sha256=_canonical_hash(input_payload),
             output_sha256=_canonical_hash(raw_output),
             provider_request_id=envelope.get("id"),

@@ -50,7 +50,7 @@ from aiops_agent.tools import (
     ToolExecutionSnapshotBuilder,
 )
 from aiops_agent.orchestration import create_kernel_blueprint_registry
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.diagnosis import AIOpsPromptRegistry
 from aiops_agent.workers import (
     AIOpsOutboxDispatcher,
     AIOpsDomainOutboxSink,
@@ -61,6 +61,7 @@ from aiops_agent.workers import (
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_core.managed_credentials import ManagedCredentialCipher
+from platform_core.prompts import PromptResolver
 from platform_clients.knowledge_core import KnowledgeCoreClient
 from platform_clients.model import AIModelConfigClient
 
@@ -126,10 +127,10 @@ def create_aiops_worker_probe(
             diagnostic_registry=diagnostic_registry,
         )
         tool_snapshot_builder.validate_catalog()
-        diagnosis_prompts = DiagnosisPromptRegistry.load(
-            Path(resolved.diagnosis.prompt_catalog_path)
-            if resolved.diagnosis.prompt_catalog_path
-            else None
+        diagnosis_prompts = AIOpsPromptRegistry(
+            PromptResolver(
+                session_factory=database_runtime.session_factory,
+            )
         )
         # 本地资源校验失败时不应提前创建网络会话。
         client_session = aiohttp.ClientSession()
@@ -264,7 +265,8 @@ def create_aiops_worker_probe(
                 turn_planning_service=TurnPlanningService(
                     uow_factory=runtime.uow_factory,
                     investigation_reasoner=InvestigationReasoner(
-                        diagnosis_model_client
+                        diagnosis_model_client,
+                        diagnosis_prompts,
                     ),
                     playbook_registry=playbook_registry,
                     task_compiler=InvestigationTaskCompiler(

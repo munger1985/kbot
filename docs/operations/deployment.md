@@ -103,11 +103,13 @@ KBOT_CONFIG_FILE=configuration/kbot.toml \
 ```
 
 默认同步 Catalog 中全部服务；只更新 Agent Runtime 时可使用
-`--service agent_runtime`。开发环境中，TOML 的每个 Prompt 固定使用唯一的 `1.0.0`
-文件基线；脚本可重复执行，并原位更新数据库中的 `FILE_SEED@1.0.0` 正文、Hash 和契约，
-不会创建新版本。数据库界面中的人工修改仍应创建新版本。非开发环境继续执行版本不可变
-校验，相同版本正文 Hash 不同会拒绝覆盖。同步成功后，数据库 Active 指针立即指向文件
-声明的版本；已有人工版本和历史版本不会被删除。
+`--service agent_runtime`。TOML 中的每个 Prompt 都是固定为 `1.0.0` 的文件初始化基准。
+开发环境可重复执行同步，并原位更新数据库中的 `FILE_SEED@1.0.0` 正文、Hash 和契约，
+不会因开发期间修改 Prompt 而创建文件版本。数据库页面修改 Prompt 时应创建并发布
+`1.1.0`、`1.2.0` 等新版本，同时保留旧版本用于回退和追溯。文件同步不得覆盖
+`DATABASE` 来源的版本，也不会把已有 Active 指针切回文件基准。非开发环境若发现已有
+`FILE_SEED@1.0.0` 与文件 Hash 不同会明确失败；只有本次首次初始化的新 Prompt 才会
+默认启用文件基准，既有 Prompt 的发布或取消发布状态始终由数据库管理。
 
 可通过 `KBOT_PYTHON=/path/to/python` 指定解释器。未指定时，安装脚本与
 `start_kbot.sh` 使用同一选择规则：优先安装到 `KBOT_CONDA_ENV`，否则自动选择

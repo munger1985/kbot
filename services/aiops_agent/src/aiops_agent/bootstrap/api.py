@@ -60,7 +60,7 @@ from aiops_agent.bootstrap.common import (
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.orchestration import create_kernel_blueprint_registry
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.diagnosis import AIOpsPromptRegistry
 from aiops_agent.workers import create_runtime_handler_registry
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.diagnostics import (
@@ -69,6 +69,7 @@ from aiops_agent.diagnostics import (
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_core.managed_credentials import ManagedCredentialCipher
+from platform_core.prompts import PromptResolver
 from platform_clients.model import AIModelConfigClient
 from platform_clients.knowledge_core import KnowledgeCoreClient
 from platform_core.security import (
@@ -201,10 +202,10 @@ def create_aiops_api(
                 resolved.executor.statement_timeout_seconds
             ),
         )
-        diagnosis_prompts = DiagnosisPromptRegistry.load(
-            Path(resolved.diagnosis.prompt_catalog_path)
-            if resolved.diagnosis.prompt_catalog_path
-            else None
+        diagnosis_prompts = AIOpsPromptRegistry(
+            PromptResolver(
+                session_factory=database_runtime.session_factory,
+            )
         )
         # 资源目录和签名配置完成校验后再创建网络会话。
         client_session = aiohttp.ClientSession()

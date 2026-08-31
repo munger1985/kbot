@@ -30,6 +30,7 @@ class TurnPlanningContext:
     trace_id: str
     deadline: datetime | None
     target_context: dict
+    prompt_snapshot: dict
     capabilities: DbaCapabilitySnapshot
     database_execution: dict
     change_context: dict

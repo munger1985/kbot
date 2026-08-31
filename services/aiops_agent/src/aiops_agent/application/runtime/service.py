@@ -79,7 +79,10 @@ from aiops_agent.orchestration import (
     build_multi_round_diagnosis_blueprint,
     build_monitor_observe_blueprint,
 )
-from aiops_agent.orchestration.diagnosis import DiagnosisPromptRegistry
+from aiops_agent.orchestration.diagnosis import (
+    DIAGNOSIS_PROMPT_IDS,
+    AIOpsPromptRegistry,
+)
 from aiops_agent.orchestration.hitl import normalize_raw_response
 from aiops_agent.contracts.hitl import (
     DiagnosticQueryApprovalRequest,
@@ -215,7 +218,7 @@ class AIOpsRuntimeService:
         max_monitor_response_bytes: int = 5 * 1024 * 1024,
         diagnostic_registry: DiagnosticRegistry | None = None,
         diagnosis_config=None,
-        diagnosis_prompt_registry: DiagnosisPromptRegistry | None = None,
+        diagnosis_prompt_registry: AIOpsPromptRegistry | None = None,
         agent_catalog=None,
         cursor_codec: SignedCursorCodec | None = None,
         monitoring_snapshot_builder: MonitoringSnapshotBuilder | None = None,
@@ -778,7 +781,7 @@ class AIOpsRuntimeService:
                 plan_snapshot["database_diagnostics"] = (
                     database_diagnostic_snapshot
                 )
-                plan_snapshot["diagnosis"] = self._diagnosis_snapshot(
+                plan_snapshot["diagnosis"] = await self._diagnosis_snapshot(
                     command=command,
                     target=target,
                     policy_snapshot=policy_snapshot,
@@ -1062,7 +1065,7 @@ class AIOpsRuntimeService:
             trace_id=trace_id,
         )
 
-    def _diagnosis_snapshot(
+    async def _diagnosis_snapshot(
         self,
         *,
         command,
@@ -1131,7 +1134,9 @@ class AIOpsRuntimeService:
                     else ""
                 ),
             },
-            "prompts": self._diagnosis_prompts.snapshot,
+            "prompts": await self._diagnosis_prompts.snapshot(
+                DIAGNOSIS_PROMPT_IDS
+            ),
             "budget": {
                 "max_rounds": int(config.max_rounds),
                 "max_tool_calls": int(config.max_tool_calls),

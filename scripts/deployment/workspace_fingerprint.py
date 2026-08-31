@@ -51,7 +51,6 @@ WORKSPACE_PACKAGES = (
             "actions/catalog/**/*.sql",
             "diagnostics/catalog/**/*.json",
             "diagnostics/catalog/**/*.sql",
-            "orchestration/diagnosis/prompt_assets/*.txt",
             "resources/**/*.json",
         ),
     ),

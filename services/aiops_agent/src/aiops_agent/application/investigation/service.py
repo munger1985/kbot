@@ -163,6 +163,7 @@ class TurnPlanningService:
             content=context.content,
             conversation_context=context.recent_context,
             target_context=context.target_context,
+            prompt_snapshot=context.prompt_snapshot,
             source_run_evidence=context.source_run_evidence,
             available_tools=discovered_tools,
             available_playbooks=discovered_playbooks,
@@ -284,6 +285,7 @@ class TurnPlanningService:
             content=context.content,
             conversation_context=context.recent_context,
             target_context=context.target_context,
+            prompt_snapshot=context.prompt_snapshot,
             source_run_evidence=context.source_run_evidence,
             task_frame=inputs.task_frame,
             prior_plan=inputs.prior_plan,
@@ -473,6 +475,7 @@ class TurnPlanningService:
                     content=context.content,
                     conversation_context=context.recent_context,
                     target_context=context.target_context,
+                    prompt_snapshot=context.prompt_snapshot,
                     source_run_evidence=context.source_run_evidence,
                     invalid_output=planned.output,
                     validation_error=str(exc),
@@ -929,6 +932,7 @@ class TurnPlanningService:
                         mode="json"
                     ),
                     "model": dict(model_snapshot),
+                    "prompts": dict(context.prompt_snapshot),
                 },
                 "investigation_model_receipt": (
                     planning_receipt.model_dump(mode="json")
@@ -1332,6 +1336,18 @@ class TurnPlanningService:
                         "captured_at": source_artifact.created_at.isoformat(),
                         "payload": source_artifact.payload_json,
                     }
+            existing_prompt_snapshot = dict(
+                dict(
+                    dict(run.plan_snapshot_json or {}).get(
+                        "answer_context", {}
+                    )
+                ).get("prompts", {})
+            )
+            prompt_snapshot = (
+                await self._investigation_reasoner.freeze_prompts(
+                    existing_prompt_snapshot or None
+                )
+            )
             return TurnPlanningContext(
                 domain_id=domain_id,
                 turn_id=turn_id,
@@ -1369,6 +1385,7 @@ class TurnPlanningService:
                     "connectivity_status": str(target.connectivity_status),
                     "selection_status": "BOUND",
                 },
+                prompt_snapshot=prompt_snapshot,
                 capabilities=build_capability_snapshot(
                     agent_id=run.agent_id,
                     agent_version=agent_version,
@@ -2018,6 +2035,7 @@ class TurnPlanningService:
                         mode="json"
                     ),
                     "model": dict(model_snapshot),
+                    "prompts": dict(context.prompt_snapshot),
                 },
                 "change_context": dict(context.change_context),
             }

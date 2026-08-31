@@ -2,67 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime
 from typing import Any
 
+from aiops_agent.orchestration.diagnosis import (
+    TURN_PROMPT_IDS,
+    AIOpsPromptRegistry,
+)
 from aiops_agent.ports.model import AIOpsModelPort, StructuredModelResult
 from platform_core.contracts.aiops import InvestigationPlanningOutput
-
-
-_PROMPT = """
-你是一名资深 Oracle DBA，也是调查规划者。先识别用户实际提供了什么材料，再判断用户
-希望你完成什么，最后决定是否需要调用工具。不要把问题强行归入固定意图或固定回答模板。
-
-输入材料可能同时包含问题、Oracle Alert Log、ORA 错误、SQL 输出、命令输出、监控快照、
-配置和普通文字。必须逐项识别并抽取关键事实。用户粘贴的日志或查询结果本身就是证据，
-即使数据库或监控源离线，也必须基于这些证据继续调查。
-
-task_frame 要列出一个或多个目标，并明确问题、已知事实、未知项、约束和完成标准。plan
-采用最小充分调查：只有
-确实能区分假设或补齐回答所需事实时才安排工具。工具只能从 available_tools 中选择；
-Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook 不能阻止分析。
-target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
-列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
-不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
-区分已配置的逻辑 Target 与查询后才能确认的实际实例、PDB、版本和启动上下文。
-调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
-必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
-db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
-清单外的同义函数、系统函数或自定义函数；应优先显式列出最小必要列，若确有诊断必要，
-系统诊断视图的星号投影可以自动执行，显式读取敏感系统列会进入用户审批；固定目录工具能够回答时
-优先使用固定工具。
-
-可用工具无法取得某项证据时，应判断现有证据能否部分或完整回答；只有缺失信息会实质
-改变结论且系统无法自动获取时，才准备向用户提出具体补证请求。不要虚构工具结果。
-""".strip()
-
-_POLICY_REPAIR_PROMPT = """
-你是一名资深 Oracle DBA 调查规划者。上一份调查计划中的工具输入或动态只读 SQL 未通过
-确定性安全策略。请依据 validation_error 修正计划，再返回完整的
-InvestigationPlanningOutput。
-
-必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
-available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
-数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
-函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的全部 input 和 policy 约束。
-target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
-系统诊断视图的星号投影允许自动执行；敏感系统列属于需要审批的有效调查动作，不要仅因
-它们需要审批而删除动作。
-如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
-""".strip()
-
-_REPLAN_PROMPT = """
-你是一名资深Oracle DBA调查者。首轮调查已经完成，但证据评估表明仍存在会实质影响结论的
-缺口。请基于原始材料、原任务框架、上一版计划和真实评估结果形成下一版调查计划。
-
-只选择能够补齐剩余未知项的最小原子工具集合。不要无参数变化地重复已经执行过的动作；
-不要把不可重试的权限、配置或授权缺口再次安排给系统。若可用工具已经无法取得关键证据，
-应返回空动作并允许系统依据现有证据回答或向用户提出明确补证请求。Playbook仅提供经验，
-不是能力白名单。不得虚构工具、证据或执行结果。
-target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
-查询所需的实例身份前置证据。
-""".strip()
 
 
 class InvestigationPlanValidationError(ValueError):
@@ -74,14 +22,23 @@ class InvestigationPlanValidationError(ValueError):
 class InvestigationReasoner:
     """使用结构化模型完成材料理解、任务建模和首轮调查规划。"""
 
-    def __init__(self, model: AIOpsModelPort) -> None:
+    def __init__(
+        self,
+        model: AIOpsModelPort,
+        prompts: AIOpsPromptRegistry,
+    ) -> None:
         self._model = model
-        self._prompt_ref = {
-            "prompt_id": "aiops.investigation-planner",
-            "prompt_version": "1",
-            "prompt_sha256": hashlib.sha256(_PROMPT.encode("utf-8")).hexdigest(),
-            "content": _PROMPT,
-        }
+        self._prompts = prompts
+
+    async def freeze_prompts(
+        self,
+        frozen_prompts: dict[str, dict[str, str]] | None = None,
+    ) -> dict[str, dict[str, str]]:
+        """冻结本 Turn 使用的全部数据库 Prompt 版本。"""
+        return await self._prompts.snapshot(
+            TURN_PROMPT_IDS,
+            frozen_prompts=frozen_prompts,
+        )
 
     async def plan(
         self,
@@ -89,6 +46,7 @@ class InvestigationReasoner:
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
         target_context: dict[str, Any],
+        prompt_snapshot: dict[str, dict[str, str]],
         available_tools: tuple[dict[str, Any], ...],
         available_playbooks: tuple[dict[str, Any], ...],
         model_snapshot: dict[str, Any],
@@ -96,11 +54,15 @@ class InvestigationReasoner:
         idempotency_key: str,
         source_run_evidence: dict[str, Any] | None = None,
     ) -> StructuredModelResult:
+        prompt = await self._prompts.resolve(
+            "investigation_planner",
+            frozen_prompts=prompt_snapshot,
+        )
         result = await self._model.generate_structured(
             purpose="aiops.investigation-plan",
             output_model=InvestigationPlanningOutput,
             model_snapshot=model_snapshot,
-            prompt_ref=self._prompt_ref,
+            prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),
@@ -131,6 +93,7 @@ class InvestigationReasoner:
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
         target_context: dict[str, Any],
+        prompt_snapshot: dict[str, dict[str, str]],
         source_run_evidence: dict[str, Any] | None,
         invalid_output: InvestigationPlanningOutput,
         validation_error: str,
@@ -141,19 +104,15 @@ class InvestigationReasoner:
         idempotency_key: str,
     ) -> StructuredModelResult:
         """携带确定性策略反馈，修正尚未执行的调查计划。"""
-        prompt_ref = {
-            "prompt_id": "aiops.investigation-policy-repair",
-            "prompt_version": "1",
-            "prompt_sha256": hashlib.sha256(
-                _POLICY_REPAIR_PROMPT.encode("utf-8")
-            ).hexdigest(),
-            "content": _POLICY_REPAIR_PROMPT,
-        }
+        prompt = await self._prompts.resolve(
+            "investigation_policy_repair",
+            frozen_prompts=prompt_snapshot,
+        )
         result = await self._model.generate_structured(
             purpose="aiops.investigation-policy-repair",
             output_model=InvestigationPlanningOutput,
             model_snapshot=model_snapshot,
-            prompt_ref=prompt_ref,
+            prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),
@@ -206,6 +165,7 @@ class InvestigationReasoner:
         content: tuple[dict[str, Any], ...],
         conversation_context: tuple[str, ...],
         target_context: dict[str, Any],
+        prompt_snapshot: dict[str, dict[str, str]],
         source_run_evidence: dict[str, Any] | None,
         task_frame: dict[str, Any],
         prior_plan: dict[str, Any],
@@ -218,19 +178,15 @@ class InvestigationReasoner:
         revision_no: int,
     ) -> StructuredModelResult:
         """根据真实Evidence Assessment生成下一轮最小调查计划。"""
-        prompt_ref = {
-            "prompt_id": "aiops.investigation-replanner",
-            "prompt_version": "1",
-            "prompt_sha256": hashlib.sha256(
-                _REPLAN_PROMPT.encode("utf-8")
-            ).hexdigest(),
-            "content": _REPLAN_PROMPT,
-        }
+        prompt = await self._prompts.resolve(
+            "investigation_replanner",
+            frozen_prompts=prompt_snapshot,
+        )
         result = await self._model.generate_structured(
             purpose="aiops.investigation-replan",
             output_model=InvestigationPlanningOutput,
             model_snapshot=model_snapshot,
-            prompt_ref=prompt_ref,
+            prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "content": list(content),
                 "recent_context": list(conversation_context[-8:]),

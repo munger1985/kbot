@@ -21,6 +21,29 @@ TARGET_CONTEXT = {
     "connectivity_status": "CONNECTED",
     "selection_status": "BOUND",
 }
+PROMPT_SNAPSHOT = {"frozen": {"prompt_version_id": "prompt-version-1"}}
+
+
+class _Prompt:
+    content = "不得再把“目标是哪一个”列为未知项。"
+
+    @staticmethod
+    def ref() -> dict[str, str]:
+        return {
+            "prompt_id": "aiops_agent.test",
+            "prompt_version": "1.0.0",
+            "prompt_sha256": "d" * 64,
+            "prompt_version_id": "prompt-version-1",
+            "prompt_source": "DATABASE",
+        }
+
+
+class _Prompts:
+    async def resolve(self, *_args, **_kwargs):
+        return _Prompt()
+
+    async def snapshot(self, *_args, **_kwargs):
+        return PROMPT_SNAPSHOT
 
 
 def _output(*, tool_id: str | None = None) -> dict:
@@ -105,12 +128,13 @@ class _Model:
 class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     async def test_user_alert_log_can_be_answered_without_external_tool(self) -> None:
         model = _Model(_output())
-        reasoner = InvestigationReasoner(model)
+        reasoner = InvestigationReasoner(model, _Prompts())
 
         result = await reasoner.plan(
             content=({"content_type": "LOG", "text": "ORA-27157"},),
             conversation_context=(),
             target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
             available_tools=(),
             available_playbooks=(),
             model_snapshot={},
@@ -134,13 +158,16 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_plan_rejects_tool_outside_current_catalog(self) -> None:
-        reasoner = InvestigationReasoner(_Model(_output(tool_id="shell.exec")))
+        reasoner = InvestigationReasoner(
+            _Model(_output(tool_id="shell.exec")), _Prompts()
+        )
 
         with self.assertRaisesRegex(ValueError, "未注册工具"):
             await reasoner.plan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
                 target_context=TARGET_CONTEXT,
+                prompt_snapshot=PROMPT_SNAPSHOT,
                 available_tools=(),
                 available_playbooks=(),
                 model_snapshot={},
@@ -151,13 +178,14 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     async def test_replan_rejects_identical_tool_call_without_progress(self) -> None:
         payload = _output(tool_id="db.instance.identity")
         payload["plan"]["revision_no"] = 2
-        reasoner = InvestigationReasoner(_Model(payload))
+        reasoner = InvestigationReasoner(_Model(payload), _Prompts())
 
         with self.assertRaisesRegex(ValueError, "不得原样重复"):
             await reasoner.replan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
                 target_context=TARGET_CONTEXT,
+                prompt_snapshot=PROMPT_SNAPSHOT,
                 source_run_evidence=None,
                 task_frame=payload["task_frame"],
                 prior_plan={
@@ -222,7 +250,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         )
         repaired_payload = _output(tool_id="db.instance.identity")
         model = _Model(repaired_payload)
-        reasoner = InvestigationReasoner(model)
+        reasoner = InvestigationReasoner(model, _Prompts())
         tools = (
             {
                 "tool_id": "db.instance.identity",
@@ -239,6 +267,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             content=({"content_type": "TEXT", "text": "检查数据库"},),
             conversation_context=(),
             target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
             source_run_evidence=None,
             invalid_output=rejected,
             validation_error=(
@@ -285,13 +314,16 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         )
         repaired_payload = _output(tool_id="db.instance.identity")
         repaired_payload["task_frame"]["problem_statement"] = "改写后的问题"
-        reasoner = InvestigationReasoner(_Model(repaired_payload))
+        reasoner = InvestigationReasoner(
+            _Model(repaired_payload), _Prompts()
+        )
 
         with self.assertRaisesRegex(ValueError, "不得改变任务框架"):
             await reasoner.repair_policy_invalid_plan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
                 conversation_context=(),
                 target_context=TARGET_CONTEXT,
+                prompt_snapshot=PROMPT_SNAPSHOT,
                 source_run_evidence=None,
                 invalid_output=rejected,
                 validation_error="DYNAMIC_SQL_FUNCTION_FORBIDDEN",
