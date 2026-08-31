@@ -498,7 +498,7 @@ class DynamicQueryInvocationHandler:
             hitl_id=str(hitl_id),
             request_type="DIAGNOSTIC_QUERY_APPROVAL",
             assignee_user_id=context.actor_id,
-            prompt_text="该只读诊断查询包含敏感或宽泛投影，需要批准后执行。",
+            prompt_text="该只读诊断查询显式读取敏感诊断列，需要批准后执行。",
             response_schema={
                 "schema_version": "DIAGNOSTIC_QUERY_APPROVAL_DECISION.v1",
                 "decisions": ["APPROVE", "REJECT"],

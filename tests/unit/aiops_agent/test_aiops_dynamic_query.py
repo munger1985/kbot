@@ -164,21 +164,20 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             {"unused": 1},
         )
 
-    def test_star_and_sensitive_columns_require_approval(self) -> None:
+    def test_star_is_automatic_but_sensitive_columns_require_approval(
+        self,
+    ) -> None:
         star = self.policy.validate("SELECT * FROM v$session")
-        self.assertEqual(star.execution_decision, "APPROVAL_REQUIRED")
+        self.assertEqual(star.execution_decision, "AUTO_EXECUTE")
         self.assertEqual(star.projected_columns, ("*",))
-        self.assertIn(
-            "DYNAMIC_SQL_STAR_FORBIDDEN",
-            star.approval_reason_codes,
-        )
+        self.assertEqual((), star.approval_reason_codes)
         sensitive = self.policy.validate(
             "SELECT sql_text AS sample FROM v$sqlstats",
         )
         self.assertEqual(sensitive.execution_decision, "APPROVAL_REQUIRED")
         self.assertEqual(sensitive.column_sensitivities, ("MASKED",))
         self.assertIn(
-            "DYNAMIC_SQL_SENSITIVE_COLUMN_FORBIDDEN",
+            "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED",
             sensitive.approval_reason_codes,
         )
 
@@ -323,7 +322,7 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         control_plane.issue_credential.assert_not_awaited()
 
-    async def test_approved_wildcard_result_is_bounded_and_masked(self) -> None:
+    async def test_automatic_wildcard_result_is_bounded_and_masked(self) -> None:
         validated = OracleDynamicQueryPolicy(self.snapshot).validate(
             "SELECT * FROM v$session"
         )
@@ -366,10 +365,10 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DynamicQueryApprovalTest(unittest.IsolatedAsyncioTestCase):
-    async def test_star_projection_suspends_for_user_approval(self) -> None:
+    async def test_sensitive_projection_suspends_with_full_query(self) -> None:
         snapshot = DynamicQueryPolicySnapshot(max_rows=25)
         validated = OracleDynamicQueryPolicy(snapshot).validate(
-            "SELECT * FROM all_objects"
+            "SELECT sql_text AS sample FROM v$sqlstats"
         )
         target_id = uuid7()
         handler = DynamicQueryInvocationHandler(
@@ -432,9 +431,14 @@ class DynamicQueryApprovalTest(unittest.IsolatedAsyncioTestCase):
             validated.query_sha256,
         )
         self.assertIn(
-            "DYNAMIC_SQL_STAR_FORBIDDEN",
+            "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED",
             result.request_payload["reason_codes"],
         )
+        self.assertEqual(
+            validated.normalized_sql,
+            result.request_payload["sql_text"],
+        )
+        self.assertEqual({}, result.request_payload["parameters"])
 
 
 class DynamicQueryPlanningTest(unittest.TestCase):
@@ -546,6 +550,10 @@ class DynamicQueryPlanningTest(unittest.TestCase):
         )
         self.assertIn(
             "policy.allowed_functions", dynamic_tool["description"]
+        )
+        self.assertEqual(
+            "AUTO_EXECUTE_BOUNDED",
+            dynamic_tool["policy"]["star_projection_behavior"],
         )
 
     def test_fixed_tool_exposes_complete_parameter_constraints(self) -> None:

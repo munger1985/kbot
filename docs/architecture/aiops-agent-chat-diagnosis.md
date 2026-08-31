@@ -191,14 +191,15 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 `db.oracle.readonly_query`执行前必须解析Oracle SQL AST，仅接受单条`SELECT`或只读`WITH`，
 禁止DDL、DML、PL/SQL、DB Link、外部过程和副作用函数；校验Schema、对象、列和诊断用户
 权限；强制行数、耗时、返回字节和并发限制；绑定参数；保存SQL Hash、策略Hash、参数和结果。
-策略输出`AUTO_EXECUTE`或`APPROVAL_REQUIRED`：宽泛投影以及凭据、绑定值、SQL正文、客户端
-身份等敏感系统列转入`DIAGNOSTIC_QUERY_APPROVAL`，不得把Turn标记为规划失败。DDL、DML、
+策略输出`AUTO_EXECUTE`或`APPROVAL_REQUIRED`：受控系统诊断视图上的`SELECT *`按普通只读
+查询自动执行，凭据、绑定值、SQL正文、客户端身份等显式敏感系统列转入
+`DIAGNOSTIC_QUERY_APPROVAL`，不得把Turn标记为规划失败。DDL、DML、
 PL/SQL、DB Link、锁和无法证明无副作用的函数仍为不可审批的越界动作。
 
-审批请求展示冻结SQL、对象、投影、列级敏感标记、参数摘要及执行上限。批准只把同一Task恢复
+调查计划和审批请求展示冻结SQL、完整绑定参数、对象、投影、列级敏感标记及执行上限。批准只把同一Task恢复
 为`READY`，执行器仍重新验证Query/Policy Hash并签发短期动态诊断Grant；拒绝和过期写入
-Evidence Gap后继续证据评估。`SELECT *`保留为宽泛投影并要求审批，`COUNT(*)`不属于宽泛
-结果投影，可按普通聚合自动执行。
+Evidence Gap后继续证据评估。`SELECT *`和`COUNT(*)`都可按普通只读查询自动执行，返回行数、
+列数、字节数、超时和并发限制仍然强制生效。
 
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。

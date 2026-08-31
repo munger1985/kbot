@@ -10083,12 +10083,20 @@
       },
       "TurnInvestigationActionView": {
         "additionalProperties": false,
-        "description": "不暴露SQL和参数的用户可见调查动作。",
+        "description": "用户可见的调查动作和已冻结动态查询。",
         "properties": {
           "action_id": {
             "pattern": "^a[0-9]+$",
             "title": "Action Id",
             "type": "string"
+          },
+          "approval_reason_codes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Approval Reason Codes",
+            "type": "array"
           },
           "depends_on": {
             "default": [],
@@ -10116,11 +10124,36 @@
             "title": "Ordinal",
             "type": "integer"
           },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
           "question": {
             "maxLength": 2000,
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "sql_text": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Text"
           },
           "status": {
             "maxLength": 24,
@@ -10496,6 +10529,18 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "ops_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ops Run Id"
           },
           "resolved_target_id": {
             "anyOf": [

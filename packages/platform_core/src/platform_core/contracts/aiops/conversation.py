@@ -212,7 +212,7 @@ class TurnEvidenceGapView(AIOpsContract):
 
 
 class TurnInvestigationActionView(AIOpsContract):
-    """不暴露SQL和参数的用户可见调查动作。"""
+    """用户可见的调查动作和已冻结动态查询。"""
 
     ordinal: int = Field(ge=1)
     action_id: str = Field(pattern=r"^a[0-9]+$")
@@ -224,6 +224,9 @@ class TurnInvestigationActionView(AIOpsContract):
     optional: bool = False
     execution_mode: str = Field(pattern=r"^(AUTO_EXECUTE|APPROVAL_REQUIRED)$")
     status: str = Field(min_length=1, max_length=24)
+    sql_text: str | None = Field(default=None, min_length=1, max_length=20000)
+    parameters: JsonObject | None = None
+    approval_reason_codes: tuple[str, ...] = ()
 
 
 class TurnInvestigationPlanView(AIOpsContract):
@@ -257,6 +260,7 @@ class TurnView(TurnSummary):
     messages: tuple[ConversationMessageView, ...] = ()
     answer_blocks: tuple[AnswerBlockView, ...] = ()
     investigation_plan: TurnInvestigationPlanView | None = None
+    ops_run_id: UUIDv7 | None = None
 
 
 class TurnPage(CursorPage):

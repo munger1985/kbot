@@ -23,8 +23,9 @@ def safe_plan_projection(
     execution_snapshot: Mapping[str, Any] | None = None,
     tool_invocations: Iterable[object] = (),
 ) -> dict[str, Any]:
-    """生成不包含SQL、参数和内部策略快照的用户可见计划。"""
+    """生成不包含凭据和内部策略快照的用户可见计划。"""
     decisions: dict[str, str] = {}
+    dynamic_queries: dict[str, dict[str, Any]] = {}
     dynamic = dict(
         (execution_snapshot or {}).get("dynamic_invocations") or {}
     )
@@ -38,6 +39,14 @@ def safe_plan_projection(
         decision = str(validated.get("execution_decision") or "")
         if decision in {"AUTO_EXECUTE", "APPROVAL_REQUIRED"}:
             decisions[action_id] = decision
+        dynamic_queries[action_id] = {
+            "sql_text": str(validated.get("normalized_sql") or ""),
+            "parameters": dict(validated.get("parameters") or {}),
+            "approval_reason_codes": [
+                str(value)
+                for value in validated.get("approval_reason_codes") or ()
+            ],
+        }
     statuses = {
         str(getattr(item, "action_id", "")): str(
             getattr(item, "status", "PLANNED")
@@ -51,24 +60,25 @@ def safe_plan_projection(
             continue
         action_id = str(raw_action.get("action_id") or "")
         tool_id = str(raw_action.get("tool_id") or "")
-        actions.append(
-            {
-                "ordinal": ordinal,
-                "action_id": action_id,
-                "question": str(raw_action.get("question") or ""),
-                "tool_id": tool_id,
-                "tool_class": tool_class_for(tool_id),
-                "measurement_semantics": str(
-                    raw_action.get("measurement_semantics") or "NOT_APPLICABLE"
-                ),
-                "depends_on": [
-                    str(value) for value in raw_action.get("depends_on") or ()
-                ],
-                "optional": bool(raw_action.get("optional", False)),
-                "execution_mode": decisions.get(action_id, "AUTO_EXECUTE"),
-                "status": statuses.get(action_id, "PLANNED"),
-            }
-        )
+        projection = {
+            "ordinal": ordinal,
+            "action_id": action_id,
+            "question": str(raw_action.get("question") or ""),
+            "tool_id": tool_id,
+            "tool_class": tool_class_for(tool_id),
+            "measurement_semantics": str(
+                raw_action.get("measurement_semantics") or "NOT_APPLICABLE"
+            ),
+            "depends_on": [
+                str(value) for value in raw_action.get("depends_on") or ()
+            ],
+            "optional": bool(raw_action.get("optional", False)),
+            "execution_mode": decisions.get(action_id, "AUTO_EXECUTE"),
+            "status": statuses.get(action_id, "PLANNED"),
+        }
+        if action_id in dynamic_queries:
+            projection.update(dynamic_queries[action_id])
+        actions.append(projection)
     return {
         "revision_no": int(plan.get("revision_no") or 1),
         "actions": actions,

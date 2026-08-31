@@ -935,10 +935,10 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("数据库结构", summary)
         self.assertNotIn("安全校验", summary)
 
-    def test_safe_plan_projection_hides_query_and_exposes_approval(
+    def test_safe_plan_projection_exposes_frozen_query_for_approval(
         self,
     ) -> None:
-        """用户计划可展示审批语义，但不得泄露SQL、参数或策略快照。"""
+        """用户计划必须展示冻结SQL和参数，但不得泄露内部策略快照。"""
         projection = safe_plan_projection(
             {
                 "revision_no": 2,
@@ -948,7 +948,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                         "question": "查看当前会话明细",
                         "tool_id": "db.oracle.readonly_query",
                         "input": {
-                            "sql": "SELECT * FROM v$session",
+                            "sql": "SELECT sql_text AS sample FROM v$sqlstats",
                             "parameters": {},
                         },
                         "measurement_semantics": "CURRENT_ACTIVITY",
@@ -962,9 +962,15 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                         "action_id": "a1",
                         "policy_snapshot": {"star_projection_allowed": False},
                         "validated_query": {
-                            "normalized_sql": "SELECT * FROM v$session",
+                            "normalized_sql": (
+                                "SELECT sql_text AS sample FROM v$sqlstats "
+                                "FETCH FIRST 200 ROWS ONLY"
+                            ),
                             "parameters": {},
                             "execution_decision": "APPROVAL_REQUIRED",
+                            "approval_reason_codes": [
+                                "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"
+                            ],
                         },
                     }
                 }
@@ -979,10 +985,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "APPROVAL_REQUIRED",
             projection["actions"][0]["execution_mode"],
         )
-        serialized = str(projection)
-        self.assertNotIn("SELECT *", serialized)
-        self.assertNotIn("parameters", serialized)
-        self.assertNotIn("policy_snapshot", serialized)
+        action = projection["actions"][0]
+        self.assertIn("v$sqlstats", action["sql_text"])
+        self.assertEqual({}, action["parameters"])
+        self.assertEqual(
+            ["DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"],
+            action["approval_reason_codes"],
+        )
+        self.assertNotIn("policy_snapshot", str(projection))
 
     async def test_terminal_task_failure_updates_chat_turn(self) -> None:
         uow = _PlanningUow()

@@ -59,7 +59,7 @@ PROPOSAL_OUTCOME.v1 → PROPOSAL_SUMMARY`。只有当前Turn内`SOURCE_VERIFIED`
 Proposal Hash、策略复核、执行凭据和效果验证链路。
 
 受控动态查询已形成运行时纵向链路：项目固定使用`sqlglot==30.17.0`按Oracle方言解析AST，动态
-SQL策略只接受单条显式投影SELECT，限制诊断对象、敏感源列、函数、bind、Schema、Database
+SQL策略只接受单条SELECT，允许受控系统诊断视图的星号投影，限制诊断对象、敏感源列、函数、bind、Schema、Database
 Link、锁和返回行数，并生成Query Hash与Policy Hash。`db.oracle.readonly_query`仅在Oracle
 Target具有`DB_READONLY`能力时进入模型Tool Discovery；规划端规范化SQL并冻结策略，Worker签发
 短期动态Grant，隔离Executor在领取一次性诊断凭据前重新验证SQL、参数、策略和投影列，并在

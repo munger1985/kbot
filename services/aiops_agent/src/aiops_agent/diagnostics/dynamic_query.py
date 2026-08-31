@@ -239,8 +239,6 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_LOCK_FORBIDDEN",
                 "动态 SQL 禁止 FOR UPDATE 或其他锁语义",
             )
-        if any(projection.is_star for projection in expression.expressions):
-            approval_reasons.append("DYNAMIC_SQL_STAR_FORBIDDEN")
         if expression.find(exp.Dot) is not None:
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
@@ -249,7 +247,7 @@ class OracleDynamicQueryPolicy:
         for column in expression.find_all(exp.Column):
             if str(column.name or "").lower() in _SENSITIVE_SOURCE_COLUMNS:
                 approval_reasons.append(
-                    "DYNAMIC_SQL_SENSITIVE_COLUMN_FORBIDDEN"
+                    "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"
                 )
         for function in expression.find_all(exp.Func):
             name = function.sql_name().upper()

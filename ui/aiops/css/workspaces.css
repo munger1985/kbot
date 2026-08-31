@@ -47,6 +47,14 @@
 .ops-investigation-plan li { padding-left: 3px; }
 .ops-investigation-plan li span, .ops-investigation-plan li small { display: block; }
 .ops-investigation-plan li small { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.ops-plan-query { margin-top: 7px; color: #47536a; }
+.ops-plan-query summary { cursor: pointer; font-size: 11px; }
+.ops-plan-query pre, .ops-query-approval pre { max-width: 100%; margin: 7px 0 11px; padding: 10px; overflow: auto; background: #20283a; color: #eef2fa; font: 11px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
+.ops-query-approval { max-width: 760px; margin: 0 0 18px 45px; padding: 15px; border: 1px solid #d9c48d; background: #fffaf0; }
+.ops-query-approval header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ops-query-approval header span, .ops-query-limits { color: var(--muted); font-size: 11px; }
+.ops-query-actions { display: flex; gap: 8px; margin-top: 12px; }
+.ops-query-actions p { margin: 0; color: var(--accent); font-weight: 700; }
 .ops-master-detail { display: grid; grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); gap: 16px; }
 .ops-case-list, .ops-case-detail { min-height: 620px; }
 .ops-case-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: #fff; text-align: left; }

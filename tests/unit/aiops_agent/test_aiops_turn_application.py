@@ -543,7 +543,8 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                                 "action_id": "a1",
                                 "validated_query": {
                                     "normalized_sql": (
-                                        "SELECT * FROM v$session"
+                                        "SELECT sql_text AS sample "
+                                        "FROM v$sqlstats"
                                     ),
                                     "parameters": {},
                                     "execution_decision": (
@@ -567,7 +568,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                             "question": "检查当前会话明细",
                             "tool_id": "db.oracle.readonly_query",
                             "input": {
-                                "sql": "SELECT * FROM v$session",
+                                "sql": (
+                                    "SELECT sql_text AS sample "
+                                    "FROM v$sqlstats"
+                                ),
                                 "parameters": {},
                             },
                             "measurement_semantics": "CURRENT_ACTIVITY",
@@ -597,8 +601,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ORACLE_SQL_DYNAMIC", action.tool_class)
         self.assertEqual("APPROVAL_REQUIRED", action.execution_mode)
         self.assertEqual("WAITING_APPROVAL", action.status)
-        self.assertNotIn("SELECT *", str(result["investigation_plan"]))
-        self.assertNotIn("parameters", str(result["investigation_plan"]))
+        self.assertIn("v$sqlstats", action.sql_text)
+        self.assertEqual({}, action.parameters)
+        self.assertEqual(run_id, view.ops_run_id)
 
     async def test_start_accepts_disabled_target_for_degraded_diagnosis(
         self,

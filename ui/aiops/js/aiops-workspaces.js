@@ -88,7 +88,10 @@
       const approval = action.execution_mode === "APPROVAL_REQUIRED";
       const mode = approval ? "需人工审批" : "自动只读执行";
       const status = action.status || "PLANNED";
-      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}</small></li>`;
+      const query = action.sql_text
+        ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
+        : "";
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}</small>${query}</li>`;
     }).join("");
     return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header><ol>${rows}</ol></section>`;
   }
@@ -99,6 +102,65 @@
     const existing = progress.parentElement?.querySelector(".ops-investigation-plan.is-live");
     if (existing) existing.remove();
     progress.insertAdjacentHTML("beforebegin", html.replace("ops-investigation-plan", "ops-investigation-plan is-live"));
+  }
+
+  function diagnosticQueryApprovalHtml(pending) {
+    const request = pending?.request || {};
+    if (pending?.hitl_type !== "DIAGNOSTIC_QUERY_APPROVAL") return "";
+    const reasons = values(request.reason_codes).length
+      ? `<p><strong>审批原因：</strong>${values(request.reason_codes).map(esc).join("、")}</p>`
+      : "";
+    return `<section class="ops-query-approval" data-query-approval="${esc(pending.hitl_id)}"><header><strong>动态只读查询待审批</strong><span>${esc(request.target_display_name || "当前 Target")}</span></header><p>${esc(request.purpose || "执行动态只读诊断")}</p>${reasons}<strong>规范化 SQL</strong><pre><code>${esc(request.sql_text || "")}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(request.parameters || {}, null, 2))}</code></pre><p class="ops-query-limits">最多 ${esc(request.max_rows || "-")} 行 · 超时 ${esc(request.timeout_seconds || "-")} 秒 · ${esc(shell.fmt(request.expires_at))} 前有效</p><div class="ops-query-actions"><button type="button" class="primary" data-query-decision="APPROVE" data-hitl-id="${esc(pending.hitl_id)}" data-row-version="${esc(pending.row_version)}">批准并继续</button><button type="button" data-query-decision="REJECT" data-hitl-id="${esc(pending.hitl_id)}" data-row-version="${esc(pending.row_version)}">拒绝并继续分析</button></div></section>`;
+  }
+
+  async function diagnosticQueryDecision(button) {
+    const approving = button.dataset.queryDecision === "APPROVE";
+    const note = approving
+      ? "用户已核对并批准该动态只读查询"
+      : prompt("请输入拒绝原因");
+    if (!note) return;
+    const card = button.closest(".ops-query-approval");
+    card.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+    try {
+      await KBotAIOpsAuth.request(`${api}/hitl/${encodeURIComponent(button.dataset.hitlId)}/decision`, {
+        method: "POST",
+        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+        body: JSON.stringify({
+          expected_row_version: Number(button.dataset.rowVersion),
+          decision: approving ? "APPROVE" : "REJECT",
+          note,
+        }),
+      });
+      card.querySelector(".ops-query-actions").innerHTML = `<p>${approving ? "已批准，诊断继续执行。" : "已拒绝，Agent 将依据现有证据继续分析。"}</p>`;
+      const progress = card.nextElementSibling?.matches("[data-turn-progress]")
+        ? card.nextElementSibling
+        : null;
+      const conversationId = state.conversation?.conversation_id;
+      if (progress && progress.id !== "live-progress" && conversationId) {
+        progress.textContent = "审批已提交，正在继续诊断…";
+        followTurn(conversationId, progress.dataset.turnProgress, progress)
+          .then(() => loadConversation(conversationId))
+          .catch((error) => shell.toast(error.message));
+      }
+    } catch (error) {
+      shell.toast(error.message);
+      card.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+    }
+  }
+
+  function bindDiagnosticQueryActions(root) {
+    root.querySelectorAll("[data-query-decision]").forEach((button) => {
+      button.onclick = () => diagnosticQueryDecision(button);
+    });
+  }
+
+  async function showDiagnosticQueryApproval(progress, hitlId) {
+    const pending = await KBotAIOpsAuth.request(`${api}/hitl/${encodeURIComponent(hitlId)}`);
+    const html = diagnosticQueryApprovalHtml(pending);
+    if (!html) return;
+    progress.parentElement?.querySelector(`[data-query-approval="${String(hitlId)}"]`)?.remove();
+    progress.insertAdjacentHTML("beforebegin", html);
+    bindDiagnosticQueryActions(progress.previousElementSibling);
   }
 
   async function agents() {
@@ -219,9 +281,9 @@
     const blocks = answerBlocks.map(answerBlockHtml).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
     const plan = investigationPlanHtml(turn.investigation_plan);
-    const terminal = terminalTurnStatuses.has(turn.status);
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
-    const progress = terminal && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
+    const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
+    const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${answer}${progress}`;
   }
 
@@ -233,6 +295,19 @@
     const panel = document.getElementById("message-list");
     panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
     turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
+    await Promise.all(turns.filter((turn) => turn.status === "WAITING_USER" && turn.ops_run_id).map(async (turn) => {
+      const progress = panel.querySelector(`[data-turn-progress="${String(turn.turn_id)}"]`);
+      if (!progress) return;
+      try {
+        const pending = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(turn.ops_run_id)}/pending-input`);
+        const html = diagnosticQueryApprovalHtml(pending);
+        if (!html) return;
+        progress.insertAdjacentHTML("beforebegin", html);
+        bindDiagnosticQueryActions(progress.previousElementSibling);
+      } catch (_) {
+        // 已处理或并发恢复的审批不再展示，Turn事件流会给出最终状态。
+      }
+    }));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
   }
@@ -376,12 +451,16 @@
         "task.frame.completed", "investigation.planned",
         "playbook.completed", "tool.started", "tool.completed",
         "tool.gap", "evidence.added", "assessment.completed",
-        "investigation.replanned",
+        "investigation.replanned", "diagnostic.query_approval_required",
+        "diagnostic.query_approved", "diagnostic.query_rejected",
       ].includes(event)) {
         progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
       }
       if (["investigation.planned", "investigation.replanned"].includes(event)) {
         showInvestigationPlan(progress, payload.plan);
+      }
+      if (event === "diagnostic.query_approval_required" && payload.hitl_id) {
+        showDiagnosticQueryApproval(progress, payload.hitl_id).catch((error) => shell.toast(error.message));
       }
       if (event === "thinking.delta") {
         progress.textContent = payload.public_summary || payload.delta || "正在组织回答";

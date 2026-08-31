@@ -299,6 +299,15 @@ class ConversationTurnService:
                 citations_by_block.setdefault(
                     citation.answer_block_id, []
                 ).append(citation)
+            link = await uow.turns.get_run_link(
+                turn_id=turn.turn_id,
+                purpose="PRIMARY",
+            )
+            run = (
+                await uow.runs.get_run(ops_run_id=link.ops_run_id)
+                if link is not None
+                else None
+            )
             plan_artifact = (
                 await uow.runs.get_artifact(
                     artifact_id=turn.current_plan_artifact_id
@@ -308,15 +317,6 @@ class ConversationTurnService:
             )
             plan_view = None
             if plan_artifact is not None:
-                link = await uow.turns.get_run_link(
-                    turn_id=turn.turn_id,
-                    purpose="PRIMARY",
-                )
-                run = (
-                    await uow.runs.get_run(ops_run_id=link.ops_run_id)
-                    if link is not None
-                    else None
-                )
                 execution_snapshot = dict(
                     dict(getattr(run, "plan_snapshot_json", None) or {}).get(
                         "investigation_execution", {}
@@ -341,6 +341,9 @@ class ConversationTurnService:
                     for row in blocks
                 ],
                 "investigation_plan": plan_view,
+                "ops_run_id": (
+                    str(link.ops_run_id) if link is not None else None
+                ),
             }
 
     async def list_events(
