@@ -5,7 +5,7 @@
 --
 -- 执行要求：
 -- 1. 仅允许在 KBOT_V_OPS_SCHEMA_VERSION=AIOPS/13/aiops-oracle-v3 时执行一次；
--- 2. 执行前停止 AIOps API、Worker 和 Scheduler，并完成 Schema 备份；
+-- 2. 执行前停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份；
 -- 3. 使用 KBot Schema Owner 在 SQL Developer 中以 Run Script（F5）执行；
 -- 4. 本脚本不修改监控源、托管凭据、Target Source Binding 的业务数据或密钥。
 
@@ -47,6 +47,24 @@ DECLARE
     v_has_agent_target  NUMBER;
     v_has_proposal_turn NUMBER;
 BEGIN
+
+    SELECT COUNT(*)
+      INTO v_unresolved
+      FROM KBOT_OPS_TASK
+     WHERE TASK_TYPE NOT IN (
+           'INTENT_ROUTE', 'SKILL_PLAN', 'SKILL_INVOKE',
+           'EVIDENCE_ASSESS', 'ANSWER', 'REQUEST_INPUT',
+           'PROPOSE', 'APPROVE', 'EXECUTE', 'VERIFY',
+           'ROLLBACK', 'REPORT'
+     );
+
+    IF v_unresolved > 0 THEN
+        RAISE_APPLICATION_ERROR(
+            -20008,
+            '存在 ' || v_unresolved
+            || ' 条无法映射到 Schema 15 的未知 Task 类型；升级未开始'
+        );
+    END IF;
 
     SELECT COUNT(*)
       INTO v_has_agent_target
@@ -317,6 +335,31 @@ BEGIN
     END IF;
 END;
 /
+
+-- 旧约束不接受新 Task 类型，必须先移除约束再转换历史数据，最后一次性
+-- 建立 Schema 15 的唯一 Task 类型边界。
+ALTER TABLE KBOT_OPS_TASK DROP CONSTRAINT CK_OPS_TASK_TYPE;
+
+UPDATE KBOT_OPS_TASK
+   SET TASK_TYPE = CASE TASK_TYPE
+           WHEN 'INTENT_ROUTE' THEN 'CONTEXT_BUILD'
+           WHEN 'SKILL_PLAN' THEN 'CONTEXT_BUILD'
+           WHEN 'SKILL_INVOKE' THEN 'PLAYBOOK_INVOKE'
+           WHEN 'PROPOSE' THEN 'PROPOSAL'
+           ELSE TASK_TYPE
+       END
+ WHERE TASK_TYPE IN (
+       'INTENT_ROUTE', 'SKILL_PLAN', 'SKILL_INVOKE', 'PROPOSE'
+ );
+
+ALTER TABLE KBOT_OPS_TASK ADD CONSTRAINT CK_OPS_TASK_TYPE CHECK (
+    TASK_TYPE IN (
+        'CONTEXT_BUILD', 'PLAYBOOK_INVOKE', 'TOOL_INVOKE',
+        'EVIDENCE_ASSESS', 'ACTION_PLAN', 'PROPOSAL',
+        'ANSWER', 'REQUEST_INPUT', 'APPROVE', 'EXECUTE',
+        'VERIFY', 'ROLLBACK', 'REPORT'
+    )
+);
 
 PROMPT [4/13] 将 Schema 13 Turn 升级为调查循环结构
 

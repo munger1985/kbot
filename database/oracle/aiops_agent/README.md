@@ -35,8 +35,8 @@ APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完�
 ## 保留现有 AIOps 数据升级
 
 已经运行 Schema 13 且需要保留 Target、Agent、监控源、Webhook Key/Secret、会话和
-诊断数据时，不要执行全量重建文件。停止 AIOps API、Worker 和 Scheduler 并完成备份后，
-使用 Schema Owner 在 SQL Developer 中以 Run Script（F5）执行：
+诊断数据时，不要执行全量重建文件。停止 AIOps API、Worker、Scheduler 和 DB Executor 并完成
+备份后，使用 Schema Owner 在 SQL Developer 中以 Run Script（F5）执行：
 
 ```text
 upgrade_13_to_15_preserve_data.sql
@@ -51,4 +51,6 @@ upgrade_13_to_15_preserve_data.sql
 `KBOT_OPS_DIAGNOSTIC_SOURCE`、`KBOT_MANAGED_CREDENTIAL` 和
 `KBOT_OPS_TARGET_SOURCE_BINDING`，因此不需要因为本次数据库升级重新生成 Webhook 密钥
 或重新运行监控 Docker。Schema 13 的 Skill 调用会先逐条复制为 Playbook 与 Tool 审计
-记录并核对数量，确认完整后才删除已经被替代的旧 Skill 表。
+记录并核对数量，确认完整后才删除已经被替代的旧 Skill 表。历史 Task 类型会在旧约束移除后
+映射为 Schema 15 的 Context、Playbook、Tool 和 Proposal 类型，再重建
+`CK_OPS_TASK_TYPE`。

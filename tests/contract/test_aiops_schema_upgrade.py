@@ -68,6 +68,54 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
         self.assertIn("FK_OPS_PROPOSAL_TURN", self.sql)
         self.assertIn("IX_OPS_PROPOSAL_TURN", self.sql)
 
+    def test_upgrade_migrates_task_types_before_using_new_planner(self) -> None:
+        drop_constraint = self.sql.index(
+            "ALTER TABLE KBOT_OPS_TASK DROP CONSTRAINT CK_OPS_TASK_TYPE"
+        )
+        update_tasks = self.sql.index("UPDATE KBOT_OPS_TASK")
+        add_constraint = self.sql.index(
+            "ALTER TABLE KBOT_OPS_TASK ADD CONSTRAINT CK_OPS_TASK_TYPE"
+        )
+
+        self.assertLess(drop_constraint, update_tasks)
+        self.assertLess(update_tasks, add_constraint)
+        for old_type, new_type in (
+            ("INTENT_ROUTE", "CONTEXT_BUILD"),
+            ("SKILL_PLAN", "CONTEXT_BUILD"),
+            ("SKILL_INVOKE", "PLAYBOOK_INVOKE"),
+            ("PROPOSE", "PROPOSAL"),
+        ):
+            self.assertIn(
+                f"WHEN '{old_type}' THEN '{new_type}'",
+                self.sql,
+            )
+        constraint = self.sql[
+            add_constraint : self.sql.index("PROMPT [4/13]")
+        ]
+        for task_type in (
+            "CONTEXT_BUILD",
+            "PLAYBOOK_INVOKE",
+            "TOOL_INVOKE",
+            "EVIDENCE_ASSESS",
+            "ACTION_PLAN",
+            "PROPOSAL",
+            "ANSWER",
+            "REQUEST_INPUT",
+            "APPROVE",
+            "EXECUTE",
+            "VERIFY",
+            "ROLLBACK",
+            "REPORT",
+        ):
+            self.assertIn(f"'{task_type}'", constraint)
+        for obsolete_type in (
+            "INTENT_ROUTE",
+            "SKILL_PLAN",
+            "SKILL_INVOKE",
+            "PROPOSE",
+        ):
+            self.assertNotIn(f"'{obsolete_type}'", constraint)
+
     def test_upgrade_checks_mapping_before_first_ddl(self) -> None:
         preflight = self.sql.index("PROMPT [1/13]")
         mapping_preflight = self.sql.index("PROMPT [2/13]")
@@ -78,12 +126,14 @@ class AIOpsSchemaUpgradeContractTest(unittest.TestCase):
         unresolved_agent = self.sql.index("-20002")
         unresolved_conversation = self.sql.index("-20003")
         unresolved_proposal = self.sql.index("-20006")
+        unknown_task_type = self.sql.index("-20008")
         self.assertLess(preflight, wrong_version)
         self.assertLess(wrong_version, mapping_preflight)
         self.assertLess(preflight, unresolved_agent)
         self.assertLess(unresolved_agent, first_ddl)
         self.assertLess(unresolved_conversation, first_ddl)
         self.assertLess(unresolved_proposal, first_ddl)
+        self.assertLess(unknown_task_type, first_ddl)
 
 
 if __name__ == "__main__":
