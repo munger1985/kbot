@@ -346,6 +346,41 @@ def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
     }
 
 
+def _identity_tool_artifact(*, source_type: str) -> dict:
+    """构造直接执行或 Playbook 内部执行的实例身份结果。"""
+    artifact = _tool_artifact(semantics="CURRENT_ACTIVITY")
+    payload = artifact["payload"]
+    payload.update(
+        {
+            "source_type": source_type,
+            "source_id": "db.instance.identity",
+            "output_schema": "db.instance.identity.output.v1",
+        }
+    )
+    outcome = payload["tool_outcomes"][0]
+    outcome.update(
+        {
+            "step_id": "instance_identity",
+            "tool_id": "db.instance.identity",
+        }
+    )
+    observation = outcome["observation"]
+    observation.update(
+        {
+            "tool_id": "db.instance.identity",
+            "columns": [
+                {
+                    "name": "INSTANCE_NAME",
+                    "logical_type": "STRING",
+                    "sensitivity": "PUBLIC",
+                }
+            ],
+            "rows": [["orcl"]],
+        }
+    )
+    return artifact
+
+
 def _monitoring_artifact() -> dict:
     now = datetime.now(UTC)
     start = now - timedelta(minutes=15)
@@ -403,6 +438,35 @@ def _monitoring_artifact() -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_assessment_includes_direct_instance_identity_result(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _identity_tool_artifact(source_type="TOOL"),
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(1, len(result.evidence))
+        self.assertEqual(
+            "db.instance.identity", result.evidence[0].tool_id
+        )
+
+    def test_assessment_suppresses_playbook_identity_probe(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _identity_tool_artifact(source_type="PLAYBOOK"),
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(0, len(result.evidence))
+
     def test_runtime_projects_direct_tool_without_playbook_parent(self) -> None:
         service = object.__new__(AIOpsRuntimeService)
         turn = SimpleNamespace(

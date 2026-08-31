@@ -138,8 +138,39 @@ def _capabilities(*, reachable: bool = True) -> DbaCapabilitySnapshot:
     )
 
 
+class _SessionBoundArtifact:
+    """模拟 Session 关闭后访问 ORM 属性时抛出的脱离错误。"""
+
+    def __init__(
+        self,
+        *,
+        owner,
+        artifact_id,
+        ops_run_id,
+        artifact_key,
+        schema_version,
+        payload_json,
+    ) -> None:
+        self._owner = owner
+        self._values = {
+            "artifact_id": artifact_id,
+            "ops_run_id": ops_run_id,
+            "artifact_key": artifact_key,
+            "schema_version": schema_version,
+            "payload_json": payload_json,
+        }
+
+    def __getattr__(self, name):
+        if name not in self._values:
+            raise AttributeError(name)
+        if not self._owner._uow_active:
+            raise RuntimeError("DetachedInstanceError")
+        return self._values[name]
+
+
 class _PlanningUow:
     def __init__(self) -> None:
+        self._uow_active = False
         self.turn = SimpleNamespace(
             turn_id=uuid7(),
             conversation_id=uuid7(),
@@ -252,8 +283,11 @@ class _PlanningUow:
             get_run=self._get_run,
             get_artifact=self._get_artifact,
             get_artifact_by_key=self._get_artifact_by_key,
+            list_artifacts=self._list_artifacts,
+            list_tasks=self._list_tasks,
             add_artifact=self._add_artifact,
             add_tasks=self._add_tasks,
+            database_now=self._database_now,
         )
         self.agents = SimpleNamespace(
             version=self._get_version,
@@ -264,9 +298,11 @@ class _PlanningUow:
         self.diagnostic_sources = SimpleNamespace(get_scoped=self._get_source)
 
     async def __aenter__(self):
+        self._uow_active = True
         return self
 
     async def __aexit__(self, *_):
+        self._uow_active = False
         return False
 
     async def commit(self):
@@ -322,6 +358,24 @@ class _PlanningUow:
             ),
             None,
         )
+
+    async def _list_artifacts(self, *, ops_run_id):
+        return [
+            artifact
+            for artifact in self.artifacts
+            if artifact.ops_run_id == ops_run_id
+        ]
+
+    async def _list_tasks(self, *, ops_run_id, lock=False):
+        del lock
+        return [
+            task
+            for task in self.tasks
+            if task.ops_run_id == ops_run_id
+        ]
+
+    async def _database_now(self):
+        return datetime.now(UTC)
 
     async def _get_version(self, *, agent_id, agent_version_id):
         if (
@@ -454,6 +508,20 @@ class _PastedLogReasoner:
         )
 
 
+class _ReplanReasoner(_PastedLogReasoner):
+    async def replan(self, **kwargs):
+        self.replan_inputs = dict(kwargs)
+        planned = await self.plan(available_tools=())
+        output = planned.output.model_copy(
+            update={
+                "plan": planned.output.plan.model_copy(
+                    update={"revision_no": 2}
+                )
+            }
+        )
+        return StructuredModelResult(output=output, receipt=planned.receipt)
+
+
 class _FrozenToolExecutor:
     def __init__(self) -> None:
         self.task_keys = []
@@ -525,6 +593,124 @@ class _GapExecutorClient:
 
 
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_replan_uses_snapshots_and_persists_supported_revision(
+        self,
+    ) -> None:
+        """重规划不能在 UoW 关闭后继续依赖 ORM 实体。"""
+        uow = _PlanningUow()
+        initial = (
+            await _PastedLogReasoner().plan(available_tools=())
+        ).output
+        plan_artifact_id = uuid7()
+        task_frame_artifact_id = uuid7()
+        assessment_artifact_id = uuid7()
+        plan_artifact = _SessionBoundArtifact(
+            owner=uow,
+            artifact_id=plan_artifact_id,
+            ops_run_id=uow.run.ops_run_id,
+            artifact_key="turn-investigation-plan:1",
+            schema_version=initial.plan.schema_version,
+            payload_json=initial.plan.model_dump(mode="json"),
+        )
+        task_frame_artifact = _SessionBoundArtifact(
+            owner=uow,
+            artifact_id=task_frame_artifact_id,
+            ops_run_id=uow.run.ops_run_id,
+            artifact_key="turn-task-frame:1",
+            schema_version=initial.task_frame.schema_version,
+            payload_json=initial.task_frame.model_dump(mode="json"),
+        )
+        assessment_artifact = _SessionBoundArtifact(
+            owner=uow,
+            artifact_id=assessment_artifact_id,
+            ops_run_id=uow.run.ops_run_id,
+            artifact_key="evidence:assess",
+            schema_version="DBA_SUFFICIENCY.v1",
+            payload_json={
+                "schema_version": "DBA_SUFFICIENCY.v1",
+                "status": "NEEDS_EVIDENCE",
+                "evidence": [],
+                "gaps": [],
+                "reasons": ["仍需补充证据"],
+            },
+        )
+        prior_evidence = _SessionBoundArtifact(
+            owner=uow,
+            artifact_id=uuid7(),
+            ops_run_id=uow.run.ops_run_id,
+            artifact_key="diagnostic:a1",
+            schema_version="DBA_TOOL_RESULT.v1",
+            payload_json={},
+        )
+        uow.artifacts.extend(
+            (
+                plan_artifact,
+                task_frame_artifact,
+                assessment_artifact,
+                prior_evidence,
+            )
+        )
+        uow.turn.status = "REPLANNING"
+        uow.turn.current_plan_revision = 1
+        uow.turn.investigation_round = 1
+        uow.turn.current_plan_artifact_id = plan_artifact_id
+        uow.turn.task_frame_artifact_id = task_frame_artifact_id
+        uow.turn.assessment_artifact_id = assessment_artifact_id
+        uow.tasks.append(
+            SimpleNamespace(
+                ops_run_id=uow.run.ops_run_id,
+                task_key="answer:compose",
+                status="PENDING",
+                depends_on_json=[],
+                input_artifacts_json=[],
+            )
+        )
+        reasoner = _ReplanReasoner()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute_replan(
+            {
+                "domain_id": 7,
+                "turn_id": str(uow.turn.turn_id),
+                "ops_run_id": str(uow.run.ops_run_id),
+                "assessment_artifact_id": str(assessment_artifact_id),
+                "revision_no": 2,
+            }
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual("COLLECTING", uow.turn.status)
+        self.assertEqual(2, uow.turn.current_plan_revision)
+        self.assertEqual("EVIDENCE_DRIVEN", uow.revisions[-1].revision_type)
+        self.assertIn(
+            "diagnostic:a1",
+            next(
+                task
+                for task in uow.tasks
+                if task.task_key == "evidence:assess:r2"
+            ).input_artifacts_json,
+        )
+        self.assertEqual(
+            initial.plan.model_dump(mode="json"),
+            reasoner.replan_inputs["prior_plan"],
+        )
+
     async def test_enabled_unreachable_target_is_attemptable_in_turn_budget(
         self,
     ) -> None:

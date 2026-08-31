@@ -215,7 +215,10 @@ CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状
             for outcome in result.tool_outcomes:
                 if outcome.observation is not None:
                     observation = outcome.observation
-                    if outcome.tool_id != "db.instance.identity":
+                    if (
+                        outcome.tool_id != "db.instance.identity"
+                        or result.source_type == "TOOL"
+                    ):
                         facts.append(
                             TurnEvidenceFact(
                                 evidence_ref=(

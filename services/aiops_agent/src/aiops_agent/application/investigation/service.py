@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -50,6 +50,16 @@ from aiops_agent.tools import (
     build_capability_snapshot,
 )
 from platform_core.identity import uuid7
+
+
+@dataclass(frozen=True)
+class _ReplanInputSnapshot:
+    """冻结重规划所需的持久化数据，禁止把 ORM 实体带出 UoW。"""
+
+    prior_plan: dict
+    task_frame: dict
+    assessment: dict
+    prior_artifacts: tuple[tuple[str, str], ...]
 
 
 class TurnPlanningService:
@@ -241,46 +251,17 @@ class TurnPlanningService:
         if revision_no != 2:
             raise state_conflict("当前调查预算最多允许两轮")
         context = await self._prepare(payload, revision_no=revision_no)
-        async with self._uow_factory() as uow:
-            turn = await uow.turns.get_turn(
-                domain_id=context.domain_id,
-                turn_id=context.turn_id,
-            )
-            assessment_artifact = await uow.runs.get_artifact(
-                artifact_id=UUID(str(payload["assessment_artifact_id"]))
-            )
-            plan_artifact = (
-                await uow.runs.get_artifact(
-                    artifact_id=turn.current_plan_artifact_id
-                )
-                if turn is not None
-                and turn.current_plan_artifact_id is not None
-                else None
-            )
-            task_frame_artifact = (
-                await uow.runs.get_artifact(
-                    artifact_id=turn.task_frame_artifact_id
-                )
-                if turn is not None
-                and turn.task_frame_artifact_id is not None
-                else None
-            )
-            prior_artifacts = await uow.runs.list_artifacts(
-                ops_run_id=context.ops_run_id
-            )
-        if (
-            assessment_artifact is None
-            or assessment_artifact.schema_version != "DBA_SUFFICIENCY.v1"
-            or plan_artifact is None
-            or task_frame_artifact is None
-        ):
-            raise state_conflict("重规划缺少上一轮评估或调查计划")
+        inputs = await self._load_replan_inputs(
+            context=context,
+            assessment_artifact_id=UUID(
+                str(payload["assessment_artifact_id"])
+            ),
+        )
         model_snapshot = await self._agent_catalog.resolve_diagnosis_model(
             agent_id=context.agent_id,
             domain_id=context.domain_id,
             trace_id=context.trace_id,
         )
-        prior_plan = dict(plan_artifact.payload_json or {})
         discovered_tools = available_tools(
             self._tool_snapshot_builder, context.capabilities
         )
@@ -291,9 +272,9 @@ class TurnPlanningService:
             content=context.content,
             conversation_context=context.recent_context,
             source_run_evidence=context.source_run_evidence,
-            task_frame=dict(task_frame_artifact.payload_json or {}),
-            prior_plan=prior_plan,
-            assessment=dict(assessment_artifact.payload_json or {}),
+            task_frame=inputs.task_frame,
+            prior_plan=inputs.prior_plan,
+            assessment=inputs.assessment,
             available_tools=discovered_tools,
             available_playbooks=discovered_playbooks,
             model_snapshot=model_snapshot,
@@ -338,9 +319,9 @@ class TurnPlanningService:
             monitoring_execution.get("log_binding_ids", ())
         )
         evidence_keys = tuple(
-            item.artifact_key
-            for item in prior_artifacts
-            if item.schema_version
+            artifact_key
+            for artifact_key, schema_version in inputs.prior_artifacts
+            if schema_version
             in {
                 "USER_PROVIDED_INPUT.v1",
                 "SOURCE_RUN_EVIDENCE.v1",
@@ -386,6 +367,58 @@ class TurnPlanningService:
             model_snapshot=model_snapshot,
             monitoring_execution=monitoring_execution,
         )
+
+    async def _load_replan_inputs(
+        self,
+        *,
+        context: TurnPlanningContext,
+        assessment_artifact_id: UUID,
+    ) -> _ReplanInputSnapshot:
+        """在同一只读 UoW 内验证并冻结重规划输入。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(
+                domain_id=context.domain_id,
+                turn_id=context.turn_id,
+            )
+            assessment_artifact = await uow.runs.get_artifact(
+                artifact_id=assessment_artifact_id
+            )
+            plan_artifact = (
+                await uow.runs.get_artifact(
+                    artifact_id=turn.current_plan_artifact_id
+                )
+                if turn is not None
+                and turn.current_plan_artifact_id is not None
+                else None
+            )
+            task_frame_artifact = (
+                await uow.runs.get_artifact(
+                    artifact_id=turn.task_frame_artifact_id
+                )
+                if turn is not None
+                and turn.task_frame_artifact_id is not None
+                else None
+            )
+            prior_artifacts = await uow.runs.list_artifacts(
+                ops_run_id=context.ops_run_id
+            )
+            if (
+                assessment_artifact is None
+                or assessment_artifact.schema_version
+                != "DBA_SUFFICIENCY.v1"
+                or plan_artifact is None
+                or task_frame_artifact is None
+            ):
+                raise state_conflict("重规划缺少上一轮评估或调查计划")
+            return _ReplanInputSnapshot(
+                prior_plan=dict(plan_artifact.payload_json or {}),
+                task_frame=dict(task_frame_artifact.payload_json or {}),
+                assessment=dict(assessment_artifact.payload_json or {}),
+                prior_artifacts=tuple(
+                    (str(item.artifact_key), str(item.schema_version))
+                    for item in prior_artifacts
+                ),
+            )
 
     async def _prepare_queries_with_repair(
         self,
@@ -551,7 +584,7 @@ class TurnPlanningService:
                 revision_id=uuid7(),
                 turn_id=turn.turn_id,
                 revision_no=revision_no,
-                revision_type="EVIDENCE_REPLAN",
+                revision_type="EVIDENCE_DRIVEN",
                 trigger_reason="上一轮评估仍有可由系统自动补齐的关键证据缺口",
                 task_frame_artifact_id=task_frame_artifact.artifact_id,
                 plan_artifact_id=plan_artifact.artifact_id,
