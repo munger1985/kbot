@@ -7,7 +7,10 @@ from pathlib import Path
 import re
 import unittest
 
-from scripts.db.render_aiops_rebuild_schema import render_rebuild_sql
+from scripts.db.render_aiops_rebuild_schema import (
+    _analyze_canonical_sql,
+    render_rebuild_sql,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +64,39 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             f"{self.manifest['contract_version']}。",
             self.sql,
         )
+        self.assertIn("l_missing_table_count <> 0", self.sql)
+        self.assertIn("l_missing_view_count <> 0", self.sql)
+        self.assertIn("l_required_column_count <> 7", self.sql)
+        self.assertIn("l_task_type_constraint_count <> 1", self.sql)
+        for table_name in self.manifest["tables"]:
+            self.assertIn(f"'{table_name}'", self.sql)
+        for view_name in self.manifest["views"]:
+            self.assertIn(f"'{view_name}'", self.sql)
+
+    def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
+        for definition in self.manifest["scripts"]:
+            content = (SCHEMA_DIR / definition["name"]).read_text(encoding="utf-8")
+            self.assertEqual(
+                definition["statements"],
+                _analyze_canonical_sql(definition["name"], content),
+            )
+
+    def test_canonical_analyzer_rejects_unclosed_check_constraint(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "括号未闭合"):
+            _analyze_canonical_sql(
+                "broken.sql",
+                "CREATE TABLE T (A NUMBER, CONSTRAINT CK_T CHECK (A IN (1, 2));",
+            )
+
+    def test_rebuild_checks_shared_parent_keys_before_drop(self) -> None:
+        preflight_position = self.sql.index("PROMPT === 正在检查 AIOps 重建前置条件 ===")
+        drop_position = self.sql.index("PROMPT === 正在删除旧 AIOps 视图和表 ===")
+        preflight = self.sql[preflight_position:drop_position]
+        self.assertLess(preflight_position, drop_position)
+        self.assertIn("KBOT_PLATFORM_DOMAIN", preflight)
+        self.assertIn("KBOT_MANAGED_CREDENTIAL", preflight)
+        self.assertIn("CREDENTIAL_ID", preflight)
+        self.assertIn("DOMAIN_ID", preflight)
 
     def test_rebuild_is_non_interactive_and_scoped_to_aiops_objects(self) -> None:
         self.assertNotIn("ACCEPT ", self.sql.upper())
@@ -70,6 +106,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("KBOT\\_OPS\\_%", self.sql)
         self.assertIn("KBOT\\_V\\_OPS\\_%", self.sql)
         self.assertIn("Worker、Scheduler 和 DB Executor", self.sql)
+        self.assertIn("SET SQLBLANKLINES ON", self.sql)
         self.assertNotIn("DROP USER", self.sql.upper())
 
     def test_turn_status_check_is_closed_before_next_constraint(self) -> None:

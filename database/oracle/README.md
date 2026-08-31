@@ -41,14 +41,8 @@ App 目录、完整权限/角色模板、`ADMIN` 凭据及其平台 `platform_ad
 Schema。规范初始化脚本不包含 `DROP`、旧表查询、旧数据导入、兼容视图或回滚逻辑。
 已有开发 Schema 无需保留数据时，先使用 KBot Schema 用户执行
 `scripts/db/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
-命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。除下述 AIOps 数据保留升级外，
-KBot 4.0 不保留一次性升级、字段修复或数据补种脚本；结构变化直接更新规范 DDL，
-并在新的空白 Schema 重新初始化。
-
-AIOps Schema 13 已产生需要保留的监控接入与 Webhook 凭据数据，因此提供一个明确的
-例外：`aiops_agent/upgrade_13_to_15_preserve_data.sql`。它只用于 13→15 原位升级，
-不属于空 Schema 初始化序列，也不会由应用或初始化工具自动执行；其他版本和服务仍遵循
-全量规范 Schema 规则。
+命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。KBot 4.0 不保留一次性升级、
+字段修复或数据补种脚本；结构变化直接更新规范 DDL，并在新的空白 Schema 重新初始化。
 
 执行前运行：
 

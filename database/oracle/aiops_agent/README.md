@@ -19,7 +19,10 @@
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
 Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建文件已经内嵌
-全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。
+全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
+共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
+`KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 15 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
@@ -28,29 +31,6 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 `KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 15 / aiops-oracle-v5`，再启动 AIOps
 服务并检查 `/ready`。
 
-`schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用启动时
-只检查 `KBOT_V_OPS_SCHEMA_VERSION`，不得执行 DDL、补列或调用 `create_all()`。
-APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
-
-## 保留现有 AIOps 数据升级
-
-已经运行 Schema 13 且需要保留 Target、Agent、监控源、Webhook Key/Secret、会话和
-诊断数据时，不要执行全量重建文件。停止 AIOps API、Worker、Scheduler 和 DB Executor 并完成
-备份后，使用 Schema Owner 在 SQL Developer 中以 Run Script（F5）执行：
-
-```text
-upgrade_13_to_15_preserve_data.sql
-```
-
-该脚本只接受 `AIOPS / 13 / aiops-oracle-v3`，同时识别规范 Schema 13 和早期保留配置表
-升级留下的存量形态；后者缺少的 `AGENT_VERSION.TARGET_ID`、
-`CHANGE_PROPOSAL.TURN_ID` 会在映射校验通过后补齐。脚本会在任何 DDL 前检查当前 Agent、
-历史会话和变更建议是否能够唯一确定逻辑 Target/Turn；无法确定时直接终止，不猜测映射。
-升级完成后应返回
-`AIOPS / 15 / aiops-oracle-v5`。脚本不会删除或重建
-`KBOT_OPS_DIAGNOSTIC_SOURCE`、`KBOT_MANAGED_CREDENTIAL` 和
-`KBOT_OPS_TARGET_SOURCE_BINDING`，因此不需要因为本次数据库升级重新生成 Webhook 密钥
-或重新运行监控 Docker。Schema 13 的 Skill 调用会先逐条复制为 Playbook 与 Tool 审计
-记录并核对数量，确认完整后才删除已经被替代的旧 Skill 表。历史 Task 类型会在旧约束移除后
-映射为 Schema 15 的 Context、Playbook、Tool 和 Proposal 类型，再重建
-`CK_OPS_TASK_TYPE`。
+`schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
+校验 `KBOT_V_OPS_SCHEMA_VERSION` 和 Schema 15 关键列、约束，不得执行 DDL、补列或调用
+`create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。

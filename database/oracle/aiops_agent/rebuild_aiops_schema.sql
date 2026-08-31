@@ -11,6 +11,80 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
 SET SERVEROUTPUT ON
 SET VERIFY OFF
+SET SQLBLANKLINES ON
+
+PROMPT === 正在检查 AIOps 重建前置条件 ===
+
+DECLARE
+    l_domain_key_count PLS_INTEGER;
+    l_credential_key_count PLS_INTEGER;
+BEGIN
+    SELECT COUNT(*)
+      INTO l_domain_key_count
+      FROM user_constraints constraint_row
+     WHERE constraint_row.table_name = 'KBOT_PLATFORM_DOMAIN'
+       AND constraint_row.constraint_type IN ('P', 'U')
+       AND constraint_row.status = 'ENABLED'
+       AND constraint_row.validated = 'VALIDATED'
+       AND (
+            SELECT COUNT(*)
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+       ) = 1
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 1
+               AND column_row.column_name = 'DOMAIN_ID'
+       );
+
+    SELECT COUNT(*)
+      INTO l_credential_key_count
+      FROM user_constraints constraint_row
+     WHERE constraint_row.table_name = 'KBOT_MANAGED_CREDENTIAL'
+       AND constraint_row.constraint_type IN ('P', 'U')
+       AND constraint_row.status = 'ENABLED'
+       AND constraint_row.validated = 'VALIDATED'
+       AND (
+            SELECT COUNT(*)
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+       ) = 2
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 1
+               AND column_row.column_name = 'CREDENTIAL_ID'
+       )
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 2
+               AND column_row.column_name = 'DOMAIN_ID'
+       );
+
+    IF l_domain_key_count = 0 THEN
+        raise_application_error(
+            -20010,
+            '重建前置条件错误：KBOT_PLATFORM_DOMAIN(DOMAIN_ID) 主键或唯一键不可用。'
+        );
+    END IF;
+    IF l_credential_key_count = 0 THEN
+        raise_application_error(
+            -20011,
+            '重建前置条件错误：KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID) 唯一键不可用。'
+        );
+    END IF;
+END;
+/
 
 PROMPT === 正在删除旧 AIOps 视图和表 ===
 
@@ -2668,10 +2742,14 @@ PROMPT === 正在验证 AIOps Schema ===
 DECLARE
     l_table_count PLS_INTEGER;
     l_view_count PLS_INTEGER;
+    l_missing_table_count PLS_INTEGER;
+    l_missing_view_count PLS_INTEGER;
     l_invalid_count PLS_INTEGER;
     l_bad_constraint_count PLS_INTEGER;
     l_bad_index_count PLS_INTEGER;
     l_workflow_kind_count PLS_INTEGER;
+    l_required_column_count PLS_INTEGER;
+    l_task_type_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -2685,6 +2763,80 @@ BEGIN
       INTO l_view_count
       FROM user_views
      WHERE view_name LIKE 'KBOT\_V\_OPS\_%' ESCAPE '\';
+
+    SELECT COUNT(*)
+      INTO l_missing_table_count
+      FROM TABLE(sys.odcivarchar2list(
+          'KBOT_OPS_TARGET',
+          'KBOT_OPS_POLICY',
+          'KBOT_OPS_TARGET_BINDING',
+          'KBOT_OPS_NOTIFICATION_SUBSCRIPTION',
+          'KBOT_OPS_DIAGNOSTIC_SOURCE',
+          'KBOT_OPS_TARGET_SOURCE_BINDING',
+          'KBOT_OPS_SIGNAL_EVENT',
+          'KBOT_OPS_SITUATION',
+          'KBOT_OPS_SITUATION_EVENT',
+          'KBOT_OPS_RUN',
+          'KBOT_OPS_TASK',
+          'KBOT_OPS_ARTIFACT',
+          'KBOT_OPS_RUN_EVENT',
+          'KBOT_OPS_CHANGE_PROPOSAL',
+          'KBOT_OPS_HITL',
+          'KBOT_OPS_APPROVAL_TOKEN',
+          'KBOT_OPS_EXECUTION',
+          'KBOT_OPS_INSPECTION_PLAN',
+          'KBOT_OPS_INSPECTION_TARGET',
+          'KBOT_OPS_INSPECTION_FIRE',
+          'KBOT_OPS_REPORT',
+          'KBOT_OPS_INBOX',
+          'KBOT_OPS_OUTBOX',
+          'KBOT_OPS_AGENT',
+          'KBOT_OPS_AGENT_VERSION',
+          'KBOT_OPS_AGENT_VERSION_SOURCE',
+          'KBOT_OPS_AGENT_VERSION_TARGET',
+          'KBOT_OPS_AGENT_GRANT',
+          'KBOT_OPS_REPORT_TEMPLATE',
+          'KBOT_OPS_REPORT_TEMPLATE_VER',
+          'KBOT_OPS_CONVERSATION',
+          'KBOT_OPS_CONVERSATION_TURN',
+          'KBOT_OPS_CONVERSATION_MESSAGE',
+          'KBOT_OPS_TURN_INPUT_ITEM',
+          'KBOT_OPS_TURN_RUN',
+          'KBOT_OPS_INVESTIGATION_REVISION',
+          'KBOT_OPS_PLAYBOOK_INVOCATION',
+          'KBOT_OPS_TOOL_INVOCATION',
+          'KBOT_OPS_TURN_EVIDENCE',
+          'KBOT_OPS_ANSWER_BLOCK',
+          'KBOT_OPS_ANSWER_CITATION',
+          'KBOT_OPS_TURN_EVENT',
+          'KBOT_OPS_EVIDENCE_REQUEST',
+          'KBOT_OPS_IMAGE_EVIDENCE'
+      )) expected
+     WHERE NOT EXISTS (
+            SELECT 1
+              FROM user_tables actual
+             WHERE actual.table_name = expected.column_value
+     );
+
+    SELECT COUNT(*)
+      INTO l_missing_view_count
+      FROM TABLE(sys.odcivarchar2list(
+          'KBOT_V_OPS_TARGET',
+          'KBOT_V_OPS_DIAGNOSTIC_SOURCE',
+          'KBOT_V_OPS_POLICY',
+          'KBOT_V_OPS_INSPECTION_PLAN',
+          'KBOT_V_OPS_INSPECTION_FIRE',
+          'KBOT_V_OPS_RUN',
+          'KBOT_V_OPS_PENDING_APPROVAL',
+          'KBOT_V_OPS_REPORT',
+          'KBOT_V_OPS_CHAT_PENDING',
+          'KBOT_V_OPS_SCHEMA_VERSION'
+      )) expected
+     WHERE NOT EXISTS (
+            SELECT 1
+              FROM user_views actual
+             WHERE actual.view_name = expected.column_value
+     );
 
     SELECT COUNT(*)
       INTO l_invalid_count
@@ -2715,6 +2867,40 @@ BEGIN
        AND column_name = 'WORKFLOW_KIND'
        AND nullable = 'N';
 
+    SELECT COUNT(*)
+      INTO l_required_column_count
+      FROM user_tab_columns
+     WHERE nullable = 'N'
+       AND (
+            (table_name = 'KBOT_OPS_TASK' AND column_name = 'TASK_TYPE')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'TURN_ID')
+         OR (table_name = 'KBOT_OPS_CONVERSATION_TURN'
+             AND column_name = 'CURRENT_PLAN_REVISION')
+         OR (table_name = 'KBOT_OPS_INVESTIGATION_REVISION'
+             AND column_name = 'REVISION_ID')
+         OR (table_name = 'KBOT_OPS_PLAYBOOK_INVOCATION'
+             AND column_name = 'PLAYBOOK_INVOCATION_ID')
+         OR (table_name = 'KBOT_OPS_TOOL_INVOCATION'
+             AND column_name = 'TOOL_INVOCATION_ID')
+         OR (table_name = 'KBOT_OPS_TURN_EVIDENCE'
+             AND column_name = 'EVIDENCE_ROLE')
+       );
+
+    SELECT COUNT(*)
+      INTO l_task_type_constraint_count
+      FROM user_constraints
+     WHERE table_name = 'KBOT_OPS_TASK'
+       AND constraint_name = 'CK_OPS_TASK_TYPE'
+       AND constraint_type = 'C'
+       AND status = 'ENABLED'
+       AND validated = 'VALIDATED'
+       AND search_condition_vc LIKE '%CONTEXT_BUILD%'
+       AND search_condition_vc LIKE '%PLAYBOOK_INVOKE%'
+       AND search_condition_vc LIKE '%PROPOSAL%'
+       AND search_condition_vc NOT LIKE '%INTENT_ROUTE%'
+       AND search_condition_vc NOT LIKE '%SKILL_PLAN%'
+       AND search_condition_vc NOT LIKE '%SKILL_INVOKE%';
+
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
@@ -2723,6 +2909,13 @@ BEGIN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
+        );
+    END IF;
+    IF l_missing_table_count <> 0 OR l_missing_view_count <> 0 THEN
+        raise_application_error(
+            -20007,
+            'AIOps 规范对象缺失：表=' || l_missing_table_count
+            || '，视图=' || l_missing_view_count
         );
     END IF;
     IF l_invalid_count <> 0 THEN
@@ -2736,6 +2929,12 @@ BEGIN
     END IF;
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
+    END IF;
+    IF l_required_column_count <> 7 THEN
+        raise_application_error(-20008, 'Schema 15 必需列缺失或允许为空。');
+    END IF;
+    IF l_task_type_constraint_count <> 1 THEN
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 15 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> 15
