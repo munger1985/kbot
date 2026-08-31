@@ -5,15 +5,14 @@ from __future__ import annotations
 import re
 
 from aiops_agent.diagnostics import DiagnosticRegistry
-from platform_core.contracts.aiops.playbooks import (
-    DbaCapabilitySnapshot,
-    DbaPlaybookPlan,
-)
-
 from aiops_agent.playbooks import (
     PlaybookCatalogError,
     PlaybookRegistry,
     canonical_hash,
+)
+from platform_core.contracts.aiops.playbooks import (
+    DbaCapabilitySnapshot,
+    DbaPlaybookPlan,
 )
 
 from .compiler import CompiledInvestigationPlan
@@ -108,11 +107,11 @@ class ToolExecutionSnapshotBuilder:
                     "tool_class": "ORACLE_SQL",
                     "description": f"受控只读数据库观测：{definition.tool_id}",
                     "input": {
-                        parameter.name: {
-                            "type": parameter.type,
-                            "required": parameter.required,
-                            "default": parameter.default,
-                        }
+                        parameter.name: parameter.model_dump(
+                            mode="json",
+                            exclude={"name"},
+                            exclude_none=True,
+                        )
                         for parameter in definition.parameters
                     },
                 }
@@ -123,6 +122,34 @@ class ToolExecutionSnapshotBuilder:
                 key=lambda value: (value["tool_id"], value["version"]),
             )
         )
+
+    def validate_direct_actions(
+        self,
+        *,
+        actions: tuple[object, ...],
+        capabilities: DbaCapabilitySnapshot,
+    ) -> dict[str, dict[str, object]]:
+        """在编译前校验模型选择的固定目录 Tool 参数并补齐默认值。"""
+        normalized = {}
+        for action in actions:
+            resolved = self._tools.resolve(
+                tool_id=action.tool_id,
+                tool_version="1.0.0",
+                db_type=str(capabilities.database_type),
+                db_version=capabilities.database_version or "",
+                capabilities=set(capabilities.target_capabilities),
+                entitlements=set(capabilities.entitlements),
+            )
+            try:
+                parameters = self._tools.validate_parameters(
+                    resolved, dict(action.input)
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"工具 {action.tool_id} 输入无效：{exc}"
+                ) from exc
+            normalized[action.action_id] = parameters
+        return normalized
 
     def build(
         self,

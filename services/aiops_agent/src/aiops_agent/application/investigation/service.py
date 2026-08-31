@@ -148,8 +148,8 @@ class TurnPlanningService:
             deadline=context.deadline,
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
-        planned, investigation, dynamic_queries = (
-            await self._prepare_dynamic_queries_with_repair(
+        planned, investigation, dynamic_queries, source_queries = (
+            await self._prepare_queries_with_repair(
                 context=context,
                 planned=planned,
                 available_tools=discovered_tools,
@@ -157,9 +157,6 @@ class TurnPlanningService:
                 model_snapshot=model_snapshot,
                 revision_no=1,
             )
-        )
-        investigation, source_queries = prepare_source_queries(
-            investigation
         )
         playbook_plan = build_playbook_plan(self._playbook_registry)
         monitoring_requested = any(
@@ -306,8 +303,8 @@ class TurnPlanningService:
             ),
             revision_no=revision_no,
         )
-        planned, investigation, dynamic_queries = (
-            await self._prepare_dynamic_queries_with_repair(
+        planned, investigation, dynamic_queries, source_queries = (
+            await self._prepare_queries_with_repair(
                 context=context,
                 planned=planned,
                 available_tools=discovered_tools,
@@ -315,9 +312,6 @@ class TurnPlanningService:
                 model_snapshot=model_snapshot,
                 revision_no=revision_no,
             )
-        )
-        investigation, source_queries = prepare_source_queries(
-            investigation
         )
         playbook_plan = build_playbook_plan(self._playbook_registry)
         monitoring_requested = any(
@@ -393,7 +387,7 @@ class TurnPlanningService:
             monitoring_execution=monitoring_execution,
         )
 
-    async def _prepare_dynamic_queries_with_repair(
+    async def _prepare_queries_with_repair(
         self,
         *,
         context: TurnPlanningContext,
@@ -403,15 +397,18 @@ class TurnPlanningService:
         model_snapshot: dict,
         revision_no: int,
     ):
-        """动态 SQL 首稿越界时，带策略反馈执行一次受控修正。"""
+        """Tool 输入首稿越界时，带策略反馈执行一次受控修正。"""
         try:
-            investigation, dynamic_queries = prepare_dynamic_queries(
-                planned.output
+            investigation, dynamic_queries, source_queries = (
+                self._prepare_query_inputs(
+                    investigation=planned.output,
+                    context=context,
+                )
             )
-            return planned, investigation, dynamic_queries
+            return planned, investigation, dynamic_queries, source_queries
         except InvestigationPlanValidationError as exc:
             logger.warning(
-                "AIOps 动态查询计划未通过策略，正在请求模型修正："
+                "AIOps Tool 输入未通过策略，正在请求模型修正："
                 "turn_id={} revision_no={} reason={}",
                 context.turn_id,
                 revision_no,
@@ -434,10 +431,58 @@ class TurnPlanningService:
                     ),
                 )
             )
-            investigation, dynamic_queries = prepare_dynamic_queries(
-                repaired.output
+            investigation, dynamic_queries, source_queries = (
+                self._prepare_query_inputs(
+                    investigation=repaired.output,
+                    context=context,
+                )
             )
-            return repaired, investigation, dynamic_queries
+            return repaired, investigation, dynamic_queries, source_queries
+
+    def _prepare_query_inputs(
+        self,
+        *,
+        investigation,
+        context: TurnPlanningContext,
+    ):
+        """在任务编译前冻结所有模型生成的 Tool 输入。"""
+        investigation, dynamic_queries = prepare_dynamic_queries(
+            investigation
+        )
+        investigation, source_queries = prepare_source_queries(investigation)
+        direct_actions = tuple(
+            action
+            for action in investigation.plan.actions
+            if action.tool_id
+            not in {
+                "monitor.query_range",
+                "loki.query_range",
+                "db.oracle.readonly_query",
+            }
+        )
+        if not direct_actions:
+            return investigation, dynamic_queries, source_queries
+        try:
+            normalized = self._tool_snapshot_builder.validate_direct_actions(
+                actions=direct_actions,
+                capabilities=context.capabilities,
+            )
+        except ValueError as exc:
+            raise InvestigationPlanValidationError(
+                f"固定诊断工具输入未通过目录约束：{exc}"
+            ) from exc
+        actions = tuple(
+            action.model_copy(update={"input": normalized[action.action_id]})
+            if action.action_id in normalized
+            else action
+            for action in investigation.plan.actions
+        )
+        plan = investigation.plan.model_copy(update={"actions": actions})
+        return (
+            investigation.model_copy(update={"plan": plan}),
+            dynamic_queries,
+            source_queries,
+        )
 
     async def _persist_replan(
         self,

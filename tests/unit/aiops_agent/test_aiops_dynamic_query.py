@@ -23,11 +23,15 @@ from aiops_agent.diagnostics.grants import (
     DiagnosticGrantError,
     canonical_sha256,
 )
+from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.executor import DynamicDiagnosticExecutorService
 from aiops_agent.executor.drivers import DriverQueryResult
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.ports.model import StructuredModelResult
-from aiops_agent.tools import InvestigationTaskCompiler
+from aiops_agent.tools import (
+    InvestigationTaskCompiler,
+    ToolExecutionSnapshotBuilder,
+)
 from aiops_agent.workers.database_handlers import (
     DynamicQueryInvocationHandler,
 )
@@ -418,6 +422,41 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             "policy.allowed_functions", dynamic_tool["description"]
         )
 
+    def test_fixed_tool_exposes_complete_parameter_constraints(self) -> None:
+        diagnostic_registry = DiagnosticRegistry.load()
+        playbook_registry = PlaybookRegistry.load()
+        snapshot_builder = ToolExecutionSnapshotBuilder(
+            playbook_registry=playbook_registry,
+            diagnostic_registry=diagnostic_registry,
+        )
+        capabilities = DbaCapabilitySnapshot(
+            agent_id=str(uuid7()),
+            agent_version_id=str(uuid7()),
+            target_id=str(uuid7()),
+            database_type="ORACLE",
+            database_version="19c",
+            target_enabled=True,
+            target_reachable=True,
+            target_capabilities=("DB_READONLY", "dynamic_performance_views"),
+        )
+
+        tools = available_tools(snapshot_builder, capabilities)
+        top_sql = next(
+            item for item in tools if item["tool_id"] == "db.sql.top_current"
+        )
+
+        self.assertEqual(
+            {
+                "type": "integer",
+                "required": False,
+                "minimum": 1,
+                "maximum": 50,
+                "enum": [],
+                "default": 10,
+            },
+            top_sql["input"]["limit"],
+        )
+
 
 class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
     async def test_policy_rejection_triggers_one_corrective_plan(self) -> None:
@@ -449,8 +488,8 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             deadline=None,
         )
 
-        planned, investigation, frozen = (
-            await service._prepare_dynamic_queries_with_repair(
+        planned, investigation, frozen, source_queries = (
+            await service._prepare_queries_with_repair(
                 context=context,
                 planned=StructuredModelResult(
                     output=rejected,
@@ -473,9 +512,113 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             "COUNT(sid)", investigation.plan.actions[0].input["sql"]
         )
         self.assertEqual("a1", frozen[0]["action_id"])
+        self.assertEqual(
+            {
+                "ad_hoc_prometheus_queries": [],
+                "ad_hoc_log_queries": [],
+            },
+            source_queries,
+        )
         call = reasoner.repair_policy_invalid_plan.await_args.kwargs
         self.assertIn("CUSTOM_FUNCTION", call["validation_error"])
         reasoner.repair_policy_invalid_plan.assert_awaited_once()
+
+    async def test_fixed_tool_parameter_rejection_triggers_repair(self) -> None:
+        factory = DynamicQueryPlanningTest()
+        template = factory._investigation(
+            sql="SELECT sid FROM v$session WHERE status = :status"
+        )
+        rejected_action = template.plan.actions[0].model_copy(
+            update={
+                "tool_id": "db.sql.top_current",
+                "input": {"limit": 1000},
+            }
+        )
+        repaired_action = rejected_action.model_copy(
+            update={"input": {"limit": 20}}
+        )
+        rejected = template.model_copy(
+            update={
+                "plan": template.plan.model_copy(
+                    update={"actions": (rejected_action,)}
+                )
+            }
+        )
+        repaired = rejected.model_copy(
+            update={
+                "plan": rejected.plan.model_copy(
+                    update={"actions": (repaired_action,)}
+                )
+            }
+        )
+        reasoner = SimpleNamespace(
+            repair_policy_invalid_plan=AsyncMock(
+                return_value=StructuredModelResult(
+                    output=repaired,
+                    receipt=SimpleNamespace(name="repaired"),
+                )
+            )
+        )
+        diagnostic_registry = DiagnosticRegistry.load()
+        playbook_registry = PlaybookRegistry.load()
+        service = object.__new__(TurnPlanningService)
+        service._investigation_reasoner = reasoner
+        service._tool_snapshot_builder = ToolExecutionSnapshotBuilder(
+            playbook_registry=playbook_registry,
+            diagnostic_registry=diagnostic_registry,
+        )
+        context = SimpleNamespace(
+            turn_id=uuid7(),
+            content=(),
+            recent_context=(),
+            source_run_evidence=None,
+            deadline=None,
+            capabilities=DbaCapabilitySnapshot(
+                agent_id=str(uuid7()),
+                agent_version_id=str(uuid7()),
+                target_id=str(uuid7()),
+                database_type="ORACLE",
+                database_version="19c",
+                target_enabled=True,
+                target_reachable=True,
+                target_capabilities=(
+                    "DB_READONLY",
+                    "dynamic_performance_views",
+                ),
+            ),
+        )
+
+        planned, investigation, frozen, source_queries = (
+            await service._prepare_queries_with_repair(
+                context=context,
+                planned=StructuredModelResult(
+                    output=rejected,
+                    receipt=SimpleNamespace(name="rejected"),
+                ),
+                available_tools=available_tools(
+                    service._tool_snapshot_builder,
+                    context.capabilities,
+                ),
+                available_playbooks=(),
+                model_snapshot={"technical_name": "test"},
+                revision_no=1,
+            )
+        )
+
+        self.assertEqual("repaired", planned.receipt.name)
+        self.assertEqual(20, investigation.plan.actions[0].input["limit"])
+        self.assertEqual((), frozen)
+        self.assertEqual(
+            {
+                "ad_hoc_prometheus_queries": [],
+                "ad_hoc_log_queries": [],
+            },
+            source_queries,
+        )
+        validation_error = reasoner.repair_policy_invalid_plan.await_args.kwargs[
+            "validation_error"
+        ]
+        self.assertIn("参数 limit 大于最大值", validation_error)
 
 
 class GapDynamicExecutorClient:

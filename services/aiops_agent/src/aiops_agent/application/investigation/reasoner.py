@@ -22,7 +22,8 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有
 确实能区分假设或补齐回答所需事实时才安排工具。工具只能从 available_tools 中选择；
 Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook 不能阻止分析。
-调用工具时必须完整遵循 available_tools 中的 input 和 policy。对于
+调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
+必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
 清单外的同义函数、系统函数或自定义函数；固定目录工具能够回答时优先使用固定工具。
 
@@ -31,13 +32,15 @@ db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，S
 """.strip()
 
 _POLICY_REPAIR_PROMPT = """
-你是一名资深 Oracle DBA 调查规划者。上一份调查计划中的动态只读 SQL 未通过确定性
-安全策略。请依据 validation_error 修正计划，再返回完整的 InvestigationPlanningOutput。
+你是一名资深 Oracle DBA 调查规划者。上一份调查计划中的工具输入或动态只读 SQL 未通过
+确定性安全策略。请依据 validation_error 修正计划，再返回完整的
+InvestigationPlanningOutput。
 
 必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
-available_tools 中选择。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
+available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
+数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
 函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的全部 input 和 policy 约束。
-如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称 SQL 已执行。
+如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
 """.strip()
 
 _REPLAN_PROMPT = """
