@@ -2,9 +2,15 @@
   "use strict";
 
   const storageKey = "kbot.aiops.session.v1";
-  const baseUrl = () => String(
-    globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "",
-  ).replace(/\/+$/, "");
+  function baseUrl() {
+    const value = String(
+      globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "",
+    ).trim().replace(/\/+$/, "");
+    if (!value) {
+      throw new Error("AIOps UI 未加载 Main API 部署配置，请刷新页面");
+    }
+    return value;
+  }
 
   function uuid() {
     return globalThis.crypto?.randomUUID?.()

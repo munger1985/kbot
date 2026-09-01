@@ -248,6 +248,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
 
+    def test_auth_rejects_missing_runtime_configuration(self):
+        script = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("KBOT_UI_CONFIG?.mainApiBaseUrl", script)
+        self.assertIn("AIOps UI 未加载 Main API 部署配置", script)
+
     def test_inspection_plan_uses_visual_schedule_builder(self):
         page = (AIOPS_ROOT / "inspection-plans.html").read_text(
             encoding="utf-8"
