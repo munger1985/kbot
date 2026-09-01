@@ -335,6 +335,11 @@ class _Uow:
             agent_id=uuid7(), status="ACTIVE", current_version_id=uuid7()
         )
         self.target = SimpleNamespace(target_id=uuid7(), status="ENABLED")
+        self.situation = SimpleNamespace(
+            situation_id=uuid7(),
+            domain_id=7,
+            target_id=self.target.target_id,
+        )
         self.version = SimpleNamespace(
             agent_version_id=self.agent.current_version_id,
             target_id=self.target.target_id,
@@ -355,6 +360,9 @@ class _Uow:
             get_scoped=self._get_target,
         )
         self.runs = _RunRepository()
+        self.situations = SimpleNamespace(
+            get_situation_scoped=self._get_situation,
+        )
         self.conversations = SimpleNamespace(
             add_conversation=self._add_conversation,
             get_conversation=self._get_conversation,
@@ -375,6 +383,11 @@ class _Uow:
     async def _get_version(self, *, agent_id, agent_version_id):
         if agent_id == self.agent.agent_id and agent_version_id == self.version.agent_version_id:
             return self.version
+        return None
+
+    async def _get_situation(self, *, situation_id, domain_id):
+        if situation_id == self.situation.situation_id and domain_id == 7:
+            return self.situation
         return None
 
     async def _source_ids(self, *, agent_version_id):
@@ -615,6 +628,59 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("aiops.turn.created", uow.outbox.rows[0].event_type)
         self.assertEqual(str(turn.turn_id), receipt["turn_id"])
         TurnReceipt.model_validate(receipt)
+
+    async def test_situation_source_is_validated_and_forwarded(self) -> None:
+        uow = _Uow()
+        service = ConversationTurnService(uow_factory=lambda: uow)
+
+        await service.start(
+            domain_id=7,
+            actor_id="dba@example.com",
+            trace_id="trace-situation",
+            conversation_create=ConversationCreate(
+                agent_id=uow.agent.agent_id,
+                target_id=uow.target.target_id,
+                source=ConversationSourceContext(
+                    source_type="SITUATION",
+                    situation_id=uow.situation.situation_id,
+                ),
+            ),
+            first_turn=TurnCreate(
+                content=(
+                    {
+                        "content_type": "TEXT",
+                        "text": "基于告警情境继续分析",
+                    },
+                ),
+                idempotency_key="request-situation",
+            ),
+        )
+
+        conversation = uow.conversation_rows[0]
+        self.assertEqual(
+            uow.situation.situation_id,
+            conversation.source_situation_id,
+        )
+        self.assertEqual(
+            str(uow.situation.situation_id),
+            uow.outbox.rows[0].payload_json["source_situation_id"],
+        )
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            created_payload
+        )
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        await TurnPlannerService(uow_factory=lambda: uow).begin(
+            planning_payload
+        )
+        self.assertEqual(
+            uow.situation.situation_id,
+            uow.runs.rows[0].situation_id,
+        )
+        self.assertEqual(
+            str(uow.situation.situation_id),
+            uow.runs.rows[0].plan_snapshot_json["source_situation_id"],
+        )
 
     async def test_get_turn_returns_safe_current_investigation_plan(
         self,

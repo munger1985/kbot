@@ -107,6 +107,11 @@ class TurnPlannerService:
                 workflow_kind=str(
                     execution_context.get("workflow_kind") or "CHAT_TURN"
                 ),
+                situation_id=(
+                    UUID(str(payload["source_situation_id"]))
+                    if payload.get("source_situation_id")
+                    else None
+                ),
                 inspection_fire_id=(
                     UUID(str(execution_context["inspection_fire_id"]))
                     if execution_context.get("inspection_fire_id")
@@ -120,6 +125,9 @@ class TurnPlannerService:
                     "schema_version": "aiops.turn-planning-context.v1",
                     "conversation_id": str(turn.conversation_id),
                     "turn_id": str(turn_id),
+                    "source_situation_id": payload.get(
+                        "source_situation_id"
+                    ),
                     "source_run_id": payload.get("source_run_id"),
                     "observation_start": execution_context.get(
                         "observation_start"

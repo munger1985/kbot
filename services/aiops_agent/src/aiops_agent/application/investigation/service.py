@@ -1702,6 +1702,58 @@ class TurnPlanningService:
                         "captured_at": source_artifact.created_at.isoformat(),
                         "payload": source_artifact.payload_json,
                     }
+            source_situation_id = dict(run.plan_snapshot_json or {}).get(
+                "source_situation_id"
+            )
+            if source_situation_id and source_run_evidence is None:
+                situation = await uow.situations.get_situation_scoped(
+                    situation_id=UUID(str(source_situation_id)),
+                    domain_id=domain_id,
+                )
+                if situation is not None and situation.target_id == target.target_id:
+                    signal_events = await uow.situations.list_events_for_situation(
+                        situation_id=situation.situation_id,
+                        limit=32,
+                    )
+                    source_run_evidence = {
+                        "source_kind": "SITUATION",
+                        "source_situation_id": str(situation.situation_id),
+                        "source_schema_version": "SITUATION_EVIDENCE.v1",
+                        "inheritance_schema_version": "SITUATION_EVIDENCE.v1",
+                        "source_artifact_type": "SITUATION_EVIDENCE",
+                        "source_trust_level": "VERIFIED",
+                        "captured_at": situation.last_observed_at.isoformat(),
+                        "payload": {
+                            "title": situation.title,
+                            "summary": situation.summary,
+                            "status": situation.status,
+                            "severity": situation.severity,
+                            "first_observed_at": (
+                                situation.first_observed_at.isoformat()
+                            ),
+                            "last_observed_at": (
+                                situation.last_observed_at.isoformat()
+                            ),
+                            "signal_events": [
+                                {
+                                    "signal_event_id": str(item.signal_event_id),
+                                    "diagnostic_source_id": str(
+                                        item.diagnostic_source_id
+                                    ),
+                                    "source_event_key": item.source_event_key,
+                                    "event_class": item.event_class,
+                                    "severity": item.severity,
+                                    "normalized_status": item.normalized_status,
+                                    "summary": item.summary,
+                                    "occurred_at": item.occurred_at.isoformat(),
+                                    "evidence_locator": dict(
+                                        item.evidence_locator_json or {}
+                                    ),
+                                }
+                                for item in signal_events
+                            ],
+                        },
+                    }
             existing_prompt_snapshot = dict(
                 dict(
                     dict(run.plan_snapshot_json or {}).get(
@@ -2159,8 +2211,17 @@ class TurnPlanningService:
                 self._artifact(
                     ops_run_id=run.ops_run_id,
                     artifact_key="turn-source-run-evidence:1",
-                    artifact_type="SOURCE_RUN_EVIDENCE",
-                    schema_version="SOURCE_RUN_EVIDENCE.v1",
+                    artifact_type=str(
+                        context.source_run_evidence.get(
+                            "source_artifact_type", "SOURCE_RUN_EVIDENCE"
+                        )
+                    ),
+                    schema_version=str(
+                        context.source_run_evidence.get(
+                            "inheritance_schema_version",
+                            "SOURCE_RUN_EVIDENCE.v1",
+                        )
+                    ),
                     payload=context.source_run_evidence,
                     producer="aiops.source-run-linker",
                     trust_level=str(

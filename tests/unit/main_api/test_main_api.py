@@ -492,6 +492,7 @@ class _FakeAIOpsClient:
         self.binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a101")
         self.authorize_agent_calls = 0
         self.raise_agent_access_denied = False
+        self.last_start_payload = None
 
     async def is_ready(self):
         return True
@@ -509,6 +510,7 @@ class _FakeAIOpsClient:
 
     async def start_conversation(self, payload, *, auth_context):
         del auth_context
+        self.last_start_payload = payload
         return {
             "conversation_id": str(
                 UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
@@ -1716,19 +1718,83 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
 
     def test_aiops_manager_starts_chat_without_agent_grant(self) -> None:
+        target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a112")
         response = self.client.post(
             "/api/v1/apps/aiops/conversations",
             headers={**self._headers(), "Idempotency-Key": "chat-turn-1"},
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "message": "检查数据库负载",
+                "target_id": str(target_id),
+                "content": [
+                    {"content_type": "TEXT", "text": "检查数据库负载"}
+                ],
             },
         )
 
-        self.assertEqual(201, response.status_code)
+        self.assertEqual(201, response.status_code, response.text)
         self.assertEqual(0, self.aiops.authorize_agent_calls)
         self.assertEqual("QUEUED", response.json()["status"])
         self.assertEqual(1, response.json()["turn_no"])
+        self.assertEqual(
+            {"source_type": "CHAT"},
+            self.aiops.last_start_payload["conversation"]["source"],
+        )
+
+    def test_aiops_starts_conversation_from_situation(self) -> None:
+        target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a112")
+        situation_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a113")
+        response = self.client.post(
+            "/api/v1/apps/aiops/conversations",
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "situation-turn-1",
+            },
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "target_id": str(target_id),
+                "source_situation_id": str(situation_id),
+                "content": [
+                    {
+                        "content_type": "TEXT",
+                        "text": "基于这次告警开始诊断",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        self.assertEqual(
+            {
+                "source_type": "SITUATION",
+                "situation_id": str(situation_id),
+            },
+            self.aiops.last_start_payload["conversation"]["source"],
+        )
+        self.assertIsNone(
+            self.aiops.last_start_payload["first_turn"]["source_run_id"]
+        )
+
+    def test_aiops_rejects_multiple_conversation_sources(self) -> None:
+        source_id = "019f8eae-2c25-7d48-b044-350ec3f5a113"
+        response = self.client.post(
+            "/api/v1/apps/aiops/conversations",
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "invalid-source-turn-1",
+            },
+            json={
+                "agent_id": str(self.agent_runtime.agent_id),
+                "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
+                "source_situation_id": source_id,
+                "source_run_id": source_id,
+                "content": [
+                    {"content_type": "TEXT", "text": "开始诊断"}
+                ],
+            },
+        )
+
+        self.assertEqual(422, response.status_code)
+        self.assertIsNone(self.aiops.last_start_payload)
 
     def test_aiops_agent_access_denial_remains_public_403(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(
@@ -1741,7 +1807,10 @@ class MainApiTest(unittest.TestCase):
             headers={**self._headers(), "Idempotency-Key": "chat-turn-2"},
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "message": "检查数据库负载",
+                "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
+                "content": [
+                    {"content_type": "TEXT", "text": "检查数据库负载"}
+                ],
             },
         )
 

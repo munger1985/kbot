@@ -7,6 +7,7 @@ import hashlib
 from datetime import datetime
 from typing import Any
 
+from loguru import logger
 from platform_core.contracts.aiops import (
     SignalEventEnvelope,
     SignalEventIntakeReceipt,
@@ -533,6 +534,7 @@ class SignalEventIntakeService:
                 uow=uow,
                 target=target,
                 source_id=source.diagnostic_source_id,
+                situation_id=situation.situation_id,
                 severity=situation.severity,
                 fingerprint=situation.correlation_hash,
                 now=now,
@@ -542,20 +544,30 @@ class SignalEventIntakeService:
             and situation.status != "RESOLVED"
             and event.event_status != "RESOLVED"
             and auto_agent is not None
-            and await uow.runs.get_active_by_situation(
+        ):
+            active_run = await uow.runs.get_active_by_situation(
                 situation_id=situation.situation_id
             )
-            is None
-        ):
-            await self._enqueue_auto_run(
-                uow=uow,
-                target=target,
-                situation=situation,
-                event_entity=entity,
-                agent_id=auto_agent.agent_id,
-                trace_id=trace_id,
-                now=now,
-            )
+            if active_run is None:
+                await self._enqueue_auto_run(
+                    uow=uow,
+                    target=target,
+                    situation=situation,
+                    event_entity=entity,
+                    agent_id=auto_agent.agent_id,
+                    trace_id=trace_id,
+                    now=now,
+                )
+            else:
+                self._log_auto_agent_decision(
+                    decision="SKIPPED",
+                    reason="ACTIVE_RUN_EXISTS",
+                    target_id=target.target_id,
+                    source_id=source.diagnostic_source_id,
+                    situation_id=situation.situation_id,
+                    severity=situation.severity,
+                    agent_id=auto_agent.agent_id,
+                )
         notifier = getattr(uow, "platform_notifications", None)
         if notifier is not None and situation is not None:
             if situation_created:
@@ -622,6 +634,7 @@ class SignalEventIntakeService:
         uow,
         target,
         source_id,
+        situation_id,
         severity: str,
         fingerprint: str,
         now: datetime,
@@ -632,6 +645,14 @@ class SignalEventIntakeService:
             target_id=target.target_id,
         )
         if resolved is None:
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="NO_ELIGIBLE_AGENT",
+                target_id=target.target_id,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity=severity,
+            )
             return None
         binding, policy = resolved
         minimum = str(policy.rules_json.get("auto_observe_min_severity", "CRITICAL"))
@@ -639,6 +660,16 @@ class SignalEventIntakeService:
         if _SEVERITY_RANK[severity] < _SEVERITY_RANK.get(
             minimum, _SEVERITY_RANK["CRITICAL"]
         ):
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="BELOW_MINIMUM_SEVERITY",
+                target_id=target.target_id,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity=severity,
+                agent_id=binding.agent_id,
+                minimum_severity=minimum,
+            )
             return None
         latest = await uow.runs.get_latest_by_situation_correlation(
             target_id=target.target_id,
@@ -647,7 +678,65 @@ class SignalEventIntakeService:
         allowed = latest is None or (
             now - latest.created_at
         ).total_seconds() >= cooldown_seconds
-        return binding if allowed else None
+        if not allowed:
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="COOLDOWN_ACTIVE",
+                target_id=target.target_id,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity=severity,
+                agent_id=binding.agent_id,
+                cooldown_seconds=cooldown_seconds,
+            )
+            return None
+        self._log_auto_agent_decision(
+            decision="SELECTED",
+            reason="ELIGIBLE_AGENT",
+            target_id=target.target_id,
+            source_id=source_id,
+            situation_id=situation_id,
+            severity=severity,
+            agent_id=binding.agent_id,
+        )
+        return binding
+
+    @staticmethod
+    def _log_auto_agent_decision(
+        *,
+        decision: str,
+        reason: str,
+        target_id,
+        source_id,
+        situation_id,
+        severity: str,
+        agent_id=None,
+        minimum_severity: str | None = None,
+        cooldown_seconds: int | None = None,
+    ) -> None:
+        """记录不含凭据和原始告警内容的自动诊断决策。"""
+        logger.bind(
+            event_name="aiops.auto_diagnosis.decision",
+            decision=decision,
+            reason=reason,
+            target_id=str(target_id),
+            diagnostic_source_id=str(source_id),
+            situation_id=str(situation_id),
+            severity=severity,
+            agent_id=str(agent_id) if agent_id is not None else None,
+            minimum_severity=minimum_severity,
+            cooldown_seconds=cooldown_seconds,
+        ).info(
+            "自动告警诊断决策：decision={} reason={} target_id={} "
+            "source_id={} situation_id={} severity={} agent_id={}",
+            decision,
+            reason,
+            target_id,
+            source_id,
+            situation_id,
+            severity,
+            agent_id,
+        )
 
     async def _enqueue_auto_run(
         self,

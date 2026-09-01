@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
 from main_api.application import (
@@ -141,7 +141,14 @@ class ConversationStartPayload(_Payload):
     target_id: UUID
     content: list[InputContent] = Field(min_length=1, max_length=16)
     title: str | None = Field(default=None, min_length=1, max_length=256)
+    source_situation_id: UUID | None = None
     source_run_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "ConversationStartPayload":
+        if self.source_situation_id is not None and self.source_run_id is not None:
+            raise ValueError("会话来源只能选择 Situation 或 Run 其中之一")
+        return self
 
 
 class AIOpsConversationTurnPayload(_Payload):
@@ -561,14 +568,18 @@ async def start_conversation(
     _, actor_id, snapshot = await _require(request, "aiops:use")
     require_app_api_scope(request, "aiops:chat:write")
     await _authorize_agent(request, payload.agent_id, snapshot, actor_id)
-    source = (
-        {
+    if payload.source_run_id is not None:
+        source = {
             "source_type": "RUN",
             "run_id": str(payload.source_run_id),
         }
-        if payload.source_run_id is not None
-        else {"source_type": "CHAT"}
-    )
+    elif payload.source_situation_id is not None:
+        source = {
+            "source_type": "SITUATION",
+            "situation_id": str(payload.source_situation_id),
+        }
+    else:
+        source = {"source_type": "CHAT"}
     return await _client(request).start_conversation(
         {
             "conversation": {

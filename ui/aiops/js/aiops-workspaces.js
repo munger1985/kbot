@@ -76,6 +76,13 @@
     return `<details class="ops-evidence"><summary>诊断依据 <span>${facts.length} 项已验证事实</span></summary><div class="ops-evidence-body">${rootRow}${factRows}${gapRows}</div></details>`;
   }
 
+  function situationEvidence(detail) {
+    const events = values(detail?.signal_events);
+    if (!events.length) return '<p class="ops-evidence-empty">当前情境没有可展示的监控信号。</p>';
+    const rows = events.map((item) => `<li><span>${esc(item.summary || item.event_class || "监控信号")}</span><small>${esc(item.event_class || item.signal_kind || "SIGNAL")} · ${esc(item.severity || "UNKNOWN")} · ${esc(item.normalized_status || "UNKNOWN")}${item.occurred_at ? ` · ${esc(shell.fmt(item.occurred_at))}` : ""}</small></li>`).join("");
+    return `<details class="ops-evidence" open><summary>关联监控信号 <span>${events.length} 条</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${rows}</ol></div></details>`;
+  }
+
   function messageHtml(role, text, meta = "", supplemental = "") {
     const user = role === "USER";
     return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
@@ -703,12 +710,16 @@
     if (rows.some((item) => String(item.agent_id) === String(preferredId))) select.value = preferredId;
   }
 
-  function continueForm(run, title) {
-    const allowed = state.agents.filter((item) => values(item.target_ids).includes(String(run.target_id)));
-    return `<div class="ops-inline-dialog"><h3>继续深入诊断</h3><p>系统会在服务端继承本次自动诊断证据；后续人工对话才可能按 Agent 权限产生审批待办。</p><form id="continue-form" class="ops-form"><div class="ops-field span-12"><label>Agent</label><select name="agent_id" required><option value="">请选择</option>${allowed.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("")}</select></div><div class="ops-field span-12"><label>继续追问</label><textarea name="message" required>${esc(`请基于“${title}”的自动诊断结果继续分析：`)}</textarea></div><div class="ops-filter-actions"><button class="primary" type="submit">进入对话</button></div></form></div>`;
+  function continueForm(source, title) {
+    const allowed = state.agents.filter((item) => values(item.target_ids).includes(String(source.target_id)));
+    const inherited = source.source_run_id ? "自动诊断结果与证据" : "告警情境及其监控信号";
+    const prompt = source.source_run_id
+      ? `请基于“${title}”的自动诊断结果继续分析：`
+      : `请基于告警情境“${title}”开始诊断，并核验关联监控证据：`;
+    return `<div class="ops-inline-dialog"><h3>继续深入诊断</h3><p>系统会在服务端继承本次${inherited}；后续人工对话才可能按 Agent 权限产生审批待办。</p><form id="continue-form" class="ops-form"><div class="ops-field span-12"><label>Agent</label><select name="agent_id" required><option value="">请选择</option>${allowed.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("")}</select></div><div class="ops-field span-12"><label>继续追问</label><textarea name="message" required>${esc(prompt)}</textarea></div><div class="ops-filter-actions"><button class="primary" type="submit">进入对话</button></div></form></div>`;
   }
 
-  async function bindContinue(run, title) {
+  async function bindContinue(source) {
     const form = document.getElementById("continue-form");
     if (!form) return;
     form.onsubmit = async (event) => {
@@ -716,10 +727,11 @@
       const fields = Object.fromEntries(new FormData(form));
       const body = {
         agent_id: fields.agent_id,
-        target_id: run.target_id,
+        target_id: source.target_id,
         content: [{ content_type: "TEXT", text: fields.message }],
-        source_run_id: run.ops_run_id,
       };
+      if (source.source_run_id) body.source_run_id = source.source_run_id;
+      if (source.source_situation_id) body.source_situation_id = source.source_situation_id;
       try {
         const result = await KBotAIOpsAuth.request(`${api}/conversations`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify(body) });
         location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
@@ -733,9 +745,22 @@
     const panel = document.getElementById("case-detail");
     const runId = detail.run_ids[0];
     let run = null; let result = null;
-    if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${result ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>${continueForm(run, detail.title)}` : '<div class="ops-empty">自动诊断尚未生成结果。</div>'}`;
-    await bindContinue(run, detail.title);
+    if (runId) {
+      run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`);
+      try {
+        result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`);
+      } catch (error) {
+        if (error.status !== 404 && error.status !== 409) throw error;
+      }
+    }
+    const source = result
+      ? { target_id: run.target_id, source_run_id: run.ops_run_id }
+      : { target_id: detail.target_id, source_situation_id: detail.situation_id };
+    const diagnosis = result
+      ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>`
+      : '<div class="ops-empty">自动诊断尚未生成结果，可选择 Agent 立即开始诊断。</div>';
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${situationEvidence(detail)}${diagnosis}${continueForm(source, detail.title)}`;
+    await bindContinue(source);
   }
 
   async function showInspection(item) {
@@ -745,8 +770,9 @@
     const runId = detail.run_ids[0];
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${continueForm(run, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
-    await bindContinue(run, "本次日常巡检");
+    const source = run ? { target_id: run.target_id, source_run_id: run.ops_run_id } : null;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    if (source) await bindContinue(source);
   }
 
   async function initCases(page) {

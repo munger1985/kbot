@@ -3,7 +3,7 @@
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from aiops_agent.application.diagnostic_sources.webhook_intake import (
     SignalEventIntakeService,
@@ -96,6 +96,41 @@ class SituationCorrelationTest(unittest.TestCase):
 
 
 class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_agent_rejection_records_structured_reason(self) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        source_id = uuid7()
+        situation_id = uuid7()
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(return_value=None)
+            )
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            result = await service._resolve_auto_agent(
+                uow=uow,
+                target=target,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity="CRITICAL",
+                fingerprint="f" * 64,
+                now=datetime(2026, 9, 1, tzinfo=UTC),
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(
+            "NO_ELIGIBLE_AGENT",
+            log.bind.call_args.kwargs["reason"],
+        )
+        self.assertEqual(
+            str(situation_id),
+            log.bind.call_args.kwargs["situation_id"],
+        )
+        log.bind.return_value.info.assert_called_once()
+
     async def test_duplicate_unmatched_target_remains_rejected(self) -> None:
         uow = SimpleNamespace(
             situations=SimpleNamespace(

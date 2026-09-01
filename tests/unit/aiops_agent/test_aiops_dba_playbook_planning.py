@@ -248,6 +248,30 @@ class _PlanningUow:
             domain_id=7,
             final_artifact_id=self.source_artifact.artifact_id,
         )
+        self.situation = SimpleNamespace(
+            situation_id=uuid7(),
+            domain_id=7,
+            target_id=self.target.target_id,
+            title="Oracle Alert Log检测到异常",
+            summary="Oracle Alert Log检测到异常",
+            status="OPEN",
+            severity="CRITICAL",
+            first_observed_at=datetime.now(UTC),
+            last_observed_at=datetime.now(UTC),
+        )
+        self.signal_events = [
+            SimpleNamespace(
+                signal_event_id=uuid7(),
+                diagnostic_source_id=uuid7(),
+                source_event_key="oracle-alert-117520",
+                event_class="database.alert_log_problem",
+                severity="CRITICAL",
+                normalized_status="FIRING",
+                summary="ORA-01653: unable to increase tablespace TEST01",
+                occurred_at=datetime.now(UTC),
+                evidence_locator_json={"target_key": "oracle-dev-190"},
+            )
+        ]
         self.message = SimpleNamespace(
             sequence_no=1,
             message_type="USER_MESSAGE",
@@ -307,6 +331,10 @@ class _PlanningUow:
         self.targets = SimpleNamespace(get_scoped=self._get_target)
         self.policies = SimpleNamespace(get_scoped=self._get_policy)
         self.diagnostic_sources = SimpleNamespace(get_scoped=self._get_source)
+        self.situations = SimpleNamespace(
+            get_situation_scoped=self._get_situation,
+            list_events_for_situation=self._list_situation_events,
+        )
 
     async def __aenter__(self):
         self._uow_active = True
@@ -411,6 +439,16 @@ class _PlanningUow:
 
     async def _get_source(self, **_):
         return None
+
+    async def _get_situation(self, *, situation_id, domain_id):
+        if situation_id == self.situation.situation_id and domain_id == 7:
+            return self.situation
+        return None
+
+    async def _list_situation_events(self, *, situation_id, limit=200):
+        if situation_id != self.situation.situation_id:
+            return []
+        return self.signal_events[:limit]
 
     async def _add_artifact(self, row):
         self.artifacts.append(row)
@@ -1119,6 +1157,47 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "turn-source-run-evidence:1",
             uow.tasks[0].input_artifacts_json,
+        )
+
+    async def test_situation_signals_are_inherited_as_verified_evidence(
+        self,
+    ) -> None:
+        uow = _PlanningUow()
+        uow.run.plan_snapshot_json["source_situation_id"] = str(
+            uow.situation.situation_id
+        )
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=_PastedLogReasoner(),
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        inherited = next(
+            item
+            for item in uow.artifacts
+            if item.artifact_key == "turn-source-run-evidence:1"
+        )
+        self.assertEqual("SITUATION_EVIDENCE.v1", inherited.schema_version)
+        self.assertEqual("VERIFIED", inherited.trust_level)
+        self.assertEqual(
+            "ORA-01653: unable to increase tablespace TEST01",
+            inherited.payload_json["payload"]["signal_events"][0]["summary"],
         )
 
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:

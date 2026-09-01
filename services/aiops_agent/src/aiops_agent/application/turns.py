@@ -94,6 +94,21 @@ class ConversationTurnService:
                         "AIOPS_SOURCE_TARGET_CONFLICT",
                         "来源 Run 的 Target 与新会话选择的 Target 不一致",
                     )
+            elif source.source_type == ConversationSourceType.SITUATION:
+                source_situation = await uow.situations.get_situation_scoped(
+                    situation_id=source.situation_id,
+                    domain_id=domain_id,
+                )
+                if source_situation is None:
+                    raise self._error(
+                        "AIOPS_SOURCE_SITUATION_INVALID",
+                        "来源 Situation 不存在",
+                    )
+                if source_situation.target_id != target_id:
+                    raise self._error(
+                        "AIOPS_SOURCE_TARGET_CONFLICT",
+                        "来源 Situation 的 Target 与新会话选择的 Target 不一致",
+                    )
             conversation = OpsConversationEntity(
                 domain_id=domain_id,
                 agent_id=agent.agent_id,
@@ -723,6 +738,11 @@ class ConversationTurnService:
             "target_id": str(target_id),
             "agent_id": str(conversation.agent_id),
             "agent_version_id": str(conversation.agent_version_id),
+            "source_situation_id": (
+                str(conversation.source_situation_id)
+                if conversation.source_situation_id
+                else None
+            ),
             "source_run_id": str(source_run.ops_run_id) if source_run else None,
             "trace_id": trace_id,
         }
