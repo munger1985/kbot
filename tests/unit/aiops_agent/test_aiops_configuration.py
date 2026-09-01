@@ -94,6 +94,35 @@ class ETagAndCursorTest(unittest.TestCase):
 
 
 class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resolves_agent_planner_model_to_served_name(self) -> None:
+        agent_id = uuid7()
+        model_id = uuid7()
+        agent_service = AsyncMock()
+        agent_service.get.return_value = {
+            "agent_id": str(agent_id),
+            "domain_id": 100,
+            "status": "ACTIVE",
+            "models": {"planner_llm": str(model_id)},
+        }
+        model_client = AsyncMock()
+        model_client.get_model.return_value = {
+            "model_id": str(model_id),
+            "served_model_name": "qwen-planner",
+        }
+        resolver = AIOpsAgentValidator(
+            agent_service,
+            model_client=model_client,
+        )
+
+        result = await resolver.resolve_planner_model(
+            agent_id=agent_id,
+            domain_id=100,
+            trace_id="trace-planner",
+        )
+
+        self.assertEqual("qwen-planner", result["technical_name"])
+        self.assertEqual(str(model_id), result["revision"])
+
     async def test_resolves_agent_diagnosis_model_to_served_name(self) -> None:
         agent_id = uuid7()
         model_id = uuid7()

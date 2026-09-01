@@ -38,7 +38,16 @@
 .ops-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
 .ops-composer-hint { color: var(--muted); font-size: 11px; }
 .ops-context-banner { padding: 11px 14px; border-left: 3px solid var(--accent); background: #eef2fa; color: #47536a; }
-.ops-progress { color: var(--muted); font-style: italic; }
+.ops-progress { max-width: 760px; margin: 0 0 18px 45px; color: #47536a; }
+.ops-progress header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ops-progress header strong { color: var(--accent); font-size: 13px; }
+.ops-progress header span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ops-progress-timeline { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.ops-progress-timeline li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: baseline; gap: 9px; color: var(--muted); font-size: 12px; }
+.ops-progress-timeline li i { width: 7px; height: 7px; border: 1px solid #8a98b0; border-radius: 50%; background: #fff; }
+.ops-progress-timeline li.is-active { color: #34415a; }
+.ops-progress-timeline li.is-active i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 3px #dce4f4; }
+.ops-progress-timeline li small { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .ops-investigation-plan { max-width: 760px; margin: 0 0 18px 45px; padding: 13px 15px; border: 1px solid #cad4e6; background: #f6f8fc; }
 .ops-investigation-plan header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .ops-investigation-plan header strong { color: var(--accent); font-size: 13px; }

@@ -11,6 +11,7 @@ from aiops_agent.orchestration.diagnosis import (
 )
 from aiops_agent.ports.model import AIOpsModelPort, StructuredModelResult
 from platform_core.contracts.aiops import InvestigationPlanningOutput
+from platform_core.contracts.aiops import CompactPlanningOutput
 
 
 class InvestigationPlanValidationError(ValueError):
@@ -39,6 +40,59 @@ class InvestigationReasoner:
             TURN_PROMPT_IDS,
             frozen_prompts=frozen_prompts,
         )
+
+    async def plan_compact(
+        self,
+        *,
+        question: str,
+        target_context: dict[str, Any],
+        prompt_snapshot: dict[str, dict[str, str]],
+        tool_cards: tuple[dict[str, Any], ...],
+        available_playbooks: tuple[dict[str, Any], ...],
+        model_snapshot: dict[str, Any],
+        deadline: datetime | None,
+        idempotency_key: str,
+    ) -> StructuredModelResult:
+        """用精简契约完成明确只读查询，或筛选完整规划上下文。"""
+        prompt = await self._prompts.resolve(
+            "compact_planner",
+            frozen_prompts=prompt_snapshot,
+        )
+        result = await self._model.generate_structured(
+            purpose="aiops.compact-planning",
+            output_model=CompactPlanningOutput,
+            model_snapshot=model_snapshot,
+            prompt_ref={**prompt.ref(), "content": prompt.content},
+            input_payload={
+                "question": question,
+                "target_context": dict(target_context),
+                "available_tools": list(tool_cards),
+                "available_playbooks": list(available_playbooks),
+            },
+            deadline=deadline,
+            idempotency_key=idempotency_key,
+        )
+        output = CompactPlanningOutput.model_validate(result.output)
+        known_tools = {str(item["tool_id"]) for item in tool_cards}
+        known_playbooks = {
+            str(item["playbook_id"])
+            for item in available_playbooks
+        }
+        unknown_tools = set(output.selected_tool_ids) - known_tools
+        unknown_playbooks = (
+            set(output.selected_playbook_ids) - known_playbooks
+        )
+        if unknown_tools:
+            raise InvestigationPlanValidationError(
+                "精简规划引用了未注册工具："
+                f"{', '.join(sorted(unknown_tools))}"
+            )
+        if unknown_playbooks:
+            raise InvestigationPlanValidationError(
+                "精简规划引用了未注册 Playbook："
+                f"{', '.join(sorted(unknown_playbooks))}"
+            )
+        return StructuredModelResult(output=output, receipt=result.receipt)
 
     async def plan(
         self,

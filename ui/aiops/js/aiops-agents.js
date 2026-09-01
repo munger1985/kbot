@@ -127,6 +127,9 @@
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
       : '<div class="ops-error">没有已启用的逻辑 Target，请先创建并启用运维目标。</div>';
     const diagnosisModels = models.filter((model) => Number(model.category) === 1);
+    document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
+      ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
+      : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
     document.getElementById("agent-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
       : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
@@ -338,6 +341,7 @@
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15;
+    form.elements.planner_model_id.value = editing.models?.planner_llm || "";
     form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
     form.elements.instruction.value = editing.instruction || "";
     form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => {
@@ -369,8 +373,10 @@
     const targetIds = selectedTargetIds();
     if (!selectedSources.length) throw new Error("至少选择一个监控源。");
     if (!targetIds.length) throw new Error("至少选择一个逻辑 Target。");
-    const modelId = form.elements.diagnosis_model_id.value.trim();
-    if (!modelId) throw new Error("请选择诊断模型。");
+    const plannerModelId = form.elements.planner_model_id.value.trim();
+    const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
+    if (!plannerModelId) throw new Error("请选择规划模型。");
+    if (!diagnosisModelId) throw new Error("请选择诊断模型。");
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
     return {
       display_name: form.elements.display_name.value.trim(),
@@ -382,7 +388,10 @@
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
       alert_cooldown_minutes: autoAlertEnabled ? Number(form.elements.alert_cooldown_minutes.value) : (editing?.alert_cooldown_minutes ?? 15),
-      models: { diagnosis_llm: modelId },
+      models: {
+        planner_llm: plannerModelId,
+        diagnosis_llm: diagnosisModelId,
+      },
       instruction: form.elements.instruction.value.trim() || null,
       image_capabilities: {},
       config: {},

@@ -129,6 +129,16 @@ class TurnPlannerService:
             await self._append_event(
                 uow,
                 turn,
+                event_type="planning.started",
+                payload={
+                    "public_summary": (
+                        "已锁定 Agent、Target 和模型配置，正在生成调查计划"
+                    ),
+                },
+            )
+            await self._append_event(
+                uow,
+                turn,
                 event_type="turn.status",
                 payload={
                     "status": "UNDERSTANDING",

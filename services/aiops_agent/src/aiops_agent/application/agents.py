@@ -42,6 +42,13 @@ class AgentImageCapabilities(_Model):
     vlm: ImageModelCapability | None = None
 
 
+class AgentModelBindings(_Model):
+    """声明 AIOps Agent 各模型调用阶段的独立绑定。"""
+
+    planner_llm: UUID | None = None
+    diagnosis_llm: UUID | None = None
+
+
 class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
@@ -54,7 +61,7 @@ class CreateAIOpsAgentCommand(_Model):
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] = "CRITICAL"
     alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
-    models: dict[str, UUID] = Field(default_factory=dict)
+    models: AgentModelBindings = Field(default_factory=AgentModelBindings)
     image_capabilities: AgentImageCapabilities = Field(
         default_factory=AgentImageCapabilities
     )
@@ -90,7 +97,7 @@ class UpdateAIOpsAgentCommand(_Model):
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] | None = None
     alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
-    models: dict[str, UUID] | None = None
+    models: AgentModelBindings | None = None
     image_capabilities: AgentImageCapabilities | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
@@ -479,6 +486,14 @@ class AIOpsAgentService:
                 "启用 Agent 前必须选择诊断模型",
                 status_code=422,
             )
+        if status == "ACTIVE" and not dict(values.get("models") or {}).get(
+            "planner_llm"
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_PLANNER_MODEL_REQUIRED",
+                "启用 Agent 前必须选择规划模型",
+                status_code=422,
+            )
         source_ids = tuple(values.get("diagnostic_source_ids") or ())
         if not source_ids:
             raise AIOpsAgentError(
@@ -636,6 +651,7 @@ class AIOpsAgentService:
             models_json={
                 key: str(value)
                 for key, value in dict(values.get("models") or {}).items()
+                if value is not None
             },
             image_capabilities_json=_image_capabilities_json(
                 values.get("image_capabilities")

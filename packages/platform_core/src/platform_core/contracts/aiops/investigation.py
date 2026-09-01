@@ -19,6 +19,7 @@ INPUT_ENVELOPE_SCHEMA_VERSION = "aiops.input-envelope.v1"
 TASK_FRAME_SCHEMA_VERSION = "aiops.task-frame.v1"
 INVESTIGATION_PLAN_SCHEMA_VERSION = "aiops.investigation-plan.v1"
 INVESTIGATION_ASSESSMENT_SCHEMA_VERSION = "aiops.investigation-assessment.v1"
+COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v1"
 
 
 class InputContentType(StrEnum):
@@ -216,6 +217,37 @@ class InvestigationPlanningOutput(AIOpsContract):
         )
         if requires_observation and not supplied and not self.plan.actions:
             raise ValueError("诊断或评估任务在没有用户证据时必须安排取证动作")
+        return self
+
+
+class CompactPlanningMode(StrEnum):
+    READ_ONLY_LOOKUP = "READ_ONLY_LOOKUP"
+    FULL_INVESTIGATION = "FULL_INVESTIGATION"
+
+
+class CompactPlanningOutput(AIOpsContract):
+    """为低歧义只读问题生成的精简计划或完整规划路由结果。"""
+
+    schema_version: str = COMPACT_PLANNING_SCHEMA_VERSION
+    planning_mode: CompactPlanningMode
+    problem_statement: str = Field(min_length=1, max_length=2000)
+    success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)
+    selected_tool_ids: tuple[str, ...] = Field(default=(), max_length=5)
+    selected_playbook_ids: tuple[str, ...] = Field(default=(), max_length=3)
+    actions: tuple[InvestigationAction, ...] = Field(default=(), max_length=4)
+    public_reasoning_summary: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> "CompactPlanningOutput":
+        selected = set(self.selected_tool_ids)
+        action_tools = {item.tool_id for item in self.actions}
+        if not action_tools <= selected:
+            raise ValueError("精简计划动作必须来自已选择工具")
+        if self.planning_mode == CompactPlanningMode.READ_ONLY_LOOKUP:
+            if not self.actions:
+                raise ValueError("明确只读查询必须生成至少一个调查动作")
+        elif self.actions:
+            raise ValueError("完整调查路由阶段不得提前生成调查动作")
         return self
 
 

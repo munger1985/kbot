@@ -144,6 +144,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             result["agent_version_id"],
             str(repository.agents[next(iter(repository.agents))].current_version_id),
         )
+        self.assertEqual({}, result["models"])
 
     async def test_active_agent_exposes_selected_sources_and_logical_target(self):
         source_id = uuid7()
@@ -158,7 +159,10 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
-                models={"diagnosis_llm": uuid7()},
+                models={
+                    "planner_llm": uuid7(),
+                    "diagnosis_llm": uuid7(),
+                },
                 status="ACTIVE",
                 actor_id="kbotui_dev",
             )
@@ -227,6 +231,28 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED", raised.exception.code
+        )
+
+    async def test_active_agent_requires_planner_model(self):
+        source_id = uuid7()
+        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.create(
+                CreateAIOpsAgentCommand(
+                    domain_id=100,
+                    display_name="缺少规划模型的诊断助手",
+                    diagnostic_source_ids=(source_id,),
+                    target_ids=(unit_of_work.target.target_id,),
+                    models={"diagnosis_llm": uuid7()},
+                    status="ACTIVE",
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_PLANNER_MODEL_REQUIRED", raised.exception.code
         )
 
     async def test_agent_requires_selected_logical_target(self):

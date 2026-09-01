@@ -104,6 +104,40 @@
     progress.insertAdjacentHTML("beforebegin", html.replace("ops-investigation-plan", "ops-investigation-plan is-live"));
   }
 
+  function ensureProgressTimeline(progress) {
+    if (progress.dataset.timelineReady === "true") return;
+    const initial = progress.textContent.trim() || "正在建立诊断计划…";
+    progress.dataset.timelineReady = "true";
+    progress.dataset.startedAt = String(Date.now());
+    progress.innerHTML = `<header><strong>诊断过程</strong><span class="ops-progress-elapsed">已运行 0 秒</span></header><ol class="ops-progress-timeline"></ol>`;
+    appendProgress(progress, "client.started", { public_summary: initial }, "client.started");
+  }
+
+  function appendProgress(progress, event, payload = {}, eventId = "") {
+    ensureProgressTimeline(progress);
+    const summary = String(payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`);
+    const key = String(eventId || `${event}:${payload.action_id || payload.status || payload.revision_no || "current"}`);
+    const timeline = progress.querySelector(".ops-progress-timeline");
+    timeline.querySelectorAll("li.is-active").forEach((item) => item.classList.remove("is-active"));
+    let row = [...timeline.children].find((item) => item.dataset.progressKey === key);
+    if (!row) {
+      row = document.createElement("li");
+      row.dataset.progressKey = key;
+      row.innerHTML = `<i aria-hidden="true"></i><span></span><small></small>`;
+      timeline.append(row);
+    }
+    row.classList.add("is-active");
+    row.querySelector("span").textContent = summary;
+    row.querySelector("small").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function updateProgressElapsed(progress) {
+    const startedAt = Number(progress.dataset.startedAt || Date.now());
+    const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const label = progress.querySelector(".ops-progress-elapsed");
+    if (label) label.textContent = `已运行 ${seconds} 秒`;
+  }
+
   function diagnosticQueryApprovalHtml(pending) {
     const request = pending?.request || {};
     if (pending?.hitl_type !== "DIAGNOSTIC_QUERY_APPROVAL") return "";
@@ -137,7 +171,7 @@
         : null;
       const conversationId = state.conversation?.conversation_id;
       if (progress && progress.id !== "live-progress" && conversationId) {
-        progress.textContent = "审批已提交，正在继续诊断…";
+        appendProgress(progress, "approval.submitted", { public_summary: "审批已提交，正在继续诊断…" });
         followTurn(conversationId, progress.dataset.turnProgress, progress)
           .then(() => loadConversation(conversationId))
           .catch((error) => shell.toast(error.message));
@@ -439,6 +473,8 @@
   }
 
   async function followTurn(conversationId, turnId, progress) {
+    ensureProgressTimeline(progress);
+    const elapsedTimer = window.setInterval(() => updateProgressElapsed(progress), 1000);
     let pending = null;
     let lastEventId = "";
     let completed = false;
@@ -447,14 +483,14 @@
       if (id) lastEventId = id;
       const payload = data?.payload || {};
       if ([
-        "turn.created", "turn.status", "input.analysis.completed",
+        "turn.created", "planning.started", "turn.status", "input.analysis.completed",
         "task.frame.completed", "investigation.planned",
         "playbook.completed", "tool.started", "tool.completed",
-        "tool.gap", "evidence.added", "assessment.completed",
+        "tool.gap", "evidence.added", "assessment.started", "assessment.completed",
         "investigation.replanned", "diagnostic.query_approval_required",
         "diagnostic.query_approved", "diagnostic.query_rejected",
       ].includes(event)) {
-        progress.textContent = payload.public_summary || payload.summary || `当前状态：${payload.status || "处理中"}`;
+        appendProgress(progress, event, payload, id);
       }
       if (["investigation.planned", "investigation.replanned"].includes(event)) {
         showInvestigationPlan(progress, payload.plan);
@@ -463,7 +499,9 @@
         showDiagnosticQueryApproval(progress, payload.hitl_id).catch((error) => shell.toast(error.message));
       }
       if (event === "thinking.delta") {
-        progress.textContent = payload.public_summary || payload.delta || "正在组织回答";
+        appendProgress(progress, event, {
+          public_summary: payload.public_summary || payload.delta || "正在组织回答",
+        }, id);
       }
       if (event === "answer.delta") {
         const delta = String(data?.payload?.delta || "");
@@ -486,7 +524,7 @@
       if (event === "done") {
         completed = true;
         if (pending) pending.finalizing = true;
-        progress.textContent = "诊断已完成，正在整理结论…";
+        appendProgress(progress, event, { public_summary: "诊断已完成，正在整理结论…" }, id);
       }
     };
     for (let attempt = 0; attempt < streamRecoveryAttempts && !completed; attempt += 1) {
@@ -511,11 +549,15 @@
       } catch (_) {
         // 状态回读也可能遇到同一次短暂网络抖动，下一轮继续恢复。
       }
-      progress.textContent = streamFailed
-        ? "事件流暂时中断，正在恢复诊断进度…"
-        : "诊断仍在后台运行，正在继续获取进度…";
+      appendProgress(progress, "stream.recovery", {
+        public_summary: streamFailed
+          ? "事件流暂时中断，正在恢复诊断进度…"
+          : "诊断仍在后台运行，正在继续获取进度…",
+      }, "stream.recovery");
       await new Promise((resolve) => window.setTimeout(resolve, Math.min(5000, 1000 * (attempt + 1))));
     }
+    window.clearInterval(elapsedTimer);
+    updateProgressElapsed(progress);
     if (!completed) throw new Error("诊断仍在后台运行，请稍后刷新会话查看结果");
     if (pending) {
       pending.finalizing = true;
@@ -572,7 +614,7 @@
         selectedFile ? `已上传诊断材料：${selectedFile.name}` : "",
       ].filter(Boolean).join("\n\n");
       panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedText));
-      panel.insertAdjacentHTML("beforeend", '<div id="live-progress" class="ops-context-banner ops-progress">正在建立诊断计划…</div>');
+      panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在建立诊断计划…</section>');
       const progress = document.getElementById("live-progress");
       await followTurn(receipt.conversation_id, receipt.turn_id, progress);
       await loadConversation(receipt.conversation_id);

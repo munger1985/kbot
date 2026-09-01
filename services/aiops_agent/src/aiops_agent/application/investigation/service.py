@@ -23,6 +23,8 @@ from aiops_agent.application.investigation.discovery import (
     available_playbooks,
     available_tools,
     build_playbook_plan,
+    compact_tool_cards,
+    select_planning_candidates,
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.query_freezing import (
@@ -55,9 +57,16 @@ from aiops_agent.tools import (
     build_capability_snapshot,
 )
 from platform_core.contracts.aiops import (
+    CompactPlanningMode,
+    InputMaterial,
     InvestigationAction,
+    InvestigationPlan,
     InvestigationPlanningOutput,
+    MaterialKind,
     MeasurementSemantics,
+    TaskFrame,
+    TaskObjective,
+    TurnInputEnvelope,
 )
 from platform_core.identity import uuid7
 
@@ -148,10 +157,17 @@ class TurnPlanningService:
                 context, content=content, resolved_uploads=uploads
             )
             context = await self._persist_input_extractions(context)
-        model_snapshot = await self._agent_catalog.resolve_diagnosis_model(
+        planner_model_snapshot = await self._agent_catalog.resolve_planner_model(
             agent_id=context.agent_id,
             domain_id=context.domain_id,
             trace_id=context.trace_id,
+        )
+        diagnosis_model_snapshot = (
+            await self._agent_catalog.resolve_diagnosis_model(
+                agent_id=context.agent_id,
+                domain_id=context.domain_id,
+                trace_id=context.trace_id,
+            )
         )
         discovered_tools = available_tools(
             self._tool_snapshot_builder, context.capabilities
@@ -159,25 +175,21 @@ class TurnPlanningService:
         discovered_playbooks = available_playbooks(
             self._playbook_registry, context.capabilities
         )
-        planned = await self._investigation_reasoner.plan(
-            content=context.content,
-            conversation_context=context.recent_context,
-            target_context=context.target_context,
-            prompt_snapshot=context.prompt_snapshot,
-            source_run_evidence=context.source_run_evidence,
-            available_tools=discovered_tools,
-            available_playbooks=discovered_playbooks,
-            model_snapshot=model_snapshot,
-            deadline=context.deadline,
-            idempotency_key=f"turn:{context.turn_id}:investigation:1",
+        planned, planning_tools, planning_playbooks, planning_route = (
+            await self._plan_initial(
+                context=context,
+                available_tools=discovered_tools,
+                available_playbooks=discovered_playbooks,
+                planner_model_snapshot=planner_model_snapshot,
+            )
         )
         planned, investigation, dynamic_queries, source_queries = (
             await self._prepare_queries_with_repair(
                 context=context,
                 planned=planned,
-                available_tools=discovered_tools,
-                available_playbooks=discovered_playbooks,
-                model_snapshot=model_snapshot,
+                available_tools=planning_tools,
+                available_playbooks=planning_playbooks,
+                model_snapshot=planner_model_snapshot,
                 revision_no=1,
             )
         )
@@ -253,9 +265,179 @@ class TurnPlanningService:
             playbook_plan=playbook_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
-            model_snapshot=model_snapshot,
+            diagnosis_model_snapshot=diagnosis_model_snapshot,
+            planner_model_snapshot=planner_model_snapshot,
+            planning_route=planning_route,
             monitoring_requested=monitoring_requested,
             monitoring_execution=monitoring_execution,
+        )
+
+    async def _plan_initial(
+        self,
+        *,
+        context: TurnPlanningContext,
+        available_tools: tuple[dict, ...],
+        available_playbooks: tuple[dict, ...],
+        planner_model_snapshot: dict,
+    ):
+        """对纯文本问题先做精简语义规划，复杂材料直接进入完整规划。"""
+        compact_question = self._compact_question(context)
+        if compact_question is None:
+            planned = await self._investigation_reasoner.plan(
+                content=context.content,
+                conversation_context=context.recent_context,
+                target_context=context.target_context,
+                prompt_snapshot=context.prompt_snapshot,
+                source_run_evidence=context.source_run_evidence,
+                available_tools=available_tools,
+                available_playbooks=available_playbooks,
+                model_snapshot=planner_model_snapshot,
+                deadline=context.deadline,
+                idempotency_key=f"turn:{context.turn_id}:investigation:1",
+            )
+            return planned, available_tools, available_playbooks, {
+                "mode": "FULL_INVESTIGATION",
+                "public_summary": "输入包含诊断材料，正在进行完整调查规划",
+            }
+
+        routed = await self._investigation_reasoner.plan_compact(
+            question=compact_question,
+            target_context=context.target_context,
+            prompt_snapshot=context.prompt_snapshot,
+            tool_cards=compact_tool_cards(available_tools),
+            available_playbooks=available_playbooks,
+            model_snapshot=planner_model_snapshot,
+            deadline=context.deadline,
+            idempotency_key=f"turn:{context.turn_id}:compact-planning:1",
+        )
+        compact = routed.output
+        selected_tools, selected_playbooks = select_planning_candidates(
+            tools=available_tools,
+            playbooks=available_playbooks,
+            tool_ids=compact.selected_tool_ids,
+            playbook_ids=compact.selected_playbook_ids,
+        )
+        selected_tools = self._include_identity_tool(selected_tools, available_tools)
+        route_snapshot = {
+            "mode": str(compact.planning_mode),
+            "public_summary": compact.public_reasoning_summary,
+            "selected_tool_ids": [
+                str(item["tool_id"]) for item in selected_tools
+            ],
+            "selected_playbook_ids": [
+                str(item["playbook_id"]) for item in selected_playbooks
+            ],
+            "model_receipt": routed.receipt.model_dump(mode="json"),
+        }
+        if compact.planning_mode == CompactPlanningMode.READ_ONLY_LOOKUP:
+            output = self._compact_investigation_output(
+                question=compact_question,
+                compact=compact,
+                target_context=context.target_context,
+            )
+            return (
+                StructuredModelResult(output=output, receipt=routed.receipt),
+                selected_tools,
+                selected_playbooks,
+                route_snapshot,
+            )
+        planned = await self._investigation_reasoner.plan(
+            content=context.content,
+            conversation_context=context.recent_context,
+            target_context=context.target_context,
+            prompt_snapshot=context.prompt_snapshot,
+            source_run_evidence=context.source_run_evidence,
+            available_tools=selected_tools,
+            available_playbooks=selected_playbooks,
+            model_snapshot=planner_model_snapshot,
+            deadline=context.deadline,
+            idempotency_key=f"turn:{context.turn_id}:investigation:1",
+        )
+        return planned, selected_tools, selected_playbooks, route_snapshot
+
+    @staticmethod
+    def _compact_question(context: TurnPlanningContext) -> str | None:
+        """只按输入结构决定是否启用精简语义路由，不匹配领域关键词。"""
+        if context.source_run_evidence is not None or context.resolved_uploads:
+            return None
+        if len(context.content) != 1:
+            return None
+        item = context.content[0]
+        if str(item.get("content_type")) != "TEXT":
+            return None
+        question = str(item.get("text") or "").strip()
+        if question != str(context.question or "").strip():
+            return None
+        return question if 0 < len(question) <= 4000 else None
+
+    @staticmethod
+    def _include_identity_tool(
+        selected_tools: tuple[dict, ...],
+        all_tools: tuple[dict, ...],
+    ) -> tuple[dict, ...]:
+        """数据库动作的实例身份前置工具由服务端补入，不占模型筛选名额。"""
+        if not any(
+            str(item.get("tool_id", "")).startswith("db.")
+            for item in selected_tools
+        ):
+            return selected_tools
+        identity = next(
+            (
+                item
+                for item in all_tools
+                if str(item.get("tool_id")) == "db.instance.identity"
+            ),
+            None,
+        )
+        if identity is None or any(
+            str(item.get("tool_id")) == "db.instance.identity"
+            for item in selected_tools
+        ):
+            return selected_tools
+        return (identity, *selected_tools)
+
+    @staticmethod
+    def _compact_investigation_output(
+        *,
+        question: str,
+        compact,
+        target_context: dict,
+    ) -> InvestigationPlanningOutput:
+        """把精简只读计划提升为统一调查契约，复用现有校验与编译链。"""
+        display_name = str(
+            target_context.get("display_name")
+            or target_context.get("target_id")
+            or "当前 Target"
+        )
+        return InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=question[:2000],
+                        key_facts=(f"用户已选择逻辑 Target：{display_name}",),
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=question,
+            ),
+            task_frame=TaskFrame(
+                objectives=(TaskObjective.UNDERSTAND,),
+                problem_statement=compact.problem_statement,
+                database_context=dict(target_context),
+                known_facts=(f"当前逻辑 Target 为 {display_name}",),
+                unknowns=(),
+                constraints=("仅执行当前 Target 的只读诊断查询",),
+                success_criteria=compact.success_criteria,
+                requires_change=False,
+            ),
+            plan=InvestigationPlan(
+                revision_no=1,
+                actions=compact.actions,
+            ),
+            suggested_playbook_ids=compact.selected_playbook_ids,
         )
 
     async def execute_replan(self, payload: dict) -> dict:
@@ -270,10 +452,17 @@ class TurnPlanningService:
                 str(payload["assessment_artifact_id"])
             ),
         )
-        model_snapshot = await self._agent_catalog.resolve_diagnosis_model(
+        planner_model_snapshot = await self._agent_catalog.resolve_planner_model(
             agent_id=context.agent_id,
             domain_id=context.domain_id,
             trace_id=context.trace_id,
+        )
+        diagnosis_model_snapshot = (
+            await self._agent_catalog.resolve_diagnosis_model(
+                agent_id=context.agent_id,
+                domain_id=context.domain_id,
+                trace_id=context.trace_id,
+            )
         )
         discovered_tools = available_tools(
             self._tool_snapshot_builder, context.capabilities
@@ -292,7 +481,7 @@ class TurnPlanningService:
             assessment=inputs.assessment,
             available_tools=discovered_tools,
             available_playbooks=discovered_playbooks,
-            model_snapshot=model_snapshot,
+            model_snapshot=planner_model_snapshot,
             deadline=context.deadline,
             idempotency_key=(
                 f"turn:{context.turn_id}:investigation:{revision_no}"
@@ -305,7 +494,7 @@ class TurnPlanningService:
                 planned=planned,
                 available_tools=discovered_tools,
                 available_playbooks=discovered_playbooks,
-                model_snapshot=model_snapshot,
+                model_snapshot=planner_model_snapshot,
                 revision_no=revision_no,
             )
         )
@@ -379,7 +568,8 @@ class TurnPlanningService:
             playbook_plan=playbook_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
-            model_snapshot=model_snapshot,
+            diagnosis_model_snapshot=diagnosis_model_snapshot,
+            planner_model_snapshot=planner_model_snapshot,
             monitoring_execution=monitoring_execution,
         )
 
@@ -657,7 +847,8 @@ class TurnPlanningService:
         playbook_plan,
         compiled,
         execution_snapshot: dict,
-        model_snapshot: dict,
+        diagnosis_model_snapshot: dict,
+        planner_model_snapshot: dict,
         monitoring_execution: dict,
     ) -> dict:
         async with self._uow_factory() as uow:
@@ -931,7 +1122,8 @@ class TurnPlanningService:
                     "investigation_plan": investigation.plan.model_dump(
                         mode="json"
                     ),
-                    "model": dict(model_snapshot),
+                    "model": dict(diagnosis_model_snapshot),
+                    "planner_model": dict(planner_model_snapshot),
                     "prompts": dict(context.prompt_snapshot),
                 },
                 "investigation_model_receipt": (
@@ -1696,7 +1888,9 @@ class TurnPlanningService:
         playbook_plan,
         compiled,
         execution_snapshot: dict,
-        model_snapshot: dict,
+        diagnosis_model_snapshot: dict,
+        planner_model_snapshot: dict,
+        planning_route: dict,
         monitoring_requested: bool,
         monitoring_execution: dict,
     ) -> dict:
@@ -2021,6 +2215,7 @@ class TurnPlanningService:
                 "playbook_plan_artifact_id": str(playbook_artifact.artifact_id),
                 "playbook_catalog_hash": playbook_plan.catalog_hash,
                 "investigation_model_receipt": planning_receipt.model_dump(mode="json"),
+                "planning_route": dict(planning_route),
                 "investigation_execution": execution_snapshot,
                 **(
                     {"monitoring": monitoring_execution}
@@ -2034,7 +2229,8 @@ class TurnPlanningService:
                     "investigation_plan": investigation.plan.model_dump(
                         mode="json"
                     ),
-                    "model": dict(model_snapshot),
+                    "model": dict(diagnosis_model_snapshot),
+                    "planner_model": dict(planner_model_snapshot),
                     "prompts": dict(context.prompt_snapshot),
                 },
                 "change_context": dict(context.change_context),
@@ -2072,11 +2268,15 @@ class TurnPlanningService:
                     "revision_no": 1,
                     "action_count": len(investigation.plan.actions),
                     "playbook_count": len(playbook_plan.items),
+                    "planning_mode": planning_route.get("mode"),
                     "plan": safe_plan_projection(
                         investigation.plan.model_dump(mode="json"),
                         execution_snapshot=execution_snapshot,
                     ),
-                    "public_summary": "调查计划已建立，正在调用只读工具取证",
+                    "public_summary": str(
+                        planning_route.get("public_summary")
+                        or "调查计划已建立，正在调用只读工具取证"
+                    ),
                 },
             )
             await self._append_event(

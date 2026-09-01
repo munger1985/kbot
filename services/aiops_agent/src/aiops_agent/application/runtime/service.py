@@ -1435,12 +1435,77 @@ class AIOpsRuntimeService:
                     "trace_id": command.trace_id,
                 },
             )
+            if run.workflow_kind == "CHAT_TURN":
+                await self._project_chat_task_started(
+                    uow=uow,
+                    run=run,
+                    task=task,
+                )
             artifacts = await self._input_artifacts(
                 uow, run_id=run.ops_run_id, task=task
             )
             await uow.commit()
             return self._task_lease(
                 run, task, artifacts, lease_token=lease_token
+            )
+
+    async def _project_chat_task_started(self, *, uow, run, task) -> None:
+        """把后台 Task 领取投影为用户可见阶段，并同步 Tool 运行状态。"""
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=run.ops_run_id
+        )
+        if link is None:
+            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+        turn = await uow.turns.get_turn(
+            domain_id=int(run.domain_id),
+            turn_id=link.turn_id,
+            lock=True,
+        )
+        if turn is None:
+            raise state_conflict("CHAT_TURN Task 缺少有效 Turn")
+        invocation = await uow.turns.get_tool_invocation_by_task(
+            ops_task_id=task.ops_task_id,
+            lock=True,
+        )
+        if invocation is not None:
+            invocation.status = "RUNNING"
+            plan = dict(
+                dict(run.plan_snapshot_json or {}).get("answer_context") or {}
+            ).get("investigation_plan") or {}
+            action = next(
+                (
+                    item
+                    for item in plan.get("actions", ())
+                    if str(item.get("action_id")) == str(invocation.action_id)
+                ),
+                {},
+            )
+            question = str(action.get("question") or "执行只读诊断步骤")
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="tool.started",
+                payload={
+                    "action_id": invocation.action_id,
+                    "tool_id": invocation.tool_id,
+                    "question": question,
+                    "public_summary": f"正在执行：{question}",
+                },
+            )
+            return
+        if str(task.task_key).startswith("evidence:assess"):
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="assessment.started",
+                payload={"public_summary": "正在评估证据充分性和下一步动作"},
+            )
+        elif task.task_key == "answer:compose":
+            await self._append_turn_event(
+                uow,
+                turn,
+                event_type="thinking.delta",
+                payload={"public_summary": "正在依据已验证证据生成回答"},
             )
 
     async def heartbeat_task(
@@ -1927,6 +1992,10 @@ class AIOpsRuntimeService:
                     "sufficiency_status": str(assessment.status),
                     "evidence_count": len(assessment.evidence),
                     "gap_count": len(assessment.gaps),
+                    "public_summary": (
+                        f"证据评估完成：{len(assessment.evidence)} 项有效证据，"
+                        f"{len(assessment.gaps)} 项缺口"
+                    ),
                 },
             )
             deterministic_replan = (

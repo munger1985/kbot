@@ -7,7 +7,10 @@ import unittest
 from aiops_agent.application.investigation import InvestigationReasoner
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.ports.model import StructuredModelResult
-from platform_core.contracts.aiops import InvestigationPlanningOutput
+from platform_core.contracts.aiops import (
+    CompactPlanningOutput,
+    InvestigationPlanningOutput,
+)
 
 
 TARGET_CONTEXT = {
@@ -126,6 +129,74 @@ class _Model:
 
 
 class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_compact_planner_uses_small_routing_contract(self) -> None:
+        payload = {
+            "planning_mode": "READ_ONLY_LOOKUP",
+            "problem_statement": "列出 TCC Schema 下的表",
+            "success_criteria": ["返回当前表清单"],
+            "selected_tool_ids": ["db.oracle.readonly_query"],
+            "selected_playbook_ids": [],
+            "actions": [
+                {
+                    "action_id": "a1",
+                    "question": "TCC Schema 当前有哪些表？",
+                    "tool_id": "db.oracle.readonly_query",
+                    "input": {
+                        "sql": "SELECT table_name FROM all_tables WHERE owner = :owner",
+                        "parameters": {"owner": "TCC"},
+                    },
+                    "expected_evidence_kind": "DATABASE_OBJECTS",
+                    "measurement_semantics": "CURRENT_ACTIVITY",
+                }
+            ],
+            "public_reasoning_summary": "问题范围明确，将直接执行只读目录查询",
+        }
+        model = _Model(payload)
+        reasoner = InvestigationReasoner(model, _Prompts())
+
+        result = await reasoner.plan_compact(
+            question="数据库用户 TCC 下有哪些表？",
+            target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
+            tool_cards=(
+                {
+                    "tool_id": "db.oracle.readonly_query",
+                    "description": "执行只读 Oracle 查询",
+                },
+            ),
+            available_playbooks=(),
+            model_snapshot={"technical_name": "planner"},
+            deadline=None,
+            idempotency_key="turn-compact-1",
+        )
+
+        self.assertIsInstance(result.output, CompactPlanningOutput)
+        self.assertEqual("aiops.compact-planning", model.calls[0]["purpose"])
+        self.assertEqual(1, len(result.output.actions))
+
+    async def test_compact_planner_rejects_unknown_selected_tool(self) -> None:
+        payload = {
+            "planning_mode": "FULL_INVESTIGATION",
+            "problem_statement": "分析数据库性能问题",
+            "success_criteria": ["形成证据结论"],
+            "selected_tool_ids": ["shell.exec"],
+            "actions": [],
+            "public_reasoning_summary": "需要进行完整调查",
+        }
+        reasoner = InvestigationReasoner(_Model(payload), _Prompts())
+
+        with self.assertRaisesRegex(ValueError, "未注册工具"):
+            await reasoner.plan_compact(
+                question="分析数据库性能问题",
+                target_context=TARGET_CONTEXT,
+                prompt_snapshot=PROMPT_SNAPSHOT,
+                tool_cards=(),
+                available_playbooks=(),
+                model_snapshot={},
+                deadline=None,
+                idempotency_key="turn-compact-2",
+            )
+
     async def test_user_alert_log_can_be_answered_without_external_tool(self) -> None:
         model = _Model(_output())
         reasoner = InvestigationReasoner(model, _Prompts())

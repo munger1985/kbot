@@ -934,6 +934,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             [
                 "turn.created",
                 "turn.status",
+                "planning.started",
                 "turn.status",
                 "answer.delta",
                 "answer.completed",
@@ -950,7 +951,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             actor_id="dba@example.com",
         )
         self.assertTrue(event_page["terminal"])
-        self.assertEqual(6, event_page["next_sequence"])
+        self.assertEqual(7, event_page["next_sequence"])
         replay = await ConversationTurnService(
             uow_factory=lambda: uow
         ).list_events(
@@ -961,7 +962,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             after_sequence=3,
         )
         self.assertEqual(
-            [4, 5, 6],
+            [4, 5, 6, 7],
             [row["sequence_no"] for row in replay["events"]],
         )
 

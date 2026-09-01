@@ -36,6 +36,14 @@ class AgentCatalogPort(Protocol):
         trace_id: str,
     ) -> dict[str, str]: ...
 
+    async def resolve_planner_model(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+        trace_id: str,
+    ) -> dict[str, str]: ...
+
     async def resolve_runtime_binding(
         self,
         *,

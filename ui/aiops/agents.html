@@ -71,12 +71,19 @@
                 <label for="agent-description">简短说明</label>
                 <input id="agent-description" name="description" maxlength="1000" placeholder="这个 Agent 负责什么">
               </div>
-              <div class="ops-field span-12">
+              <div class="ops-field span-6">
+                <label for="agent-planner-model">规划模型</label>
+                <select id="agent-planner-model" name="planner_model_id" required>
+                  <option value="">正在加载已启用的 LLM…</option>
+                </select>
+                <small>必选。负责问题路由、调查计划生成和证据驱动的重规划。</small>
+              </div>
+              <div class="ops-field span-6">
                 <label for="agent-model">诊断模型</label>
                 <select id="agent-model" name="diagnosis_model_id" required>
                   <option value="">正在加载已启用的 LLM…</option>
                 </select>
-                <small>必选。Agent 的人工诊断、告警诊断和巡检分析都使用该模型。</small>
+                <small>必选。负责证据评估、诊断结论和最终回答生成。</small>
               </div>
             </div>
             <p id="agent-status-help" class="agent-inline-note">新增 Agent 固定保存为草稿；确认资源后再启用。</p>
@@ -162,6 +169,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20260827-2"></script>
+  <script src="./js/aiops-agents.js?v=20260901-1"></script>
 </body>
 </html>

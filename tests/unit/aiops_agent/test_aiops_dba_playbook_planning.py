@@ -6,6 +6,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
@@ -39,6 +40,7 @@ from platform_core.contracts.aiops.conversation import (
     MeasurementSemantics,
 )
 from platform_core.contracts.aiops.investigation import (
+    CompactPlanningOutput,
     InputMaterial,
     InvestigationAction,
     InvestigationPlan,
@@ -455,8 +457,11 @@ class _PlanningUow:
 
 
 class _AgentCatalog:
+    async def resolve_planner_model(self, **_):
+        return {"technical_name": "planner-model", "revision": "2"}
+
     async def resolve_diagnosis_model(self, **_):
-        return {"technical_name": "test-model", "revision": "1"}
+        return {"technical_name": "diagnosis-model", "revision": "1"}
 
 
 class _PastedLogReasoner:
@@ -546,6 +551,59 @@ class _ReplanReasoner(_PastedLogReasoner):
         return StructuredModelResult(output=output, receipt=planned.receipt)
 
 
+class _CompactLookupReasoner(_PastedLogReasoner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.compact_calls = []
+
+    async def plan_compact(self, **kwargs):
+        self.compact_calls.append(kwargs)
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "READ_ONLY_LOOKUP",
+                "problem_statement": "列出 TCC Schema 下的表",
+                "success_criteria": ["返回当前表清单"],
+                "selected_tool_ids": ["db.oracle.readonly_query"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "TCC Schema 当前有哪些表？",
+                        "tool_id": "db.oracle.readonly_query",
+                        "input": {
+                            "sql": (
+                                "SELECT table_name FROM all_tables "
+                                "WHERE owner = :owner ORDER BY table_name"
+                            ),
+                            "parameters": {"owner": "TCC"},
+                        },
+                        "expected_evidence_kind": "DATABASE_OBJECTS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "问题范围明确，直接查询系统目录",
+            }
+        )
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.compact-planning",
+                schema_id="CompactPlanningOutput",
+                model_technical_name="planner-model",
+                model_revision="2",
+                prompt_id="aiops_agent.compact_planner",
+                prompt_version="1.0.0",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
+
+    async def plan(self, **_kwargs):
+        raise AssertionError("明确只读问题不应进入完整调查 Planner")
+
+
 class _FrozenToolExecutor:
     def __init__(self) -> None:
         self.task_keys = []
@@ -629,6 +687,163 @@ class _RetryableGapExecutorClient(_GapExecutorClient):
 
 
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_plain_readonly_question_uses_compact_planner_end_to_end(self):
+        uow = _PlanningUow()
+        question = "数据库用户 TCC 下有哪些表？"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        reasoner = _CompactLookupReasoner()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual(1, len(reasoner.compact_calls))
+        snapshot = uow.run.plan_snapshot_json
+        self.assertEqual("READ_ONLY_LOOKUP", snapshot["planning_route"]["mode"])
+        self.assertEqual(
+            "planner-model",
+            snapshot["answer_context"]["planner_model"]["technical_name"],
+        )
+        self.assertEqual(
+            ["db.instance.identity", "db.oracle.readonly_query"],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+
+    async def test_chat_tool_claim_projects_started_progress(self):
+        turn_id = uuid7()
+        task_id = uuid7()
+        turn = SimpleNamespace(turn_id=turn_id, event_cursor=0)
+        invocation = SimpleNamespace(
+            status="PLANNED",
+            action_id="a1",
+            tool_id="db.sql.top_current",
+        )
+        turns = SimpleNamespace(
+            get_run_link_by_ops_run_id=AsyncMock(
+                return_value=SimpleNamespace(turn_id=turn_id)
+            ),
+            get_turn=AsyncMock(return_value=turn),
+            get_tool_invocation_by_task=AsyncMock(return_value=invocation),
+            add_event=AsyncMock(),
+        )
+        uow = SimpleNamespace(turns=turns)
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            domain_id=7,
+            plan_snapshot_json={
+                "answer_context": {
+                    "investigation_plan": {
+                        "actions": [
+                            {
+                                "action_id": "a1",
+                                "question": "当前资源消耗最高的 SQL 是哪些？",
+                            }
+                        ]
+                    }
+                }
+            },
+        )
+        task = SimpleNamespace(ops_task_id=task_id, task_key="diagnostic:a1")
+        service = object.__new__(AIOpsRuntimeService)
+
+        await service._project_chat_task_started(
+            uow=uow,
+            run=run,
+            task=task,
+        )
+
+        self.assertEqual("RUNNING", invocation.status)
+        event = turns.add_event.await_args.args[0]
+        self.assertEqual("tool.started", event.event_type)
+        self.assertIn("当前资源消耗最高", event.payload_json["public_summary"])
+
+    def test_compact_planning_only_accepts_the_plain_question_payload(self):
+        context = SimpleNamespace(
+            source_run_evidence=None,
+            resolved_uploads=(),
+            question="数据库用户 TCC 下有哪些表？",
+            content=(
+                {
+                    "content_type": "TEXT",
+                    "text": "数据库用户 TCC 下有哪些表？",
+                },
+            ),
+        )
+
+        self.assertEqual(
+            context.question,
+            TurnPlanningService._compact_question(context),
+        )
+        pasted_evidence = SimpleNamespace(
+            source_run_evidence=None,
+            resolved_uploads=(),
+            question=context.question,
+            content=(
+                {"content_type": "TEXT", "text": "ORA-27157 日志正文"},
+            ),
+        )
+        self.assertIsNone(
+            TurnPlanningService._compact_question(pasted_evidence)
+        )
+
+    def test_compact_plan_is_promoted_to_the_shared_investigation_contract(self):
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "READ_ONLY_LOOKUP",
+                "problem_statement": "列出 TCC Schema 下的表",
+                "success_criteria": ["返回表清单"],
+                "selected_tool_ids": ["db.oracle.readonly_query"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "TCC Schema 当前有哪些表？",
+                        "tool_id": "db.oracle.readonly_query",
+                        "input": {"sql": "SELECT 1 AS value FROM dual"},
+                        "expected_evidence_kind": "DATABASE_OBJECTS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "直接执行只读查询",
+            }
+        )
+
+        investigation = TurnPlanningService._compact_investigation_output(
+            question="数据库用户 TCC 下有哪些表？",
+            compact=compact,
+            target_context={"display_name": "Oracle Test DB"},
+        )
+
+        self.assertEqual(1, len(investigation.plan.actions))
+        self.assertEqual(
+            "Oracle Test DB",
+            investigation.task_frame.database_context["display_name"],
+        )
+        self.assertEqual(
+            (TaskObjective.UNDERSTAND,),
+            investigation.task_frame.objectives,
+        )
+
     async def test_replan_uses_snapshots_and_persists_supported_revision(
         self,
     ) -> None:
@@ -832,6 +1047,12 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(1, len(uow.revisions))
         self.assertEqual(2, uow.commit_count)
+        answer_context = uow.run.plan_snapshot_json["answer_context"]
+        self.assertEqual("diagnosis-model", answer_context["model"]["technical_name"])
+        self.assertEqual(
+            "planner-model",
+            answer_context["planner_model"]["technical_name"],
+        )
         planned_event = next(
             event
             for event in uow.events

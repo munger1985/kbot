@@ -121,6 +121,58 @@ def available_playbooks(
     )
 
 
+def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
+    """压缩语义路由输入，同时保留动态查询必须遵守的策略边界。"""
+    cards = []
+    for tool in tools:
+        card = {
+            "tool_id": str(tool["tool_id"]),
+            "tool_class": str(tool.get("tool_class") or "DIAGNOSTIC"),
+            "description": str(tool.get("description") or "")[:500],
+            "input": dict(tool.get("input") or {}),
+        }
+        if tool.get("policy") is not None:
+            card["policy"] = dict(tool["policy"])
+        if tool.get("database_access") is not None:
+            card["database_access"] = dict(tool["database_access"])
+        cards.append(card)
+    return tuple(cards)
+
+
+def select_planning_candidates(
+    *,
+    tools: tuple[dict, ...],
+    playbooks: tuple[dict, ...],
+    tool_ids: tuple[str, ...],
+    playbook_ids: tuple[str, ...],
+) -> tuple[tuple[dict, ...], tuple[dict, ...]]:
+    """按语义路由结果选择有限上下文，并拒绝模型虚构目录项。"""
+    tool_index = {str(item["tool_id"]): item for item in tools}
+    playbook_index = {
+        str(item["playbook_id"]): item for item in playbooks
+    }
+    unknown_tools = sorted(set(tool_ids) - set(tool_index))
+    unknown_playbooks = sorted(set(playbook_ids) - set(playbook_index))
+    if unknown_tools:
+        raise ValueError(
+            f"语义路由引用了未注册工具：{', '.join(unknown_tools)}"
+        )
+    if unknown_playbooks:
+        raise ValueError(
+            "语义路由引用了未注册 Playbook："
+            f"{', '.join(unknown_playbooks)}"
+        )
+    selected_tools = tuple(
+        tool_index[item]
+        for item in dict.fromkeys(tool_ids)
+    )
+    selected_playbooks = tuple(
+        playbook_index[item]
+        for item in dict.fromkeys(playbook_ids)
+    )
+    return selected_tools, selected_playbooks
+
+
 def manifest_applicable(manifest, capabilities: DbaCapabilitySnapshot) -> bool:
     """只按确定性能力与版本边界筛选Playbook，不使用意图作为准入条件。"""
     if capabilities.database_type not in manifest.database_types:

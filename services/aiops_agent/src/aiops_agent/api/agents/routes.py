@@ -10,6 +10,7 @@ from aiops_agent.api.dependencies import get_aiops_auth_context, require_service
 from aiops_agent.application.agents import (
     AIOpsAgentError,
     AgentImageCapabilities,
+    AgentModelBindings,
     CreateAIOpsAgentCommand,
     UpdateAIOpsAgentCommand,
     UpsertAIOpsAgentGrantCommand,
@@ -35,7 +36,7 @@ class AgentCreateRequest(_Request):
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] = "CRITICAL"
     alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
-    models: dict[str, UUID] = Field(default_factory=dict)
+    models: AgentModelBindings = Field(default_factory=AgentModelBindings)
     image_capabilities: AgentImageCapabilities = Field(
         default_factory=AgentImageCapabilities
     )
@@ -60,7 +61,7 @@ class AgentUpdateRequest(_Request):
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] | None = None
     alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
-    models: dict[str, UUID] | None = None
+    models: AgentModelBindings | None = None
     image_capabilities: AgentImageCapabilities | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None

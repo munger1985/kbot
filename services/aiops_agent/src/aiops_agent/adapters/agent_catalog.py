@@ -45,20 +45,55 @@ class AIOpsAgentValidator:
         domain_id: int,
         trace_id: str,
     ) -> dict[str, str]:
+        return await self._resolve_model(
+            agent_id=agent_id,
+            domain_id=domain_id,
+            trace_id=trace_id,
+            role="diagnosis_llm",
+            role_label="诊断",
+        )
+
+    async def resolve_planner_model(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+        trace_id: str,
+    ) -> dict[str, str]:
+        """解析调查路由、首轮规划和重规划专用模型。"""
+        return await self._resolve_model(
+            agent_id=agent_id,
+            domain_id=domain_id,
+            trace_id=trace_id,
+            role="planner_llm",
+            role_label="规划",
+        )
+
+    async def _resolve_model(
+        self,
+        *,
+        agent_id: UUID,
+        domain_id: int,
+        trace_id: str,
+        role: str,
+        role_label: str,
+    ) -> dict[str, str]:
         del trace_id
         if self._model_client is None:
             raise dependency_unavailable("模型目录暂时不可用")
         agent = await self._get_active(agent_id=agent_id, domain_id=domain_id)
-        model_id = dict(agent.get("models") or {}).get("diagnosis_llm")
+        model_id = dict(agent.get("models") or {}).get(role)
         if not model_id:
-            raise validation_failed("AIOps Agent 必须配置 models.diagnosis_llm")
+            raise validation_failed(f"AIOps Agent 必须配置 models.{role}")
         try:
             definition = await self._model_client.get_model(UUID(str(model_id)))
         except (LookupError, RuntimeError, ValueError) as exc:
-            raise dependency_unavailable("诊断模型目录暂时不可用") from exc
+            raise dependency_unavailable(
+                f"{role_label}模型目录暂时不可用"
+            ) from exc
         served_name = str(definition.get("served_model_name") or "").strip()
         if not served_name:
-            raise validation_failed("诊断模型缺少 served_model_name")
+            raise validation_failed(f"{role_label}模型缺少 served_model_name")
         return {"technical_name": served_name, "revision": str(model_id)}
 
     async def resolve_runtime_binding(

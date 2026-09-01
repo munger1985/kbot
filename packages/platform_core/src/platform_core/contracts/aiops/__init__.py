@@ -33,6 +33,8 @@ from .conversation import (
 )
 from .events import AIOpsEvent, SafeAIOpsEvent, UnknownEvent
 from .investigation import (
+    CompactPlanningMode,
+    CompactPlanningOutput,
     ConversationUploadReceipt,
     InputContent,
     InputContentType,
@@ -212,6 +214,8 @@ __all__ = [
     "FailOpsTaskCommand",
     "FreshnessStatus",
     "ConnectivityCheckReceipt",
+    "CompactPlanningMode",
+    "CompactPlanningOutput",
     "DiagnosticQueryApprovalDecision",
     "ConversationUploadReceipt",
     "HitlResponse",
