@@ -712,13 +712,14 @@ sudo install -d -m 0750 /etc/kbot-aiops/alloy
 sudo install -m 0644 \
   scripts/deployment/aiops_observability/configuration/alloy/config.alloy \
   /etc/kbot-aiops/alloy/config.alloy
-printf '%s\n' 'local-internal-only' | \
+printf '%s' 'local-internal-only' | \
   sudo tee /etc/kbot-aiops/alloy/loki_authorization >/dev/null
 sudo chmod 0644 /etc/kbot-aiops/alloy/loki_authorization
 ```
 
-`local-internal-only` 不是远程认证凭据，只是当前 Alloy配置读取的本地占位值。生产或
-远程 Loki必须改为真实短期 Token，并使用受限文件权限和 TLS入口。
+`local-internal-only` 不是远程认证凭据，只是当前 Alloy配置读取的本地占位值。该文件
+不得包含结尾换行，否则会生成非法的`Authorization` Header。生产或远程 Loki必须改为
+真实短期 Token，并使用受限文件权限和 TLS入口。
 
 启动：
 

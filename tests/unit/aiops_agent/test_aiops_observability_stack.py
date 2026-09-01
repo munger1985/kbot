@@ -213,6 +213,9 @@ password = postgres-secret
     assert "event_class: database.alert_log_problem" in loki_rules
     alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
     assert 'severity       = "severity"' in alloy_config
+    assert (
+        settings.runtime_dir / "secrets/loki_authorization"
+    ).read_bytes() == b"local-internal-only"
     revision = next(
         line.split("=", 1)[1]
         for line in (settings.runtime_dir / "stack.env").read_text().splitlines()
@@ -225,6 +228,7 @@ password = postgres-secret
         if line.startswith("AIOPS_ALLOY_CONFIG_REVISION=")
     )
     assert len(alloy_revision) == 64
+    assert alloy_revision != revision
     generated_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in settings.runtime_dir.rglob("*")
@@ -418,6 +422,18 @@ def test_oracle_collector_uses_durable_ordered_checkpoint() -> None:
     assert "RECORD_ID > :last_record_id" in collector.QUERY
     assert "ORDER BY ORIGINATING_TIMESTAMP, RECORD_ID" in collector.QUERY
     assert collector.Settings.__dataclass_params__.frozen is True
+
+
+def test_oracle_collector_rejects_rows_at_or_before_checkpoint() -> None:
+    collector = _load_collector()
+    checkpoint = (datetime(2026, 9, 1, 6, 46, 32, 315000), 8685)
+    assert not collector._is_after_checkpoint(
+        datetime(2026, 9, 1, 6, 24, 46, 585000, tzinfo=timezone.utc),
+        9195,
+        checkpoint,
+    )
+    assert not collector._is_after_checkpoint(checkpoint[0], 8685, checkpoint)
+    assert collector._is_after_checkpoint(checkpoint[0], 8686, checkpoint)
 
 
 def test_oracle_collector_classifies_all_structured_alert_types() -> None:

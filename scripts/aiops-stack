@@ -194,6 +194,11 @@ def _write_secret(path: Path, value: str) -> None:
     _write_text(path, _safe_value(path.name, value) + "\n", 0o640)
 
 
+def _write_http_header_secret(path: Path, value: str) -> None:
+    """写入HTTP Header值，不附加会破坏Header语法的换行。"""
+    _write_text(path, _safe_value(path.name, value), 0o640)
+
+
 def _write_secret_document(path: Path, content: str) -> None:
     if not content.strip() or "\x00" in content:
         raise ValueError(f"{path.name}不能为空或包含空字节")
@@ -1077,8 +1082,11 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         loki_revision = hashlib.sha256(
             (loki_config + loki_rules).encode("utf-8")
         ).hexdigest()
+        loki_authorization = loki_token or "local-internal-only"
         alloy_revision = hashlib.sha256(
             (STACK_ROOT / "configuration/alloy/config.alloy").read_bytes()
+            + b"\0http-header-v2\0"
+            + loki_authorization.encode("utf-8")
         ).hexdigest()
         env_lines.extend(
             [
@@ -1089,8 +1097,8 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
                 f"LOKI_PORT={_bounded_int(parser, 'logs', 'loki_port', 3100, 1, 65535)}",
             ]
         )
-        _write_secret(
-            secrets / "loki_authorization", loki_token or "local-internal-only"
+        _write_http_header_secret(
+            secrets / "loki_authorization", loki_authorization
         )
         _write_text(
             runtime / "loki/loki.yml",

@@ -150,6 +150,25 @@ def _initial_checkpoint(settings: Settings) -> tuple[datetime, int]:
     )
 
 
+def _normalized_cursor_timestamp(value: datetime) -> datetime:
+    """将ADR游标时间统一为无时区UTC值，避免驱动时区转换造成重复采集。"""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _is_after_checkpoint(
+    timestamp: datetime,
+    record_id: Any,
+    checkpoint: tuple[datetime, int],
+) -> bool:
+    row_timestamp = _normalized_cursor_timestamp(timestamp)
+    checkpoint_timestamp = _normalized_cursor_timestamp(checkpoint[0])
+    return row_timestamp > checkpoint_timestamp or (
+        row_timestamp == checkpoint_timestamp and int(record_id) > checkpoint[1]
+    )
+
+
 def _load_checkpoint(settings: Settings) -> tuple[datetime, int]:
     if not settings.checkpoint_file.exists():
         return _initial_checkpoint(settings)
@@ -230,6 +249,17 @@ def _collect_once(
         )
         columns = [description[0] for description in cursor.description]
         rows = cursor.fetchall()
+    timestamp_index = columns.index("ORIGINATING_TIMESTAMP")
+    record_id_index = columns.index("RECORD_ID")
+    rows = [
+        row
+        for row in rows
+        if _is_after_checkpoint(
+            row[timestamp_index],
+            row[record_id_index],
+            checkpoint,
+        )
+    ]
     next_checkpoint = _append_rows(settings, columns, rows)
     if next_checkpoint is None:
         return checkpoint

@@ -272,6 +272,11 @@ Ruler。Oracle Alert Collector依据`V$DIAG_ALERT_EXT.MESSAGE_TYPE`和
 的ORA、TNS或其他Oracle组件错误无需修改规则。没有诊断码的普通Notification、Trace
 和Dump只保留在Loki供诊断查询，避免正常启动信息造成告警风暴。
 
+部署脚本写入供Alloy使用的Loki认证值时不附加结尾换行，避免HTTP
+`Authorization` Header无效而导致整批日志被丢弃。本地内部Loki仍不要求用户配置
+`loki_token`；远程Loki配置的Token同样按Header值原样写入。认证值变更会更新Alloy
+配置修订号，使`./scripts/aiops-stack`自动重建Alloy容器并加载新Secret。
+
 Prometheus侧仍由所有处于firing状态的Alerting Rule进入同一个Alertmanager，不按
 告警名称设置白名单。新增监控指标时必须同时定义对应的告警条件；仅存在一条指标时序
 不代表发生了异常。
