@@ -191,15 +191,11 @@ Subject精确相等作为准入；没有候选时使用通用调查提示和Tool
 `db.oracle.readonly_query`执行前必须解析Oracle SQL AST，仅接受单条`SELECT`或只读`WITH`，
 禁止DDL、DML、PL/SQL、DB Link、外部过程和副作用函数；校验Schema、对象、列和诊断用户
 权限；强制行数、耗时、返回字节和并发限制；绑定参数；保存SQL Hash、策略Hash、参数和结果。
-策略输出`AUTO_EXECUTE`或`APPROVAL_REQUIRED`：受控系统诊断视图上的`SELECT *`按普通只读
-查询自动执行，凭据、绑定值、SQL正文、客户端身份等显式敏感系统列转入
-`DIAGNOSTIC_QUERY_APPROVAL`，不得把Turn标记为规划失败。DDL、DML、
-PL/SQL、DB Link、锁和无法证明无副作用的函数仍为不可审批的越界动作。
-
-调查计划和审批请求展示冻结SQL、完整绑定参数、对象、投影、列级敏感标记及执行上限。批准只把同一Task恢复
-为`READY`，执行器仍重新验证Query/Policy Hash并签发短期动态诊断Grant；拒绝和过期写入
-Evidence Gap后继续证据评估。`SELECT *`和`COUNT(*)`都可按普通只读查询自动执行，返回行数、
-列数、字节数、超时和并发限制仍然强制生效。
+受控系统诊断视图上的`SELECT *`、显式列查询和`COUNT(*)`都按普通只读查询自动执行；字段
+可见性完全由诊断数据库账号权限决定，数据库字典值和诊断正文原样进入Evidence，不做字段
+脱敏或内容审批。DDL、DML、PL/SQL、DB Link、锁和无法证明无副作用的函数仍为不可审批的
+越界动作。执行器始终重新验证Query/Policy Hash并签发短期动态诊断Grant，返回行数、列数、
+字节数、超时和并发限制继续强制生效。
 
 动态SQL只能使用诊断凭据，不能复用变更执行器。PromQL和LogQL使用相同的解析、范围注入、
 标签限制和预算策略。
@@ -211,7 +207,7 @@ PromQL使用语法AST检查所有Vector Selector；数据库指标必须精确�
 `${binding_selector}`引用已冻结的Binding精确标签，后面附加有限个字面量包含或排除过滤。
 
 Oracle动态SQL的解析实现固定使用SQLGlot Oracle方言，并在规划端和执行端消费同一份
-`ORACLE_DYNAMIC_QUERY_POLICY.v2`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
+`ORACLE_DYNAMIC_QUERY_POLICY.v3`。解析成功不视为可执行：还必须验证根节点、对象族、Schema、
 投影列、函数、bind、Database Link和锁语义，注入服务端行数上限并绑定Query/Policy Hash。
 执行端仍必须开启只读事务、使用诊断凭据并强制超时、行数、列数、字节和单元格长度限制。
 
@@ -291,7 +287,8 @@ Invocation具有业务唯一键。
 新增事件：`input.analysis.started/completed`、`task.frame.completed`、
 `investigation.planned/replanned`、`tool.started/completed/gap`、`evidence.added`、
 `assessment.completed`、`thinking.delta`、`answer.delta/completed`、`turn.status`和`done`。
-事件只展示简洁进度，不暴露模型Chain of Thought、Secret、完整DSN或未脱敏结果。
+事件展示可审计的调查摘要，不暴露模型Chain of Thought、Secret或完整DSN；诊断账号有权读取
+的日志正文和数据库字典结果可以作为完整Evidence供模型分析与用户核对。
 
 ## 14. 服务代码目标结构
 

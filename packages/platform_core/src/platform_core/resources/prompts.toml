@@ -612,8 +612,8 @@ target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，
 必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
 清单外的同义函数、系统函数或自定义函数；应优先显式列出最小必要列，若确有诊断必要，
-系统诊断视图的星号投影可以自动执行，显式读取敏感系统列会进入用户审批；固定目录工具
-能够回答时优先使用固定工具。生成Oracle诊断SQL时必须读取该工具的database_access：
+系统诊断视图的星号投影和显式列查询都按只读边界自动执行，结果按诊断账号实际可见内容
+原样返回；固定目录工具能够回答时优先使用固定工具。生成Oracle诊断SQL时必须读取该工具的database_access：
 诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、DBA_、CDB_、ALL_及
 AWR/ASH系统视图；不得生成超出工具对象范围的应用Schema、数据库链路或非SELECT语句。
 AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
@@ -642,8 +642,8 @@ available_tools 中选择，且每项工具的 input 是完整参数契约，必
 policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、
 DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
-系统诊断视图的星号投影允许自动执行；敏感系统列属于需要审批的有效调查动作，不要仅因
-它们需要审批而删除动作。
+系统诊断视图的星号投影和显式列查询都允许在只读边界内自动执行，结果按诊断账号实际
+可见内容原样返回，不要为业务字段增加脱敏或人工审批。
 如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
 """
 

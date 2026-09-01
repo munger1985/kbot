@@ -69,7 +69,7 @@ def available_tools(
                 "诊断账号已授予 CREATE SESSION 和 SELECT ANY DICTIONARY，"
                 "可以查询 V$/GV$、DBA_/CDB_/ALL_ 以及 AWR/ASH 系统视图；"
                 "仅在固定目录工具不能回答问题时使用，优先显式投影并使用 bind 参数；"
-                "系统诊断视图的星号投影可自动执行，显式敏感系统列转为用户审批；"
+                "查询结果按诊断账号实际可见内容原样返回，不做业务字段脱敏；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数"
             ),
             "database_access": {
@@ -97,7 +97,7 @@ def available_tools(
                 "max_sql_chars": dynamic_policy.max_sql_chars,
                 "max_bind_count": dynamic_policy.max_bind_count,
                 "star_projection_behavior": "AUTO_EXECUTE_BOUNDED",
-                "sensitive_column_behavior": "REQUIRE_APPROVAL",
+                "diagnostic_data_behavior": "RETURN_AUTHORIZED_VALUES",
                 "require_bind_parameters": True,
             },
         }

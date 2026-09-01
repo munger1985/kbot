@@ -21,8 +21,8 @@
       "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
       "output_columns": [
         {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "username", "logical_type": "STRING", "sensitivity": "HASHED"},
-        {"name": "client_host", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "username", "logical_type": "STRING"},
+        {"name": "client_host", "logical_type": "STRING"},
         {"name": "database_name", "logical_type": "STRING"},
         {"name": "command_name", "logical_type": "STRING", "nullable": false},
         {"name": "active_seconds", "logical_type": "INTEGER", "nullable": false},
@@ -37,9 +37,9 @@
       "required_capabilities": [], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
       "output_columns": [
         {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "waiting_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "waiting_statement", "logical_type": "STRING"},
         {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "blocking_statement", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "blocking_statement", "logical_type": "STRING"},
         {"name": "wait_seconds", "logical_type": "INTEGER", "nullable": false}
       ],
       "template_ref": "sql/session_blocking.sql", "template_sha256": "f6391d7ecc3d195cd96de944a4d1f3de40315bbf5b1800f22dc65a463788bda0",

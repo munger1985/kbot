@@ -171,6 +171,13 @@ class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
         self.assertEqual(33, len(registry.tools))
+        self.assertTrue(
+            all(
+                column.sensitivity == "PUBLIC"
+                for tool in registry.tools
+                for column in tool.definition.output_columns
+            )
+        )
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools
@@ -395,6 +402,53 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         serialized = result.model_dump_json()
         self.assertNotIn("hidden", serialized)
         self.assertNotIn("private-user", serialized)
+
+    def test_alert_log_text_is_returned_without_business_redaction(self) -> None:
+        tool = DiagnosticRegistry.load().resolve(
+            tool_id="db.alert.recent",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities={"dynamic_performance_views"},
+            entitlements=set(),
+        )
+        observed_at = datetime(2026, 9, 1, 1, 33, 53, tzinfo=UTC)
+        message = "ORA-00600: internal error code, arguments: [4194]"
+        observation = DiagnosticExecutorService._normalize(
+            request=SimpleNamespace(executor_request_id=uuid7()),
+            grant=SimpleNamespace(
+                target_id=uuid7(),
+                tool_id=tool.definition.tool_id,
+                tool_version=tool.definition.version,
+                variant=tool.definition.variant,
+                template_sha256=tool.definition.template_sha256,
+                db_type="ORACLE",
+                capability_snapshot_hash="b" * 64,
+                parameters_sha256=canonical_sha256({}),
+            ),
+            tool=tool,
+            raw=DriverQueryResult(
+                columns=tuple(
+                    item.name for item in tool.definition.output_columns
+                ),
+                rows=((observed_at, 1, 1, "ORA 600 [4194]", message),),
+                truncated=False,
+                db_version="19.24.0.0.0",
+            ),
+            captured_at=observed_at,
+            duration_ms=8,
+            limits=DiagnosticLimits(
+                statement_timeout_seconds=30,
+                max_result_rows=100,
+                max_result_bytes=1048576,
+            ),
+        )
+
+        self.assertEqual("ORA 600 [4194]", observation.rows[0][3])
+        self.assertEqual(message, observation.rows[0][4])
+        self.assertTrue(
+            all(column.sensitivity == "PUBLIC" for column in observation.columns)
+        )
 
     async def test_database_failure_becomes_structured_gap(self) -> None:
         result = await self._execute(FailingDriver())

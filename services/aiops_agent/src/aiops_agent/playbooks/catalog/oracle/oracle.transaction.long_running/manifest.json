@@ -24,7 +24,7 @@
   "presentation_kind": "TABLE",
   "fallback_playbooks": [],
   "manual_evidence_template": "oracle.transaction.long-running.manual.v1",
-  "sensitive_fields": ["sql_id"],
+  "sensitive_fields": [],
   "redaction_rules": [],
   "freshness": {"max_age_seconds": 90, "requires_observed_at": true}
 }

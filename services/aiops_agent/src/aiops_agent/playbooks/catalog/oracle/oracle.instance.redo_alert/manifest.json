@@ -25,7 +25,7 @@
   "presentation_kind": "TABLE",
   "fallback_playbooks": ["oracle.instance.archive"],
   "manual_evidence_template": "oracle.instance.redo_alert.manual.v1",
-  "sensitive_fields": ["problem_key", "message_text"],
-  "redaction_rules": ["MASK_DIAGNOSTIC_TEXT"],
+  "sensitive_fields": [],
+  "redaction_rules": [],
   "freshness": {"max_age_seconds": 300, "requires_observed_at": true}
 }

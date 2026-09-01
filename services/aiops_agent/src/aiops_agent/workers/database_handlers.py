@@ -13,10 +13,6 @@ from aiops_agent.contracts.artifacts import (
     DatabaseScopeResult,
     EvidenceGap,
 )
-from aiops_agent.contracts.hitl import (
-    DiagnosticQueryApprovalRequest,
-    InputSuspension,
-)
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     ToolOutcome,
@@ -299,7 +295,7 @@ class DynamicQueryInvocationHandler:
 
     async def execute(
         self, context: TaskExecutionContext
-    ) -> DbaToolResult | InputSuspension:
+    ) -> DbaToolResult:
         execution = context.plan_snapshot["investigation_execution"]
         invocation = dict(
             execution["dynamic_invocations"][context.task_key]
@@ -307,50 +303,6 @@ class DynamicQueryInvocationHandler:
         database = dict(execution["database"])
         validated = dict(invocation["validated_query"])
         tool_id = "db.oracle.readonly_query"
-        if validated.get("execution_decision") == "APPROVAL_REQUIRED":
-            approval = dict(invocation.get("approval") or {})
-            if not approval:
-                if context.trigger_type != "CHAT":
-                    return self._result(
-                        invocation,
-                        gap=EvidenceGap(
-                            code="DIAGNOSTIC_QUERY_APPROVAL_REQUIRED",
-                            tool_id=tool_id,
-                            detail="该动态只读查询需要人工审批，当前 Run 不支持交互审批",
-                            retryable=False,
-                        ),
-                    )
-                return self._approval_suspension(
-                    context=context,
-                    invocation=invocation,
-                    validated=validated,
-                )
-            if (
-                approval.get("status") != "APPROVED"
-                or approval.get("query_sha256")
-                != validated.get("query_sha256")
-                or approval.get("policy_sha256")
-                != validated.get("policy_sha256")
-            ):
-                return self._result(
-                    invocation,
-                    gap=EvidenceGap(
-                        code="DIAGNOSTIC_QUERY_APPROVAL_INVALID",
-                        tool_id=tool_id,
-                        detail="动态查询审批与冻结 SQL 不匹配",
-                        retryable=False,
-                    ),
-                )
-            if _utc(str(approval["expires_at"])) <= datetime.now(UTC):
-                return self._result(
-                    invocation,
-                    gap=EvidenceGap(
-                        code="DIAGNOSTIC_QUERY_APPROVAL_EXPIRED",
-                        tool_id=tool_id,
-                        detail="动态查询审批已经过期",
-                        retryable=False,
-                    ),
-                )
         if not database.get("automatic_access_enabled", True):
             return self._finish(
                 context,
@@ -453,66 +405,6 @@ class DynamicQueryInvocationHandler:
                     detail="动态只读查询本次未取得可验证结果",
                     retryable=result.retryable,
                 ),
-            ),
-        )
-
-    @staticmethod
-    def _approval_suspension(
-        *,
-        context: TaskExecutionContext,
-        invocation: dict,
-        validated: dict,
-    ) -> InputSuspension:
-        now = datetime.now(UTC)
-        expires_at = now + timedelta(hours=2)
-        if context.deadline_at:
-            expires_at = min(expires_at, _utc(context.deadline_at))
-        limits = dict(invocation["limits"])
-        hitl_id = uuid7()
-        target = dict(context.plan_snapshot.get("target") or {})
-        request = DiagnosticQueryApprovalRequest(
-            hitl_id=str(hitl_id),
-            run_id=context.run_id,
-            task_id=context.task_id,
-            target_id=context.target_id,
-            target_display_name=str(
-                target.get("display_name") or context.target_id
-            ),
-            purpose=str(invocation["question"]),
-            sql_text=str(validated["normalized_sql"]),
-            query_sha256=str(validated["query_sha256"]),
-            policy_sha256=str(validated["policy_sha256"]),
-            referenced_objects=tuple(validated["referenced_objects"]),
-            projected_columns=tuple(validated["projected_columns"]),
-            column_sensitivities=tuple(
-                validated["column_sensitivities"]
-            ),
-            parameters=dict(validated["parameters"]),
-            reason_codes=tuple(validated["approval_reason_codes"]),
-            max_rows=int(validated["max_rows"]),
-            timeout_seconds=int(limits["statement_timeout_seconds"]),
-            max_result_bytes=int(limits["max_result_bytes"]),
-            expires_at=expires_at,
-        )
-        return InputSuspension(
-            hitl_id=str(hitl_id),
-            request_type="DIAGNOSTIC_QUERY_APPROVAL",
-            assignee_user_id=context.actor_id,
-            prompt_text="该只读诊断查询显式读取敏感诊断列，需要批准后执行。",
-            response_schema={
-                "schema_version": "DIAGNOSTIC_QUERY_APPROVAL_DECISION.v1",
-                "decisions": ["APPROVE", "REJECT"],
-                "single_use": True,
-            },
-            request_artifact_type="DIAGNOSTIC_QUERY_APPROVAL_REQUEST",
-            request_schema_version=(
-                "DIAGNOSTIC_QUERY_APPROVAL_REQUEST.v1"
-            ),
-            request_payload=request.model_dump(mode="json"),
-            expires_at=expires_at,
-            idempotency_key=(
-                f"{context.task_id}:diagnostic-query-approval:"
-                f"{validated['query_sha256']}"
             ),
         )
 

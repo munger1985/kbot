@@ -26,7 +26,7 @@
   "presentation_kind": "TABLE",
   "fallback_playbooks": ["oracle.instance.archive"],
   "manual_evidence_template": "oracle.maintenance.health.manual.v1",
-  "sensitive_fields": ["owner", "job_name", "additional_info"],
-  "redaction_rules": ["HASH_OWNER", "HASH_JOB_NAME", "MASK_ADDITIONAL_INFO"],
+  "sensitive_fields": [],
+  "redaction_rules": [],
   "freshness": {"max_age_seconds": 900, "requires_observed_at": true}
 }

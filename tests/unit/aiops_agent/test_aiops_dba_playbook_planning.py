@@ -1240,10 +1240,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                                 "FETCH FIRST 200 ROWS ONLY"
                             ),
                             "parameters": {},
-                            "execution_decision": "APPROVAL_REQUIRED",
-                            "approval_reason_codes": [
-                                "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"
-                            ],
+                            "execution_decision": "AUTO_EXECUTE",
+                            "approval_reason_codes": [],
                         },
                     }
                 }
@@ -1255,7 +1253,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "ORACLE_SQL_DYNAMIC", projection["actions"][0]["tool_class"]
         )
         self.assertEqual(
-            "APPROVAL_REQUIRED",
+            "AUTO_EXECUTE",
             projection["actions"][0]["execution_mode"],
         )
         action = projection["actions"][0]
@@ -1270,10 +1268,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("v$sqlstats", action["sql_text"])
         self.assertEqual({}, action["parameters"])
-        self.assertEqual(
-            ["DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"],
-            action["approval_reason_codes"],
-        )
+        self.assertEqual([], action["approval_reason_codes"])
         self.assertNotIn("policy_snapshot", str(projection))
 
     async def test_terminal_task_failure_updates_chat_turn(self) -> None:

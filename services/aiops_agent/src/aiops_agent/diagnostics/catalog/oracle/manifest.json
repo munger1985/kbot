@@ -72,11 +72,11 @@
         {"name": "instance_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "serial_number", "logical_type": "INTEGER", "nullable": false},
-        {"name": "username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "username", "logical_type": "STRING"},
         {"name": "status", "logical_type": "STRING", "nullable": false},
         {"name": "wait_event", "logical_type": "STRING"},
         {"name": "wait_seconds", "logical_type": "INTEGER"},
-        {"name": "client_host", "logical_type": "STRING", "sensitivity": "MASKED"}
+        {"name": "client_host", "logical_type": "STRING"}
       ],
       "template_ref": "sql/session_active.sql",
       "template_sha256": "363d4cf635fd296476431b62164bf5a7761f82e67565c6aaafec65395a30de45",
@@ -99,10 +99,10 @@
       "output_columns": [
         {"name": "waiting_instance_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "waiting_username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "waiting_username", "logical_type": "STRING"},
         {"name": "blocking_instance_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "blocking_username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "blocking_username", "logical_type": "STRING"},
         {"name": "wait_event", "logical_type": "STRING"},
         {"name": "wait_seconds", "logical_type": "INTEGER"}
       ],
@@ -283,7 +283,7 @@
       "output_columns": [
         {"name": "instance_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
-        {"name": "username", "logical_type": "STRING", "sensitivity": "HASHED"},
+        {"name": "username", "logical_type": "STRING"},
         {"name": "transaction_started_at", "logical_type": "DATETIME", "nullable": false},
         {"name": "elapsed_seconds", "logical_type": "INTEGER", "nullable": false},
         {"name": "undo_blocks", "logical_type": "INTEGER", "nullable": false},
@@ -446,8 +446,8 @@
         {"name": "observed_at", "logical_type": "DATETIME", "nullable": false},
         {"name": "message_type", "logical_type": "INTEGER"},
         {"name": "message_level", "logical_type": "INTEGER"},
-        {"name": "problem_key", "logical_type": "STRING", "sensitivity": "MASKED"},
-        {"name": "message_text", "logical_type": "STRING", "sensitivity": "MASKED", "nullable": false}
+        {"name": "problem_key", "logical_type": "STRING"},
+        {"name": "message_text", "logical_type": "STRING", "nullable": false}
       ],
       "template_ref": "sql/alert_recent.sql",
       "template_sha256": "78f4f4855bb45062083b2a2dd2e363b01564c7f56fd34c412ff3c19261ff2472",
@@ -471,13 +471,13 @@
         {"name": "limit", "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "required": false}
       ],
       "output_columns": [
-        {"name": "owner", "logical_type": "STRING", "sensitivity": "HASHED", "nullable": false},
-        {"name": "job_name", "logical_type": "STRING", "sensitivity": "HASHED", "nullable": false},
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "job_name", "logical_type": "STRING", "nullable": false},
         {"name": "status", "logical_type": "STRING", "nullable": false},
         {"name": "error_code", "logical_type": "INTEGER"},
         {"name": "actual_start_date", "logical_type": "DATETIME"},
         {"name": "run_duration", "logical_type": "STRING"},
-        {"name": "additional_info", "logical_type": "STRING", "sensitivity": "MASKED"}
+        {"name": "additional_info", "logical_type": "STRING"}
       ],
       "template_ref": "sql/scheduler_failed_jobs.sql",
       "template_sha256": "6fdfc8254f9ad7017fe98cb160704f16e8479647111179c69e5b54d2432f7e3e",
@@ -498,7 +498,7 @@
       "required_privileges": ["DBA_OBJECTS"],
       "parameters": [],
       "output_columns": [
-        {"name": "owner", "logical_type": "STRING", "sensitivity": "HASHED", "nullable": false},
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
         {"name": "object_type", "logical_type": "STRING", "nullable": false},
         {"name": "status", "logical_type": "STRING", "nullable": false},
         {"name": "object_count", "logical_type": "INTEGER", "nullable": false}

@@ -74,8 +74,8 @@ class DiagnosticExecutionGrant(AIOpsContract):
 class OracleDynamicQueryPolicyGrant(AIOpsContract):
     """随 Grant 冻结并由 Executor 重放的 Oracle 动态查询策略。"""
 
-    schema_version: Literal["ORACLE_DYNAMIC_QUERY_POLICY.v2"] = (
-        "ORACLE_DYNAMIC_QUERY_POLICY.v2"
+    schema_version: Literal["ORACLE_DYNAMIC_QUERY_POLICY.v3"] = (
+        "ORACLE_DYNAMIC_QUERY_POLICY.v3"
     )
     allowed_objects: tuple[str, ...] = ()
     allowed_functions: tuple[str, ...]

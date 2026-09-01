@@ -63,28 +63,6 @@ _SAFE_FUNCTIONS = frozenset(
         "VARIANCE",
     }
 )
-_SENSITIVE_SOURCE_COLUMNS = frozenset(
-    {
-        "auth_vfr_data",
-        "bind_data",
-        "other_xml",
-        "password",
-        "password_hash",
-        "spare4",
-        "sql_fulltext",
-        "sql_text",
-        "text",
-        "value_string",
-        "machine",
-        "program",
-        "client_identifier",
-        "message_text",
-        "job_action",
-        "source",
-    }
-)
-
-
 class DynamicQueryRejected(ValueError):
     """动态查询未通过确定性策略。"""
 
@@ -98,7 +76,7 @@ class DynamicQueryPolicySnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v2"
+    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v3"
     allowed_objects: tuple[str, ...] = ()
     allowed_functions: tuple[str, ...] = tuple(sorted(_SAFE_FUNCTIONS))
     max_rows: int = Field(default=200, ge=1, le=1000)
@@ -112,7 +90,7 @@ class ValidatedDynamicQuery(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "ORACLE_VALIDATED_DYNAMIC_QUERY.v2"
+    schema_version: str = "ORACLE_VALIDATED_DYNAMIC_QUERY.v3"
     normalized_sql: str
     query_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -167,9 +145,9 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_NOT_SELECT",
                 "动态 SQL 只允许单条 SELECT 或带 WITH 的 SELECT",
             )
-        approval_reason_codes = self._validate_nodes(expression)
+        self._validate_nodes(expression)
         projected_columns = self._projected_columns(expression)
-        column_sensitivities = self._column_sensitivities(expression)
+        column_sensitivities = ("PUBLIC",) * len(projected_columns)
         referenced_objects = self._referenced_objects(expression)
         bind_names = self._bind_names(expression)
         normalized_parameters = self._parameters(bind_names, parameters or {})
@@ -192,12 +170,8 @@ class OracleDynamicQueryPolicy:
             bind_names=bind_names,
             parameters=normalized_parameters,
             max_rows=effective_rows,
-            execution_decision=(
-                "APPROVAL_REQUIRED"
-                if approval_reason_codes
-                else "AUTO_EXECUTE"
-            ),
-            approval_reason_codes=approval_reason_codes,
+            execution_decision="AUTO_EXECUTE",
+            approval_reason_codes=(),
         )
 
     def _effective_row_limit(self, expression: exp.Select) -> int:
@@ -232,8 +206,7 @@ class OracleDynamicQueryPolicy:
             )
         return min(requested, self.snapshot.max_rows)
 
-    def _validate_nodes(self, expression: exp.Select) -> tuple[str, ...]:
-        approval_reasons: list[str] = []
+    def _validate_nodes(self, expression: exp.Select) -> None:
         if expression.find(exp.Lock) is not None:
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_LOCK_FORBIDDEN",
@@ -244,11 +217,6 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
                 "动态 SQL 禁止包函数、成员调用或不透明点表达式",
             )
-        for column in expression.find_all(exp.Column):
-            if str(column.name or "").lower() in _SENSITIVE_SOURCE_COLUMNS:
-                approval_reasons.append(
-                    "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"
-                )
         for function in expression.find_all(exp.Func):
             # sqlglot 将 AND/OR 连接符也纳入 Func 继承体系；它们是 SQL
             # 语法节点而非可调用函数，不能参与函数白名单判断。
@@ -262,8 +230,6 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
                     f"动态 SQL 函数不在允许清单：{name or 'UNKNOWN'}",
                 )
-        return tuple(dict.fromkeys(approval_reasons))
-
     def _projected_columns(self, expression: exp.Select) -> tuple[str, ...]:
         columns: list[str] = []
         for projection in expression.expressions:
@@ -283,26 +249,6 @@ class OracleDynamicQueryPolicy:
                 "动态 SQL 返回列不能为空或重名",
             )
         return tuple(columns)
-
-    @staticmethod
-    def _column_sensitivities(
-        expression: exp.Select,
-    ) -> tuple[Literal["PUBLIC", "MASKED", "HASHED"], ...]:
-        sensitivities: list[Literal["PUBLIC", "MASKED", "HASHED"]] = []
-        for projection in expression.expressions:
-            if projection.is_star:
-                sensitivities.append("MASKED")
-                continue
-            source_columns = {
-                str(column.name or "").lower()
-                for column in projection.find_all(exp.Column)
-            }
-            sensitivities.append(
-                "MASKED"
-                if source_columns & _SENSITIVE_SOURCE_COLUMNS
-                else "PUBLIC"
-            )
-        return tuple(sensitivities)
 
     def _referenced_objects(self, expression: exp.Select) -> tuple[str, ...]:
         cte_names = {

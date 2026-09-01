@@ -24,7 +24,7 @@
   "presentation_kind": "TABLE_AND_CHART",
   "fallback_playbooks": [],
   "manual_evidence_template": "oracle.session.blocking_chain.manual.v1",
-  "sensitive_fields": ["waiting_username", "blocking_username"],
-  "redaction_rules": ["HASH_USERNAME"],
+  "sensitive_fields": [],
+  "redaction_rules": [],
   "freshness": {"max_age_seconds": 15, "requires_observed_at": true}
 }

@@ -206,11 +206,7 @@ class DynamicDiagnosticExecutorService:
                     "RESULT_LIMIT_EXCEEDED", retryable=False
                 )
             normalized_rows.append(normalized)
-        sensitivities = (
-            ("MASKED",) * len(raw.columns)
-            if wildcard_projection
-            else validated.column_sensitivities
-        )
+        sensitivities = ("PUBLIC",) * len(raw.columns)
         columns = tuple(
             DatabaseColumn(
                 name=name,

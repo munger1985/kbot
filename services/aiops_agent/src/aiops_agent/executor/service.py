@@ -1,9 +1,8 @@
-"""诊断 Grant 验证、限界查询、输出校验和脱敏。"""
+"""诊断 Grant 验证、限界查询和输出校验。"""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -197,7 +196,6 @@ class DiagnosticExecutorService:
                 DiagnosticExecutorService._normalize_cell(
                     value=value,
                     definition=definition,
-                    target_id=str(grant.target_id),
                     max_chars=limits.max_cell_chars,
                 )
                 for value, definition in zip(row, definitions, strict=True)
@@ -235,7 +233,7 @@ class DiagnosticExecutorService:
                 DatabaseColumn(
                     name=item.name,
                     logical_type=item.logical_type,
-                    sensitivity=item.sensitivity,
+                    sensitivity="PUBLIC",
                 )
                 for item in definitions
             ),
@@ -256,7 +254,6 @@ class DiagnosticExecutorService:
         *,
         value: Any,
         definition,
-        target_id: str,
         max_chars: int,
     ) -> Any:
         if value is None:
@@ -296,10 +293,4 @@ class DiagnosticExecutorService:
             raise DiagnosticDriverError(
                 "RESULT_LIMIT_EXCEEDED", retryable=False
             )
-        if definition.sensitivity == "MASKED":
-            return "[已脱敏]"
-        if definition.sensitivity == "HASHED":
-            return "sha256:" + hashlib.sha256(
-                f"{target_id}:{serialized}".encode("utf-8")
-            ).hexdigest()
         return normalized

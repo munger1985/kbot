@@ -24,7 +24,7 @@
   "presentation_kind": "TABLE_AND_CHART",
   "fallback_playbooks": [],
   "manual_evidence_template": "oracle.session.active.manual.v1",
-  "sensitive_fields": ["username", "client_host"],
-  "redaction_rules": ["HASH_USERNAME", "MASK_CLIENT_HOST"],
+  "sensitive_fields": [],
+  "redaction_rules": [],
   "freshness": {"max_age_seconds": 30, "requires_observed_at": true}
 }

@@ -14,7 +14,6 @@ from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
 from aiops_agent.application.investigation.service import TurnPlanningService
-from aiops_agent.contracts.hitl import InputSuspension
 from aiops_agent.diagnostics.dynamic_query import (
     DynamicQueryPolicySnapshot,
     DynamicQueryRejected,
@@ -194,22 +193,20 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             {"unused": 1},
         )
 
-    def test_star_is_automatic_but_sensitive_columns_require_approval(
+    def test_dictionary_columns_are_automatic_and_public(
         self,
     ) -> None:
         star = self.policy.validate("SELECT * FROM v$session")
         self.assertEqual(star.execution_decision, "AUTO_EXECUTE")
         self.assertEqual(star.projected_columns, ("*",))
+        self.assertEqual(star.column_sensitivities, ("PUBLIC",))
         self.assertEqual((), star.approval_reason_codes)
-        sensitive = self.policy.validate(
+        sql_text = self.policy.validate(
             "SELECT sql_text AS sample FROM v$sqlstats",
         )
-        self.assertEqual(sensitive.execution_decision, "APPROVAL_REQUIRED")
-        self.assertEqual(sensitive.column_sensitivities, ("MASKED",))
-        self.assertIn(
-            "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED",
-            sensitive.approval_reason_codes,
-        )
+        self.assertEqual(sql_text.execution_decision, "AUTO_EXECUTE")
+        self.assertEqual(sql_text.column_sensitivities, ("PUBLIC",))
+        self.assertEqual((), sql_text.approval_reason_codes)
 
     def test_count_star_is_an_automatic_aggregate(self) -> None:
         result = self.policy.validate(
@@ -352,7 +349,7 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         control_plane.issue_credential.assert_not_awaited()
 
-    async def test_automatic_wildcard_result_is_bounded_and_masked(self) -> None:
+    async def test_automatic_wildcard_result_is_bounded_and_public(self) -> None:
         validated = OracleDynamicQueryPolicy(self.snapshot).validate(
             "SELECT * FROM v$session"
         )
@@ -383,7 +380,7 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         assert result.observation is not None
         self.assertTrue(
             all(
-                column.sensitivity == "MASKED"
+                column.sensitivity == "PUBLIC"
                 for column in result.observation.columns
             )
         )
@@ -392,83 +389,6 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         token = self.codec.issue_dynamic(self.grant)
         with self.assertRaises(DiagnosticGrantError):
             self.codec.verify(token)
-
-
-class DynamicQueryApprovalTest(unittest.IsolatedAsyncioTestCase):
-    async def test_sensitive_projection_suspends_with_full_query(self) -> None:
-        snapshot = DynamicQueryPolicySnapshot(max_rows=25)
-        validated = OracleDynamicQueryPolicy(snapshot).validate(
-            "SELECT sql_text AS sample FROM v$sqlstats"
-        )
-        target_id = uuid7()
-        handler = DynamicQueryInvocationHandler(
-            executor_client=AsyncMock(),
-            grant_codec=DiagnosticGrantCodec(
-                secret="d" * 32,
-                issuer="kbot-aiops-worker",
-                audience="kbot-aiops-db-executor",
-            ),
-            grant_issuer="kbot-aiops-worker",
-            grant_audience="kbot-aiops-db-executor",
-            grant_ttl_seconds=30,
-        )
-        context = TaskExecutionContext(
-            run_id=str(uuid7()),
-            task_id=str(uuid7()),
-            task_key="dynamic:a1",
-            target_id=str(target_id),
-            agent_id=str(uuid7()),
-            trigger_type="CHAT",
-            actor_id="user-1",
-            trace_id="trace-1",
-            attempt=1,
-            deadline_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
-            lease_until=(datetime.now(UTC) + timedelta(seconds=30)).isoformat(),
-            plan_snapshot={
-                "target": {"display_name": "测试数据库"},
-                "investigation_execution": {
-                    "database": {},
-                    "dynamic_invocations": {
-                        "dynamic:a1": {
-                            "action_id": "a1",
-                            "question": "最近创建了哪些对象？",
-                            "measurement_semantics": "CURRENT_ACTIVITY",
-                            "policy_snapshot": snapshot.model_dump(mode="json"),
-                            "validated_query": validated.model_dump(mode="json"),
-                            "limits": {
-                                "statement_timeout_seconds": 20,
-                                "max_result_rows": 25,
-                                "max_result_bytes": 1048576,
-                                "max_columns": 64,
-                                "max_cell_chars": 32768,
-                            },
-                        }
-                    },
-                },
-            },
-            policy_snapshot={},
-            input_artifacts=(),
-            lease_token=str(uuid7()),
-            max_attempts=3,
-        )
-
-        result = await handler.execute(context)
-
-        self.assertIsInstance(result, InputSuspension)
-        self.assertEqual(result.request_type, "DIAGNOSTIC_QUERY_APPROVAL")
-        self.assertEqual(
-            result.request_payload["query_sha256"],
-            validated.query_sha256,
-        )
-        self.assertIn(
-            "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED",
-            result.request_payload["reason_codes"],
-        )
-        self.assertEqual(
-            validated.normalized_sql,
-            result.request_payload["sql_text"],
-        )
-        self.assertEqual({}, result.request_payload["parameters"])
 
 
 class DynamicQueryPlanningTest(unittest.TestCase):
