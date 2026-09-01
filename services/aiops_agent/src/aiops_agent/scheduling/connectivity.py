@@ -8,6 +8,8 @@ import json
 import random
 from datetime import timedelta
 
+from loguru import logger
+
 from aiops_agent.entities import OutboxEntity
 from platform_core.identity import uuid7
 
@@ -114,8 +116,16 @@ class AIOpsConnectivityScheduler:
             return True
 
     async def run_forever(self) -> None:
+        logger.info("AIOps 连通性 Scheduler 开始运行")
         while not self._stop.is_set():
-            worked = await self.run_once()
+            try:
+                worked = await self.run_once()
+            except Exception as exc:  # noqa: BLE001
+                logger.opt(exception=exc).error(
+                    "AIOps 连通性 Scheduler 本轮失败：{}",
+                    type(exc).__name__,
+                )
+                worked = False
             if worked:
                 continue
             try:
@@ -124,3 +134,4 @@ class AIOpsConnectivityScheduler:
                 )
             except TimeoutError:
                 continue
+        logger.info("AIOps 连通性 Scheduler 已停止")

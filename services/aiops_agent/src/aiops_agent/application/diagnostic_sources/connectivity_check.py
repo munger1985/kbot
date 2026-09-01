@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from loguru import logger
+
 from aiops_agent.adapters.diagnostic_sources.base import (
     DiagnosticSourceAdapterError,
 )
@@ -18,6 +20,8 @@ from aiops_agent.ports.diagnostic_source import (
 
 
 class DiagnosticSourceConnectivityCheckService:
+    _MAX_VERSION_RETRIES = 2
+
     def __init__(
         self, *, uow_factory, diagnostic_source_registry, secret_store
     ):
@@ -29,6 +33,47 @@ class DiagnosticSourceConnectivityCheckService:
         source_id = UUID(payload["aggregate_id"])
         details = payload["details"]
         request_id = UUID(details["connectivity_check_request_id"])
+        for attempt in range(1, self._MAX_VERSION_RETRIES + 1):
+            snapshot = await self._load_snapshot(
+                payload=payload,
+                source_id=source_id,
+                request_id=request_id,
+            )
+            if snapshot is None:
+                return
+            result = await self._check_source(
+                payload=payload,
+                snapshot=snapshot,
+            )
+            if await self._record_result(
+                source_id=source_id,
+                request_id=request_id,
+                snapshot=snapshot,
+                result=result,
+            ):
+                return
+            if attempt < self._MAX_VERSION_RETRIES:
+                logger.info(
+                    "监控源连通性检查遇到并发版本变化，重新读取后重试："
+                    "source_id={} request_id={} attempt={}",
+                    source_id,
+                    request_id,
+                    attempt,
+                )
+        logger.warning(
+            "监控源连通性检查结果未能回写，等待调度器补偿："
+            "source_id={} request_id={}",
+            source_id,
+            request_id,
+        )
+
+    async def _load_snapshot(
+        self,
+        *,
+        payload: dict,
+        source_id: UUID,
+        request_id: UUID,
+    ) -> dict | None:
         async with self._uow_factory() as uow:
             source = await uow.diagnostic_sources.get_scoped(
                 diagnostic_source_id=source_id,
@@ -38,7 +83,7 @@ class DiagnosticSourceConnectivityCheckService:
                 source is None
                 or source.connectivity_check_request_id != request_id
             ):
-                return
+                return None
             credential_id = (
                 source.auth_credential_id
                 if source.endpoint
@@ -47,7 +92,7 @@ class DiagnosticSourceConnectivityCheckService:
             credential_kind = (
                 "diagnostic_source" if source.endpoint else "source_webhook"
             )
-            snapshot = {
+            return {
                 "source_id": str(source.diagnostic_source_id),
                 "source_type": source.source_type,
                 "adapter_id": source.adapter_id,
@@ -70,6 +115,10 @@ class DiagnosticSourceConnectivityCheckService:
                 ),
                 "config": dict(source.config_json or {}),
             }
+
+    async def _check_source(
+        self, *, payload: dict, snapshot: dict
+    ) -> SourceHealthResult:
         try:
             credentials = {}
             if snapshot["secret_ref"]:
@@ -111,12 +160,22 @@ class DiagnosticSourceConnectivityCheckService:
                 adapter_version=snapshot["adapter_version"],
             )
         except Exception:
-            result = SourceHealthResult(
+            return SourceHealthResult(
                 healthy=False,
                 error_code="SOURCE_UNREACHABLE",
                 adapter_id=snapshot["adapter_id"],
                 adapter_version=snapshot["adapter_version"],
             )
+        return result
+
+    async def _record_result(
+        self,
+        *,
+        source_id: UUID,
+        request_id: UUID,
+        snapshot: dict,
+        result: SourceHealthResult,
+    ) -> bool:
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             changed = await uow.diagnostic_sources.update_connectivity(
@@ -141,3 +200,4 @@ class DiagnosticSourceConnectivityCheckService:
             )
             if changed:
                 await uow.commit()
+            return changed

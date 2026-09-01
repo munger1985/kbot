@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import Select, and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
@@ -146,39 +147,57 @@ class TargetRepository(AIOpsRepository):
         self, *, due_before: datetime, pending_before: datetime
     ) -> TargetEntity | None:
         """锁定一个到期 Target，供多副本 Scheduler 安全发起检查。"""
-        self._check_active()
-        statement = (
-            select(TargetEntity)
-            .where(
-                TargetEntity.readonly_connection_enabled == 1,
-                or_(
-                    and_(
-                        TargetEntity.last_connectivity_check_at.is_(None),
-                        or_(
-                            TargetEntity.connectivity_check_requested_at.is_(None),
-                            TargetEntity.connectivity_check_requested_at
-                            <= pending_before,
-                        ),
-                    ),
-                    and_(
-                        TargetEntity.last_connectivity_check_at <= due_before,
-                        TargetEntity.connectivity_status != "CHECKING",
-                    ),
-                    and_(
-                        TargetEntity.connectivity_status == "CHECKING",
-                        TargetEntity.connectivity_check_requested_at
-                        <= pending_before,
-                    ),
-                )
-            )
-            .order_by(
-                TargetEntity.last_connectivity_check_at.asc().nullsfirst(),
-                TargetEntity.target_id,
-            )
-            .with_for_update(skip_locked=True)
-            .limit(1)
+        claimed_id = await self._claim_oracle_uuid(
+            plsql="""
+                DECLARE
+                    CURSOR c_claim IS
+                        SELECT TARGET_ID
+                        FROM KBOT_OPS_TARGET
+                        WHERE READONLY_CONNECTION_ENABLED = 1
+                          AND (
+                              (
+                                  LAST_CONNECTIVITY_CHECK_AT IS NULL
+                                  AND (
+                                      CONNECTIVITY_CHECK_REQUESTED_AT IS NULL
+                                      OR CONNECTIVITY_CHECK_REQUESTED_AT
+                                          <= :pending_before
+                                  )
+                              )
+                              OR (
+                                  LAST_CONNECTIVITY_CHECK_AT <= :due_before
+                                  AND CONNECTIVITY_STATUS <> 'CHECKING'
+                              )
+                              OR (
+                                  CONNECTIVITY_STATUS = 'CHECKING'
+                                  AND CONNECTIVITY_CHECK_REQUESTED_AT
+                                      <= :pending_before
+                              )
+                          )
+                        ORDER BY LAST_CONNECTIVITY_CHECK_AT NULLS FIRST,
+                                 TARGET_ID
+                        FOR UPDATE OF TARGET_ID SKIP LOCKED;
+                BEGIN
+                    :claimed_id := NULL;
+                    OPEN c_claim;
+                    FETCH c_claim INTO :claimed_id;
+                    CLOSE c_claim;
+                END;
+            """,
+            parameters={
+                "due_before": due_before,
+                "pending_before": pending_before,
+            },
         )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        if claimed_id is None:
+            return None
+        entity = (
+            await self._session.execute(
+                select(TargetEntity).where(TargetEntity.target_id == claimed_id)
+            )
+        ).scalar_one_or_none()
+        if entity is None:
+            raise StateConflictError(f"领取后的 Target 不存在：{claimed_id}")
+        return entity
 
     async def update_target(
         self,

@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import Select, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
     SituationEntity,
@@ -88,39 +89,58 @@ class DiagnosticSourceRepository(AIOpsRepository):
         self, *, due_before: datetime, pending_before: datetime
     ) -> DiagnosticSourceEntity | None:
         """锁定一个到期监控源，供多副本 Scheduler 安全发起检查。"""
-        self._check_active()
-        statement = (
-            select(DiagnosticSourceEntity)
-            .where(
-                or_(
-                    and_(
-                        DiagnosticSourceEntity.last_connectivity_check_at.is_(None),
-                        or_(
-                            DiagnosticSourceEntity.connectivity_check_requested_at.is_(None),
-                            DiagnosticSourceEntity.connectivity_check_requested_at
-                            <= pending_before,
-                        ),
-                    ),
-                    and_(
-                        DiagnosticSourceEntity.last_connectivity_check_at
-                        <= due_before,
-                        DiagnosticSourceEntity.connectivity_status != "CHECKING",
-                    ),
-                    and_(
-                        DiagnosticSourceEntity.connectivity_status == "CHECKING",
-                        DiagnosticSourceEntity.connectivity_check_requested_at
-                        <= pending_before,
-                    ),
+        claimed_id = await self._claim_oracle_uuid(
+            plsql="""
+                DECLARE
+                    CURSOR c_claim IS
+                        SELECT DIAGNOSTIC_SOURCE_ID
+                        FROM KBOT_OPS_DIAGNOSTIC_SOURCE
+                        WHERE (
+                            (
+                                LAST_CONNECTIVITY_CHECK_AT IS NULL
+                                AND (
+                                    CONNECTIVITY_CHECK_REQUESTED_AT IS NULL
+                                    OR CONNECTIVITY_CHECK_REQUESTED_AT
+                                        <= :pending_before
+                                )
+                            )
+                            OR (
+                                LAST_CONNECTIVITY_CHECK_AT <= :due_before
+                                AND CONNECTIVITY_STATUS <> 'CHECKING'
+                            )
+                            OR (
+                                CONNECTIVITY_STATUS = 'CHECKING'
+                                AND CONNECTIVITY_CHECK_REQUESTED_AT
+                                    <= :pending_before
+                            )
+                        )
+                        ORDER BY LAST_CONNECTIVITY_CHECK_AT NULLS FIRST,
+                                 DIAGNOSTIC_SOURCE_ID
+                        FOR UPDATE OF DIAGNOSTIC_SOURCE_ID SKIP LOCKED;
+                BEGIN
+                    :claimed_id := NULL;
+                    OPEN c_claim;
+                    FETCH c_claim INTO :claimed_id;
+                    CLOSE c_claim;
+                END;
+            """,
+            parameters={
+                "due_before": due_before,
+                "pending_before": pending_before,
+            },
+        )
+        if claimed_id is None:
+            return None
+        entity = (
+            await self._session.execute(
+                select(DiagnosticSourceEntity).where(
+                    DiagnosticSourceEntity.diagnostic_source_id == claimed_id
                 )
             )
-            .order_by(
-                DiagnosticSourceEntity.last_connectivity_check_at.asc().nullsfirst(),
-                DiagnosticSourceEntity.diagnostic_source_id,
-            )
-            .with_for_update(skip_locked=True)
-            .limit(1)
-        )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        ).scalar_one_or_none()
+        if entity is None:
+            raise StateConflictError(f"领取后的监控源不存在：{claimed_id}")
+        return entity
 
     async def update_config(
         self,
