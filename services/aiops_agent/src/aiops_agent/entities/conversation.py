@@ -24,6 +24,7 @@ class OpsConversationEntity(BaseEntity):
     source_situation_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_run_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     source_report_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    source_inspection_fire_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     last_turn_no: Mapped[int] = mapped_column(
         Numeric(19, 0), nullable=False, default=0
     )

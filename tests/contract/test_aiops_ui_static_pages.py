@@ -261,6 +261,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('name="schedule_mode" value="MONTHLY"', page)
         self.assertIn('name="schedule_mode" value="INTERVAL"', page)
         self.assertIn('id="inspection-schedule-summary"', page)
+        self.assertIn('name="agent_id" required', page)
+        self.assertIn("创建并启用", page)
         self.assertIn("function buildSchedule(form)", script)
         self.assertIn("function hydrateScheduleBuilder(form, plan)", script)
         self.assertIn("function renderSchedule(form)", script)
@@ -270,6 +272,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         ).read_text(encoding="utf-8")
         self.assertIn('["schedule_type", "调度周期", "schedule"]', pages_script)
         self.assertIn('DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期"', pages_script)
+        self.assertIn('data-inspection-action="${action}"', pages_script)
+        self.assertIn('/inspection-plans/${encodeURIComponent(item.plan_id)}/${button.dataset.inspectionAction}', pages_script)
 
     def test_agent_form_owns_resources_and_policy_inputs(self):
         page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")

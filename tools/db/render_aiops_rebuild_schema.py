@@ -238,6 +238,8 @@ BEGIN
              AND column_name = 'TOOL_INVOCATION_ID')
          OR (table_name = 'KBOT_OPS_TURN_EVIDENCE'
              AND column_name = 'EVIDENCE_ROLE')
+         OR (table_name = 'KBOT_OPS_INSPECTION_PLAN'
+             AND column_name = 'AGENT_ID')
        );
 
     SELECT COUNT(*)
@@ -297,7 +299,7 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 7 THEN
+    IF l_required_column_count <> 8 THEN
         raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN

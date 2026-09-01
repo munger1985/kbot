@@ -7,16 +7,15 @@ PostgreSQL 及后续数据库是核心托管目标；Prometheus、Zabbix、OEM�
 数据库连接、主机与云平台通过端口提供诊断证据。任何外部工具都不得成为诊断领域
 模型的强制依赖。
 
-故障事件、用户问题和定时巡检共用证据、Skill、执行与审计基础设施，但使用不同的
-入口编排。告警和巡检按 Blueprint 创建 `DiagnosticRun`；用户消息先创建
-`ConversationTurn`，经过 Intent Router 与 Skill Planner 后再执行当前问题所需的最小
-能力集。目标态逻辑结构如下：
+故障事件、用户问题和定时巡检共用证据、Skill、执行与审计基础设施。告警按
+Blueprint 创建 `DiagnosticRun`；用户消息和定时巡检都创建 `ConversationTurn`，
+由同一个 Agent Planner 决定当前任务所需的最小能力集。目标态逻辑结构如下：
 
 ```mermaid
 flowchart TD
     A1[故障事件] --> SIT[Situation / Diagnostic Run]
     A2[用户问题] --> TURN[Conversation Turn]
-    A3[定时巡检] --> SIT
+    A3[定时巡检] --> TURN
 
     SIT --> PLAN[Investigation Planner]
     TURN --> IP[Intent Plan]
@@ -90,7 +89,7 @@ AIOps Agent 是独立领域服务，当前面向 Oracle、MySQL 和 PostgreSQL �
 
 ## 触发与闭环
 
-入口包括用户聊天、监控告警和定期巡检。告警与巡检闭环为：
+入口包括用户聊天、监控告警和定期巡检。告警闭环为：
 
 ```text
 Trigger → Observe → Diagnose → Evidence Assessment → Advisory
@@ -103,6 +102,10 @@ Trigger → Observe → Diagnose → Evidence Assessment → Advisory
 Message → Turn Scope → Intent Plan → Skill Plan → Evidence Collection
         → Sufficiency Assessment → Answer / Clarification / Evidence Request / Proposal
 ```
+
+巡检计划到期后只提交一条标准 Agent 任务；Agent 冻结当前发布版本，并针对其负责的
+Target 复用上述 Conversation Turn 链路生成巡检报告。Scheduler 不解析 Target、模型、
+策略或诊断步骤。
 
 自动告警和巡检只能使用已配置的数据源；证据不足时生成不确定结论和后续建议，
 不会等待用户。聊天场景可进入多轮 HITL：当数据库不可直连且监控证据不足时，
@@ -180,8 +183,10 @@ Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入�
 
 ## 巡检与报告
 
-Inspection Plan 支持日报、周报和 Cron。Scheduler 生成不可变 Fire，并按 Target
-展开 Run。报告保存在系统中供前端渲染，包括诊断报告、巡检报告、处理结果和前后
+Inspection Plan 选择一名已启用的 DBA Agent，并支持日报、周报和 Cron。Scheduler
+生成不可变 Fire 并提交一次标准 Agent 巡检任务。Agent 接收任务时冻结当前发布版本，
+再复用人工健康检查的理解、规划、工具执行、证据评估和回答链生成巡检报告。
+报告保存在系统中供前端渲染，包括诊断报告、巡检报告、处理结果和前后
 对比报告。
 
 站内主动分享采用独立订阅资源，使用强 ETag 控制更新，并按最低严重级别过滤四类

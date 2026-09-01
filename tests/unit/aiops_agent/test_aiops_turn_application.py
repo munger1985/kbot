@@ -1136,6 +1136,50 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             [row["sequence_no"] for row in replay["events"]],
         )
 
+    async def test_scheduled_turn_context_reaches_primary_run(self) -> None:
+        uow = _Uow()
+        _, receipt = await self._start(uow)
+        fire_id = uuid7()
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        created_payload["execution_context"] = {
+            "trigger_type": "SCHEDULE",
+            "interaction_mode": "AUTONOMOUS",
+            "workflow_kind": "INSPECTION_TURN",
+            "inspection_fire_id": str(fire_id),
+            "deadline_at": "2026-07-24T02:00:00+00:00",
+            "observation_start": "2026-07-22T16:00:00+00:00",
+            "observation_end": "2026-07-23T16:00:00+00:00",
+            "inspection": {
+                "template_id": "database_daily",
+                "template_version": "1.0.0",
+                "schedule_type": "DAILY",
+                "timezone": "Asia/Shanghai",
+                "period_start": "2026-07-22T16:00:00+00:00",
+                "period_end": "2026-07-23T16:00:00+00:00",
+            },
+        }
+        uow.outbox.rows[0].payload_json = created_payload
+        queue = TurnQueueService(uow_factory=lambda: uow)
+        planner = TurnPlannerService(uow_factory=lambda: uow)
+
+        await queue.accept_created(created_payload)
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        await planner.begin(planning_payload)
+
+        run = uow.runs.rows[0]
+        self.assertEqual(run.trigger_type, "SCHEDULE")
+        self.assertEqual(run.interaction_mode, "AUTONOMOUS")
+        self.assertEqual(run.workflow_kind, "INSPECTION_TURN")
+        self.assertEqual(run.inspection_fire_id, fire_id)
+        self.assertEqual(
+            run.plan_snapshot_json["client_metadata"]["inspection"][
+                "schedule_type"
+            ],
+            "DAILY",
+        )
+        self.assertEqual(str(run.deadline_at), "2026-07-24 02:00:00+00:00")
+        self.assertEqual(receipt["turn_id"], str(uow.turns.turns[0].turn_id))
+
     async def test_waiting_user_ends_current_turn_event_stream(self) -> None:
         uow = _Uow()
         service, receipt = await self._start(uow)

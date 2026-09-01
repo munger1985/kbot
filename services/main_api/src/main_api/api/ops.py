@@ -40,9 +40,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanDetail,
     InspectionPlanPage,
     InspectionPlanPatch,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     ManualResultCommand,
     ManualResultReceipt,
     NotificationSubscriptionList,
@@ -824,7 +821,6 @@ async def enable_target(
         idempotency_key=idempotency_key,
     )
 
-
 @router.post("/targets/{target_id}/disable", response_model=TargetDetail)
 async def disable_target(
     target_id: UUID,
@@ -1389,67 +1385,3 @@ async def disable_inspection_plan(
         if_match=if_match,
         idempotency_key=idempotency_key,
     )
-
-
-@router.get(
-    "/inspection-plans/{plan_id}/targets",
-    response_model=tuple[InspectionTargetView, ...],
-)
-async def list_inspection_targets(
-    plan_id: UUID, request: Request
-) -> tuple[InspectionTargetView, ...]:
-    payload = await _client(request).list_inspection_targets(
-        plan_id, auth_context=request.state.auth_context
-    )
-    return tuple(InspectionTargetView.model_validate(item) for item in payload)
-
-
-@router.post(
-    "/inspection-plans/{plan_id}/targets",
-    response_model=InspectionTargetView,
-    status_code=201,
-)
-async def add_inspection_target(
-    plan_id: UUID,
-    body: InspectionTargetCreate,
-    request: Request,
-    response: Response,
-    if_match: IfMatch,
-    idempotency_key: IdempotencyKey,
-) -> InspectionTargetView:
-    payload = await _client(request).add_inspection_target(
-        plan_id,
-        body.model_dump(mode="json"),
-        if_match=if_match,
-        idempotency_key=idempotency_key,
-        auth_context=request.state.auth_context,
-    )
-    result = InspectionTargetView.model_validate(payload)
-    current = int(if_match.strip('"')[3:])
-    response.headers["ETag"] = f'"rv-{current + 1}"'
-    return result
-
-
-@router.patch(
-    "/inspection-plans/{plan_id}/targets/{plan_target_id}",
-    response_model=InspectionTargetView,
-)
-async def patch_inspection_target(
-    plan_id: UUID,
-    plan_target_id: UUID,
-    body: InspectionTargetPatch,
-    request: Request,
-    response: Response,
-    if_match: IfMatch,
-) -> InspectionTargetView:
-    payload = await _client(request).patch_inspection_target(
-        plan_id,
-        plan_target_id,
-        body.model_dump(mode="json", exclude_unset=True),
-        if_match=if_match,
-        auth_context=request.state.auth_context,
-    )
-    result = InspectionTargetView.model_validate(payload)
-    current = int(if_match.strip('"')[3:])
-    response.headers["ETag"] = f'"rv-{current + 1}"'
-    return result

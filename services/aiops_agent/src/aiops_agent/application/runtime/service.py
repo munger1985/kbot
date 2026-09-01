@@ -318,12 +318,24 @@ class AIOpsRuntimeService:
                 or agent.current_version_id is None
             ):
                 raise resource_not_found("Active AIOps Agent")
+            selected_agent_version_id = (
+                command.expected_agent_version_id or agent.current_version_id
+            )
             agent_version = await uow.agents.version(
                 agent_id=agent.agent_id,
-                agent_version_id=agent.current_version_id,
+                agent_version_id=selected_agent_version_id,
             )
             if agent_version is None:
                 raise resource_not_found("Agent Version")
+            if command.expected_agent_version_id is not None:
+                private_agent_binding = await uow.agents.get_version_binding(
+                    domain_id=command.domain_id,
+                    agent_id=command.agent_id,
+                    agent_version_id=command.expected_agent_version_id,
+                    target_id=command.target_id,
+                )
+                if private_agent_binding is None:
+                    raise resource_not_found("Frozen AIOps Agent Binding")
             source_context = None
             requested_source_run_id = command.client_metadata.get(
                 "source_run_id"
@@ -1767,6 +1779,21 @@ class AIOpsRuntimeService:
                             trace_id=command.trace_id,
                         )
                     )
+                if (
+                    run.trigger_type == "SCHEDULE"
+                    and run.inspection_fire_id is not None
+                    and artifact.schema_version == "AIOPS_TURN_RESULT.v1"
+                ):
+                    final_artifact = (
+                        await self._publish_turn_inspection_report(
+                            uow=uow,
+                            run=run,
+                            task=task,
+                            source_artifact=artifact,
+                            now=now,
+                            trace_id=command.trace_id,
+                        )
+                    )
                 if artifact.schema_version == "ACTION_VERIFICATION.v1":
                     final_artifact = (
                         await self._publish_comparison_report(
@@ -2625,6 +2652,173 @@ class AIOpsRuntimeService:
                 payload_json=payload,
             )
         )
+
+    async def _publish_turn_inspection_report(
+        self,
+        *,
+        uow,
+        run,
+        task,
+        source_artifact,
+        now: datetime,
+        trace_id: str,
+    ):
+        """把标准 Agent Turn 的最终回答发布为巡检报告。"""
+        assert uow.inspections is not None
+        plan = dict(run.plan_snapshot_json or {})
+        inspection = dict(
+            plan.get("client_metadata", {}).get("inspection", {})
+        )
+        schedule_type = str(inspection.get("schedule_type") or "CRON")
+        report_type = {
+            "DAILY": "INSPECTION_DAILY",
+            "WEEKLY": "INSPECTION_WEEKLY",
+        }.get(schedule_type, "INSPECTION_CUSTOM")
+        report_key = {
+            "DAILY": "inspection.daily",
+            "WEEKLY": "inspection.weekly",
+        }.get(schedule_type, "inspection.custom")
+        title = {
+            "DAILY": "数据库日常巡检报告",
+            "WEEKLY": "数据库周度巡检报告",
+        }.get(schedule_type, "数据库定期巡检报告")
+        period_start = datetime.fromisoformat(
+            str(inspection["period_start"])
+        )
+        period_end = datetime.fromisoformat(str(inspection["period_end"]))
+        source = AIOpsTurnResult.model_validate(
+            dict(source_artifact.payload_json or {})
+        )
+        markdown = "\n\n".join(
+            str(block.payload.get("markdown") or "").strip()
+            for block in source.blocks
+            if str(block.block_type) == "MARKDOWN"
+        ).strip()
+        status = "READY" if source.status == "COMPLETED" else "PARTIAL"
+        summary = markdown[:2000] or "Agent 已完成巡检，但未生成文字摘要"
+        security_level = int(
+            dict(plan.get("target") or {}).get("security_level") or 0
+        )
+        content = ReportContent(
+            report_key=report_key,
+            report_type=report_type,
+            ops_run_id=str(run.ops_run_id),
+            target_id=str(run.target_id),
+            title=title,
+            status=status,
+            summary=summary,
+            period_start=period_start,
+            period_end=period_end,
+            scope={
+                "inspection_fire_id": str(run.inspection_fire_id),
+                "template_id": inspection["template_id"],
+                "template_version": inspection["template_version"],
+                "schedule_type": schedule_type,
+                "timezone": inspection["timezone"],
+            },
+            facts=(
+                {
+                    "kind": "agent_health_inspection",
+                    "markdown": markdown,
+                    "sufficiency_status": str(source.sufficiency_status),
+                },
+            ),
+            evidence_refs=(
+                {
+                    "artifact_id": str(source_artifact.artifact_id),
+                    "content_hash": source_artifact.content_hash,
+                    "schema_version": source_artifact.schema_version,
+                },
+            ),
+            provenance={
+                "producer": "aiops.agent-turn",
+                "llm_used": True,
+                "source_turn_result_hash": source_artifact.content_hash,
+            },
+        )
+        payload = content.model_dump(mode="json")
+        content_hash = sha256_json(payload)
+        report_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=run.ops_run_id,
+                ops_task_id=task.ops_task_id,
+                artifact_key=f"report:{report_key}:v1",
+                artifact_type="REPORT_CONTENT",
+                schema_version="REPORT_CONTENT.v1",
+                payload_json=payload,
+                content_hash=content_hash,
+                byte_size=len(canonical_bytes(payload)),
+                provenance_json={
+                    "producer": "aiops.agent-turn-report-publisher",
+                    "producer_version": "1",
+                    "source_artifact_id": str(source_artifact.artifact_id),
+                },
+                trust_level="MODEL_INFERENCE",
+                security_level=security_level,
+            )
+        )
+        report = await uow.inspections.publish_report(
+            ReportEntity(
+                report_id=uuid7(),
+                ops_run_id=run.ops_run_id,
+                target_id=run.target_id,
+                report_key=report_key,
+                report_version=1,
+                is_current=0,
+                report_type=report_type,
+                title=title,
+                status=status,
+                period_start=period_start,
+                period_end=period_end,
+                template_id=inspection["template_id"],
+                template_version=inspection["template_version"],
+                generated_by_task_id=task.ops_task_id,
+                content_artifact_id=report_artifact.artifact_id,
+                content_hash=content_hash,
+                summary=summary,
+                security_level=security_level,
+                schema_version="REPORT_CONTENT.v1",
+            )
+        )
+        await uow.runs.append_event(
+            ops_run_id=run.ops_run_id,
+            ops_task_id=task.ops_task_id,
+            event_type="report.ready",
+            event_key=f"report:{report.report_id}:ready",
+            visibility="USER",
+            payload_json={
+                "report_id": str(report.report_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+                "summary": summary,
+                "trace_id": trace_id,
+            },
+        )
+        await self._add_outbox(
+            uow,
+            aggregate_id=report.report_id,
+            event_type="OPS_REPORT_READY",
+            idempotency_key=f"report:{report.report_id}:ready",
+            payload={
+                "report_id": str(report.report_id),
+                "ops_run_id": str(run.ops_run_id),
+                "report_key": report_key,
+                "report_type": report_type,
+                "report_version": 1,
+                "status": status,
+            },
+            trace_id=trace_id,
+            now=now,
+        )
+        assert uow.platform_notifications is not None
+        await uow.platform_notifications.emit_report_ready(
+            run=run,
+            report=report,
+            actor_id=run.actor_id,
+        )
+        return report_artifact
 
     async def _publish_inspection_report(
         self,
@@ -4881,6 +5075,7 @@ class AIOpsRuntimeService:
             "PERFORMANCE",
             "INSPECTION_DAILY",
             "INSPECTION_WEEKLY",
+            "INSPECTION_CUSTOM",
             "COMPARISON",
         }
         if report_type is not None and report_type not in allowed:

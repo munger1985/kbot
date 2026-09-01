@@ -17,12 +17,12 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
    优化，发现异常时复用同一条深度诊断链路。
 
 三个入口共享证据、变更和验证基础设施，但不会把每个用户问题都强制解释为根因诊断。
-告警和巡检按预定义 Blueprint 启动；人工对话中的每条消息先形成独立 Turn，再按意图
+告警按预定义 Blueprint 启动；人工对话和定时巡检都先形成独立 Turn，再由 Agent
 选择专业 DBA Skill：
 
 ```text
-告警/巡检 → Situation → Diagnostic Run → Blueprint → 报告或诊断结论
-人工对话 → Conversation Turn → Intent Plan → Skill Plan → 本轮证据 → 自然回答
+告警 → Situation → Diagnostic Run → Blueprint → 报告或诊断结论
+人工对话/巡检 → Conversation Turn → Agent Plan → 本轮证据 → 回答或巡检报告
 变更请求 → Change Proposal → 人工审批 → 受控执行 → 同口径验证
 ```
 
@@ -288,8 +288,10 @@ AlertManager、Zabbix 或 OEM Webhook 经过验签、Target 映射、去重和�
 
 ### Schedule
 
-日巡检、周巡检或 Cron 计划按时区展开为 Fire，再为每个有效 Target 创建独立
-Run。重叠策略支持 `SKIP/QUEUE`。日报展示健康与异常，周报聚合趋势、反复告警、
+日巡检、周巡检或 Cron 计划选择一名 DBA Agent，并按时区触发 Fire。Scheduler 每次
+只向 Agent 提交一条标准巡检任务；Agent 接收后冻结当前发布版本及其 Target、模型和
+策略，并复用人工健康检查的规划、取证和回答链。重叠策略支持 `SKIP/QUEUE`。
+日报展示健康与异常，周报聚合趋势、反复告警、
 未解决事项和上周对比。
 
 ## 根因诊断主流程

@@ -60,6 +60,7 @@ class InspectionPlanEntity(BaseEntity):
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     schedule_type: Mapped[str] = mapped_column(String(16), nullable=False)
     cron_expression: Mapped[str] = mapped_column(String(256), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -74,7 +75,7 @@ class InspectionPlanEntity(BaseEntity):
         String(64), nullable=False
     )
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="PAUSED"
+        String(16), nullable=False, default="ACTIVE"
     )
     next_run_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
@@ -105,31 +106,6 @@ class InspectionPlanEntity(BaseEntity):
         nullable=False,
     )
     __mapper_args__ = {"version_id_col": row_version}
-
-
-class InspectionTargetEntity(BaseEntity):
-    __tablename__ = "KBOT_OPS_INSPECTION_TARGET"
-
-    inspection_target_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), primary_key=True, default=uuid7
-    )
-    inspection_plan_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), nullable=False
-    )
-    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    template_overrides_json: Mapped[dict | None] = mapped_column(OracleNativeJSON)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
 
 
 class InspectionFireEntity(BaseEntity):

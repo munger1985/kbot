@@ -40,7 +40,6 @@ from aiops_agent.application.errors import (
 from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
-    InspectionTargetEntity,
     DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
@@ -63,9 +62,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanPage,
     InspectionPlanPatch,
     InspectionPlanSummary,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -108,7 +104,6 @@ class ConfigurationServiceBase:
         agent_catalog: AgentCatalogPort,
         template_registry: InspectionTemplateRegistry,
         management: AIOpsManagementConfig,
-        max_inspection_targets: int,
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
         diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
@@ -119,7 +114,6 @@ class ConfigurationServiceBase:
         self._agent_catalog = agent_catalog
         self._template_registry = template_registry
         self._management = management
-        self._max_inspection_targets = max_inspection_targets
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher
         self._managed_credentials = managed_credential_service

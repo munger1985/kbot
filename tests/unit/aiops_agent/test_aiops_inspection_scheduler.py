@@ -12,6 +12,7 @@ from aiops_agent.scheduling import (
     AIOpsInspectionScheduler,
     resolve_due_schedule,
 )
+from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
 
@@ -81,13 +82,99 @@ class ScheduleResolverTest(unittest.TestCase):
 
 
 class InspectionSchedulerTest(unittest.TestCase):
-    def test_due_plan_atomically_creates_fire_and_target_requests(
+    def test_agent_task_creates_standard_turns_for_current_targets(self) -> None:
+        fire_id = uuid7()
+        agent_id = uuid7()
+        version_id = uuid7()
+        target_ids = [uuid7(), uuid7()]
+        fire = SimpleNamespace(
+            plan_snapshot_json={"agent_version_id": None},
+            target_count=0,
+            updated_at=None,
+        )
+        conversations = []
+
+        async def add_conversation(entity):
+            conversations.append(entity)
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                get_fire=AsyncMock(return_value=fire),
+            ),
+            conversations=SimpleNamespace(
+                list_for_inspection_fire=AsyncMock(return_value=[]),
+                add_conversation=AsyncMock(side_effect=add_conversation),
+            ),
+            agents=SimpleNamespace(
+                get=AsyncMock(
+                    return_value=SimpleNamespace(
+                        agent_id=agent_id,
+                        status="ACTIVE",
+                        current_version_id=version_id,
+                    )
+                ),
+                version=AsyncMock(
+                    return_value=SimpleNamespace(
+                        agent_version_id=version_id
+                    )
+                ),
+                active_version_target_ids=AsyncMock(
+                    return_value=target_ids
+                ),
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = ConversationTurnService(uow_factory=lambda: context)
+        service._require_existing_target = AsyncMock()
+        service._create_turn = AsyncMock(
+            return_value={"status": "QUEUED"}
+        )
+        payload = {
+            "inspection_fire_id": str(fire_id),
+            "domain_id": 200,
+            "actor_id": "system:inspection-scheduler",
+            "agent_id": str(agent_id),
+            "plan_display_name": "数据库日报",
+            "template_id": "database_daily",
+            "template_version": "1.0.0",
+            "schedule_type": "DAILY",
+            "timezone": "Asia/Shanghai",
+            "period_start": "2026-07-22T16:00:00+00:00",
+            "period_end": "2026-07-23T16:00:00+00:00",
+            "timeout_seconds": 3600,
+            "trace_id": "trace-inspection",
+        }
+
+        result = asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual(result["conversation_count"], 2)
+        self.assertEqual(len(conversations), 2)
+        self.assertTrue(
+            all(item.source_type == "INSPECTION" for item in conversations)
+        )
+        self.assertEqual(fire.target_count, 2)
+        self.assertEqual(
+            fire.plan_snapshot_json["agent_version_id"], str(version_id)
+        )
+        self.assertEqual(service._create_turn.await_count, 2)
+        for call in service._create_turn.await_args_list:
+            execution = call.kwargs["execution_context"]
+            self.assertEqual(execution["trigger_type"], "SCHEDULE")
+            self.assertEqual(execution["inspection_fire_id"], str(fire_id))
+        uow.commit.assert_awaited_once()
+
+    def test_due_plan_atomically_creates_fire_and_single_agent_request(
         self,
     ) -> None:
         now = datetime(2026, 7, 24, 1, 0, 10, tzinfo=UTC)
+        agent_id = uuid7()
         plan = SimpleNamespace(
             inspection_plan_id=uuid7(),
             domain_id=200,
+            agent_id=agent_id,
             display_name="数据库日报",
             schedule_type="DAILY",
             cron_expression="0 9 * * *",
@@ -101,16 +188,6 @@ class InspectionSchedulerTest(unittest.TestCase):
             next_run_at=datetime(2026, 7, 24, 1, 0, tzinfo=UTC),
             row_version=3,
         )
-        targets = [
-            SimpleNamespace(
-                target_id=uuid7(),
-                template_overrides_json=None,
-            ),
-            SimpleNamespace(
-                target_id=uuid7(),
-                template_overrides_json={"thresholds": {"cpu": 90}},
-            ),
-        ]
         fires = []
         messages = []
 
@@ -124,7 +201,6 @@ class InspectionSchedulerTest(unittest.TestCase):
 
         inspections = SimpleNamespace(
             claim_due_plan=AsyncMock(return_value=plan),
-            list_active_targets=AsyncMock(return_value=targets),
             list_open_fires=AsyncMock(return_value=[]),
             add_fire=AsyncMock(side_effect=add_fire),
             advance_claimed_plan=AsyncMock(return_value=True),
@@ -145,7 +221,6 @@ class InspectionSchedulerTest(unittest.TestCase):
         scheduler = AIOpsInspectionScheduler(
             uow_factory=lambda: context,
             scheduler_id="scheduler-test",
-            system_agent_id=uuid7(),
             lease_seconds=120,
             interval_seconds=30,
             misfire_grace_seconds=60,
@@ -154,16 +229,22 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertTrue(worked)
         self.assertEqual(len(fires), 1)
         self.assertEqual(fires[0].status, "RUNNING")
-        self.assertEqual(fires[0].target_count, 2)
-        self.assertEqual(len(messages), 2)
+        self.assertEqual(fires[0].target_count, 0)
+        self.assertEqual(len(messages), 1)
         self.assertEqual(
             {item.event_type for item in messages},
-            {"OPS_INSPECTION_RUN_REQUESTED"},
+            {"OPS_INSPECTION_AGENT_REQUESTED"},
         )
+        self.assertEqual(
+            {item.payload_json["agent_id"] for item in messages},
+            {str(agent_id)},
+        )
+        self.assertNotIn("agent_version_id", messages[0].payload_json)
+        self.assertNotIn("target_id", messages[0].payload_json)
         inspections.advance_claimed_plan.assert_awaited_once()
         uow.commit.assert_awaited_once()
 
-    def test_running_fire_aggregates_mixed_terminal_runs(self) -> None:
+    def test_running_fire_aggregates_agent_turn_terminals(self) -> None:
         now = datetime(2026, 7, 24, 2, 0, tzinfo=UTC)
         fire = SimpleNamespace(
             inspection_fire_id=uuid7(),
@@ -176,21 +257,22 @@ class InspectionSchedulerTest(unittest.TestCase):
             completed_at=None,
             updated_at=now,
         )
-        runs = [
+        runs = [SimpleNamespace(status="COMPLETED")]
+        turns = [
             SimpleNamespace(status="COMPLETED"),
-            SimpleNamespace(status="FAILED"),
+            SimpleNamespace(status="PARTIAL"),
         ]
         inspections = SimpleNamespace(
             claim_due_plan=AsyncMock(return_value=None),
             find_reconcilable_fire=AsyncMock(return_value=fire),
             get_fire=AsyncMock(return_value=fire),
             list_runs_for_fire=AsyncMock(return_value=runs),
-            list_run_request_events_for_fire=AsyncMock(
+            list_agent_request_events_for_fire=AsyncMock(
                 return_value=[
-                    SimpleNamespace(status="PUBLISHED"),
                     SimpleNamespace(status="PUBLISHED"),
                 ]
             ),
+            list_turns_for_fire=AsyncMock(return_value=turns),
         )
         uow = SimpleNamespace(
             runs=SimpleNamespace(
@@ -204,7 +286,6 @@ class InspectionSchedulerTest(unittest.TestCase):
         scheduler = AIOpsInspectionScheduler(
             uow_factory=lambda: context,
             scheduler_id="scheduler-test",
-            system_agent_id=uuid7(),
             lease_seconds=120,
             interval_seconds=30,
             misfire_grace_seconds=60,
@@ -213,22 +294,28 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertTrue(worked)
         self.assertEqual(fire.status, "PARTIAL")
         self.assertEqual(fire.completed_count, 1)
-        self.assertEqual(fire.failed_count, 1)
+        self.assertEqual(fire.failed_count, 0)
+        self.assertEqual(fire.target_count, 2)
+        self.assertEqual(fire.run_count, 1)
 
-    def test_run_request_preserves_fire_and_report_window(self) -> None:
+    def test_agent_request_reuses_standard_turn_entry(self) -> None:
         runtime = AsyncMock()
+        turns = AsyncMock()
+        turns.start_scheduled_inspection.return_value = {
+            "conversation_count": 2
+        }
         sink = AIOpsDomainOutboxSink(
             runtime_service=runtime,
             fallback=AsyncMock(),
+            conversation_turn_service=turns,
         )
         fire_id = uuid7()
-        target_id = uuid7()
         payload = {
             "inspection_fire_id": str(fire_id),
-                        "domain_id": 200,
+            "domain_id": 200,
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(uuid7()),
-            "target_id": str(target_id),
+            "plan_display_name": "数据库日报",
             "template_id": "database_daily",
             "template_version": "1.0.0",
             "schedule_type": "DAILY",
@@ -236,22 +323,13 @@ class InspectionSchedulerTest(unittest.TestCase):
             "period_start": "2026-07-22T16:00:00+00:00",
             "period_end": "2026-07-23T16:00:00+00:00",
             "timeout_seconds": 3600,
-            "template_overrides": {},
             "trace_id": "trace-inspection",
         }
         asyncio.run(
-            sink.publish("OPS_INSPECTION_RUN_REQUESTED", payload)
+            sink.publish("OPS_INSPECTION_AGENT_REQUESTED", payload)
         )
-        command = runtime.create_run.await_args.args[0]
-        self.assertEqual(command.inspection_fire_id, fire_id)
-        self.assertEqual(command.trigger_type, "SCHEDULE")
-        self.assertEqual(
-            command.blueprint_id, "database.diagnostic-baseline"
-        )
-        self.assertEqual(
-            command.client_metadata["inspection"]["timezone"],
-            "Asia/Shanghai",
-        )
+        turns.start_scheduled_inspection.assert_awaited_once_with(payload)
+        runtime.create_run.assert_not_awaited()
 
 
 if __name__ == "__main__":

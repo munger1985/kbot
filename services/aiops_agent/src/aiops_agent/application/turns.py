@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -105,6 +105,7 @@ class ConversationTurnService:
                 source_situation_id=source.situation_id,
                 source_run_id=source.run_id,
                 source_report_id=source.report_id,
+                source_inspection_fire_id=source.inspection_fire_id,
                 last_turn_no=0,
                 last_message_no=0,
                 created_by=actor_id,
@@ -122,6 +123,145 @@ class ConversationTurnService:
             )
             await uow.commit()
             return receipt
+
+    async def start_scheduled_inspection(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """把一次定时触发转换为标准 Agent Conversation Turn。"""
+        domain_id = int(payload["domain_id"])
+        agent_id = UUID(str(payload["agent_id"]))
+        fire_id = UUID(str(payload["inspection_fire_id"]))
+        actor_id = str(payload["actor_id"])
+        trace_id = str(payload["trace_id"])
+        async with self._uow_factory() as uow:
+            fire = await uow.inspections.get_fire(
+                inspection_fire_id=fire_id,
+                lock=True,
+            )
+            if fire is None:
+                raise resource_not_found("Inspection Fire")
+            existing = await uow.conversations.list_for_inspection_fire(
+                inspection_fire_id=fire_id
+            )
+            if existing:
+                return {
+                    "inspection_fire_id": str(fire_id),
+                    "conversation_count": len(existing),
+                    "agent_version_id": dict(fire.plan_snapshot_json).get(
+                        "agent_version_id"
+                    ),
+                }
+            agent = await uow.agents.get(
+                domain_id=domain_id,
+                agent_id=agent_id,
+            )
+            if (
+                agent is None
+                or agent.status != "ACTIVE"
+                or agent.current_version_id is None
+            ):
+                raise resource_not_found("Active AIOps Agent")
+            version = await uow.agents.version(
+                agent_id=agent.agent_id,
+                agent_version_id=agent.current_version_id,
+            )
+            if version is None:
+                raise resource_not_found("Agent Version")
+            target_ids = await uow.agents.active_version_target_ids(
+                domain_id=domain_id,
+                agent_version_id=version.agent_version_id,
+            )
+            if not target_ids:
+                raise self._error(
+                    "AIOPS_INSPECTION_AGENT_TARGET_REQUIRED",
+                    "巡检触发时 Agent 当前版本没有已启用的 Target",
+                )
+            period_start = datetime.fromisoformat(str(payload["period_start"]))
+            period_end = datetime.fromisoformat(str(payload["period_end"]))
+            schedule_type = str(payload["schedule_type"])
+            task_text = (
+                "请对你负责的数据库执行本期健康巡检并生成巡检报告。"
+                f"观测窗口为 [{period_start.isoformat()}, {period_end.isoformat()})，"
+                f"巡检周期类型为 {schedule_type}。"
+                "请自主规划只读诊断步骤、执行取证、评估健康风险，"
+                "并给出有证据支持的结论和建议。"
+            )
+            deadline_at = datetime.now(UTC) + timedelta(
+                seconds=int(payload["timeout_seconds"])
+            )
+            receipts: list[dict[str, Any]] = []
+            for target_id in target_ids:
+                await self._require_existing_target(
+                    uow=uow,
+                    domain_id=domain_id,
+                    target_id=target_id,
+                )
+                conversation = OpsConversationEntity(
+                    domain_id=domain_id,
+                    agent_id=agent.agent_id,
+                    agent_version_id=version.agent_version_id,
+                    target_id=target_id,
+                    title=f"{payload['plan_display_name']} · 定期巡检",
+                    status="ACTIVE",
+                    source_type="INSPECTION",
+                    source_inspection_fire_id=fire_id,
+                    last_turn_no=0,
+                    last_message_no=0,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+                await uow.conversations.add_conversation(conversation)
+                receipts.append(
+                    await self._create_turn(
+                        uow=uow,
+                        conversation=conversation,
+                        version=version,
+                        command=TurnCreate(
+                            content=(
+                                {
+                                    "content_type": "TEXT",
+                                    "text": task_text,
+                                },
+                            ),
+                            idempotency_key=(
+                                f"inspection:{fire_id}:target:{target_id}"
+                            ),
+                        ),
+                        actor_id=actor_id,
+                        trace_id=trace_id,
+                        source_run=None,
+                        execution_context={
+                            "trigger_type": "SCHEDULE",
+                            "interaction_mode": "AUTONOMOUS",
+                            "workflow_kind": "INSPECTION_TURN",
+                            "inspection_fire_id": str(fire_id),
+                            "deadline_at": deadline_at.isoformat(),
+                            "observation_start": period_start.isoformat(),
+                            "observation_end": period_end.isoformat(),
+                            "inspection": {
+                                "template_id": payload["template_id"],
+                                "template_version": payload[
+                                    "template_version"
+                                ],
+                                "schedule_type": schedule_type,
+                                "timezone": payload["timezone"],
+                                "period_start": period_start.isoformat(),
+                                "period_end": period_end.isoformat(),
+                            },
+                        },
+                    )
+                )
+            snapshot = dict(fire.plan_snapshot_json)
+            snapshot["agent_version_id"] = str(version.agent_version_id)
+            fire.plan_snapshot_json = snapshot
+            fire.target_count = len(receipts)
+            fire.updated_at = datetime.now(UTC)
+            await uow.commit()
+            return {
+                "inspection_fire_id": str(fire_id),
+                "conversation_count": len(receipts),
+                "agent_version_id": str(version.agent_version_id),
+            }
 
     async def create_turn(
         self,
@@ -487,6 +627,7 @@ class ConversationTurnService:
         actor_id: str,
         trace_id: str,
         source_run,
+        execution_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         upload_metadata = {}
         for item in command.content:
@@ -585,6 +726,8 @@ class ConversationTurnService:
             "source_run_id": str(source_run.ops_run_id) if source_run else None,
             "trace_id": trace_id,
         }
+        if execution_context:
+            outbox_payload["execution_context"] = execution_context
         encoded = json.dumps(
             outbox_payload, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
@@ -697,6 +840,11 @@ class ConversationTurnService:
             "source_run_id": str(row.source_run_id) if row.source_run_id else None,
             "source_report_id": (
                 str(row.source_report_id) if row.source_report_id else None
+            ),
+            "source_inspection_fire_id": (
+                str(row.source_inspection_fire_id)
+                if row.source_inspection_fire_id
+                else None
             ),
             "last_turn_no": int(row.last_turn_no),
             "created_at": row.created_at.isoformat() if row.created_at else None,

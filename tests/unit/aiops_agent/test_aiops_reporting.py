@@ -15,6 +15,94 @@ from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_scheduled_agent_turn_publishes_custom_report(self) -> None:
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            actor_id="system:inspection-scheduler",
+            target_id=uuid7(),
+            inspection_fire_id=uuid7(),
+            plan_snapshot_json={
+                "target": {"security_level": 2},
+                "client_metadata": {
+                    "inspection": {
+                        "template_id": "database_custom",
+                        "template_version": "1.0.0",
+                        "schedule_type": "CRON",
+                        "timezone": "Asia/Shanghai",
+                        "period_start": "2026-07-22T16:00:00+00:00",
+                        "period_end": "2026-07-23T16:00:00+00:00",
+                    }
+                },
+            },
+        )
+        source = SimpleNamespace(
+            artifact_id=uuid7(),
+            schema_version="AIOPS_TURN_RESULT.v1",
+            content_hash="c" * 64,
+            payload_json={
+                "schema_version": "AIOPS_TURN_RESULT.v1",
+                "status": "COMPLETED",
+                "sufficiency_status": "ANSWERABLE",
+                "blocks": [
+                    {
+                        "block_type": "MARKDOWN",
+                        "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                        "payload": {"markdown": "数据库整体健康。"},
+                        "evidence_refs": [],
+                    }
+                ],
+            },
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report)
+            ),
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+
+        result = asyncio.run(
+            service._publish_turn_inspection_report(
+                uow=uow,
+                run=run,
+                task=SimpleNamespace(ops_task_id=uuid7()),
+                source_artifact=source,
+                now=datetime(2026, 7, 24, tzinfo=UTC),
+                trace_id="trace-agent-inspection",
+            )
+        )
+
+        self.assertEqual(result.schema_version, "REPORT_CONTENT.v1")
+        self.assertEqual(
+            result.payload_json["report_type"], "INSPECTION_CUSTOM"
+        )
+        self.assertEqual(
+            result.payload_json["facts"][0]["markdown"],
+            "数据库整体健康。",
+        )
+
     def test_schedule_result_publishes_report_content_and_projection(
         self,
     ) -> None:

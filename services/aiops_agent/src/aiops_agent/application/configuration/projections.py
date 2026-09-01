@@ -37,7 +37,6 @@ from aiops_agent.application.errors import (
 from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
-    InspectionTargetEntity,
     DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
@@ -56,9 +55,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanPage,
     InspectionPlanPatch,
     InspectionPlanSummary,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -297,6 +293,7 @@ def _inspection_summary(
     return InspectionPlanSummary(
         plan_id=entity.inspection_plan_id,
         display_name=entity.display_name,
+        agent_id=entity.agent_id,
         schedule_type=entity.schedule_type,
         timezone=entity.timezone,
         status=entity.status,
@@ -310,7 +307,7 @@ def _inspection_summary(
 def _inspection_detail(
     entity: InspectionPlanEntity,
     *,
-    active_target_count: int,
+    agent_target_count: int,
 ) -> InspectionPlanDetail:
     return InspectionPlanDetail(
         **_inspection_summary(entity).model_dump(),
@@ -321,21 +318,8 @@ def _inspection_detail(
         overlap_policy=entity.overlap_policy,
         misfire_policy=entity.misfire_policy,
         schedule_resolver_version=entity.schedule_resolver_version,
-        active_target_count=active_target_count,
+        agent_target_count=agent_target_count,
         created_at=entity.created_at.astimezone(UTC),
         created_by=entity.created_by,
         updated_by=entity.updated_by,
-    )
-
-def _inspection_target_view(
-    entity: InspectionTargetEntity,
-) -> InspectionTargetView:
-    return InspectionTargetView(
-        plan_target_id=entity.inspection_target_id,
-        plan_id=entity.inspection_plan_id,
-        target_id=entity.target_id,
-        template_overrides=entity.template_overrides_json,
-        status=entity.status,
-        created_at=entity.created_at.astimezone(UTC),
-        updated_at=entity.updated_at.astimezone(UTC),
     )

@@ -165,9 +165,6 @@ def create_aiops_api(
                 resolved.management.inspection_templates
             ),
             management=resolved.management,
-            max_inspection_targets=(
-                resolved.limits.max_targets_per_inspection_fire
-            ),
             credential_cipher=credential_cipher,
             managed_credential_service=managed_credential_service,
             diagnostic_source_catalog=diagnostic_source_catalog,

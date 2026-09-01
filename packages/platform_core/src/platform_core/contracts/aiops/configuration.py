@@ -28,7 +28,6 @@ SourceStatus = Literal["ENABLED", "DISABLED"]
 SourceBindingStatus = Literal["ACTIVE", "DISABLED"]
 PolicyStatus = Literal["DRAFT", "ACTIVE", "RETIRED"]
 InspectionPlanStatus = Literal["ACTIVE", "PAUSED", "DISABLED"]
-InspectionTargetStatus = Literal["ACTIVE", "DISABLED"]
 NotificationStage = Literal[
     "SITUATION_DETECTED",
     "DIAGNOSIS_STARTED",
@@ -450,6 +449,7 @@ class PolicyPage(CursorPage):
 class InspectionPlanCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
+    agent_id: UUIDv7
     schedule_type: Literal["DAILY", "WEEKLY", "CRON"]
     cron_expression: str = Field(min_length=9, max_length=256)
     timezone: str = Field(min_length=1, max_length=64)
@@ -464,6 +464,7 @@ class InspectionPlanCreate(AIOpsContract):
 class InspectionPlanPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    agent_id: UUIDv7 | None = None
     cron_expression: str | None = Field(default=None, min_length=9, max_length=256)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     template_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -480,6 +481,7 @@ class InspectionPlanSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     plan_id: UUIDv7
     display_name: str
+    agent_id: UUIDv7
     schedule_type: str
     timezone: str
     status: InspectionPlanStatus
@@ -496,7 +498,7 @@ class InspectionPlanDetail(InspectionPlanSummary):
     overlap_policy: str
     misfire_policy: str
     schedule_resolver_version: str
-    active_target_count: int = Field(ge=0)
+    agent_target_count: int = Field(ge=0)
     created_at: UtcDatetime
     created_by: str
     updated_by: str
@@ -505,29 +507,6 @@ class InspectionPlanDetail(InspectionPlanSummary):
 class InspectionPlanPage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     items: tuple[InspectionPlanSummary, ...] = ()
-
-
-class InspectionTargetCreate(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    target_id: UUIDv7
-    template_overrides: JsonObject | None = None
-
-
-class InspectionTargetPatch(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    template_overrides: JsonObject | None = None
-    status: InspectionTargetStatus | None = None
-
-
-class InspectionTargetView(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    plan_target_id: UUIDv7
-    plan_id: UUIDv7
-    target_id: UUIDv7
-    template_overrides: JsonObject | None = None
-    status: InspectionTargetStatus
-    created_at: UtcDatetime
-    updated_at: UtcDatetime
 
 
 class ConnectivityCheckReceipt(AIOpsContract):

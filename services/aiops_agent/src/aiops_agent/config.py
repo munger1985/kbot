@@ -144,7 +144,6 @@ class AIOpsLimitsConfig(BaseModel):
     )
     max_tasks_per_run: int = Field(default=64, ge=1, le=512)
     run_timeout_seconds: int = Field(default=3600, ge=60, le=86400)
-    max_targets_per_inspection_fire: int = Field(default=100, ge=1, le=1000)
     conversation_upload_ttl_seconds: int = Field(
         default=86_400, ge=300, le=604_800
     )

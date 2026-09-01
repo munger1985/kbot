@@ -14,6 +14,7 @@ from aiops_agent.entities import (
     AIOpsAgentVersionSourceEntity,
     AIOpsAgentVersionTargetEntity,
     PolicyEntity,
+    TargetEntity,
 )
 
 
@@ -75,6 +76,25 @@ class AIOpsAgentRepository:
             .where(
                 AIOpsAgentVersionTargetEntity.agent_version_id
                 == agent_version_id
+            )
+            .order_by(AIOpsAgentVersionTargetEntity.target_id)
+        )
+        return list(rows)
+
+    async def active_version_target_ids(
+        self, *, domain_id: int, agent_version_id: UUID
+    ) -> list[UUID]:
+        """返回 Agent 当前版本中仍处于启用状态的 Target。"""
+        rows = await self._session.scalars(
+            select(AIOpsAgentVersionTargetEntity.target_id)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == AIOpsAgentVersionTargetEntity.target_id,
+            )
+            .where(
+                AIOpsAgentVersionTargetEntity.agent_version_id == agent_version_id,
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.status == "ENABLED",
             )
             .order_by(AIOpsAgentVersionTargetEntity.target_id)
         )
@@ -279,6 +299,42 @@ class AIOpsAgentRepository:
         policy = await self._session.get(PolicyEntity, version.policy_id)
         return _execution_binding(
             agent, version, source_ids, target_ids, policy,
+            selected_target_id=target_id,
+        )
+
+    async def get_version_binding(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        agent_version_id: UUID,
+        target_id: UUID,
+    ):
+        """解析计划触发时冻结的不可变 Agent 版本执行上下文。"""
+        agent = await self.get(domain_id=domain_id, agent_id=agent_id)
+        if agent is None or agent.status != "ACTIVE":
+            return None
+        version = await self.version(
+            agent_id=agent_id,
+            agent_version_id=agent_version_id,
+        )
+        if version is None:
+            return None
+        source_ids = await self.version_source_ids(
+            agent_version_id=agent_version_id
+        )
+        target_ids = await self.version_target_ids(
+            agent_version_id=agent_version_id
+        )
+        if target_id not in target_ids:
+            return None
+        policy = await self._session.get(PolicyEntity, version.policy_id)
+        return _execution_binding(
+            agent,
+            version,
+            source_ids,
+            target_ids,
+            policy,
             selected_target_id=target_id,
         )
 

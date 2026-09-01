@@ -13,11 +13,11 @@ from aiops_agent.entities import (
     InspectionPlanEntity,
     InspectionReportTemplateEntity,
     InspectionReportTemplateVersionEntity,
-    InspectionTargetEntity,
+    OpsConversationEntity,
+    OpsConversationTurnEntity,
     OpsRunEntity,
     OutboxEntity,
     ReportEntity,
-    TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
@@ -33,11 +33,6 @@ class InspectionRepository(AIOpsRepository):
     async def add_plan(
         self, entity: InspectionPlanEntity
     ) -> InspectionPlanEntity:
-        return await self._add(entity)
-
-    async def add_target(
-        self, entity: InspectionTargetEntity
-    ) -> InspectionTargetEntity:
         return await self._add(entity)
 
     async def add_fire(
@@ -151,111 +146,6 @@ class InspectionRepository(AIOpsRepository):
                 == inspection_plan_id,
                 InspectionPlanEntity.domain_id == domain_id,
                 InspectionPlanEntity.row_version == expected_version,
-            )
-            .values(**update_values)
-            .execution_options(synchronize_session=False)
-        )
-        result = await self._session.execute(statement)
-        return result.rowcount == 1
-
-    async def list_active_targets(
-        self,
-        *,
-        inspection_plan_id: UUID,
-        domain_id: int,
-    ) -> list[InspectionTargetEntity]:
-        self._check_active()
-        statement = (
-            select(InspectionTargetEntity)
-            .join(
-                InspectionPlanEntity,
-                InspectionPlanEntity.inspection_plan_id
-                == InspectionTargetEntity.inspection_plan_id,
-            )
-            .join(
-                TargetEntity,
-                TargetEntity.target_id == InspectionTargetEntity.target_id,
-            )
-            .where(
-                InspectionTargetEntity.inspection_plan_id
-                == inspection_plan_id,
-                InspectionTargetEntity.status == "ACTIVE",
-                InspectionPlanEntity.domain_id == domain_id,
-                TargetEntity.domain_id == domain_id,
-                TargetEntity.status == "ENABLED",
-            )
-            .order_by(InspectionTargetEntity.inspection_target_id)
-        )
-        return list((await self._session.execute(statement)).scalars())
-
-    async def list_targets(
-        self,
-        *,
-        inspection_plan_id: UUID,
-        domain_id: int,
-    ) -> list[InspectionTargetEntity]:
-        self._check_active()
-        statement = (
-            select(InspectionTargetEntity)
-            .join(
-                InspectionPlanEntity,
-                InspectionPlanEntity.inspection_plan_id
-                == InspectionTargetEntity.inspection_plan_id,
-            )
-            .where(
-                InspectionTargetEntity.inspection_plan_id
-                == inspection_plan_id,
-                InspectionPlanEntity.domain_id == domain_id,
-            )
-            .order_by(InspectionTargetEntity.inspection_target_id)
-        )
-        return list((await self._session.execute(statement)).scalars())
-
-    async def get_target_scoped(
-        self,
-        *,
-        inspection_target_id: UUID,
-        inspection_plan_id: UUID,
-        domain_id: int,
-        lock: bool = False,
-    ) -> InspectionTargetEntity | None:
-        self._check_active()
-        statement: Select = (
-            select(InspectionTargetEntity)
-            .join(
-                InspectionPlanEntity,
-                InspectionPlanEntity.inspection_plan_id
-                == InspectionTargetEntity.inspection_plan_id,
-            )
-            .where(
-                InspectionTargetEntity.inspection_target_id
-                == inspection_target_id,
-                InspectionTargetEntity.inspection_plan_id
-                == inspection_plan_id,
-                InspectionPlanEntity.domain_id == domain_id,
-            )
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def update_target(
-        self,
-        *,
-        inspection_target_id: UUID,
-        inspection_plan_id: UUID,
-        values: dict,
-    ) -> bool:
-        self._check_active()
-        update_values = dict(values)
-        update_values["updated_at"] = datetime.now(UTC)
-        statement = (
-            update(InspectionTargetEntity)
-            .where(
-                InspectionTargetEntity.inspection_target_id
-                == inspection_target_id,
-                InspectionTargetEntity.inspection_plan_id
-                == inspection_plan_id,
             )
             .values(**update_values)
             .execution_options(synchronize_session=False)
@@ -491,7 +381,7 @@ class InspectionRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
-    async def list_run_request_events_for_fire(
+    async def list_agent_request_events_for_fire(
         self, *, inspection_fire_id: UUID
     ) -> list[OutboxEntity]:
         self._check_active()
@@ -501,9 +391,28 @@ class InspectionRepository(AIOpsRepository):
                 OutboxEntity.aggregate_type == "OPS_INSPECTION_FIRE",
                 OutboxEntity.aggregate_id == inspection_fire_id,
                 OutboxEntity.event_type
-                == "OPS_INSPECTION_RUN_REQUESTED",
+                == "OPS_INSPECTION_AGENT_REQUESTED",
             )
             .order_by(OutboxEntity.outbox_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def list_turns_for_fire(
+        self, *, inspection_fire_id: UUID
+    ) -> list[OpsConversationTurnEntity]:
+        """返回由一次巡检 Fire 创建的全部 Agent Turn。"""
+        statement = (
+            select(OpsConversationTurnEntity)
+            .join(
+                OpsConversationEntity,
+                OpsConversationEntity.conversation_id
+                == OpsConversationTurnEntity.conversation_id,
+            )
+            .where(
+                OpsConversationEntity.source_inspection_fire_id
+                == inspection_fire_id
+            )
+            .order_by(OpsConversationTurnEntity.turn_id)
         )
         return list((await self._session.execute(statement)).scalars())
 

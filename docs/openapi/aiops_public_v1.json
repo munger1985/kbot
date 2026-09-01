@@ -1368,6 +1368,11 @@
       "InspectionPlanCreate": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "cron_expression": {
             "maxLength": 256,
             "minLength": 9,
@@ -1445,6 +1450,7 @@
         },
         "required": [
           "display_name",
+          "agent_id",
           "schedule_type",
           "cron_expression",
           "timezone",
@@ -1459,9 +1465,14 @@
       "InspectionPlanDetail": {
         "additionalProperties": false,
         "properties": {
-          "active_target_count": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_target_count": {
             "minimum": 0.0,
-            "title": "Active Target Count",
+            "title": "Agent Target Count",
             "type": "integer"
           },
           "created_at": {
@@ -1562,6 +1573,7 @@
         "required": [
           "plan_id",
           "display_name",
+          "agent_id",
           "schedule_type",
           "timezone",
           "status",
@@ -1574,7 +1586,7 @@
           "overlap_policy",
           "misfire_policy",
           "schedule_resolver_version",
-          "active_target_count",
+          "agent_target_count",
           "created_at",
           "created_by",
           "updated_by"
@@ -1622,6 +1634,18 @@
       "InspectionPlanPatch": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
           "cron_expression": {
             "anyOf": [
               {
@@ -1755,6 +1779,11 @@
       "InspectionPlanSummary": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -1812,6 +1841,7 @@
         "required": [
           "plan_id",
           "display_name",
+          "agent_id",
           "schedule_type",
           "timezone",
           "status",
@@ -1819,142 +1849,6 @@
           "updated_at"
         ],
         "title": "InspectionPlanSummary",
-        "type": "object"
-      },
-      "InspectionTargetCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "template_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template Overrides"
-          }
-        },
-        "required": [
-          "target_id"
-        ],
-        "title": "InspectionTargetCreate",
-        "type": "object"
-      },
-      "InspectionTargetPatch": {
-        "additionalProperties": false,
-        "properties": {
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ACTIVE",
-                  "DISABLED"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          },
-          "template_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template Overrides"
-          }
-        },
-        "title": "InspectionTargetPatch",
-        "type": "object"
-      },
-      "InspectionTargetView": {
-        "additionalProperties": false,
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "plan_id": {
-            "format": "uuid",
-            "title": "Plan Id",
-            "type": "string"
-          },
-          "plan_target_id": {
-            "format": "uuid",
-            "title": "Plan Target Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "template_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template Overrides"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "plan_target_id",
-          "plan_id",
-          "target_id",
-          "status",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "InspectionTargetView",
         "type": "object"
       },
       "ManualResultCommand": {
@@ -3190,6 +3084,7 @@
           "PERFORMANCE",
           "INSPECTION_DAILY",
           "INSPECTION_WEEKLY",
+          "INSPECTION_CUSTOM",
           "COMPARISON"
         ],
         "title": "ReportType",
@@ -6255,208 +6150,6 @@
           }
         },
         "summary": "Pause Inspection Plan",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/inspection-plans/{plan_id}/targets": {
-      "get": {
-        "operationId": "list_inspection_targets_api_v1_apps_aiops_inspection_plans__plan_id__targets_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Plan Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/InspectionTargetView"
-                  },
-                  "title": "Response List Inspection Targets Api V1 Apps Aiops Inspection Plans  Plan Id  Targets Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Inspection Targets",
-        "tags": [
-          "AIOps"
-        ]
-      },
-      "post": {
-        "operationId": "add_inspection_target_api_v1_apps_aiops_inspection_plans__plan_id__targets_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Plan Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InspectionTargetCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InspectionTargetView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Add Inspection Target",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/inspection-plans/{plan_id}/targets/{plan_target_id}": {
-      "patch": {
-        "operationId": "patch_inspection_target_api_v1_apps_aiops_inspection_plans__plan_id__targets__plan_target_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "plan_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Plan Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "plan_target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Plan Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InspectionTargetPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InspectionTargetView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Patch Inspection Target",
         "tags": [
           "AIOps"
         ]

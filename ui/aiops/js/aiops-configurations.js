@@ -4,6 +4,7 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   let editing = null;
+  let inspectionAgents = [];
 
   function showResult(id, message, tone = "bad") {
     const element = document.getElementById(id);
@@ -587,6 +588,7 @@
     form.elements.cron_expression.value = schedule.cron;
     const payload = {
       display_name: form.elements.display_name.value.trim(),
+      agent_id: form.elements.agent_id.value,
       cron_expression: schedule.cron,
       timezone: form.elements.timezone.value,
       template_id: form.elements.template_id.value.trim(),
@@ -610,7 +612,7 @@
     form.elements.schedule_resolver_version.value = "1.0.0";
     form.elements.timeout_seconds.value = 1800;
     document.getElementById("inspection-plan-dialog-title").textContent = "新增巡检计划";
-    document.getElementById("save-inspection-plan").textContent = "创建计划";
+    document.getElementById("save-inspection-plan").textContent = "创建并启用";
     showResult("inspection-plan-result", "", "");
     document.getElementById("inspection-plan-dialog").showModal();
     form.elements.display_name.focus();
@@ -637,6 +639,7 @@
   function planPayloadValues(plan) {
     return {
       display_name: plan.display_name,
+      agent_id: plan.agent_id,
       schedule_type: plan.schedule_type,
       cron_expression: plan.cron_expression,
       timezone: plan.timezone,
@@ -666,14 +669,14 @@
         },
       );
       document.getElementById("inspection-plan-dialog").close();
-      shell.toast(editing ? "巡检计划已更新" : "巡检计划已创建");
+      shell.toast(editing ? "巡检计划已更新" : "巡检计划已创建并启用");
       editing = null;
       await KBotAIOpsPages.reload();
     } catch (error) {
       showResult("inspection-plan-result", error.message);
     } finally {
       button.disabled = false;
-      button.textContent = editing ? "保存修改" : "创建计划";
+      button.textContent = editing ? "保存修改" : "创建并启用";
     }
   }
 
@@ -684,7 +687,7 @@
   }
 
   globalThis.KBotAIOpsConfigurations = { openEdit };
-  shell.ready.then(() => {
+  shell.ready.then(async () => {
     const page = document.body.dataset.page;
     if (page === "diagnostic-sources") {
       const dialog = document.getElementById("diagnostic-source-dialog");
@@ -708,6 +711,23 @@
     } else if (page === "inspection-plans") {
       const planDialog = document.getElementById("inspection-plan-dialog");
       const planForm = document.getElementById("inspection-plan-form");
+      try {
+        const rows = await KBotAIOpsAuth.request(`${api}/agents`);
+        inspectionAgents = (Array.isArray(rows) ? rows : []).filter((agent) => agent.status === "ACTIVE");
+        planForm.elements.agent_id.replaceChildren(
+          new Option("请选择已启用的 DBA Agent", ""),
+          ...inspectionAgents.map((agent) => new Option(
+            `${agent.display_name} · ${agent.target_ids?.length || 0} 个 Target`,
+            agent.agent_id,
+          )),
+        );
+        document.getElementById("plan-agent-help").textContent = inspectionAgents.length
+          ? "计划触发时，将使用该 Agent 当前发布版本关联的全部 Target、模型和策略。"
+          : "当前没有可用 Agent，请先创建并启用至少一名 DBA Agent。";
+      } catch (error) {
+        planForm.elements.agent_id.replaceChildren(new Option("Agent 读取失败", ""));
+        document.getElementById("plan-agent-help").textContent = error.message;
+      }
       closeButtons(planDialog);
       const monthDay = planForm.elements.month_day;
       monthDay.replaceChildren(...Array.from({ length: 28 }, (_, index) => {

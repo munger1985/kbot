@@ -40,3 +40,15 @@ class ConversationRepository(AIOpsRepository):
             OpsConversationEntity.conversation_id.desc(),
         ).limit(limit))
         return list(rows)
+
+    async def list_for_inspection_fire(self, *, inspection_fire_id: UUID):
+        """返回一次巡检 Fire 已经创建的系统会话。"""
+        rows = await self._session.scalars(
+            select(OpsConversationEntity)
+            .where(
+                OpsConversationEntity.source_inspection_fire_id
+                == inspection_fire_id
+            )
+            .order_by(OpsConversationEntity.target_id)
+        )
+        return list(rows)

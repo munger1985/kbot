@@ -1,4 +1,4 @@
-"""Inspection Plan 与 Plan Target 配置用例。"""
+"""由 DBA Agent 驱动的 Inspection Plan 配置用例。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,6 @@ from aiops_agent.application.errors import (
 from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
-    InspectionTargetEntity,
     DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
@@ -56,9 +55,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanPage,
     InspectionPlanPatch,
     InspectionPlanSummary,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -92,11 +88,35 @@ from .projections import (
     _policy_summary,
     _inspection_detail,
     _inspection_summary,
-    _inspection_target_view,
 )
 
 
 class InspectionConfigurationMixin:
+    async def _active_inspection_agent(self, *, uow, domain_id: int, agent_id: UUID):
+        """确认计划引用的是已启用 DBA Agent，不解析其执行资源。"""
+        assert uow.agents is not None
+        binding = await uow.agents.get_active(
+            domain_id=domain_id,
+            agent_id=agent_id,
+        )
+        if binding is None:
+            raise validation_failed("巡检计划必须选择一个已启用的 Agent")
+        return binding
+
+    async def _inspection_agent_target_count(
+        self, *, uow, domain_id: int, agent_id: UUID
+    ) -> int:
+        """返回计划所选 Agent 当前版本关联的 Target 数。"""
+        assert uow.agents is not None
+        agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
+        if agent is None or agent.current_version_id is None:
+            return 0
+        return len(
+            await uow.agents.version_target_ids(
+                agent_version_id=agent.current_version_id
+            )
+        )
+
     def _validate_plan_definition(
         self,
         *,
@@ -123,7 +143,7 @@ class InspectionConfigurationMixin:
         request: InspectionPlanCreate,
         idempotency_key: str,
     ) -> InspectionPlanDetail:
-        self._validate_plan_definition(
+        next_run_at = self._validate_plan_definition(
             cron_expression=request.cron_expression,
             timezone=request.timezone,
             template_id=request.template_id,
@@ -135,10 +155,17 @@ class InspectionConfigurationMixin:
             uow: AIOpsUnitOfWork, now: datetime
         ) -> InspectionPlanDetail:
             assert uow.inspections is not None
+            binding = await self._active_inspection_agent(
+                uow=uow,
+                domain_id=scope.domain_id,
+                agent_id=request.agent_id,
+            )
+            target_count = len(binding.target_ids)
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
                 domain_id=scope.domain_id,
                 display_name=request.display_name,
+                agent_id=request.agent_id,
                 schedule_type=request.schedule_type,
                 cron_expression=request.cron_expression,
                 timezone=request.timezone,
@@ -148,7 +175,8 @@ class InspectionConfigurationMixin:
                 overlap_policy=request.overlap_policy,
                 misfire_policy=request.misfire_policy,
                 schedule_resolver_version=request.schedule_resolver_version,
-                status="PAUSED",
+                status="ACTIVE",
+                next_run_at=next_run_at,
                 row_version=1,
                 created_by=scope.actor_id,
                 updated_by=scope.actor_id,
@@ -164,7 +192,9 @@ class InspectionConfigurationMixin:
                 event_type="INSPECTION_PLAN_CREATED",
                 row_version=1,
             )
-            return _inspection_detail(entity, active_target_count=0)
+            return _inspection_detail(
+                entity, agent_target_count=target_count
+            )
 
         return await self._idempotent(
             scope=scope,
@@ -187,12 +217,13 @@ class InspectionConfigurationMixin:
             )
             if entity is None:
                 raise resource_not_found("Inspection Plan")
-            targets = await uow.inspections.list_active_targets(
-                inspection_plan_id=plan_id,
+            target_count = await self._inspection_agent_target_count(
+                uow=uow,
                 domain_id=scope.domain_id,
+                agent_id=entity.agent_id,
             )
             return _inspection_detail(
-                entity, active_target_count=len(targets)
+                entity, agent_target_count=target_count
             )
 
     async def list_inspection_plans(
@@ -260,7 +291,7 @@ class InspectionConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Inspection Plan")
             self._check_version(entity.row_version, expected_version)
-            fields = request.model_dump(exclude_unset=True, mode="json")
+            fields = request.model_dump(exclude_unset=True, mode="python")
             fields.pop("schema_version", None)
             if not fields:
                 raise validation_failed("PATCH 至少需要一个可修改字段")
@@ -283,17 +314,13 @@ class InspectionConfigurationMixin:
                 setattr(entity, name, value)
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
-            targets = await uow.inspections.list_active_targets(
-                inspection_plan_id=plan_id,
+            binding = await self._active_inspection_agent(
+                uow=uow,
                 domain_id=scope.domain_id,
+                agent_id=entity.agent_id,
             )
+            target_count = len(binding.target_ids)
             if entity.status == "ACTIVE":
-                if not targets:
-                    raise validation_failed(
-                        "Active 计划必须至少保留一个 Active Target"
-                    )
-                if len(targets) > self._max_inspection_targets:
-                    raise validation_failed("计划 Target 数超过部署限制")
                 entity.next_run_at = next_run_at
             else:
                 entity.next_run_at = None
@@ -307,7 +334,7 @@ class InspectionConfigurationMixin:
                 row_version=int(entity.row_version),
             )
             response = _inspection_detail(
-                entity, active_target_count=len(targets)
+                entity, agent_target_count=target_count
             )
             await uow.commit()
             return response
@@ -346,15 +373,13 @@ class InspectionConfigurationMixin:
                 raise state_conflict(
                     f"Inspection Plan 不能从 {entity.status} 执行 {command}"
                 )
-            targets = await uow.inspections.list_active_targets(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-            )
             if destination == "ACTIVE":
-                if not targets:
-                    raise validation_failed("激活计划前至少需要一个 Active Target")
-                if len(targets) > self._max_inspection_targets:
-                    raise validation_failed("计划 Target 数超过部署限制")
+                binding = await self._active_inspection_agent(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    agent_id=entity.agent_id,
+                )
+                target_count = len(binding.target_ids)
                 entity.next_run_at = self._validate_plan_definition(
                     cron_expression=entity.cron_expression,
                     timezone=entity.timezone,
@@ -363,6 +388,11 @@ class InspectionConfigurationMixin:
                     resolver_version=entity.schedule_resolver_version,
                 )
             else:
+                target_count = await self._inspection_agent_target_count(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    agent_id=entity.agent_id,
+                )
                 entity.next_run_at = None
             entity.status = destination
             entity.updated_by = scope.actor_id
@@ -377,7 +407,7 @@ class InspectionConfigurationMixin:
                 row_version=int(entity.row_version),
             )
             return _inspection_detail(
-                entity, active_target_count=len(targets)
+                entity, agent_target_count=target_count
             )
 
         return await self._idempotent(
@@ -389,181 +419,3 @@ class InspectionConfigurationMixin:
             response_type=InspectionPlanDetail,
             handler=handler,
         )
-
-    async def add_inspection_target(
-        self,
-        *,
-        scope: ConfigurationScope,
-        plan_id: UUID,
-        request: InspectionTargetCreate,
-        expected_plan_version: int,
-        idempotency_key: str,
-    ) -> InspectionTargetView:
-        async def handler(
-            uow: AIOpsUnitOfWork, now: datetime
-        ) -> InspectionTargetView:
-            assert uow.inspections is not None
-            assert uow.targets is not None
-            plan = await uow.inspections.get_plan_scoped(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-                lock=True,
-            )
-            if plan is None:
-                raise resource_not_found("Inspection Plan")
-            self._check_version(plan.row_version, expected_plan_version)
-            target = await uow.targets.get_scoped(
-                target_id=request.target_id,
-                domain_id=scope.domain_id,
-            )
-            if target is None:
-                raise resource_not_found("Target")
-            registration = self._template_registry.validate(
-                template_id=plan.template_id,
-                template_version=plan.template_version,
-                schedule_resolver_version=plan.schedule_resolver_version,
-            )
-            self._template_registry.validate_overrides(
-                registration=registration,
-                overrides=request.template_overrides,
-            )
-            existing = await uow.inspections.list_targets(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-            )
-            if any(item.target_id == request.target_id for item in existing):
-                raise state_conflict("Target 已加入该 Inspection Plan")
-            if len(existing) >= self._max_inspection_targets:
-                raise validation_failed("计划 Target 数超过部署限制")
-            entity = InspectionTargetEntity(
-                inspection_target_id=uuid7(),
-                inspection_plan_id=plan_id,
-                target_id=request.target_id,
-                template_overrides_json=request.template_overrides,
-                status="ACTIVE",
-                created_by=scope.actor_id,
-                updated_by=scope.actor_id,
-                created_at=now,
-                updated_at=now,
-            )
-            await uow.inspections.add_target(entity)
-            plan.updated_by = scope.actor_id
-            plan.updated_at = now
-            await uow.session.flush()  # type: ignore[union-attr]
-            await add_configuration_event(
-                uow=uow,
-                scope=scope,
-                aggregate_type="INSPECTION_PLAN",
-                aggregate_id=plan_id,
-                event_type="INSPECTION_TARGET_ADDED",
-                row_version=int(plan.row_version),
-                details={
-                    "inspection_target_id": str(entity.inspection_target_id),
-                    "target_id": str(entity.target_id),
-                },
-            )
-            return _inspection_target_view(entity)
-
-        return await self._idempotent(
-            scope=scope,
-            operation="INSPECTION_TARGET_ADD",
-            parent_resource=str(plan_id),
-            idempotency_key=idempotency_key,
-            payload={
-                "request": request.model_dump(mode="json"),
-                "plan_row_version": expected_plan_version,
-            },
-            response_type=InspectionTargetView,
-            handler=handler,
-        )
-
-    async def list_inspection_targets(
-        self, *, scope: ConfigurationScope, plan_id: UUID
-    ) -> tuple[InspectionTargetView, ...]:
-        async with self._uow_factory() as uow:
-            assert uow.inspections is not None
-            plan = await uow.inspections.get_plan_scoped(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-            )
-            if plan is None:
-                raise resource_not_found("Inspection Plan")
-            entities = await uow.inspections.list_targets(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-            )
-            return tuple(_inspection_target_view(item) for item in entities)
-
-    async def patch_inspection_target(
-        self,
-        *,
-        scope: ConfigurationScope,
-        plan_id: UUID,
-        plan_target_id: UUID,
-        request: InspectionTargetPatch,
-        expected_plan_version: int,
-    ) -> InspectionTargetView:
-        async with self._uow_factory() as uow:
-            assert uow.inspections is not None
-            plan = await uow.inspections.get_plan_scoped(
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-                lock=True,
-            )
-            if plan is None:
-                raise resource_not_found("Inspection Plan")
-            self._check_version(plan.row_version, expected_plan_version)
-            entity = await uow.inspections.get_target_scoped(
-                inspection_target_id=plan_target_id,
-                inspection_plan_id=plan_id,
-                domain_id=scope.domain_id,
-                lock=True,
-            )
-            if entity is None:
-                raise resource_not_found("Inspection Target")
-            fields = request.model_dump(exclude_unset=True, mode="json")
-            fields.pop("schema_version", None)
-            if not fields:
-                raise validation_failed("PATCH 至少需要一个可修改字段")
-            if "template_overrides" in fields:
-                registration = self._template_registry.validate(
-                    template_id=plan.template_id,
-                    template_version=plan.template_version,
-                    schedule_resolver_version=plan.schedule_resolver_version,
-                )
-                self._template_registry.validate_overrides(
-                    registration=registration,
-                    overrides=request.template_overrides,
-                )
-                fields["template_overrides_json"] = fields.pop(
-                    "template_overrides"
-                )
-            for name, value in fields.items():
-                setattr(entity, name, value)
-            now = datetime.now(UTC)
-            entity.updated_by = scope.actor_id
-            entity.updated_at = now
-            plan.updated_by = scope.actor_id
-            plan.updated_at = now
-            if plan.status == "ACTIVE":
-                active_targets = await uow.inspections.list_active_targets(
-                    inspection_plan_id=plan_id,
-                    domain_id=scope.domain_id,
-                )
-                if not active_targets:
-                    raise validation_failed(
-                        "Active 计划必须至少保留一个 Active Target"
-                    )
-            await uow.session.flush()  # type: ignore[union-attr]
-            await add_configuration_event(
-                uow=uow,
-                scope=scope,
-                aggregate_type="INSPECTION_PLAN",
-                aggregate_id=plan_id,
-                event_type="INSPECTION_TARGET_UPDATED",
-                row_version=int(plan.row_version),
-                details={"inspection_target_id": str(plan_target_id)},
-            )
-            response = _inspection_target_view(entity)
-            await uow.commit()
-            return response

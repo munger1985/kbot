@@ -3,12 +3,12 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>巡检计划</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
 <body data-page="inspection-plans">
   <main class="ops-main">
-    <header class="ops-head"><div><h1>巡检计划</h1><p>配置周期、目标范围、检查模板与报告输出。</p></div><button id="create-inspection-plan" class="primary" type="button" data-write-ready>新增计划</button></header>
+    <header class="ops-head"><div><h1>巡检计划</h1><p>选择一名 DBA Agent，按计划对其负责的全部 Target 执行巡检。</p></div><button id="create-inspection-plan" class="primary" type="button" data-write-ready>新增计划</button></header>
     <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
   </main>
   <dialog id="inspection-plan-dialog" class="ops-dialog inspection-plan-dialog">
     <form id="inspection-plan-form">
-      <header class="inspection-plan-head"><div><p class="inspection-plan-kicker">INSPECTION SCHEDULE</p><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><p>设置巡检内容和执行节奏，创建后再添加需要巡检的目标。</p></div><button data-close-dialog type="button">关闭</button></header>
+      <header class="inspection-plan-head"><div><p class="inspection-plan-kicker">INSPECTION SCHEDULE</p><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><p>Agent 决定 Target、模型、监控源、诊断步骤和报告内容；计划只定义触发时间与报告展示类型。</p></div><button data-close-dialog type="button">关闭</button></header>
       <div class="ops-dialog-body inspection-plan-body">
         <section class="inspection-form-section" aria-labelledby="inspection-basic-title">
           <div class="inspection-section-number">01</div>
@@ -16,6 +16,7 @@
             <div class="inspection-section-heading"><div><h3 id="inspection-basic-title">基本信息</h3><p>给计划一个容易识别的名称，并选择已登记的巡检模板。</p></div></div>
             <div class="ops-form">
               <div class="ops-field span-12"><label for="plan-display-name">计划名称</label><input id="plan-display-name" name="display_name" maxlength="256" placeholder="例如：生产数据库每日健康巡检" required></div>
+              <div class="ops-field span-12"><label for="plan-agent-id">执行巡检的 DBA Agent</label><select id="plan-agent-id" name="agent_id" required><option value="">正在读取可用 Agent…</option></select><small id="plan-agent-help">计划触发时，将使用该 Agent 当前发布版本关联的全部 Target、模型和策略。</small></div>
               <div class="ops-field span-6"><label for="plan-template-id">巡检模板</label><input id="plan-template-id" name="template_id" value="database_daily" maxlength="128" required><small>填写部署时登记的模板标识。</small></div>
               <div class="ops-field span-3"><label for="plan-template-version">模板版本</label><input id="plan-template-version" name="template_version" value="1.0.0" maxlength="64" required></div>
               <div class="ops-field span-3"><label for="plan-resolver-version">解析器版本</label><input id="plan-resolver-version" name="schedule_resolver_version" value="1.0.0" maxlength="64" required></div>
@@ -90,7 +91,7 @@
         </section>
         <p id="inspection-plan-result" class="ops-connection-result" role="status"></p>
       </div>
-      <footer><button data-close-dialog type="button">取消</button><button id="save-inspection-plan" class="primary" type="submit">创建计划</button></footer>
+      <footer><button data-close-dialog type="button">取消</button><button id="save-inspection-plan" class="primary" type="submit">创建并启用</button></footer>
     </form>
   </dialog>
   <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js"></script><script src="./js/aiops-pages.js"></script><script src="./js/aiops-configurations.js"></script>

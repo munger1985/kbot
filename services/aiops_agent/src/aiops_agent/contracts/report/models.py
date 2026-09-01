@@ -19,6 +19,7 @@ class ReportContent(BaseModel):
         "PERFORMANCE",
         "INSPECTION_DAILY",
         "INSPECTION_WEEKLY",
+        "INSPECTION_CUSTOM",
         "COMPARISON",
     ]
     ops_run_id: str

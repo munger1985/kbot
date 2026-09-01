@@ -28,6 +28,9 @@ from aiops_agent.application.configuration.schedule import (
 from aiops_agent.application.configuration.policy_service import (
     PolicyConfigurationMixin,
 )
+from aiops_agent.application.configuration.inspection_service import (
+    InspectionConfigurationMixin,
+)
 from aiops_agent.application.configuration.service import (
     AIOpsConfigurationService,
 )
@@ -37,6 +40,7 @@ from aiops_agent.entities import DiagnosticSourceEntity
 from platform_core.contracts.aiops import (
     DiagnosticSourceCreate,
     DiagnosticSourcePatch,
+    InspectionPlanCreate,
     TargetCreate,
 )
 from platform_core.identity import uuid7
@@ -255,6 +259,71 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         metadata = await adapter.validate_ref("managed://credential-id")
         self.assertEqual("managed-credential", metadata.provider)
         self.assertNotIn("plain-secret-value", repr(metadata))
+
+
+class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
+    async def test_create_plan_selects_agent_and_is_active_immediately(self) -> None:
+        service = object.__new__(InspectionConfigurationMixin)
+        service._template_registry = InspectionTemplateRegistry(
+            (
+                InspectionTemplateRegistration(
+                    template_id="database_daily",
+                    template_version="1.0.0",
+                    schedule_resolver_version="1.0.0",
+                ),
+            )
+        )
+        agent_id = uuid7()
+        agent_version_id = uuid7()
+        target_ids = [uuid7(), uuid7()]
+        added = []
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                add_plan=AsyncMock(side_effect=lambda entity: added.append(entity))
+            ),
+            agents=SimpleNamespace(
+                get_active=AsyncMock(
+                    return_value=SimpleNamespace(
+                        binding_id=agent_version_id,
+                        target_ids=tuple(target_ids),
+                    )
+                ),
+                active_version_target_ids=AsyncMock(return_value=target_ids),
+            ),
+            outbox=SimpleNamespace(add=AsyncMock()),
+        )
+
+        async def execute_idempotently(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = execute_idempotently
+        result = await service.create_inspection_plan(
+            scope=ConfigurationScope(
+                domain_id=100,
+                principal_id="PORTAL:aiops",
+                actor_id="operator-1",
+                request_id="request-1",
+                trace_id="trace-1",
+            ),
+            request=InspectionPlanCreate(
+                display_name="每日巡检",
+                agent_id=agent_id,
+                schedule_type="DAILY",
+                cron_expression="0 13 * * *",
+                timezone="Asia/Shanghai",
+                template_id="database_daily",
+                template_version="1.0.0",
+                timeout_seconds=1800,
+                schedule_resolver_version="1.0.0",
+            ),
+            idempotency_key="inspection-create-1",
+        )
+
+        self.assertEqual(1, len(added))
+        self.assertEqual(agent_id, added[0].agent_id)
+        self.assertEqual("ACTIVE", added[0].status)
+        self.assertIsNotNone(added[0].next_run_at)
+        self.assertEqual(2, result.agent_target_count)
 
 
 class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):

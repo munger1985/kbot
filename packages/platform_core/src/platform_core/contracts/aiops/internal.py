@@ -28,6 +28,7 @@ class CreateOpsRunCommand(AIOpsContract):
     domain_id: int = Field(ge=1)
     actor_id: str = Field(min_length=1, max_length=256)
     agent_id: UUIDv7
+    expected_agent_version_id: UUIDv7 | None = None
     target_id: UUIDv7
     trigger_type: TriggerType
     input: str = Field(min_length=1, max_length=32000)

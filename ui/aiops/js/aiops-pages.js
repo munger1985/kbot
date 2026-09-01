@@ -7,7 +7,7 @@
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
-    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"]], detail: "inspection-plan-detail.html?id=" },
+    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
   function cell(item, [key, , type]) {
@@ -34,6 +34,13 @@
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
       return `<div class="ops-actions">${detailButton}${checkButton}${buttons.join("")}</div>`;
+    }
+    if (type === "inspection-actions") {
+      const action = item.status === "ACTIVE" ? "pause" : item.status === "PAUSED" ? "activate" : "";
+      if (!action) return "—";
+      const label = action === "activate" ? "启用" : "暂停";
+      const primary = action === "activate" ? ' class="primary"' : "";
+      return `<div class="ops-actions"><button type="button"${primary} data-inspection-action="${action}">${label}</button></div>`;
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
@@ -127,8 +134,15 @@
     const body = document.getElementById("ops-table-body");
     head.innerHTML = `<tr>${cfg.cols.map((col) => `<th>${col[1]}</th>`).join("")}</tr>`;
     try {
-      const payload = await KBotAIOpsAuth.request(appApi + cfg.path);
-      const items = Array.isArray(payload) ? payload : payload?.items || [];
+      const [payload, agentRows] = await Promise.all([
+        KBotAIOpsAuth.request(appApi + cfg.path),
+        page === "inspection-plans" ? KBotAIOpsAuth.request(`${appApi}/agents`) : Promise.resolve([]),
+      ]);
+      const agentNames = new Map((Array.isArray(agentRows) ? agentRows : []).map((agent) => [String(agent.agent_id), agent.display_name]));
+      const sourceItems = Array.isArray(payload) ? payload : payload?.items || [];
+      const items = page === "inspection-plans"
+        ? sourceItems.map((item) => ({ ...item, agent_name: agentNames.get(String(item.agent_id)) || shell.short(item.agent_id) }))
+        : sourceItems;
       if (!items.length) {
         body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">当前范围内暂无数据</td></tr>`;
         return;
@@ -176,6 +190,32 @@
               (candidate) => String(candidate.target_id) === row.dataset.resourceId
             );
             if (item) runTargetAction(button, item);
+          });
+        });
+      }
+      if (page === "inspection-plans") {
+        body.querySelectorAll("[data-inspection-action]").forEach((button) => {
+          button.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            const row = button.closest("tr");
+            const item = items.find((candidate) => String(candidate.plan_id) === row.dataset.resourceId);
+            if (!item) return;
+            button.disabled = true;
+            try {
+              await KBotAIOpsAuth.request(`${appApi}/inspection-plans/${encodeURIComponent(item.plan_id)}/${button.dataset.inspectionAction}`, {
+                method: "POST",
+                headers: {
+                  "If-Match": `"rv-${item.row_version}"`,
+                  "Idempotency-Key": KBotAIOpsAuth.uuid(),
+                },
+                body: JSON.stringify({}),
+              });
+              shell.toast(button.dataset.inspectionAction === "activate" ? "巡检计划已启用" : "巡检计划已暂停");
+              await renderList("inspection-plans");
+            } catch (error) {
+              shell.toast(error.message);
+              button.disabled = false;
+            }
           });
         });
       }

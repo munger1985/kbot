@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 17
-                              AND contract_version = 'aiops-oracle-v7'
+                              AND schema_version = 18
+                              AND contract_version = 'aiops-oracle-v8'
                             """
                         )
                     )
@@ -86,6 +86,8 @@ class AIOpsProcessRuntime:
                                     AND COLUMN_NAME = 'TOOL_INVOCATION_ID')
                                 OR (TABLE_NAME = 'KBOT_OPS_TURN_EVIDENCE'
                                     AND COLUMN_NAME = 'EVIDENCE_ROLE')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
+                                    AND COLUMN_NAME = 'AGENT_ID')
                               )
                             """
                         )
@@ -132,7 +134,7 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 7
+                    required_columns == 8
                     and task_type_constraint == 1
                     and tool_class_constraint == 1
                 )

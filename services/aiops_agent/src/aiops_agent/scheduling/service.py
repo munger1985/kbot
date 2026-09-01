@@ -32,14 +32,12 @@ class AIOpsInspectionScheduler:
         *,
         uow_factory,
         scheduler_id: str,
-        system_agent_id,
         lease_seconds: int,
         interval_seconds: float,
         misfire_grace_seconds: int,
     ):
         self._uow_factory = uow_factory
         self._scheduler_id = scheduler_id
-        self._system_agent_id = system_agent_id
         self._lease_seconds = lease_seconds
         self._interval = interval_seconds
         self._misfire_grace = misfire_grace_seconds
@@ -80,19 +78,6 @@ class AIOpsInspectionScheduler:
                 misfire_grace_seconds=self._misfire_grace,
                 resolver_version=plan.schedule_resolver_version,
             )
-            targets = await uow.inspections.list_active_targets(
-                inspection_plan_id=plan.inspection_plan_id,
-                domain_id=int(plan.domain_id),
-            )
-            target_snapshots = [
-                {
-                    "target_id": str(item.target_id),
-                    "template_overrides": dict(
-                        item.template_overrides_json or {}
-                    ),
-                }
-                for item in targets
-            ]
             open_fires = await uow.inspections.list_open_fires(
                 inspection_plan_id=plan.inspection_plan_id,
                 lock=True,
@@ -101,9 +86,6 @@ class AIOpsInspectionScheduler:
             skip_reason = resolution.skip_reason
             if resolution.skipped:
                 status = "SKIPPED"
-            elif not target_snapshots:
-                status = "SKIPPED"
-                skip_reason = "NO_ACTIVE_TARGETS"
             elif open_fires and plan.overlap_policy == "SKIP":
                 status = "SKIPPED"
                 skip_reason = "OVERLAP_SKIPPED"
@@ -122,6 +104,8 @@ class AIOpsInspectionScheduler:
                 "domain_id": int(plan.domain_id),
                 "plan_id": str(plan.inspection_plan_id),
                 "display_name": plan.display_name,
+                "agent_id": str(plan.agent_id),
+                "agent_version_id": None,
                 "schedule_type": plan.schedule_type,
                 "timezone": plan.timezone,
                 "template_id": plan.template_id,
@@ -129,7 +113,6 @@ class AIOpsInspectionScheduler:
                 "timeout_seconds": int(plan.timeout_seconds),
                 "period_start": resolution.period_start.isoformat(),
                 "period_end": resolution.period_end.isoformat(),
-                "targets": target_snapshots,
             }
             await uow.inspections.add_fire(
                 InspectionFireEntity(
@@ -145,7 +128,7 @@ class AIOpsInspectionScheduler:
                     ),
                     plan_snapshot_json=plan_snapshot,
                     resolution_json=resolution.resolution,
-                    target_count=len(target_snapshots),
+                    target_count=0,
                     run_count=0,
                     completed_count=0,
                     failed_count=0,
@@ -155,7 +138,7 @@ class AIOpsInspectionScheduler:
                 )
             )
             if status == "RUNNING":
-                await self._enqueue_runs(
+                await self._enqueue_agent_task(
                     uow=uow,
                     fire_id=fire_id,
                     snapshot=plan_snapshot,
@@ -176,22 +159,13 @@ class AIOpsInspectionScheduler:
                 raise RuntimeError("巡检计划租约或版本围栏已失效")
             await uow.commit()
             logger.info(
-                "巡检 Fire 已创建：fire_id={} status={} targets={}",
+                "巡检 Fire 已创建：fire_id={} status={}",
                 fire_id,
                 status,
-                len(target_snapshots),
             )
             return True
 
     async def _reconcile_one(self) -> bool:
-        terminal = {
-            "COMPLETED",
-            "PARTIAL",
-            "FAILED",
-            "CANCELLED",
-            "EXPIRED",
-        }
-        success = {"COMPLETED", "PARTIAL"}
         async with self._uow_factory() as uow:
             assert uow.runs is not None
             assert uow.inspections is not None
@@ -220,7 +194,7 @@ class AIOpsInspectionScheduler:
                 fire.status = "RUNNING"
                 fire.started_at = now
                 fire.updated_at = now
-                await self._enqueue_runs(
+                await self._enqueue_agent_task(
                     uow=uow,
                     fire_id=fire.inspection_fire_id,
                     snapshot=dict(fire.plan_snapshot_json),
@@ -233,31 +207,54 @@ class AIOpsInspectionScheduler:
                 inspection_fire_id=fire.inspection_fire_id
             )
             request_events = (
-                await uow.inspections.list_run_request_events_for_fire(
+                await uow.inspections.list_agent_request_events_for_fire(
                     inspection_fire_id=fire.inspection_fire_id
                 )
             )
-            requests_finished = request_events and all(
-                item.status in {"PUBLISHED", "FAILED"}
+            if not request_events or any(
+                item.status not in {"PUBLISHED", "FAILED"}
                 for item in request_events
-            )
-            if len(runs) < int(fire.target_count) and not requests_finished:
-                return False
-            if any(item.status not in terminal for item in runs):
-                return False
-            completed = sum(item.status in success for item in runs)
-            failed = int(fire.target_count) - completed
-            if (
-                len(runs) == int(fire.target_count)
-                and completed == len(runs)
             ):
+                return False
+            turns = await uow.inspections.list_turns_for_fire(
+                inspection_fire_id=fire.inspection_fire_id
+            )
+            if not turns:
+                if not all(item.status == "FAILED" for item in request_events):
+                    return False
+                fire.status = "FAILED"
+                fire.error_code = "AIOPS_INSPECTION_AGENT_DISPATCH_FAILED"
+                fire.error_message = "巡检任务未能提交给所选 Agent"
+                fire.completed_at = now
+                fire.updated_at = now
+                await uow.commit()
+                return True
+            turn_terminal = {
+                "COMPLETED",
+                "PARTIAL",
+                "WAITING_USER",
+                "FAILED",
+                "CANCELLED",
+            }
+            if any(item.status not in turn_terminal for item in turns):
+                return False
+            completed = sum(item.status == "COMPLETED" for item in turns)
+            partial = sum(
+                item.status in {"PARTIAL", "WAITING_USER"}
+                for item in turns
+            )
+            failed = sum(
+                item.status in {"FAILED", "CANCELLED"} for item in turns
+            )
+            if completed == len(turns):
                 status = "COMPLETED"
-            elif completed:
+            elif completed or partial:
                 status = "PARTIAL"
             else:
                 status = "FAILED"
             fire.status = status
             fire.run_count = len(runs)
+            fire.target_count = len(turns)
             fire.completed_count = completed
             fire.failed_count = failed
             fire.completed_at = now
@@ -270,7 +267,7 @@ class AIOpsInspectionScheduler:
             )
             return True
 
-    async def _enqueue_runs(
+    async def _enqueue_agent_task(
         self,
         *,
         uow,
@@ -279,39 +276,35 @@ class AIOpsInspectionScheduler:
         trace_id: str,
         now,
     ) -> None:
-        for target in snapshot["targets"]:
-            payload = {
-                "inspection_fire_id": str(fire_id),
-                                "domain_id": snapshot["domain_id"],
-                "actor_id": "system:inspection-scheduler",
-                "agent_id": str(self._system_agent_id),
-                "target_id": target["target_id"],
-                "template_id": snapshot["template_id"],
-                "template_version": snapshot["template_version"],
-                "schedule_type": snapshot["schedule_type"],
-                "timezone": snapshot["timezone"],
-                "period_start": snapshot["period_start"],
-                "period_end": snapshot["period_end"],
-                "timeout_seconds": snapshot["timeout_seconds"],
-                "template_overrides": target["template_overrides"],
-                "trace_id": trace_id,
-            }
-            await uow.outbox.add(
-                OutboxEntity(
-                    aggregate_type="OPS_INSPECTION_FIRE",
-                    aggregate_id=fire_id,
-                    event_type="OPS_INSPECTION_RUN_REQUESTED",
-                    idempotency_key=(
-                        f"inspection:{fire_id}:target:{target['target_id']}"
-                    ),
-                    payload_json=payload,
-                    payload_hash=_hash(payload),
-                    status="PENDING",
-                    available_at=now,
-                    max_attempts=8,
-                    trace_id=trace_id,
-                )
+        payload = {
+            "inspection_fire_id": str(fire_id),
+            "domain_id": snapshot["domain_id"],
+            "actor_id": "system:inspection-scheduler",
+            "agent_id": snapshot["agent_id"],
+            "plan_display_name": snapshot["display_name"],
+            "template_id": snapshot["template_id"],
+            "template_version": snapshot["template_version"],
+            "schedule_type": snapshot["schedule_type"],
+            "timezone": snapshot["timezone"],
+            "period_start": snapshot["period_start"],
+            "period_end": snapshot["period_end"],
+            "timeout_seconds": snapshot["timeout_seconds"],
+            "trace_id": trace_id,
+        }
+        await uow.outbox.add(
+            OutboxEntity(
+                aggregate_type="OPS_INSPECTION_FIRE",
+                aggregate_id=fire_id,
+                event_type="OPS_INSPECTION_AGENT_REQUESTED",
+                idempotency_key=f"inspection:{fire_id}:agent",
+                payload_json=payload,
+                payload_hash=_hash(payload),
+                status="PENDING",
+                available_at=now,
+                max_attempts=8,
+                trace_id=trace_id,
             )
+        )
 
     async def run_forever(self) -> None:
         logger.info("AIOps Inspection Scheduler 开始运行")

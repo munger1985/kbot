@@ -286,7 +286,7 @@ Run、Report、Proposal 不再设置面向业务用户的一级列表入口。�
 - Target 只允许启用、维护、停用，不提供物理删除；
 - 监控源健康检查异步进行，页面显示最近检查结果；Webhook Key 轮换后只显示一次，并且不写入 APEX 页面项、调试日志或报表；
 - Target 的 Agent Binding 与 Monitor Binding 分为两个页签，命令采用明确按钮（activate/disable/maintenance），不将命令名直接作为自由文本；
-- 巡检计划默认暂停，只有计划、目标范围和调度校验通过才允许启用；Inspection Fire 仅展示审计摘要与跳转。
+- 巡检计划创建时选择一名已启用的 DBA Agent 并立即启用；Scheduler 到期只提交一条标准 Agent 任务，Target、模型、监控源、策略和诊断步骤都由 Agent 链路解析。列表提供启用与暂停操作，Inspection Fire 展示冻结的 Agent 版本、关联 Turn 与审计跳转。
 
 Policy 没有 `PATCH` 编辑接口，是不可变的版本资源：修改规则时新建 Policy，校验后激活
 新版本，并在需要时更新 Target Agent Binding 的 `policy_id`；旧版本通过 `retire` 命令

@@ -37,7 +37,6 @@ from aiops_agent.application.errors import (
 from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.entities import (
     InspectionPlanEntity,
-    InspectionTargetEntity,
     DiagnosticSourceEntity,
     PolicyEntity,
     TargetBindingEntity,
@@ -56,9 +55,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanPage,
     InspectionPlanPatch,
     InspectionPlanSummary,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -92,7 +88,6 @@ from .projections import (
     _policy_summary,
     _inspection_detail,
     _inspection_summary,
-    _inspection_target_view,
 )
 
 

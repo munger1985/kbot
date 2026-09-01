@@ -11,7 +11,6 @@ from .inspection import (
     InspectionPlanEntity,
     InspectionReportTemplateEntity,
     InspectionReportTemplateVersionEntity,
-    InspectionTargetEntity,
     ReportEntity,
 )
 from .messaging import InboxEntity, OutboxEntity
@@ -69,7 +68,6 @@ __all__ = [
     "InspectionPlanEntity",
     "InspectionReportTemplateEntity",
     "InspectionReportTemplateVersionEntity",
-    "InspectionTargetEntity",
     "DiagnosticSourceEntity",
     "SituationEntity",
     "SituationEventEntity",

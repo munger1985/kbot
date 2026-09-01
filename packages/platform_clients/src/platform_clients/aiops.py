@@ -809,53 +809,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def list_inspection_targets(
-        self, plan_id: UUID, *, auth_context: AuthContext
-    ) -> list[dict[str, Any]]:
-        return await self._json(
-            "GET",
-            f"{self._CONFIG}/inspection-plans/{plan_id}/targets",
-            auth_context=auth_context,
-        )
-
-    async def add_inspection_target(
-        self,
-        plan_id: UUID,
-        payload: dict[str, Any],
-        *,
-        if_match: str,
-        idempotency_key: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "POST",
-            f"{self._CONFIG}/inspection-plans/{plan_id}/targets",
-            payload=payload,
-            if_match=if_match,
-            idempotency_key=idempotency_key,
-            auth_context=auth_context,
-        )
-
-    async def patch_inspection_target(
-        self,
-        plan_id: UUID,
-        plan_target_id: UUID,
-        payload: dict[str, Any],
-        *,
-        if_match: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "PATCH",
-            (
-                f"{self._CONFIG}/inspection-plans/{plan_id}"
-                f"/targets/{plan_target_id}"
-            ),
-            payload=payload,
-            if_match=if_match,
-            auth_context=auth_context,
-        )
-
     async def create_run(
         self,
         command: CreateOpsRunCommand,

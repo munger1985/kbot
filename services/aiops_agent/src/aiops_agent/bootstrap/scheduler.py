@@ -47,7 +47,6 @@ def create_aiops_scheduler_probe(
         scheduler = AIOpsInspectionScheduler(
             uow_factory=runtime.uow_factory,
             scheduler_id=config.scheduler_id,
-            system_agent_id=resolved.runtime.system_aiops_agent_id,
             lease_seconds=config.lease_seconds,
             interval_seconds=config.scan_interval_seconds,
             misfire_grace_seconds=config.misfire_grace_seconds,

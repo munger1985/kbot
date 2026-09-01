@@ -32,9 +32,6 @@ from platform_core.contracts.aiops import (
     InspectionPlanDetail,
     InspectionPlanPage,
     InspectionPlanPatch,
-    InspectionTargetCreate,
-    InspectionTargetPatch,
-    InspectionTargetView,
     NotificationSubscriptionList,
     NotificationSubscriptionUpsert,
     NotificationSubscriptionView,
@@ -874,64 +871,3 @@ async def disable_inspection_plan(
     return await _command_inspection_plan(
         plan_id, "disable", response, service, scope, idempotency_key, if_match
     )
-
-
-@router.get(
-    "/inspection-plans/{plan_id}/targets",
-    response_model=tuple[InspectionTargetView, ...],
-)
-async def list_inspection_targets(
-    plan_id: UUID, service: Service, scope: Scope
-) -> tuple[InspectionTargetView, ...]:
-    return await service.list_inspection_targets(scope=scope, plan_id=plan_id)
-
-
-@router.post(
-    "/inspection-plans/{plan_id}/targets",
-    response_model=InspectionTargetView,
-    status_code=201,
-)
-async def add_inspection_target(
-    plan_id: UUID,
-    body: InspectionTargetCreate,
-    response: Response,
-    service: Service,
-    scope: Scope,
-    idempotency_key: IdempotencyKey,
-    if_match: IfMatch = None,
-) -> InspectionTargetView:
-    expected = parse_etag(if_match)
-    result = await service.add_inspection_target(
-        scope=scope,
-        plan_id=plan_id,
-        request=body,
-        expected_plan_version=expected,
-        idempotency_key=idempotency_key,
-    )
-    _etag(response, expected + 1)
-    return result
-
-
-@router.patch(
-    "/inspection-plans/{plan_id}/targets/{plan_target_id}",
-    response_model=InspectionTargetView,
-)
-async def patch_inspection_target(
-    plan_id: UUID,
-    plan_target_id: UUID,
-    body: InspectionTargetPatch,
-    response: Response,
-    service: Service,
-    scope: Scope,
-    if_match: IfMatch = None,
-) -> InspectionTargetView:
-    expected = parse_etag(if_match)
-    result = await service.patch_inspection_target(
-        scope=scope,
-        plan_id=plan_id,
-        plan_target_id=plan_target_id,
-        request=body,
-        expected_plan_version=expected,
-    )
-    _etag(response, expected + 1)
-    return result

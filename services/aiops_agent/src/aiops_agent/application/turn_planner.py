@@ -89,15 +89,29 @@ class TurnPlannerService:
                 raise state_conflict("Turn 缺少唯一用户问题")
             now = datetime.now(UTC)
             ops_run_id = uuid7()
+            execution_context = dict(payload.get("execution_context") or {})
+            trigger_type = str(
+                execution_context.get("trigger_type") or "CHAT"
+            )
             run = OpsRunEntity(
                 ops_run_id=ops_run_id,
                 domain_id=domain_id,
                 target_id=turn.resolved_target_id,
                 agent_id=UUID(str(payload["agent_id"])),
                 agent_version_id=UUID(str(payload["agent_version_id"])),
-                trigger_type="CHAT",
-                interaction_mode="INTERACTIVE",
-                workflow_kind="CHAT_TURN",
+                trigger_type=trigger_type,
+                interaction_mode=str(
+                    execution_context.get("interaction_mode")
+                    or "INTERACTIVE"
+                ),
+                workflow_kind=str(
+                    execution_context.get("workflow_kind") or "CHAT_TURN"
+                ),
+                inspection_fire_id=(
+                    UUID(str(execution_context["inspection_fire_id"]))
+                    if execution_context.get("inspection_fire_id")
+                    else None
+                ),
                 actor_id=turn.created_by,
                 original_request=str(user_message.payload_json["text"]),
                 idempotency_key=f"turn:{turn_id}:primary",
@@ -107,11 +121,29 @@ class TurnPlannerService:
                     "conversation_id": str(turn.conversation_id),
                     "turn_id": str(turn_id),
                     "source_run_id": payload.get("source_run_id"),
+                    "observation_start": execution_context.get(
+                        "observation_start"
+                    ),
+                    "observation_end": execution_context.get(
+                        "observation_end"
+                    ),
+                    "client_metadata": {
+                        "inspection": dict(
+                            execution_context.get("inspection") or {}
+                        )
+                    },
                 },
                 policy_snapshot_json={
                     "agent_version_id": str(payload["agent_version_id"]),
                 },
                 trace_id=str(payload["trace_id"]),
+                deadline_at=(
+                    datetime.fromisoformat(
+                        str(execution_context["deadline_at"])
+                    )
+                    if execution_context.get("deadline_at")
+                    else None
+                ),
                 started_at=now,
             )
             await uow.runs.add_run(run)

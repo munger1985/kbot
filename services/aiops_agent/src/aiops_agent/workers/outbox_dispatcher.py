@@ -47,6 +47,7 @@ class AIOpsDomainOutboxSink:
         turn_queue_service=None,
         turn_planner_service=None,
         turn_planning_service=None,
+        conversation_turn_service=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -58,6 +59,7 @@ class AIOpsDomainOutboxSink:
         self._turn_queue_service = turn_queue_service
         self._turn_planner_service = turn_planner_service
         self._turn_planning_service = turn_planning_service
+        self._conversation_turn_service = conversation_turn_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if event_type == "aiops.turn.created" and self._turn_queue_service is not None:
@@ -179,56 +181,18 @@ class AIOpsDomainOutboxSink:
                 trace_id=payload["trace_id"],
             )
             return
-        if event_type == "OPS_INSPECTION_RUN_REQUESTED":
-            fire_id = payload["inspection_fire_id"]
-            target_id = payload["target_id"]
-            await self._runtime_service.create_run(
-                CreateOpsRunCommand(
-                    command_id=uuid7(),
-                    idempotency_key=(
-                        f"inspection:{fire_id}:target:{target_id}"
-                    ),
-                    domain_id=payload["domain_id"],
-                    actor_id=payload["actor_id"],
-                    agent_id=payload["agent_id"],
-                    target_id=target_id,
-                    trigger_type="SCHEDULE",
-                    inspection_fire_id=fire_id,
-                    deadline=datetime.now(UTC)
-                    + timedelta(seconds=payload["timeout_seconds"]),
-                    observation_start=datetime.fromisoformat(
-                        payload["period_start"]
-                    ),
-                    observation_end=datetime.fromisoformat(
-                        payload["period_end"]
-                    ),
-                    input="执行数据库定期巡检并生成报告",
-                    blueprint_id="database.diagnostic-baseline",
-                    blueprint_version="1",
-                    client_metadata={
-                        "trace_id": payload["trace_id"],
-                        "trigger": "inspection_schedule",
-                        "inspection": {
-                            "fire_id": fire_id,
-                            "template_id": payload["template_id"],
-                            "template_version": payload[
-                                "template_version"
-                            ],
-                            "schedule_type": payload["schedule_type"],
-                            "timezone": payload["timezone"],
-                            "period_start": payload["period_start"],
-                            "period_end": payload["period_end"],
-                            "template_overrides": payload[
-                                "template_overrides"
-                            ],
-                        },
-                    },
+        if event_type == "OPS_INSPECTION_AGENT_REQUESTED":
+            if self._conversation_turn_service is None:
+                raise RuntimeError("巡检 Agent Turn 服务未配置")
+            result = (
+                await self._conversation_turn_service.start_scheduled_inspection(
+                    payload
                 )
             )
             logger.info(
-                "巡检 Run 已创建：fire_id={} target_id={}",
-                fire_id,
-                target_id,
+                "巡检任务已提交给 Agent：fire_id={} conversations={}",
+                payload["inspection_fire_id"],
+                result["conversation_count"],
             )
             return
         if event_type != "OPS_SITUATION_AUTO_RUN_REQUESTED":

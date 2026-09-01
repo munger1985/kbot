@@ -32,6 +32,7 @@ class ConversationSourceType(StrEnum):
     SITUATION = "SITUATION"
     RUN = "RUN"
     REPORT = "REPORT"
+    INSPECTION = "INSPECTION"
 
 
 class TurnStatus(StrEnum):
@@ -90,6 +91,7 @@ class ConversationSourceContext(AIOpsContract):
     situation_id: UUIDv7 | None = None
     run_id: UUIDv7 | None = None
     report_id: UUIDv7 | None = None
+    inspection_fire_id: UUIDv7 | None = None
 
     @model_validator(mode="after")
     def validate_source(self) -> "ConversationSourceContext":
@@ -98,10 +100,16 @@ class ConversationSourceContext(AIOpsContract):
             ConversationSourceType.SITUATION: self.situation_id,
             ConversationSourceType.RUN: self.run_id,
             ConversationSourceType.REPORT: self.report_id,
+            ConversationSourceType.INSPECTION: self.inspection_fire_id,
         }[ConversationSourceType(self.source_type)]
         supplied = tuple(
             value
-            for value in (self.situation_id, self.run_id, self.report_id)
+            for value in (
+                self.situation_id,
+                self.run_id,
+                self.report_id,
+                self.inspection_fire_id,
+            )
             if value is not None
         )
         if self.source_type == ConversationSourceType.CHAT and supplied:
@@ -152,6 +160,7 @@ class ConversationSummary(AIOpsContract):
     source_situation_id: UUIDv7 | None = None
     source_run_id: UUIDv7 | None = None
     source_report_id: UUIDv7 | None = None
+    source_inspection_fire_id: UUIDv7 | None = None
     last_turn_no: int = Field(ge=0)
     created_at: UtcDatetime
     updated_at: UtcDatetime
