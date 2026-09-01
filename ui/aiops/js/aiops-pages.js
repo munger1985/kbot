@@ -45,7 +45,11 @@
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
     }
-    if (key === "connectivity_status" && !item.readonly_connection_enabled) {
+    if (
+      key === "connectivity_status"
+      && Object.prototype.hasOwnProperty.call(item, "readonly_connection_enabled")
+      && !item.readonly_connection_enabled
+    ) {
       return "仅监控";
     }
     if (type === "schedule") {

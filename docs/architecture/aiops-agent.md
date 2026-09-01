@@ -171,6 +171,10 @@ Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入�
 仍可继续消费已启用且可连接的监控源。Target 的 `db.availability` 观测只更新业务
 观测状态，不能覆盖数据库直连状态。
 
+入站Webhook仅以Diagnostic Source的`ENABLED`状态作为人工开关，不以可能波动的
+连通性状态作为路由条件；Webhook Key、HMAC签名、时间戳和防重放校验共同承担请求
+认证。否则一次周期检查失败会把合法事件错误地拒绝为`SOURCE_ROUTE_NOT_FOUND`。
+
 ## 建议、审批与执行
 
 分析结果可以只给解决思路，也可以生成版本化 Change Proposal。每条命令必须单独

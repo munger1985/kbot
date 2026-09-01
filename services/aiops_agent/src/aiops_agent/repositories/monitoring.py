@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
+    SignalEventEntity,
     SituationEntity,
     SituationEventEntity,
-    SignalEventEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
@@ -201,9 +201,6 @@ class DiagnosticSourceRepository(AIOpsRepository):
         self._check_active()
         statement = select(DiagnosticSourceEntity).where(
             DiagnosticSourceEntity.status == "ENABLED",
-            DiagnosticSourceEntity.connectivity_status.in_(
-                ("CONNECTED", "DEGRADED")
-            ),
             or_(
                 DiagnosticSourceEntity.webhook_key_hash == webhook_key_hash,
                 (

@@ -7,6 +7,11 @@ import hashlib
 from datetime import datetime
 from typing import Any
 
+from platform_core.contracts.aiops import (
+    SignalEventEnvelope,
+    SignalEventIntakeReceipt,
+)
+from platform_core.identity import uuid7
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
@@ -15,31 +20,25 @@ from aiops_agent.application.errors import (
     dependency_unavailable,
     validation_failed,
 )
+from aiops_agent.application.managed_credentials import AIOpsManagedCredentialService
 from aiops_agent.application.runtime.service import (
     canonical_bytes,
     sha256_json,
 )
-from aiops_agent.application.managed_credentials import AIOpsManagedCredentialService
 from aiops_agent.contracts.evidence import NormalizedSignalEvent
 from aiops_agent.domain.evidence import correlate_signal_event
 from aiops_agent.entities import (
     InboxEntity,
+    OutboxEntity,
+    SignalEventEntity,
     SituationEntity,
     SituationEventEntity,
-    SignalEventEntity,
-    OutboxEntity,
 )
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_RECEIVE,
     DiagnosticSourceContext,
     SignalWebhookRequest,
 )
-from platform_core.contracts.aiops import (
-    SignalEventEnvelope,
-    SignalEventIntakeReceipt,
-)
-from platform_core.identity import uuid7
-
 
 _SEVERITY_RANK = {
     "INFO": 0,
@@ -153,8 +152,6 @@ class SignalEventIntakeService:
             if (
                 source is None
                 or source.status != "ENABLED"
-                or source.connectivity_status
-                not in {"CONNECTED", "DEGRADED"}
                 or int(source.row_version)
                 != source_snapshot["config_version"]
             ):

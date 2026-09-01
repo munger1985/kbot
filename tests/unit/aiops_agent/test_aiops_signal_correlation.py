@@ -1,16 +1,19 @@
 """SignalEvent 与跨来源 Situation 确定性关联测试。"""
 
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
-
-from sqlalchemy.dialects import oracle
 
 from aiops_agent.domain.evidence import (
     correlate_signal_event,
     validate_event_class_map,
 )
-from aiops_agent.repositories.monitoring import SituationRepository
+from aiops_agent.repositories.monitoring import (
+    DiagnosticSourceRepository,
+    SituationRepository,
+)
 from platform_core.identity import uuid7
+from sqlalchemy.dialects import oracle
 
 
 class SituationCorrelationTest(unittest.TestCase):
@@ -65,6 +68,27 @@ class SituationCorrelationTest(unittest.TestCase):
 
 
 class SituationStateRepositoryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_webhook_route_uses_enablement_not_connectivity_as_gate(
+        self,
+    ) -> None:
+        result = Mock()
+        result.scalar_one_or_none.return_value = None
+        session = Mock()
+        session.execute = AsyncMock(return_value=result)
+        repository = DiagnosticSourceRepository(session)
+
+        await repository.get_by_webhook_hash(
+            webhook_key_hash="a" * 64,
+            now=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+
+        statement = session.execute.await_args.args[0]
+        sql = str(statement.compile(dialect=oracle.dialect())).upper()
+        where_clause = sql.split("WHERE", 1)[1]
+        self.assertIn("STATUS", where_clause)
+        self.assertIn("WEBHOOK_KEY_HASH", where_clause)
+        self.assertNotIn("CONNECTIVITY_STATUS", where_clause)
+
     async def test_latest_state_per_source_incident_controls_resolution(
         self,
     ) -> None:

@@ -1,10 +1,9 @@
 """AIOps 正式页面静态契约检查。"""
 
-from html.parser import HTMLParser
-from pathlib import Path
 import subprocess
 import unittest
-
+from html.parser import HTMLParser
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 AIOPS_ROOT = ROOT / "ui" / "aiops"
@@ -231,6 +230,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-source-action="enable"', pages_script)
         self.assertIn('data-source-action="disable"', pages_script)
         self.assertIn("connectivity_check_pending", pages_script)
+        self.assertIn(
+            'hasOwnProperty.call(item, "readonly_connection_enabled")',
+            pages_script,
+        )
         self.assertIn('data-target-action="connectivity"', pages_script)
         self.assertIn('data-target-action="detail"', pages_script)
         self.assertIn('data-target-action="enable"', pages_script)
