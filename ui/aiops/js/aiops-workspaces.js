@@ -83,17 +83,34 @@
 
   function investigationPlanHtml(plan) {
     const actions = values(plan?.actions);
-    if (!actions.length) return "";
+    const frame = plan?.task_frame || {};
+    const hypotheses = values(plan?.hypotheses);
+    if (!actions.length && !frame.problem_statement && !hypotheses.length) return "";
+    const list = (title, items) => values(items).length
+      ? `<div class="ops-plan-section"><strong>${esc(title)}</strong><ul>${values(items).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`
+      : "";
+    const frameHtml = frame.problem_statement
+      ? `<div class="ops-plan-frame"><p><strong>问题定义：</strong>${esc(frame.problem_statement)}</p>${list("当前已知", frame.known_facts)}${list("待验证", frame.unknowns)}${list("完成标准", frame.success_criteria)}</div>`
+      : "";
+    const hypothesisHtml = hypotheses.length
+      ? `<div class="ops-plan-hypotheses"><strong>待验证假设</strong><ol>${hypotheses.map((item) => {
+        const confidence = Number.isFinite(Number(item.confidence)) ? ` · 初始置信度 ${Math.round(Number(item.confidence) * 100)}%` : "";
+        return `<li><span>${esc(item.statement || "待验证假设")}</span>${item.rationale || confidence ? `<small>${item.rationale ? `判断依据摘要：${esc(item.rationale)}` : ""}${esc(confidence)}</small>` : ""}</li>`;
+      }).join("")}</ol></div>`
+      : "";
     const rows = actions.map((action) => {
       const approval = action.execution_mode === "APPROVAL_REQUIRED";
       const mode = approval ? "需人工审批" : "自动只读执行";
       const status = action.status || "PLANNED";
+      const evidence = action.expected_evidence_kind ? ` · 预期证据 ${action.expected_evidence_kind}` : "";
+      const dependency = values(action.depends_on).length ? ` · 依赖 ${values(action.depends_on).join("、")}` : "";
       const query = action.sql_text
         ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
         : "";
-      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}</small>${query}</li>`;
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}</small>${query}</li>`;
     }).join("");
-    return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header><ol>${rows}</ol></section>`;
+    const actionsHtml = actions.length ? `<div class="ops-plan-actions"><strong>取证步骤</strong><ol>${rows}</ol></div>` : `<p class="ops-plan-empty">现有材料已足够，本轮不需要调用额外诊断工具。</p>`;
+    return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划与判断依据</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header>${frameHtml}${hypothesisHtml}${actionsHtml}</section>`;
   }
 
   function showInvestigationPlan(progress, plan) {
@@ -106,11 +123,17 @@
 
   function ensureProgressTimeline(progress) {
     if (progress.dataset.timelineReady === "true") return;
-    const initial = progress.textContent.trim() || "正在建立诊断计划…";
+    const initial = progress.textContent.trim() || "正在建立诊断计划：先固定执行上下文，再理解问题并选择证据…";
     progress.dataset.timelineReady = "true";
     progress.dataset.startedAt = String(Date.now());
     progress.innerHTML = `<header><strong>诊断过程</strong><span class="ops-progress-elapsed">已运行 0 秒</span></header><ol class="ops-progress-timeline"></ol>`;
-    appendProgress(progress, "client.started", { public_summary: initial }, "client.started");
+    appendProgress(progress, "client.started", {
+      public_summary: initial,
+      public_sections: [{
+        title: "计划将包含",
+        items: ["问题定义与完成标准", "当前已知和待验证项", "候选假设、取证步骤及每步预期证据"],
+      }],
+    }, "client.started");
   }
 
   function appendProgress(progress, event, payload = {}, eventId = "") {
@@ -123,11 +146,15 @@
     if (!row) {
       row = document.createElement("li");
       row.dataset.progressKey = key;
-      row.innerHTML = `<i aria-hidden="true"></i><span></span><small></small>`;
+      row.innerHTML = `<i aria-hidden="true"></i><div class="ops-progress-content"><span></span><div class="ops-progress-details"></div></div><small></small>`;
       timeline.append(row);
     }
     row.classList.add("is-active");
-    row.querySelector("span").textContent = summary;
+    row.querySelector(".ops-progress-content > span").textContent = summary;
+    const details = row.querySelector(".ops-progress-details");
+    const sections = values(payload.public_sections).filter((section) => values(section?.items).length);
+    details.innerHTML = sections.map((section) => `<section><strong>${esc(section.title || "阶段详情")}</strong><ul>${values(section.items).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>`).join("");
+    details.hidden = !sections.length;
     row.querySelector("small").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
@@ -483,7 +510,8 @@
       if (id) lastEventId = id;
       const payload = data?.payload || {};
       if ([
-        "turn.created", "planning.started", "turn.status", "input.analysis.completed",
+        "turn.created", "planning.started", "planning.route.selected", "turn.status",
+        "input.analysis.started", "input.analysis.completed",
         "task.frame.completed", "investigation.planned",
         "playbook.completed", "tool.started", "tool.completed",
         "tool.gap", "evidence.added", "assessment.started", "assessment.completed",
@@ -614,7 +642,7 @@
         selectedFile ? `已上传诊断材料：${selectedFile.name}` : "",
       ].filter(Boolean).join("\n\n");
       panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedText));
-      panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在建立诊断计划…</section>');
+      panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在建立诊断计划：先固定执行上下文，再理解问题并选择证据…</section>');
       const progress = document.getElementById("live-progress");
       await followTurn(receipt.conversation_id, receipt.turn_id, progress);
       await loadConversation(receipt.conversation_id);

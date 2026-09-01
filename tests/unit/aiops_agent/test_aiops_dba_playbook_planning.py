@@ -1046,7 +1046,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             tuple(uow.tasks[0].input_artifacts_json),
         )
         self.assertEqual(1, len(uow.revisions))
-        self.assertEqual(2, uow.commit_count)
+        self.assertEqual(3, uow.commit_count)
         answer_context = uow.run.plan_snapshot_json["answer_context"]
         self.assertEqual("diagnosis-model", answer_context["model"]["technical_name"])
         self.assertEqual(
@@ -1058,9 +1058,22 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             for event in uow.events
             if event.event_type == "investigation.planned"
         )
+        self.assertEqual(1, planned_event.payload_json["plan"]["revision_no"])
+        self.assertEqual([], planned_event.payload_json["plan"]["actions"])
         self.assertEqual(
-            {"revision_no": 1, "actions": []},
-            planned_event.payload_json["plan"],
+            "解释 ORA-27157 的含义和可能原因",
+            planned_event.payload_json["plan"]["task_frame"][
+                "problem_statement"
+            ],
+        )
+        route_event = next(
+            event
+            for event in uow.events
+            if event.event_type == "planning.route.selected"
+        )
+        self.assertEqual(
+            "FULL_INVESTIGATION",
+            route_event.payload_json["planning_mode"],
         )
 
     async def test_source_run_final_artifact_is_inherited_as_current_evidence(
@@ -1186,6 +1199,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         projection = safe_plan_projection(
             {
                 "revision_no": 2,
+                "hypotheses": [
+                    {
+                        "hypothesis_id": "h1",
+                        "statement": "高负载来自单次执行成本",
+                        "rationale": "需要用执行统计验证",
+                        "confidence": 0.6,
+                    }
+                ],
                 "actions": [
                     {
                         "action_id": "a1",
@@ -1195,10 +1216,18 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                             "sql": "SELECT sql_text AS sample FROM v$sqlstats",
                             "parameters": {},
                         },
+                        "expected_evidence_kind": "SQL_RUNTIME_STATS",
                         "measurement_semantics": "CURRENT_ACTIVITY",
                         "depends_on": [],
                     }
                 ],
+            },
+            task_frame={
+                "objectives": ["DIAGNOSE"],
+                "problem_statement": "分析 Top SQL 的主要资源消耗",
+                "known_facts": ["目标 SQL 当前排名第一"],
+                "unknowns": ["排序指标和单次执行成本"],
+                "success_criteria": ["给出有执行统计支持的结论"],
             },
             execution_snapshot={
                 "dynamic_invocations": {
@@ -1230,6 +1259,15 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             projection["actions"][0]["execution_mode"],
         )
         action = projection["actions"][0]
+        self.assertEqual("SQL_RUNTIME_STATS", action["expected_evidence_kind"])
+        self.assertEqual(
+            "分析 Top SQL 的主要资源消耗",
+            projection["task_frame"]["problem_statement"],
+        )
+        self.assertEqual(
+            "高负载来自单次执行成本",
+            projection["hypotheses"][0]["statement"],
+        )
         self.assertIn("v$sqlstats", action["sql_text"])
         self.assertEqual({}, action["parameters"])
         self.assertEqual(

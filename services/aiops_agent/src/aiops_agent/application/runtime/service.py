@@ -1489,6 +1489,31 @@ class AIOpsRuntimeService:
                     "action_id": invocation.action_id,
                     "tool_id": invocation.tool_id,
                     "question": question,
+                    "expected_evidence_kind": str(
+                        action.get("expected_evidence_kind") or "OBSERVATION"
+                    ),
+                    "public_sections": [
+                        {
+                            "title": "本步要回答",
+                            "items": [question],
+                        },
+                        {
+                            "title": "执行方式",
+                            "items": [
+                                f"调用只读工具 {invocation.tool_id}",
+                                "结果会先登记为证据，再参与后续判断",
+                            ],
+                        },
+                        {
+                            "title": "预期产出",
+                            "items": [
+                                str(
+                                    action.get("expected_evidence_kind")
+                                    or "数据库诊断观测"
+                                )
+                            ],
+                        },
+                    ],
                     "public_summary": f"正在执行：{question}",
                 },
             )

@@ -220,6 +220,7 @@ class TurnInvestigationActionView(AIOpsContract):
     tool_id: str = Field(min_length=1, max_length=128)
     tool_class: str = Field(min_length=1, max_length=32)
     measurement_semantics: MeasurementSemantics
+    expected_evidence_kind: str = Field(default="", max_length=64)
     depends_on: tuple[str, ...] = ()
     optional: bool = False
     execution_mode: str = Field(pattern=r"^(AUTO_EXECUTE|APPROVAL_REQUIRED)$")
@@ -229,11 +230,37 @@ class TurnInvestigationActionView(AIOpsContract):
     approval_reason_codes: tuple[str, ...] = ()
 
 
+class TurnTaskFrameView(AIOpsContract):
+    """用户可见的问题框架，不包含模型隐藏推理。"""
+
+    objectives: tuple[str, ...] = ()
+    problem_statement: str = Field(default="", max_length=4000)
+    time_scope: str | None = Field(default=None, max_length=512)
+    known_facts: tuple[str, ...] = ()
+    unknowns: tuple[str, ...] = ()
+    constraints: tuple[str, ...] = ()
+    success_criteria: tuple[str, ...] = ()
+    requires_change: bool = False
+
+
+class TurnInvestigationHypothesisView(AIOpsContract):
+    """模型明确输出、等待证据验证的公开假设。"""
+
+    hypothesis_id: str = Field(pattern=r"^h[0-9]+$")
+    statement: str = Field(min_length=1, max_length=2000)
+    rationale: str = Field(default="", max_length=2000)
+    confidence: float = Field(ge=0, le=1)
+
+
 class TurnInvestigationPlanView(AIOpsContract):
     """当前Turn已经验证并冻结的安全计划摘要。"""
 
     revision_no: int = Field(ge=1)
+    task_frame: TurnTaskFrameView | None = None
+    hypotheses: tuple[TurnInvestigationHypothesisView, ...] = ()
     actions: tuple[TurnInvestigationActionView, ...] = ()
+    answer_if_no_more_evidence: bool = False
+    stop_reason: str | None = Field(default=None, max_length=2000)
 
 
 class TurnSummary(AIOpsContract):

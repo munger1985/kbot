@@ -315,6 +315,13 @@ class ConversationTurnService:
                 if turn.current_plan_artifact_id is not None
                 else None
             )
+            task_frame_artifact = (
+                await uow.runs.get_artifact(
+                    artifact_id=turn.task_frame_artifact_id
+                )
+                if getattr(turn, "task_frame_artifact_id", None) is not None
+                else None
+            )
             plan_view = None
             if plan_artifact is not None:
                 execution_snapshot = dict(
@@ -327,6 +334,11 @@ class ConversationTurnService:
                 )
                 plan_view = safe_plan_projection(
                     dict(plan_artifact.payload_json or {}),
+                    task_frame=(
+                        dict(task_frame_artifact.payload_json or {})
+                        if task_frame_artifact is not None
+                        else None
+                    ),
                     execution_snapshot=execution_snapshot,
                     tool_invocations=tool_invocations,
                 )

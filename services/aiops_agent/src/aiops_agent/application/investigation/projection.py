@@ -20,10 +20,11 @@ def tool_class_for(tool_id: str) -> str:
 def safe_plan_projection(
     plan: Mapping[str, Any],
     *,
+    task_frame: Mapping[str, Any] | None = None,
     execution_snapshot: Mapping[str, Any] | None = None,
     tool_invocations: Iterable[object] = (),
 ) -> dict[str, Any]:
-    """生成不包含凭据和内部策略快照的用户可见计划。"""
+    """生成不包含凭据、隐藏推理和内部策略快照的用户可见计划。"""
     decisions: dict[str, str] = {}
     dynamic_queries: dict[str, dict[str, Any]] = {}
     dynamic = dict(
@@ -69,6 +70,9 @@ def safe_plan_projection(
             "measurement_semantics": str(
                 raw_action.get("measurement_semantics") or "NOT_APPLICABLE"
             ),
+            "expected_evidence_kind": str(
+                raw_action.get("expected_evidence_kind") or ""
+            ),
             "depends_on": [
                 str(value) for value in raw_action.get("depends_on") or ()
             ],
@@ -79,7 +83,60 @@ def safe_plan_projection(
         if action_id in dynamic_queries:
             projection.update(dynamic_queries[action_id])
         actions.append(projection)
+    hypotheses = []
+    for raw_hypothesis in plan.get("hypotheses") or ():
+        if not isinstance(raw_hypothesis, Mapping):
+            continue
+        hypotheses.append(
+            {
+                "hypothesis_id": str(
+                    raw_hypothesis.get("hypothesis_id") or ""
+                ),
+                "statement": str(raw_hypothesis.get("statement") or ""),
+                "rationale": str(raw_hypothesis.get("rationale") or ""),
+                "confidence": float(raw_hypothesis.get("confidence") or 0),
+            }
+        )
+    public_task_frame = None
+    if task_frame is not None:
+        public_task_frame = {
+            "objectives": [
+                str(value) for value in task_frame.get("objectives") or ()
+            ],
+            "problem_statement": str(
+                task_frame.get("problem_statement") or ""
+            ),
+            "time_scope": (
+                str(task_frame.get("time_scope"))
+                if task_frame.get("time_scope")
+                else None
+            ),
+            "known_facts": [
+                str(value) for value in task_frame.get("known_facts") or ()
+            ],
+            "unknowns": [
+                str(value) for value in task_frame.get("unknowns") or ()
+            ],
+            "constraints": [
+                str(value) for value in task_frame.get("constraints") or ()
+            ],
+            "success_criteria": [
+                str(value)
+                for value in task_frame.get("success_criteria") or ()
+            ],
+            "requires_change": bool(
+                task_frame.get("requires_change", False)
+            ),
+        }
     return {
         "revision_no": int(plan.get("revision_no") or 1),
+        "task_frame": public_task_frame,
+        "hypotheses": hypotheses,
         "actions": actions,
+        "answer_if_no_more_evidence": bool(
+            plan.get("answer_if_no_more_evidence", False)
+        ),
+        "stop_reason": (
+            str(plan.get("stop_reason")) if plan.get("stop_reason") else None
+        ),
     }

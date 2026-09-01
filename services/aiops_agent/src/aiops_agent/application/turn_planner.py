@@ -131,6 +131,22 @@ class TurnPlannerService:
                 turn,
                 event_type="planning.started",
                 payload={
+                    "public_sections": [
+                        {
+                            "title": "已固定的执行上下文",
+                            "items": [
+                                "本轮 Agent 版本、逻辑 Target 与模型配置",
+                                "后续步骤将沿用同一上下文，避免诊断过程中发生漂移",
+                            ],
+                        },
+                        {
+                            "title": "正在准备",
+                            "items": [
+                                "读取 Target 能力与可用数据源",
+                                "冻结数据库 Prompt 版本并建立可追溯的调查 Run",
+                            ],
+                        },
+                    ],
                     "public_summary": (
                         "已锁定 Agent、Target 和模型配置，正在生成调查计划"
                     ),
@@ -142,6 +158,15 @@ class TurnPlannerService:
                 event_type="turn.status",
                 payload={
                     "status": "UNDERSTANDING",
+                    "public_sections": [
+                        {
+                            "title": "理解阶段的产出",
+                            "items": [
+                                "识别输入属于问题、日志、SQL 输出、指标还是配置",
+                                "提取已知事实、待验证项和本轮完成标准",
+                            ],
+                        }
+                    ],
                     "public_summary": "正在识别输入材料并理解要解决的问题",
                 },
             )

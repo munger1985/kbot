@@ -557,7 +557,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         turn = uow.turns.turns[0]
         run_id = uuid7()
         artifact_id = uuid7()
+        task_frame_artifact_id = uuid7()
         turn.current_plan_artifact_id = artifact_id
+        turn.task_frame_artifact_id = task_frame_artifact_id
         uow.turns.run_links.append(
             SimpleNamespace(
                 turn_id=turn.turn_id,
@@ -613,6 +615,18 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 },
             )
         )
+        uow.runs.artifacts.append(
+            SimpleNamespace(
+                artifact_id=task_frame_artifact_id,
+                payload_json={
+                    "objectives": ["DIAGNOSE"],
+                    "problem_statement": "分析当前会话资源消耗",
+                    "known_facts": ["目标 SQL 已被选中"],
+                    "unknowns": ["具体等待事件"],
+                    "success_criteria": ["形成有证据支持的判断"],
+                },
+            )
+        )
         uow.turns.tool_invocations = [
             SimpleNamespace(
                 turn_id=turn.turn_id,
@@ -635,6 +649,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("WAITING_APPROVAL", action.status)
         self.assertIn("v$sqlstats", action.sql_text)
         self.assertEqual({}, action.parameters)
+        self.assertEqual(
+            "分析当前会话资源消耗",
+            view.investigation_plan.task_frame.problem_statement,
+        )
         self.assertEqual(run_id, view.ops_run_id)
 
     async def test_start_accepts_disabled_target_for_degraded_diagnosis(

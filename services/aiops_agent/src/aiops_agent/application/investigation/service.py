@@ -283,6 +283,26 @@ class TurnPlanningService:
         """对纯文本问题先做精简语义规划，复杂材料直接进入完整规划。"""
         compact_question = self._compact_question(context)
         if compact_question is None:
+            await self._record_planning_route(
+                context=context,
+                mode="FULL_INVESTIGATION",
+                public_summary="输入包含诊断材料，将进行完整调查规划",
+                public_sections=[
+                    {
+                        "title": "为什么进入完整调查",
+                        "items": [
+                            "需要同时理解用户材料、问题上下文和可用证据，不能直接套用单一查询"
+                        ],
+                    },
+                    {
+                        "title": "接下来会做什么",
+                        "items": [
+                            "识别已知事实与证据缺口",
+                            "形成候选假设并选择能够区分假设的只读工具",
+                        ],
+                    },
+                ],
+            )
             planned = await self._investigation_reasoner.plan(
                 content=context.content,
                 conversation_context=context.recent_context,
@@ -329,6 +349,25 @@ class TurnPlanningService:
             ],
             "model_receipt": routed.receipt.model_dump(mode="json"),
         }
+        await self._record_planning_route(
+            context=context,
+            mode=str(compact.planning_mode),
+            public_summary=compact.public_reasoning_summary,
+            public_sections=[
+                {
+                    "title": "问题判断",
+                    "items": [compact.problem_statement],
+                },
+                {
+                    "title": "规划选择",
+                    "items": [compact.public_reasoning_summary],
+                },
+                {
+                    "title": "完成标准",
+                    "items": list(compact.success_criteria),
+                },
+            ],
+        )
         if compact.planning_mode == CompactPlanningMode.READ_ONLY_LOOKUP:
             output = self._compact_investigation_output(
                 question=compact_question,
@@ -354,6 +393,35 @@ class TurnPlanningService:
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
         return planned, selected_tools, selected_playbooks, route_snapshot
+
+    async def _record_planning_route(
+        self,
+        *,
+        context: TurnPlanningContext,
+        mode: str,
+        public_summary: str,
+        public_sections: list[dict[str, object]],
+    ) -> None:
+        """提交模型可公开的规划决策摘要，不记录隐藏推理。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(
+                domain_id=context.domain_id,
+                turn_id=context.turn_id,
+                lock=True,
+            )
+            if turn is None:
+                raise resource_not_found("Conversation Turn")
+            await self._append_event(
+                uow,
+                turn,
+                event_type="planning.route.selected",
+                payload={
+                    "planning_mode": mode,
+                    "public_summary": public_summary,
+                    "public_sections": public_sections,
+                },
+            )
+            await uow.commit()
 
     @staticmethod
     def _compact_question(context: TurnPlanningContext) -> str | None:
@@ -1768,6 +1836,31 @@ class TurnPlanningService:
                     payload={
                         "content_count": len(context.content),
                         "upload_count": len(context.raw_uploads),
+                        "public_sections": [
+                            {
+                                "title": "当前目标",
+                                "items": [
+                                    (
+                                        f"{context.target_context['display_name']} · "
+                                        f"{context.target_context['db_type']} · "
+                                        f"{context.target_context['environment']}"
+                                    )
+                                ],
+                            },
+                            {
+                                "title": "当前动作",
+                                "items": [
+                                    f"核对 {len(context.content)} 项输入内容"
+                                    + (
+                                        f"和 {len(context.raw_uploads)} 个上传文件"
+                                        if context.raw_uploads
+                                        else ""
+                                    ),
+                                    "冻结本轮 Prompt、Target 能力和只读执行边界",
+                                    "下一步将判断直接查询还是进入完整调查",
+                                ],
+                            },
+                        ],
                         "public_summary": "输入材料已安全保存，正在识别内容",
                     },
                 )
@@ -2238,6 +2331,11 @@ class TurnPlanningService:
             run.policy_snapshot_json = dict(
                 context.change_context.get("policy", {})
             )
+            public_plan = safe_plan_projection(
+                investigation.plan.model_dump(mode="json"),
+                task_frame=investigation.task_frame.model_dump(mode="json"),
+                execution_snapshot=execution_snapshot,
+            )
             await self._append_event(
                 uow,
                 turn,
@@ -2245,6 +2343,46 @@ class TurnPlanningService:
                 payload={
                     "material_count": len(investigation.input_envelope.materials),
                     "contains_user_evidence": contains_user_evidence,
+                    "materials": [
+                        {
+                            "item_no": item.item_no,
+                            "material_kind": str(item.material_kind),
+                            "summary": item.summary,
+                            "confidence": item.confidence,
+                            "contains_user_evidence": (
+                                item.contains_user_evidence
+                            ),
+                        }
+                        for item in investigation.input_envelope.materials
+                    ],
+                    "explicit_question": (
+                        investigation.input_envelope.explicit_question
+                    ),
+                    "inferred_question": (
+                        investigation.input_envelope.inferred_question
+                    ),
+                    "ambiguities": list(
+                        investigation.input_envelope.ambiguities
+                    ),
+                    "public_sections": [
+                        {
+                            "title": "识别到的材料",
+                            "items": [
+                                f"{item.material_kind}: {item.summary}"
+                                for item in investigation.input_envelope.materials
+                            ],
+                        },
+                        {
+                            "title": "问题理解",
+                            "items": [
+                                str(
+                                    investigation.input_envelope.explicit_question
+                                    or investigation.input_envelope.inferred_question
+                                    or investigation.task_frame.problem_statement
+                                )
+                            ],
+                        },
+                    ],
                     "public_summary": "已识别输入材料，正在形成调查任务",
                 },
             )
@@ -2256,6 +2394,33 @@ class TurnPlanningService:
                     "objectives": [
                         str(item)
                         for item in investigation.task_frame.objectives
+                    ],
+                    "task_frame": public_plan["task_frame"],
+                    "public_sections": [
+                        {
+                            "title": "本轮要解决的问题",
+                            "items": [
+                                investigation.task_frame.problem_statement
+                            ],
+                        },
+                        {
+                            "title": "当前已知",
+                            "items": list(
+                                investigation.task_frame.known_facts
+                            )
+                            or ["尚无经过验证的事实，需先取证"],
+                        },
+                        {
+                            "title": "待验证",
+                            "items": list(investigation.task_frame.unknowns)
+                            or ["没有额外待验证项"],
+                        },
+                        {
+                            "title": "完成标准",
+                            "items": list(
+                                investigation.task_frame.success_criteria
+                            ),
+                        },
                     ],
                     "public_summary": "已明确本轮问题、已知事实和待验证项",
                 },
@@ -2269,10 +2434,26 @@ class TurnPlanningService:
                     "action_count": len(investigation.plan.actions),
                     "playbook_count": len(playbook_plan.items),
                     "planning_mode": planning_route.get("mode"),
-                    "plan": safe_plan_projection(
-                        investigation.plan.model_dump(mode="json"),
-                        execution_snapshot=execution_snapshot,
-                    ),
+                    "plan": public_plan,
+                    "public_sections": [
+                        {
+                            "title": "规划方式",
+                            "items": [
+                                str(
+                                    planning_route.get("public_summary")
+                                    or "已生成最小充分调查计划"
+                                )
+                            ],
+                        },
+                        {
+                            "title": "准备执行的步骤",
+                            "items": [
+                                str(item.get("question") or "执行诊断步骤")
+                                for item in public_plan["actions"]
+                            ]
+                            or ["现有材料已经足够，不需要调用诊断工具"],
+                        },
+                    ],
                     "public_summary": str(
                         planning_route.get("public_summary")
                         or "调查计划已建立，正在调用只读工具取证"

@@ -44,6 +44,15 @@ class TurnQueueService:
                     visibility="USER",
                     payload_json={
                         "status": "ACCEPTED",
+                        "public_sections": [
+                            {
+                                "title": "队列阶段正在做什么",
+                                "items": [
+                                    "为本轮问题创建唯一规划任务",
+                                    "等待后台规划器领取；此时尚未访问数据库或监控源",
+                                ],
+                            }
+                        ],
                         "public_summary": "问题已进入诊断规划队列",
                     },
                 )
