@@ -97,6 +97,12 @@
 .ops-evidence-list li { padding-left: 3px; }
 .ops-evidence-list span, .ops-evidence-list small { display: block; }
 .ops-evidence-list small { margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: .03em; }
+.ops-evidence-data { display: grid; gap: 14px; padding-top: 10px; border-top: 1px solid #e6e9ef; font-size: 12px; }
+.ops-evidence-data > section { min-width: 0; padding: 10px 12px; background: #f7f8fb; border: 1px solid #e1e5ec; }
+.ops-evidence-data > section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ops-evidence-data > section > header span { font-weight: 700; }
+.ops-evidence-data > section > header small { color: var(--muted); font-size: 10px; }
+.ops-evidence-data .ops-table-wrap { margin-top: 8px; }
 .ops-evidence-gaps { padding-top: 10px; border-top: 1px solid #e6e9ef; font-size: 12px; }
 .ops-evidence-gaps ul { margin: 7px 0 0; padding-left: 20px; }
 .ops-evidence-empty { margin: 10px 0; color: var(--muted); }

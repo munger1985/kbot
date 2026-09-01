@@ -309,6 +309,7 @@
 
   function turnEvidenceHtml(blocks, gaps = []) {
     const evidence = new Map();
+    const dataBlocks = blocks.filter((block) => ["TABLE", "CHART"].includes(block.block_type));
     const add = (key, label, meta) => {
       const normalizedLabel = String(label || "诊断证据").trim();
       const normalizedKey = String(key || normalizedLabel.toLowerCase());
@@ -332,14 +333,19 @@
       label: item.detail || item.code || "本次未取得证据",
       meta: `${item.code || "EVIDENCE_GAP"}${item.step_id ? ` · ${item.step_id}` : ""}`,
     }));
-    if (!rows.length && !gapRows.length) return "";
+    if (!rows.length && !gapRows.length && !dataBlocks.length) return "";
     const evidenceRows = rows.length
       ? `<ol class="ops-evidence-list">${rows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta || "EVIDENCE")}</small></li>`).join("")}</ol>`
-      : '<p class="ops-evidence-empty">本次没有形成可展示的有效证据。</p>';
+      : dataBlocks.length
+        ? ""
+        : '<p class="ops-evidence-empty">本次没有形成可展示的有效证据。</p>';
+    const evidenceData = dataBlocks.length
+      ? `<div class="ops-evidence-data"><strong>原始取证结果</strong>${dataBlocks.map((block) => { const payload = block.payload || {}; const meta = [payload.measurement_semantics, payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · "); return `<section><header><span>${esc(payload.title || (block.block_type === "CHART" ? "指标图表" : "查询结果"))}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</header>${answerBlockHtml(block)}</section>`; }).join("")}</div>`
+      : "";
     const missingRows = gapRows.length
       ? `<div class="ops-evidence-gaps"><strong>未取得的证据</strong><ol class="ops-evidence-list">${gapRows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta)}</small></li>`).join("")}</ol></div>`
       : "";
-    return `<details class="ops-evidence"><summary>诊断依据 <span>${rows.length} 项证据${gapRows.length ? ` · ${gapRows.length} 项缺口` : ""}</span></summary><div class="ops-evidence-body">${evidenceRows}${missingRows}</div></details>`;
+    return `<details class="ops-evidence"><summary>诊断依据 <span>${rows.length} 项证据${dataBlocks.length ? ` · ${dataBlocks.length} 份原始结果` : ""}${gapRows.length ? ` · ${gapRows.length} 项缺口` : ""}</span></summary><div class="ops-evidence-body">${evidenceRows}${evidenceData}${missingRows}</div></details>`;
   }
 
   function turnHtml(turn) {
@@ -347,7 +353,8 @@
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
     const answerBlocks = values(turn.answer_blocks);
-    const blocks = answerBlocks.map(answerBlockHtml).join("");
+    const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type));
+    const blocks = narrativeBlocks.map(answerBlockHtml).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
     const plan = investigationPlanHtml(turn.investigation_plan);
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
