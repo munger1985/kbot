@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import time
 from dataclasses import dataclass
@@ -41,6 +42,11 @@ _ERROR_MESSAGE_TYPES = {2, 3}
 _WARNING_MESSAGE_TYPES = {4}
 # MESSAGE_LEVEL中1为Critical、2为Severe，用于覆盖类型未知但级别明确的记录。
 _CRITICAL_MESSAGE_LEVELS = {1, 2}
+# Oracle组件统一使用“组件前缀-数字”诊断码；匹配格式而非维护具体错误码清单。
+_DIAGNOSTIC_CODE = re.compile(
+    r"(?<![A-Z0-9_])[A-Z][A-Z0-9_]{1,15}-\d{3,6}\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -111,8 +117,12 @@ def _json_value(value: Any) -> Any:
     return value
 
 
-def _diagnostic_severity(message_type: Any, message_level: Any) -> str:
-    """依据Oracle ADR结构化字段归一化诊断严重度。"""
+def _diagnostic_severity(
+    message_type: Any,
+    message_level: Any,
+    message_text: Any = None,
+) -> str:
+    """依据ADR字段及标准诊断码格式归一化严重度。"""
     try:
         normalized_type = int(message_type)
     except (TypeError, ValueError):
@@ -124,6 +134,7 @@ def _diagnostic_severity(message_type: Any, message_level: Any) -> str:
     if (
         normalized_type in _ERROR_MESSAGE_TYPES
         or normalized_level in _CRITICAL_MESSAGE_LEVELS
+        or _DIAGNOSTIC_CODE.search(str(message_text or "")) is not None
     ):
         return "critical"
     if normalized_type in _WARNING_MESSAGE_TYPES:
@@ -190,6 +201,7 @@ def _append_rows(
                     "severity": _diagnostic_severity(
                         payload.get("message_type"),
                         payload.get("message_level"),
+                        payload.get("message_text"),
                     ),
                     "collected_at": datetime.now(timezone.utc).isoformat(),
                 }

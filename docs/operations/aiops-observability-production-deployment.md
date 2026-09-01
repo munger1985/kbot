@@ -267,8 +267,10 @@ sed -n '1,80p' var/aiops-stack/generated/alertmanager/alertmanager.yml
 Ruler。Oracle Alert Collector依据`V$DIAG_ALERT_EXT.MESSAGE_TYPE`和
 `MESSAGE_LEVEL`生成统一严重度，Incident Error、Error、Critical和Severe归为
 `critical`，Warning归为`warning`。Ruler转发所有这两类结构化异常，不维护ORA错误码
-白名单；因此新出现的ORA错误无需修改规则。普通Notification、Trace和Dump只保留在
-Loki供诊断查询，不自动触发Agent，避免正常启动信息造成告警风暴。
+白名单。部分Oracle错误会被ADR标为普通Notification或Important，因此Collector还会
+识别Oracle通用的“组件前缀-数字”标准诊断码格式；它同样不枚举ORA编号。因此新出现
+的ORA、TNS或其他Oracle组件错误无需修改规则。没有诊断码的普通Notification、Trace
+和Dump只保留在Loki供诊断查询，避免正常启动信息造成告警风暴。
 
 Prometheus侧仍由所有处于firing状态的Alerting Rule进入同一个Alertmanager，不按
 告警名称设置白名单。新增监控指标时必须同时定义对应的告警条件；仅存在一条指标时序

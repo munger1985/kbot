@@ -672,7 +672,8 @@ groups:
 
 `severity`由Oracle Collector根据ADR结构化字段生成，不按ORA编号匹配。Incident
 Error、Error、Critical和Severe归为`critical`，Warning归为`warning`；其他日志只
-用于诊断查询。
+用于诊断查询。对于被ADR标为Notification或Important但正文含Oracle标准诊断码的
+记录，Collector按通用“组件前缀-数字”格式识别为`critical`，不维护具体错误码清单。
 
 拉取固定镜像并启动：
 

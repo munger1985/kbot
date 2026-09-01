@@ -427,6 +427,17 @@ def test_oracle_collector_classifies_all_structured_alert_types() -> None:
     assert collector._diagnostic_severity(1, 1) == "critical"
     assert collector._diagnostic_severity(4, 16) == "warning"
     assert collector._diagnostic_severity(5, 16) == "info"
+    assert (
+        collector._diagnostic_severity(
+            5,
+            16,
+            'ORA-12012: error on auto execute of job "SYS"."DBMS_JOB$_5"',
+        )
+        == "critical"
+    )
+    assert collector._diagnostic_severity(5, 16, "ABC_1-4567: 任意组件错误") == (
+        "critical"
+    )
 
 
 def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
@@ -455,12 +466,12 @@ def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
             "MESSAGE_LEVEL",
             "MESSAGE_TEXT",
         ],
-        [(timestamp, 1, 3, 8, "任意Oracle错误")],
+        [(timestamp, 1, 5, 16, "ORA-12012: 自动任务执行失败")],
     )
     payload = json.loads(settings.output_file.read_text(encoding="utf-8"))
     assert payload["target_key"] == "oracle-test"
     assert payload["severity"] == "critical"
-    assert payload["message_text"] == "任意Oracle错误"
+    assert payload["message_text"] == "ORA-12012: 自动任务执行失败"
 
 
 def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -> None:
