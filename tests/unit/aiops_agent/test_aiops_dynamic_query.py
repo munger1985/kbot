@@ -227,6 +227,27 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
         self.assertIn("FETCH FIRST 50 ROWS ONLY", result.normalized_sql)
         self.assertEqual({"days": 7}, result.parameters)
 
+    def test_oracle_surface_function_names_survive_ast_normalization(
+        self,
+    ) -> None:
+        result = self.policy.validate(
+            "SELECT TO_DATE('2026-09-01', 'YYYY-MM-DD') AS sample_date, "
+            "SUBSTR(instance_name, 1, 8) AS instance_prefix "
+            "FROM v$instance"
+        )
+
+        self.assertIn(
+            "TO_DATE('2026-09-01', 'YYYY-MM-DD')",
+            result.normalized_sql,
+        )
+        self.assertIn("SUBSTR(instance_name, 1, 8)", result.normalized_sql)
+
+    def test_unknown_function_remains_forbidden_after_name_mapping(self) -> None:
+        self._assert_rejected(
+            "SELECT str_to_magic(instance_name) AS value FROM v$instance",
+            "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
+        )
+
     def _assert_rejected(
         self,
         sql: str,
@@ -565,6 +586,23 @@ class DynamicQueryPlanningTest(unittest.TestCase):
 
 
 class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _context():
+        return SimpleNamespace(
+            turn_id=uuid7(),
+            content=(),
+            recent_context=(),
+            target_context={
+                "target_id": "target-1",
+                "display_name": "订单生产库",
+                "db_type": "ORACLE",
+                "selection_status": "BOUND",
+            },
+            prompt_snapshot={"frozen": {}},
+            source_run_evidence=None,
+            deadline=None,
+        )
+
     async def test_policy_rejection_triggers_one_corrective_plan(self) -> None:
         factory = DynamicQueryPlanningTest()
         rejected = factory._investigation(
@@ -636,6 +674,114 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CUSTOM_FUNCTION", call["validation_error"])
         self.assertEqual(context.target_context, call["target_context"])
         reasoner.repair_policy_invalid_plan.assert_awaited_once()
+
+    async def test_second_rejection_keeps_independent_valid_action(self) -> None:
+        factory = DynamicQueryPlanningTest()
+        rejected = factory._investigation(
+            sql="SELECT custom_function(sid) AS result FROM v$session"
+        )
+        valid_action = rejected.plan.actions[0].model_copy(
+            update={
+                "action_id": "a2",
+                "question": "当前活动会话数是多少？",
+                "input": {
+                    "sql": (
+                        "SELECT COUNT(sid) AS session_count FROM v$session "
+                        "WHERE status = :status"
+                    ),
+                    "parameters": {"status": "ACTIVE"},
+                },
+            }
+        )
+        repaired = rejected.model_copy(
+            update={
+                "plan": rejected.plan.model_copy(
+                    update={
+                        "actions": (rejected.plan.actions[0], valid_action)
+                    }
+                )
+            }
+        )
+        reasoner = SimpleNamespace(
+            repair_policy_invalid_plan=AsyncMock(
+                return_value=StructuredModelResult(
+                    output=repaired,
+                    receipt=SimpleNamespace(name="partially-repaired"),
+                )
+            )
+        )
+        service = object.__new__(TurnPlanningService)
+        service._investigation_reasoner = reasoner
+
+        _, investigation, frozen, _ = (
+            await service._prepare_queries_with_repair(
+                context=self._context(),
+                planned=StructuredModelResult(
+                    output=rejected,
+                    receipt=SimpleNamespace(name="rejected"),
+                ),
+                available_tools=({"tool_id": "db.oracle.readonly_query"},),
+                available_playbooks=(),
+                model_snapshot={"technical_name": "test"},
+                revision_no=2,
+            )
+        )
+
+        self.assertEqual(
+            ["a2"],
+            [action.action_id for action in investigation.plan.actions],
+        )
+        self.assertEqual(["a2"], [item["action_id"] for item in frozen])
+
+    async def test_second_rejection_removes_dependent_action(self) -> None:
+        factory = DynamicQueryPlanningTest()
+        rejected = factory._investigation(
+            sql="SELECT custom_function(sid) AS result FROM v$session"
+        )
+        dependent = rejected.plan.actions[0].model_copy(
+            update={
+                "action_id": "a2",
+                "question": "汇总上一动作的会话证据",
+                "input": {
+                    "sql": "SELECT COUNT(*) AS sample_count FROM v$session",
+                    "parameters": {},
+                },
+                "depends_on": ("a1",),
+            }
+        )
+        repaired = rejected.model_copy(
+            update={
+                "plan": rejected.plan.model_copy(
+                    update={"actions": (rejected.plan.actions[0], dependent)}
+                )
+            }
+        )
+        reasoner = SimpleNamespace(
+            repair_policy_invalid_plan=AsyncMock(
+                return_value=StructuredModelResult(
+                    output=repaired,
+                    receipt=SimpleNamespace(name="invalid"),
+                )
+            )
+        )
+        service = object.__new__(TurnPlanningService)
+        service._investigation_reasoner = reasoner
+
+        with self.assertRaises(InvestigationPlanValidationError) as raised:
+            await service._prepare_queries_with_repair(
+                context=self._context(),
+                planned=StructuredModelResult(
+                    output=rejected,
+                    receipt=SimpleNamespace(name="rejected"),
+                ),
+                available_tools=({"tool_id": "db.oracle.readonly_query"},),
+                available_playbooks=(),
+                model_snapshot={"technical_name": "test"},
+                revision_no=2,
+            )
+
+        self.assertIn("没有可执行动作", str(raised.exception))
+        self.assertIn("依赖的调查动作不可执行", str(raised.exception))
 
     async def test_fixed_tool_parameter_rejection_triggers_repair(self) -> None:
         factory = DynamicQueryPlanningTest()

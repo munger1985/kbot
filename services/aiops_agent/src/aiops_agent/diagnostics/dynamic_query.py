@@ -65,6 +65,15 @@ _SAFE_FUNCTIONS = frozenset(
         "VARIANCE",
     }
 )
+
+# sqlglot 的 AST 使用跨方言内部函数名。策略契约和模型提示仍应使用
+# Oracle 表面函数名，否则合法的 Oracle SQL 会因解析器内部改名被误拦截。
+_SQLGLOT_ORACLE_FUNCTION_NAMES = {
+    "STR_TO_DATE": "TO_DATE",
+    "SUBSTRING": "SUBSTR",
+}
+
+
 class DynamicQueryRejected(ValueError):
     """动态查询未通过确定性策略。"""
 
@@ -227,6 +236,7 @@ class OracleDynamicQueryPolicy:
             name = function.sql_name().upper()
             if name == "ANONYMOUS":
                 name = str(getattr(function, "name", "")).upper()
+            name = _SQLGLOT_ORACLE_FUNCTION_NAMES.get(name, name)
             if name not in self._allowed_functions:
                 raise DynamicQueryRejected(
                     "DYNAMIC_SQL_FUNCTION_FORBIDDEN",

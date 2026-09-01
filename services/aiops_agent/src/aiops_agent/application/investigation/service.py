@@ -755,13 +755,119 @@ class TurnPlanningService:
                 ),
                 receipt=repaired.receipt,
             )
-            investigation, dynamic_queries, source_queries = (
-                self._prepare_query_inputs(
-                    investigation=repaired.output,
+            try:
+                investigation, dynamic_queries, source_queries = (
+                    self._prepare_query_inputs(
+                        investigation=repaired.output,
+                        context=context,
+                    )
+                )
+            except InvestigationPlanValidationError:
+                investigation, dynamic_queries, source_queries = (
+                    self._prepare_valid_query_subset(
+                        investigation=repaired.output,
+                        context=context,
+                        revision_no=revision_no,
+                    )
+                )
+            return repaired, investigation, dynamic_queries, source_queries
+
+    def _prepare_valid_query_subset(
+        self,
+        *,
+        investigation: InvestigationPlanningOutput,
+        context: TurnPlanningContext,
+        revision_no: int,
+    ):
+        """修正计划仍越界时，保留独立且合规的只读调查动作。"""
+        normalized_actions: dict[str, InvestigationAction] = {}
+        rejected_reasons: dict[str, str] = {}
+        source_actions = tuple(investigation.plan.actions)
+
+        for action in source_actions:
+            isolated_action = action.model_copy(update={"depends_on": ()})
+            isolated_plan = investigation.plan.model_copy(
+                update={"actions": (isolated_action,)}
+            )
+            isolated = investigation.model_copy(
+                update={"plan": isolated_plan}
+            )
+            try:
+                prepared, _, _ = self._prepare_query_inputs(
+                    investigation=isolated,
                     context=context,
                 )
+            except InvestigationPlanValidationError as exc:
+                rejected_reasons[action.action_id] = str(exc)
+                continue
+            normalized_actions[action.action_id] = (
+                prepared.plan.actions[0].model_copy(
+                    update={"depends_on": action.depends_on}
+                )
             )
-            return repaired, investigation, dynamic_queries, source_queries
+
+        for tool_id in ("monitor.query_range", "loki.query_range"):
+            action_ids = [
+                action.action_id
+                for action in source_actions
+                if action.tool_id == tool_id
+                and action.action_id in normalized_actions
+            ]
+            for action_id in action_ids[4:]:
+                normalized_actions.pop(action_id, None)
+                rejected_reasons[action_id] = (
+                    "同类临时监控查询超过单轮 4 条限制"
+                )
+
+        rejected_ids = set(rejected_reasons)
+        changed = True
+        while changed:
+            changed = False
+            for action in source_actions:
+                if action.action_id in rejected_ids:
+                    continue
+                unavailable = sorted(set(action.depends_on) & rejected_ids)
+                if not unavailable:
+                    continue
+                rejected_ids.add(action.action_id)
+                normalized_actions.pop(action.action_id, None)
+                rejected_reasons[action.action_id] = (
+                    "依赖的调查动作不可执行：" + ", ".join(unavailable)
+                )
+                changed = True
+
+        retained_actions = tuple(
+            normalized_actions[action.action_id]
+            for action in source_actions
+            if action.action_id in normalized_actions
+            and action.action_id not in rejected_ids
+        )
+        if not retained_actions:
+            details = "；".join(
+                f"{action_id}={reason}"
+                for action_id, reason in rejected_reasons.items()
+            )
+            raise InvestigationPlanValidationError(
+                "修正后的调查计划没有可执行动作"
+                + (f"：{details}" if details else "")
+            )
+
+        logger.warning(
+            "AIOps 修正计划仍有越界动作，已保留独立合规动作："
+            "turn_id={} revision_no={} retained={} rejected={}",
+            context.turn_id,
+            revision_no,
+            [action.action_id for action in retained_actions],
+            rejected_reasons,
+        )
+        retained_plan = investigation.plan.model_copy(
+            update={"actions": retained_actions}
+        )
+        retained = investigation.model_copy(update={"plan": retained_plan})
+        return self._prepare_query_inputs(
+            investigation=retained,
+            context=context,
+        )
 
     @staticmethod
     def _bind_target_to_plan(
