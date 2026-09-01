@@ -108,6 +108,11 @@ def main() -> int:
         loki_environment = rendered_compose["services"]["loki"]["environment"]
         if not loki_environment.get("AIOPS_LOKI_CONFIG_REVISION"):
             raise RuntimeError("Loki配置变化不会触发容器重建")
+        alertmanager_environment = rendered_compose["services"]["alertmanager"][
+            "environment"
+        ]
+        if not alertmanager_environment.get("AIOPS_ALERTMANAGER_CONFIG_REVISION"):
+            raise RuntimeError("Alertmanager配置变化不会触发容器重建")
         alloy_environment = rendered_compose["services"]["alloy"]["environment"]
         if not alloy_environment.get("AIOPS_ALLOY_CONFIG_REVISION"):
             raise RuntimeError("Alloy配置变化不会触发容器重建")

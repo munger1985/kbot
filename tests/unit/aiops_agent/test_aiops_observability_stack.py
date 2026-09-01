@@ -88,6 +88,7 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
     state = settings.runtime_dir
     env_text = (state / "stack.env").read_text(encoding="utf-8")
     assert "AIOPS_PROMETHEUS_CONFIG_REVISION=" in env_text
+    assert "AIOPS_ALERTMANAGER_CONFIG_REVISION=" in env_text
     assert password not in env_text
     assert password not in (state / "deployment.json").read_text(encoding="utf-8")
     password_file = state / "secrets/oracle-oracle-prod-01_password"
@@ -211,6 +212,10 @@ password = postgres-secret
     assert 'severity=~"critical|warning"' in loki_rules
     assert "ORA-00060" not in loki_rules
     assert "event_class: database.alert_log_problem" in loki_rules
+    alertmanager_config = (
+        settings.runtime_dir / "alertmanager/alertmanager.yml"
+    ).read_text()
+    assert "receiver: kbot" in alertmanager_config
     alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
     assert 'severity       = "severity"' in alloy_config
     assert (

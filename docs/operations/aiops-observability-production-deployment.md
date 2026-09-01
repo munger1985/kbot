@@ -248,6 +248,8 @@ kbot_webhook_secret = 填写页面生成并已保存到诊断源的Webhook Secre
 
 6. 不带参数重新执行`./scripts/aiops-stack`。脚本会保留现有数据卷，增加或重建
    `kbot-webhook-signer`，并把Alertmanager Receiver从`discard`切换为`kbot`。
+   Alertmanager配置摘要会写入容器环境，因此Receiver或Webhook状态发生变化时会强制
+   重建容器，不会继续运行内存中的旧配置。
 7. 验证签名桥和Alertmanager均健康：
 
 ```bash

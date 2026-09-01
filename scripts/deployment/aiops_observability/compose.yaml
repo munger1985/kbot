@@ -37,6 +37,8 @@ services:
     <<: *service-defaults
     image: ${ALERTMANAGER_IMAGE}
     profiles: [metrics]
+    environment:
+      AIOPS_ALERTMANAGER_CONFIG_REVISION: ${AIOPS_ALERTMANAGER_CONFIG_REVISION}
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager

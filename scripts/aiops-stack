@@ -1029,9 +1029,15 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         prometheus_revision = hashlib.sha256(
             (_prometheus_config() + _prometheus_rules()).encode("utf-8")
         ).hexdigest()
+        webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
+        alertmanager_config = _alertmanager_config(bool(webhook_url))
+        alertmanager_revision = hashlib.sha256(
+            alertmanager_config.encode("utf-8")
+        ).hexdigest()
         env_lines.extend(
             [
                 f"AIOPS_PROMETHEUS_CONFIG_REVISION={prometheus_revision}",
+                f"AIOPS_ALERTMANAGER_CONFIG_REVISION={alertmanager_revision}",
                 "PROMETHEUS_RETENTION="
                 + _optional(parser, "metrics", "prometheus_retention", "30d"),
                 "ALERTMANAGER_RETENTION="
@@ -1048,7 +1054,6 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
                 ),
             ]
         )
-        webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
         webhook_key = parser.get("metrics", "kbot_webhook_key", fallback="").strip()
         webhook_secret = parser.get(
             "metrics", "kbot_webhook_secret", fallback=""
@@ -1059,7 +1064,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             _write_secret(secrets / "kbot_webhook_secret", webhook_secret)
         _write_text(
             runtime / "alertmanager/alertmanager.yml",
-            _alertmanager_config(bool(webhook_url)),
+            alertmanager_config,
         )
 
     if "logs" in settings.profiles:
