@@ -114,13 +114,20 @@ class _TimeoutConnection:
 
 
 class _OracleErrorCursor(_TimeoutCursor):
+    def __init__(self, code: int = 1861) -> None:
+        super().__init__()
+        self.code = code
+
     async def execute(self, _sql, _parameters=None):
         self.execute_count += 1
         if self.execute_count == 2:
             error = type(
                 "OracleErrorInfo",
                 (),
-                {"code": 1861, "full_code": "ORA-01861"},
+                {
+                    "code": self.code,
+                    "full_code": f"ORA-{self.code:05d}",
+                },
             )()
             import oracledb
 
@@ -128,8 +135,8 @@ class _OracleErrorCursor(_TimeoutCursor):
 
 
 class _OracleErrorConnection(_TimeoutConnection):
-    def __init__(self) -> None:
-        self._cursor = _OracleErrorCursor()
+    def __init__(self, code: int = 1861) -> None:
+        self._cursor = _OracleErrorCursor(code)
 
 
 class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
@@ -185,7 +192,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("QUERY_TIMEOUT", raised.exception.code)
         self.assertTrue(raised.exception.retryable)
 
-    async def test_date_format_error_is_query_incompatible(self) -> None:
+    async def test_date_format_error_has_specific_query_code(self) -> None:
         with patch(
             "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
             AsyncMock(return_value=_OracleErrorConnection()),
@@ -193,8 +200,32 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(DiagnosticDriverError) as raised:
                 await self._execute()
 
-        self.assertEqual("QUERY_INCOMPATIBLE", raised.exception.code)
+        self.assertEqual("QUERY_VALUE_FORMAT_INVALID", raised.exception.code)
         self.assertFalse(raised.exception.retryable)
+
+    async def test_invalid_column_is_not_reported_as_privilege_error(
+        self,
+    ) -> None:
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleErrorConnection(904)),
+        ):
+            with self.assertRaises(DiagnosticDriverError) as raised:
+                await self._execute()
+
+        self.assertEqual("QUERY_COLUMN_INVALID", raised.exception.code)
+
+    async def test_missing_object_is_not_assumed_to_be_privilege_error(
+        self,
+    ) -> None:
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleErrorConnection(942)),
+        ):
+            with self.assertRaises(DiagnosticDriverError) as raised:
+                await self._execute()
+
+        self.assertEqual("QUERY_OBJECT_UNAVAILABLE", raised.exception.code)
 
 
 class DiagnosticCatalogTest(unittest.TestCase):

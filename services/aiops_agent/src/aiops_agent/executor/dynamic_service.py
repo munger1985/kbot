@@ -32,6 +32,14 @@ from platform_core.contracts.aiops.executor import (
 )
 
 
+class DynamicOutputValidationError(ValueError):
+    """保留动态查询结果归一化失败的稳定错误分类。"""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class DynamicDiagnosticExecutorService:
     """验证签名、SQL、策略和参数后，在只读事务中执行查询。"""
 
@@ -125,7 +133,14 @@ class DynamicDiagnosticExecutorService:
                 exc.retryable,
             )
             return self._gap(request, exc.code, retryable=exc.retryable)
+        except DynamicOutputValidationError as exc:
+            logger.warning(
+                "Oracle 动态只读诊断结果校验失败：code={}",
+                exc.code,
+            )
+            return self._gap(request, exc.code, retryable=False)
         except ValueError:
+            logger.warning("Oracle 动态只读诊断结果结构无法验证")
             return self._gap(
                 request, "OUTPUT_SCHEMA_INVALID", retryable=False
             )
@@ -171,11 +186,16 @@ class DynamicDiagnosticExecutorService:
         *, request, grant, validated, raw, captured_at, duration_ms, limits
     ) -> DatabaseObservation:
         wildcard_projection = grant.projected_columns == ("*",)
-        if (
-            (not wildcard_projection and raw.columns != grant.projected_columns)
-            or len(raw.columns) > limits.max_columns
-        ):
-            raise ValueError("动态查询输出列与 Grant 不一致")
+        if len(raw.columns) > limits.max_columns:
+            raise DynamicOutputValidationError(
+                "OUTPUT_COLUMN_LIMIT_EXCEEDED",
+                "动态查询输出列数超过 Grant 限制",
+            )
+        if not wildcard_projection and raw.columns != grant.projected_columns:
+            raise DynamicOutputValidationError(
+                "OUTPUT_COLUMNS_MISMATCH",
+                "动态查询输出列与 Grant 冻结投影不一致",
+            )
         rows = tuple(tuple(row) for row in raw.rows)
         logical_types = tuple(
             DynamicDiagnosticExecutorService._column_type(
@@ -256,7 +276,10 @@ class DynamicDiagnosticExecutorService:
             if isinstance(value, (bytes, bytearray, memoryview)) or (
                 hasattr(value, "read") and not isinstance(value, str)
             ):
-                raise ValueError("动态诊断结果禁止二进制或 LOB")
+                raise DynamicOutputValidationError(
+                    "OUTPUT_VALUE_TYPE_UNSUPPORTED",
+                    "动态诊断结果禁止二进制或 LOB",
+                )
             if isinstance(value, bool):
                 kinds.add("BOOLEAN")
             elif isinstance(value, int):
@@ -272,7 +295,10 @@ class DynamicDiagnosticExecutorService:
         if kinds <= {"INTEGER", "DECIMAL"}:
             return "DECIMAL" if "DECIMAL" in kinds else "INTEGER"
         if len(kinds) != 1:
-            raise ValueError("动态诊断结果同列类型不一致")
+            raise DynamicOutputValidationError(
+                "OUTPUT_COLUMN_TYPE_MISMATCH",
+                "动态诊断结果同列类型不一致",
+            )
         return next(iter(kinds))
 
     @staticmethod

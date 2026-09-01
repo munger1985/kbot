@@ -808,33 +808,60 @@ class DbaAnswerComposeHandler:
                 lines.append(
                     f"- `{tool_id}`：{gap.detail}（`{gap.code}`）"
                 )
+            request_codes = {gap.code for gap, _ in requests}
+            permission_codes = {"AUTH_FAILED", "PRIVILEGE_MISSING"}
+            query_codes = {
+                "QUERY_INCOMPATIBLE",
+                "QUERY_OBJECT_UNAVAILABLE",
+                "QUERY_COLUMN_INVALID",
+                "QUERY_COLUMN_AMBIGUOUS",
+                "QUERY_SYNTAX_INVALID",
+                "QUERY_VALUE_FORMAT_INVALID",
+            }
+            output_codes = {
+                "OUTPUT_COLUMNS_MISMATCH",
+                "OUTPUT_COLUMN_LIMIT_EXCEEDED",
+                "OUTPUT_VALUE_TYPE_UNSUPPORTED",
+                "OUTPUT_COLUMN_TYPE_MISMATCH",
+                "OUTPUT_SCHEMA_INVALID",
+                "RESULT_LIMIT_EXCEEDED",
+            }
+            lines.append("")
+            if request_codes & permission_codes:
+                lines.append(
+                    "请检查 Target 只读凭据；只有上述认证或权限错误需要调整账号授权。"
+                )
+            if request_codes & query_codes:
+                lines.append(
+                    "数据库连接已进入查询阶段，请按错误码修正 SQL 的对象、列名、语法或版本兼容性。"
+                )
+            if request_codes & output_codes:
+                lines.append(
+                    "查询已经执行并进入结果校验阶段，该错误不表示 Target 缺少查询权限。"
+                )
+            if not request_codes & (
+                permission_codes | query_codes | output_codes
+            ):
+                lines.append("请按上述错误码检查对应的只读诊断链路。")
             lines.extend(
                 [
-                    "",
-                    "请优先修正 Target 只读凭据、对象权限或数据库版本兼容问题。",
                     "如果暂时不能调整，可以执行下面的只读 SQL，",
                     "再把结果以文字或截图粘贴到对话中：",
                 ]
             )
-            for _, tool in requests:
+            for gap, tool in requests:
                 sql = DbaAnswerComposeHandler._manual_sql(tool)
                 if not sql:
                     continue
                 privileges = tuple(tool.get("required_privileges", ()))
-                lines.extend(
-                    [
-                        "",
-                        f"#### {tool['tool_id']}",
-                        (
-                            f"所需对象权限：`{', '.join(privileges)}`"
-                            if privileges
-                            else "无需额外对象权限"
-                        ),
-                        "```sql",
-                        sql,
-                        "```",
-                    ]
-                )
+                lines.extend(["", f"#### {tool['tool_id']}"])
+                if gap.code == "PRIVILEGE_MISSING":
+                    lines.append(
+                        f"所需对象权限：`{', '.join(privileges)}`"
+                        if privileges
+                        else "需要补充该查询对应的对象权限"
+                    )
+                lines.extend(["```sql", sql, "```"])
         if monitoring_gaps:
             queries = DbaAnswerComposeHandler._monitoring_queries(
                 context

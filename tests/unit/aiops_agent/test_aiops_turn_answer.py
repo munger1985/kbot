@@ -925,10 +925,73 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("WAITING_USER", result.status)
         markdown = result.blocks[1].payload["markdown"]
         self.assertIn("QUERY_INCOMPATIBLE", markdown)
-        self.assertIn("SELECT ANY DICTIONARY", markdown)
+        self.assertIn("数据库连接已进入查询阶段", markdown)
+        self.assertNotIn("SELECT ANY DICTIONARY", markdown)
+        self.assertNotIn("所需对象权限", markdown)
         self.assertIn("created >= SYSDATE - 7", markdown)
         self.assertIn("FETCH FIRST 200 ROWS ONLY", markdown)
         self.assertNotIn(":days", markdown)
+
+    def test_output_validation_gap_does_not_claim_missing_privilege(
+        self,
+    ) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            gaps=(
+                TurnEvidenceGap(
+                    source_id="db.oracle.readonly_query",
+                    step_id="memory_stats",
+                    code="OUTPUT_SCHEMA_INVALID",
+                    detail="查询已执行，但返回结果结构无法通过归一化校验",
+                ),
+            ),
+            reasons=("当前没有取得能够回答问题的主题证据",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        context = replace(
+            context,
+            plan_snapshot={
+                **context.plan_snapshot,
+                "investigation_execution": {
+                    "invocations": {},
+                    "dynamic_invocations": {
+                        "dynamic:memory_stats": {
+                            "action_id": "memory_stats",
+                            "required_privileges": [
+                                "SELECT ANY DICTIONARY"
+                            ],
+                            "validated_query": {
+                                "normalized_sql": (
+                                    "SELECT name, value FROM v$pgastat "
+                                    "FETCH FIRST 200 ROWS ONLY"
+                                ),
+                                "parameters": {},
+                            },
+                        }
+                    },
+                },
+            },
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=_AnswerModel(evidence_refs=()),
+            prompts=_TestPrompts(),
+        )
+
+        result = asyncio.run(handler.execute(context))
+
+        markdown = result.blocks[1].payload["markdown"]
+        self.assertIn("查询已经执行并进入结果校验阶段", markdown)
+        self.assertIn("不表示 Target 缺少查询权限", markdown)
+        self.assertNotIn("SELECT ANY DICTIONARY", markdown)
+        self.assertNotIn("请优先修正 Target 只读凭据", markdown)
 
     def test_model_missing_evidence_with_facts_is_partial_and_retryable(self) -> None:
         handler = DbaEvidenceAssessmentHandler(

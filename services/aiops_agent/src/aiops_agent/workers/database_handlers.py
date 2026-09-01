@@ -44,6 +44,38 @@ def _utc(value: str) -> datetime:
     )
 
 
+def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
+    """将执行错误转换为不会误判权限的用户可读说明。"""
+    details = {
+        "PRIVILEGE_MISSING": "Target 只读凭据缺少该查询所需的对象权限",
+        "AUTH_FAILED": "Target 只读凭据认证失败",
+        "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
+        "TIMEOUT": "受控只读查询执行超时",
+        "TARGET_CONNECTION_TIMEOUT": "Target 数据库只读连接建立超时",
+        "QUERY_TIMEOUT": "受控只读查询执行超时",
+        "QUERY_INCOMPATIBLE": "查询与当前 Oracle 版本或视图列定义不兼容",
+        "QUERY_OBJECT_UNAVAILABLE": "查询引用的对象在当前数据库中不存在或不可见",
+        "QUERY_COLUMN_INVALID": "查询引用了当前数据库中不存在的列",
+        "QUERY_COLUMN_AMBIGUOUS": "查询包含无法唯一识别的列名",
+        "QUERY_SYNTAX_INVALID": "查询不符合当前 Oracle SQL 语法",
+        "QUERY_VALUE_FORMAT_INVALID": "查询中的值与 Oracle 要求的格式不匹配",
+        "OUTPUT_COLUMNS_MISMATCH": "查询已执行，但返回列与冻结投影不一致",
+        "OUTPUT_COLUMN_LIMIT_EXCEEDED": "查询已执行，但返回列数超过诊断结果限制",
+        "OUTPUT_VALUE_TYPE_UNSUPPORTED": "查询已执行，但结果包含不支持的二进制或 LOB 类型",
+        "OUTPUT_COLUMN_TYPE_MISMATCH": "查询已执行，但同一返回列包含不一致的数据类型",
+        "OUTPUT_SCHEMA_INVALID": "查询已执行，但返回结果结构无法通过归一化校验",
+        "RESULT_LIMIT_EXCEEDED": "查询已执行，但返回结果超过诊断结果限制",
+        "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
+        "EXECUTOR_INTERNAL_ERROR": "受控数据库执行器未能完成本次只读查询",
+    }
+    fallback = (
+        "动态只读查询本次未取得可验证结果"
+        if dynamic
+        else "该数据库诊断证据本次不可用"
+    )
+    return details.get(code, fallback)
+
+
 class DatabaseScopeHandler:
     async def execute(
         self, context: TaskExecutionContext
@@ -250,18 +282,6 @@ class DatabaseDiagnosticHandler:
         *,
         retryable: bool,
     ) -> DatabaseDiagnosticResult:
-        details = {
-            "PRIVILEGE_MISSING": "Target 只读凭据缺少该诊断工具所需的对象查询权限",
-            "AUTH_FAILED": "Target 只读凭据认证失败",
-            "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
-            "TIMEOUT": "受控只读查询执行超时",
-            "TARGET_CONNECTION_TIMEOUT": "Target 数据库只读连接建立超时",
-            "QUERY_TIMEOUT": "受控只读查询执行超时",
-            "OUTPUT_SCHEMA_INVALID": "数据库返回列与受控诊断目录不一致",
-            "QUERY_INCOMPATIBLE": "受控查询与当前 Oracle 视图列定义不兼容",
-            "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
-            "EXECUTOR_INTERNAL_ERROR": "受控数据库执行器未能完成本次只读查询",
-        }
         return DatabaseDiagnosticResult(
             target_id=context.target_id,
             tool_id=tool_id,
@@ -269,7 +289,7 @@ class DatabaseDiagnosticHandler:
             gap=EvidenceGap(
                 code=code,
                 tool_id=tool_id,
-                detail=details.get(code, "该数据库诊断证据本次不可用"),
+                detail=_database_gap_detail(code),
                 retryable=retryable,
             ),
         )
@@ -402,7 +422,10 @@ class DynamicQueryInvocationHandler:
                 gap=EvidenceGap(
                     code=result.error_code or "EXECUTOR_INTERNAL_ERROR",
                     tool_id=tool_id,
-                    detail="动态只读查询本次未取得可验证结果",
+                    detail=_database_gap_detail(
+                        result.error_code or "EXECUTOR_INTERNAL_ERROR",
+                        dynamic=True,
+                    ),
                     retryable=result.retryable,
                 ),
             ),

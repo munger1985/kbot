@@ -271,6 +271,22 @@ class FakeDynamicDriver:
         )
 
 
+class StaticDynamicDriver:
+    db_type = "ORACLE"
+
+    def __init__(self, *, columns, rows) -> None:
+        self.columns = columns
+        self.rows = rows
+
+    async def execute_dynamic(self, **kwargs):
+        return DriverQueryResult(
+            columns=self.columns,
+            rows=self.rows,
+            truncated=False,
+            db_version="23.26.1.0.0",
+        )
+
+
 class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.codec = DiagnosticGrantCodec(
@@ -331,11 +347,11 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             idempotency_key="dynamic-request-1",
         )
 
-    def _service(self, control_plane):
+    def _service(self, control_plane, *, driver=None):
         return DynamicDiagnosticExecutorService(
             grant_codec=self.codec,
             control_plane=control_plane,
-            oracle_driver=FakeDynamicDriver(),
+            oracle_driver=driver or FakeDynamicDriver(),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=30,
                 max_result_rows=100,
@@ -417,6 +433,60 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
                 for column in result.observation.columns
             )
         )
+
+    async def test_output_columns_mismatch_has_specific_gap(self) -> None:
+        control_plane = AsyncMock()
+        control_plane.issue_credential.return_value = SimpleNamespace(
+            username="private-user",
+            password="hidden",
+        )
+        driver = StaticDynamicDriver(
+            columns=("sid", "unexpected_column"),
+            rows=((10, 1),),
+        )
+
+        result = await self._service(
+            control_plane, driver=driver
+        ).execute(self._request())
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual("OUTPUT_COLUMNS_MISMATCH", result.error_code)
+
+    async def test_binary_or_lob_result_has_specific_gap(self) -> None:
+        control_plane = AsyncMock()
+        control_plane.issue_credential.return_value = SimpleNamespace(
+            username="private-user",
+            password="hidden",
+        )
+        driver = StaticDynamicDriver(
+            columns=("sid", "wait_seconds"),
+            rows=((10, b"binary"),),
+        )
+
+        result = await self._service(
+            control_plane, driver=driver
+        ).execute(self._request())
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual("OUTPUT_VALUE_TYPE_UNSUPPORTED", result.error_code)
+
+    async def test_mixed_column_types_have_specific_gap(self) -> None:
+        control_plane = AsyncMock()
+        control_plane.issue_credential.return_value = SimpleNamespace(
+            username="private-user",
+            password="hidden",
+        )
+        driver = StaticDynamicDriver(
+            columns=("sid", "wait_seconds"),
+            rows=((10, 1), ("unknown", 2)),
+        )
+
+        result = await self._service(
+            control_plane, driver=driver
+        ).execute(self._request())
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual("OUTPUT_COLUMN_TYPE_MISMATCH", result.error_code)
 
     def test_fixed_and_dynamic_grants_cannot_cross_entrypoints(self) -> None:
         token = self.codec.issue_dynamic(self.grant)
@@ -893,16 +963,23 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
 
 
 class GapDynamicExecutorClient:
-    def __init__(self, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        retryable: bool = False,
+        error_code: str | None = None,
+    ) -> None:
         self.request = None
         self.retryable = retryable
+        self.error_code = error_code
 
     async def execute_dynamic_diagnostic(self, request, *, trace_id):
         self.request = request
         return ReadDiagnosticResult(
             executor_request_id=request.executor_request_id,
             status="GAP",
-            error_code=(
+            error_code=self.error_code
+            or (
                 "TARGET_CONNECTION_TIMEOUT"
                 if self.retryable
                 else "PRIVILEGE_MISSING"
@@ -1013,6 +1090,88 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
             "TARGET_CONNECTION_TIMEOUT",
             final.tool_outcomes[0].gap.code,
         )
+
+    async def test_worker_preserves_output_validation_reason(self) -> None:
+        codec = DiagnosticGrantCodec(
+            secret="w" * 32,
+            issuer="kbot-aiops-worker",
+            audience="kbot-aiops-db-executor",
+        )
+        policy_snapshot = DynamicQueryPolicySnapshot(max_rows=10)
+        validated = OracleDynamicQueryPolicy(policy_snapshot).validate(
+            "SELECT sid FROM v$session"
+        )
+        client = GapDynamicExecutorClient(
+            error_code="OUTPUT_COLUMNS_MISMATCH"
+        )
+        handler = DynamicQueryInvocationHandler(
+            executor_client=client,
+            grant_codec=codec,
+            grant_issuer="kbot-aiops-worker",
+            grant_audience="kbot-aiops-db-executor",
+            grant_ttl_seconds=45,
+        )
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="dynamic:a1",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-worker-output-gap",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "investigation_execution": {
+                    "capability_snapshot_hash": "c" * 64,
+                    "database": {
+                        "domain_id": 100,
+                        "target_row_version": 1,
+                        "connection_profile": {
+                            "host": "db.internal",
+                            "port": 1521,
+                            "service": "PDB01",
+                            "tls_enabled": False,
+                        },
+                        "diagnostic_credential_id": str(uuid7()),
+                        "automatic_access_enabled": True,
+                    },
+                    "dynamic_invocations": {
+                        "dynamic:a1": {
+                            "action_id": "a1",
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                            "policy_snapshot": policy_snapshot.model_dump(
+                                mode="json"
+                            ),
+                            "validated_query": validated.model_dump(
+                                mode="json"
+                            ),
+                            "limits": {
+                                "statement_timeout_seconds": 10,
+                                "max_result_rows": 10,
+                                "max_result_bytes": 65536,
+                                "max_columns": 16,
+                                "max_cell_chars": 1024,
+                            },
+                        }
+                    },
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+            lease_token="lease-output-gap",
+            lease_until=(
+                datetime.now(UTC) + timedelta(seconds=60)
+            ).isoformat(),
+        )
+
+        result = await handler.execute(context)
+
+        gap = result.tool_outcomes[0].gap
+        assert gap is not None
+        self.assertEqual("OUTPUT_COLUMNS_MISMATCH", gap.code)
+        self.assertIn("查询已执行", gap.detail)
+        self.assertNotIn("权限", gap.detail)
 
 
 if __name__ == "__main__":

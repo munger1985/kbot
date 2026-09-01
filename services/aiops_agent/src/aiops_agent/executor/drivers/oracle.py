@@ -167,10 +167,18 @@ class OracleDiagnosticDriver:
             full_code = getattr(driver_error, "full_code", None)
             if code in {1017, 28000, 28001}:
                 mapped = "AUTH_FAILED"
-            elif code in {942, 1031}:
+            elif code == 1031:
                 mapped = "PRIVILEGE_MISSING"
-            elif code in {904, 918, 933, 936, 1861}:
-                mapped = "QUERY_INCOMPATIBLE"
+            elif code == 942:
+                mapped = "QUERY_OBJECT_UNAVAILABLE"
+            elif code == 904:
+                mapped = "QUERY_COLUMN_INVALID"
+            elif code == 918:
+                mapped = "QUERY_COLUMN_AMBIGUOUS"
+            elif code in {933, 936}:
+                mapped = "QUERY_SYNTAX_INVALID"
+            elif code == 1861:
+                mapped = "QUERY_VALUE_FORMAT_INVALID"
             elif code in {12170, 12535} or full_code == "DPY-4024":
                 mapped = (
                     "TARGET_CONNECTION_TIMEOUT"
