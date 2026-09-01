@@ -345,7 +345,7 @@
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${answer}${progress}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${progress}${answer}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -534,8 +534,8 @@
       if (event === "answer.delta") {
         const delta = String(data?.payload?.delta || "");
         if (!pending) {
-          progress.insertAdjacentHTML("beforebegin", messageHtml("AGENT", ""));
-          const message = progress.previousElementSibling;
+          progress.insertAdjacentHTML("afterend", messageHtml("AGENT", ""));
+          const message = progress.nextElementSibling;
           pending = {
             message,
             content: message.querySelector(".ops-message-content"),
