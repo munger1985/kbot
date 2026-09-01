@@ -402,6 +402,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('"WAITING_USER", "COMPLETED"', workspace)
         self.assertIn("await followTurn(receipt.conversation_id", workspace)
         self.assertIn("await loadConversation(receipt.conversation_id)", workspace)
+        self.assertIn("resumeActiveTurns(conversation.conversation_id, turns)", workspace)
+        self.assertIn("activeTurnFollowers.has(followerKey)", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
         self.assertIn("请先选择 Target 和 Agent 查看会话历史", workspace)
         self.assertIn("?agent_id=${encodeURIComponent(selectedAgent)}", workspace)

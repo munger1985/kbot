@@ -7,6 +7,7 @@
   const state = { agents: [], targets: [], conversation: null, selectedFile: null };
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
+  const activeTurnFollowers = new Set();
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
@@ -384,6 +385,7 @@
     }));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
+    resumeActiveTurns(conversation.conversation_id, turns);
   }
 
   async function loadConversation(id) {
@@ -604,6 +606,25 @@
       pending.finalizing = true;
       await waitForTyping(pending);
     }
+  }
+
+  function resumeActiveTurns(conversationId, turns) {
+    turns.filter((turn) => !terminalTurnStatuses.has(turn.status)).forEach((turn) => {
+      const turnId = String(turn.turn_id);
+      const followerKey = `${conversationId}:${turnId}`;
+      const progress = document.querySelector(`[data-turn-progress="${turnId}"]`);
+      if (!progress || activeTurnFollowers.has(followerKey)) return;
+      activeTurnFollowers.add(followerKey);
+      followTurn(conversationId, turnId, progress)
+        .then(() => {
+          if (String(state.conversation?.conversation_id) === String(conversationId)) {
+            return loadConversation(conversationId);
+          }
+          return null;
+        })
+        .catch((error) => shell.toast(error.message))
+        .finally(() => activeTurnFollowers.delete(followerKey));
+    });
   }
 
   async function submitConversation(event) {

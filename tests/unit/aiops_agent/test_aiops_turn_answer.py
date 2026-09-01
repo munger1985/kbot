@@ -490,6 +490,59 @@ def _monitoring_artifact() -> dict:
 
 
 class DbaTurnAnswerTest(unittest.TestCase):
+    def test_assessment_includes_inherited_situation_signals(self) -> None:
+        artifact_id = str(uuid7())
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        {
+                            "artifact_id": artifact_id,
+                            "schema_version": "SITUATION_EVIDENCE.v1",
+                            "payload": {
+                                "source_kind": "SITUATION",
+                                "source_situation_id": str(uuid7()),
+                                "source_schema_version": (
+                                    "SITUATION_EVIDENCE.v1"
+                                ),
+                                "source_trust_level": "SOURCE_VERIFIED",
+                                "captured_at": datetime.now(UTC).isoformat(),
+                                "payload": {
+                                    "title": "Oracle Alert Log检测到异常",
+                                    "signal_events": [
+                                        {
+                                            "event_class": (
+                                                "database.alert_log_problem"
+                                            ),
+                                            "severity": "CRITICAL",
+                                            "summary": (
+                                                "ORA-01653: unable to increase "
+                                                "tablespace TEST01"
+                                            ),
+                                        }
+                                    ],
+                                },
+                            },
+                        },
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(1, len(result.evidence))
+        fact = result.evidence[0]
+        self.assertEqual(
+            f"artifact:{artifact_id}#source-situation",
+            fact.evidence_ref,
+        )
+        self.assertEqual("source.situation-evidence", fact.source_id)
+        self.assertEqual("source.situation.signal-events", fact.tool_id)
+        self.assertEqual("SOURCE_VERIFIED", fact.trust_level)
+        self.assertEqual(
+            "ORA-01653: unable to increase tablespace TEST01",
+            fact.rows[0][1]["signal_events"][0]["summary"],
+        )
+
     def test_assessment_includes_direct_instance_identity_result(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(

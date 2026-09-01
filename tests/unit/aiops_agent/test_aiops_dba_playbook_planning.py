@@ -1194,11 +1194,18 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             if item.artifact_key == "turn-source-run-evidence:1"
         )
         self.assertEqual("SITUATION_EVIDENCE.v1", inherited.schema_version)
-        self.assertEqual("VERIFIED", inherited.trust_level)
+        self.assertEqual("SOURCE_VERIFIED", inherited.trust_level)
         self.assertEqual(
             "ORA-01653: unable to increase tablespace TEST01",
             inherited.payload_json["payload"]["signal_events"][0]["summary"],
         )
+        linked = next(
+            item
+            for item in uow.evidence
+            if item.artifact_id == inherited.artifact_id
+        )
+        self.assertEqual("SITUATION", linked.source_kind)
+        self.assertEqual("MONITORING_SIGNAL", linked.evidence_kind)
 
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
         uow = _PlanningUow()

@@ -1721,7 +1721,7 @@ class TurnPlanningService:
                         "source_schema_version": "SITUATION_EVIDENCE.v1",
                         "inheritance_schema_version": "SITUATION_EVIDENCE.v1",
                         "source_artifact_type": "SITUATION_EVIDENCE",
-                        "source_trust_level": "VERIFIED",
+                        "source_trust_level": "SOURCE_VERIFIED",
                         "captured_at": situation.last_observed_at.isoformat(),
                         "payload": {
                             "title": situation.title,
@@ -2287,13 +2287,23 @@ class TurnPlanningService:
                         linked_by="aiops.input-understanding",
                     ))
             if source_run_artifact is not None:
+                inherited_from_situation = (
+                    context.source_run_evidence.get("source_kind")
+                    == "SITUATION"
+                )
                 await uow.turns.add_evidence(
                     OpsTurnEvidenceEntity(
                         turn_evidence_id=uuid7(),
                         turn_id=turn.turn_id,
                         artifact_id=source_run_artifact.artifact_id,
-                        source_kind="RUN",
-                        evidence_kind="INHERITED_DIAGNOSIS",
+                        source_kind=(
+                            "SITUATION" if inherited_from_situation else "RUN"
+                        ),
+                        evidence_kind=(
+                            "MONITORING_SIGNAL"
+                            if inherited_from_situation
+                            else "INHERITED_DIAGNOSIS"
+                        ),
                         confidence=0.9,
                         evidence_role="CONTEXT",
                         measurement_semantics="NOT_APPLICABLE",

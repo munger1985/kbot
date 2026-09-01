@@ -75,17 +75,33 @@ class DbaEvidenceAssessmentHandler:
         )
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
-            if schema_version == "SOURCE_RUN_EVIDENCE.v1":
+            if schema_version in {
+                "SOURCE_RUN_EVIDENCE.v1",
+                "SITUATION_EVIDENCE.v1",
+            }:
                 payload = dict(artifact.get("payload") or {})
                 artifact_id = str(artifact["artifact_id"])
                 source_payload = payload.get("payload")
+                from_situation = schema_version == "SITUATION_EVIDENCE.v1"
                 facts.append(
                     TurnEvidenceFact(
-                        evidence_ref=f"artifact:{artifact_id}#source-run",
+                        evidence_ref=(
+                            f"artifact:{artifact_id}#source-situation"
+                            if from_situation
+                            else f"artifact:{artifact_id}#source-run"
+                        ),
                         artifact_id=artifact_id,
-                        source_id="source.run-evidence",
+                        source_id=(
+                            "source.situation-evidence"
+                            if from_situation
+                            else "source.run-evidence"
+                        ),
                         step_id="inherit",
-                        tool_id="source.run.final-artifact",
+                        tool_id=(
+                            "source.situation.signal-events"
+                            if from_situation
+                            else "source.run.final-artifact"
+                        ),
                         trust_level=_fact_trust_level(
                             payload.get("source_trust_level")
                         ),
