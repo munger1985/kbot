@@ -603,11 +603,12 @@ server:
   http_listen_port: 3100
 
 common:
+  instance_addr: 127.0.0.1
   path_prefix: /loki
   storage:
     filesystem:
       chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
+      rules_directory: /etc/loki/rules
   replication_factor: 1
   ring:
     kvstore:
@@ -634,7 +635,44 @@ limits_config:
   max_query_length: 744h
   max_entries_limit_per_query: 5000
   allow_structured_metadata: true
+
+ruler:
+  alertmanager_url: http://kbot-alertmanager:9093
+  enable_alertmanager_v2: true
+  enable_api: false
+  rule_path: /loki/ruler
 ```
+
+创建`/etc/kbot-aiops/loki/rules/fake/kbot-oracle-alerts.yml`。`auth_enabled: false`
+时Loki使用固定租户目录`fake`：
+
+```bash
+sudo install -d -m 0750 /etc/kbot-aiops/loki/rules/fake
+sudoedit /etc/kbot-aiops/loki/rules/fake/kbot-oracle-alerts.yml
+```
+
+```yaml
+groups:
+  - name: kbot-oracle-alert-log
+    interval: 15s
+    rules:
+      - alert: OracleAlertLogProblemDetected
+        expr: |
+          sum by (target_key, database_id, container_name, severity) (
+            count_over_time({job="oracle_alert", severity=~"critical|warning"}[1m])
+          ) > 0
+        labels:
+          event_class: database.alert_log_problem
+        annotations:
+          summary: "Oracle Alert Log检测到异常"
+          description: >-
+            {{ $labels.target_key }}/{{ $labels.container_name }}出现
+            {{ $labels.severity }}级别数据库日志，请启动诊断并查询同期完整日志。
+```
+
+`severity`由Oracle Collector根据ADR结构化字段生成，不按ORA编号匹配。Incident
+Error、Error、Critical和Severe归为`critical`，Warning归为`warning`；其他日志只
+用于诊断查询。
 
 拉取固定镜像并启动：
 
@@ -648,7 +686,7 @@ docker run -d \
   --security-opt no-new-privileges:true \
   --network kbot-aiops-observability \
   -p 127.0.0.1:3100:3100 \
-  -v /etc/kbot-aiops/loki/loki.yml:/etc/loki/loki.yml:ro \
+  -v /etc/kbot-aiops/loki:/etc/loki:ro \
   -v kbot-loki-data:/loki \
   "${LOKI_IMAGE}" \
   -config.file=/etc/loki/loki.yml

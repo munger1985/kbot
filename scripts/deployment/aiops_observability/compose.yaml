@@ -58,6 +58,8 @@ services:
     image: ${LOKI_IMAGE}
     profiles: [logs]
     command: [-config.file=/etc/loki/loki.yml]
+    environment:
+      AIOPS_LOKI_CONFIG_REVISION: ${AIOPS_LOKI_CONFIG_REVISION:-disabled}
     volumes:
       - ${AIOPS_STACK_STATE_DIR}/loki:/etc/loki:ro
       - loki-data:/loki
@@ -80,6 +82,7 @@ services:
     environment:
       AIOPS_LOKI_PUSH_URL: ${AIOPS_LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
       AIOPS_LOKI_TENANT: ${AIOPS_LOKI_TENANT:-kbot}
+      AIOPS_ALLOY_CONFIG_REVISION: ${AIOPS_ALLOY_CONFIG_REVISION:-disabled}
     volumes:
       - ./configuration/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy

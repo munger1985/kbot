@@ -12,7 +12,6 @@ from typing import Any
 
 import oracledb
 
-
 QUERY = """
 SELECT *
 FROM (
@@ -36,6 +35,12 @@ FROM (
 )
 WHERE ROWNUM <= :max_rows
 """
+
+# Oracle ADR的MESSAGE_TYPE枚举：2为Incident Error、3为Error、4为Warning。
+_ERROR_MESSAGE_TYPES = {2, 3}
+_WARNING_MESSAGE_TYPES = {4}
+# MESSAGE_LEVEL中1为Critical、2为Severe，用于覆盖类型未知但级别明确的记录。
+_CRITICAL_MESSAGE_LEVELS = {1, 2}
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,26 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def _diagnostic_severity(message_type: Any, message_level: Any) -> str:
+    """依据Oracle ADR结构化字段归一化诊断严重度。"""
+    try:
+        normalized_type = int(message_type)
+    except (TypeError, ValueError):
+        normalized_type = 1
+    try:
+        normalized_level = int(message_level)
+    except (TypeError, ValueError):
+        normalized_level = 16
+    if (
+        normalized_type in _ERROR_MESSAGE_TYPES
+        or normalized_level in _CRITICAL_MESSAGE_LEVELS
+    ):
+        return "critical"
+    if normalized_type in _WARNING_MESSAGE_TYPES:
+        return "warning"
+    return "info"
+
+
 def _initial_checkpoint(settings: Settings) -> tuple[datetime, int]:
     return (
         datetime.now(timezone.utc)
@@ -162,6 +187,10 @@ def _append_rows(
                     "schema": "ORACLE_ALERT_LOG.v1",
                     "source": "V$DIAG_ALERT_EXT",
                     "target_key": settings.target_key,
+                    "severity": _diagnostic_severity(
+                        payload.get("message_type"),
+                        payload.get("message_level"),
+                    ),
                     "collected_at": datetime.now(timezone.utc).isoformat(),
                 }
             )

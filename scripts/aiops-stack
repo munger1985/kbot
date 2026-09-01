@@ -15,7 +15,6 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STACK_ROOT = REPO_ROOT / "scripts/deployment/aiops_observability"
 COMPOSE_FILE = STACK_ROOT / "compose.yaml"
@@ -89,6 +88,8 @@ local_access = false
 # enabled = true
 # loki_retention = 720h
 # loki_port = 3100
+# 当前节点同时启用metrics和logs时，自动启用Loki Ruler。
+# Oracle结构化异常日志将发送到Alertmanager。
 # 单机部署使用下面的内部地址；Collector分离部署时改为带TLS的Central地址。
 # loki_url = http://loki:3100/loki/api/v1/push
 # loki_tenant = kbot
@@ -662,18 +663,19 @@ def _alertmanager_config(webhook_enabled: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _loki_config(retention: str) -> str:
-    return f"""auth_enabled: false
+def _loki_config(retention: str, *, alerting_enabled: bool) -> str:
+    config = f"""auth_enabled: false
 
 server:
   http_listen_port: 3100
 
 common:
+  instance_addr: 127.0.0.1
   path_prefix: /loki
   storage:
     filesystem:
       chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
+      rules_directory: /etc/loki/rules
   replication_factor: 1
   ring:
     kvstore:
@@ -700,6 +702,35 @@ limits_config:
   max_query_length: 744h
   max_entries_limit_per_query: 5000
   allow_structured_metadata: true
+"""
+    if alerting_enabled:
+        config += """
+ruler:
+  alertmanager_url: http://alertmanager:9093
+  enable_alertmanager_v2: true
+  enable_api: false
+  rule_path: /loki/ruler
+"""
+    return config
+
+
+def _loki_rules() -> str:
+    return """groups:
+  - name: kbot-oracle-alert-log
+    interval: 15s
+    rules:
+      - alert: OracleAlertLogProblemDetected
+        expr: |
+          sum by (target_key, database_id, container_name, severity) (
+            count_over_time({job="oracle_alert", severity=~"critical|warning"}[1m])
+          ) > 0
+        labels:
+          event_class: database.alert_log_problem
+        annotations:
+          summary: "Oracle Alert Log检测到异常"
+          description: >-
+            {{ $labels.target_key }}/{{ $labels.container_name }}出现
+            {{ $labels.severity }}级别数据库日志，请启动诊断并查询同期完整日志。
 """
 
 
@@ -1035,10 +1066,26 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         )
         loki_tenant = _optional(parser, "logs", "loki_tenant", "kbot")
         loki_token = parser.get("logs", "loki_token", fallback="").strip()
+        loki_alerting_enabled = (
+            "metrics" in settings.profiles and settings.role != "collector"
+        )
+        loki_config = _loki_config(
+            _optional(parser, "logs", "loki_retention", "720h"),
+            alerting_enabled=loki_alerting_enabled,
+        )
+        loki_rules = _loki_rules() if loki_alerting_enabled else ""
+        loki_revision = hashlib.sha256(
+            (loki_config + loki_rules).encode("utf-8")
+        ).hexdigest()
+        alloy_revision = hashlib.sha256(
+            (STACK_ROOT / "configuration/alloy/config.alloy").read_bytes()
+        ).hexdigest()
         env_lines.extend(
             [
                 f"AIOPS_LOKI_PUSH_URL={loki_url}",
                 f"AIOPS_LOKI_TENANT={loki_tenant}",
+                f"AIOPS_LOKI_CONFIG_REVISION={loki_revision}",
+                f"AIOPS_ALLOY_CONFIG_REVISION={alloy_revision}",
                 f"LOKI_PORT={_bounded_int(parser, 'logs', 'loki_port', 3100, 1, 65535)}",
             ]
         )
@@ -1047,8 +1094,13 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         )
         _write_text(
             runtime / "loki/loki.yml",
-            _loki_config(_optional(parser, "logs", "loki_retention", "720h")),
+            loki_config,
         )
+        loki_rule_path = runtime / "loki/rules/fake/kbot-oracle-alerts.yml"
+        if loki_alerting_enabled:
+            _write_text(loki_rule_path, loki_rules)
+        else:
+            loki_rule_path.unlink(missing_ok=True)
 
     if "dashboard" in settings.profiles:
         env_lines.extend(

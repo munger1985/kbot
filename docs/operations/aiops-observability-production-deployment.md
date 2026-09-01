@@ -28,6 +28,7 @@ Oracle/MySQL/PostgreSQL               Prometheus / Alertmanager
         │                             Loki / 可选Grafana
 独立Exporter ─── 内部受控网络 ───────▶ Prometheus
 Oracle Alert Collector ── Alloy ─────▶ Loki TLS入口
+                                      Loki Ruler ────────▶ Alertmanager
                                       Alertmanager ── 签名桥 ──▶ KBot
 ```
 
@@ -262,6 +263,17 @@ sed -n '1,80p' var/aiops-stack/generated/alertmanager/alertmanager.yml
 `timestamp + "." + raw_body`计算HMAC-SHA256，添加`X-KBot-Timestamp`和
 `X-KBot-Signature`后转发。签名桥不映射宿主机端口，不使用静态Bearer代替验签。
 
+同一Central或`all-in-one`节点同时启用`metrics`和`logs`时，脚本还会启用Loki
+Ruler。Oracle Alert Collector依据`V$DIAG_ALERT_EXT.MESSAGE_TYPE`和
+`MESSAGE_LEVEL`生成统一严重度，Incident Error、Error、Critical和Severe归为
+`critical`，Warning归为`warning`。Ruler转发所有这两类结构化异常，不维护ORA错误码
+白名单；因此新出现的ORA错误无需修改规则。普通Notification、Trace和Dump只保留在
+Loki供诊断查询，不自动触发Agent，避免正常启动信息造成告警风暴。
+
+Prometheus侧仍由所有处于firing状态的Alerting Rule进入同一个Alertmanager，不按
+告警名称设置白名单。新增监控指标时必须同时定义对应的告警条件；仅存在一条指标时序
+不代表发生了异常。
+
 ## 7. 生成产物
 
 所有运行产物位于`var/aiops-stack/generated/`：
@@ -277,6 +289,7 @@ sed -n '1,80p' var/aiops-stack/generated/alertmanager/alertmanager.yml
 | `prometheus/kbot-aiops-query-overrides.json` | 完整AIOps指标语义到PromQL映射 |
 | `alertmanager/alertmanager.yml` | 告警路由配置 |
 | `loki/loki.yml` | 单机Loki配置 |
+| `loki/rules/fake/kbot-oracle-alerts.yml` | Oracle Alert Log通用异常规则 |
 | `deployment.json` | 不含密码的部署清单和Target列表 |
 
 这些文件由脚本生成，不得手工编辑。源配置仍只有INI一份。
@@ -294,10 +307,12 @@ docker compose \
 curl -fsS http://127.0.0.1:9090/-/ready
 curl -fsS http://127.0.0.1:9090/api/v1/targets
 curl -fsS http://127.0.0.1:9093/-/ready
+sed -n '1,120p' var/aiops-stack/generated/loki/rules/fake/kbot-oracle-alerts.yml
 ```
 
 验收标准是每个配置的`target_key`各有一个预期Exporter Target且为`up`，查询结果不
-跨Target，Oracle日志带正确`target_key`进入Loki，测试告警经过签名桥被KBot接受。
+跨Target，Oracle日志带正确`target_key`和`severity`进入Loki，结构化异常日志及
+Prometheus测试告警都经过Alertmanager和签名桥被KBot接受。
 不要通过停止生产数据库制造测试告警。
 
 自动化部署已经挂载受控Oracle自定义指标，并统一生成Recording/Alerting Rules和

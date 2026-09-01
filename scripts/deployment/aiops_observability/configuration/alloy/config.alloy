@@ -26,6 +26,7 @@ loki.process "oracle_alert" {
       container_name = "container_name",
       database_id    = "database_id",
       target_key     = "target_key",
+      severity       = "severity",
     }
   }
   stage.labels {
@@ -35,6 +36,7 @@ loki.process "oracle_alert" {
       container_name = "",
       database_id    = "",
       target_key     = "",
+      severity       = "",
     }
   }
   forward_to = [loki.write.central.receiver]

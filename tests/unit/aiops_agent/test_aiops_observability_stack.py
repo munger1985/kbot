@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
-from importlib.machinery import SourceFileLoader
 import json
 import stat
 import sys
+from datetime import datetime, timezone
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[3]
 STACK = ROOT / "scripts/deployment/aiops_observability"
@@ -200,6 +200,31 @@ password = postgres-secret
         settings.runtime_dir / "secrets/postgres-postgres-all-modules-01_password"
     ).read_text().strip() == "postgres-secret"
     assert "168h" in (settings.runtime_dir / "loki/loki.yml").read_text()
+    loki_config = (settings.runtime_dir / "loki/loki.yml").read_text()
+    assert "ruler:" in loki_config
+    assert "alertmanager_url: http://alertmanager:9093" in loki_config
+    assert "rules_directory: /etc/loki/rules" in loki_config
+    loki_rules = (
+        settings.runtime_dir / "loki/rules/fake/kbot-oracle-alerts.yml"
+    ).read_text()
+    assert "alert: OracleAlertLogProblemDetected" in loki_rules
+    assert 'severity=~"critical|warning"' in loki_rules
+    assert "ORA-00060" not in loki_rules
+    assert "event_class: database.alert_log_problem" in loki_rules
+    alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
+    assert 'severity       = "severity"' in alloy_config
+    revision = next(
+        line.split("=", 1)[1]
+        for line in (settings.runtime_dir / "stack.env").read_text().splitlines()
+        if line.startswith("AIOPS_LOKI_CONFIG_REVISION=")
+    )
+    assert len(revision) == 64
+    alloy_revision = next(
+        line.split("=", 1)[1]
+        for line in (settings.runtime_dir / "stack.env").read_text().splitlines()
+        if line.startswith("AIOPS_ALLOY_CONFIG_REVISION=")
+    )
+    assert len(alloy_revision) == 64
     generated_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in settings.runtime_dir.rglob("*")
@@ -209,6 +234,32 @@ password = postgres-secret
     assert "oracle-secret" not in generated_text
     assert "mysql-secret" not in generated_text
     assert "postgres-secret" not in generated_text
+
+
+def test_loki_ruler_is_disabled_without_local_alertmanager(tmp_path: Path) -> None:
+    stack = _load_stack_script()
+    config = stack._loki_config("168h", alerting_enabled=False)
+    assert "ruler:" not in config
+    assert "alertmanager_url:" not in config
+    ini = tmp_path / "aiops-stack.ini"
+    ini.write_text(
+        """[deployment]
+deployment_id = logs-only
+role = all-in-one
+local_access = false
+
+[logs]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    ini.chmod(0o600)
+    settings = stack._load_settings(ini)
+    stale_rule = settings.runtime_dir / "loki/rules/fake/kbot-oracle-alerts.yml"
+    stale_rule.parent.mkdir(parents=True, exist_ok=True)
+    stale_rule.write_text("stale", encoding="utf-8")
+    stack._prepare_runtime(settings)
+    assert not stale_rule.exists()
 
 
 def test_multiple_oracle_targets_generate_isolated_services_and_labels(
@@ -367,6 +418,49 @@ def test_oracle_collector_uses_durable_ordered_checkpoint() -> None:
     assert "RECORD_ID > :last_record_id" in collector.QUERY
     assert "ORDER BY ORIGINATING_TIMESTAMP, RECORD_ID" in collector.QUERY
     assert collector.Settings.__dataclass_params__.frozen is True
+
+
+def test_oracle_collector_classifies_all_structured_alert_types() -> None:
+    collector = _load_collector()
+    assert collector._diagnostic_severity(2, 8) == "critical"
+    assert collector._diagnostic_severity(3, 8) == "critical"
+    assert collector._diagnostic_severity(1, 1) == "critical"
+    assert collector._diagnostic_severity(4, 16) == "warning"
+    assert collector._diagnostic_severity(5, 16) == "info"
+
+
+def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
+    collector = _load_collector()
+    settings = collector.Settings(
+        host="oracle.internal",
+        port=1521,
+        service="PDB01",
+        target_key="oracle-test",
+        poll_seconds=15,
+        initial_lookback_seconds=900,
+        max_rows=1000,
+        username_file=tmp_path / "username",
+        password_file=tmp_path / "password",
+        output_file=tmp_path / "alert.jsonl",
+        checkpoint_file=tmp_path / "checkpoint.json",
+        health_file=tmp_path / "health.json",
+    )
+    timestamp = datetime.now(timezone.utc)
+    collector._append_rows(
+        settings,
+        [
+            "ORIGINATING_TIMESTAMP",
+            "RECORD_ID",
+            "MESSAGE_TYPE",
+            "MESSAGE_LEVEL",
+            "MESSAGE_TEXT",
+        ],
+        [(timestamp, 1, 3, 8, "任意Oracle错误")],
+    )
+    payload = json.loads(settings.output_file.read_text(encoding="utf-8"))
+    assert payload["target_key"] == "oracle-test"
+    assert payload["severity"] == "critical"
+    assert payload["message_text"] == "任意Oracle错误"
 
 
 def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -> None:

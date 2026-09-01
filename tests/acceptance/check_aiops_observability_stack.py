@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import importlib.util
-from importlib.machinery import SourceFileLoader
-import os
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 STACK = ROOT / "scripts/deployment/aiops_observability"
@@ -106,6 +105,34 @@ def main() -> int:
         ]
         if "wget" in loki_healthcheck or "-verify-config=true" not in loki_healthcheck:
             raise RuntimeError("Loki健康检查依赖镜像中不存在的外部工具")
+        loki_environment = rendered_compose["services"]["loki"]["environment"]
+        if not loki_environment.get("AIOPS_LOKI_CONFIG_REVISION"):
+            raise RuntimeError("Loki配置变化不会触发容器重建")
+        alloy_environment = rendered_compose["services"]["alloy"]["environment"]
+        if not alloy_environment.get("AIOPS_ALLOY_CONFIG_REVISION"):
+            raise RuntimeError("Alloy配置变化不会触发容器重建")
+        loki_config = (state / "loki/loki.yml").read_text(encoding="utf-8")
+        for required_text in (
+            "ruler:",
+            "instance_addr: 127.0.0.1",
+            "alertmanager_url: http://alertmanager:9093",
+            "rules_directory: /etc/loki/rules",
+            "rule_path: /loki/ruler",
+        ):
+            if required_text not in loki_config:
+                raise RuntimeError(f"Loki Ruler配置缺少约束：{required_text}")
+        loki_rules = (
+            state / "loki/rules/fake/kbot-oracle-alerts.yml"
+        ).read_text(encoding="utf-8")
+        for required_text in (
+            "alert: OracleAlertLogProblemDetected",
+            'severity=~"critical|warning"',
+            "event_class: database.alert_log_problem",
+        ):
+            if required_text not in loki_rules:
+                raise RuntimeError(f"Oracle通用异常日志规则缺少约束：{required_text}")
+        if "ORA-00060" in loki_rules:
+            raise RuntimeError("Oracle异常日志规则不得维护错误码白名单")
         if os.stat(state / "secrets/oracle-oracle-prod-01_password").st_mode & 0o037:
             raise RuntimeError("Oracle Secret权限过宽")
         generated = json.loads((state / "compose.generated.yaml").read_text())
@@ -321,7 +348,7 @@ environment = production
             subprocess.run(["promtool", "check", "rules", str(rule_file)], check=True)
     print(
         "AIOps观测栈检查通过：角色、Compose、Secret、多数据库目标、"
-        "签名桥和Grafana看板配置有效"
+        "Loki通用日志告警、签名桥和Grafana看板配置有效"
     )
     return 0
 
