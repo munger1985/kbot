@@ -383,6 +383,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("request.sql_text", workspace)
         self.assertIn("request.parameters", workspace)
         self.assertIn("turn.ops_run_id", workspace)
+        self.assertIn('["WAITING_INPUT", "WAITING_APPROVAL"]', workspace)
+        self.assertIn(
+            "includes(run?.status)",
+            workspace,
+        )
         self.assertIn("审批已提交，正在继续诊断", workspace)
         self.assertIn("const evidence = new Map()", workspace)
         self.assertIn("${evidence}</div></article>", workspace)

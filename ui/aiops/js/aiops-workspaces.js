@@ -360,6 +360,12 @@
       const progress = panel.querySelector(`[data-turn-progress="${String(turn.turn_id)}"]`);
       if (!progress) return;
       try {
+        const run = await KBotAIOpsAuth.request(
+          `${api}/runs/${encodeURIComponent(turn.ops_run_id)}`,
+        );
+        if (!["WAITING_INPUT", "WAITING_APPROVAL"].includes(run?.status)) {
+          return;
+        }
         const pending = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(turn.ops_run_id)}/pending-input`);
         const html = diagnosticQueryApprovalHtml(pending);
         if (!html) return;
