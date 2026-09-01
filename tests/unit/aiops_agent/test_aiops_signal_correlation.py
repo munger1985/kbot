@@ -3,7 +3,7 @@
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiops_agent.application.diagnostic_sources.webhook_intake import (
     SignalEventIntakeService,
@@ -14,6 +14,7 @@ from aiops_agent.domain.evidence import (
     correlate_signal_event,
     validate_event_class_map,
 )
+from aiops_agent.repositories.agent import AIOpsAgentRepository
 from aiops_agent.repositories.monitoring import (
     DiagnosticSourceRepository,
     SituationRepository,
@@ -95,7 +96,112 @@ class SituationCorrelationTest(unittest.TestCase):
             )
 
 
+class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_target_agent_is_fallback_when_transport_source_is_not_selected(
+        self,
+    ) -> None:
+        alertmanager_source_id = uuid7()
+        evidence_source_id = uuid7()
+        target_id = uuid7()
+        agent = SimpleNamespace(
+            agent_id=uuid7(),
+            status="ACTIVE",
+            row_version=1,
+        )
+        version = SimpleNamespace(
+            agent_version_id=uuid7(),
+            policy_id=uuid7(),
+            instruction=None,
+        )
+        policy = SimpleNamespace(
+            policy_id=version.policy_id,
+            rules_json={"auto_alert_enabled": True},
+        )
+        exact = MagicMock()
+        exact.__iter__.return_value = iter(())
+        fallback = MagicMock()
+        fallback.__iter__.return_value = iter(((agent, version, policy),))
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=(exact, fallback))
+        session.scalars = AsyncMock(
+            side_effect=([evidence_source_id], [target_id])
+        )
+        repository = AIOpsAgentRepository(session, lambda: None)
+
+        resolved = await repository.resolve_auto_alert(
+            domain_id=7,
+            source_id=alertmanager_source_id,
+            target_id=target_id,
+        )
+
+        self.assertIsNotNone(resolved)
+        binding, resolved_policy = resolved
+        self.assertEqual(agent.agent_id, binding.agent_id)
+        self.assertEqual((evidence_source_id,), binding.diagnostic_source_ids)
+        self.assertEqual(policy, resolved_policy)
+        self.assertEqual(2, session.execute.await_count)
+        exact_sql = str(
+            session.execute.await_args_list[0].args[0].compile(
+                dialect=oracle.dialect()
+            )
+        ).upper()
+        fallback_sql = str(
+            session.execute.await_args_list[1].args[0].compile(
+                dialect=oracle.dialect()
+            )
+        ).upper()
+        self.assertIn("KBOT_OPS_AGENT_VERSION_SOURCE", exact_sql)
+        self.assertNotIn("KBOT_OPS_AGENT_VERSION_SOURCE", fallback_sql)
+        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", fallback_sql)
+
+
 class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_agent_logs_target_fallback_selection(self) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        alertmanager_source_id = uuid7()
+        binding = SimpleNamespace(
+            agent_id=uuid7(),
+            diagnostic_source_ids=(uuid7(),),
+        )
+        policy = SimpleNamespace(
+            rules_json={
+                "auto_observe_min_severity": "CRITICAL",
+                "alert_cooldown_seconds": 900,
+            }
+        )
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(
+                    return_value=(binding, policy)
+                )
+            ),
+            runs=SimpleNamespace(
+                get_latest_by_situation_correlation=AsyncMock(
+                    return_value=None
+                )
+            ),
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            result = await service._resolve_auto_agent(
+                uow=uow,
+                target=target,
+                source_id=alertmanager_source_id,
+                situation_id=uuid7(),
+                severity="CRITICAL",
+                fingerprint="f" * 64,
+                now=datetime(2026, 9, 1, tzinfo=UTC),
+            )
+
+        self.assertEqual(binding, result)
+        self.assertEqual(
+            "TARGET_AGENT_FALLBACK",
+            log.bind.call_args.kwargs["reason"],
+        )
+
     async def test_auto_agent_rejection_records_structured_reason(self) -> None:
         service = object.__new__(SignalEventIntakeService)
         target = SimpleNamespace(domain_id=7, target_id=uuid7())

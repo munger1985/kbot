@@ -692,7 +692,11 @@ class SignalEventIntakeService:
             return None
         self._log_auto_agent_decision(
             decision="SELECTED",
-            reason="ELIGIBLE_AGENT",
+            reason=(
+                "SUBSCRIBED_SOURCE_AGENT"
+                if source_id in binding.diagnostic_source_ids
+                else "TARGET_AGENT_FALLBACK"
+            ),
             target_id=target.target_id,
             source_id=source_id,
             situation_id=situation_id,

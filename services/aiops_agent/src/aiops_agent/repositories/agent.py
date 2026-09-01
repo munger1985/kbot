@@ -341,18 +341,46 @@ class AIOpsAgentRepository:
     async def resolve_auto_alert(
         self, *, domain_id: int, source_id: UUID, target_id: UUID
     ):
-        """选择一个同时订阅监控源并管理该 Target 的启用 Agent。"""
-        rows = await self._session.execute(
+        """优先选择订阅告警源的 Agent，否则按 Target 安全回退。"""
+        for required_source_id in (source_id, None):
+            rows = await self._auto_alert_candidates(
+                domain_id=domain_id,
+                target_id=target_id,
+                source_id=required_source_id,
+            )
+            for agent, version, policy in rows:
+                if not bool(policy.rules_json.get("auto_alert_enabled", True)):
+                    continue
+                source_ids = await self.version_source_ids(
+                    agent_version_id=version.agent_version_id
+                )
+                target_ids = await self.version_target_ids(
+                    agent_version_id=version.agent_version_id
+                )
+                return _execution_binding(
+                    agent,
+                    version,
+                    source_ids,
+                    target_ids,
+                    policy,
+                    selected_target_id=target_id,
+                ), policy
+        return None
+
+    async def _auto_alert_candidates(
+        self,
+        *,
+        domain_id: int,
+        target_id: UUID,
+        source_id: UUID | None,
+    ):
+        """读取满足状态与 Target 边界的确定性自动告警候选。"""
+        statement = (
             select(AIOpsAgentEntity, AIOpsAgentVersionEntity, PolicyEntity)
             .join(
                 AIOpsAgentVersionEntity,
                 AIOpsAgentVersionEntity.agent_version_id
                 == AIOpsAgentEntity.current_version_id,
-            )
-            .join(
-                AIOpsAgentVersionSourceEntity,
-                AIOpsAgentVersionSourceEntity.agent_version_id
-                == AIOpsAgentVersionEntity.agent_version_id,
             )
             .join(
                 AIOpsAgentVersionTargetEntity,
@@ -363,25 +391,20 @@ class AIOpsAgentRepository:
             .where(
                 AIOpsAgentEntity.domain_id == domain_id,
                 AIOpsAgentEntity.status == "ACTIVE",
-                AIOpsAgentVersionSourceEntity.diagnostic_source_id == source_id,
                 AIOpsAgentVersionTargetEntity.target_id == target_id,
                 PolicyEntity.status == "ACTIVE",
             )
             .order_by(AIOpsAgentEntity.agent_id)
         )
-        for agent, version, policy in rows:
-            if bool(policy.rules_json.get("auto_alert_enabled", True)):
-                source_ids = await self.version_source_ids(
-                    agent_version_id=version.agent_version_id
-                )
-                target_ids = await self.version_target_ids(
-                    agent_version_id=version.agent_version_id
-                )
-                return _execution_binding(
-                    agent, version, source_ids, target_ids, policy,
-                    selected_target_id=target_id,
-                ), policy
-        return None
+        if source_id is not None:
+            statement = statement.join(
+                AIOpsAgentVersionSourceEntity,
+                AIOpsAgentVersionSourceEntity.agent_version_id
+                == AIOpsAgentVersionEntity.agent_version_id,
+            ).where(
+                AIOpsAgentVersionSourceEntity.diagnostic_source_id == source_id
+            )
+        return await self._session.execute(statement)
 
 
 @dataclass(frozen=True)
