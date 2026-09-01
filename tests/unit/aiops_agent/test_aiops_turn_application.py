@@ -32,6 +32,7 @@ from platform_core.contracts.aiops import (
     TurnSummary,
     TurnView,
 )
+from platform_core.contracts.aiops.types import WorkflowKind
 from platform_core.identity import uuid7
 
 
@@ -1210,7 +1211,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         created_payload["execution_context"] = {
             "trigger_type": "SCHEDULE",
             "interaction_mode": "AUTONOMOUS",
-            "workflow_kind": "INSPECTION_TURN",
+            "workflow_kind": WorkflowKind.INSPECTION.value,
             "inspection_fire_id": str(fire_id),
             "deadline_at": "2026-07-24T02:00:00+00:00",
             "observation_start": "2026-07-22T16:00:00+00:00",
@@ -1235,7 +1236,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         run = uow.runs.rows[0]
         self.assertEqual(run.trigger_type, "SCHEDULE")
         self.assertEqual(run.interaction_mode, "AUTONOMOUS")
-        self.assertEqual(run.workflow_kind, "INSPECTION_TURN")
+        self.assertIs(WorkflowKind(run.workflow_kind), WorkflowKind.INSPECTION)
         self.assertEqual(run.inspection_fire_id, fire_id)
         self.assertEqual(
             run.plan_snapshot_json["client_metadata"]["inspection"][

@@ -29,6 +29,7 @@ from platform_core.contracts.aiops import (
     ConversationSourceType,
     TurnCreate,
 )
+from platform_core.contracts.aiops.types import WorkflowKind
 from platform_core.identity import uuid7
 
 
@@ -248,7 +249,7 @@ class ConversationTurnService:
                         execution_context={
                             "trigger_type": "SCHEDULE",
                             "interaction_mode": "AUTONOMOUS",
-                            "workflow_kind": "INSPECTION_TURN",
+                            "workflow_kind": WorkflowKind.INSPECTION.value,
                             "inspection_fire_id": str(fire_id),
                             "deadline_at": deadline_at.isoformat(),
                             "observation_start": period_start.isoformat(),
