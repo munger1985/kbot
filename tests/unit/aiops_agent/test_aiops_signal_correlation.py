@@ -2,11 +2,14 @@
 
 import unittest
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from aiops_agent.application.diagnostic_sources.webhook_intake import (
+    SignalEventIntakeService,
     _auto_run_idempotency_key,
 )
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.domain.evidence import (
     correlate_signal_event,
     validate_event_class_map,
@@ -90,6 +93,50 @@ class SituationCorrelationTest(unittest.TestCase):
                     }
                 }
             )
+
+
+class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_unmatched_target_remains_rejected(self) -> None:
+        uow = SimpleNamespace(
+            situations=SimpleNamespace(
+                list_signal_event_ids_by_inbox=AsyncMock()
+            )
+        )
+        inbox = SimpleNamespace(
+            inbox_id=uuid7(),
+            status="IGNORED",
+            error_code="SOURCE_TARGET_NOT_FOUND",
+        )
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await SignalEventIntakeService._duplicate_receipt(uow, inbox)
+
+        self.assertEqual("SOURCE_TARGET_NOT_FOUND", raised.exception.code)
+        self.assertEqual(422, raised.exception.status_code)
+        uow.situations.list_signal_event_ids_by_inbox.assert_not_awaited()
+
+    async def test_duplicate_processed_event_is_accepted(self) -> None:
+        signal_event_id = uuid7()
+        uow = SimpleNamespace(
+            situations=SimpleNamespace(
+                list_signal_event_ids_by_inbox=AsyncMock(
+                    return_value=[signal_event_id]
+                )
+            )
+        )
+        inbox = SimpleNamespace(
+            inbox_id=uuid7(),
+            status="PROCESSED",
+            error_code=None,
+        )
+
+        receipt = await SignalEventIntakeService._duplicate_receipt(
+            uow, inbox
+        )
+
+        self.assertTrue(receipt.accepted)
+        self.assertTrue(receipt.duplicate)
+        self.assertEqual((signal_event_id,), receipt.signal_event_ids)
 
 
 class SituationStateRepositoryTest(unittest.IsolatedAsyncioTestCase):

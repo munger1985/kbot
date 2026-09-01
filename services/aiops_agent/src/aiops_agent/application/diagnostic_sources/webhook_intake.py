@@ -58,6 +58,17 @@ def _auto_run_idempotency_key(
     )
 
 
+def _source_target_not_found() -> AIOpsApplicationError:
+    """拒绝无法安全归属到逻辑 Target 的已验签事件。"""
+    return AIOpsApplicationError(
+        code="SOURCE_TARGET_NOT_FOUND",
+        message=(
+            "监控事件的 target_key 未匹配当前诊断源的 Active Target 映射"
+        ),
+        status_code=422,
+    )
+
+
 class SignalEventIntakeService:
     def __init__(
         self,
@@ -233,6 +244,8 @@ class SignalEventIntakeService:
                 inbox.status = "PROCESSED"
             inbox.processed_at = now
             await uow.commit()
+            if inbox.status == "IGNORED":
+                raise _source_target_not_found()
             return SignalEventIntakeReceipt(
                 inbox_id=inbox.inbox_id,
                 accepted=True,
@@ -242,6 +255,11 @@ class SignalEventIntakeService:
 
     @staticmethod
     async def _duplicate_receipt(uow, inbox) -> SignalEventIntakeReceipt:
+        if (
+            inbox.status == "IGNORED"
+            and inbox.error_code == "SOURCE_TARGET_NOT_FOUND"
+        ):
+            raise _source_target_not_found()
         signal_event_ids = await uow.situations.list_signal_event_ids_by_inbox(
             inbox_id=inbox.inbox_id
         )
