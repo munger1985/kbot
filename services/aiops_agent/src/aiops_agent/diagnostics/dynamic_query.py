@@ -250,6 +250,10 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_SENSITIVE_COLUMN_APPROVAL_REQUIRED"
                 )
         for function in expression.find_all(exp.Func):
+            # sqlglot 将 AND/OR 连接符也纳入 Func 继承体系；它们是 SQL
+            # 语法节点而非可调用函数，不能参与函数白名单判断。
+            if isinstance(function, exp.Connector):
+                continue
             name = function.sql_name().upper()
             if name == "ANONYMOUS":
                 name = str(getattr(function, "name", "")).upper()

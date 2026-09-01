@@ -109,6 +109,36 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             "DYNAMIC_SQL_LIMIT_INVALID",
         )
 
+    def test_boolean_connectors_and_join_conditions_are_allowed(self) -> None:
+        result = self.policy.validate(
+            """
+            SELECT
+                s.inst_id AS instance_id,
+                s.sid AS session_id
+            FROM gv$session s
+            JOIN gv$process p
+              ON p.inst_id = s.inst_id
+             AND p.addr = s.paddr
+            WHERE s.type = :session_type
+              AND (s.status = :active_status OR s.username IS NOT NULL)
+            """,
+            {
+                "session_type": "USER",
+                "active_status": "ACTIVE",
+            },
+        )
+
+        self.assertEqual(
+            result.referenced_objects,
+            ("gv$process", "gv$session"),
+        )
+        self.assertEqual(
+            result.bind_names,
+            ("active_status", "session_type"),
+        )
+        self.assertIn(" AND ", result.normalized_sql)
+        self.assertIn(" OR ", result.normalized_sql)
+
     def test_dml_and_multiple_statements_are_rejected(self) -> None:
         self._assert_rejected(
             "DELETE FROM v$session",
@@ -485,7 +515,8 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             self._investigation(
                 sql=(
                     "SELECT sid, event FROM v$session "
-                    "WHERE status = :status"
+                    "WHERE type = 'USER' "
+                    "AND (status = :status OR username IS NOT NULL)"
                 )
             )
         )

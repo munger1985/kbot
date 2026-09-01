@@ -8,8 +8,12 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+from loguru import logger
 from pydantic import TypeAdapter
 
+from aiops_agent.application.investigation import (
+    InvestigationPlanValidationError,
+)
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
@@ -82,6 +86,14 @@ class _UnsupportedPlanningStage(_PlannerStage):
             }
         )
         return {"status": "FAILED"}
+
+
+class _InvalidPlanningStage(_UnsupportedPlanningStage):
+    async def execute(self, payload):
+        self.calls.append(dict(payload))
+        raise InvestigationPlanValidationError(
+            "动态查询未通过策略：DYNAMIC_SQL_FUNCTION_FORBIDDEN"
+        )
 
 
 class _TerminalFailureSink:
@@ -708,6 +720,36 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(planning.failures))
         self.assertEqual(
             "AIOPS_INVESTIGATION_CATALOG_CHANGED",
+            planning.failures[0]["error_code"],
+        )
+
+    async def test_invalid_planning_log_preserves_policy_reason(self) -> None:
+        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
+        planning = _InvalidPlanningStage()
+        sink = AIOpsDomainOutboxSink(
+            runtime_service=object(),
+            fallback=_NoopSink(),
+            turn_planner_service=begin,
+            turn_planning_service=planning,
+        )
+        payload = {"domain_id": 7, "turn_id": str(uuid7())}
+        messages: list[str] = []
+        sink_id = logger.add(messages.append, format="{message}", level="WARNING")
+
+        try:
+            await sink.publish("aiops.turn.understanding_requested", payload)
+        finally:
+            logger.remove(sink_id)
+
+        self.assertTrue(
+            any(
+                "reason=动态查询未通过策略："
+                "DYNAMIC_SQL_FUNCTION_FORBIDDEN" in message
+                for message in messages
+            )
+        )
+        self.assertEqual(
+            "AIOPS_INVESTIGATION_PLAN_INVALID",
             planning.failures[0]["error_code"],
         )
 

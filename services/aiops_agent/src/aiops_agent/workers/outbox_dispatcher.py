@@ -82,10 +82,12 @@ class AIOpsDomainOutboxSink:
                         exc, "code", "AIOPS_INVESTIGATION_PLAN_INVALID"
                     )
                     logger.warning(
-                        "AIOps Turn 规划无法执行：turn_id={} code={} type={}",
+                        "AIOps Turn 规划无法执行："
+                        "turn_id={} code={} type={} reason={}",
                         payload.get("turn_id"),
                         error_code,
                         type(exc).__name__,
+                        str(exc),
                     )
                     await self._turn_planning_service.fail_terminal(
                         payload,
