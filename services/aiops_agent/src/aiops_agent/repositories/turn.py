@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
+from sqlalchemy.orm import aliased
 
 from aiops_agent.entities import (
     OpsAnswerBlockEntity,
@@ -20,6 +21,17 @@ from aiops_agent.entities import (
     OpsTurnRunEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
+
+
+_TURN_QUEUE_BLOCKING_STATUSES = (
+    "ACCEPTED",
+    "UNDERSTANDING",
+    "PLANNING",
+    "COLLECTING",
+    "ASSESSING",
+    "REPLANNING",
+    "ANSWERING",
+)
 
 
 class TurnRepository(AIOpsRepository):
@@ -195,6 +207,73 @@ class TurnRepository(AIOpsRepository):
         statement = select(OpsConversationTurnEntity).where(
             OpsConversationTurnEntity.conversation_id == conversation_id,
             OpsConversationTurnEntity.idempotency_key == idempotency_key,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_blocking_turn(
+        self,
+        *,
+        conversation_id: UUID,
+        exclude_turn_id: UUID | None = None,
+    ) -> OpsConversationTurnEntity | None:
+        """返回占用当前 Conversation 执行槽的 Turn。"""
+        statement = select(OpsConversationTurnEntity).where(
+            OpsConversationTurnEntity.conversation_id == conversation_id,
+            OpsConversationTurnEntity.status.in_(
+                _TURN_QUEUE_BLOCKING_STATUSES
+            ),
+        )
+        if exclude_turn_id is not None:
+            statement = statement.where(
+                OpsConversationTurnEntity.turn_id != exclude_turn_id
+            )
+        statement = statement.order_by(
+            OpsConversationTurnEntity.turn_no
+        ).limit(1)
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_next_queued_turn(
+        self,
+        *,
+        conversation_id: UUID,
+    ) -> OpsConversationTurnEntity | None:
+        statement = (
+            select(OpsConversationTurnEntity)
+            .where(
+                OpsConversationTurnEntity.conversation_id
+                == conversation_id,
+                OpsConversationTurnEntity.status == "QUEUED",
+            )
+            .order_by(OpsConversationTurnEntity.turn_no)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_next_eligible_queued_turn(
+        self,
+    ) -> OpsConversationTurnEntity | None:
+        """返回不存在已接收或执行中前序 Turn 的最早排队项。"""
+        candidate = aliased(OpsConversationTurnEntity)
+        blocker = aliased(OpsConversationTurnEntity)
+        has_blocker = exists().where(
+            blocker.conversation_id == candidate.conversation_id,
+            blocker.status.in_(_TURN_QUEUE_BLOCKING_STATUSES),
+        )
+        statement = (
+            select(candidate)
+            .where(candidate.status == "QUEUED", ~has_blocker)
+            .order_by(candidate.created_at, candidate.turn_no)
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_event_by_key(
+        self,
+        *,
+        event_key: str,
+    ) -> OpsTurnEventEntity | None:
+        statement = select(OpsTurnEventEntity).where(
+            OpsTurnEventEntity.event_key == event_key
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 

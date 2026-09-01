@@ -10,8 +10,15 @@ from platform_core.identity import uuid7
 
 
 class AIOpsReconciler:
-    def __init__(self, *, runtime_service, interval_seconds: float):
+    def __init__(
+        self,
+        *,
+        runtime_service,
+        interval_seconds: float,
+        turn_queue_service=None,
+    ):
         self._service = runtime_service
+        self._turn_queue_service = turn_queue_service
         self._interval = interval_seconds
         self._stop = asyncio.Event()
 
@@ -32,6 +39,18 @@ class AIOpsReconciler:
                     str(exc),
                 )
                 worked = False
+            if self._turn_queue_service is not None:
+                try:
+                    worked = (
+                        await self._turn_queue_service.promote_next()
+                        or worked
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "AIOps Conversation Turn 排队提升失败：type={} error={}",
+                        type(exc).__name__,
+                        str(exc),
+                    )
             if worked:
                 continue
             try:

@@ -392,17 +392,40 @@ class LocalLogSearchService:
                 records.append((line_offset, None, None, [line]))
             elif records and records[-1][1] is not None:
                 records[-1][3].append(line)
+            elif (
+                records
+                and records[-1][1] is None
+                and records[-1][2] is None
+            ):
+                records[-1][3].append(line)
             elif line.strip():
                 records.append((line_offset, None, None, [line]))
-        return [self._event(ref, *record) for record in records]
+        events: list[dict[str, Any]] = []
+        next_record_timestamp: datetime | None = None
+        for record in reversed(records):
+            event = self._event(
+                ref,
+                *record,
+                next_record_timestamp=next_record_timestamp,
+            )
+            events.append(event)
+            if record[1] is not None or record[2] is not None:
+                next_record_timestamp = datetime.fromisoformat(
+                    event["timestamp"]
+                )
+        events.reverse()
+        return events
 
     def _event(
         self, ref: LogFileRef, offset: int, match: re.Match[str] | None,
         json_row: dict | None, lines: list[str],
+        *,
+        next_record_timestamp: datetime | None = None,
     ) -> dict[str, Any]:
         source = "\n".join(lines)
         if json_row is not None:
             timestamp = self._json_timestamp(json_row, ref)
+            timestamp_source = "LOG_RECORD"
             level_value = json_row.get("level", "INFO")
             level = str(
                 level_value.get("name", "INFO")
@@ -417,13 +440,22 @@ class LocalLogSearchService:
             timestamp = datetime.strptime(
                 match.group("timestamp"), "%Y-%m-%d %H:%M:%S.%f"
             ).astimezone()
+            timestamp_source = "LOG_RECORD"
             level = match.group("level").strip().upper()
             process = match.group("process").strip()
             location = "api-access" if ref.stream == "ACCESS" else match.group("location").strip()
             message = match.group("message")
             values = {}
         else:
-            timestamp = datetime.fromtimestamp(ref.modified_at, tz=timezone.utc).astimezone()
+            timestamp = next_record_timestamp or datetime.fromtimestamp(
+                ref.modified_at,
+                tz=timezone.utc,
+            ).astimezone()
+            timestamp_source = (
+                "NEXT_LOG_RECORD"
+                if next_record_timestamp is not None
+                else "FILE_MODIFIED_AT"
+            )
             lowered = source.casefold()
             level = "ERROR" if any(
                 marker in lowered for marker in (
@@ -458,6 +490,8 @@ class LocalLogSearchService:
         return {
             "event_id": event_id,
             "timestamp": timestamp.isoformat(),
+            "timestamp_source": timestamp_source,
+            "timestamp_estimated": timestamp_source != "LOG_RECORD",
             "level": level if level in _LEVELS else "INFO",
             "service_name": ref.service_name,
             "process": redact_recursive(process, max_chars=256),

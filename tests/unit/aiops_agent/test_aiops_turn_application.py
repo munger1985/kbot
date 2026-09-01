@@ -23,6 +23,7 @@ from aiops_agent.workers.outbox_dispatcher import (
     AIOpsDomainOutboxSink,
     AIOpsOutboxDispatcher,
 )
+from aiops_agent.workers.reconciliation import AIOpsReconciler
 from platform_core.contracts.aiops import (
     ConversationCreate,
     ConversationSourceContext,
@@ -41,6 +42,16 @@ class _CollectionRepository:
     async def add(self, row):
         self.rows.append(row)
         return row
+
+    async def get_by_idempotency(self, *, idempotency_key):
+        return next(
+            (
+                row
+                for row in self.rows
+                if row.idempotency_key == idempotency_key
+            ),
+            None,
+        )
 
 
 class _FailingCollectionRepository(_CollectionRepository):
@@ -259,6 +270,62 @@ class _TurnRepository:
                 if row.conversation_id == conversation_id
                 and row.idempotency_key == idempotency_key
             ),
+            None,
+        )
+
+    async def get_blocking_turn(
+        self,
+        *,
+        conversation_id,
+        exclude_turn_id=None,
+    ):
+        blocking = {
+            "ACCEPTED",
+            "UNDERSTANDING",
+            "PLANNING",
+            "COLLECTING",
+            "ASSESSING",
+            "REPLANNING",
+            "ANSWERING",
+        }
+        return next(
+            (
+                row
+                for row in sorted(self.turns, key=lambda item: item.turn_no)
+                if row.conversation_id == conversation_id
+                and row.turn_id != exclude_turn_id
+                and row.status in blocking
+            ),
+            None,
+        )
+
+    async def get_next_queued_turn(self, *, conversation_id):
+        return next(
+            (
+                row
+                for row in sorted(self.turns, key=lambda item: item.turn_no)
+                if row.conversation_id == conversation_id
+                and row.status == "QUEUED"
+            ),
+            None,
+        )
+
+    async def get_next_eligible_queued_turn(self):
+        candidates = sorted(
+            (row for row in self.turns if row.status == "QUEUED"),
+            key=lambda item: (item.created_at, item.turn_no),
+        )
+        for candidate in candidates:
+            if await self.get_blocking_turn(
+                conversation_id=candidate.conversation_id,
+                exclude_turn_id=candidate.turn_id,
+            ) is None:
+                return candidate
+        return None
+
+    async def get_event_by_key(self, *, event_key):
+        return next(
+            (row for row in self.events if row.event_key == event_key),
             None,
         )
 
@@ -673,10 +740,18 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_queue_accept_is_idempotent(self) -> None:
         uow = _Uow()
+        conversation_id = uuid7()
+        uow.conversation_rows.append(
+            SimpleNamespace(
+                conversation_id=conversation_id,
+                domain_id=7,
+            )
+        )
         turn = SimpleNamespace(
             turn_id=uuid7(),
-            conversation_id=uuid7(),
+            conversation_id=conversation_id,
             domain_id=7,
+            turn_no=1,
             status="QUEUED",
             event_cursor=1,
             started_at=None,
@@ -702,6 +777,83 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             uow.outbox.rows[0].event_type,
         )
         self.assertEqual(1, uow.commit_count)
+
+    async def test_later_turn_waits_until_active_turn_completes(self) -> None:
+        uow = _Uow()
+        service, first = await self._start(uow)
+        second = await service.create_turn(
+            domain_id=7,
+            conversation_id=UUID(first["conversation_id"]),
+            actor_id="dba@example.com",
+            trace_id="trace-second",
+            command=TurnCreate(
+                content=(
+                    {
+                        "content_type": "TEXT",
+                        "text": "能否输出健康检查结果？",
+                    },
+                ),
+                idempotency_key="request-second",
+            ),
+        )
+        queue = TurnQueueService(uow_factory=lambda: uow)
+
+        await queue.accept_created(dict(uow.outbox.rows[0].payload_json))
+        await queue.accept_created(dict(uow.outbox.rows[1].payload_json))
+        await queue.accept_created(dict(uow.outbox.rows[1].payload_json))
+
+        first_turn, second_turn = uow.turns.turns
+        self.assertEqual("ACCEPTED", first_turn.status)
+        self.assertEqual("QUEUED", second_turn.status)
+        waiting = [
+            row
+            for row in uow.turns.events
+            if row.event_key == f"turn.queue_waiting:{second_turn.turn_id}"
+        ]
+        self.assertEqual(1, len(waiting))
+        self.assertEqual(
+            "上一轮诊断仍在运行，本轮已排队等待",
+            waiting[0].payload_json["public_summary"],
+        )
+
+        first_turn.status = "COMPLETED"
+        promoted = await queue.promote_next()
+
+        self.assertTrue(promoted)
+        self.assertEqual("ACCEPTED", second_turn.status)
+        planning = [
+            row
+            for row in uow.outbox.rows
+            if row.event_type == "aiops.turn.understanding_requested"
+        ]
+        self.assertEqual(2, len(planning))
+        self.assertEqual(second["turn_id"], str(planning[-1].aggregate_id))
+
+    async def test_reconciler_checks_waiting_turn_queue(self) -> None:
+        runtime = SimpleNamespace(reconcile_once=self._no_runtime_work)
+        calls = []
+        reconciler = None
+
+        async def promote_next():
+            calls.append("promote")
+            reconciler.stop()
+            return False
+
+        queue = SimpleNamespace(promote_next=promote_next)
+        reconciler = AIOpsReconciler(
+            runtime_service=runtime,
+            turn_queue_service=queue,
+            interval_seconds=0.01,
+        )
+
+        await reconciler.run_forever()
+
+        self.assertEqual(["promote"], calls)
+
+    @staticmethod
+    async def _no_runtime_work(*, trace_id):
+        del trace_id
+        return False
 
     async def test_planning_outbox_runs_both_transaction_stages(self) -> None:
         begin = _PlannerStage(result={"status": "UNDERSTANDING"})

@@ -237,9 +237,13 @@ def create_aiops_worker_probe(
             )
             for index in range(config.concurrency)
         ]
+        turn_queue_service = TurnQueueService(
+            uow_factory=runtime.uow_factory,
+        )
         reconciler = AIOpsReconciler(
             runtime_service=runtime_service,
             interval_seconds=config.claim_interval_seconds,
+            turn_queue_service=turn_queue_service,
         )
         dispatcher = AIOpsOutboxDispatcher(
             uow_factory=runtime.uow_factory,
@@ -256,9 +260,7 @@ def create_aiops_worker_probe(
                     managed_credentials=managed_credential_service,
                 ),
                 db_executor_client=db_executor_client,
-                turn_queue_service=TurnQueueService(
-                    uow_factory=runtime.uow_factory,
-                ),
+                turn_queue_service=turn_queue_service,
                 turn_planner_service=TurnPlannerService(
                     uow_factory=runtime.uow_factory,
                 ),

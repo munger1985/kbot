@@ -258,6 +258,50 @@ service_name = "kbot-aiops-api"
             next(row["event_id"] for row in events if row["message"] == "recent-event"),
         )
 
+    def test_unstructured_traceback_uses_next_record_time(self):
+        log_path = self.log_root / "aiops_agent" / "runtime.log"
+        older = "2026-08-31 08:00:00.000"
+        newer = "2026-09-01 08:00:00.000"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "Traceback (most recent call last):",
+                    "  ModuleNotFoundError: No module named 'example'",
+                    (
+                        f"{older} | ERROR    | "
+                        "[supervisor:worker] process-supervisor - "
+                        "进程异常退出 | exit_code=1"
+                    ),
+                    (
+                        f"{newer} | INFO     | "
+                        "[worker] aiops_agent.worker:run:1 - 后续任务完成"
+                    ),
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        events, _, _ = self._search(
+            service_name="aiops_agent",
+            streams={"RUNTIME"},
+            started_at=datetime(2026, 8, 30, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 2, tzinfo=timezone.utc),
+        )
+        traceback = next(
+            row for row in events if row["message"].startswith("Traceback")
+        )
+        detail = self.service.event_detail(event_id=traceback["event_id"])
+
+        self.assertTrue(traceback["timestamp_estimated"])
+        self.assertEqual("NEXT_LOG_RECORD", traceback["timestamp_source"])
+        self.assertEqual(
+            datetime.strptime(older, "%Y-%m-%d %H:%M:%S.%f")
+            .astimezone()
+            .isoformat(),
+            traceback["timestamp"],
+        )
+        self.assertIn("ModuleNotFoundError", detail["raw"])
+
     def test_uncontrolled_directory_and_missing_root_are_ignored(self):
         rogue = self.log_root / "foreign_admin"
         rogue.mkdir()

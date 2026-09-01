@@ -46,10 +46,13 @@
     return `/api/v1/development/logs/events?${params.toString()}`;
   }
 
-  function formatTime(value) {
+  function formatTime(value, estimated = false) {
     if (!value) return "-";
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    const formatted = Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleString();
+    return estimated ? `约 ${formatted}` : formatted;
   }
 
   function renderEvents(events) {
@@ -63,7 +66,9 @@
       .map(
         (event) => `
           <tr data-event-id="${KBotUI.escapeHtml(event.event_id)}" tabindex="0">
-            <td class="log-time">${KBotUI.escapeHtml(formatTime(event.timestamp))}</td>
+            <td class="log-time">${KBotUI.escapeHtml(
+              formatTime(event.timestamp, event.timestamp_estimated)
+            )}</td>
             <td><span class="log-source">${KBotUI.escapeHtml(event.process || "-")}</span></td>
             <td><span class="log-level level-${KBotUI.escapeHtml(event.level.toLowerCase())}">${KBotUI.escapeHtml(event.level)}</span></td>
             <td class="log-location" title="${KBotUI.escapeHtml(event.location)}">${KBotUI.escapeHtml(event.location || "-")}</td>
@@ -77,7 +82,7 @@
     const event = eventsById.get(eventId);
     if (!event) return;
     metaElement.textContent = [
-      formatTime(event.timestamp),
+      formatTime(event.timestamp, event.timestamp_estimated),
       event.service_name,
       event.log_type,
       event.process,
