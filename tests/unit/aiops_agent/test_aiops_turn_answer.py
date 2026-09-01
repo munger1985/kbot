@@ -138,6 +138,36 @@ class _InvalidAssessmentModel:
         )
 
 
+class _NeedsMoreEvidenceAssessmentModel:
+    async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=InvestigationAssessment(
+                round_no=2,
+                sufficiency_status="NEEDS_EVIDENCE",
+                verified_facts=("已取得当前内存顾问数据",),
+                remaining_unknowns=("PGA 峰值",),
+                hypothesis_updates={},
+                evidence_gaps=("缺少 PGA 峰值统计",),
+                next_action="REPLAN",
+                progress_made=True,
+                reason="仍可通过数据库只读工具补充 PGA 峰值",
+            ),
+            receipt=ModelInvocationReceipt(
+                purpose=kwargs["purpose"],
+                schema_id="aiops.investigation-assessment.v1",
+                model_technical_name="test-model",
+                model_revision="1",
+                prompt_id=kwargs["prompt_ref"]["prompt_id"],
+                prompt_version=kwargs["prompt_ref"]["prompt_version"],
+                prompt_sha256=kwargs["prompt_ref"]["prompt_sha256"],
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
+
+
 class _ProgressService:
     def __init__(self) -> None:
         self.commands = []
@@ -802,6 +832,89 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertIn("V_$SQLSTATS", markdown)
         self.assertIn("ROWNUM <= 10", markdown)
         self.assertNotIn(":limit", markdown)
+
+    def test_unmapped_gap_does_not_create_false_waiting_user(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            gaps=(
+                TurnEvidenceGap(
+                    source_id="investigation.assessment",
+                    step_id="remaining-evidence-1",
+                    code="INVESTIGATION_EVIDENCE_GAP",
+                    detail="仍可查询 PGA 峰值",
+                    retryable=True,
+                ),
+            ),
+            reasons=("系统仍有只读补证能力",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=_AnswerModel(evidence_refs=()),
+            prompts=_TestPrompts(),
+        )
+
+        result = asyncio.run(handler.execute(context))
+
+        self.assertEqual("PARTIAL", result.status)
+        self.assertEqual(1, len(result.blocks))
+
+    def test_model_missing_evidence_with_facts_is_partial_and_retryable(self) -> None:
+        handler = DbaEvidenceAssessmentHandler(
+            model_client=_NeedsMoreEvidenceAssessmentModel(),
+            prompts=_TestPrompts(),
+        )
+
+        result = asyncio.run(
+            handler.execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertEqual("INVESTIGATION_EVIDENCE_GAP", result.gaps[-1].code)
+        self.assertTrue(result.gaps[-1].retryable)
+
+    def test_replan_is_not_stopped_by_second_round_when_progress_continues(
+        self,
+    ) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.PARTIAL,
+            investigation=InvestigationAssessment(
+                round_no=2,
+                sufficiency_status="PARTIAL",
+                evidence_gaps=("缺少 PGA 峰值",),
+                next_action="REPLAN",
+                progress_made=True,
+                reason="仍有数据库只读证据可获取",
+            ),
+        )
+
+        self.assertTrue(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=assessment,
+                deterministic_replan=True,
+                no_progress_count=0,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=assessment,
+                deterministic_replan=True,
+                no_progress_count=2,
+            )
+        )
 
     def test_recent_request_with_cumulative_evidence_is_partial(self) -> None:
         context = _context(

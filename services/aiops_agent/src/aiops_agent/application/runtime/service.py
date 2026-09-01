@@ -2027,14 +2027,10 @@ class AIOpsRuntimeService:
                 str(assessment.status) in {"NEEDS_EVIDENCE", "PARTIAL"}
                 and any(gap.retryable for gap in assessment.gaps)
             )
-            should_replan = (
-                (
-                    assessment.investigation.next_action == "REPLAN"
-                    if assessment.investigation is not None
-                    else deterministic_replan
-                )
-                and int(turn.investigation_round or 1) < 2
-                and int(turn.no_progress_count or 0) < 2
+            should_replan = self._should_replan_investigation(
+                assessment=assessment,
+                deterministic_replan=deterministic_replan,
+                no_progress_count=int(turn.no_progress_count or 0),
             )
             if should_replan:
                 await self._schedule_turn_replan(
@@ -2062,6 +2058,21 @@ class AIOpsRuntimeService:
                 payload=payload,
                 now=now,
             )
+
+    @staticmethod
+    def _should_replan_investigation(
+        *,
+        assessment: DbaSufficiencyAssessment,
+        deterministic_replan: bool,
+        no_progress_count: int,
+    ) -> bool:
+        """只要持续取得进展，就在 Run 截止时间内继续自动补证。"""
+        requested = (
+            assessment.investigation.next_action == "REPLAN"
+            if assessment.investigation is not None
+            else deterministic_replan
+        )
+        return requested and no_progress_count < 2
 
     async def _schedule_turn_replan(
         self,

@@ -340,9 +340,26 @@ class DbaEvidenceAssessmentHandler:
             return deterministic
         investigation = InvestigationAssessment.model_validate(result.output)
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
+        if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
+            assessed_status = SufficiencyStatus.PARTIAL
+        semantic_gaps = tuple(
+            TurnEvidenceGap(
+                source_id="investigation.assessment",
+                step_id=f"remaining-evidence-{index}",
+                code="INVESTIGATION_EVIDENCE_GAP",
+                detail=detail,
+                retryable=investigation.next_action == "REPLAN",
+            )
+            for index, detail in enumerate(
+                investigation.evidence_gaps,
+                start=1,
+            )
+            if detail
+        )
         return deterministic.model_copy(
             update={
                 "status": assessed_status,
+                "gaps": tuple((*deterministic.gaps, *semantic_gaps)),
                 "reasons": tuple(
                     dict.fromkeys(
                         (*deterministic.reasons, investigation.reason)
@@ -725,8 +742,11 @@ class DbaAnswerComposeHandler:
         )
         if evidence_request is not None:
             blocks.append(evidence_request)
+        waiting_for_user = bool(
+            assessment.clarification_question or evidence_request is not None
+        )
         return AIOpsTurnResult(
-            status="WAITING_USER",
+            status="WAITING_USER" if waiting_for_user else "PARTIAL",
             sufficiency_status=assessment.status,
             blocks=tuple(blocks),
         )
