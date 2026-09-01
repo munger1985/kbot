@@ -245,6 +245,8 @@ kbot_webhook_secret = 填写页面生成并已保存到诊断源的Webhook Secre
 `kbot_webhook_url`只填写Main API根地址，不得追加
 `/api/v1/integrations/aiops/signals/...`。同机`all-in-one`测试环境可以填写KBot主机内网
 地址，例如`http://10.0.0.190:18099`；`central`生产角色必须使用客户HTTPS入口。
+轮换Webhook Key或Secret后重新执行`scripts/aiops-stack`，脚本会通过非敏感配置修订号
+重建签名桥，确保容器重新读取Secret文件，不会继续使用旧凭据。
 
 6. 不带参数重新执行`./scripts/aiops-stack`。脚本会保留现有数据卷，增加或重建
    `kbot-webhook-signer`，并把Alertmanager Receiver从`discard`切换为`kbot`。

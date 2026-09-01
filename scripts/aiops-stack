@@ -1067,7 +1067,16 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             "metrics", "kbot_webhook_secret", fallback=""
         ).strip()
         if webhook_url:
+            signer_revision = hashlib.sha256(
+                (
+                    f"{webhook_url.rstrip('/')}\0"
+                    f"{webhook_key}\0{webhook_secret}"
+                ).encode("utf-8")
+            ).hexdigest()
             env_lines.append(f"KBOT_WEBHOOK_BASE_URL={webhook_url.rstrip('/')}")
+            env_lines.append(
+                "AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION=" + signer_revision
+            )
             _write_secret(secrets / "kbot_webhook_key", webhook_key)
             _write_secret(secrets / "kbot_webhook_secret", webhook_secret)
         _write_text(
@@ -1168,7 +1177,12 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             "security_opt": ["no-new-privileges:true"],
             "image": "${KBOT_WEBHOOK_SIGNER_IMAGE}",
             "build": {"context": str(STACK_ROOT / "webhook_signer")},
-            "environment": {"KBOT_WEBHOOK_BASE_URL": "${KBOT_WEBHOOK_BASE_URL}"},
+            "environment": {
+                "KBOT_WEBHOOK_BASE_URL": "${KBOT_WEBHOOK_BASE_URL}",
+                "AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION": (
+                    "${AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION}"
+                ),
+            },
             "secrets": [
                 {"source": "kbot-webhook-key", "target": "kbot_webhook_key"},
                 {"source": "kbot-webhook-secret", "target": "kbot_webhook_secret"},

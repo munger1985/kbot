@@ -213,6 +213,13 @@ environment = production
         )
         if "kbot-webhook-signer" not in central_compose["services"]:
             raise RuntimeError("KBot Webhook签名桥没有生成")
+        signer_environment = central_compose["services"][
+            "kbot-webhook-signer"
+        ].get("environment", {})
+        if not signer_environment.get(
+            "AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION"
+        ):
+            raise RuntimeError("Webhook签名桥缺少凭据修订号")
     if "@sha256:" not in (STACK / "images.env").read_text(encoding="utf-8"):
         raise RuntimeError("镜像清单没有固定Digest")
     oracle_user_script = (

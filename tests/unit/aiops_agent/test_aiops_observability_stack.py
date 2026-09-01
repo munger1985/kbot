@@ -201,6 +201,9 @@ password = postgres-secret
         settings.runtime_dir / "secrets/postgres-postgres-all-modules-01_password"
     ).read_text().strip() == "postgres-secret"
     assert "168h" in (settings.runtime_dir / "loki/loki.yml").read_text()
+    generated = json.loads(
+        (settings.runtime_dir / "compose.generated.yaml").read_text()
+    )
     loki_config = (settings.runtime_dir / "loki/loki.yml").read_text()
     assert "ruler:" in loki_config
     assert "alertmanager_url: http://alertmanager:9093" in loki_config
@@ -221,6 +224,13 @@ password = postgres-secret
     assert (
         "group_by: [alertname, target_key, event_class, source_event_id]"
         in alertmanager_config
+    )
+    signer_environment = generated["services"]["kbot-webhook-signer"][
+        "environment"
+    ]
+    assert (
+        signer_environment["AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION"]
+        == "${AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION}"
     )
     alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
     assert 'severity       = "severity"' in alloy_config
@@ -249,6 +259,26 @@ password = postgres-secret
     assert "oracle-secret" not in generated_text
     assert "mysql-secret" not in generated_text
     assert "postgres-secret" not in generated_text
+
+    signer_revision = next(
+        line.split("=", 1)[1]
+        for line in (settings.runtime_dir / "stack.env").read_text().splitlines()
+        if line.startswith("AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION=")
+    )
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "whk-acceptance-key-long-enough-for-kbot",
+            "whk-rotated-key-long-enough-for-kbot",
+        ),
+        encoding="utf-8",
+    )
+    stack._prepare_runtime(stack._load_settings(config))
+    rotated_signer_revision = next(
+        line.split("=", 1)[1]
+        for line in (settings.runtime_dir / "stack.env").read_text().splitlines()
+        if line.startswith("AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION=")
+    )
+    assert rotated_signer_revision != signer_revision
 
 
 def test_loki_ruler_is_disabled_without_local_alertmanager(tmp_path: Path) -> None:
