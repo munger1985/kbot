@@ -136,13 +136,28 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
         return str(candidate)
 
 
+class KBotUiServer(ThreadingHTTPServer):
+    """限制慢连接生命周期，避免开发 UI 被长期占满。"""
+
+    allow_reuse_address = True
+    daemon_threads = True
+    block_on_close = False
+    request_queue_size = 128
+    request_timeout_seconds = 15
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        request.settimeout(self.request_timeout_seconds)
+        return request, client_address
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--bind", default="0.0.0.0")
     args = parser.parse_args()
     KBotUiHandler.main_api_base_url = _load_main_api_base_url()
-    server = ThreadingHTTPServer((args.bind, args.port), KBotUiHandler)
+    server = KBotUiServer((args.bind, args.port), KBotUiHandler)
     print(
         f"KBot UI 服务已启动：http://{args.bind}:{args.port}"
         f" | Main API={KBotUiHandler.main_api_base_url}",

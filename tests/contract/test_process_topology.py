@@ -54,6 +54,10 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertIn('request_path.startswith("/ui/")', ui_server)
         self.assertIn('"/ui/km/login.html"', ui_server)
         self.assertIn('"/operations-logs.html"', ui_server)
+        self.assertIn("class KBotUiServer(ThreadingHTTPServer)", ui_server)
+        self.assertIn("daemon_threads = True", ui_server)
+        self.assertIn("request_queue_size = 128", ui_server)
+        self.assertIn("request.settimeout(self.request_timeout_seconds)", ui_server)
         for group in (
             "Model Serving",
             "Knowledge Core",
