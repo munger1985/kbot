@@ -50,13 +50,10 @@ _SEVERITY_RANK = {
 
 
 def _auto_run_idempotency_key(
-    *, situation_id: Any, signal_event_id: Any, agent_id: Any
+    *, situation_id: Any, agent_id: Any
 ) -> str:
-    """按独立信号生成自动诊断幂等键，同一交付重试仍只创建一次。"""
-    return (
-        f"situation:{situation_id}:signal:{signal_event_id}:"
-        f"agent:{agent_id}:observe-run"
-    )
+    """按Situation和Agent生成自动诊断幂等键。"""
+    return f"situation:{situation_id}:agent:{agent_id}:observe-run"
 
 
 def _source_target_not_found() -> AIOpsApplicationError:
@@ -675,10 +672,12 @@ class SignalEventIntakeService:
             target_id=target.target_id,
             fingerprint=fingerprint,
         )
-        allowed = latest is None or (
-            now - latest.created_at
-        ).total_seconds() >= cooldown_seconds
-        if not allowed:
+        cooldown_active = (
+            latest is not None
+            and latest.situation_id == situation_id
+            and (now - latest.created_at).total_seconds() < cooldown_seconds
+        )
+        if cooldown_active:
             self._log_auto_agent_decision(
                 decision="SKIPPED",
                 reason="COOLDOWN_ACTIVE",
@@ -755,7 +754,6 @@ class SignalEventIntakeService:
     ) -> None:
         idempotency_key = _auto_run_idempotency_key(
             situation_id=situation.situation_id,
-            signal_event_id=event_entity.signal_event_id,
             agent_id=agent_id,
         )
         if (

@@ -24,15 +24,13 @@ from sqlalchemy.dialects import oracle
 
 
 class SituationCorrelationTest(unittest.TestCase):
-    def test_auto_run_idempotency_is_scoped_to_signal(self) -> None:
+    def test_auto_run_idempotency_is_scoped_to_situation_and_agent(self) -> None:
         first = _auto_run_idempotency_key(
             situation_id="situation-1",
-            signal_event_id="signal-1",
             agent_id="agent-1",
         )
         second = _auto_run_idempotency_key(
-            situation_id="situation-1",
-            signal_event_id="signal-2",
+            situation_id="situation-2",
             agent_id="agent-1",
         )
 
@@ -41,7 +39,6 @@ class SituationCorrelationTest(unittest.TestCase):
             first,
             _auto_run_idempotency_key(
                 situation_id="situation-1",
-                signal_event_id="signal-1",
                 agent_id="agent-1",
             ),
         )
@@ -236,6 +233,101 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
             log.bind.call_args.kwargs["situation_id"],
         )
         log.bind.return_value.info.assert_called_once()
+
+    async def test_recent_diagnosis_does_not_cool_down_new_situation(
+        self,
+    ) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        source_id = uuid7()
+        current_situation_id = uuid7()
+        previous_situation_id = uuid7()
+        binding = SimpleNamespace(
+            agent_id=uuid7(),
+            diagnostic_source_ids=(source_id,),
+        )
+        policy = SimpleNamespace(
+            rules_json={
+                "auto_observe_min_severity": "CRITICAL",
+                "alert_cooldown_seconds": 900,
+            }
+        )
+        now = datetime(2026, 9, 1, tzinfo=UTC)
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(
+                    return_value=(binding, policy)
+                )
+            ),
+            runs=SimpleNamespace(
+                get_latest_by_situation_correlation=AsyncMock(
+                    return_value=SimpleNamespace(
+                        situation_id=previous_situation_id,
+                        created_at=now,
+                    )
+                )
+            ),
+        )
+
+        result = await service._resolve_auto_agent(
+            uow=uow,
+            target=target,
+            source_id=source_id,
+            situation_id=current_situation_id,
+            severity="CRITICAL",
+            fingerprint="f" * 64,
+            now=now,
+        )
+
+        self.assertEqual(binding, result)
+
+    async def test_recent_diagnosis_cools_down_same_situation(self) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        source_id = uuid7()
+        situation_id = uuid7()
+        binding = SimpleNamespace(
+            agent_id=uuid7(),
+            diagnostic_source_ids=(source_id,),
+        )
+        policy = SimpleNamespace(
+            rules_json={
+                "auto_observe_min_severity": "CRITICAL",
+                "alert_cooldown_seconds": 900,
+            }
+        )
+        now = datetime(2026, 9, 1, tzinfo=UTC)
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(
+                    return_value=(binding, policy)
+                )
+            ),
+            runs=SimpleNamespace(
+                get_latest_by_situation_correlation=AsyncMock(
+                    return_value=SimpleNamespace(
+                        situation_id=situation_id,
+                        created_at=now,
+                    )
+                )
+            ),
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            result = await service._resolve_auto_agent(
+                uow=uow,
+                target=target,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity="CRITICAL",
+                fingerprint="f" * 64,
+                now=now,
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual("COOLDOWN_ACTIVE", log.bind.call_args.kwargs["reason"])
 
     async def test_duplicate_unmatched_target_remains_rejected(self) -> None:
         uow = SimpleNamespace(
