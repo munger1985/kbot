@@ -113,6 +113,25 @@ class _TimeoutConnection:
         return None
 
 
+class _OracleErrorCursor(_TimeoutCursor):
+    async def execute(self, _sql, _parameters=None):
+        self.execute_count += 1
+        if self.execute_count == 2:
+            error = type(
+                "OracleErrorInfo",
+                (),
+                {"code": 1861, "full_code": "ORA-01861"},
+            )()
+            import oracledb
+
+            raise oracledb.DatabaseError(error)
+
+
+class _OracleErrorConnection(_TimeoutConnection):
+    def __init__(self) -> None:
+        self._cursor = _OracleErrorCursor()
+
+
 class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _profile() -> DiagnosticConnectionProfile:
@@ -165,6 +184,17 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("QUERY_TIMEOUT", raised.exception.code)
         self.assertTrue(raised.exception.retryable)
+
+    async def test_date_format_error_is_query_incompatible(self) -> None:
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleErrorConnection()),
+        ):
+            with self.assertRaises(DiagnosticDriverError) as raised:
+                await self._execute()
+
+        self.assertEqual("QUERY_INCOMPATIBLE", raised.exception.code)
+        self.assertFalse(raised.exception.retryable)
 
 
 class DiagnosticCatalogTest(unittest.TestCase):

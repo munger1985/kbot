@@ -215,6 +215,18 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
         self.assertEqual(result.execution_decision, "AUTO_EXECUTE")
         self.assertEqual(result.projected_columns, ("object_count",))
 
+    def test_oracle_relative_time_with_sysdate_is_allowed(self) -> None:
+        result = self.policy.validate(
+            "SELECT owner, object_name, created FROM dba_objects "
+            "WHERE created >= SYSDATE - :days "
+            "ORDER BY created DESC, owner, object_name",
+            {"days": 7},
+        )
+
+        self.assertIn("created >= SYSDATE - :days", result.normalized_sql)
+        self.assertIn("FETCH FIRST 50 ROWS ONLY", result.normalized_sql)
+        self.assertEqual({"days": 7}, result.parameters)
+
     def _assert_rejected(
         self,
         sql: str,

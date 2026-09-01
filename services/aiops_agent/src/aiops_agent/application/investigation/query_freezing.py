@@ -61,6 +61,7 @@ def prepare_dynamic_queries(investigation):
                 "action_id": action.action_id,
                 "question": action.question,
                 "measurement_semantics": action.measurement_semantics,
+                "required_privileges": ["SELECT ANY DICTIONARY"],
                 "policy_snapshot": snapshot.model_dump(mode="json"),
                 "validated_query": validated.model_dump(mode="json"),
                 "limits": {

@@ -169,7 +169,7 @@ class OracleDiagnosticDriver:
                 mapped = "AUTH_FAILED"
             elif code in {942, 1031}:
                 mapped = "PRIVILEGE_MISSING"
-            elif code in {904, 918, 933, 936}:
+            elif code in {904, 918, 933, 936, 1861}:
                 mapped = "QUERY_INCOMPATIBLE"
             elif code in {12170, 12535} or full_code == "DPY-4024":
                 mapped = (

@@ -866,6 +866,70 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("PARTIAL", result.status)
         self.assertEqual(1, len(result.blocks))
 
+    def test_dynamic_query_gap_uses_frozen_validated_sql(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            gaps=(
+                TurnEvidenceGap(
+                    source_id="db.oracle.readonly_query",
+                    step_id="recent_objects",
+                    code="QUERY_INCOMPATIBLE",
+                    detail="动态只读查询与当前Oracle语法不兼容",
+                ),
+            ),
+            reasons=("当前没有取得能够回答问题的主题证据",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        context = replace(
+            context,
+            plan_snapshot={
+                **context.plan_snapshot,
+                "investigation_execution": {
+                    "invocations": {},
+                    "dynamic_invocations": {
+                        "dynamic:recent_objects": {
+                            "action_id": "recent_objects",
+                            "required_privileges": [
+                                "SELECT ANY DICTIONARY"
+                            ],
+                            "validated_query": {
+                                "normalized_sql": (
+                                    "SELECT owner, object_name, created "
+                                    "FROM dba_objects "
+                                    "WHERE created >= SYSDATE - :days "
+                                    "ORDER BY created DESC, owner, object_name "
+                                    "FETCH FIRST 200 ROWS ONLY"
+                                ),
+                                "parameters": {"days": 7},
+                            },
+                        }
+                    },
+                },
+            },
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=_AnswerModel(evidence_refs=()),
+            prompts=_TestPrompts(),
+        )
+
+        result = asyncio.run(handler.execute(context))
+
+        self.assertEqual("WAITING_USER", result.status)
+        markdown = result.blocks[1].payload["markdown"]
+        self.assertIn("QUERY_INCOMPATIBLE", markdown)
+        self.assertIn("SELECT ANY DICTIONARY", markdown)
+        self.assertIn("created >= SYSDATE - 7", markdown)
+        self.assertIn("FETCH FIRST 200 ROWS ONLY", markdown)
+        self.assertNotIn(":days", markdown)
+
     def test_model_missing_evidence_with_facts_is_partial_and_retryable(self) -> None:
         handler = DbaEvidenceAssessmentHandler(
             model_client=_NeedsMoreEvidenceAssessmentModel(),

@@ -30,6 +30,8 @@ _SAFE_FUNCTIONS = frozenset(
         "CEIL",
         "COALESCE",
         "COUNT",
+        "CURRENT_DATE",
+        "CURRENT_TIMESTAMP",
         "DECODE",
         "DENSE_RANK",
         "FLOOR",

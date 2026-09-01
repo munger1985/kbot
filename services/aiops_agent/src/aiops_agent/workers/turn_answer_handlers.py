@@ -765,6 +765,23 @@ class DbaAnswerComposeHandler:
             source_id = str(invocation.get("playbook_id", ""))
             for tool in invocation.get("tools", ()):
                 tools_by_step[(source_id, str(tool.get("step_id", "")))] = tool
+        for invocation in dict(
+            execution.get("dynamic_invocations", {})
+        ).values():
+            action_id = str(invocation.get("action_id", ""))
+            validated = dict(invocation.get("validated_query") or {})
+            sql = str(validated.get("normalized_sql") or "").strip()
+            if not action_id or not sql:
+                continue
+            tools_by_step[("db.oracle.readonly_query", action_id)] = {
+                "step_id": action_id,
+                "tool_id": "db.oracle.readonly_query",
+                "manual_sql": sql,
+                "parameters": dict(validated.get("parameters") or {}),
+                "required_privileges": list(
+                    invocation.get("required_privileges") or ()
+                ),
+            }
         requests: list[tuple[TurnEvidenceGap, dict[str, Any]]] = []
         monitoring_gaps = [
             gap

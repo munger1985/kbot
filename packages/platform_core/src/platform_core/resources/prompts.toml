@@ -618,6 +618,12 @@ db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，S
 AWR/ASH系统视图；不得生成超出工具对象范围的应用Schema、数据库链路或非SELECT语句。
 AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 
+Oracle相对时间窗口必须优先使用SYSDATE减去数值bind，例如最近七天使用
+`created >= SYSDATE - :days`和`{"days": 7}`；不要把ISO 8601时间字符串交给不匹配的
+TO_DATE格式，也不要使用MySQL日期函数。查询受max_rows边界保护；truncated=false表示当前
+谓词下结果完整，truncated=true时先查询精确COUNT，再按稳定排序键分页补齐，禁止要求取消
+行数上限或执行无界查询。
+
 可用工具无法取得某项证据时，应判断现有证据能否部分或完整回答；只有缺失信息会实质
 改变结论且系统无法自动获取时，才准备向用户提出具体补证请求。不要虚构工具结果。
 """
@@ -644,6 +650,9 @@ DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/AS
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
 系统诊断视图的星号投影和显式列查询都允许在只读边界内自动执行，结果按诊断账号实际
 可见内容原样返回，不要为业务字段增加脱敏或人工审批。
+Oracle相对时间窗口优先使用SYSDATE减去数值bind；不要用MySQL日期函数，也不要把ISO 8601
+字符串交给不匹配的TO_DATE格式。truncated=false的有界结果可以证明当前谓词结果完整；
+truncated=true时使用COUNT和稳定排序分页，不得通过取消max_rows来补齐结果。
 如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
 """
 
@@ -680,6 +689,8 @@ content = """
 假设与剩余未知项，判断证据是否足以回答，并选择ANSWER、REPLAN、ASK_USER或STOP_UNSAFE。
 不得虚构证据。系统仍有授权Tool可以补证时优先REPLAN；只有系统无法取得关键证据时才
 ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失否定全部已验证事实。
+有界查询返回truncated=false时不得声称缺少“无行数上限”的结果；truncated=true时才需要
+COUNT和稳定排序分页补证，不得要求执行无界查询。
 sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
 CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状态。
 """
@@ -708,6 +719,8 @@ content = """
    项目声明为缺失；零行证据表示当前没有匹配对象，不等于未取证。
 6. 不输出未经审批的变更执行承诺；可以解释只读观察结果和下一步诊断方向。
 7. 使用简洁、清晰的中文Markdown；只有内容确实需要时才使用小标题或列表。
+8. 不自行编造供用户执行的SQL。truncated=false的有界查询是完整证据；只有truncated=true
+   才能说明结果被截断，并建议由系统继续执行COUNT和稳定排序分页。
 """
 
 [[prompts]]
@@ -734,6 +747,8 @@ content = """
 观察到当前没有匹配对象，不等于未取证。原始表格和图表由服务端展示，正文只提炼结论，
 不复制大段行数据。对于原理解释、方案讨论等无需外部事实的问题，可以使用专业 DBA 知识
 直接回答，但必须区分通用知识和当前环境事实。不得承诺执行未经审批的变更。
+不得自行编造供用户执行的SQL，也不得把truncated=false的有界结果说成“不完整”或要求
+取消行数上限；truncated=true时应由系统继续执行COUNT和稳定排序分页。
 """
 
 [[prompts]]
