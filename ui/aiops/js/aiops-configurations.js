@@ -397,11 +397,198 @@
     shell.toast(message);
   }
 
+  const weekdayLabels = {
+    "0": "周日",
+    "1": "周一",
+    "2": "周二",
+    "3": "周三",
+    "4": "周四",
+    "5": "周五",
+    "6": "周六",
+  };
+
+  const intervalSchedules = {
+    MINUTES_15: { cron: "*/15 * * * *", summary: "每 15 分钟执行" },
+    MINUTES_30: { cron: "*/30 * * * *", summary: "每 30 分钟执行" },
+    HOURS_1: { cron: "0 * * * *", summary: "每小时整点执行" },
+    HOURS_2: { cron: "0 */2 * * *", summary: "每 2 小时整点执行" },
+    HOURS_6: { cron: "0 */6 * * *", summary: "每 6 小时整点执行" },
+    HOURS_12: { cron: "0 */12 * * *", summary: "每 12 小时整点执行" },
+  };
+
+  function scheduleTime(value) {
+    const match = /^(\d{2}):(\d{2})$/.exec(value || "");
+    if (!match) throw new Error("请选择有效的执行时间。");
+    return { hour: Number(match[1]), minute: Number(match[2]), label: value };
+  }
+
+  function checkedWeekdays(form) {
+    return Array.from(form.querySelectorAll('input[name="weekdays"]:checked'))
+      .map((input) => input.value);
+  }
+
+  function weekdaySummary(days) {
+    const ordered = ["1", "2", "3", "4", "5", "6", "0"];
+    const positions = days.map((day) => ordered.indexOf(day));
+    const consecutive = positions.every(
+      (position, index) => index === 0 || position === positions[index - 1] + 1,
+    );
+    if (days.length === 7) return "每天";
+    if (days.length >= 3 && consecutive) {
+      return `每${weekdayLabels[days[0]]}至${weekdayLabels[days.at(-1)]}`;
+    }
+    return `每${days.map((day) => weekdayLabels[day]).join("、")}`;
+  }
+
+  function buildSchedule(form) {
+    const mode = form.querySelector('input[name="schedule_mode"]:checked')?.value;
+    if (!mode) {
+      return {
+        type: form.elements.schedule_type.value,
+        cron: form.elements.cron_expression.value,
+        summary: "保持现有高级调度",
+      };
+    }
+    if (mode === "DAILY") {
+      const time = scheduleTime(form.elements.daily_time.value);
+      return { type: "DAILY", cron: `${time.minute} ${time.hour} * * *`, summary: `每天 ${time.label} 执行` };
+    }
+    if (mode === "WEEKLY") {
+      const time = scheduleTime(form.elements.weekly_time.value);
+      const days = checkedWeekdays(form);
+      if (!days.length) throw new Error("每周巡检至少选择一个执行日期。");
+      return { type: "WEEKLY", cron: `${time.minute} ${time.hour} * * ${days.join(",")}`, summary: `${weekdaySummary(days)} ${time.label} 执行` };
+    }
+    if (mode === "MONTHLY") {
+      const time = scheduleTime(form.elements.monthly_time.value);
+      const day = Number(form.elements.month_day.value);
+      if (!Number.isInteger(day) || day < 1 || day > 28) throw new Error("请选择每月执行日期。");
+      return { type: "CRON", cron: `${time.minute} ${time.hour} ${day} * *`, summary: `每月 ${day} 日 ${time.label} 执行` };
+    }
+    const interval = intervalSchedules[form.elements.interval_preset.value];
+    if (!interval) throw new Error("请选择有效的重复间隔。");
+    return { type: "CRON", cron: interval.cron, summary: interval.summary };
+  }
+
+  function renderSchedule(form) {
+    const mode = form.querySelector('input[name="schedule_mode"]:checked')?.value;
+    form.querySelectorAll("[data-schedule-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.schedulePanel !== mode;
+    });
+    document.getElementById("inspection-legacy-schedule").hidden = Boolean(mode);
+    try {
+      const schedule = buildSchedule(form);
+      form.elements.schedule_type.value = schedule.type;
+      form.elements.cron_expression.value = schedule.cron;
+      document.getElementById("inspection-schedule-summary").textContent = schedule.summary;
+    } catch (error) {
+      document.getElementById("inspection-schedule-summary").textContent = error.message;
+    }
+    const timezone = form.elements.timezone;
+    document.getElementById("inspection-timezone-summary").textContent =
+      timezone.selectedOptions[0]?.textContent || timezone.value;
+  }
+
+  function selectScheduleMode(form, mode, locked) {
+    form.querySelectorAll('input[name="schedule_mode"]').forEach((input) => {
+      input.checked = input.value === mode;
+      input.disabled = Boolean(locked && input.value !== mode);
+    });
+  }
+
+  function parseCronValues(value, minimum, maximum) {
+    const values = new Set();
+    for (const part of value.split(",")) {
+      const range = /^(\d+)(?:-(\d+))?$/.exec(part);
+      if (!range) return null;
+      const start = Number(range[1]);
+      const end = Number(range[2] || range[1]);
+      if (start < minimum || end > maximum || start > end) return null;
+      for (let current = start; current <= end; current += 1) values.add(current);
+    }
+    return values;
+  }
+
+  function setTime(input, hour, minute) {
+    input.value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  function ensureSelectOption(select, value, label = value) {
+    if (!Array.from(select.options).some((option) => option.value === value)) {
+      select.add(new Option(label, value));
+    }
+    select.value = value;
+  }
+
+  function cronInteger(value, minimum, maximum) {
+    if (!/^\d+$/.test(value || "")) return null;
+    const parsed = Number(value);
+    return parsed >= minimum && parsed <= maximum ? parsed : null;
+  }
+
+  function hydrateScheduleBuilder(form, plan) {
+    const fields = plan.cron_expression.trim().split(/\s+/);
+    const minute = cronInteger(fields[0], 0, 59);
+    const hour = cronInteger(fields[1], 0, 23);
+    let mode = null;
+    if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "DAILY" && fields.slice(2).every((field) => field === "*")) {
+      mode = "DAILY";
+      setTime(form.elements.daily_time, hour, minute);
+    } else if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "WEEKLY" && fields[2] === "*" && fields[3] === "*" && fields[4] !== "*") {
+      const days = parseCronValues(fields[4], 0, 7);
+      if (days) {
+        mode = "WEEKLY";
+        setTime(form.elements.weekly_time, hour, minute);
+        form.querySelectorAll('input[name="weekdays"]').forEach((input) => {
+          input.checked = days.has(Number(input.value)) || (input.value === "0" && days.has(7));
+        });
+      }
+    } else if (fields.length === 5 && minute !== null && hour !== null && plan.schedule_type === "CRON" && cronInteger(fields[2], 1, 28) !== null && fields[3] === "*" && fields[4] === "*") {
+      const day = cronInteger(fields[2], 1, 28);
+      if (day >= 1 && day <= 28) {
+        mode = "MONTHLY";
+        form.elements.month_day.value = String(day);
+        setTime(form.elements.monthly_time, hour, minute);
+      }
+    } else if (plan.schedule_type === "CRON") {
+      const interval = Object.entries(intervalSchedules).find(([, item]) => item.cron === plan.cron_expression);
+      if (interval) {
+        mode = "INTERVAL";
+        form.elements.interval_preset.value = interval[0];
+      }
+    }
+    selectScheduleMode(form, mode, true);
+    ensureSelectOption(form.elements.timezone, plan.timezone);
+    ensureSelectOption(
+      form.elements.timeout_seconds,
+      String(plan.timeout_seconds),
+      `自定义 · ${plan.timeout_seconds} 秒`,
+    );
+    renderSchedule(form);
+  }
+
+  function resetScheduleBuilder(form) {
+    selectScheduleMode(form, "DAILY", false);
+    form.elements.daily_time.value = "02:00";
+    form.elements.weekly_time.value = "09:00";
+    form.elements.monthly_time.value = "09:00";
+    form.elements.month_day.value = "1";
+    form.elements.interval_preset.value = "MINUTES_15";
+    form.querySelectorAll('input[name="weekdays"]').forEach((input) => {
+      input.checked = ["1", "2", "3", "4", "5"].includes(input.value);
+    });
+    form.elements.timezone.value = "Asia/Shanghai";
+    renderSchedule(form);
+  }
+
   function planPayload(form, create) {
+    const schedule = buildSchedule(form);
+    form.elements.schedule_type.value = schedule.type;
+    form.elements.cron_expression.value = schedule.cron;
     const payload = {
       display_name: form.elements.display_name.value.trim(),
-      cron_expression: form.elements.cron_expression.value.trim(),
-      timezone: form.elements.timezone.value.trim(),
+      cron_expression: schedule.cron,
+      timezone: form.elements.timezone.value,
       template_id: form.elements.template_id.value.trim(),
       template_version: form.elements.template_version.value.trim(),
       timeout_seconds: Number(form.elements.timeout_seconds.value),
@@ -417,11 +604,10 @@
     editing = null;
     const form = document.getElementById("inspection-plan-form");
     form.reset();
-    form.elements.schedule_type.disabled = false;
-    form.elements.cron_expression.value = "0 2 * * *";
-    form.elements.timezone.value = "Asia/Shanghai";
+    resetScheduleBuilder(form);
+    form.elements.template_id.value = "database_daily";
     form.elements.template_version.value = "1.0.0";
-    form.elements.schedule_resolver_version.value = "v1";
+    form.elements.schedule_resolver_version.value = "1.0.0";
     form.elements.timeout_seconds.value = 1800;
     document.getElementById("inspection-plan-dialog-title").textContent = "新增巡检计划";
     document.getElementById("save-inspection-plan").textContent = "创建计划";
@@ -437,7 +623,7 @@
       const form = document.getElementById("inspection-plan-form");
       form.reset();
       Object.entries(planPayloadValues(plan)).forEach(([key, value]) => { form.elements[key].value = value; });
-      form.elements.schedule_type.disabled = true;
+      hydrateScheduleBuilder(form, plan);
       document.getElementById("inspection-plan-dialog-title").textContent = "编辑巡检计划";
       document.getElementById("save-inspection-plan").textContent = "保存修改";
       showResult("inspection-plan-result", "", "");
@@ -520,9 +706,19 @@
         renderSourceType(event.target.form);
       });
     } else if (page === "inspection-plans") {
-      closeButtons(document.getElementById("inspection-plan-dialog"));
+      const planDialog = document.getElementById("inspection-plan-dialog");
+      const planForm = document.getElementById("inspection-plan-form");
+      closeButtons(planDialog);
+      const monthDay = planForm.elements.month_day;
+      monthDay.replaceChildren(...Array.from({ length: 28 }, (_, index) => {
+        const day = index + 1;
+        return new Option(`${day} 日`, String(day));
+      }));
       document.getElementById("create-inspection-plan").addEventListener("click", openPlanCreate);
-      document.getElementById("inspection-plan-form").addEventListener("submit", savePlan);
+      planForm.addEventListener("submit", savePlan);
+      planForm.querySelectorAll('input[name="schedule_mode"], input[name="weekdays"], input[type="time"], select[name="month_day"], select[name="interval_preset"], select[name="timezone"]').forEach((control) => {
+        control.addEventListener("change", () => renderSchedule(planForm));
+      });
     }
   });
 })();

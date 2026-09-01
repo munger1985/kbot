@@ -245,6 +245,32 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
 
+    def test_inspection_plan_uses_visual_schedule_builder(self):
+        page = (AIOPS_ROOT / "inspection-plans.html").read_text(
+            encoding="utf-8"
+        )
+        script = (
+            AIOPS_ROOT / "js" / "aiops-configurations.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('name="cron_expression" type="hidden"', page)
+        self.assertIn('name="schedule_type" type="hidden"', page)
+        self.assertNotIn("Cron 表达式", page)
+        self.assertIn('name="schedule_mode" value="DAILY"', page)
+        self.assertIn('name="schedule_mode" value="WEEKLY"', page)
+        self.assertIn('name="schedule_mode" value="MONTHLY"', page)
+        self.assertIn('name="schedule_mode" value="INTERVAL"', page)
+        self.assertIn('id="inspection-schedule-summary"', page)
+        self.assertIn("function buildSchedule(form)", script)
+        self.assertIn("function hydrateScheduleBuilder(form, plan)", script)
+        self.assertIn("function renderSchedule(form)", script)
+        self.assertIn('cron: "*/15 * * * *"', script)
+        pages_script = (
+            AIOPS_ROOT / "js" / "aiops-pages.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('["schedule_type", "调度周期", "schedule"]', pages_script)
+        self.assertIn('DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期"', pages_script)
+
     def test_agent_form_owns_resources_and_policy_inputs(self):
         page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(

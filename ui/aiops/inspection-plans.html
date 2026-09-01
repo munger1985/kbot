@@ -6,23 +6,88 @@
     <header class="ops-head"><div><h1>巡检计划</h1><p>配置周期、目标范围、检查模板与报告输出。</p></div><button id="create-inspection-plan" class="primary" type="button" data-write-ready>新增计划</button></header>
     <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
   </main>
-  <dialog id="inspection-plan-dialog" class="ops-dialog">
+  <dialog id="inspection-plan-dialog" class="ops-dialog inspection-plan-dialog">
     <form id="inspection-plan-form">
-      <header><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><button data-close-dialog type="button">关闭</button></header>
-      <div class="ops-dialog-body">
-        <div class="ops-form">
-          <div class="ops-field span-8"><label for="plan-display-name">计划名称</label><input id="plan-display-name" name="display_name" maxlength="256" required></div>
-          <div class="ops-field span-4"><label for="plan-schedule-type">调度类型</label><select id="plan-schedule-type" name="schedule_type"><option>DAILY</option><option>WEEKLY</option><option>CRON</option></select></div>
-          <div class="ops-field span-6"><label for="plan-cron">Cron 表达式</label><input id="plan-cron" name="cron_expression" value="0 2 * * *" minlength="9" maxlength="256" required></div>
-          <div class="ops-field span-6"><label for="plan-timezone">IANA 时区</label><input id="plan-timezone" name="timezone" value="Asia/Shanghai" maxlength="64" required></div>
-          <div class="ops-field span-6"><label for="plan-template-id">巡检模板 ID</label><input id="plan-template-id" name="template_id" maxlength="128" required></div>
-          <div class="ops-field span-3"><label for="plan-template-version">模板版本</label><input id="plan-template-version" name="template_version" value="1.0.0" maxlength="64" required></div>
-          <div class="ops-field span-3"><label for="plan-resolver-version">解析器版本</label><input id="plan-resolver-version" name="schedule_resolver_version" value="v1" maxlength="64" required></div>
-          <div class="ops-field span-4"><label for="plan-timeout">超时秒数</label><input id="plan-timeout" name="timeout_seconds" type="number" min="1" max="86400" value="1800" required></div>
-          <div class="ops-field span-4"><label for="plan-overlap">重叠策略</label><select id="plan-overlap" name="overlap_policy"><option>SKIP</option><option>QUEUE</option></select></div>
-          <div class="ops-field span-4"><label for="plan-misfire">补跑策略</label><select id="plan-misfire" name="misfire_policy"><option>LATEST_ONLY</option><option>SKIP</option></select></div>
-        </div>
-        <p class="ops-dialog-note">调度类型创建后不可修改；模板 ID、版本和解析器版本必须与部署登记一致。</p>
+      <header class="inspection-plan-head"><div><p class="inspection-plan-kicker">INSPECTION SCHEDULE</p><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><p>设置巡检内容和执行节奏，创建后再添加需要巡检的目标。</p></div><button data-close-dialog type="button">关闭</button></header>
+      <div class="ops-dialog-body inspection-plan-body">
+        <section class="inspection-form-section" aria-labelledby="inspection-basic-title">
+          <div class="inspection-section-number">01</div>
+          <div class="inspection-section-content">
+            <div class="inspection-section-heading"><div><h3 id="inspection-basic-title">基本信息</h3><p>给计划一个容易识别的名称，并选择已登记的巡检模板。</p></div></div>
+            <div class="ops-form">
+              <div class="ops-field span-12"><label for="plan-display-name">计划名称</label><input id="plan-display-name" name="display_name" maxlength="256" placeholder="例如：生产数据库每日健康巡检" required></div>
+              <div class="ops-field span-6"><label for="plan-template-id">巡检模板</label><input id="plan-template-id" name="template_id" value="database_daily" maxlength="128" required><small>填写部署时登记的模板标识。</small></div>
+              <div class="ops-field span-3"><label for="plan-template-version">模板版本</label><input id="plan-template-version" name="template_version" value="1.0.0" maxlength="64" required></div>
+              <div class="ops-field span-3"><label for="plan-resolver-version">解析器版本</label><input id="plan-resolver-version" name="schedule_resolver_version" value="1.0.0" maxlength="64" required></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="inspection-form-section" aria-labelledby="inspection-schedule-title">
+          <div class="inspection-section-number">02</div>
+          <div class="inspection-section-content">
+            <div class="inspection-section-heading"><div><h3 id="inspection-schedule-title">执行时间</h3><p>选择业务周期即可，系统会自动生成调度规则。</p></div></div>
+            <input id="plan-schedule-type" name="schedule_type" type="hidden" value="DAILY">
+            <input id="plan-cron" name="cron_expression" type="hidden" value="0 2 * * *">
+            <fieldset class="inspection-frequency" id="inspection-frequency" aria-label="巡检频率">
+              <legend>巡检频率</legend>
+              <label><input type="radio" name="schedule_mode" value="DAILY" checked><span><strong>每天</strong><small>每日固定时间执行</small></span></label>
+              <label><input type="radio" name="schedule_mode" value="WEEKLY"><span><strong>每周</strong><small>选择一周中的日期</small></span></label>
+              <label><input type="radio" name="schedule_mode" value="MONTHLY"><span><strong>每月</strong><small>每月固定日期执行</small></span></label>
+              <label><input type="radio" name="schedule_mode" value="INTERVAL"><span><strong>固定间隔</strong><small>按分钟或小时重复</small></span></label>
+            </fieldset>
+
+            <div class="inspection-schedule-editor">
+              <div class="inspection-schedule-panel" data-schedule-panel="DAILY">
+                <div class="ops-field"><label for="plan-daily-time">每天执行时间</label><input id="plan-daily-time" name="daily_time" type="time" value="02:00"></div>
+              </div>
+              <div class="inspection-schedule-panel" data-schedule-panel="WEEKLY" hidden>
+                <div class="ops-field"><label for="plan-weekly-time">执行时间</label><input id="plan-weekly-time" name="weekly_time" type="time" value="09:00"></div>
+                <fieldset class="inspection-weekdays"><legend>执行日期</legend>
+                  <label><input type="checkbox" name="weekdays" value="1" checked><span>一</span></label>
+                  <label><input type="checkbox" name="weekdays" value="2" checked><span>二</span></label>
+                  <label><input type="checkbox" name="weekdays" value="3" checked><span>三</span></label>
+                  <label><input type="checkbox" name="weekdays" value="4" checked><span>四</span></label>
+                  <label><input type="checkbox" name="weekdays" value="5" checked><span>五</span></label>
+                  <label><input type="checkbox" name="weekdays" value="6"><span>六</span></label>
+                  <label><input type="checkbox" name="weekdays" value="0"><span>日</span></label>
+                </fieldset>
+              </div>
+              <div class="inspection-schedule-panel" data-schedule-panel="MONTHLY" hidden>
+                <div class="inspection-inline-fields">
+                  <div class="ops-field"><label for="plan-month-day">每月日期</label><select id="plan-month-day" name="month_day"></select></div>
+                  <div class="ops-field"><label for="plan-monthly-time">执行时间</label><input id="plan-monthly-time" name="monthly_time" type="time" value="09:00"></div>
+                </div>
+                <p class="inspection-helper">为确保每个月都能执行，可选择每月 1 至 28 日。</p>
+              </div>
+              <div class="inspection-schedule-panel" data-schedule-panel="INTERVAL" hidden>
+                <div class="ops-field"><label for="plan-interval-preset">重复间隔</label><select id="plan-interval-preset" name="interval_preset">
+                  <option value="MINUTES_15">每 15 分钟</option><option value="MINUTES_30">每 30 分钟</option><option value="HOURS_1">每小时</option><option value="HOURS_2">每 2 小时</option><option value="HOURS_6">每 6 小时</option><option value="HOURS_12">每 12 小时</option>
+                </select></div>
+              </div>
+              <div id="inspection-legacy-schedule" class="inspection-legacy-schedule" hidden><strong>现有高级调度将保持不变</strong><p>该计划来自旧版高级规则。你仍可修改其他配置；如需改变执行周期，请新建计划。</p></div>
+            </div>
+
+            <div class="inspection-schedule-footer">
+              <div class="ops-field"><label for="plan-timezone">执行时区</label><select id="plan-timezone" name="timezone" required>
+                <option value="Asia/Shanghai">中国标准时间 · Asia/Shanghai</option><option value="Asia/Hong_Kong">香港时间 · Asia/Hong_Kong</option><option value="Asia/Singapore">新加坡时间 · Asia/Singapore</option><option value="Asia/Tokyo">日本时间 · Asia/Tokyo</option><option value="UTC">协调世界时 · UTC</option><option value="Europe/London">伦敦时间 · Europe/London</option><option value="America/New_York">纽约时间 · America/New_York</option><option value="America/Los_Angeles">洛杉矶时间 · America/Los_Angeles</option>
+              </select></div>
+              <div class="inspection-schedule-summary" aria-live="polite"><span>执行安排</span><strong id="inspection-schedule-summary">每天 02:00 执行</strong><small id="inspection-timezone-summary">中国标准时间 · Asia/Shanghai</small></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="inspection-form-section" aria-labelledby="inspection-policy-title">
+          <div class="inspection-section-number">03</div>
+          <div class="inspection-section-content">
+            <div class="inspection-section-heading"><div><h3 id="inspection-policy-title">运行策略</h3><p>控制单次巡检时限，以及任务冲突或错过执行时间时的处理方式。</p></div></div>
+            <div class="ops-form">
+              <div class="ops-field span-4"><label for="plan-timeout">单次超时</label><select id="plan-timeout" name="timeout_seconds"><option value="900">15 分钟</option><option value="1800" selected>30 分钟</option><option value="3600">1 小时</option><option value="7200">2 小时</option></select></div>
+              <div class="ops-field span-4"><label for="plan-overlap">上次尚未完成</label><select id="plan-overlap" name="overlap_policy"><option value="SKIP">跳过本次</option><option value="QUEUE">排队等待</option></select></div>
+              <div class="ops-field span-4"><label for="plan-misfire">错过执行时间</label><select id="plan-misfire" name="misfire_policy"><option value="LATEST_ONLY">仅补跑最近一次</option><option value="SKIP">不再补跑</option></select></div>
+            </div>
+          </div>
+        </section>
         <p id="inspection-plan-result" class="ops-connection-result" role="status"></p>
       </div>
       <footer><button data-close-dialog type="button">取消</button><button id="save-inspection-plan" class="primary" type="submit">创建计划</button></footer>
