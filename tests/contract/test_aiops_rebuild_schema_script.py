@@ -80,6 +80,28 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         for view_name in self.manifest["views"]:
             self.assertIn(f"'{view_name}'", self.sql)
 
+    def test_schema_version_view_matches_manifest_contract(self) -> None:
+        canonical = (SCHEMA_DIR / "006_ops_fks_views.sql").read_text(
+            encoding="utf-8"
+        )
+        version_view = re.search(
+            r"CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS"
+            r"(?P<body>.*?)FROM DUAL;",
+            canonical,
+            re.DOTALL,
+        )
+
+        self.assertIsNotNone(version_view)
+        body = version_view.group("body")
+        self.assertIn(
+            f"{self.manifest['schema_version']} AS SCHEMA_VERSION",
+            body,
+        )
+        self.assertIn(
+            f"'{self.manifest['contract_version']}' AS CONTRACT_VERSION",
+            body,
+        )
+
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:
             content = (SCHEMA_DIR / definition["name"]).read_text(encoding="utf-8")

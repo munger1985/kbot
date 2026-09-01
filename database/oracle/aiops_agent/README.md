@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的44张表和10个只读视图，按以下顺序在空Schema
+本目录当前拥有 AIOps 服务的43张表和10个只读视图，按以下顺序在空Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -23,7 +23,7 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 17 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 18 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
