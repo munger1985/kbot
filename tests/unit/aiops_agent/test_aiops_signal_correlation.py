@@ -4,6 +4,9 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
+from aiops_agent.application.diagnostic_sources.webhook_intake import (
+    _auto_run_idempotency_key,
+)
 from aiops_agent.domain.evidence import (
     correlate_signal_event,
     validate_event_class_map,
@@ -17,6 +20,28 @@ from sqlalchemy.dialects import oracle
 
 
 class SituationCorrelationTest(unittest.TestCase):
+    def test_auto_run_idempotency_is_scoped_to_signal(self) -> None:
+        first = _auto_run_idempotency_key(
+            situation_id="situation-1",
+            signal_event_id="signal-1",
+            agent_id="agent-1",
+        )
+        second = _auto_run_idempotency_key(
+            situation_id="situation-1",
+            signal_event_id="signal-2",
+            agent_id="agent-1",
+        )
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(
+            first,
+            _auto_run_idempotency_key(
+                situation_id="situation-1",
+                signal_event_id="signal-1",
+                agent_id="agent-1",
+            ),
+        )
+
     def test_explicit_mapping_correlates_different_source_classes(self) -> None:
         prometheus = correlate_signal_event(
             target_id="target-1",

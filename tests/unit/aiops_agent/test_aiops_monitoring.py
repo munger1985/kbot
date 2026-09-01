@@ -9,21 +9,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from aiops_agent.adapters.diagnostic_sources import DiagnosticSourceAdapterRegistry
 from aiops_agent.adapters.diagnostic_sources.base import DiagnosticSourceAdapterError
-from aiops_agent.adapters.diagnostic_sources.prometheus import PrometheusAdapter
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.adapters.diagnostic_sources.payload_store import (
     LocalSignalPayloadStore,
 )
+from aiops_agent.adapters.diagnostic_sources.prometheus import PrometheusAdapter
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.contracts.evidence import (
     MetricPoint,
     MetricSeries,
 )
-from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.domain.evidence import summarize_points
 from aiops_agent.orchestration import (
     BlueprintRegistry,
@@ -45,6 +42,8 @@ from aiops_agent.workers.evidence_handlers import (
     EvidenceReportHandler,
     _metric_definitions,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from platform_core.security import create_public_auth_middleware
 
 
@@ -261,6 +260,7 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
                     "labels": {
                         "target_key": "db-prod-1",
                         "alertname": "DatabaseDown",
+                        "event_class": "database.unavailable",
                         "severity": "critical",
                         "target_id": "untrusted",
                     },
@@ -277,6 +277,10 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(batch.events))
         event = batch.events[0]
         self.assertEqual("db-prod-1", event.source_locator_key)
+        self.assertEqual("database.unavailable", event.event_type)
+        self.assertEqual(
+            "DatabaseDown", event.provider_attributes["alertname"]
+        )
         self.assertEqual("CRITICAL", event.severity)
         self.assertNotIn("target_id", event.provider_attributes)
 

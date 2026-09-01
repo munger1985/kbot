@@ -8,8 +8,8 @@ from datetime import datetime
 import aiohttp
 
 from aiops_agent.contracts.evidence import (
-    NormalizedSignalEvent,
     NormalizedSignalBatch,
+    NormalizedSignalEvent,
 )
 from aiops_agent.domain.evidence import SignalEventStatus, SignalSeverity
 from aiops_agent.ports.diagnostic_source import (
@@ -19,7 +19,6 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
-
 
 _SEVERITY = {
     "critical": SignalSeverity.CRITICAL,
@@ -111,7 +110,10 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
                 if status_text == "resolved"
                 else SignalEventStatus.FIRING
             )
-            event_class = str(labels.get("alertname", "prometheus.alert"))
+            alertname = str(labels.get("alertname", "prometheus.alert"))
+            event_class = str(
+                labels.get("event_class") or alertname
+            )
             transition_at = (
                 str(item.get("endsAt", ""))
                 if status == SignalEventStatus.RESOLVED
@@ -142,7 +144,8 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
                         or event_class
                     )[:1000],
                     provider_attributes={
-                        "alertname": event_class,
+                        "alertname": alertname,
+                        "event_class": event_class,
                         "status": status_text,
                         "target_label": _TARGET_LABEL,
                     },

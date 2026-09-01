@@ -341,7 +341,7 @@ docker volume create kbot-alertmanager-data
 ```yaml
 route:
   receiver: kbot-disabled
-  group_by: [alertname, instance, severity]
+  group_by: [alertname, target_key, event_class, source_event_id]
   group_wait: 10s
   group_interval: 1m
   repeat_interval: 4h
@@ -658,8 +658,15 @@ groups:
     rules:
       - alert: OracleAlertLogProblemDetected
         expr: |
-          sum by (target_key, database_id, container_name, severity) (
-            count_over_time({job="oracle_alert", severity=~"critical|warning"}[1m])
+          sum by (
+            target_key, database_id, container_name, severity, source_event_id
+          ) (
+            count_over_time(
+              {job="oracle_alert", severity=~"critical|warning"}
+                | json source_event_id="record_id"
+                | source_event_id != ""
+              [1m]
+            )
           ) > 0
         labels:
           event_class: database.alert_log_problem
@@ -667,7 +674,8 @@ groups:
           summary: "Oracle Alert Log检测到异常"
           description: >-
             {{ $labels.target_key }}/{{ $labels.container_name }}出现
-            {{ $labels.severity }}级别数据库日志，请启动诊断并查询同期完整日志。
+            {{ $labels.severity }}级别数据库日志（事件
+            {{ $labels.source_event_id }}），请启动诊断并查询同期完整日志。
 ```
 
 `severity`由Oracle Collector根据ADR结构化字段生成，不按ORA编号匹配。Incident

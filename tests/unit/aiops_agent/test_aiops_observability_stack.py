@@ -210,12 +210,18 @@ password = postgres-secret
     ).read_text()
     assert "alert: OracleAlertLogProblemDetected" in loki_rules
     assert 'severity=~"critical|warning"' in loki_rules
+    assert 'json source_event_id="record_id"' in loki_rules
+    assert "source_event_id" in loki_rules
     assert "ORA-00060" not in loki_rules
     assert "event_class: database.alert_log_problem" in loki_rules
     alertmanager_config = (
         settings.runtime_dir / "alertmanager/alertmanager.yml"
     ).read_text()
     assert "receiver: kbot" in alertmanager_config
+    assert (
+        "group_by: [alertname, target_key, event_class, source_event_id]"
+        in alertmanager_config
+    )
     alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
     assert 'severity       = "severity"' in alloy_config
     assert (

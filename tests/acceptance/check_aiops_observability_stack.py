@@ -132,6 +132,7 @@ def main() -> int:
         for required_text in (
             "alert: OracleAlertLogProblemDetected",
             'severity=~"critical|warning"',
+            'json source_event_id="record_id"',
             "event_class: database.alert_log_problem",
         ):
             if required_text not in loki_rules:

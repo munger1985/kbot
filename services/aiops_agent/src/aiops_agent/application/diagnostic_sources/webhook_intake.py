@@ -48,6 +48,16 @@ _SEVERITY_RANK = {
 }
 
 
+def _auto_run_idempotency_key(
+    *, situation_id: Any, signal_event_id: Any, agent_id: Any
+) -> str:
+    """按独立信号生成自动诊断幂等键，同一交付重试仍只创建一次。"""
+    return (
+        f"situation:{situation_id}:signal:{signal_event_id}:"
+        f"agent:{agent_id}:observe-run"
+    )
+
+
 class SignalEventIntakeService:
     def __init__(
         self,
@@ -632,8 +642,10 @@ class SignalEventIntakeService:
         trace_id: str,
         now: datetime,
     ) -> None:
-        idempotency_key = (
-            f"situation:{situation.situation_id}:agent:{agent_id}:observe-run"
+        idempotency_key = _auto_run_idempotency_key(
+            situation_id=situation.situation_id,
+            signal_event_id=event_entity.signal_event_id,
+            agent_id=agent_id,
         )
         if (
             await uow.outbox.get_by_idempotency(
