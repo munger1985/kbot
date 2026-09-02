@@ -588,6 +588,8 @@ class SituationStateRepositoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PARTITION BY", sql)
         self.assertIn("KBOT_OPS_DIAGNOSTIC_SOURCE", sql)
         self.assertIn("SOURCE_RANK =", sql)
+        outer_projection = sql.split("FROM (SELECT", 1)[0]
+        self.assertNotIn("SOURCE_RANK", outer_projection)
 
     async def test_latest_auto_run_outbox_query_accepts_legacy_and_generation_keys(
         self,

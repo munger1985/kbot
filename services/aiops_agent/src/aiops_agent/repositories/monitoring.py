@@ -416,7 +416,18 @@ class SituationRepository(AIOpsRepository):
             .subquery()
         )
         statement = (
-            select(ranked)
+            select(
+                ranked.c.diagnostic_source_id,
+                ranked.c.display_name,
+                ranked.c.source_type,
+                ranked.c.event_count,
+                ranked.c.latest_event_class,
+                ranked.c.latest_severity,
+                ranked.c.latest_status,
+                ranked.c.latest_summary,
+                ranked.c.first_observed_at,
+                ranked.c.last_observed_at,
+            )
             .where(ranked.c.source_rank == 1)
             .order_by(
                 ranked.c.last_observed_at.desc(),
