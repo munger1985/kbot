@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from typing import Any
 
@@ -129,20 +130,23 @@ class OracleDiagnosticDriver:
                         str(item[0]).lower() for item in cursor.description
                     )
                     rows = await cursor.fetchmany(limits.max_result_rows + 1)
+                    row_truncated = len(rows) > limits.max_result_rows
+                    materialized_rows, cell_truncated = (
+                        await self._materialize_character_lobs(
+                            rows[: limits.max_result_rows],
+                            max_cell_chars=limits.max_cell_chars,
+                        )
+                    )
                 logger.debug(
                     "Oracle 诊断查询完成：tool_id={} duration_ms={} rows={}",
                     operation_id,
                     int((time.monotonic() - query_started) * 1000),
                     len(rows),
                 )
-                truncated = len(rows) > limits.max_result_rows
                 return DriverQueryResult(
                     columns=columns,
-                    rows=tuple(
-                        tuple(row)
-                        for row in rows[: limits.max_result_rows]
-                    ),
-                    truncated=truncated,
+                    rows=materialized_rows,
+                    truncated=row_truncated or cell_truncated,
                     db_version=str(connection.version),
                 )
             finally:
@@ -211,6 +215,42 @@ class OracleDiagnosticDriver:
                     await connection.close()
                 except Exception:
                     pass
+
+    @staticmethod
+    async def _materialize_character_lobs(
+        rows,
+        *,
+        max_cell_chars: int,
+    ) -> tuple[tuple[tuple[Any, ...], ...], bool]:
+        """在连接关闭前有界读取 CLOB/NCLOB，二进制 LOB 保持拒绝语义。"""
+        materialized: list[tuple[Any, ...]] = []
+        truncated = False
+        character_lob_types = {
+            oracledb.DB_TYPE_CLOB,
+            oracledb.DB_TYPE_NCLOB,
+        }
+        for row in rows:
+            values = []
+            for value in row:
+                if (
+                    hasattr(value, "read")
+                    and getattr(value, "type", None)
+                    in character_lob_types
+                ):
+                    content = value.read(
+                        offset=1,
+                        amount=max_cell_chars + 1,
+                    )
+                    if inspect.isawaitable(content):
+                        content = await content
+                    if isinstance(content, str):
+                        if len(content) > max_cell_chars:
+                            content = content[:max_cell_chars]
+                            truncated = True
+                        value = content
+                values.append(value)
+            materialized.append(tuple(values))
+        return tuple(materialized), truncated
 
 
 class OracleMutationDriver:

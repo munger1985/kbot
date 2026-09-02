@@ -139,6 +139,36 @@ class _OracleErrorConnection(_TimeoutConnection):
         self._cursor = _OracleErrorCursor(code)
 
 
+class _FakeOracleLob:
+    def __init__(self, value, lob_type) -> None:
+        self.value = value
+        self.type = lob_type
+        self.read_amount = None
+
+    async def read(self, *, offset, amount):
+        self.read_amount = (offset, amount)
+        return self.value[:amount]
+
+
+class _OracleResultCursor(_TimeoutCursor):
+    description = (("PLAN_TEXT",),)
+
+    def __init__(self, value) -> None:
+        super().__init__()
+        self.value = value
+
+    async def execute(self, _sql, _parameters=None):
+        self.execute_count += 1
+
+    async def fetchmany(self, _limit):
+        return ((self.value,),)
+
+
+class _OracleResultConnection(_TimeoutConnection):
+    def __init__(self, value) -> None:
+        self._cursor = _OracleResultCursor(value)
+
+
 class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _profile() -> DiagnosticConnectionProfile:
@@ -226,6 +256,59 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
                 await self._execute()
 
         self.assertEqual("QUERY_OBJECT_UNAVAILABLE", raised.exception.code)
+
+    async def test_character_lob_is_materialized_before_connection_closes(
+        self,
+    ) -> None:
+        import oracledb
+
+        lob = _FakeOracleLob(
+            "SELECT STATEMENT\n  TABLE ACCESS FULL",
+            oracledb.DB_TYPE_CLOB,
+        )
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleResultConnection(lob)),
+        ):
+            result = await self._execute()
+
+        self.assertEqual(
+            (("SELECT STATEMENT\n  TABLE ACCESS FULL",),),
+            result.rows,
+        )
+        self.assertFalse(result.truncated)
+        self.assertEqual((1, 32769), lob.read_amount)
+
+    async def test_oversized_character_lob_is_bounded_and_marked_truncated(
+        self,
+    ) -> None:
+        import oracledb
+
+        lob = _FakeOracleLob(
+            "x" * 40000,
+            oracledb.DB_TYPE_NCLOB,
+        )
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleResultConnection(lob)),
+        ):
+            result = await self._execute()
+
+        self.assertEqual(32768, len(result.rows[0][0]))
+        self.assertTrue(result.truncated)
+
+    async def test_binary_lob_is_not_materialized(self) -> None:
+        import oracledb
+
+        lob = _FakeOracleLob(b"binary-plan", oracledb.DB_TYPE_BLOB)
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleResultConnection(lob)),
+        ):
+            result = await self._execute()
+
+        self.assertIs(lob, result.rows[0][0])
+        self.assertIsNone(lob.read_amount)
 
 
 class DiagnosticCatalogTest(unittest.TestCase):
