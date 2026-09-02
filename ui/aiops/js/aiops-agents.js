@@ -153,8 +153,16 @@
     return matches.find((item) => item.status === "ACTIVE") || matches[0] || null;
   }
 
+  function sourceCards() {
+    return [...document.querySelectorAll("#agent-sources .agent-source-card[data-source-id]")];
+  }
+
+  function sourceCardFor(sourceId) {
+    return sourceCards().find((card) => card.dataset.sourceId === sourceId) || null;
+  }
+
   function resetMappingInputs() {
-    document.querySelectorAll(".agent-source-card").forEach((card) => {
+    sourceCards().forEach((card) => {
       card.querySelector("[data-locator-key]").value = "";
       const job = card.querySelector("[data-loki-job]");
       const label = card.querySelector("[data-loki-target-label]");
@@ -173,7 +181,7 @@
   }
 
   function applyBindings() {
-    document.querySelectorAll(".agent-source-card").forEach((card) => {
+    sourceCards().forEach((card) => {
       const binding = bindingFor(card.dataset.sourceId);
       if (!binding) return;
       card.dataset.bindingId = binding.binding_id;
@@ -225,11 +233,14 @@
     const targetId = document.getElementById("agent-mapping-target").value;
     let selectedCount = 0;
     let mappedCount = 0;
-    document.querySelectorAll(".agent-source-card").forEach((card) => {
-      const checked = card.querySelector('[name="diagnostic_source_ids"]').checked;
+    sourceCards().forEach((card) => {
+      const choice = card.querySelector('[name="diagnostic_source_ids"]');
+      const mapping = card.querySelector(".agent-source-mapping");
+      if (!choice || !mapping) return;
+      const checked = choice.checked;
       const show = Boolean(targetId && checked);
       card.classList.toggle("selected", checked);
-      card.querySelector(".agent-source-mapping").hidden = !show;
+      mapping.hidden = !show;
       if (checked) selectedCount += 1;
       if (show && bindingFor(card.dataset.sourceId)?.status === "ACTIVE") mappedCount += 1;
     });
@@ -301,7 +312,7 @@
   function captureMappingDraft() {
     if (!bindingTargetId) return;
     const draft = {};
-    document.querySelectorAll(".agent-source-card").forEach((card) => {
+    sourceCards().forEach((card) => {
       const labels = {};
       const job = card.querySelector("[data-loki-job]");
       const label = card.querySelector("[data-loki-target-label]");
@@ -321,7 +332,7 @@
   function applyMappingDraft(targetId) {
     const draft = draftsByTarget.get(targetId);
     if (!draft) return;
-    document.querySelectorAll(".agent-source-card").forEach((card) => {
+    sourceCards().forEach((card) => {
       const item = draft[card.dataset.sourceId];
       if (!item) return;
       card.querySelector("[data-locator-key]").value = item.locatorKey || "";
@@ -487,8 +498,9 @@
   function collectBindingPlans(targetId, selectedSourceIds) {
     if (!targetId) return [];
     return selectedSourceIds.map((sourceId) => {
-      const card = [...document.querySelectorAll(".agent-source-card")].find((item) => item.dataset.sourceId === sourceId);
+      const card = sourceCardFor(sourceId);
       const source = sources.find((item) => item.source_id === sourceId);
+      if (!card || !source) throw new Error("监控源配置已经变化，请刷新页面后重试。");
       const locatorKey = card.querySelector("[data-locator-key]").value.trim();
       if (!locatorKey) throw new Error(`${source.display_name}：请填写 Target 在监控系统中的标识。`);
       let sourceLocator = {};
