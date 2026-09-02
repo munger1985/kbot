@@ -45,6 +45,7 @@ class InvestigationReasoner:
         self,
         *,
         question: str,
+        conversation_context: tuple[str, ...],
         target_context: dict[str, Any],
         prompt_snapshot: dict[str, dict[str, str]],
         tool_cards: tuple[dict[str, Any], ...],
@@ -65,6 +66,7 @@ class InvestigationReasoner:
             prompt_ref={**prompt.ref(), "content": prompt.content},
             input_payload={
                 "question": question,
+                "recent_context": list(conversation_context[-8:]),
                 "target_context": dict(target_context),
                 "available_tools": list(tool_cards),
                 "available_playbooks": list(available_playbooks),
@@ -78,7 +80,10 @@ class InvestigationReasoner:
             str(item["playbook_id"])
             for item in available_playbooks
         }
-        unknown_tools = set(output.selected_tool_ids) - known_tools
+        referenced_tools = set(output.selected_tool_ids) | {
+            action.tool_id for action in output.actions
+        }
+        unknown_tools = referenced_tools - known_tools
         unknown_playbooks = (
             set(output.selected_playbook_ids) - known_playbooks
         )

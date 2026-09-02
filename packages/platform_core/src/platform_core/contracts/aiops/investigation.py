@@ -227,7 +227,12 @@ class CompactPlanningMode(StrEnum):
 
 
 class CompactPlanningOutput(AIOpsContract):
-    """生成精简查询、受控动作前置核验或完整规划路由结果。"""
+    """生成精简查询、受控动作前置核验或完整规划路由结果。
+
+    精简路由允许暂时不返回动作，也不在数据契约层判断路由与动作选择的
+    交叉字段一致性。应用层会统一协调候选工具或携带完整对话上下文进入
+    Investigation Planner，避免把模型可恢复的语义缺项误报为内部错误。
+    """
 
     schema_version: str = COMPACT_PLANNING_SCHEMA_VERSION
     planning_mode: CompactPlanningMode
@@ -237,23 +242,6 @@ class CompactPlanningOutput(AIOpsContract):
     selected_playbook_ids: tuple[str, ...] = Field(default=(), max_length=3)
     actions: tuple[InvestigationAction, ...] = Field(default=(), max_length=4)
     public_reasoning_summary: str = Field(min_length=1, max_length=1000)
-
-    @model_validator(mode="after")
-    def validate_mode(self) -> "CompactPlanningOutput":
-        selected = set(self.selected_tool_ids)
-        action_tools = {item.tool_id for item in self.actions}
-        if not action_tools <= selected:
-            raise ValueError("精简计划动作必须来自已选择工具")
-        if self.planning_mode in {
-            CompactPlanningMode.READ_ONLY_LOOKUP,
-            CompactPlanningMode.CONTROLLED_ACTION,
-        }:
-            if not self.actions:
-                raise ValueError("精简查询或受控动作必须生成至少一个只读核验动作")
-        elif self.actions:
-            raise ValueError("完整调查路由阶段不得提前生成调查动作")
-        return self
-
 
 class InvestigationAssessment(AIOpsContract):
     schema_version: str = INVESTIGATION_ASSESSMENT_SCHEMA_VERSION

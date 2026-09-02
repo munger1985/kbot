@@ -156,6 +156,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
 
         result = await reasoner.plan_compact(
             question="数据库用户 TCC 下有哪些表？",
+            conversation_context=("前一轮已经确认目标 Schema 为 TCC",),
             target_context=TARGET_CONTEXT,
             prompt_snapshot=PROMPT_SNAPSHOT,
             tool_cards=(
@@ -173,6 +174,10 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result.output, CompactPlanningOutput)
         self.assertEqual("aiops.compact-planning", model.calls[0]["purpose"])
         self.assertEqual(1, len(result.output.actions))
+        self.assertEqual(
+            ["前一轮已经确认目标 Schema 为 TCC"],
+            model.calls[0]["input_payload"]["recent_context"],
+        )
 
     async def test_compact_planner_rejects_unknown_selected_tool(self) -> None:
         payload = {
@@ -188,6 +193,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "未注册工具"):
             await reasoner.plan_compact(
                 question="分析数据库性能问题",
+                conversation_context=(),
                 target_context=TARGET_CONTEXT,
                 prompt_snapshot=PROMPT_SNAPSHOT,
                 tool_cards=(),
@@ -197,18 +203,90 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="turn-compact-2",
             )
 
-    async def test_compact_controlled_action_requires_readonly_precheck(self):
-        with self.assertRaisesRegex(ValueError, "只读核验动作"):
-            CompactPlanningOutput.model_validate(
+    async def test_compact_planner_accepts_known_action_omitted_from_selection(
+        self,
+    ) -> None:
+        payload = {
+            "planning_mode": "READ_ONLY_LOOKUP",
+            "problem_statement": "查询当前数据库对象",
+            "success_criteria": ["返回查询结果"],
+            "selected_tool_ids": [],
+            "actions": [
                 {
-                    "planning_mode": "CONTROLLED_ACTION",
-                    "problem_statement": "收集表统计信息",
-                    "success_criteria": ["生成审批提案"],
-                    "selected_tool_ids": ["db.table.statistics"],
-                    "actions": [],
-                    "public_reasoning_summary": "先核验后审批",
+                    "action_id": "a1",
+                    "question": "当前有哪些对象？",
+                    "tool_id": "db.oracle.readonly_query",
+                    "input": {"sql": "SELECT object_name FROM user_objects"},
+                    "expected_evidence_kind": "DATABASE_OBJECTS",
+                    "measurement_semantics": "CURRENT_ACTIVITY",
                 }
-            )
+            ],
+            "public_reasoning_summary": "直接查询系统目录",
+        }
+        reasoner = InvestigationReasoner(_Model(payload), _Prompts())
+
+        result = await reasoner.plan_compact(
+            question="当前有哪些对象？",
+            conversation_context=(),
+            target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
+            tool_cards=(
+                {
+                    "tool_id": "db.oracle.readonly_query",
+                    "description": "执行只读 Oracle 查询",
+                },
+            ),
+            available_playbooks=(),
+            model_snapshot={},
+            deadline=None,
+            idempotency_key="turn-compact-selection-repair",
+        )
+
+        self.assertEqual(
+            "db.oracle.readonly_query",
+            result.output.actions[0].tool_id,
+        )
+
+    async def test_incomplete_compact_route_is_valid_for_full_planner_fallback(
+        self,
+    ):
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "problem_statement": "执行当前对话中约定的受控动作",
+                "success_criteria": ["生成审批提案"],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [],
+                "public_reasoning_summary": "需要结合对话解析动作对象",
+            }
+        )
+
+        self.assertEqual("CONTROLLED_ACTION", output.planning_mode)
+        self.assertEqual((), output.actions)
+
+    async def test_compact_semantic_mismatch_is_reconciled_after_parsing(self):
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "FULL_INVESTIGATION",
+                "problem_statement": "继续分析前一轮对象",
+                "success_criteria": ["形成完整调查计划"],
+                "selected_tool_ids": [],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "查询对象当前状态",
+                        "tool_id": "db.table.statistics",
+                        "input": {},
+                        "expected_evidence_kind": "TABLE_STATISTICS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "需要完整调查",
+            }
+        )
+
+        self.assertEqual("FULL_INVESTIGATION", output.planning_mode)
+        self.assertEqual("db.table.statistics", output.actions[0].tool_id)
 
     async def test_user_alert_log_can_be_answered_without_external_tool(self) -> None:
         model = _Model(_output())

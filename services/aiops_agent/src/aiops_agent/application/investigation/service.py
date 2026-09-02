@@ -326,6 +326,7 @@ class TurnPlanningService:
 
         routed = await self._investigation_reasoner.plan_compact(
             question=compact_question,
+            conversation_context=context.recent_context,
             target_context=context.target_context,
             prompt_snapshot=context.prompt_snapshot,
             tool_cards=compact_tool_cards(available_tools),
@@ -335,16 +336,53 @@ class TurnPlanningService:
             idempotency_key=f"turn:{context.turn_id}:compact-planning:1",
         )
         compact = routed.output
+        candidate_tool_ids = tuple(
+            dict.fromkeys(
+                (
+                    *compact.selected_tool_ids,
+                    *(action.tool_id for action in compact.actions),
+                )
+            )
+        )
         selected_tools, selected_playbooks = select_planning_candidates(
             tools=available_tools,
             playbooks=available_playbooks,
-            tool_ids=compact.selected_tool_ids,
+            tool_ids=candidate_tool_ids,
             playbook_ids=compact.selected_playbook_ids,
         )
-        selected_tools = self._include_identity_tool(selected_tools, available_tools)
+        compact_route_incomplete = (
+            compact.planning_mode
+            in {
+                CompactPlanningMode.READ_ONLY_LOOKUP,
+                CompactPlanningMode.CONTROLLED_ACTION,
+            }
+            and not compact.actions
+        )
+        if compact_route_incomplete:
+            # 精简模型已经完成语义选路，但可能因“该表”“按前述方案”等
+            # 对话指代而无法安全生成参数。统一升级到携带完整上下文的 Planner；
+            # 若精简模型连候选能力也未选出，则恢复完整能力集，避免二次空计划。
+            if not selected_tools:
+                selected_tools = available_tools
+            if not selected_playbooks:
+                selected_playbooks = available_playbooks
+        selected_tools = self._include_identity_tool(
+            selected_tools, available_tools
+        )
+        effective_mode = (
+            CompactPlanningMode.FULL_INVESTIGATION
+            if compact_route_incomplete
+            else compact.planning_mode
+        )
+        public_summary = compact.public_reasoning_summary
+        if compact_route_incomplete:
+            public_summary = (
+                "精简路由已识别任务方向，但尚未形成可执行的前置核验，"
+                "正在结合对话上下文生成完整调查计划"
+            )
         route_snapshot = {
-            "mode": str(compact.planning_mode),
-            "public_summary": compact.public_reasoning_summary,
+            "mode": str(effective_mode),
+            "public_summary": public_summary,
             "selected_tool_ids": [
                 str(item["tool_id"]) for item in selected_tools
             ],
@@ -353,10 +391,17 @@ class TurnPlanningService:
             ],
             "model_receipt": routed.receipt.model_dump(mode="json"),
         }
+        if compact_route_incomplete:
+            route_snapshot.update(
+                {
+                    "compact_mode": str(compact.planning_mode),
+                    "fallback_reason": "COMPACT_ACTIONS_MISSING",
+                }
+            )
         await self._record_planning_route(
             context=context,
-            mode=str(compact.planning_mode),
-            public_summary=compact.public_reasoning_summary,
+            mode=str(effective_mode),
+            public_summary=public_summary,
             public_sections=[
                 {
                     "title": "问题判断",
@@ -364,7 +409,7 @@ class TurnPlanningService:
                 },
                 {
                     "title": "规划选择",
-                    "items": [compact.public_reasoning_summary],
+                    "items": [public_summary],
                 },
                 {
                     "title": "完成标准",
@@ -372,7 +417,7 @@ class TurnPlanningService:
                 },
             ],
         )
-        if compact.planning_mode in {
+        if not compact_route_incomplete and compact.planning_mode in {
             CompactPlanningMode.READ_ONLY_LOOKUP,
             CompactPlanningMode.CONTROLLED_ACTION,
         }:

@@ -611,7 +611,8 @@ class _CompactLookupReasoner(_PastedLogReasoner):
                 "planning_mode": "READ_ONLY_LOOKUP",
                 "problem_statement": "列出 TCC Schema 下的表",
                 "success_criteria": ["返回当前表清单"],
-                "selected_tool_ids": ["db.oracle.readonly_query"],
+                # 模拟模型生成了合法动作但漏填候选工具，由应用层统一补齐。
+                "selected_tool_ids": [],
                 "actions": [
                     {
                         "action_id": "a1",
@@ -700,6 +701,89 @@ class _CompactControlledActionReasoner(_CompactLookupReasoner):
 
     async def plan(self, **_kwargs):
         raise AssertionError("明确受控动作不应进入复杂调查 Planner")
+
+
+class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
+    """模拟精简模型识别出受控动作，但没有生成可执行预检。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.full_calls = []
+
+    async def plan_compact(self, **kwargs):
+        self.compact_calls.append(kwargs)
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "problem_statement": "按前一轮方案执行数据库受控动作",
+                "success_criteria": ["核验对象并生成审批提案"],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [],
+                "public_reasoning_summary": "需要结合对话解析目标对象",
+            }
+        )
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.compact-planning",
+                schema_id="CompactPlanningOutput",
+                model_technical_name="planner-model",
+                model_revision="2",
+                prompt_id="aiops_agent.compact_planner",
+                prompt_version="1.0.0",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
+
+    async def plan(self, **kwargs):
+        self.full_calls.append(kwargs)
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
+                "success_criteria": ["生成等待人工审批的统计信息提案"],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "核验目标表统计信息状态",
+                        "tool_id": "db.table.statistics",
+                        "input": {
+                            "schema_name": "TPCC",
+                            "table_name": "ORDER_BIG",
+                        },
+                        "expected_evidence_kind": "TABLE_STATISTICS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "已从对话解析目标表",
+            }
+        )
+        output = TurnPlanningService._compact_investigation_output(
+            question="按照修正基数估算的方案，搜集该表的统计信息",
+            compact=compact,
+            target_context=kwargs["target_context"],
+        )
+        digest = "b" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.investigation-plan",
+                schema_id="InvestigationPlanningOutput",
+                model_technical_name="planner-model",
+                model_revision="2",
+                prompt_id="aiops_agent.investigation_planner",
+                prompt_version="1.0.0",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
 
 
 class _FrozenToolExecutor:
@@ -868,6 +952,83 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         snapshot = uow.run.plan_snapshot_json
         self.assertEqual(
             "CONTROLLED_ACTION", snapshot["planning_route"]["mode"]
+        )
+        self.assertTrue(
+            snapshot["answer_context"]["task_frame"]["requires_change"]
+        )
+        self.assertEqual(
+            ["db.instance.identity", "db.table.statistics"],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        task_keys = {item.task_key for item in uow.tasks}
+        self.assertIn("change:action-plan", task_keys)
+        self.assertIn("change:proposal", task_keys)
+
+    async def test_incomplete_compact_action_falls_back_to_contextual_planner(
+        self,
+    ):
+        uow = _PlanningUow()
+        question = "按照修正基数估算的方案，搜集该表的统计信息"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        prior_context = (
+            "前一轮已确认 TPCC.ORDER_BIG 基数估算偏差明显，"
+            "建议重新收集表统计信息。"
+        )
+        uow.turns.list_recent_conversation_messages = AsyncMock(
+            return_value=[SimpleNamespace(payload_json={"text": prior_context})]
+        )
+        uow.target.capabilities_json["privileges"] = [
+            "V_$INSTANCE",
+            "V_$DATABASE",
+            "DBA_TABLES",
+            "DBA_TAB_STATISTICS",
+        ]
+        reasoner = _IncompleteCompactControlledActionReasoner()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual(
+            (prior_context,),
+            reasoner.compact_calls[0]["conversation_context"],
+        )
+        self.assertEqual(
+            (prior_context,),
+            reasoner.full_calls[0]["conversation_context"],
+        )
+        snapshot = uow.run.plan_snapshot_json
+        self.assertEqual(
+            "FULL_INVESTIGATION", snapshot["planning_route"]["mode"]
+        )
+        self.assertEqual(
+            "CONTROLLED_ACTION",
+            snapshot["planning_route"]["compact_mode"],
+        )
+        self.assertEqual(
+            "COMPACT_ACTIONS_MISSING",
+            snapshot["planning_route"]["fallback_reason"],
         )
         self.assertTrue(
             snapshot["answer_context"]["task_frame"]["requires_change"]
