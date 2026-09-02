@@ -11,6 +11,7 @@ from aiops_agent.application.agents import (
     AIOpsAgentError,
     AgentImageCapabilities,
     AgentModelBindings,
+    TargetControlledActionExecution,
     CreateAIOpsAgentCommand,
     UpdateAIOpsAgentCommand,
     UpsertAIOpsAgentGrantCommand,
@@ -30,7 +31,9 @@ class AgentCreateRequest(_Request):
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    allow_change_execution: bool = False
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -55,7 +58,9 @@ class AgentUpdateRequest(_Request):
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
-    allow_change_execution: bool | None = None
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -122,6 +127,21 @@ async def model_references(
             model_id=model_id
         )
     }
+
+
+@router.get("/action-catalog/{target_id}")
+async def action_catalog(
+    target_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    try:
+        return await request.app.state.agent_service.action_catalog(
+            domain_id=domain_id, target_id=target_id
+        )
+    except AIOpsAgentError as exc:
+        _raise(exc)
 
 
 @router.post(":authorize")

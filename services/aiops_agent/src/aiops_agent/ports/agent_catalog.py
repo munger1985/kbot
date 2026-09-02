@@ -1,6 +1,6 @@
 """AIOps 私有 Agent 配置校验 Port。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import UUID
 
@@ -17,6 +17,8 @@ class AgentRuntimeBinding:
     row_version: int
     allow_mutation: bool
     allowed_actions_json: tuple[str, ...]
+    object_scopes_json: dict[str, object] = field(default_factory=dict)
+    max_daily_executions: int | None = None
 
 
 class AgentCatalogPort(Protocol):

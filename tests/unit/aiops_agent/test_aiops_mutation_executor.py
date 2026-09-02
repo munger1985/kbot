@@ -7,6 +7,7 @@ import hashlib
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from aiops_agent.actions import (
     ActionRegistry,
@@ -20,8 +21,11 @@ from aiops_agent.executor import (
 from aiops_agent.executor.drivers import (
     MutationDriverError,
     MutationDriverResult,
+    OracleMutationDriver,
 )
+from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
+    DiagnosticConnectionProfile,
     MutationClaimReceipt,
     MutationExecutionGrant,
     MutationExecutionRequest,
@@ -213,6 +217,318 @@ class MutationExecutorServiceTest(unittest.TestCase):
                 b'"db.session.terminate","outcome_unknown":true}'
             ).hexdigest(),
         )
+
+
+class _OracleMutationCursor:
+    def __init__(self, *, present=True, execution_error=False):
+        self.present = present
+        self.execution_error = execution_error
+        self.calls = []
+
+    async def execute(self, sql, parameters=None):
+        self.calls.append((" ".join(sql.split()), parameters))
+        if self.execution_error and str(sql).startswith("ALTER INDEX"):
+            raise TimeoutError
+
+    async def fetchone(self):
+        return (1,) if self.present else None
+
+    def close(self):
+        return None
+
+
+class _OracleMutationConnection:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self.call_timeout = 0
+        self.module = ""
+        self.action = ""
+
+    def cursor(self):
+        return self._cursor
+
+    async def close(self):
+        return None
+
+
+class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        registry = ActionRegistry.load()
+        template = registry.resolve(
+            action_template_id="db.index.rebuild",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "index_maintenance"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                },
+                "online": True,
+            },
+        )
+        self.profile = DiagnosticConnectionProfile(
+            host="db.internal",
+            port=1521,
+            service="PDB1",
+            tls_enabled=False,
+        )
+        self.secret = ResolvedSecret(
+            values={"username": "ops", "password": "hidden"},
+            fingerprint="test",
+        )
+
+    async def _execute(self, cursor):
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleMutationConnection(cursor)),
+        ):
+            return await OracleMutationDriver().execute_action(
+                profile=self.profile,
+                secret=self.secret,
+                action=self.action,
+                trace_id="trace-index",
+            )
+
+    async def test_rechecks_exact_index_before_rebuild(self):
+        cursor = _OracleMutationCursor()
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("FROM DBA_INDEXES", cursor.calls[0][0])
+        self.assertEqual(
+            {"schema_name": "APP", "index_name": "IX_ORDERS"},
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            'ALTER INDEX "APP"."IX_ORDERS" REBUILD ONLINE',
+            cursor.calls[1][0],
+        )
+
+    async def test_rechecks_exact_partition_before_partition_rebuild(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.index.partition.rebuild",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "index_maintenance"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                    "partition": "P_202609",
+                },
+                "partition_name": "P_202609",
+                "online": True,
+            },
+        )
+        cursor = _OracleMutationCursor()
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("FROM DBA_IND_PARTITIONS", cursor.calls[0][0])
+        self.assertEqual(
+            {
+                "schema_name": "APP",
+                "index_name": "IX_ORDERS",
+                "partition_name": "P_202609",
+            },
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            'ALTER INDEX "APP"."IX_ORDERS" REBUILD PARTITION "P_202609" ONLINE',
+            cursor.calls[1][0],
+        )
+
+    async def test_rechecks_exact_sql_before_cancelling(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.session.cancel_sql",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dynamic_performance_views", "session_management"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "session_id": 42,
+                "serial_number": 9,
+                "instance_id": 1,
+                "sql_id": "0abc123def456",
+            },
+        )
+        cursor = _OracleMutationCursor()
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("SQL_ID = :sql_id", cursor.calls[0][0])
+        self.assertEqual(
+            {
+                "instance_id": 1,
+                "session_id": 42,
+                "serial_number": 9,
+                "sql_id": "0abc123def456",
+            },
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            "ALTER SYSTEM CANCEL SQL '42,9,@1,0abc123def456' IMMEDIATE",
+            cursor.calls[1][0],
+        )
+
+    async def test_rechecks_exact_invalid_object_before_compile(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.object.compile",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "object_type": "PACKAGE",
+                "object_ref": {
+                    "schema": "APP",
+                    "object_type": "PACKAGE",
+                    "object_name": "PKG_ORDERS",
+                },
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("FROM DBA_OBJECTS", cursor.calls[0][0])
+        self.assertIn("STATUS = 'INVALID'", cursor.calls[0][0])
+        self.assertEqual(
+            {
+                "schema_name": "APP",
+                "object_name": "PKG_ORDERS",
+                "object_type": "PACKAGE",
+            },
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            'ALTER PACKAGE "APP"."PKG_ORDERS" COMPILE',
+            cursor.calls[1][0],
+        )
+
+    async def test_rechecks_stale_unlocked_table_before_gathering_stats(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.statistics.gather",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "table_ref": {
+                    "schema": "APP",
+                    "object_type": "TABLE",
+                    "object_name": "ORDERS",
+                }
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("FROM DBA_TABLES", cursor.calls[0][0])
+        self.assertIn("s.STATTYPE_LOCKED IS NULL", cursor.calls[0][0])
+        self.assertIn("s.STALE_STATS = 'YES'", cursor.calls[0][0])
+        self.assertEqual(
+            {"schema_name": "APP", "table_name": "ORDERS"},
+            cursor.calls[0][1],
+        )
+        self.assertTrue(
+            cursor.calls[1][0].startswith(
+                "BEGIN DBMS_STATS.GATHER_TABLE_STATS("
+            )
+        )
+
+    async def test_rechecks_job_state_and_counts_before_running(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.scheduler.job.run",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "job_ref": {
+                    "schema": "APP",
+                    "object_type": "SCHEDULER_JOB",
+                    "object_name": "NIGHTLY_JOB",
+                },
+                "previous_run_count": 7,
+                "previous_failure_count": 1,
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("FROM DBA_SCHEDULER_JOBS", cursor.calls[0][0])
+        self.assertIn("STATE = 'SCHEDULED'", cursor.calls[0][0])
+        self.assertEqual(
+            {
+                "schema_name": "APP",
+                "job_name": "NIGHTLY_JOB",
+                "previous_run_count": 7,
+                "previous_failure_count": 1,
+            },
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            "BEGIN DBMS_SCHEDULER.RUN_JOB(job_name => "
+            "'\"APP\".\"NIGHTLY_JOB\"', use_current_session => FALSE); END;",
+            cursor.calls[1][0],
+        )
+
+    async def test_missing_index_rejects_before_mutation(self):
+        cursor = _OracleMutationCursor(present=False)
+        with self.assertRaises(MutationDriverError) as raised:
+            await self._execute(cursor)
+
+        self.assertEqual("PRECONDITION_CHANGED", raised.exception.code)
+        self.assertEqual(1, len(cursor.calls))
+
+    async def test_timeout_after_rebuild_starts_is_unknown(self):
+        cursor = _OracleMutationCursor(execution_error=True)
+        with self.assertRaises(MutationDriverError) as raised:
+            await self._execute(cursor)
+
+        self.assertEqual("EXECUTION_OUTCOME_UNKNOWN", raised.exception.code)
+        self.assertTrue(raised.exception.outcome_unknown)
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@
         {"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}
       ],
       "output_columns": [
-        {"name": "sql_id", "logical_type": "STRING", "nullable": false},
+        {"name": "sql_id", "logical_type": "STRING"},
         {"name": "plan_hash_value", "logical_type": "INTEGER"},
         {"name": "executions", "logical_type": "INTEGER", "nullable": false},
         {"name": "elapsed_seconds", "logical_type": "DECIMAL", "nullable": false},
@@ -86,6 +86,35 @@
       "cost_level": "LOW"
     },
     {
+      "tool_id": "db.session.current_sql",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_gv",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dynamic_performance_views", "session_management"],
+      "required_entitlements": [],
+      "required_privileges": ["GV_$SESSION"],
+      "parameters": [
+        {"name": "instance_id", "type": "integer", "minimum": 1, "maximum": 1024},
+        {"name": "session_id", "type": "integer", "minimum": 1, "maximum": 4294967295}
+      ],
+      "output_columns": [
+        {"name": "instance_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "serial_number", "logical_type": "INTEGER", "nullable": false},
+        {"name": "sql_id", "logical_type": "STRING", "nullable": false},
+        {"name": "username", "logical_type": "STRING"},
+        {"name": "status", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/session_current_sql.sql",
+      "template_sha256": "dcf32f9fdc929c4e96d3d9d1e28e891fa804e88ae830ab3f73c710a67ad419b0",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.session.blocking_chain",
       "version": "1.0.0",
       "db_type": "ORACLE",
@@ -112,6 +141,88 @@
       "max_rows": 200,
       "max_bytes": 1048576,
       "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.index.health",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dba_indexes",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views", "index_maintenance"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_INDEXES", "DBA_SEGMENTS", "DBA_FREE_SPACE", "GV_$LOCKED_OBJECT", "DBA_OBJECTS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "index_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "index_name", "logical_type": "STRING", "nullable": false},
+        {"name": "table_owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_name", "logical_type": "STRING"},
+        {"name": "status", "logical_type": "STRING"},
+        {"name": "index_type", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "visibility", "logical_type": "STRING", "nullable": false},
+        {"name": "degree", "logical_type": "STRING"},
+        {"name": "leaf_blocks", "logical_type": "INTEGER"},
+        {"name": "num_rows", "logical_type": "INTEGER"},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "index_size_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "tablespace_free_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "active_table_locks", "logical_type": "INTEGER", "nullable": false},
+        {"name": "online_supported", "logical_type": "STRING", "nullable": false},
+        {"name": "space_sufficient", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/index_health.sql",
+      "template_sha256": "d3923bae630bc9824c65fc8968affecb277f7188cdd941cf024bc1194384d0f3",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.index.partition.health",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dba_ind_partitions",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views", "index_maintenance"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_IND_PARTITIONS", "DBA_INDEXES", "DBA_SEGMENTS", "DBA_FREE_SPACE", "GV_$LOCKED_OBJECT", "DBA_OBJECTS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "index_name", "type": "string", "max_length": 128},
+        {"name": "partition_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "index_name", "logical_type": "STRING", "nullable": false},
+        {"name": "partition_name", "logical_type": "STRING", "nullable": false},
+        {"name": "table_owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_name", "logical_type": "STRING"},
+        {"name": "status", "logical_type": "STRING"},
+        {"name": "index_type", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "leaf_blocks", "logical_type": "INTEGER"},
+        {"name": "num_rows", "logical_type": "INTEGER"},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "partition_size_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "tablespace_free_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "active_table_locks", "logical_type": "INTEGER", "nullable": false},
+        {"name": "online_supported", "logical_type": "STRING", "nullable": false},
+        {"name": "space_sufficient", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/index_partition_health.sql",
+      "template_sha256": "05e97169640c63e7a10c0f51e7ab6ae538c2b8e218f02d4e9ac5117c7bc4cd2d",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
     },
     {
       "tool_id": "db.storage.capacity",
@@ -485,6 +596,96 @@
       "max_rows": 100,
       "max_bytes": 1048576,
       "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.scheduler.job.status",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dba_scheduler_jobs",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_SCHEDULER_JOBS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "job_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "job_name", "logical_type": "STRING", "nullable": false},
+        {"name": "enabled", "logical_type": "STRING", "nullable": false},
+        {"name": "state", "logical_type": "STRING", "nullable": false},
+        {"name": "last_start_date", "logical_type": "DATETIME"},
+        {"name": "last_run_duration", "logical_type": "STRING"},
+        {"name": "run_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "failure_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/scheduler_job_status.sql",
+      "template_sha256": "e9acb33c15b198e982ebc67d9fed752a22b748fd75fdb37299166ccc5c707d7f",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.object.status",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dba_objects",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_OBJECTS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "object_name", "type": "string", "max_length": 128},
+        {"name": "object_type", "type": "string", "enum": ["PROCEDURE", "FUNCTION", "PACKAGE"], "max_length": 16}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "object_name", "logical_type": "STRING", "nullable": false},
+        {"name": "object_type", "logical_type": "STRING", "nullable": false},
+        {"name": "status", "logical_type": "STRING", "nullable": false},
+        {"name": "last_ddl_time", "logical_type": "DATETIME"}
+      ],
+      "template_ref": "sql/object_status.sql",
+      "template_sha256": "c460ebe9ea40b9342abc6810cf28c166029bcd5684aa50e7b06e7f238573a26c",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.table.statistics",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dba_tab_statistics",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_TABLES", "DBA_TAB_STATISTICS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "table_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "temporary", "logical_type": "STRING", "nullable": false},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "stale_stats", "logical_type": "STRING"},
+        {"name": "stattype_locked", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/table_statistics.sql",
+      "template_sha256": "64d838a26e25be14ef10330a09844015b86c9a8703cf57b3f63d071d75d57818",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
     },
     {
       "tool_id": "db.objects.invalid_summary",

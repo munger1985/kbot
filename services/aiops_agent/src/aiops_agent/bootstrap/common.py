@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 19
-                              AND contract_version = 'aiops-oracle-v9'
+                              AND schema_version = 20
+                              AND contract_version = 'aiops-oracle-v10'
                             """
                         )
                     )

@@ -116,10 +116,11 @@
             <div id="agent-sources" class="agent-source-list"></div>
 
             <div id="agent-change-field" class="agent-permission-row">
-              <label class="agent-switch-row">
-                <input name="allow_change_execution" type="checkbox">
-                <span><strong>允许人工审批后执行数据库变更</strong><small id="agent-change-help">只开放系统支持的受控动作，仍必须进入人工审批链。</small></span>
-              </label>
+              <div>
+                <strong>审批后执行已登记受控动作</strong>
+                <small id="agent-change-help">按 Target 明确选择动作；新发布动作不会自动获得授权。</small>
+              </div>
+              <div id="agent-controlled-actions" class="agent-source-list"></div>
             </div>
           </div>
         </section>
@@ -169,6 +170,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20260901-1"></script>
+  <script src="./js/aiops-agents.js?v=20260902-1"></script>
 </body>
 </html>

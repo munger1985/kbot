@@ -94,17 +94,17 @@ from .projections import (
 class PolicyConfigurationMixin:
     @staticmethod
     def _validate_policy_rules(rules: dict[str, Any]) -> None:
-        obsolete = {"max_risk_level", "allowed_action_types"}.intersection(rules)
+        obsolete = {
+            "max_risk_level",
+            "allowed_action_types",
+            "allow_agent_execution",
+        }.intersection(rules)
         if obsolete:
             raise validation_failed(
-                "Policy 不再接受最大风险级别或用户指定动作类型"
+                "Policy 不再承载风险级别或动作执行授权"
             )
         if rules.get("schema_version") != "ops.policy.v1":
             raise validation_failed("Policy rules.schema_version 必须为 ops.policy.v1")
-        if not isinstance(rules.get("allow_agent_execution"), bool):
-            raise validation_failed(
-                "Policy rules.allow_agent_execution 必须为布尔值"
-            )
         if not isinstance(rules.get("readonly_database_enabled"), bool):
             raise validation_failed(
                 "Policy rules.readonly_database_enabled 必须为布尔值"

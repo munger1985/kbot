@@ -293,7 +293,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('name="diagnostic_source_ids"', script)
         self.assertIn('name="target_ids"', script)
         self.assertIn('id="agent-targets"', page)
-        self.assertIn('name="allow_change_execution"', page)
+        self.assertNotIn('name="allow_change_execution"', page)
+        self.assertIn('id="agent-controlled-actions"', page)
+        self.assertIn('controlled_action_execution:', script)
+        self.assertIn('/action-catalog/', script)
         self.assertIn('name="auto_alert_enabled"', page)
         self.assertIn('name="diagnosis_model_id" required', page)
         self.assertIn('name="planner_model_id" required', page)
@@ -314,6 +317,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="policy_id"', page)
         self.assertNotIn("max_risk_level", page)
         self.assertNotIn("allowed_action_types", page)
+
+    def test_workspace_separates_approval_and_manual_actions(self):
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('payload.execution_mode === "MANUAL_ONLY"', workspace)
+        self.assertIn("仅供人工执行", workspace)
+        self.assertIn("data-manual-proposal", workspace)
+        self.assertIn("/manual-result", workspace)
+        self.assertIn("data-copy-code", workspace)
 
     def test_business_workspace_has_exact_three_entry_points(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(

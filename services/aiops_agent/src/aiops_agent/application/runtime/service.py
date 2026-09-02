@@ -63,9 +63,14 @@ from aiops_agent.contracts.turn_answer import (
     DbaSufficiencyAssessment,
 )
 from aiops_agent.contracts.change import (
+    ActionPlan,
     ActionVerification,
     ExecutionResultArtifact,
     ProposalOutcome,
+)
+from aiops_agent.application.changes.proposal_snapshot import (
+    build_proposal_snapshot,
+    proposal_summary_payload,
 )
 from aiops_agent.contracts.report import (
     ComparisonPlan,
@@ -468,6 +473,12 @@ class AIOpsRuntimeService:
                 "allowed_actions": list(
                     binding.allowed_actions_json or []
                 ),
+                "object_scopes": dict(
+                    getattr(binding, "object_scopes_json", {}) or {}
+                ),
+                "max_daily_executions": getattr(
+                    binding, "max_daily_executions", None
+                ),
                 "row_version": int(binding.row_version),
             }
             policy_snapshot = (
@@ -668,14 +679,6 @@ class AIOpsRuntimeService:
                         )
                     )
                 )
-                mandatory = {
-                    "db.session.active",
-                    "db.session.blocking_chain",
-                }
-                if not mandatory.issubset(requested_tools):
-                    raise validation_failed(
-                        "Advisory 验证必须检查活动会话和阻塞链"
-                    )
                 (
                     _,
                     database_diagnostic_snapshot,
@@ -686,6 +689,77 @@ class AIOpsRuntimeService:
                     policy=policy,
                     requested_tool_ids=requested_tools,
                 )
+                if proposal_snapshot.action_template_id in {
+                    "db.index.rebuild",
+                    "db.index.partition.rebuild",
+                }:
+                    object_ref = dict(
+                        proposal_snapshot.canonical_parameters["index_ref"]
+                    )
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.index.health":
+                            tool["parameters"] = {
+                                "schema_name": object_ref["schema"],
+                                "index_name": object_ref["object_name"],
+                            }
+                        elif tool["tool_id"] == "db.index.partition.health":
+                            partition_name = (
+                                proposal_snapshot.canonical_parameters[
+                                    "partition_name"
+                                ]
+                            )
+                            tool["parameters"] = {
+                                "schema_name": object_ref["schema"],
+                                "index_name": object_ref["object_name"],
+                                "partition_name": partition_name,
+                            }
+                elif (
+                    proposal_snapshot.action_template_id
+                    == "db.session.cancel_sql"
+                ):
+                    parameters = proposal_snapshot.canonical_parameters
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.session.current_sql":
+                            tool["parameters"] = {
+                                "instance_id": parameters["instance_id"],
+                                "session_id": parameters["session_id"],
+                            }
+                elif proposal_snapshot.action_template_id == "db.object.compile":
+                    parameters = proposal_snapshot.canonical_parameters
+                    object_ref = dict(parameters["object_ref"])
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.object.status":
+                            tool["parameters"] = {
+                                "schema_name": object_ref["schema"],
+                                "object_name": object_ref["object_name"],
+                                "object_type": parameters["object_type"],
+                            }
+                elif (
+                    proposal_snapshot.action_template_id
+                    == "db.statistics.gather"
+                ):
+                    table_ref = dict(
+                        proposal_snapshot.canonical_parameters["table_ref"]
+                    )
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.table.statistics":
+                            tool["parameters"] = {
+                                "schema_name": table_ref["schema"],
+                                "table_name": table_ref["object_name"],
+                            }
+                elif (
+                    proposal_snapshot.action_template_id
+                    == "db.scheduler.job.run"
+                ):
+                    job_ref = dict(
+                        proposal_snapshot.canonical_parameters["job_ref"]
+                    )
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.scheduler.job.status":
+                            tool["parameters"] = {
+                                "schema_name": job_ref["schema"],
+                                "job_name": job_ref["object_name"],
+                            }
                 verification["initial_gap_codes"] = tuple(
                     item["code"]
                     for item in database_diagnostic_snapshot[
@@ -735,14 +809,6 @@ class AIOpsRuntimeService:
                                 if configured_policy_status is not None
                                 else "POLICY_MISSING"
                             ),
-                        ),
-                        (
-                            policy is not None
-                            and policy.rules_json.get(
-                                "allow_agent_execution"
-                            )
-                            is not True,
-                            "POLICY_MUTATION_DENIED",
                         ),
                         (
                             not bool(binding.allowed_actions_json),
@@ -3501,7 +3567,179 @@ class AIOpsRuntimeService:
             report=report,
             actor_id=source_run.actor_id,
         )
+        await self._release_next_action_proposal(
+            uow=uow,
+            source_run=source_run,
+            source_proposal=proposal,
+            verification=verification,
+            now=now,
+            trace_id=trace_id,
+        )
         return report_artifact
+
+    async def _release_next_action_proposal(
+        self,
+        *,
+        uow,
+        source_run,
+        source_proposal,
+        verification: ActionVerification,
+        now: datetime,
+        trace_id: str,
+    ) -> None:
+        """仅在当前动作验证成功后释放动作组中的下一条 Proposal。"""
+        if verification.status != "VERIFIED":
+            return
+        tasks = await uow.runs.list_tasks(
+            ops_run_id=source_run.ops_run_id
+        )
+        plan_task = next(
+            (item for item in tasks if item.task_key == "change:action-plan"),
+            None,
+        )
+        proposal_task = next(
+            (
+                item
+                for item in tasks
+                if item.ops_task_id == source_proposal.ops_task_id
+            ),
+            None,
+        )
+        if (
+            plan_task is None
+            or plan_task.output_artifact_id is None
+            or proposal_task is None
+        ):
+            return
+        plan_artifact = await uow.runs.get_artifact(
+            artifact_id=plan_task.output_artifact_id
+        )
+        if (
+            plan_artifact is None
+            or plan_artifact.schema_version != "ACTION_PLAN.v1"
+        ):
+            raise validation_failed("后续受控动作缺少冻结 Action Plan")
+        plan = ActionPlan.model_validate(plan_artifact.payload_json)
+        next_ordinal = int(source_proposal.command_ordinal) + 1
+        action = next(
+            (item for item in plan.actions if item.ordinal == next_ordinal),
+            None,
+        )
+        if action is None:
+            return
+        existing = await uow.changes.get_proposal_by_ordinal(
+            ops_run_id=source_run.ops_run_id,
+            solution_group_key=plan.solution_group_key,
+            command_ordinal=next_ordinal,
+        )
+        if existing is not None:
+            return
+        target_snapshot = dict(
+            (source_run.plan_snapshot_json or {}).get("target")
+            or dict(
+                (source_run.plan_snapshot_json or {}).get(
+                    "change_context", {}
+                )
+            ).get("target", {})
+        )
+        snapshot = build_proposal_snapshot(
+            plan=plan,
+            action=action,
+            run_id=str(source_run.ops_run_id),
+            task_id=str(source_proposal.ops_task_id),
+            target_id=str(source_run.target_id),
+            target_version=int(target_snapshot["row_version"]),
+            now=now,
+        )
+        outcome = ProposalOutcome(status="CREATED", proposal=snapshot)
+        payload = outcome.model_dump(mode="json")
+        snapshot_artifact = await uow.runs.add_artifact(
+            OpsArtifactEntity(
+                ops_run_id=source_run.ops_run_id,
+                ops_task_id=source_proposal.ops_task_id,
+                artifact_key=(
+                    f"proposal:{plan.solution_group_key}:"
+                    f"ordinal:{next_ordinal}:v1"
+                ),
+                artifact_type="PROPOSAL_OUTCOME",
+                schema_version="PROPOSAL_OUTCOME.v1",
+                payload_json=payload,
+                content_hash=sha256_json(payload),
+                byte_size=len(canonical_bytes(payload)),
+                provenance_json={
+                    "producer": "aiops.action-sequencer",
+                    "producer_version": "1",
+                    "source_proposal_id": str(
+                        source_proposal.proposal_id
+                    ),
+                    "verification_status": verification.status,
+                },
+                trust_level="SOURCE_VERIFIED",
+                security_level=int(target_snapshot.get("security_level", 1)),
+            )
+        )
+        await self._materialize_advisory_proposal(
+            uow=uow,
+            run=source_run,
+            task=proposal_task,
+            artifact=snapshot_artifact,
+            payload=payload,
+            trace_id=trace_id,
+            now=now,
+        )
+        await self._append_sequenced_proposal_block(
+            uow=uow,
+            source_run=source_run,
+            snapshot=snapshot,
+        )
+
+    async def _append_sequenced_proposal_block(
+        self, *, uow, source_run, snapshot
+    ) -> None:
+        """把新释放的单条 Proposal 追加到原诊断回答中。"""
+        link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=source_run.ops_run_id
+        )
+        if link is None:
+            raise validation_failed("后续 Proposal 缺少所属诊断 Turn")
+        turn = await uow.turns.get_turn(
+            domain_id=int(source_run.domain_id),
+            turn_id=link.turn_id,
+            lock=True,
+        )
+        blocks = await uow.turns.list_answer_blocks(turn_id=link.turn_id)
+        if turn is None or not blocks:
+            raise validation_failed("后续 Proposal 缺少原诊断回答")
+        message_id = blocks[0].message_id
+        block_no = max(int(item.block_no) for item in blocks) + 1
+        block_payload = proposal_summary_payload(snapshot)
+        answer_block_id = uuid7()
+        await uow.turns.add_answer_block(
+            OpsAnswerBlockEntity(
+                answer_block_id=answer_block_id,
+                turn_id=turn.turn_id,
+                message_id=message_id,
+                block_no=block_no,
+                block_type="PROPOSAL_SUMMARY",
+                schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
+                payload_json=block_payload,
+                content_hash=sha256_json(block_payload),
+            )
+        )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="answer.block",
+            payload={
+                "answer_block_id": str(answer_block_id),
+                "block_no": block_no,
+                "block_type": "PROPOSAL_SUMMARY",
+                "schema_version": "AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
+                "payload": block_payload,
+                "citation_count": 0,
+            },
+            answer_block_id=answer_block_id,
+        )
 
     @staticmethod
     def _comparison_result(
@@ -3510,19 +3748,10 @@ class AIOpsRuntimeService:
         """把只读 Verification 结果映射为稳定、可审计的对比结论。"""
         if verification.status == "ADVERSE":
             return "DEGRADED", ("VERIFICATION_ADVERSE",)
-        if (
-            verification.status == "INCONCLUSIVE"
-            or verification.gap_codes
-            or verification.target_still_present is None
-            or verification.blocking_still_present is None
-        ):
+        if verification.status == "INCONCLUSIVE" or verification.gap_codes:
             return "INCONCLUSIVE", ("EVIDENCE_NOT_COMPARABLE",)
-        if (
-            verification.status == "VERIFIED"
-            and not verification.target_still_present
-            and not verification.blocking_still_present
-        ):
-            return "RESOLVED", ("TARGET_AND_BLOCKING_EFFECT_CLEARED",)
+        if verification.status == "VERIFIED":
+            return "RESOLVED", ("ACTION_EFFECT_VERIFIED",)
         if verification.status == "NOT_ACHIEVED":
             return "UNCHANGED", ("EXPECTED_DIRECT_EFFECT_NOT_OBSERVED",)
         return "INCONCLUSIVE", ("VERIFICATION_STATE_UNSUPPORTED",)
@@ -3790,11 +4019,15 @@ class AIOpsRuntimeService:
             raise validation_failed("Proposal Snapshot 资源标识不匹配")
         if snapshot.mode not in {"ADVISORY", "AGENT_EXECUTE"}:
             raise validation_failed("Proposal 执行模式无效")
-        status = (
-            "PENDING_APPROVAL"
-            if snapshot.mode == "AGENT_EXECUTE"
-            else "ADVISORY_READY"
+        pending_approval = (
+            snapshot.mode == "AGENT_EXECUTE"
+            and snapshot.execution_mode == "EXECUTABLE_AFTER_APPROVAL"
         )
+        if snapshot.execution_mode == "MANUAL_ONLY" and (
+            snapshot.mode != "ADVISORY" or snapshot.executor_kind != "NONE"
+        ):
+            raise validation_failed("人工动作的 Proposal 执行语义无效")
+        status = "PENDING_APPROVAL" if pending_approval else "ADVISORY_READY"
         baseline_start = run.created_at or now
         baseline_seconds = max(
             60, int((now - baseline_start).total_seconds())
@@ -3820,6 +4053,11 @@ class AIOpsRuntimeService:
                 (run.plan_snapshot_json or {}).get("change_context", {})
             ).get("target", {})
         )
+        turn_link = await uow.turns.get_run_link_by_ops_run_id(
+            ops_run_id=run.ops_run_id
+        )
+        if turn_link is None:
+            raise validation_failed("Proposal 缺少所属诊断 Turn")
         comparison_plan_artifact = await uow.runs.add_artifact(
             OpsArtifactEntity(
                 ops_run_id=run.ops_run_id,
@@ -3846,6 +4084,7 @@ class AIOpsRuntimeService:
         )
         proposal = ChangeProposalEntity(
             proposal_id=UUID(snapshot.proposal_id),
+            turn_id=turn_link.turn_id,
             ops_run_id=run.ops_run_id,
             ops_task_id=task.ops_task_id,
             target_id=run.target_id,
@@ -3853,6 +4092,11 @@ class AIOpsRuntimeService:
             command_ordinal=snapshot.command_ordinal,
             proposal_version=snapshot.proposal_version,
             action_type=snapshot.mode,
+            action_family=snapshot.action_family,
+            effect_class=snapshot.effect_class,
+            execution_mode=snapshot.execution_mode,
+            executor_kind=snapshot.executor_kind,
+            canonical_object_ref_json=snapshot.canonical_object_ref,
             action_template_id=snapshot.action_template_id,
             action_template_version=snapshot.action_template_version,
             action_template_hash=snapshot.action_template_hash,
@@ -3863,6 +4107,10 @@ class AIOpsRuntimeService:
             rationale=snapshot.rationale,
             impact_scope_json={"summary": snapshot.impact},
             risk_level=snapshot.risk_level,
+            lock_impact=snapshot.lock_impact,
+            estimated_duration_seconds=(
+                snapshot.estimated_duration_seconds
+            ),
             preconditions_json=[
                 {"tool_id": item} for item in snapshot.preconditions
             ],

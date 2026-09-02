@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from aiops_agent.actions import (
     ActionRegistry,
     ActionRenderer,
+    DESTRUCTIVE_EFFECT_CLASSES,
     MutationGrantCodec,
 )
 from aiops_agent.application.errors import (
@@ -294,6 +295,12 @@ class AIOpsChangeService:
                 raise state_conflict("用户看到的 Proposal 已发生变化")
             if proposal.status != "PENDING_APPROVAL":
                 raise state_conflict("Proposal 当前不能审批")
+            if (
+                proposal.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
+                or proposal.effect_class in DESTRUCTIVE_EFFECT_CLASSES
+                or proposal.executor_kind == "NONE"
+            ):
+                raise state_conflict("该 Proposal 只允许人工执行，不能审批下发")
             now = await uow.runs.database_now()
             if (
                 proposal.expires_at is None
@@ -329,7 +336,10 @@ class AIOpsChangeService:
             binding = None
             if getattr(uow, "agents", None) is not None:
                 candidate = await uow.agents.get_active(
-                    domain_id=domain_id, agent_id=run.agent_id, lock=True
+                    domain_id=domain_id,
+                    agent_id=run.agent_id,
+                    target_id=target.target_id,
+                    lock=True,
                 )
                 if candidate is not None and candidate.target_id == target.target_id:
                     binding = candidate
@@ -348,6 +358,16 @@ class AIOpsChangeService:
                 not in set(binding.allowed_actions_json or ())
             ):
                 raise state_conflict("Agent Binding 当前不允许该动作")
+            self._validate_object_scope(binding, proposal)
+            max_daily = getattr(binding, "max_daily_executions", None)
+            if max_daily is not None:
+                executed = await uow.changes.count_agent_target_executions_since(
+                    agent_id=run.agent_id,
+                    target_id=target.target_id,
+                    since=now - timedelta(days=1),
+                )
+                if executed >= int(max_daily):
+                    raise state_conflict("该 Agent–Target 已达到每日执行上限")
             policy = (
                 await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
@@ -362,7 +382,6 @@ class AIOpsChangeService:
             if (
                 policy is None
                 or policy.status != "ACTIVE"
-                or rules.get("allow_agent_execution") is not True
                 or frozen_policy.get("policy_hash") != policy.policy_hash
             ):
                 raise state_conflict("当前 Policy 不再允许该动作")
@@ -391,8 +410,8 @@ class AIOpsChangeService:
                     "Action Catalog 或参数当前不可执行"
                 ) from None
             if (
-                rendered.execution_capability
-                != "EXECUTABLE_AFTER_APPROVAL"
+                rendered.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
+                or rendered.effect_class in DESTRUCTIVE_EFFECT_CLASSES
                 or rendered.template_hash
                 != proposal.action_template_hash
                 or rendered.parameters_hash != proposal.parameters_hash
@@ -869,7 +888,10 @@ class AIOpsChangeService:
             binding = None
             if getattr(uow, "agents", None) is not None:
                 candidate = await uow.agents.get_active(
-                    domain_id=domain_id, agent_id=run.agent_id, lock=True
+                    domain_id=domain_id,
+                    agent_id=run.agent_id,
+                    target_id=target.target_id,
+                    lock=True,
                 )
                 if candidate is not None and candidate.target_id == target.target_id:
                     binding = candidate
@@ -888,6 +910,7 @@ class AIOpsChangeService:
                 not in set(binding.allowed_actions_json or ())
             ):
                 raise state_conflict("Agent Binding 已不允许该动作")
+            self._validate_object_scope(binding, proposal)
             policy = (
                 await uow.policies.get_scoped(
                     policy_id=binding.policy_id,
@@ -902,7 +925,6 @@ class AIOpsChangeService:
             if (
                 policy is None
                 or policy.status != "ACTIVE"
-                or rules.get("allow_agent_execution") is not True
                 or frozen_policy.get("policy_hash") != policy.policy_hash
                 or token.policy_decision_hash
                 != proposal.policy_decision_hash
@@ -933,6 +955,10 @@ class AIOpsChangeService:
                     "Action Catalog 或参数当前不可执行"
                 ) from None
             if (
+                proposal.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
+                or proposal.effect_class in DESTRUCTIVE_EFFECT_CLASSES
+                or proposal.executor_kind == "NONE"
+                or
                 rendered.template_hash
                 != execution.action_template_hash
                 or rendered.parameters_hash != execution.parameters_hash
@@ -1292,6 +1318,11 @@ class AIOpsChangeService:
             target_id=proposal.target_id,
             target_version=snapshot.target_version,
             mode=snapshot.mode,
+            action_family=snapshot.action_family,
+            effect_class=snapshot.effect_class,
+            execution_mode=snapshot.execution_mode,
+            executor_kind=snapshot.executor_kind,
+            canonical_object_ref=snapshot.canonical_object_ref,
             action_template_id=proposal.action_template_id,
             action_template_version=proposal.action_template_version,
             action_template_hash=proposal.action_template_hash,
@@ -1301,6 +1332,10 @@ class AIOpsChangeService:
             command_hash=proposal.command_hash,
             impact=snapshot.impact,
             risk=proposal.risk_level,
+            lock_impact=snapshot.lock_impact,
+            estimated_duration_seconds=(
+                snapshot.estimated_duration_seconds
+            ),
             prerequisites=tuple(snapshot.preconditions),
             rollback_plan=snapshot.rollback_plan,
             verification_plan="；".join(snapshot.verification_plan),
@@ -1310,6 +1345,28 @@ class AIOpsChangeService:
             expires_at=proposal.expires_at,
             row_version=int(proposal.row_version),
         )
+
+    @staticmethod
+    def _validate_object_scope(binding, proposal) -> None:
+        object_ref = dict(
+            getattr(proposal, "canonical_object_ref_json", None) or {}
+        )
+        if not object_ref:
+            return
+        schema = str(object_ref.get("schema", "")).upper()
+        scopes = dict(getattr(binding, "object_scopes_json", {}) or {})
+        allowed = {str(item).upper() for item in scopes.get("schemas", ())}
+        if allowed and schema not in allowed:
+            raise state_conflict("Proposal 数据库对象超出 Agent–Target 范围")
+        if scopes.get("exclude_system_objects", True) and schema in {
+            "SYS",
+            "SYSTEM",
+            "OUTLN",
+            "DBSNMP",
+            "XDB",
+            "AUDSYS",
+        }:
+            raise state_conflict("系统 Schema 对象不允许进入受控执行")
 
     @staticmethod
     def _artifact_ref(artifact) -> ArtifactRef:

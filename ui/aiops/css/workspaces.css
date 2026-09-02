@@ -121,6 +121,10 @@
 .ops-proposal-parameters li { display: flex; justify-content: space-between; gap: 18px; padding: 6px 8px; background: rgba(255,255,255,.75); }
 .ops-proposal-actions { display: flex; gap: 8px; margin-top: 14px; }
 .ops-proposal-status { color: var(--muted); font-size: 12px; }
+.ops-manual-result { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #d9c48d; }
+.ops-manual-result select, .ops-manual-result textarea { width: 100%; }
+.ops-manual-result textarea { min-height: 70px; resize: vertical; }
+.ops-manual-result button { justify-self: start; }
 .ops-inline-dialog { margin-top: 18px; padding: 16px; border: 1px solid var(--line); background: #f8f9fb; }
 .agent-code-block { margin: 12px 0; border: 1px solid #39445a; background: #20283a; color: #eef2fa; }
 .agent-code-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #2b3549; font-size: 11px; }

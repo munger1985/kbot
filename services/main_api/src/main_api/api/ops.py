@@ -104,7 +104,7 @@ async def _require_route_access(request: Request) -> None:
         permission = "aiops:policy_manage"
     elif relative.startswith("/inspection-plans"):
         permission = "aiops:plan_manage"
-    elif relative.endswith("/approve"):
+    elif relative.endswith(("/approve", "/reject", "/manual-result")):
         permission = "aiops:proposal:approve"
     require_app_api_permission(request, permission)
     service = cast(

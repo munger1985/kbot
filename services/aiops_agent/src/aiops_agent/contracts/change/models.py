@@ -19,13 +19,22 @@ class ActionPlanItem(_ChangeContract):
     action_template_version: str
     variant: str
     mode: Literal["ADVISORY", "AGENT_EXECUTE"]
-    canonical_parameters: dict[str, int | str]
+    action_family: str
+    effect_class: str
+    execution_mode: Literal[
+        "EXECUTABLE_AFTER_APPROVAL", "MANUAL_ONLY"
+    ]
+    executor_kind: Literal["DATABASE", "EXTERNAL", "NONE"]
+    canonical_object_ref: dict[str, str] | None = None
+    canonical_parameters: dict[str, Any]
     parameter_fact_refs: dict[str, str]
     rationale: str = Field(min_length=1, max_length=2000)
     expected_effects: tuple[str, ...]
     precondition_tool_refs: tuple[str, ...]
     verification_tool_refs: tuple[str, ...]
     rollback_description: str | None = None
+    lock_impact: str
+    estimated_duration_seconds: int = Field(ge=0)
     rendered_action: dict[str, Any]
 
 
@@ -54,17 +63,26 @@ class ChangeProposalSnapshot(_ChangeContract):
     command_ordinal: int = Field(ge=1)
     proposal_version: int = Field(ge=1)
     mode: Literal["ADVISORY", "AGENT_EXECUTE"]
+    action_family: str
+    effect_class: str
+    execution_mode: Literal[
+        "EXECUTABLE_AFTER_APPROVAL", "MANUAL_ONLY"
+    ]
+    executor_kind: Literal["DATABASE", "EXTERNAL", "NONE"]
+    canonical_object_ref: dict[str, str] | None = None
     action_template_id: str
     action_template_version: str
     action_template_variant: str
     action_template_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     renderer_version: str
-    canonical_parameters: dict[str, int | str]
+    canonical_parameters: dict[str, Any]
     parameter_fact_refs: dict[str, str]
     parameters_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     rendered_command: str
     command_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     risk_level: str
+    lock_impact: str
+    estimated_duration_seconds: int = Field(ge=0)
     impact: str
     rationale: str
     preconditions: tuple[str, ...]
@@ -107,7 +125,7 @@ class AdvisoryVerificationScope(_ChangeContract):
     source_run_id: str
     result_artifact_id: str
     action_template_id: str
-    canonical_parameters: dict[str, int | str]
+    canonical_parameters: dict[str, Any]
     verification_tool_refs: tuple[str, ...]
     source_result_status: Literal["EXECUTED", "SUCCEEDED", "UNKNOWN"]
     initial_gap_codes: tuple[str, ...] = ()
@@ -124,6 +142,8 @@ class ActionVerification(_ChangeContract):
         "VERIFIED", "NOT_ACHIEVED", "ADVERSE", "INCONCLUSIVE"
     ]
     summary: str
+    effect_achieved: bool | None = None
+    adverse_effect: bool | None = None
     target_still_present: bool | None = None
     blocking_still_present: bool | None = None
     checked_tool_refs: tuple[str, ...] = ()

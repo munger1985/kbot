@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, literal_column, or_, select, update
+from sqlalchemy import Select, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -30,6 +30,27 @@ class ChangeRepository(AIOpsRepository):
         self, entity: ChangeProposalEntity
     ) -> ChangeProposalEntity:
         return await self._add(entity)
+
+    async def count_agent_target_executions_since(
+        self,
+        *,
+        agent_id: UUID,
+        target_id: UUID,
+        since: datetime,
+    ) -> int:
+        value = await self._session.scalar(
+            select(func.count(ExecutionEntity.execution_id))
+            .join(
+                OpsRunEntity,
+                OpsRunEntity.ops_run_id == ExecutionEntity.ops_run_id,
+            )
+            .where(
+                OpsRunEntity.agent_id == agent_id,
+                ExecutionEntity.target_id == target_id,
+                ExecutionEntity.created_at >= since,
+            )
+        )
+        return int(value or 0)
 
     async def add_hitl(self, entity: HitlEntity) -> HitlEntity:
         return await self._add(entity)
@@ -147,6 +168,23 @@ class ChangeRepository(AIOpsRepository):
         )
         if lock:
             statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_proposal_by_ordinal(
+        self,
+        *,
+        ops_run_id: UUID,
+        solution_group_key: str,
+        command_ordinal: int,
+    ) -> ChangeProposalEntity | None:
+        """读取动作组中的单个序号，防止验证重放重复释放后续动作。"""
+        self._check_active()
+        statement = select(ChangeProposalEntity).where(
+            ChangeProposalEntity.ops_run_id == ops_run_id,
+            ChangeProposalEntity.solution_group_key == solution_group_key,
+            ChangeProposalEntity.command_ordinal == command_ordinal,
+            ChangeProposalEntity.proposal_version == 1,
+        )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def get_hitl_scoped(

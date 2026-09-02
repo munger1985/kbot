@@ -816,6 +816,11 @@ CREATE TABLE KBOT_OPS_CHANGE_PROPOSAL (
     COMMAND_ORDINAL NUMBER(19) NOT NULL,
     PROPOSAL_VERSION NUMBER(19) NOT NULL,
     ACTION_TYPE VARCHAR2(32 CHAR) NOT NULL,
+    ACTION_FAMILY VARCHAR2(64 CHAR) NOT NULL,
+    EFFECT_CLASS VARCHAR2(48 CHAR) NOT NULL,
+    EXECUTION_MODE VARCHAR2(40 CHAR) NOT NULL,
+    EXECUTOR_KIND VARCHAR2(16 CHAR) NOT NULL,
+    CANONICAL_OBJECT_REF_JSON JSON,
     ACTION_TEMPLATE_ID VARCHAR2(128 CHAR) NOT NULL,
     ACTION_TEMPLATE_VERSION VARCHAR2(64 CHAR) NOT NULL,
     ACTION_TEMPLATE_HASH VARCHAR2(64 CHAR) NOT NULL,
@@ -826,6 +831,8 @@ CREATE TABLE KBOT_OPS_CHANGE_PROPOSAL (
     RATIONALE CLOB NOT NULL,
     IMPACT_SCOPE_JSON JSON,
     RISK_LEVEL VARCHAR2(16 CHAR) NOT NULL,
+    LOCK_IMPACT VARCHAR2(1000 CHAR) NOT NULL,
+    ESTIMATED_DURATION_SECONDS NUMBER(10) NOT NULL,
     PRECONDITIONS_JSON JSON,
     ROLLBACK_PLAN_JSON JSON,
     VERIFICATION_PLAN_JSON JSON,
@@ -857,6 +864,11 @@ CREATE TABLE KBOT_OPS_CHANGE_PROPOSAL (
     ),
     CONSTRAINT CK_OPS_PROPOSAL_RISK
         CHECK (RISK_LEVEL IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    CONSTRAINT CK_OPS_PROPOSAL_MODE CHECK (
+        EXECUTION_MODE IN ('EXECUTABLE_AFTER_APPROVAL', 'MANUAL_ONLY')
+        AND EXECUTOR_KIND IN ('DATABASE', 'EXTERNAL', 'NONE')
+        AND ESTIMATED_DURATION_SECONDS >= 0
+    ),
     CONSTRAINT CK_OPS_PROPOSAL_STATUS CHECK (
         STATUS IN (
             'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED',
@@ -1872,8 +1884,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    19 AS SCHEMA_VERSION,
-    'aiops-oracle-v9' AS CONTRACT_VERSION
+    20 AS SCHEMA_VERSION,
+    'aiops-oracle-v10' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -1950,6 +1962,7 @@ CREATE INDEX IX_OPS_AGENT_VER_SOURCE_SRC
 CREATE TABLE KBOT_OPS_AGENT_VERSION_TARGET (
     AGENT_VERSION_ID RAW(16) NOT NULL,
     TARGET_ID RAW(16) NOT NULL,
+    CONTROLLED_ACTION_POLICY_JSON JSON NOT NULL,
     CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT PK_OPS_AGENT_VERSION_TARGET
         PRIMARY KEY (AGENT_VERSION_ID, TARGET_ID),
@@ -2896,6 +2909,14 @@ BEGIN
        AND (
             (table_name = 'KBOT_OPS_TASK' AND column_name = 'TASK_TYPE')
          OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'TURN_ID')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'ACTION_FAMILY')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EFFECT_CLASS')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EXECUTION_MODE')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EXECUTOR_KIND')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'LOCK_IMPACT')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'ESTIMATED_DURATION_SECONDS')
+         OR (table_name = 'KBOT_OPS_AGENT_VERSION_TARGET'
+             AND column_name = 'CONTROLLED_ACTION_POLICY_JSON')
          OR (table_name = 'KBOT_OPS_CONVERSATION_TURN'
              AND column_name = 'CURRENT_PLAN_REVISION')
          OR (table_name = 'KBOT_OPS_INVESTIGATION_REVISION'
@@ -2974,21 +2995,21 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 8 THEN
-        raise_application_error(-20008, 'Schema 19 必需列缺失或允许为空。');
+    IF l_required_column_count <> 15 THEN
+        raise_application_error(-20008, 'Schema 20 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 19 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 20 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 19 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 20 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 19
-       OR l_contract_version <> 'aiops-oracle-v9' THEN
+       OR l_schema_version <> 20
+       OR l_contract_version <> 'aiops-oracle-v10' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -2998,7 +3019,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：43 张表、10 个视图，Schema Version '
-        || '19，合同 aiops-oracle-v9。'
+        || '20，合同 aiops-oracle-v10。'
     );
 END;
 /

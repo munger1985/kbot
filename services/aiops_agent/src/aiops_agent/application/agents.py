@@ -49,13 +49,47 @@ class AgentModelBindings(_Model):
     diagnosis_llm: UUID | None = None
 
 
+class ControlledActionObjectScopes(_Model):
+    schemas: tuple[str, ...] = ()
+    exclude_system_objects: bool = True
+
+    @model_validator(mode="after")
+    def validate_schemas(self):
+        if len(set(self.schemas)) != len(self.schemas):
+            raise ValueError("受控动作 Schema 范围不能重复")
+        for schema in self.schemas:
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]{0,127}", schema) is None:
+                raise ValueError("受控动作 Schema 名称格式无效")
+        return self
+
+
+class TargetControlledActionExecution(_Model):
+    target_id: UUID
+    enabled: bool = False
+    allowed_action_ids: tuple[str, ...] = ()
+    object_scopes: ControlledActionObjectScopes = Field(
+        default_factory=ControlledActionObjectScopes
+    )
+    max_daily_executions: int | None = Field(default=None, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def validate_action_selection(self):
+        if len(set(self.allowed_action_ids)) != len(self.allowed_action_ids):
+            raise ValueError("受控动作不能重复")
+        if self.enabled != bool(self.allowed_action_ids):
+            raise ValueError("启用受控动作时必须明确选择至少一个动作")
+        return self
+
+
 class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    allow_change_execution: bool = False
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -76,6 +110,11 @@ class CreateAIOpsAgentCommand(_Model):
             raise ValueError("diagnostic_source_ids 不能重复")
         if len(set(self.target_ids)) != len(self.target_ids):
             raise ValueError("target_ids 不能重复")
+        policy_targets = [item.target_id for item in self.controlled_action_execution]
+        if len(set(policy_targets)) != len(policy_targets):
+            raise ValueError("每个 Target 只能声明一份受控动作策略")
+        if not set(policy_targets).issubset(self.target_ids):
+            raise ValueError("受控动作策略只能引用已选择的 Target")
         return self
 
 
@@ -91,7 +130,9 @@ class UpdateAIOpsAgentCommand(_Model):
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
-    allow_change_execution: bool | None = None
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -116,6 +157,16 @@ class UpdateAIOpsAgentCommand(_Model):
             self.target_ids
         ):
             raise ValueError("target_ids 不能重复")
+        if self.controlled_action_execution is not None:
+            policy_targets = [
+                item.target_id for item in self.controlled_action_execution
+            ]
+            if len(set(policy_targets)) != len(policy_targets):
+                raise ValueError("每个 Target 只能声明一份受控动作策略")
+            if self.target_ids is not None and not set(policy_targets).issubset(
+                self.target_ids
+            ):
+                raise ValueError("受控动作策略只能引用已选择的 Target")
         return self
 
 
@@ -185,6 +236,9 @@ class AIOpsAgentService:
                 await uow.agents.add_version_targets(
                     version_id=version_id,
                     target_ids=command.target_ids,
+                    controlled_action_policies=(
+                        self._controlled_action_policies(values)
+                    ),
                 )
                 agent.current_version_id = version_id
                 await uow.commit()
@@ -211,6 +265,64 @@ class AIOpsAgentService:
                 uow, agent, await self._version(uow.agents, agent)
             )
 
+    async def action_catalog(
+        self, *, domain_id: int, target_id: UUID
+    ) -> dict[str, Any]:
+        """返回一个 Target 可见动作及当前可执行原因。"""
+        async with self._uow_factory() as uow:
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=domain_id
+            )
+            if target is None:
+                self._not_found()
+            capabilities = {
+                key
+                for key, enabled in dict(target.capabilities_json or {}).items()
+                if enabled is True
+            }
+            features = dict(target.capabilities_json or {}).get("features", [])
+            if isinstance(features, list):
+                capabilities.update(str(item) for item in features if item)
+            templates = self._action_registry.compatible(
+                db_type=target.db_type,
+                db_version=target.version_code or "UNKNOWN",
+                capabilities=capabilities,
+                entitlements=set(),
+                environment=target.environment,
+            ) if self._action_registry is not None else ()
+            return {
+                "target_id": str(target.target_id),
+                "catalog_hash": (
+                    self._action_registry.catalog_hash
+                    if self._action_registry is not None
+                    else None
+                ),
+                "actions": [
+                    {
+                        "action_id": item.definition.action_template_id,
+                        "version": item.definition.version,
+                        "action_family": item.definition.action_family,
+                        "effect_class": item.definition.effect_class,
+                        "execution_mode": item.definition.execution_mode,
+                        "executor_kind": item.definition.executor_kind,
+                        "risk_level": item.definition.risk_level,
+                        "lock_impact": item.definition.lock_impact,
+                        "estimated_duration_seconds": (
+                            item.definition.estimated_duration_seconds
+                        ),
+                        "status": item.definition.status,
+                        "currently_executable": bool(
+                            item.definition.status == "ACTIVE"
+                            and item.definition.execution_mode
+                            == "EXECUTABLE_AFTER_APPROVAL"
+                            and target.controlled_change_enabled
+                            and target.execution_credential_id is not None
+                        ),
+                    }
+                    for item in templates
+                ],
+            }
+
     async def update(self, command: UpdateAIOpsAgentCommand) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             agent = await uow.agents.get(
@@ -231,6 +343,11 @@ class AIOpsAgentService:
             current_targets = await uow.agents.version_target_ids(
                 agent_version_id=current.agent_version_id
             )
+            current_action_policies = (
+                await uow.agents.version_target_policies(
+                    agent_version_id=current.agent_version_id
+                )
+            )
             current_policy = await uow.policies.get_scoped(
                 policy_id=current.policy_id, domain_id=command.domain_id
             )
@@ -249,9 +366,13 @@ class AIOpsAgentService:
                     "diagnostic_source_ids", tuple(current_sources)
                 ),
                 "target_ids": changes.get("target_ids", tuple(current_targets)),
-                "allow_change_execution": changes.get(
-                    "allow_change_execution",
-                    bool(current_rules.get("allow_agent_execution", False)),
+                "controlled_action_execution": changes.get(
+                    "controlled_action_execution",
+                    [
+                        {"target_id": target_id, **policy}
+                        for target_id, policy in current_action_policies.items()
+                        if policy
+                    ],
                 ),
                 "auto_alert_enabled": changes.get(
                     "auto_alert_enabled",
@@ -278,7 +399,7 @@ class AIOpsAgentService:
             version_fields = {
                 "diagnostic_source_ids",
                 "target_ids",
-                "allow_change_execution",
+                "controlled_action_execution",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
                 "alert_cooldown_minutes",
@@ -321,6 +442,9 @@ class AIOpsAgentService:
                 await uow.agents.add_version_targets(
                     version_id=version_id,
                     target_ids=effective["target_ids"],
+                    controlled_action_policies=(
+                        self._controlled_action_policies(effective)
+                    ),
                 )
                 agent.current_version_id = version_id
             for field in ("display_name", "description", "status"):
@@ -352,7 +476,9 @@ class AIOpsAgentService:
                 "policy_id": row["policy_id"],
                 "diagnostic_source_ids": row["diagnostic_source_ids"],
                 "target_ids": row["target_ids"],
-                "allow_change_execution": row["allow_change_execution"],
+                "controlled_action_execution": row[
+                    "controlled_action_execution"
+                ],
                 "auto_alert_enabled": row["auto_alert_enabled"],
                 "auto_observe_min_severity": row["auto_observe_min_severity"],
                 "alert_cooldown_minutes": row["alert_cooldown_minutes"],
@@ -552,23 +678,30 @@ class AIOpsAgentService:
                         f"Target“{target.display_name}”至少需要映射一个所选监控源",
                         status_code=422,
                     )
-        if values.get("allow_change_execution"):
-            change_targets = [
-                target for target in targets
-                if target.controlled_change_enabled
-                and target.execution_credential_id is not None
-            ]
-            if not change_targets:
+        policies = self._controlled_action_policies(values)
+        target_by_id = {target.target_id: target for target in targets}
+        for target_id, action_policy in policies.items():
+            if not action_policy.get("enabled"):
+                continue
+            target = target_by_id.get(target_id)
+            if (
+                target is None
+                or not target.controlled_change_enabled
+                or target.execution_credential_id is None
+            ):
                 raise AIOpsAgentError(
                     "AIOPS_AGENT_CHANGE_TARGET_REQUIRED",
-                    "允许执行变更前，至少一个 Target 必须允许受控变更并配置执行凭据",
+                    "启用受控动作前，目标必须允许受控变更并配置执行凭据",
                     status_code=422,
                 )
-            values["_allowed_action_types"] = sorted({
-                action
-                for target in change_targets
-                for action in self._compatible_action_ids(target)
-            })
+            selected = set(action_policy.get("allowed_action_ids") or ())
+            compatible = set(self._compatible_action_ids(target))
+            if not selected or not selected.issubset(compatible):
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_ACTION_NOT_COMPATIBLE",
+                    "选择的受控动作与 Target 类型、版本或能力不兼容",
+                    status_code=422,
+                )
 
     def _compatible_action_ids(self, target) -> list[str]:
         if self._action_registry is None:
@@ -590,7 +723,7 @@ class AIOpsAgentService:
                 template.definition.action_template_id
                 for template in self._action_registry.templates
                 if template.definition.status == "ACTIVE"
-                and template.definition.execution_capability
+                and template.definition.execution_mode
                 == "EXECUTABLE_AFTER_APPROVAL"
                 and template.definition.db_type == target.db_type
                 and template.definition.supported_version_min <= major
@@ -602,6 +735,24 @@ class AIOpsAgentService:
             }
         )
 
+    @staticmethod
+    def _controlled_action_policies(values) -> dict[UUID, dict[str, Any]]:
+        """把请求中的每 Target 策略规范化为不可变版本快照。"""
+        result: dict[UUID, dict[str, Any]] = {}
+        for raw in values.get("controlled_action_execution") or ():
+            item = (
+                raw.model_dump(mode="python")
+                if isinstance(raw, TargetControlledActionExecution)
+                else dict(raw)
+            )
+            target_id = UUID(str(item.pop("target_id")))
+            item["allowed_action_ids"] = sorted(
+                set(item.get("allowed_action_ids") or ())
+            )
+            item["object_scopes"] = dict(item.get("object_scopes") or {})
+            result[target_id] = item
+        return result
+
     async def _create_policy(
         self, *, uow, agent_id, version_no, display_name, values, actor_id
     ) -> PolicyEntity:
@@ -609,10 +760,6 @@ class AIOpsAgentService:
         rules = {
             "schema_version": "ops.policy.v1",
             "readonly_database_enabled": True,
-            "allow_agent_execution": bool(
-                values.get("allow_change_execution", False)
-            ),
-            "allowed_action_types": list(values.get("_allowed_action_types") or []),
             "auto_alert_enabled": bool(values.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": values.get(
                 "auto_observe_min_severity", "CRITICAL"
@@ -683,6 +830,9 @@ class AIOpsAgentService:
         candidate_ids = set(await uow.agents.version_target_ids(
             agent_version_id=version.agent_version_id
         ))
+        action_policies = await uow.agents.version_target_policies(
+            agent_version_id=version.agent_version_id
+        )
         target_candidates = []
         for target_id in sorted(candidate_ids, key=str):
             target = await uow.targets.get_scoped(
@@ -722,12 +872,11 @@ class AIOpsAgentService:
             "diagnostic_source_ids": [str(item) for item in source_ids],
             "target_ids": [str(item) for item in sorted(candidate_ids, key=str)],
             "target_candidates": target_candidates,
-            "allow_change_execution": bool(
-                rules.get("allow_agent_execution", False)
-            ),
-            "allowed_action_types": list(
-                rules.get("allowed_action_types") or []
-            ),
+            "controlled_action_execution": [
+                {"target_id": str(target_id), **dict(action_policies[target_id])}
+                for target_id in sorted(action_policies, key=str)
+                if action_policies[target_id]
+            ],
             "auto_alert_enabled": bool(rules.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": rules.get(
                 "auto_observe_min_severity", "CRITICAL"

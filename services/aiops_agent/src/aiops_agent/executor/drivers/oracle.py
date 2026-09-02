@@ -214,7 +214,7 @@ class OracleDiagnosticDriver:
 
 
 class OracleMutationDriver:
-    """只执行已渲染并通过 Catalog 校验的 Oracle 单会话终止命令。"""
+    """按动作执行器注册表执行已签名且重新渲染的 Oracle Action。"""
 
     db_type = "ORACLE"
 
@@ -232,8 +232,19 @@ class OracleMutationDriver:
         if not username or not password:
             raise MutationDriverError("AUTH_FAILED")
         if (
-            action.action_template_id != "db.session.terminate"
+            action.action_template_id
+            not in {
+                "db.session.terminate",
+                "db.session.cancel_sql",
+                "db.index.rebuild",
+                "db.index.partition.rebuild",
+                "db.object.compile",
+                "db.statistics.gather",
+                "db.scheduler.job.run",
+            }
             or action.db_type != self.db_type
+            or action.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
+            or action.executor_kind != "DATABASE"
             or profile.tls_profile_ref
             or not profile.service
         ):
@@ -265,23 +276,7 @@ class OracleMutationDriver:
             connection.action = action.action_template_id
             cursor = connection.cursor()
             try:
-                parameters = action.typed_parameters
-                await cursor.execute(
-                    """
-                    SELECT 1
-                      FROM GV$SESSION
-                     WHERE INST_ID = :instance_id
-                       AND SID = :session_id
-                       AND SERIAL# = :serial_number
-                    """,
-                    {
-                        "instance_id": parameters["instance_id"],
-                        "session_id": parameters["session_id"],
-                        "serial_number": parameters["serial_number"],
-                    },
-                )
-                if await cursor.fetchone() is None:
-                    raise MutationDriverError("PRECONDITION_CHANGED")
+                await self._check_precondition(cursor, action)
                 phase = "EXECUTE"
                 async with asyncio.timeout(
                     action.statement_timeout_seconds
@@ -299,7 +294,8 @@ class OracleMutationDriver:
         except MutationDriverError:
             raise
         except (TimeoutError, oracledb.Error) as exc:
-            code = getattr(getattr(exc, "args", [None])[0], "code", None)
+            details = exc.args[0] if exc.args else None
+            code = getattr(details, "code", None)
             if phase == "EXECUTE":
                 raise MutationDriverError(
                     "EXECUTION_OUTCOME_UNKNOWN",
@@ -322,3 +318,146 @@ class OracleMutationDriver:
                     await connection.close()
                 except Exception:
                     pass
+
+    @staticmethod
+    async def _check_precondition(cursor, action: RenderedAction) -> None:
+        """执行前再次从数据库确认精确对象仍存在。"""
+        parameters = action.typed_parameters
+        if action.action_template_id == "db.session.terminate":
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM GV$SESSION
+                 WHERE INST_ID = :instance_id
+                   AND SID = :session_id
+                   AND SERIAL# = :serial_number
+                """,
+                {
+                    "instance_id": parameters["instance_id"],
+                    "session_id": parameters["session_id"],
+                    "serial_number": parameters["serial_number"],
+                },
+            )
+        elif action.action_template_id == "db.session.cancel_sql":
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM GV$SESSION
+                 WHERE INST_ID = :instance_id
+                   AND SID = :session_id
+                   AND SERIAL# = :serial_number
+                   AND SQL_ID = :sql_id
+                   AND STATUS = 'ACTIVE'
+                """,
+                {
+                    "instance_id": parameters["instance_id"],
+                    "session_id": parameters["session_id"],
+                    "serial_number": parameters["serial_number"],
+                    "sql_id": parameters["sql_id"],
+                },
+            )
+        elif action.action_template_id == "db.index.rebuild":
+            object_ref = dict(parameters["index_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                 FROM DBA_INDEXES
+                 WHERE OWNER = :schema_name
+                   AND INDEX_NAME = :index_name
+                   AND PARTITIONED = 'NO'
+                   AND INDEX_TYPE IN ('NORMAL', 'NORMAL/REV')
+                """,
+                {
+                    "schema_name": object_ref["schema"],
+                    "index_name": object_ref["object_name"],
+                },
+            )
+        elif action.action_template_id == "db.index.partition.rebuild":
+            object_ref = dict(parameters["index_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_IND_PARTITIONS p
+                  JOIN DBA_INDEXES i
+                    ON i.OWNER = p.INDEX_OWNER
+                   AND i.INDEX_NAME = p.INDEX_NAME
+                 WHERE p.INDEX_OWNER = :schema_name
+                   AND p.INDEX_NAME = :index_name
+                   AND p.PARTITION_NAME = :partition_name
+                   AND i.PARTITIONED = 'YES'
+                   AND i.INDEX_TYPE IN ('NORMAL', 'NORMAL/REV')
+                """,
+                {
+                    "schema_name": object_ref["schema"],
+                    "index_name": object_ref["object_name"],
+                    "partition_name": parameters["partition_name"],
+                },
+            )
+        elif action.action_template_id == "db.object.compile":
+            object_ref = dict(parameters["object_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_OBJECTS
+                 WHERE OWNER = :schema_name
+                   AND OBJECT_NAME = :object_name
+                   AND OBJECT_TYPE = :object_type
+                   AND STATUS = 'INVALID'
+                """,
+                {
+                    "schema_name": object_ref["schema"],
+                    "object_name": object_ref["object_name"],
+                    "object_type": parameters["object_type"],
+                },
+            )
+        elif action.action_template_id == "db.statistics.gather":
+            table_ref = dict(parameters["table_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_TABLES t
+                  LEFT JOIN DBA_TAB_STATISTICS s
+                    ON s.OWNER = t.OWNER
+                   AND s.TABLE_NAME = t.TABLE_NAME
+                   AND s.PARTITION_NAME IS NULL
+                   AND s.SUBPARTITION_NAME IS NULL
+                   AND s.OBJECT_TYPE = 'TABLE'
+                 WHERE t.OWNER = :schema_name
+                   AND t.TABLE_NAME = :table_name
+                   AND t.NESTED = 'NO'
+                   AND t.SECONDARY = 'N'
+                   AND t.TEMPORARY = 'N'
+                   AND s.STATTYPE_LOCKED IS NULL
+                   AND (s.LAST_ANALYZED IS NULL OR s.STALE_STATS = 'YES')
+                """,
+                {
+                    "schema_name": table_ref["schema"],
+                    "table_name": table_ref["object_name"],
+                },
+            )
+        elif action.action_template_id == "db.scheduler.job.run":
+            job_ref = dict(parameters["job_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_SCHEDULER_JOBS
+                 WHERE OWNER = :schema_name
+                   AND JOB_NAME = :job_name
+                   AND ENABLED = 'TRUE'
+                   AND STATE = 'SCHEDULED'
+                   AND NVL(RUN_COUNT, 0) = :previous_run_count
+                   AND NVL(FAILURE_COUNT, 0) = :previous_failure_count
+                """,
+                {
+                    "schema_name": job_ref["schema"],
+                    "job_name": job_ref["object_name"],
+                    "previous_run_count": parameters["previous_run_count"],
+                    "previous_failure_count": parameters[
+                        "previous_failure_count"
+                    ],
+                },
+            )
+        else:
+            raise MutationDriverError("CAPABILITY_UNAVAILABLE")
+        if await cursor.fetchone() is None:
+            raise MutationDriverError("PRECONDITION_CHANGED")

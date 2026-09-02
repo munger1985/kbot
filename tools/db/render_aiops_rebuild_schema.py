@@ -229,6 +229,14 @@ BEGIN
        AND (
             (table_name = 'KBOT_OPS_TASK' AND column_name = 'TASK_TYPE')
          OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'TURN_ID')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'ACTION_FAMILY')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EFFECT_CLASS')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EXECUTION_MODE')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'EXECUTOR_KIND')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'LOCK_IMPACT')
+         OR (table_name = 'KBOT_OPS_CHANGE_PROPOSAL' AND column_name = 'ESTIMATED_DURATION_SECONDS')
+         OR (table_name = 'KBOT_OPS_AGENT_VERSION_TARGET'
+             AND column_name = 'CONTROLLED_ACTION_POLICY_JSON')
          OR (table_name = 'KBOT_OPS_CONVERSATION_TURN'
              AND column_name = 'CURRENT_PLAN_REVISION')
          OR (table_name = 'KBOT_OPS_INVESTIGATION_REVISION'
@@ -307,7 +315,7 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 8 THEN
+    IF l_required_column_count <> 15 THEN
         raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN

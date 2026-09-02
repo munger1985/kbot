@@ -89,6 +89,9 @@ class AIOpsAgentVersionTargetEntity(BaseEntity):
         UUIDv7Type(), primary_key=True
     )
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    controlled_action_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
     )

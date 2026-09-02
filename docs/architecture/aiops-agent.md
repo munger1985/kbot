@@ -185,6 +185,28 @@ Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入�
 用户也可选择自行执行并回填结果。无论自动或人工处理，系统都保留 Before/After
 指标，生成验证结论和对比报告。
 
+受控动作平台的设计、当前实现状态和后续扩展计划见
+[AIOps 已登记受控动作设计与实施计划](../proposals/aiops-controlled-actions-implementation-plan.md)。
+方案固定使用单人审批，不接入 OA 或双人审批；`DROP`、`TRUNCATE`、归档清理等破坏性操作只
+生成供 DBA 人工执行的命令，不能进入 DB Executor。当前可执行范围仍以代码中的 Action
+Catalog 为准。
+当前 Oracle 已实现普通索引和分区索引重建的审批后执行代码切片；提案参数只能来自
+`SOURCE_VERIFIED` 对象事实，并包含表空间余量和活动锁检查。`db.index.coalesce` 因尚无
+通用且只读的可信碎片判定依据，保持 `PLANNED/UNSUPPORTED`。
+会话领域除断开阻塞会话外，也已登记 `db.session.cancel_sql`：执行前再次核对实例、SID、
+SERIAL# 和 SQL_ID，执行后确认旧 SQL 已消失且原会话仍存在。
+对象维护已登记首批 `db.object.compile` 离线代码切片，仅支持 Oracle 19c+ 的 `PROCEDURE`、
+`FUNCTION` 和 `PACKAGE`。参数只能来自本轮 `db.object.status` 的 `SOURCE_VERIFIED`、
+`INVALID` 对象事实；执行前复核同一对象仍无效，执行后要求状态为 `VALID`，对象不可见时标记
+`ADVERSE`。VIEW、TRIGGER、TYPE 和 Schema 批量编译尚未进入可执行 Catalog，真实 Oracle
+权限、锁和失败场景也尚未验收。
+统计信息维护已登记首批 `db.statistics.gather` 单表切片，仅处理数据库确认的非临时、统计未锁定
+且统计缺失或过期的表；收集策略固定，不接收模型生成的采样参数或 PL/SQL，执行后重新确认
+`LAST_ANALYZED` 和 `STALE_STATS`。Oracle Scheduler 已登记首批 `db.scheduler.job.run`，仅运行
+已启用且处于 `SCHEDULED` 的指定 Job，并用执行前后运行/失败计数验证结果。Job 的
+enable/disable/stop 尚未启用，需先为规划器增加互斥动作意图选择；以上切片均未完成真实 Oracle
+权限、负载和失败场景验收。
+
 ## 巡检与报告
 
 Inspection Plan 选择一名已启用的 DBA Agent，并支持日报、周报和 Cron。Scheduler

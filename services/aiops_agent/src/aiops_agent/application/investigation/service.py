@@ -1605,6 +1605,12 @@ class TurnPlanningService:
                 domain_id=domain_id,
             )
             policy_rules = dict(policy.rules_json or {}) if policy else {}
+            target_action_policies = await uow.agents.version_target_policies(
+                agent_version_id=agent_version.agent_version_id
+            )
+            controlled_action_execution = dict(
+                target_action_policies.get(target.target_id, {})
+            )
             readonly_allowed = bool(
                 policy_rules.get("readonly_database_enabled", False)
             )
@@ -1871,6 +1877,9 @@ class TurnPlanningService:
                         ),
                         "rules": policy_rules,
                     },
+                    "controlled_action_execution": (
+                        controlled_action_execution
+                    ),
                 },
                 source_run_evidence=source_run_evidence,
             )

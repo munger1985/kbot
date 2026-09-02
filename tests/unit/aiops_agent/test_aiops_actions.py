@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-from aiops_agent.actions import ActionRegistry, ActionRenderer
+from aiops_agent.actions import (
+    ActionCompilerRegistry,
+    ActionRegistry,
+    ActionRenderer,
+)
 from aiops_agent.actions.validation import validate_rendered_action
 from aiops_agent.contracts.diagnosis import (
     EvidenceFact,
@@ -27,6 +34,9 @@ from platform_core.contracts.aiops import (
     SufficiencyStatus,
 )
 from aiops_agent.workers.handlers import TaskExecutionContext
+from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.contracts.change import ActionVerification
+from platform_core.identity import uuid7
 
 
 class ActionCatalogTest(unittest.TestCase):
@@ -34,7 +44,14 @@ class ActionCatalogTest(unittest.TestCase):
         self.registry = ActionRegistry.load()
 
     def test_registry_has_exact_oracle_and_mysql_variants(self) -> None:
-        self.assertEqual(len(self.registry.templates), 2)
+        self.assertEqual(len(self.registry.templates), 20)
+        modes = {
+            item.definition.action_template_id: item.definition.execution_mode
+            for item in self.registry.templates
+        }
+        self.assertEqual("MANUAL_ONLY", modes["db.table.drop"])
+        self.assertEqual("MANUAL_ONLY", modes["db.table.truncate"])
+        self.assertEqual("MANUAL_ONLY", modes["db.archive.cleanup"])
         oracle = self.registry.resolve(
             action_template_id="db.session.terminate",
             version="1.0.0",
@@ -52,12 +69,507 @@ class ActionCatalogTest(unittest.TestCase):
             rendered.command_text,
             "ALTER SYSTEM DISCONNECT SESSION '42,9,@1' IMMEDIATE",
         )
+        manual = self.registry.resolve(
+            action_template_id="db.table.truncate",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities=set(),
+            entitlements=set(),
+            environment="PROD",
+        )
+        manual_rendered = ActionRenderer().render(
+            manual,
+            {
+                "table_ref": {
+                    "schema": "APP",
+                    "object_type": "TABLE",
+                    "object_name": "ORDERS_STAGING",
+                }
+            },
+        )
+        self.assertEqual("MANUAL_ONLY", manual_rendered.execution_mode)
+        self.assertEqual("NONE", manual_rendered.executor_kind)
+        self.assertEqual(
+            'TRUNCATE TABLE "APP"."ORDERS_STAGING"',
+            manual_rendered.command_text,
+        )
+
+    def test_oracle_partition_rebuild_uses_quoted_verified_identifiers(
+        self,
+    ) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.index.partition.rebuild",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "index_maintenance"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        rendered = ActionRenderer().render(
+            template,
+            {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                    "partition": "P_202609",
+                },
+                "partition_name": "P_202609",
+                "online": True,
+            },
+        )
+        self.assertEqual(
+            'ALTER INDEX "APP"."IX_ORDERS" REBUILD PARTITION "P_202609" ONLINE',
+            rendered.command_text,
+        )
+        with self.assertRaisesRegex(ValueError, "分区引用"):
+            ActionRenderer().render(
+                template,
+                {
+                    "index_ref": {
+                        "schema": "APP",
+                        "object_type": "INDEX",
+                        "object_name": "IX_ORDERS",
+                        "partition": "P_202609",
+                    },
+                    "partition_name": "P_OTHER",
+                    "online": True,
+                },
+            )
+
+    def test_oracle_cancel_sql_has_exact_typed_command(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.session.cancel_sql",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dynamic_performance_views", "session_management"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        rendered = ActionRenderer().render(
+            template,
+            {
+                "session_id": 42,
+                "serial_number": 9,
+                "instance_id": 1,
+                "sql_id": "0abc123def456",
+            },
+        )
+        self.assertEqual(
+            "ALTER SYSTEM CANCEL SQL '42,9,@1,0abc123def456' IMMEDIATE",
+            rendered.command_text,
+        )
+
+    def test_oracle_compile_uses_matching_typed_object_reference(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.object.compile",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        parameters = {
+            "object_type": "PROCEDURE",
+            "object_ref": {
+                "schema": "APP",
+                "object_type": "PROCEDURE",
+                "object_name": "PROC_A",
+            },
+        }
+
+        rendered = ActionRenderer().render(template, parameters)
+
+        self.assertEqual(
+            'ALTER PROCEDURE "APP"."PROC_A" COMPILE',
+            rendered.command_text,
+        )
+        parameters["object_type"] = "FUNCTION"
+        with self.assertRaisesRegex(ValueError, "类型.*不一致"):
+            ActionRenderer().render(template, parameters)
+
+    def test_oracle_table_statistics_uses_fixed_gather_strategy(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.statistics.gather",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        parameters = {
+            "table_ref": {
+                "schema": "APP",
+                "object_type": "TABLE",
+                "object_name": "ORDERS",
+            }
+        }
+
+        rendered = ActionRenderer().render(template, parameters)
+
+        self.assertEqual(
+            "BEGIN DBMS_STATS.GATHER_TABLE_STATS(ownname => 'APP', "
+            "tabname => 'ORDERS', estimate_percent => "
+            "DBMS_STATS.AUTO_SAMPLE_SIZE, method_opt => "
+            "'FOR ALL COLUMNS SIZE AUTO', cascade => TRUE, "
+            "no_invalidate => DBMS_STATS.AUTO_INVALIDATE); END;",
+            rendered.command_text,
+        )
+        parameters["table_ref"]["schema"] = "APP'); DELETE FROM USERS;--"
+        with self.assertRaisesRegex(ValueError, "标识符无效"):
+            ActionRenderer().render(template, parameters)
+
+    def test_oracle_scheduler_run_binds_exact_registered_job(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.scheduler.job.run",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+
+        rendered = ActionRenderer().render(
+            template,
+            {
+                "job_ref": {
+                    "schema": "APP",
+                    "object_type": "SCHEDULER_JOB",
+                    "object_name": "NIGHTLY_JOB",
+                },
+                "previous_run_count": 7,
+                "previous_failure_count": 1,
+            },
+        )
+
+        self.assertEqual(
+            "BEGIN DBMS_SCHEDULER.RUN_JOB(job_name => "
+            "'\"APP\".\"NIGHTLY_JOB\"', use_current_session => FALSE); END;",
+            rendered.command_text,
+        )
+
+
+class OracleIndexActionCompilerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.registry = ActionRegistry.load()
+
+    def _assessment(self, *, tool_id: str, columns: tuple[str, ...], row: tuple):
+        return DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=(
+                TurnEvidenceFact(
+                    evidence_ref="artifact:index#row-0",
+                    artifact_id="index-artifact",
+                    source_id="oracle.index",
+                    step_id="index-health",
+                    tool_id=tool_id,
+                    trust_level="SOURCE_VERIFIED",
+                    measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                    presentation_kind="TABLE",
+                    captured_at="2026-09-02T00:00:00+00:00",
+                    columns=tuple({"name": name} for name in columns),
+                    rows=(row,),
+                    row_count=1,
+                ),
+            ),
+        )
+
+    def test_partition_rebuild_requires_verified_space_and_lock_context(self):
+        columns = (
+            "owner",
+            "index_name",
+            "partition_name",
+            "status",
+            "partitioned",
+            "index_type",
+            "space_sufficient",
+            "online_supported",
+            "active_table_locks",
+        )
+        compiler = ActionCompilerRegistry()
+        compiled = compiler.compile_turn(
+            compiler_id="oracle-index-partition-rebuild.v1",
+            assessment=self._assessment(
+                tool_id="db.index.partition.health",
+                columns=columns,
+                row=(
+                    "APP",
+                    "IX_ORDERS",
+                    "P_202609",
+                    "UNUSABLE",
+                    "YES",
+                    "NORMAL",
+                    "YES",
+                    "YES",
+                    2,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNotNone(compiled)
+        self.assertEqual(
+            compiled.parameters["index_ref"]["partition"], "P_202609"
+        )
+        self.assertTrue(compiled.parameters["online"])
+
+        insufficient = compiler.compile_turn(
+            compiler_id="oracle-index-partition-rebuild.v1",
+            assessment=self._assessment(
+                tool_id="db.index.partition.health",
+                columns=columns,
+                row=(
+                    "APP",
+                    "IX_ORDERS",
+                    "P_202609",
+                    "UNUSABLE",
+                    "YES",
+                    "NORMAL",
+                    "NO",
+                    "YES",
+                    0,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(insufficient)
+
+    def test_offline_rebuild_is_not_compiled_while_table_is_locked(self):
+        columns = (
+            "owner",
+            "index_name",
+            "status",
+            "partitioned",
+            "index_type",
+            "space_sufficient",
+            "online_supported",
+            "active_table_locks",
+        )
+        compiled = ActionCompilerRegistry().compile_turn(
+            compiler_id="oracle-index-rebuild.v1",
+            assessment=self._assessment(
+                tool_id="db.index.health",
+                columns=columns,
+                row=(
+                    "APP",
+                    "IX_ORDERS",
+                    "UNUSABLE",
+                    "NO",
+                    "NORMAL",
+                    "YES",
+                    "NO",
+                    1,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(compiled)
+
+    def test_cancel_sql_compiler_only_consumes_dedicated_verified_fact(self):
+        columns = (
+            "instance_id",
+            "session_id",
+            "serial_number",
+            "sql_id",
+            "status",
+        )
+        compiled = ActionCompilerRegistry().compile_turn(
+            compiler_id="oracle-session-cancel-sql.v1",
+            assessment=self._assessment(
+                tool_id="db.session.current_sql",
+                columns=columns,
+                row=(1, 42, 9, "0abc123def456", "ACTIVE"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual(
+            {
+                "session_id": 42,
+                "serial_number": 9,
+                "instance_id": 1,
+                "sql_id": "0abc123def456",
+            },
+            compiled.parameters,
+        )
+
+    def test_object_compile_requires_verified_invalid_plsql_object(self):
+        compiler = ActionCompilerRegistry()
+        columns = (
+            "owner",
+            "object_name",
+            "object_type",
+            "status",
+            "last_ddl_time",
+        )
+        compiled = compiler.compile_turn(
+            compiler_id="oracle-object-compile.v1",
+            assessment=self._assessment(
+                tool_id="db.object.status",
+                columns=columns,
+                row=("APP", "PROC_A", "PROCEDURE", "INVALID", None),
+            ),
+            db_type="ORACLE",
+        )
+
+        self.assertIsNotNone(compiled)
+        self.assertEqual(
+            {
+                "object_type": "PROCEDURE",
+                "object_ref": {
+                    "schema": "APP",
+                    "object_type": "PROCEDURE",
+                    "object_name": "PROC_A",
+                },
+            },
+            compiled.parameters,
+        )
+        already_valid = compiler.compile_turn(
+            compiler_id="oracle-object-compile.v1",
+            assessment=self._assessment(
+                tool_id="db.object.status",
+                columns=columns,
+                row=("APP", "PROC_A", "PROCEDURE", "VALID", None),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(already_valid)
+
+    def test_statistics_gather_requires_stale_unlocked_regular_table(self):
+        compiler = ActionCompilerRegistry()
+        columns = (
+            "owner",
+            "table_name",
+            "partitioned",
+            "temporary",
+            "last_analyzed",
+            "stale_stats",
+            "stattype_locked",
+        )
+        compiled = compiler.compile_turn(
+            compiler_id="oracle-table-statistics-gather.v1",
+            assessment=self._assessment(
+                tool_id="db.table.statistics",
+                columns=columns,
+                row=(
+                    "APP",
+                    "ORDERS",
+                    "NO",
+                    "N",
+                    "2026-08-01T00:00:00+00:00",
+                    "YES",
+                    None,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+
+        self.assertIsNotNone(compiled)
+        self.assertEqual(
+            {
+                "table_ref": {
+                    "schema": "APP",
+                    "object_type": "TABLE",
+                    "object_name": "ORDERS",
+                }
+            },
+            compiled.parameters,
+        )
+        locked = compiler.compile_turn(
+            compiler_id="oracle-table-statistics-gather.v1",
+            assessment=self._assessment(
+                tool_id="db.table.statistics",
+                columns=columns,
+                row=(
+                    "APP",
+                    "ORDERS",
+                    "NO",
+                    "N",
+                    "2026-08-01T00:00:00+00:00",
+                    "YES",
+                    "ALL",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(locked)
+
+    def test_scheduler_run_requires_enabled_scheduled_job(self):
+        compiler = ActionCompilerRegistry()
+        columns = (
+            "owner",
+            "job_name",
+            "enabled",
+            "state",
+            "last_start_date",
+            "last_run_duration",
+            "run_count",
+            "failure_count",
+        )
+        compiled = compiler.compile_turn(
+            compiler_id="oracle-scheduler-job-run.v1",
+            assessment=self._assessment(
+                tool_id="db.scheduler.job.status",
+                columns=columns,
+                row=(
+                    "APP",
+                    "NIGHTLY_JOB",
+                    "TRUE",
+                    "SCHEDULED",
+                    None,
+                    None,
+                    7,
+                    1,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+
+        self.assertIsNotNone(compiled)
+        self.assertEqual(7, compiled.parameters["previous_run_count"])
+        self.assertEqual(1, compiled.parameters["previous_failure_count"])
+        self.assertEqual(
+            "SCHEDULER_JOB",
+            compiled.parameters["job_ref"]["object_type"],
+        )
+        running = compiler.compile_turn(
+            compiler_id="oracle-scheduler-job-run.v1",
+            assessment=self._assessment(
+                tool_id="db.scheduler.job.status",
+                columns=columns,
+                row=(
+                    "APP",
+                    "NIGHTLY_JOB",
+                    "TRUE",
+                    "RUNNING",
+                    None,
+                    None,
+                    7,
+                    1,
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(running)
 
     def test_renderer_rejects_unregistered_command_shape(self) -> None:
+        oracle = self.registry.resolve(
+            action_template_id="db.session.terminate",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"session_management"},
+            entitlements=set(),
+            environment="PROD",
+        )
         with self.assertRaisesRegex(ValueError, "Allowlist"):
             validate_rendered_action(
                 "ALTER SYSTEM SET open_cursors=999",
-                db_type="ORACLE",
+                definition=oracle.definition,
             )
 
 
@@ -269,6 +781,91 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
         self.assertEqual(plan.decision, "NO_ACTION")
         self.assertIn("AGENT_EXECUTION_NOT_ALLOWED", plan.decision_reasons)
 
+    def test_next_action_is_released_only_after_verified_predecessor(self) -> None:
+        first_plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(self._context())
+        )
+        second = first_plan.actions[0].model_copy(update={"ordinal": 2})
+        plan = first_plan.model_copy(
+            update={"actions": (first_plan.actions[0], second)}
+        )
+        run_id = uuid7()
+        target_id = uuid7()
+        proposal_task_id = uuid7()
+        plan_task = SimpleNamespace(
+            task_key="change:action-plan",
+            output_artifact_id=uuid7(),
+            ops_task_id=uuid7(),
+        )
+        proposal_task = SimpleNamespace(
+            task_key="change:proposal",
+            output_artifact_id=uuid7(),
+            ops_task_id=proposal_task_id,
+        )
+        added = []
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            added.append(entity)
+            return entity
+
+        uow = SimpleNamespace(
+            runs=SimpleNamespace(
+                list_tasks=AsyncMock(return_value=[plan_task, proposal_task]),
+                get_artifact=AsyncMock(
+                    return_value=SimpleNamespace(
+                        schema_version="ACTION_PLAN.v1",
+                        payload_json=plan.model_dump(mode="json"),
+                    )
+                ),
+                add_artifact=AsyncMock(side_effect=add_artifact),
+            ),
+            changes=SimpleNamespace(
+                get_proposal_by_ordinal=AsyncMock(return_value=None)
+            ),
+        )
+        runtime = SimpleNamespace(
+            _materialize_advisory_proposal=AsyncMock(),
+            _append_sequenced_proposal_block=AsyncMock(),
+        )
+        verification = ActionVerification(
+            proposal_id=str(uuid7()),
+            source_run_id=str(run_id),
+            result_artifact_id=str(uuid7()),
+            status="VERIFIED",
+            summary="第一条动作已验证",
+        )
+        asyncio.run(
+            AIOpsRuntimeService._release_next_action_proposal(
+                runtime,
+                uow=uow,
+                source_run=SimpleNamespace(
+                    ops_run_id=run_id,
+                    target_id=target_id,
+                    plan_snapshot_json={
+                        "target": {"row_version": 3, "security_level": 2}
+                    },
+                ),
+                source_proposal=SimpleNamespace(
+                    proposal_id=uuid7(),
+                    command_ordinal=1,
+                    ops_task_id=proposal_task_id,
+                ),
+                verification=verification,
+                now=datetime(2026, 9, 2, tzinfo=UTC),
+                trace_id="trace-sequence",
+            )
+        )
+
+        self.assertEqual(1, len(added))
+        released = added[0].payload_json["proposal"]
+        self.assertEqual(2, released["command_ordinal"])
+        runtime._materialize_advisory_proposal.assert_awaited_once()
+        runtime._append_sequenced_proposal_block.assert_awaited_once()
+
     def _context(
         self,
         *,
@@ -344,9 +941,19 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
                         "capabilities": {"session_management": True},
                     },
                     "policy": {
-                        "rules": {
-                            "allow_agent_execution": allow_execution
-                        }
+                        "rules": {}
+                    },
+                    "controlled_action_execution": {
+                        "enabled": allow_execution,
+                        "allowed_action_ids": (
+                            ["db.session.terminate"]
+                            if allow_execution
+                            else []
+                        ),
+                        "object_scopes": {
+                            "schemas": [],
+                            "exclude_system_objects": True,
+                        },
                     },
                 },
             },

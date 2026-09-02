@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from aiops_agent.actions import (
     ActionRegistry,
     ActionRenderer,
+    DESTRUCTIVE_EFFECT_CLASSES,
     MutationGrantCodec,
     MutationGrantError,
 )
@@ -170,8 +171,8 @@ class MutationExecutorService:
             template, dict(grant.typed_parameters)
         )
         if (
-            action.execution_capability
-            != "EXECUTABLE_AFTER_APPROVAL"
+            action.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
+            or action.effect_class in DESTRUCTIVE_EFFECT_CLASSES
             or action.parameters_hash != grant.parameters_hash
             or action.command_hash != grant.command_hash
             or action.renderer_version != grant.renderer_version

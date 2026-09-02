@@ -327,6 +327,7 @@ class _PlanningUow:
         self.agents = SimpleNamespace(
             version=self._get_version,
             version_source_ids=self._source_ids,
+            version_target_policies=self._version_target_policies,
         )
         self.targets = SimpleNamespace(get_scoped=self._get_target)
         self.policies = SimpleNamespace(get_scoped=self._get_policy)
@@ -366,6 +367,9 @@ class _PlanningUow:
 
     async def _recent(self, **_):
         return []
+
+    async def _version_target_policies(self, **_):
+        return {}
 
     async def _get_run(self, *, ops_run_id, lock=False):
         del lock

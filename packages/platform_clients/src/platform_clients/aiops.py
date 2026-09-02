@@ -1174,6 +1174,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_private_action_catalog(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ):
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/agents/action-catalog/{target_id}",
+            auth_context=auth_context,
+        )
+
     async def get_private_agent(
         self, agent_id: UUID, *, auth_context: AuthContext
     ):

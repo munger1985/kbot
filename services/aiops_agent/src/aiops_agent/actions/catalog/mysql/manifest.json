@@ -11,7 +11,10 @@
       "required_capabilities": ["session_management"],
       "required_entitlements": [],
       "required_privileges": ["CONNECTION_ADMIN"],
-      "execution_capability": "EXECUTABLE_AFTER_APPROVAL",
+      "action_family": "SESSION_TRANSACTION",
+      "effect_class": "SESSION_CONTROL",
+      "execution_mode": "EXECUTABLE_AFTER_APPROVAL",
+      "executor_kind": "DATABASE",
       "risk_level": "HIGH",
       "environment_allowlist": ["DEV", "STG", "PROD"],
       "parameters": [
@@ -25,7 +28,11 @@
       ],
       "command_ref": "commands/kill_connection.sql",
       "command_sha256": "49ff20dea3d2efbb3b267ce2d495364247987af30f75af858ec8272f7f069fb7",
-      "renderer_version": "strict-template.v1",
+      "compiler_id": "session-terminate.v1",
+      "renderer_id": "strict-scalar.v2",
+      "validator_id": "session-control.v1",
+      "verifier_id": "session-terminate.v1",
+      "renderer_version": "strict-template.v2",
       "precondition_tool_refs": ["db.session.active"],
       "verification_tool_refs": ["db.session.active", "db.session.blocking_chain"],
       "expected_effects": ["目标连接消失", "对应阻塞链解除"],
@@ -34,6 +41,9 @@
       "observation_delay_seconds": 5,
       "idempotency_class": "NON_RETRYABLE",
       "concurrency_key": "database-session-mutation",
+      "lock_impact": "目标连接将立即断开并回滚未提交事务",
+      "estimated_duration_seconds": 30,
+      "cancellable": false,
       "status": "ACTIVE"
     }
   ]

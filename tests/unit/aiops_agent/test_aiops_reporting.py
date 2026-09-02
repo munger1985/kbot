@@ -509,6 +509,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
                 get_artifact_by_key=AsyncMock(
                     return_value=plan_artifact
                 ),
+                list_tasks=AsyncMock(return_value=[]),
                 add_artifact=AsyncMock(side_effect=add_artifact),
                 append_event=AsyncMock(),
             ),

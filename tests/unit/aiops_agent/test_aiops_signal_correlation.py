@@ -121,7 +121,7 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         session.execute = AsyncMock(side_effect=(exact, fallback))
         session.scalars = AsyncMock(
-            side_effect=([evidence_source_id], [target_id])
+            side_effect=([evidence_source_id], [target_id], [])
         )
         repository = AIOpsAgentRepository(session, lambda: None)
 

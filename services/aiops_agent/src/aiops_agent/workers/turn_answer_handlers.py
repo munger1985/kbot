@@ -13,6 +13,9 @@ from loguru import logger
 
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.change import ProposalOutcome
+from aiops_agent.application.changes.proposal_snapshot import (
+    proposal_summary_payload,
+)
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
@@ -717,18 +720,7 @@ class DbaAnswerComposeHandler:
         return TurnAnswerBlock(
             block_type=AnswerBlockType.PROPOSAL_SUMMARY,
             schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
-            payload={
-                "proposal_id": proposal.proposal_id,
-                "proposal_hash": proposal.proposal_hash,
-                "row_version": 1,
-                "status": "PENDING_APPROVAL",
-                "action_template_id": proposal.action_template_id,
-                "risk_level": proposal.risk_level,
-                "rationale": proposal.rationale,
-                "impact": proposal.impact,
-                "parameters": proposal.canonical_parameters,
-                "expires_at": proposal.expires_at.isoformat(),
-            },
+            payload=proposal_summary_payload(proposal),
             evidence_refs=proposal.evidence_refs,
         )
 

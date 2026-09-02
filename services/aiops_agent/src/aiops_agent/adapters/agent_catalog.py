@@ -124,6 +124,14 @@ class AIOpsAgentValidator:
             raise validation_failed("AIOps Agent 当前诊断目标配置不完整")
         if not policy_id or not version_id:
             raise validation_failed("AIOps Agent 当前版本配置不完整")
+        action_policy = next(
+            (
+                item
+                for item in agent.get("controlled_action_execution") or ()
+                if str(item.get("target_id")) == str(target_id)
+            ),
+            {},
+        )
         return AgentRuntimeBinding(
             binding_id=UUID(str(version_id)),
             agent_id=agent_id,
@@ -131,12 +139,17 @@ class AIOpsAgentValidator:
             policy_id=UUID(str(policy_id)),
             status="ACTIVE",
             row_version=int(agent.get("row_version") or 1),
-            allow_mutation=(
-                bool(agent.get("allow_change_execution", False))
-                and bool(target.get("controlled_change_enabled", False))
-            ),
+            allow_mutation=bool(action_policy.get("enabled", False))
+            and bool(target.get("controlled_change_enabled", False)),
             allowed_actions_json=tuple(
-                str(item) for item in agent.get("allowed_action_types", [])
+                str(item)
+                for item in action_policy.get("allowed_action_ids", [])
+            ),
+            object_scopes_json=dict(action_policy.get("object_scopes") or {}),
+            max_daily_executions=(
+                int(action_policy["max_daily_executions"])
+                if action_policy.get("max_daily_executions") is not None
+                else None
             ),
         )
 

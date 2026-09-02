@@ -14,6 +14,11 @@
 目标是把“单一Intent精确匹配固定Skill”的聊天链替换为“输入理解—Task Frame—调查计划—
 Tool取证—证据评估—重规划—回答”的AI DBA调查循环，不在旧链旁新增兼容分支。
 
+已登记受控动作从单会话终止扩展到 DBA 日常运维领域的目标设计、单人审批边界、破坏性动作
+人工执行规则和分阶段实施计划，统一由
+[AIOps 已登记受控动作设计与实施计划](aiops-controlled-actions-implementation-plan.md)约束。
+该文档同时记录已完成和待实施范围；具体可执行能力必须以状态说明和当前 Action Catalog 为准。
+
 ## 2. 当前基线与替换范围
 
 复用Conversation、Turn、Run、Task、Artifact、Evidence、Answer、Event、Outbox、租约、SSE、

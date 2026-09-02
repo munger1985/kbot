@@ -698,12 +698,9 @@ class TargetConfigurationMixin:
         )
         if policy is None:
             raise resource_not_found("Policy")
-        if require_active and (
-            policy.status != "ACTIVE"
-            or policy.rules_json.get("allow_agent_execution") is not True
-        ):
+        if require_active and policy.status != "ACTIVE":
             raise validation_failed(
-                "EXECUTE Binding 必须引用允许 Agent 执行的 Active Policy"
+                "EXECUTE Binding 必须引用 Active Policy"
             )
 
     async def list_agent_bindings(

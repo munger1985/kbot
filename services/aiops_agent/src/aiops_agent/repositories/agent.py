@@ -47,13 +47,20 @@ class AIOpsAgentRepository:
         await self._session.flush()
 
     async def add_version_targets(
-        self, *, version_id: UUID, target_ids: tuple[UUID, ...]
+        self,
+        *,
+        version_id: UUID,
+        target_ids: tuple[UUID, ...],
+        controlled_action_policies: dict[UUID, dict[str, Any]],
     ) -> None:
         self._write_guard()
         self._session.add_all(
             AIOpsAgentVersionTargetEntity(
                 agent_version_id=version_id,
                 target_id=target_id,
+                controlled_action_policy_json=dict(
+                    controlled_action_policies.get(target_id, {})
+                ),
             )
             for target_id in target_ids
         )
@@ -80,6 +87,20 @@ class AIOpsAgentRepository:
             .order_by(AIOpsAgentVersionTargetEntity.target_id)
         )
         return list(rows)
+
+    async def version_target_policies(
+        self, *, agent_version_id: UUID
+    ) -> dict[UUID, dict[str, Any]]:
+        rows = await self._session.scalars(
+            select(AIOpsAgentVersionTargetEntity).where(
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == agent_version_id
+            )
+        )
+        return {
+            row.target_id: dict(row.controlled_action_policy_json or {})
+            for row in rows
+        }
 
     async def active_version_target_ids(
         self, *, domain_id: int, agent_version_id: UUID
@@ -294,11 +315,14 @@ class AIOpsAgentRepository:
         target_ids = await self.version_target_ids(
             agent_version_id=version.agent_version_id
         )
+        target_policies = await self.version_target_policies(
+            agent_version_id=version.agent_version_id
+        )
         if target_id is not None and target_id not in target_ids:
             return None
         policy = await self._session.get(PolicyEntity, version.policy_id)
         return _execution_binding(
-            agent, version, source_ids, target_ids, policy,
+            agent, version, source_ids, target_ids, target_policies, policy,
             selected_target_id=target_id,
         )
 
@@ -326,6 +350,9 @@ class AIOpsAgentRepository:
         target_ids = await self.version_target_ids(
             agent_version_id=agent_version_id
         )
+        target_policies = await self.version_target_policies(
+            agent_version_id=agent_version_id
+        )
         if target_id not in target_ids:
             return None
         policy = await self._session.get(PolicyEntity, version.policy_id)
@@ -334,6 +361,7 @@ class AIOpsAgentRepository:
             version,
             source_ids,
             target_ids,
+            target_policies,
             policy,
             selected_target_id=target_id,
         )
@@ -357,11 +385,15 @@ class AIOpsAgentRepository:
                 target_ids = await self.version_target_ids(
                     agent_version_id=version.agent_version_id
                 )
+                target_policies = await self.version_target_policies(
+                    agent_version_id=version.agent_version_id
+                )
                 return _execution_binding(
                     agent,
                     version,
                     source_ids,
                     target_ids,
+                    target_policies,
                     policy,
                     selected_target_id=target_id,
                 ), policy
@@ -419,6 +451,8 @@ class AIOpsAgentExecutionBinding:
     row_version: int
     allow_mutation: bool
     allowed_actions_json: list[str]
+    object_scopes_json: dict[str, Any]
+    max_daily_executions: int | None
     instruction: str | None
 
 
@@ -427,11 +461,13 @@ def _execution_binding(
     version: AIOpsAgentVersionEntity,
     source_ids: list[UUID],
     target_ids: list[UUID],
+    target_policies: dict[UUID, dict[str, Any]],
     policy: PolicyEntity | None,
     *,
     selected_target_id: UUID | None = None,
 ):
     rules: dict[str, Any] = dict(policy.rules_json or {}) if policy else {}
+    action_policy = dict(target_policies.get(selected_target_id, {}))
     return AIOpsAgentExecutionBinding(
         binding_id=version.agent_version_id,
         agent_id=agent.agent_id,
@@ -441,8 +477,15 @@ def _execution_binding(
         diagnostic_source_ids=tuple(source_ids),
         status=agent.status,
         row_version=int(agent.row_version),
-        allow_mutation=bool(rules.get("allow_agent_execution", False)),
-        allowed_actions_json=list(rules.get("allowed_action_types") or [])
-        if rules.get("allow_agent_execution", False) else [],
+        allow_mutation=bool(action_policy.get("enabled", False)),
+        allowed_actions_json=list(
+            action_policy.get("allowed_action_ids") or []
+        ) if action_policy.get("enabled", False) else [],
+        object_scopes_json=dict(action_policy.get("object_scopes") or {}),
+        max_daily_executions=(
+            int(action_policy["max_daily_executions"])
+            if action_policy.get("max_daily_executions") is not None
+            else None
+        ),
         instruction=version.instruction,
     )

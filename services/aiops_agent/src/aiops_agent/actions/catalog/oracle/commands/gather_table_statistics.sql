@@ -1,0 +1,1 @@
+BEGIN DBMS_STATS.GATHER_TABLE_STATS({{table_ref}}, estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE, method_opt => 'FOR ALL COLUMNS SIZE AUTO', cascade => TRUE, no_invalidate => DBMS_STATS.AUTO_INVALIDATE); END;

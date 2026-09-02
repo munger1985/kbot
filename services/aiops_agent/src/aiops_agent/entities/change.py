@@ -36,6 +36,13 @@ class ChangeProposalEntity(BaseEntity):
         Numeric(19, 0), nullable=False
     )
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    action_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    effect_class: Mapped[str] = mapped_column(String(48), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    executor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    canonical_object_ref_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
     action_template_id: Mapped[str] = mapped_column(
         String(128), nullable=False
     )
@@ -56,6 +63,10 @@ class ChangeProposalEntity(BaseEntity):
         OracleNativeJSON
     )
     risk_level: Mapped[str] = mapped_column(String(16), nullable=False)
+    lock_impact: Mapped[str] = mapped_column(String(1000), nullable=False)
+    estimated_duration_seconds: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False
+    )
     preconditions_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
         OracleNativeJSON
     )

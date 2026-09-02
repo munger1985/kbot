@@ -2797,6 +2797,10 @@
       "ProposalView": {
         "additionalProperties": false,
         "properties": {
+          "action_family": {
+            "title": "Action Family",
+            "type": "string"
+          },
           "action_template_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Action Template Hash",
@@ -2810,6 +2814,18 @@
             "title": "Action Template Version",
             "type": "string"
           },
+          "canonical_object_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Object Ref"
+          },
           "command_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Command Hash",
@@ -2819,6 +2835,15 @@
             "title": "Command Preview",
             "type": "string"
           },
+          "effect_class": {
+            "title": "Effect Class",
+            "type": "string"
+          },
+          "estimated_duration_seconds": {
+            "minimum": 0.0,
+            "title": "Estimated Duration Seconds",
+            "type": "integer"
+          },
           "evidence_refs": {
             "default": [],
             "items": {
@@ -2826,6 +2851,23 @@
             },
             "title": "Evidence Refs",
             "type": "array"
+          },
+          "execution_mode": {
+            "enum": [
+              "EXECUTABLE_AFTER_APPROVAL",
+              "MANUAL_ONLY"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "executor_kind": {
+            "enum": [
+              "DATABASE",
+              "EXTERNAL",
+              "NONE"
+            ],
+            "title": "Executor Kind",
+            "type": "string"
           },
           "expires_at": {
             "anyOf": [
@@ -2841,6 +2883,10 @@
           },
           "impact": {
             "title": "Impact",
+            "type": "string"
+          },
+          "lock_impact": {
+            "title": "Lock Impact",
             "type": "string"
           },
           "mode": {
@@ -2923,6 +2969,10 @@
           "target_id",
           "target_version",
           "mode",
+          "action_family",
+          "effect_class",
+          "execution_mode",
+          "executor_kind",
           "action_template_id",
           "action_template_version",
           "action_template_hash",
@@ -2932,6 +2982,8 @@
           "command_hash",
           "impact",
           "risk",
+          "lock_impact",
+          "estimated_duration_seconds",
           "prerequisites",
           "rollback_plan",
           "verification_plan",

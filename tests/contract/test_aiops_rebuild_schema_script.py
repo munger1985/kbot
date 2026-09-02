@@ -80,7 +80,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         )
         self.assertIn("l_missing_table_count <> 0", self.sql)
         self.assertIn("l_missing_view_count <> 0", self.sql)
-        self.assertIn("l_required_column_count <> 8", self.sql)
+        self.assertIn("l_required_column_count <> 15", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_task_type_constraint_count <> 1", self.sql)
         for table_name in self.manifest["tables"]:

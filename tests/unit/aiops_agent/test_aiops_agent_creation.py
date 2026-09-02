@@ -19,6 +19,7 @@ class _AgentRepository:
         self.current_version_at_agent_insert = "NOT_CAPTURED"
         self.version_sources = {}
         self.version_targets = {}
+        self.controlled_action_policies = {}
 
     async def resource_states(self, **kwargs):
         del kwargs
@@ -41,11 +42,19 @@ class _AgentRepository:
     async def version_source_ids(self, *, agent_version_id):
         return self.version_sources.get(agent_version_id, [])
 
-    async def add_version_targets(self, *, version_id, target_ids):
+    async def add_version_targets(
+        self, *, version_id, target_ids, controlled_action_policies
+    ):
         self.version_targets[version_id] = list(target_ids)
+        self.controlled_action_policies[version_id] = dict(
+            controlled_action_policies
+        )
 
     async def version_target_ids(self, *, agent_version_id):
         return self.version_targets.get(agent_version_id, [])
+
+    async def version_target_policies(self, *, agent_version_id):
+        return self.controlled_action_policies.get(agent_version_id, {})
 
     async def get(self, *, domain_id, agent_id, lock=False):
         del lock
@@ -171,7 +180,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACTIVE", result["status"])
         self.assertEqual([str(unit_of_work.target.target_id)], result["target_ids"])
         self.assertEqual([str(source_id)], result["diagnostic_source_ids"])
-        self.assertFalse(result["allow_change_execution"])
+        self.assertEqual([], result["controlled_action_execution"])
         self.assertFalse(
             result["target_candidates"][0]["readonly_connection_enabled"]
         )
@@ -290,7 +299,15 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     display_name="数据库变更助手",
                     diagnostic_source_ids=(source_id,),
                     target_ids=(target_id,),
-                    allow_change_execution=True,
+                    controlled_action_execution=(
+                        {
+                            "target_id": target_id,
+                            "enabled": True,
+                            "allowed_action_ids": (
+                                "db.session.terminate",
+                            ),
+                        },
+                    ),
                     actor_id="kbotui_dev",
                 )
             )

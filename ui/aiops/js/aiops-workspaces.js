@@ -276,6 +276,30 @@
     } catch (error) { shell.toast(error.message); button.disabled = false; }
   }
 
+  async function submitManualResult(button) {
+    const proposal = button.closest(".ops-proposal");
+    const status = proposal.querySelector("[data-manual-status]").value;
+    const note = proposal.querySelector("[data-manual-note]").value.trim();
+    const boundedOutput = proposal.querySelector("[data-manual-output]").value.trim();
+    if (!confirm(`确认回填人工处理结果为“${status}”吗？系统不会执行页面中的命令。`)) return;
+    button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(`${api}/proposals/${encodeURIComponent(button.dataset.manualProposal)}/manual-result`, {
+        method: "POST",
+        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+        body: JSON.stringify({
+          expected_row_version: Number(button.dataset.version),
+          status,
+          occurred_at: new Date().toISOString(),
+          note: note || null,
+          bounded_output: boundedOutput || null,
+        }),
+      });
+      shell.toast(status === "EXECUTED" ? "人工结果已回填，系统将进行只读验证" : "人工结果已回填");
+      if (state.conversation) await loadConversation(state.conversation.conversation_id);
+    } catch (error) { shell.toast(error.message); button.disabled = false; }
+  }
+
   function answerBlockHtml(block) {
     const payload = block.payload || {};
     if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
@@ -296,12 +320,18 @@
       return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
     }
     if (block.block_type === "PROPOSAL_SUMMARY") {
-      const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(value)}</span></li>`).join("");
+      const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(typeof value === "object" ? JSON.stringify(value) : value)}</span></li>`).join("");
       const pending = payload.status === "PENDING_APPROVAL";
+      const manual = payload.execution_mode === "MANUAL_ONLY" && payload.status === "ADVISORY_READY";
       const actions = pending
         ? `<div class="ops-proposal-actions"><button type="button" class="primary" data-approve-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}" data-hash="${esc(payload.proposal_hash)}">批准并执行</button><button type="button" data-reject-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">拒绝</button></div>`
-        : `<p class="ops-proposal-status">当前状态：${esc(payload.status || "UNKNOWN")}</p>`;
-      return `<section class="ops-proposal"><header><div><strong>受控变更待审批</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(payload.risk_level || "UNKNOWN")}</small></div></header><p>${esc(payload.rationale || "")}</p><p><strong>影响范围：</strong>${esc(payload.impact || "-")}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${actions}</section>`;
+        : manual
+          ? `<div class="ops-manual-result"><strong>DBA 人工执行结果</strong><select data-manual-status><option value="EXECUTED">已执行</option><option value="FAILED">执行失败</option><option value="CANCELLED">已取消</option></select><textarea data-manual-note maxlength="4000" placeholder="处理说明（可选）"></textarea><textarea data-manual-output maxlength="16000" placeholder="受限输出（可选，请勿填写密码或密钥）"></textarea><button type="button" class="primary" data-manual-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">回填结果</button></div>`
+          : `<p class="ops-proposal-status">当前状态：${esc(payload.status || "UNKNOWN")}</p>`;
+      const command = payload.command_preview ? `<div class="agent-code-block"><div class="agent-code-toolbar"><span>仅供 DBA 人工核对${manual ? "并在 KBot 外执行" : ""}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(payload.command_preview)}</code></pre></div>` : "";
+      const verification = values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${values(payload.verification_plan).map(esc).join("、")}</p>` : "";
+      const title = manual ? "仅供人工执行" : pending ? "受控变更待审批" : "受控动作建议";
+      return `<section class="ops-proposal"><header><div><strong>${title}</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(payload.risk_level || "UNKNOWN")}</small></div></header><p>${esc(payload.rationale || "")}</p><p><strong>影响范围：</strong>${esc(payload.impact || "-")}</p><p><strong>锁影响：</strong>${esc(payload.lock_impact || "-")}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${command}${verification}${actions}</section>`;
     }
     if (block.block_type === "EVIDENCE_REFERENCES") return "";
     return markdown.render(payload.markdown || payload.text || payload.instruction || "");
@@ -820,6 +850,8 @@
     if (copyButton) markdown.copyCode(copyButton);
     const proposalButton = event.target.closest("[data-approve-proposal],[data-reject-proposal]");
     if (proposalButton) proposalAction(proposalButton);
+    const manualButton = event.target.closest("[data-manual-proposal]");
+    if (manualButton) submitManualResult(manualButton);
   });
   shell.ready.then(() => {
     const page = document.body.dataset.page;

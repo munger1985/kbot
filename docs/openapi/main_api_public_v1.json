@@ -11,11 +11,6 @@
             "title": "Alert Cooldown Minutes",
             "type": "integer"
           },
-          "allow_change_execution": {
-            "default": false,
-            "title": "Allow Change Execution",
-            "type": "boolean"
-          },
           "auto_alert_enabled": {
             "default": true,
             "title": "Auto Alert Enabled",
@@ -36,6 +31,14 @@
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
+          },
+          "controlled_action_execution": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
+            },
+            "title": "Controlled Action Execution",
+            "type": "array"
           },
           "description": {
             "anyOf": [
@@ -198,17 +201,6 @@
             ],
             "title": "Alert Cooldown Minutes"
           },
-          "allow_change_execution": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allow Change Execution"
-          },
           "auto_alert_enabled": {
             "anyOf": [
               {
@@ -248,6 +240,20 @@
               }
             ],
             "title": "Config"
+          },
+          "controlled_action_execution": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlled Action Execution"
           },
           "description": {
             "anyOf": [
@@ -439,6 +445,26 @@
         "title": "AIOpsCollectionStatusPayload",
         "type": "object"
       },
+      "AIOpsControlledActionObjectScopes": {
+        "additionalProperties": false,
+        "properties": {
+          "exclude_system_objects": {
+            "default": true,
+            "title": "Exclude System Objects",
+            "type": "boolean"
+          },
+          "schemas": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Schemas",
+            "type": "array"
+          }
+        },
+        "title": "AIOpsControlledActionObjectScopes",
+        "type": "object"
+      },
       "AIOpsConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
@@ -533,6 +559,50 @@
           "new_password"
         ],
         "title": "AIOpsPasswordChangePayload",
+        "type": "object"
+      },
+      "AIOpsTargetControlledActionExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_action_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Action Ids",
+            "type": "array"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_daily_executions": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Daily Executions"
+          },
+          "object_scopes": {
+            "$ref": "#/components/schemas/AIOpsControlledActionObjectScopes"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "AIOpsTargetControlledActionExecution",
         "type": "object"
       },
       "AgentActivatePayload": {
@@ -2563,6 +2633,18 @@
               }
             ],
             "title": "Source Run Id"
+          },
+          "source_situation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Situation Id"
           },
           "target_id": {
             "format": "uuid",
@@ -7246,6 +7328,10 @@
       "ProposalView": {
         "additionalProperties": false,
         "properties": {
+          "action_family": {
+            "title": "Action Family",
+            "type": "string"
+          },
           "action_template_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Action Template Hash",
@@ -7259,6 +7345,18 @@
             "title": "Action Template Version",
             "type": "string"
           },
+          "canonical_object_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Object Ref"
+          },
           "command_hash": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Command Hash",
@@ -7268,6 +7366,15 @@
             "title": "Command Preview",
             "type": "string"
           },
+          "effect_class": {
+            "title": "Effect Class",
+            "type": "string"
+          },
+          "estimated_duration_seconds": {
+            "minimum": 0.0,
+            "title": "Estimated Duration Seconds",
+            "type": "integer"
+          },
           "evidence_refs": {
             "default": [],
             "items": {
@@ -7275,6 +7382,23 @@
             },
             "title": "Evidence Refs",
             "type": "array"
+          },
+          "execution_mode": {
+            "enum": [
+              "EXECUTABLE_AFTER_APPROVAL",
+              "MANUAL_ONLY"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "executor_kind": {
+            "enum": [
+              "DATABASE",
+              "EXTERNAL",
+              "NONE"
+            ],
+            "title": "Executor Kind",
+            "type": "string"
           },
           "expires_at": {
             "anyOf": [
@@ -7290,6 +7414,10 @@
           },
           "impact": {
             "title": "Impact",
+            "type": "string"
+          },
+          "lock_impact": {
+            "title": "Lock Impact",
             "type": "string"
           },
           "mode": {
@@ -7372,6 +7500,10 @@
           "target_id",
           "target_version",
           "mode",
+          "action_family",
+          "effect_class",
+          "execution_mode",
+          "executor_kind",
           "action_template_id",
           "action_template_version",
           "action_template_hash",
@@ -7381,6 +7513,8 @@
           "command_hash",
           "impact",
           "risk",
+          "lock_impact",
+          "estimated_duration_seconds",
           "prerequisites",
           "rollback_plan",
           "verification_plan",
@@ -10882,6 +11016,47 @@
           }
         },
         "summary": "Get Access",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/action-catalog/{target_id}": {
+      "get": {
+        "operationId": "action_catalog_api_v1_apps_aiops_action_catalog__target_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Action Catalog",
         "tags": [
           "AIOps App"
         ]

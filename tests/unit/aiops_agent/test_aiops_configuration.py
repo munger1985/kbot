@@ -200,8 +200,18 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             ],
             "policy_id": str(policy_id),
             "row_version": 3,
-            "allow_change_execution": True,
-            "allowed_action_types": ["db.session.terminate"],
+            "controlled_action_execution": [
+                {
+                    "target_id": str(target_id),
+                    "enabled": True,
+                    "allowed_action_ids": ["db.session.terminate"],
+                    "object_scopes": {
+                        "schemas": [],
+                        "exclude_system_objects": True,
+                    },
+                    "max_daily_executions": 10,
+                }
+            ],
         }
         resolver = AIOpsAgentValidator(agent_service)
 
@@ -554,7 +564,6 @@ class ConfigurationContractTest(unittest.TestCase):
         PolicyConfigurationMixin()._validate_policy_rules(
             {
                 "schema_version": "ops.policy.v1",
-                "allow_agent_execution": False,
                 "readonly_database_enabled": False,
                 "auto_alert_enabled": True,
                 "auto_observe_min_severity": "CRITICAL",

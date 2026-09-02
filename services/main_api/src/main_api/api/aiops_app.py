@@ -83,12 +83,37 @@ class AIOpsManualApprovalPayload(_Payload):
     comment: str | None = Field(default=None, max_length=1000)
 
 
+class AIOpsControlledActionObjectScopes(_Payload):
+    schemas: tuple[str, ...] = ()
+    exclude_system_objects: bool = True
+
+
+class AIOpsTargetControlledActionExecution(_Payload):
+    target_id: UUID
+    enabled: bool = False
+    allowed_action_ids: tuple[str, ...] = ()
+    object_scopes: AIOpsControlledActionObjectScopes = Field(
+        default_factory=AIOpsControlledActionObjectScopes
+    )
+    max_daily_executions: int | None = Field(default=None, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def validate_selection(self):
+        if self.enabled != bool(self.allowed_action_ids):
+            raise ValueError("启用受控动作时必须明确选择至少一个动作")
+        if len(set(self.allowed_action_ids)) != len(self.allowed_action_ids):
+            raise ValueError("受控动作不能重复")
+        return self
+
+
 class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    allow_change_execution: bool = False
+    controlled_action_execution: tuple[
+        AIOpsTargetControlledActionExecution, ...
+    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -111,7 +136,9 @@ class AIOpsAgentUpdatePayload(_Payload):
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
-    allow_change_execution: bool | None = None
+    controlled_action_execution: tuple[
+        AIOpsTargetControlledActionExecution, ...
+    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -461,6 +488,14 @@ async def list_agents(request: Request):
         item for item in agents
         if item.get("status") == "ACTIVE" and str(item.get("agent_id")) in allowed
     ]
+
+
+@router.get("/action-catalog/{target_id}")
+async def action_catalog(target_id: UUID, request: Request):
+    await _require(request, "aiops:agent_manage")
+    return await _client(request).get_private_action_catalog(
+        target_id, auth_context=request.state.auth_context
+    )
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)

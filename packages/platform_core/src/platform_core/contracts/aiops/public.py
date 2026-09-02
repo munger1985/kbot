@@ -266,6 +266,13 @@ class ProposalView(AIOpsContract):
     target_id: UUIDv7
     target_version: int = Field(ge=1)
     mode: str
+    action_family: str
+    effect_class: str
+    execution_mode: Literal[
+        "EXECUTABLE_AFTER_APPROVAL", "MANUAL_ONLY"
+    ]
+    executor_kind: Literal["DATABASE", "EXTERNAL", "NONE"]
+    canonical_object_ref: JsonObject | None = None
     action_template_id: str
     action_template_version: str
     action_template_hash: Sha256Digest
@@ -275,6 +282,8 @@ class ProposalView(AIOpsContract):
     command_hash: Sha256Digest
     impact: str
     risk: str
+    lock_impact: str
+    estimated_duration_seconds: int = Field(ge=0)
     prerequisites: tuple[str, ...]
     rollback_plan: str
     verification_plan: str
