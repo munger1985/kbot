@@ -70,31 +70,11 @@ class ConversationTurnService:
         agent_id = UUID(str(payload["agent_id"]))
         target_id = UUID(str(payload["target_id"]))
         situation_id = UUID(str(payload["situation_id"]))
+        signal_event_id = UUID(str(payload["signal_event_id"]))
         actor_id = "system:signal-intake"
         trace_id = str(payload["trace_id"])
-        turn_idempotency_key = (
-            f"alert:{situation_id}:agent:{agent_id}"
-        )
+        turn_idempotency_key = f"alert-signal:{signal_event_id}"
         async with self._uow_factory() as uow:
-            existing_conversation = (
-                await uow.conversations.get_auto_situation_conversation(
-                    domain_id=domain_id,
-                    situation_id=situation_id,
-                    agent_id=agent_id,
-                    actor_id=actor_id,
-                )
-            )
-            if existing_conversation is not None:
-                existing_turn = await uow.turns.get_by_idempotency(
-                    conversation_id=existing_conversation.conversation_id,
-                    idempotency_key=turn_idempotency_key,
-                )
-                if existing_turn is None:
-                    raise state_conflict(
-                        "告警自动诊断会话缺少对应 Turn"
-                    )
-                return self._receipt(existing_turn)
-
             situation = await uow.situations.get_situation_scoped(
                 situation_id=situation_id,
                 domain_id=domain_id,
@@ -109,6 +89,56 @@ class ConversationTurnService:
                 "自动开始诊断。请核验告警、规划并执行必要的只读取证，"
                 "分析可能原因、影响和处置建议，并给出有证据支持的结论。"
             )
+            command = TurnCreate(
+                content=(
+                    {
+                        "content_type": "TEXT",
+                        "text": task_text,
+                    },
+                ),
+                idempotency_key=turn_idempotency_key,
+            )
+            execution_context = {
+                "trigger_type": "ALERT",
+                "interaction_mode": "AUTONOMOUS",
+                "workflow_kind": WorkflowKind.ALERT_DIAGNOSIS.value,
+                "trigger_signal_event_id": str(signal_event_id),
+            }
+            existing_conversation = (
+                await uow.conversations.get_auto_situation_conversation(
+                    domain_id=domain_id,
+                    situation_id=situation_id,
+                    agent_id=agent_id,
+                    actor_id=actor_id,
+                    lock=True,
+                )
+            )
+            if existing_conversation is not None:
+                existing_turn = await uow.turns.get_by_idempotency(
+                    conversation_id=existing_conversation.conversation_id,
+                    idempotency_key=turn_idempotency_key,
+                )
+                if existing_turn is not None:
+                    return self._receipt(existing_turn)
+                version = await uow.agents.version(
+                    agent_id=existing_conversation.agent_id,
+                    agent_version_id=existing_conversation.agent_version_id,
+                )
+                if version is None:
+                    raise resource_not_found("Agent Version")
+                receipt = await self._create_turn(
+                    uow=uow,
+                    conversation=existing_conversation,
+                    version=version,
+                    command=command,
+                    actor_id=actor_id,
+                    trace_id=trace_id,
+                    source_run=None,
+                    execution_context=execution_context,
+                )
+                await uow.commit()
+                return receipt
+
             receipt = await self._start_in_uow(
                 uow=uow,
                 domain_id=domain_id,
@@ -123,23 +153,8 @@ class ConversationTurnService:
                         situation_id=situation_id,
                     ),
                 ),
-                first_turn=TurnCreate(
-                    content=(
-                        {
-                            "content_type": "TEXT",
-                            "text": task_text,
-                        },
-                    ),
-                    idempotency_key=turn_idempotency_key,
-                ),
-                execution_context={
-                    "trigger_type": "ALERT",
-                    "interaction_mode": "AUTONOMOUS",
-                    "workflow_kind": WorkflowKind.ALERT_DIAGNOSIS.value,
-                    "trigger_signal_event_id": str(
-                        payload["signal_event_id"]
-                    ),
-                },
+                first_turn=command,
+                execution_context=execution_context,
             )
             await uow.commit()
             return receipt

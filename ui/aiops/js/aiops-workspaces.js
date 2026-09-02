@@ -8,9 +8,14 @@
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
   const activeTurnFollowers = new Set();
+  const terminalRunStatuses = new Set([
+    "COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED",
+  ]);
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
+  let activeSituationId = null;
+  let situationRefreshTimer = null;
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
@@ -797,28 +802,63 @@
     };
   }
 
-  async function showSituation(item) {
-    const detail = await KBotAIOpsAuth.request(`${api}/situations/${encodeURIComponent(item.situation_id)}`);
-    document.getElementById("case-title").textContent = detail.title;
-    const panel = document.getElementById("case-detail");
-    const runId = detail.run_ids[0];
-    let run = null; let result = null;
-    if (runId) {
-      run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`);
-      try {
-        result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`);
-      } catch (error) {
-        if (error.status !== 404 && error.status !== 409) throw error;
+  function scheduleSituationRefresh(item, delayMs) {
+    window.clearTimeout(situationRefreshTimer);
+    situationRefreshTimer = window.setTimeout(() => {
+      loadSituation(item, { background: true });
+    }, delayMs);
+  }
+
+  async function loadSituation(item, { background = false } = {}) {
+    const situationId = String(item.situation_id);
+    if (activeSituationId !== situationId) return;
+    try {
+      const detail = await KBotAIOpsAuth.request(`${api}/situations/${encodeURIComponent(situationId)}`);
+      if (activeSituationId !== situationId) return;
+      document.getElementById("case-title").textContent = detail.title;
+      const panel = document.getElementById("case-detail");
+      const runId = detail.run_ids[0];
+      let run = null; let result = null;
+      if (runId) {
+        run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`);
+        try {
+          result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`);
+        } catch (error) {
+          if (error.status !== 404 && error.status !== 409) throw error;
+        }
+      }
+      if (activeSituationId !== situationId) return;
+      const hasFinalResult = Boolean(result?.final_artifact);
+      const source = hasFinalResult
+        ? { target_id: run.target_id, source_run_id: run.ops_run_id }
+        : { target_id: detail.target_id, source_situation_id: detail.situation_id };
+      let diagnosis;
+      if (hasFinalResult) {
+        diagnosis = `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>`;
+      } else if (run && !terminalRunStatuses.has(run.status)) {
+        diagnosis = `<div class="ops-empty">Agent 正在诊断，当前状态：${esc(run.status)}。页面会自动更新结果。</div>`;
+      } else if (run) {
+        diagnosis = `<div class="ops-empty">本次自动诊断已结束但未形成可展示结果，最终状态：${esc(run.status)}。</div>`;
+      } else {
+        diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
+      }
+      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${situationEvidence(detail)}${diagnosis}${continueForm(source, detail.title)}`;
+      await bindContinue(source);
+      const runActive = !run || !terminalRunStatuses.has(run.status);
+      if (runActive) scheduleSituationRefresh(item, 3000);
+      else if (detail.status !== "RESOLVED") scheduleSituationRefresh(item, 15000);
+    } catch (error) {
+      if (!background) throw error;
+      if (activeSituationId === situationId) {
+        scheduleSituationRefresh(item, 5000);
       }
     }
-    const source = result
-      ? { target_id: run.target_id, source_run_id: run.ops_run_id }
-      : { target_id: detail.target_id, source_situation_id: detail.situation_id };
-    const diagnosis = result
-      ? `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>`
-      : '<div class="ops-empty">自动诊断尚未生成结果，可选择 Agent 立即开始诊断。</div>';
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${situationEvidence(detail)}${diagnosis}${continueForm(source, detail.title)}`;
-    await bindContinue(source);
+  }
+
+  async function showSituation(item) {
+    activeSituationId = String(item.situation_id);
+    window.clearTimeout(situationRefreshTimer);
+    await loadSituation(item);
   }
 
   async function showInspection(item) {

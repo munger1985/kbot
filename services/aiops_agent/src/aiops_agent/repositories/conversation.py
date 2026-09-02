@@ -60,6 +60,7 @@ class ConversationRepository(AIOpsRepository):
         situation_id: UUID,
         agent_id: UUID,
         actor_id: str,
+        lock: bool = False,
     ):
         """返回同一告警情境已经提交给同一 Agent 的系统会话。"""
         statement = (
@@ -70,8 +71,10 @@ class ConversationRepository(AIOpsRepository):
                 OpsConversationEntity.source_situation_id == situation_id,
                 OpsConversationEntity.agent_id == agent_id,
                 OpsConversationEntity.created_by == actor_id,
+                OpsConversationEntity.status != "ARCHIVED",
             )
             .order_by(OpsConversationEntity.created_at)
-            .limit(1)
         )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalars().first()

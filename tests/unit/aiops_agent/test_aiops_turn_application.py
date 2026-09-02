@@ -438,8 +438,10 @@ class _Uow:
         )
 
     async def _get_auto_situation_conversation(
-        self, *, domain_id, situation_id, agent_id, actor_id
+        self, *, domain_id, situation_id, agent_id, actor_id, lock=False
     ):
+        if lock:
+            await self._conversation_lock.acquire()
         return next(
             (
                 row
@@ -761,6 +763,41 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(WorkflowKind.ALERT_DIAGNOSIS.value, run.workflow_kind)
         self.assertEqual(signal_event_id, run.trigger_signal_event_id)
         self.assertEqual(uow.situation.situation_id, run.situation_id)
+
+    async def test_new_alert_signal_creates_new_turn_in_same_conversation(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service = ConversationTurnService(uow_factory=lambda: uow)
+        payload = {
+            "domain_id": 7,
+            "agent_id": str(uow.agent.agent_id),
+            "target_id": str(uow.target.target_id),
+            "situation_id": str(uow.situation.situation_id),
+            "signal_event_id": str(uuid7()),
+            "trace_id": "trace-alert-first",
+        }
+
+        first = await service.start_alert_diagnosis(payload)
+        payload["signal_event_id"] = str(uuid7())
+        payload["trace_id"] = "trace-alert-next"
+        second = await service.start_alert_diagnosis(payload)
+        repeated = await service.start_alert_diagnosis(payload)
+
+        self.assertEqual(first["conversation_id"], second["conversation_id"])
+        self.assertNotEqual(first["turn_id"], second["turn_id"])
+        self.assertEqual(second["turn_id"], repeated["turn_id"])
+        self.assertEqual(1, len(uow.conversation_rows))
+        self.assertEqual(2, len(uow.turns.turns))
+        self.assertEqual(2, len(uow.outbox.rows))
+        self.assertEqual(1, uow.turns.turns[0].turn_no)
+        self.assertEqual(2, uow.turns.turns[1].turn_no)
+        self.assertEqual(
+            payload["signal_event_id"],
+            uow.outbox.rows[1].payload_json["execution_context"][
+                "trigger_signal_event_id"
+            ],
+        )
 
     async def test_get_turn_returns_safe_current_investigation_plan(
         self,
