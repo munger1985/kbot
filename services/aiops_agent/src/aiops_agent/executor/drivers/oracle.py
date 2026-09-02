@@ -126,14 +126,24 @@ class OracleDiagnosticDriver:
                     query_started = time.monotonic()
                     phase = "QUERY"
                     await cursor.execute(sql, parameters)
+                    description = tuple(cursor.description or ())
                     columns = tuple(
-                        str(item[0]).lower() for item in cursor.description
+                        str(item[0]).lower() for item in description
+                    )
+                    database_type_codes = tuple(
+                        item[1] if len(item) > 1 else None
+                        for item in description
+                    )
+                    database_types = tuple(
+                        self._database_type_name(item)
+                        for item in database_type_codes
                     )
                     rows = await cursor.fetchmany(limits.max_result_rows + 1)
                     row_truncated = len(rows) > limits.max_result_rows
                     materialized_rows, cell_truncated = (
-                        await self._materialize_character_lobs(
+                        await self._materialize_supported_values(
                             rows[: limits.max_result_rows],
+                            database_type_codes=database_type_codes,
                             max_cell_chars=limits.max_cell_chars,
                         )
                     )
@@ -148,6 +158,7 @@ class OracleDiagnosticDriver:
                     rows=materialized_rows,
                     truncated=row_truncated or cell_truncated,
                     db_version=str(connection.version),
+                    database_types=database_types,
                 )
             finally:
                 cursor.close()
@@ -217,40 +228,66 @@ class OracleDiagnosticDriver:
                     pass
 
     @staticmethod
-    async def _materialize_character_lobs(
+    async def _materialize_supported_values(
         rows,
         *,
+        database_type_codes,
         max_cell_chars: int,
     ) -> tuple[tuple[tuple[Any, ...], ...], bool]:
-        """在连接关闭前有界读取 CLOB/NCLOB，二进制 LOB 保持拒绝语义。"""
+        """按 Oracle 列元数据有界读取字符 LOB，并规范化 RAW。"""
         materialized: list[tuple[Any, ...]] = []
         truncated = False
         character_lob_types = {
             oracledb.DB_TYPE_CLOB,
             oracledb.DB_TYPE_NCLOB,
         }
+        raw_types = {
+            oracledb.DB_TYPE_RAW,
+            oracledb.DB_TYPE_LONG_RAW,
+        }
         for row in rows:
             values = []
-            for value in row:
-                if (
-                    hasattr(value, "read")
-                    and getattr(value, "type", None)
-                    in character_lob_types
+            for index, value in enumerate(row):
+                database_type = (
+                    database_type_codes[index]
+                    if index < len(database_type_codes)
+                    else None
+                )
+                value_type = getattr(value, "type", None)
+                if database_type in character_lob_types or (
+                    database_type is None
+                    and value_type in character_lob_types
                 ):
-                    content = value.read(
-                        offset=1,
-                        amount=max_cell_chars + 1,
-                    )
-                    if inspect.isawaitable(content):
-                        content = await content
+                    if isinstance(value, str):
+                        content = value
+                    elif hasattr(value, "read"):
+                        content = value.read(1, max_cell_chars + 1)
+                        if inspect.isawaitable(content):
+                            content = await content
+                    else:
+                        content = value
                     if isinstance(content, str):
                         if len(content) > max_cell_chars:
                             content = content[:max_cell_chars]
                             truncated = True
                         value = content
+                elif database_type in raw_types and isinstance(
+                    value, (bytes, bytearray, memoryview)
+                ):
+                    content = bytes(value)
+                    max_bytes = max_cell_chars // 2
+                    if len(content) > max_bytes:
+                        content = content[:max_bytes]
+                        truncated = True
+                    value = content.hex().upper()
                 values.append(value)
             materialized.append(tuple(values))
         return tuple(materialized), truncated
+
+    @staticmethod
+    def _database_type_name(database_type) -> str:
+        """只暴露稳定 Oracle 类型名，不记录返回值。"""
+        return str(getattr(database_type, "name", None) or "UNKNOWN")
 
 
 class OracleMutationDriver:

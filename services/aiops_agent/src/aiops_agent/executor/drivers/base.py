@@ -27,6 +27,7 @@ class DriverQueryResult:
     rows: tuple[tuple[Any, ...], ...]
     truncated: bool
     db_version: str
+    database_types: tuple[str, ...] = ()
 
 
 class ReadonlyDatabaseDriver(Protocol):

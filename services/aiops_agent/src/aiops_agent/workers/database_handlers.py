@@ -61,7 +61,9 @@ def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
         "QUERY_VALUE_FORMAT_INVALID": "查询中的值与 Oracle 要求的格式不匹配",
         "OUTPUT_COLUMNS_MISMATCH": "查询已执行，但返回列与冻结投影不一致",
         "OUTPUT_COLUMN_LIMIT_EXCEEDED": "查询已执行，但返回列数超过诊断结果限制",
-        "OUTPUT_VALUE_TYPE_UNSUPPORTED": "查询已执行，但结果包含不支持的二进制或 LOB 类型",
+        "OUTPUT_VALUE_TYPE_UNSUPPORTED": (
+            "查询已执行，但结果包含不支持的 BLOB、BFILE 或未识别二进制类型"
+        ),
         "OUTPUT_COLUMN_TYPE_MISMATCH": "查询已执行，但同一返回列包含不一致的数据类型",
         "OUTPUT_SCHEMA_INVALID": "查询已执行，但返回结果结构无法通过归一化校验",
         "RESULT_LIMIT_EXCEEDED": "查询已执行，但返回结果超过诊断结果限制",

@@ -145,17 +145,16 @@ class _FakeOracleLob:
         self.type = lob_type
         self.read_amount = None
 
-    async def read(self, *, offset, amount):
+    async def read(self, offset=1, amount=None):
         self.read_amount = (offset, amount)
         return self.value[:amount]
 
 
 class _OracleResultCursor(_TimeoutCursor):
-    description = (("PLAN_TEXT",),)
-
-    def __init__(self, value) -> None:
+    def __init__(self, value, database_type=None) -> None:
         super().__init__()
         self.value = value
+        self.description = (("PLAN_TEXT", database_type),)
 
     async def execute(self, _sql, _parameters=None):
         self.execute_count += 1
@@ -165,8 +164,8 @@ class _OracleResultCursor(_TimeoutCursor):
 
 
 class _OracleResultConnection(_TimeoutConnection):
-    def __init__(self, value) -> None:
-        self._cursor = _OracleResultCursor(value)
+    def __init__(self, value, database_type=None) -> None:
+        self._cursor = _OracleResultCursor(value, database_type)
 
 
 class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
@@ -297,18 +296,58 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(32768, len(result.rows[0][0]))
         self.assertTrue(result.truncated)
 
+    async def test_character_lob_uses_cursor_metadata_when_lob_type_is_absent(
+        self,
+    ) -> None:
+        import oracledb
+
+        lob = _FakeOracleLob("SELECT * FROM orders", None)
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(
+                return_value=_OracleResultConnection(
+                    lob, oracledb.DB_TYPE_CLOB
+                )
+            ),
+        ):
+            result = await self._execute()
+
+        self.assertEqual((("SELECT * FROM orders",),), result.rows)
+        self.assertEqual(("DB_TYPE_CLOB",), result.database_types)
+
+    async def test_raw_value_is_rendered_as_bounded_hex_text(self) -> None:
+        import oracledb
+
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(
+                return_value=_OracleResultConnection(
+                    bytes.fromhex("DEADBEEF"), oracledb.DB_TYPE_RAW
+                )
+            ),
+        ):
+            result = await self._execute()
+
+        self.assertEqual((("DEADBEEF",),), result.rows)
+        self.assertEqual(("DB_TYPE_RAW",), result.database_types)
+
     async def test_binary_lob_is_not_materialized(self) -> None:
         import oracledb
 
         lob = _FakeOracleLob(b"binary-plan", oracledb.DB_TYPE_BLOB)
         with patch(
             "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
-            AsyncMock(return_value=_OracleResultConnection(lob)),
+            AsyncMock(
+                return_value=_OracleResultConnection(
+                    lob, oracledb.DB_TYPE_BLOB
+                )
+            ),
         ):
             result = await self._execute()
 
         self.assertIs(lob, result.rows[0][0])
         self.assertIsNone(lob.read_amount)
+        self.assertEqual(("DB_TYPE_BLOB",), result.database_types)
 
 
 class DiagnosticCatalogTest(unittest.TestCase):

@@ -35,9 +35,20 @@ from platform_core.contracts.aiops.executor import (
 class DynamicOutputValidationError(ValueError):
     """保留动态查询结果归一化失败的稳定错误分类。"""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        column_name: str | None = None,
+        database_type: str | None = None,
+        value_type: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.column_name = column_name
+        self.database_type = database_type
+        self.value_type = value_type
 
 
 class DynamicDiagnosticExecutorService:
@@ -128,15 +139,33 @@ class DynamicDiagnosticExecutorService:
             raise DiagnosticGrantError(exc.code, str(exc)) from exc
         except DiagnosticDriverError as exc:
             logger.warning(
-                "Oracle 动态只读诊断未取得结果：code={} retryable={}",
+                "Oracle 动态只读诊断未取得结果："
+                "executor_request_id={} run_id={} task_id={} trace_id={} "
+                "query_sha256={} code={} retryable={}",
+                request.executor_request_id,
+                grant.run_id,
+                grant.task_id,
+                grant.trace_id,
+                grant.query_sha256,
                 exc.code,
                 exc.retryable,
             )
             return self._gap(request, exc.code, retryable=exc.retryable)
         except DynamicOutputValidationError as exc:
             logger.warning(
-                "Oracle 动态只读诊断结果校验失败：code={}",
+                "Oracle 动态只读诊断结果校验失败："
+                "executor_request_id={} run_id={} task_id={} trace_id={} "
+                "query_sha256={} code={} column={} database_type={} "
+                "value_type={}",
+                request.executor_request_id,
+                grant.run_id,
+                grant.task_id,
+                grant.trace_id,
+                grant.query_sha256,
                 exc.code,
+                exc.column_name or "UNKNOWN",
+                exc.database_type or "UNKNOWN",
+                exc.value_type or "UNKNOWN",
             )
             return self._gap(request, exc.code, retryable=False)
         except ValueError:
@@ -199,7 +228,13 @@ class DynamicDiagnosticExecutorService:
         rows = tuple(tuple(row) for row in raw.rows)
         logical_types = tuple(
             DynamicDiagnosticExecutorService._column_type(
-                tuple(row[index] for row in rows)
+                tuple(row[index] for row in rows),
+                column_name=raw.columns[index],
+                database_type=(
+                    raw.database_types[index]
+                    if index < len(raw.database_types)
+                    else "UNKNOWN"
+                ),
             )
             for index in range(len(raw.columns))
         )
@@ -268,7 +303,12 @@ class DynamicDiagnosticExecutorService:
         )
 
     @staticmethod
-    def _column_type(values: tuple[Any, ...]) -> str:
+    def _column_type(
+        values: tuple[Any, ...],
+        *,
+        column_name: str,
+        database_type: str,
+    ) -> str:
         kinds: set[str] = set()
         for value in values:
             if value is None:
@@ -279,6 +319,9 @@ class DynamicDiagnosticExecutorService:
                 raise DynamicOutputValidationError(
                     "OUTPUT_VALUE_TYPE_UNSUPPORTED",
                     "动态诊断结果禁止二进制或 LOB",
+                    column_name=column_name,
+                    database_type=database_type,
+                    value_type=type(value).__name__,
                 )
             if isinstance(value, bool):
                 kinds.add("BOOLEAN")
@@ -298,6 +341,8 @@ class DynamicDiagnosticExecutorService:
             raise DynamicOutputValidationError(
                 "OUTPUT_COLUMN_TYPE_MISMATCH",
                 "动态诊断结果同列类型不一致",
+                column_name=column_name,
+                database_type=database_type,
             )
         return next(iter(kinds))
 

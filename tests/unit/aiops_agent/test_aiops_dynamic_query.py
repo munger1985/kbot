@@ -6,7 +6,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from aiops_agent.application.investigation import prepare_dynamic_queries
 from aiops_agent.application.investigation.discovery import available_tools
@@ -274,9 +274,10 @@ class FakeDynamicDriver:
 class StaticDynamicDriver:
     db_type = "ORACLE"
 
-    def __init__(self, *, columns, rows) -> None:
+    def __init__(self, *, columns, rows, database_types=()) -> None:
         self.columns = columns
         self.rows = rows
+        self.database_types = database_types
 
     async def execute_dynamic(self, **kwargs):
         return DriverQueryResult(
@@ -284,6 +285,7 @@ class StaticDynamicDriver:
             rows=self.rows,
             truncated=False,
             db_version="23.26.1.0.0",
+            database_types=self.database_types,
         )
 
 
@@ -461,14 +463,28 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         driver = StaticDynamicDriver(
             columns=("sid", "wait_seconds"),
             rows=((10, b"binary"),),
+            database_types=("DB_TYPE_NUMBER", "DB_TYPE_BLOB"),
         )
 
-        result = await self._service(
-            control_plane, driver=driver
-        ).execute(self._request())
+        request = self._request()
+        with patch(
+            "aiops_agent.executor.dynamic_service.logger.warning"
+        ) as warning:
+            result = await self._service(
+                control_plane, driver=driver
+            ).execute(request)
 
         self.assertEqual("GAP", result.status)
         self.assertEqual("OUTPUT_VALUE_TYPE_UNSUPPORTED", result.error_code)
+        logged = warning.call_args.args
+        self.assertIn(request.executor_request_id, logged)
+        self.assertIn(self.grant.run_id, logged)
+        self.assertIn(self.grant.task_id, logged)
+        self.assertIn(self.grant.trace_id, logged)
+        self.assertIn(self.grant.query_sha256, logged)
+        self.assertIn("wait_seconds", logged)
+        self.assertIn("DB_TYPE_BLOB", logged)
+        self.assertIn("bytes", logged)
 
     async def test_mixed_column_types_have_specific_gap(self) -> None:
         control_plane = AsyncMock()
