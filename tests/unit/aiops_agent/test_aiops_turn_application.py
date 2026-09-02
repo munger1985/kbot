@@ -340,6 +340,9 @@ class _Uow:
             situation_id=uuid7(),
             domain_id=7,
             target_id=self.target.target_id,
+            title="Oracle Alert Log 检测到异常",
+            severity="CRITICAL",
+            status="OPEN",
         )
         self.version = SimpleNamespace(
             agent_version_id=self.agent.current_version_id,
@@ -367,6 +370,9 @@ class _Uow:
         self.conversations = SimpleNamespace(
             add_conversation=self._add_conversation,
             get_conversation=self._get_conversation,
+            get_auto_situation_conversation=(
+                self._get_auto_situation_conversation
+            ),
             list_conversations=self._list_conversations,
         )
 
@@ -427,6 +433,21 @@ class _Uow:
                 for row in self.conversation_rows
                 if int(row.domain_id) == domain_id
                 and row.conversation_id == conversation_id
+            ),
+            None,
+        )
+
+    async def _get_auto_situation_conversation(
+        self, *, domain_id, situation_id, agent_id, actor_id
+    ):
+        return next(
+            (
+                row
+                for row in self.conversation_rows
+                if int(row.domain_id) == domain_id
+                and row.source_situation_id == situation_id
+                and row.agent_id == agent_id
+                and row.created_by == actor_id
             ),
             None,
         )
@@ -682,6 +703,64 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             str(uow.situation.situation_id),
             uow.runs.rows[0].plan_snapshot_json["source_situation_id"],
         )
+
+    async def test_alert_diagnosis_uses_standard_autonomous_turn_chain(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service = ConversationTurnService(uow_factory=lambda: uow)
+        signal_event_id = uuid7()
+        payload = {
+            "domain_id": 7,
+            "agent_id": str(uow.agent.agent_id),
+            "target_id": str(uow.target.target_id),
+            "situation_id": str(uow.situation.situation_id),
+            "signal_event_id": str(signal_event_id),
+            "trace_id": "trace-alert",
+        }
+
+        first = await service.start_alert_diagnosis(payload)
+        second = await service.start_alert_diagnosis(payload)
+
+        self.assertEqual(first["conversation_id"], second["conversation_id"])
+        self.assertEqual(first["turn_id"], second["turn_id"])
+        self.assertEqual(1, len(uow.conversation_rows))
+        self.assertEqual(1, len(uow.turns.turns))
+        self.assertEqual(1, len(uow.outbox.rows))
+        conversation = uow.conversation_rows[0]
+        self.assertEqual("SITUATION", conversation.source_type)
+        self.assertEqual(
+            uow.situation.situation_id,
+            conversation.source_situation_id,
+        )
+        self.assertEqual("system:signal-intake", conversation.created_by)
+        command = uow.outbox.rows[0].payload_json
+        self.assertEqual("ALERT", command["execution_context"]["trigger_type"])
+        self.assertEqual(
+            "AUTONOMOUS",
+            command["execution_context"]["interaction_mode"],
+        )
+        self.assertEqual(
+            WorkflowKind.ALERT_DIAGNOSIS.value,
+            command["execution_context"]["workflow_kind"],
+        )
+        self.assertEqual(
+            str(signal_event_id),
+            command["execution_context"]["trigger_signal_event_id"],
+        )
+
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            dict(command)
+        )
+        await TurnPlannerService(uow_factory=lambda: uow).begin(
+            dict(uow.outbox.rows[1].payload_json)
+        )
+        run = uow.runs.rows[0]
+        self.assertEqual("ALERT", run.trigger_type)
+        self.assertEqual("AUTONOMOUS", run.interaction_mode)
+        self.assertEqual(WorkflowKind.ALERT_DIAGNOSIS.value, run.workflow_kind)
+        self.assertEqual(signal_event_id, run.trigger_signal_event_id)
+        self.assertEqual(uow.situation.situation_id, run.situation_id)
 
     async def test_get_turn_returns_safe_current_investigation_plan(
         self,

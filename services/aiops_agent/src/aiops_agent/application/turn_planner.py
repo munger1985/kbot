@@ -107,6 +107,11 @@ class TurnPlannerService:
                 workflow_kind=str(
                     execution_context.get("workflow_kind") or "CHAT_TURN"
                 ),
+                trigger_signal_event_id=(
+                    UUID(str(execution_context["trigger_signal_event_id"]))
+                    if execution_context.get("trigger_signal_event_id")
+                    else None
+                ),
                 situation_id=(
                     UUID(str(payload["source_situation_id"]))
                     if payload.get("source_situation_id")

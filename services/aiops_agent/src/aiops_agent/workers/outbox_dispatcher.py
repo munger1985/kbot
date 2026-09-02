@@ -198,29 +198,17 @@ class AIOpsDomainOutboxSink:
         if event_type != "OPS_SITUATION_AUTO_RUN_REQUESTED":
             await self._fallback.publish(event_type, payload)
             return
-        situation_id = payload["situation_id"]
-        await self._runtime_service.create_run(
-            CreateOpsRunCommand(
-                command_id=uuid7(),
-                idempotency_key=f"situation:{situation_id}:observe",
-                domain_id=payload["domain_id"],
-                actor_id="system:signal-intake",
-                agent_id=payload["agent_id"],
-                target_id=payload["target_id"],
-                trigger_type="ALERT",
-                trigger_signal_event_id=payload["signal_event_id"],
-                situation_id=situation_id,
-                input="已验证故障信号触发主动根因诊断",
-                blueprint_id="diagnosis.root-cause",
-                blueprint_version="1",
-                client_metadata={
-                    "trace_id": payload["trace_id"],
-                    "trigger": "verified_signal_event",
-                },
-            )
+        if self._conversation_turn_service is None:
+            raise RuntimeError("告警 Agent Turn 服务未配置")
+        result = await self._conversation_turn_service.start_alert_diagnosis(
+            payload
         )
         logger.info(
-            "严重故障情境诊断 Run 已创建：situation_id={}", situation_id
+            "告警情境已提交给 Agent：situation_id={} conversation_id={} "
+            "turn_id={}",
+            payload["situation_id"],
+            result["conversation_id"],
+            result["turn_id"],
         )
 
     async def on_terminal_failure(
@@ -230,6 +218,15 @@ class AIOpsDomainOutboxSink:
         exc: Exception,
     ) -> None:
         """在 Outbox 重试耗尽后收敛关联业务状态。"""
+        if event_type == "OPS_SITUATION_AUTO_RUN_REQUESTED":
+            logger.opt(exception=exc).error(
+                "告警自动诊断提交 Agent 重试耗尽：situation_id={} "
+                "agent_id={} type={}",
+                payload.get("situation_id"),
+                payload.get("agent_id"),
+                type(exc).__name__,
+            )
+            return
         if self._turn_planning_service is None:
             return
         if event_type == "aiops.turn.replanning_requested":
@@ -350,6 +347,24 @@ class AIOpsOutboxDispatcher:
                 retryable
                 and snapshot["attempt"] < snapshot["max_attempts"]
             )
+            logger.bind(
+                event_name="aiops.outbox.publish_failed",
+                outbox_id=str(snapshot["outbox_id"]),
+                outbox_event_type=snapshot["event_type"],
+                attempt=snapshot["attempt"],
+                max_attempts=snapshot["max_attempts"],
+                retry=retry,
+                exception_type=type(exc).__name__,
+            ).warning(
+                "AIOps Outbox 投递失败：event_type={} outbox_id={} "
+                "attempt={}/{} retry={} type={}",
+                snapshot["event_type"],
+                snapshot["outbox_id"],
+                snapshot["attempt"],
+                snapshot["max_attempts"],
+                retry,
+                type(exc).__name__,
+            )
             async with self._uow_factory() as uow:
                 now = await uow.runs.database_now()
                 changed = await uow.outbox.release_failed(
@@ -404,8 +419,32 @@ class AIOpsOutboxDispatcher:
 
     async def run_forever(self) -> None:
         logger.info("AIOps Outbox Dispatcher 开始运行")
+        consecutive_failures = 0
         while not self._stop.is_set():
-            worked = await self.run_once()
+            try:
+                worked = await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                consecutive_failures += 1
+                retry_seconds = min(
+                    2 ** min(consecutive_failures - 1, 5), 30
+                )
+                logger.opt(exception=exc).error(
+                    "AIOps Outbox Dispatcher 单轮执行失败，将在 {} 秒后恢复："
+                    "type={} consecutive_failures={}",
+                    retry_seconds,
+                    type(exc).__name__,
+                    consecutive_failures,
+                )
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(), timeout=retry_seconds
+                    )
+                except TimeoutError:
+                    pass
+                continue
+            consecutive_failures = 0
             if worked:
                 continue
             try:

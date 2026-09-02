@@ -52,7 +52,7 @@ _SEVERITY_RANK = {
 def _auto_run_idempotency_key(
     *, situation_id: Any, agent_id: Any
 ) -> str:
-    """按Situation和Agent生成自动诊断幂等键。"""
+    """按 Situation 和 Agent 生成自动诊断请求幂等键。"""
     return f"situation:{situation_id}:agent:{agent_id}:observe-run"
 
 
@@ -785,7 +785,7 @@ class SignalEventIntakeService:
                 ).hexdigest(),
                 status="PENDING",
                 available_at=now,
-                max_attempts=5,
+                max_attempts=8,
                 trace_id=trace_id,
                 created_at=now,
                 updated_at=now,

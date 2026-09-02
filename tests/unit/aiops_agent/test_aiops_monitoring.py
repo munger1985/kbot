@@ -419,28 +419,40 @@ class SecretAndOutboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("top-secret", secret.values["token"])
         self.assertNotIn("top-secret", repr(secret))
 
-    async def test_situation_outbox_builds_root_cause_run(self) -> None:
+    async def test_situation_outbox_reuses_agent_conversation_turn(self) -> None:
         runtime = Mock()
         runtime.create_run = AsyncMock()
         fallback = Mock()
         fallback.publish = AsyncMock()
-        sink = AIOpsDomainOutboxSink(
-            runtime_service=runtime, fallback=fallback
+        turns = Mock()
+        turns.start_alert_diagnosis = AsyncMock(
+            return_value={
+                "conversation_id": (
+                    "019c03b5-4b88-7ab2-8c19-7b6ea34f2a15"
+                ),
+                "turn_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a16",
+            }
         )
+        sink = AIOpsDomainOutboxSink(
+            runtime_service=runtime,
+            fallback=fallback,
+            conversation_turn_service=turns,
+        )
+        payload = {
+            "domain_id": 2,
+            "agent_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11",
+            "target_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a12",
+            "situation_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a13",
+            "signal_event_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a14",
+            "trace_id": "trace-1",
+        }
         await sink.publish(
             "OPS_SITUATION_AUTO_RUN_REQUESTED",
-            {
-                "domain_id": 2,
-                "agent_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11",
-                "target_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a12",
-                "situation_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a13",
-                "signal_event_id": "019c03b5-4b88-7ab2-8c19-7b6ea34f2a14",
-                "trace_id": "trace-1",
-            },
+            payload,
         )
-        command = runtime.create_run.await_args.args[0]
-        self.assertEqual("diagnosis.root-cause", command.blueprint_id)
-        self.assertEqual("ALERT", command.trigger_type)
+
+        turns.start_alert_diagnosis.assert_awaited_once_with(payload)
+        runtime.create_run.assert_not_awaited()
         fallback.publish.assert_not_awaited()
 
     async def test_verified_payload_store_is_content_addressed(self) -> None:

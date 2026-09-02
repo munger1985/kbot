@@ -153,6 +153,47 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_warning_event_uses_agent_configured_warning_threshold(
+        self,
+    ) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        source_id = uuid7()
+        binding = SimpleNamespace(
+            agent_id=uuid7(),
+            diagnostic_source_ids=(source_id,),
+        )
+        policy = SimpleNamespace(
+            rules_json={
+                "auto_observe_min_severity": "WARNING",
+                "alert_cooldown_seconds": 900,
+            }
+        )
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(
+                    return_value=(binding, policy)
+                )
+            ),
+            runs=SimpleNamespace(
+                get_latest_by_situation_correlation=AsyncMock(
+                    return_value=None
+                )
+            ),
+        )
+
+        result = await service._resolve_auto_agent(
+            uow=uow,
+            target=target,
+            source_id=source_id,
+            situation_id=uuid7(),
+            severity="WARNING",
+            fingerprint="f" * 64,
+            now=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+
+        self.assertEqual(binding, result)
+
     async def test_auto_agent_logs_target_fallback_selection(self) -> None:
         service = object.__new__(SignalEventIntakeService)
         target = SimpleNamespace(domain_id=7, target_id=uuid7())
