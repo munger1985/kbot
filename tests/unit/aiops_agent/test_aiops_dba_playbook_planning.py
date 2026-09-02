@@ -610,6 +610,8 @@ class _CompactLookupReasoner(_PastedLogReasoner):
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
                 "action_intent": "NONE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "列出 TCC Schema 下的表",
                 "success_criteria": ["返回当前表清单"],
                 # 模拟模型生成了合法动作但漏填候选工具，由应用层统一补齐。
@@ -654,6 +656,40 @@ class _CompactLookupReasoner(_PastedLogReasoner):
         raise AssertionError("明确只读问题不应进入完整调查 Planner")
 
 
+class _CompactSingleSqlReasoner(_CompactLookupReasoner):
+    async def plan_compact(self, **kwargs):
+        self.compact_calls.append(kwargs)
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "READ_ONLY_LOOKUP",
+                "action_intent": "NONE",
+                "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                "subject_ref": {"sql_id": "6TJX7SU0Q5TTJ"},
+                "problem_statement": "分析指定 SQL 的性能问题",
+                "success_criteria": ["识别已验证的主要性能原因"],
+                "selected_tool_ids": [],
+                "actions": [],
+                "public_reasoning_summary": "已识别明确 SQL_ID",
+            }
+        )
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.compact-planning",
+                schema_id="CompactPlanningOutput",
+                model_technical_name="planner-model",
+                model_revision="2",
+                prompt_id="aiops_agent.compact_planner",
+                prompt_version="1.0.0",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
+
+
 class _CompactControlledActionReasoner(_CompactLookupReasoner):
     async def plan_compact(self, **kwargs):
         self.compact_calls.append(kwargs)
@@ -661,6 +697,8 @@ class _CompactControlledActionReasoner(_CompactLookupReasoner):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "EXECUTE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": [
                     "核验表状态并生成统计信息收集审批提案"
@@ -729,6 +767,8 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "EXECUTE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "按前一轮方案执行数据库受控动作",
                 "success_criteria": ["核验对象并生成审批提案"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -759,6 +799,8 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "EXECUTE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": ["生成等待人工审批的统计信息提案"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -935,6 +977,64 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             ["db.instance.identity", "db.oracle.readonly_query"],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+
+    async def test_single_sql_profile_expands_complete_fixed_baseline(self):
+        uow = _PlanningUow()
+        question = "分析 SQL 6TJX7SU0Q5TTJ 的问题"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        reasoner = _CompactSingleSqlReasoner()
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=diagnostics,
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual(1, len(reasoner.compact_calls))
+        snapshot = uow.run.plan_snapshot_json
+        self.assertEqual("READ_ONLY_LOOKUP", snapshot["planning_route"]["mode"])
+        self.assertEqual(
+            "SINGLE_SQL_PERFORMANCE",
+            snapshot["answer_context"]["task_frame"]["diagnostic_profile"],
+        )
+        self.assertEqual(
+            {"sql_id": "6tjx7su0q5ttj"},
+            snapshot["answer_context"]["task_frame"]["subject_ref"],
+        )
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+                "db.sql.plan_monitor",
+            ],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        self.assertNotIn(
+            "db.oracle.readonly_query",
             [item.tool_id for item in uow.tool_invocations],
         )
 
@@ -1197,6 +1297,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
                 "action_intent": "NONE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "列出 TCC Schema 下的表",
                 "success_criteria": ["返回表清单"],
                 "selected_tool_ids": ["db.oracle.readonly_query"],
@@ -1235,6 +1337,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "EXECUTE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": ["生成等待人工审批的受控动作"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -1274,6 +1378,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "ADVISORY",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "生成 TPCC.ORDER_BIG 的统计信息收集语句",
                 "success_criteria": ["返回可复制的登记模板语句"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -2770,6 +2876,30 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         self.assertIn("dba_catalog_views", snapshot.target_capabilities)
         self.assertIn("replication_views", snapshot.target_capabilities)
         self.assertIn("DB_SQL_STATS", snapshot.target_capabilities)
+        self.assertIn("CREATE SESSION", snapshot.privileges)
+        self.assertIn("SELECT ANY DICTIONARY", snapshot.privileges)
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        discovered = {
+            item["tool_id"]
+            for item in ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=diagnostics,
+            ).discover_tools(snapshot)
+        }
+        self.assertTrue(
+            {
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+            }
+            <= discovered
+        )
         self.assertEqual(
             frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),
             snapshot.available_source_capabilities,

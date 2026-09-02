@@ -353,7 +353,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(55, len(registry.tools))
+        self.assertEqual(58, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -376,6 +376,9 @@ class DiagnosticCatalogTest(unittest.TestCase):
             self.assertIn(("POSTGRESQL", tool_id), pairs)
         self.assertIn(("ORACLE", "db.sql.top_current"), pairs)
         self.assertIn(("ORACLE", "db.sql.plan_monitor"), pairs)
+        self.assertIn(("ORACLE", "db.sql.cursor_details"), pairs)
+        self.assertIn(("ORACLE", "db.sql.execution_plan"), pairs)
+        self.assertIn(("ORACLE", "db.sql.object_statistics"), pairs)
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
         )
@@ -424,6 +427,51 @@ class DiagnosticCatalogTest(unittest.TestCase):
             ("sql_id", "limit"),
             tuple(parameter.name for parameter in tool.definition.parameters),
         )
+
+    def test_oracle_single_sql_baseline_contracts_are_loadable(self) -> None:
+        registry = DiagnosticRegistry.load()
+        expected = {
+            "db.sql.cursor_details": (
+                ("sql_id", "limit"),
+                {"child_number", "plan_hash_value", "last_active_time"},
+            ),
+            "db.sql.execution_plan": (
+                ("sql_id", "limit"),
+                {"plan_line_id", "cardinality", "access_predicates"},
+            ),
+            "db.sql.object_statistics": (
+                ("sql_id",),
+                {"last_analyzed", "stale_stats", "stattype_locked"},
+            ),
+        }
+        for tool_id, (parameters, columns) in expected.items():
+            with self.subTest(tool_id=tool_id):
+                tool = registry.resolve(
+                    tool_id=tool_id,
+                    tool_version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19c",
+                    capabilities={
+                        "dynamic_performance_views",
+                        "dba_catalog_views",
+                    },
+                    entitlements=set(),
+                )
+                self.assertEqual(
+                    parameters,
+                    tuple(
+                        parameter.name
+                        for parameter in tool.definition.parameters
+                    ),
+                )
+                self.assertTrue(
+                    columns
+                    <= {
+                        column.name
+                        for column in tool.definition.output_columns
+                    }
+                )
+                self.assertEqual(64, len(tool.definition.template_sha256))
 
     def test_capability_and_entitlement_selection_is_exact(self) -> None:
         registry = DiagnosticRegistry.load()

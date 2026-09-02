@@ -77,6 +77,13 @@ class ToolExecutionSnapshotBuilder:
             return ()
         major = int(match.group(0))
         configured_privileges = set(capabilities.privileges)
+        normalized_privileges = {
+            str(value).strip().upper() for value in configured_privileges
+        }
+        dictionary_access = (
+            str(capabilities.database_type) == "ORACLE"
+            and "SELECT ANY DICTIONARY" in normalized_privileges
+        )
         discovered = []
         for item in self._tools.tools:
             definition = item.definition
@@ -96,16 +103,22 @@ class ToolExecutionSnapshotBuilder:
                 capabilities.entitlements
             ):
                 continue
-            if configured_privileges and not set(
+            if configured_privileges and not dictionary_access and not set(
                 definition.required_privileges
             ) <= configured_privileges:
                 continue
+            output_names = tuple(
+                column.name for column in definition.output_columns
+            )
             discovered.append(
                 {
                     "tool_id": definition.tool_id,
                     "version": definition.version,
                     "tool_class": "ORACLE_SQL",
-                    "description": f"受控只读数据库观测：{definition.tool_id}",
+                    "description": (
+                        f"受控只读数据库观测：{definition.tool_id}；"
+                        f"返回字段：{', '.join(output_names)}"
+                    ),
                     "input": {
                         parameter.name: parameter.model_dump(
                             mode="json",
@@ -114,6 +127,7 @@ class ToolExecutionSnapshotBuilder:
                         )
                         for parameter in definition.parameters
                     },
+                    "returns": list(output_names),
                 }
             )
         return tuple(

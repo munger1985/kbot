@@ -130,6 +130,7 @@ def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
             "tool_class": str(tool.get("tool_class") or "DIAGNOSTIC"),
             "description": str(tool.get("description") or "")[:500],
             "input": dict(tool.get("input") or {}),
+            "returns": list(tool.get("returns") or ()),
         }
         if tool.get("policy") is not None:
             card["policy"] = dict(tool["policy"])

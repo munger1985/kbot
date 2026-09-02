@@ -133,6 +133,8 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         payload = {
             "planning_mode": "READ_ONLY_LOOKUP",
             "action_intent": "NONE",
+            "diagnostic_profile": "GENERAL",
+            "subject_ref": {},
             "problem_statement": "列出 TCC Schema 下的表",
             "success_criteria": ["返回当前表清单"],
             "selected_tool_ids": ["db.oracle.readonly_query"],
@@ -184,6 +186,8 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         payload = {
             "planning_mode": "FULL_INVESTIGATION",
             "action_intent": "NONE",
+            "diagnostic_profile": "GENERAL",
+            "subject_ref": {},
             "problem_statement": "分析数据库性能问题",
             "success_criteria": ["形成证据结论"],
             "selected_tool_ids": ["shell.exec"],
@@ -211,6 +215,8 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         payload = {
             "planning_mode": "READ_ONLY_LOOKUP",
             "action_intent": "NONE",
+            "diagnostic_profile": "GENERAL",
+            "subject_ref": {},
             "problem_statement": "查询当前数据库对象",
             "success_criteria": ["返回查询结果"],
             "selected_tool_ids": [],
@@ -257,6 +263,8 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             {
                 "planning_mode": "CONTROLLED_ACTION",
                 "action_intent": "EXECUTE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "执行当前对话中约定的受控动作",
                 "success_criteria": ["生成审批提案"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -273,6 +281,8 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             {
                 "planning_mode": "FULL_INVESTIGATION",
                 "action_intent": "NONE",
+                "diagnostic_profile": "GENERAL",
+                "subject_ref": {},
                 "problem_statement": "继续分析前一轮对象",
                 "success_criteria": ["形成完整调查计划"],
                 "selected_tool_ids": [],

@@ -59,6 +59,7 @@ from aiops_agent.tools import (
 from platform_core.contracts.aiops import (
     ActionIntent,
     CompactPlanningMode,
+    DiagnosticProfile,
     InputMaterial,
     InvestigationAction,
     InvestigationPlan,
@@ -339,11 +340,21 @@ class TurnPlanningService:
             idempotency_key=f"turn:{context.turn_id}:compact-planning:1",
         )
         compact = routed.output
+        profile_tool_ids = self._profile_tool_ids(compact)
+        available_tool_ids = {
+            str(item["tool_id"]) for item in available_tools
+        }
+        profile_candidate_ids = tuple(
+            tool_id
+            for tool_id in profile_tool_ids
+            if tool_id in available_tool_ids
+        )
         candidate_tool_ids = tuple(
             dict.fromkeys(
                 (
                     *compact.selected_tool_ids,
                     *(action.tool_id for action in compact.actions),
+                    *profile_candidate_ids,
                 )
             )
         )
@@ -360,6 +371,7 @@ class TurnPlanningService:
                 CompactPlanningMode.CONTROLLED_ACTION,
             }
             and not compact.actions
+            and compact.diagnostic_profile == DiagnosticProfile.GENERAL
         )
         compact_route_mismatch = (
             (
@@ -368,8 +380,20 @@ class TurnPlanningService:
             )
             != (compact.action_intent != ActionIntent.NONE)
         )
+        single_sql_id = self._single_sql_id(compact)
+        profile_incomplete = (
+            compact.diagnostic_profile
+            == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+            and (
+                single_sql_id is None
+                or not set(profile_tool_ids)
+                <= {str(item["tool_id"]) for item in selected_tools}
+            )
+        )
         compact_route_incomplete = (
-            compact_actions_missing or compact_route_mismatch
+            compact_actions_missing
+            or compact_route_mismatch
+            or profile_incomplete
         )
         if compact_route_incomplete:
             # 精简模型已经完成语义选路，但可能因“该表”“按前述方案”等
@@ -385,15 +409,22 @@ class TurnPlanningService:
         effective_mode = (
             CompactPlanningMode.FULL_INVESTIGATION
             if compact_route_incomplete
+            else CompactPlanningMode.READ_ONLY_LOOKUP
+            if single_sql_id is not None
             else compact.planning_mode
         )
         public_summary = compact.public_reasoning_summary
+        if single_sql_id is not None and not compact_route_incomplete:
+            public_summary = (
+                f"已识别单 SQL 性能调查对象 {single_sql_id}，"
+                "将执行游标、计划、计划对象统计和实时计划监控基线"
+            )
         if compact_route_incomplete:
             public_summary = (
                 "精简路由已识别任务方向，但尚未形成可执行的前置核验，"
                 "正在结合对话上下文生成完整调查计划"
                 if compact_actions_missing
-                else "精简路由与动作意图不一致，正在由完整 Planner 重新确认用户诉求"
+                else "精简路由信息不完整，正在由完整 Planner 重新确认调查对象和用户诉求"
             )
         route_snapshot = {
             "mode": str(effective_mode),
@@ -405,6 +436,8 @@ class TurnPlanningService:
                 str(item["playbook_id"]) for item in selected_playbooks
             ],
             "model_receipt": routed.receipt.model_dump(mode="json"),
+            "diagnostic_profile": str(compact.diagnostic_profile),
+            "subject_ref": dict(compact.subject_ref),
         }
         if compact_route_incomplete:
             route_snapshot.update(
@@ -414,6 +447,8 @@ class TurnPlanningService:
                         "COMPACT_ACTIONS_MISSING"
                         if compact_actions_missing
                         else "COMPACT_ACTION_INTENT_MISMATCH"
+                        if compact_route_mismatch
+                        else "COMPACT_DIAGNOSTIC_PROFILE_INCOMPLETE"
                     ),
                 }
             )
@@ -436,6 +471,19 @@ class TurnPlanningService:
                 },
             ],
         )
+        if single_sql_id is not None and not compact_route_incomplete:
+            output = self._single_sql_investigation_output(
+                question=compact_question,
+                compact=compact,
+                target_context=context.target_context,
+                sql_id=single_sql_id,
+            )
+            return (
+                StructuredModelResult(output=output, receipt=routed.receipt),
+                selected_tools,
+                selected_playbooks,
+                route_snapshot,
+            )
         if not compact_route_incomplete and compact.planning_mode in {
             CompactPlanningMode.READ_ONLY_LOOKUP,
             CompactPlanningMode.CONTROLLED_ACTION,
@@ -484,7 +532,169 @@ class TurnPlanningService:
                 ),
                 receipt=planned.receipt,
             )
+        if (
+            compact.diagnostic_profile != DiagnosticProfile.GENERAL
+            and planned.output.task_frame.diagnostic_profile
+            == DiagnosticProfile.GENERAL
+        ):
+            planned = StructuredModelResult(
+                output=planned.output.model_copy(
+                    update={
+                        "task_frame": planned.output.task_frame.model_copy(
+                            update={
+                                "diagnostic_profile": (
+                                    compact.diagnostic_profile
+                                ),
+                                "subject_ref": dict(compact.subject_ref),
+                            }
+                        )
+                    }
+                ),
+                receipt=planned.receipt,
+            )
         return planned, selected_tools, selected_playbooks, route_snapshot
+
+    @staticmethod
+    def _profile_tool_ids(compact) -> tuple[str, ...]:
+        """把模型选择的诊断档案展开为确定性固定 Tool 集合。"""
+        if (
+            compact.diagnostic_profile
+            == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+        ):
+            return (
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+                "db.sql.plan_monitor",
+            )
+        return ()
+
+    @staticmethod
+    def _single_sql_id(compact) -> str | None:
+        if (
+            compact.diagnostic_profile
+            != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+        ):
+            return None
+        sql_id = str(compact.subject_ref.get("sql_id") or "").strip().lower()
+        if len(sql_id) != 13 or not sql_id.isalnum():
+            return None
+        return sql_id
+
+    @staticmethod
+    def _single_sql_investigation_output(
+        *,
+        question: str,
+        compact,
+        target_context: dict,
+        sql_id: str,
+    ) -> InvestigationPlanningOutput:
+        """为单 SQL 调优建立不依赖模型临场发挥的核心证据基线。"""
+        display_name = str(
+            target_context.get("display_name")
+            or target_context.get("target_id")
+            or "当前 Target"
+        )
+        action_specs = (
+            (
+                "游标指标",
+                "db.sql.cursor_details",
+                {"sql_id": sql_id, "limit": 50},
+                MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                False,
+            ),
+            (
+                "完整执行计划、对象、估算基数和谓词",
+                "db.sql.execution_plan",
+                {"sql_id": sql_id, "limit": 500},
+                MeasurementSemantics.CURRENT_ACTIVITY,
+                False,
+            ),
+            (
+                "执行计划所访问表的统计信息状态",
+                "db.sql.object_statistics",
+                {"sql_id": sql_id},
+                MeasurementSemantics.CURRENT_ACTIVITY,
+                False,
+            ),
+            (
+                "可用的实时执行行源统计",
+                "db.sql.plan_monitor",
+                {"sql_id": sql_id, "limit": 200},
+                MeasurementSemantics.CURRENT_ACTIVITY,
+                True,
+            ),
+        )
+        actions = tuple(
+            InvestigationAction(
+                action_id=f"a{index}",
+                question=f"{sql_id} 的{title}是什么？",
+                tool_id=tool_id,
+                input=parameters,
+                expected_evidence_kind="SINGLE_SQL_PERFORMANCE",
+                measurement_semantics=semantics,
+                optional=optional,
+            )
+            for index, (
+                title,
+                tool_id,
+                parameters,
+                semantics,
+                optional,
+            ) in enumerate(action_specs, start=1)
+        )
+        return InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=question[:2000],
+                        key_facts=(
+                            f"用户已选择逻辑 Target：{display_name}",
+                            f"调查对象 SQL_ID：{sql_id}",
+                        ),
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=question,
+            ),
+            task_frame=TaskFrame(
+                objectives=(TaskObjective.DIAGNOSE, TaskObjective.ASSESS),
+                problem_statement=compact.problem_statement,
+                database_context=dict(target_context),
+                known_facts=(
+                    f"当前逻辑 Target 为 {display_name}",
+                    f"待分析 SQL_ID 为 {sql_id}",
+                ),
+                unknowns=(
+                    "游标资源消耗和子游标差异",
+                    "执行计划、估算基数、访问对象与谓词",
+                    "计划对象统计信息是否缺失或陈旧",
+                    "可用的实际行源统计与估算偏差",
+                ),
+                constraints=(
+                    "只执行当前 Target 的固定只读单 SQL 诊断基线",
+                ),
+                success_criteria=tuple(
+                    dict.fromkeys(
+                        (
+                            *compact.success_criteria,
+                            "取得游标、执行计划和计划对象统计信息证据",
+                            "明确区分已验证根因与尚缺的运行时证据",
+                        )
+                    )
+                ),
+                action_intent=ActionIntent.NONE,
+                diagnostic_profile=(
+                    DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+                ),
+                subject_ref={"sql_id": sql_id},
+            ),
+            plan=InvestigationPlan(revision_no=1, actions=actions),
+            suggested_playbook_ids=compact.selected_playbook_ids,
+        )
 
     async def _record_planning_route(
         self,
@@ -611,6 +821,8 @@ class TurnPlanningService:
                 ),
                 success_criteria=compact.success_criteria,
                 action_intent=action_intent,
+                diagnostic_profile=compact.diagnostic_profile,
+                subject_ref=dict(compact.subject_ref),
                 requires_change=(action_intent == ActionIntent.EXECUTE),
             ),
             plan=InvestigationPlan(

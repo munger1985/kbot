@@ -252,6 +252,11 @@ class TurnTaskFrameView(AIOpsContract):
     action_intent: str = Field(
         default="NONE", pattern=r"^(NONE|ADVISORY|EXECUTE)$"
     )
+    diagnostic_profile: str = Field(
+        default="GENERAL",
+        pattern=r"^(GENERAL|SINGLE_SQL_PERFORMANCE)$",
+    )
+    subject_ref: dict = Field(default_factory=dict)
     requires_change: bool = False
 
 

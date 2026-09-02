@@ -571,6 +571,12 @@ content = """
 可用工具卡片和 Playbook 摘要。请先结合 recent_context 解析“该表”“这个会话”“按前面方案”
 等对话指代，再判断能否用不超过四个只读动作直接取得回答或受控动作前置核验所需事实。
 
+必须输出 diagnostic_profile 和 subject_ref。用户要求分析一个明确 SQL_ID 的性能、执行计划、
+资源消耗或调优问题时，选择 SINGLE_SQL_PERFORMANCE，并在 subject_ref.sql_id 中原样提取后
+转为小写；这是只读诊断，action_intent 必须为 NONE。该档案由服务端展开游标、完整执行计划、
+计划对象统计信息和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
+subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
+
 如果问题目标明确、没有用户粘贴证据、不要求根因推演或变更，并且现有工具可以直接查询，
 选择 READ_ONLY_LOOKUP，生成最小动作集合。若固定工具足以回答则优先固定工具；否则使用动态
 只读查询工具并严格遵守其 database_access、input 和 policy。不要额外查询已经绑定的逻辑
@@ -621,6 +627,9 @@ available_tools 中选择；Playbook 只是经验参考，可选，不是能力�
 task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示动作语句时为 ADVISORY，
 明确要求系统执行时为 EXECUTE，其他任务为 NONE。ADVISORY 不是执行请求，不得把执行凭据、
 变更权限或人工审批列为生成语句的前置条件；不得把 PL/SQL 或变更语句作为动态只读查询。
+若问题围绕明确的单个 SQL_ID 做性能诊断，task_frame.diagnostic_profile 应为
+SINGLE_SQL_PERFORMANCE，subject_ref.sql_id 保存规范化小写 SQL_ID。此时游标指标、完整执行
+计划和计划对象统计信息是核心证据，不得仅用临时动态 SQL 或实时 Plan Monitor 代替。
 target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
 列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
 不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
@@ -714,6 +723,11 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
 COUNT和稳定排序分页补证，不得要求执行无界查询。
 sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
 CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状态。
+当 task_frame.diagnostic_profile=SINGLE_SQL_PERFORMANCE 时，必须分别核对
+db.sql.cursor_details、db.sql.execution_plan 和 db.sql.object_statistics。缺少任一核心证据时，
+不得把“统计信息正常/过旧”“基数估算准确/错误”或完整根因标记为 ANSWERABLE；系统仍可补证
+时选择 REPLAN，否则只能输出有明确边界的 PARTIAL。db.sql.plan_monitor 是可选的实时证据，
+零行只表示当前没有保留实时监控记录，不能抵消执行计划或对象统计信息证据。
 """
 
 [[prompts]]

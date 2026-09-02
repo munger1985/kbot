@@ -127,6 +127,10 @@ def safe_plan_projection(
             "action_intent": str(
                 task_frame.get("action_intent") or "NONE"
             ),
+            "diagnostic_profile": str(
+                task_frame.get("diagnostic_profile") or "GENERAL"
+            ),
+            "subject_ref": dict(task_frame.get("subject_ref") or {}),
             "requires_change": bool(
                 task_frame.get("requires_change", False)
             ),

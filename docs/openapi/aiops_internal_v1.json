@@ -8220,6 +8220,12 @@
             "title": "Constraints",
             "type": "array"
           },
+          "diagnostic_profile": {
+            "default": "GENERAL",
+            "pattern": "^(GENERAL|SINGLE_SQL_PERFORMANCE)$",
+            "title": "Diagnostic Profile",
+            "type": "string"
+          },
           "known_facts": {
             "default": [],
             "items": {
@@ -8246,6 +8252,11 @@
             "default": false,
             "title": "Requires Change",
             "type": "boolean"
+          },
+          "subject_ref": {
+            "additionalProperties": true,
+            "title": "Subject Ref",
+            "type": "object"
           },
           "success_criteria": {
             "default": [],

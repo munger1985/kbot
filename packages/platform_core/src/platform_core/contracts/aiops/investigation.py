@@ -115,6 +115,13 @@ class ActionIntent(StrEnum):
     EXECUTE = "EXECUTE"
 
 
+class DiagnosticProfile(StrEnum):
+    """由语义路由选择、由服务端展开的确定性诊断能力档案。"""
+
+    GENERAL = "GENERAL"
+    SINGLE_SQL_PERFORMANCE = "SINGLE_SQL_PERFORMANCE"
+
+
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
     objectives: tuple[TaskObjective, ...] = Field(
@@ -134,6 +141,8 @@ class TaskFrame(AIOpsContract):
             "不请求执行；EXECUTE表示请求系统在审批后执行。"
         ),
     )
+    diagnostic_profile: DiagnosticProfile = DiagnosticProfile.GENERAL
+    subject_ref: JsonObject = Field(default_factory=dict)
     requires_change: bool = False
 
     @model_validator(mode="before")
@@ -273,6 +282,17 @@ class CompactPlanningOutput(AIOpsContract):
         description=(
             "NONE表示只读回答；ADVISORY表示只生成或展示登记动作模板的语句、"
             "不执行；EXECUTE表示用户明确要求审批后执行。"
+        )
+    )
+    diagnostic_profile: DiagnosticProfile = Field(
+        description=(
+            "SINGLE_SQL_PERFORMANCE表示围绕一个明确SQL_ID执行完整SQL性能基线；"
+            "其他问题使用GENERAL。"
+        )
+    )
+    subject_ref: JsonObject = Field(
+        description=(
+            "结构化调查对象；单SQL性能分析必须提供sql_id，其他问题为空对象。"
         )
     )
     problem_statement: str = Field(min_length=1, max_length=2000)

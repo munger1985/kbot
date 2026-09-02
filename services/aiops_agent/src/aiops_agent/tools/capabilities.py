@@ -20,6 +20,7 @@ def build_capability_snapshot(
     """只根据已持久化且可审计的配置生成规划快照。"""
     target_payload = dict(getattr(target, "capabilities_json", None) or {})
     target_capabilities = set(_capability_names(target_payload))
+    privileges = set(_string_values(target_payload.get("privileges")))
     if (
         bool(getattr(target, "readonly_connection_enabled", False))
         and
@@ -35,6 +36,9 @@ def build_capability_snapshot(
                     "dba_catalog_views",
                     "replication_views",
                 }
+            )
+            privileges.update(
+                {"CREATE SESSION", "SELECT ANY DICTIONARY"}
             )
     if (
         bool(getattr(target, "controlled_change_enabled", False))
@@ -87,7 +91,7 @@ def build_capability_snapshot(
         target_reachable=str(target.connectivity_status)
         in {"CONNECTED", "DEGRADED"},
         target_capabilities=tuple(sorted(target_capabilities)),
-        privileges=tuple(sorted(_string_values(target_payload.get("privileges")))),
+        privileges=tuple(sorted(privileges)),
         entitlements=tuple(
             sorted(_string_values(target_payload.get("entitlements")))
         ),

@@ -282,6 +282,39 @@ class DbaEvidenceAssessmentHandler:
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         task_frame = dict(answer_context.get("task_frame", {}))
+        profile_core_gaps: list[TurnEvidenceGap] = []
+        if (
+            str(task_frame.get("diagnostic_profile"))
+            == "SINGLE_SQL_PERFORMANCE"
+        ):
+            required_core = {
+                "db.sql.cursor_details": "缺少目标 SQL 的游标指标和子游标证据",
+                "db.sql.execution_plan": "缺少目标 SQL 的完整执行计划证据",
+                "db.sql.object_statistics": (
+                    "缺少执行计划所访问表的统计信息证据"
+                ),
+            }
+            observed = {
+                fact.tool_id
+                for fact in facts
+                if fact.row_count > 0
+            }
+            profile_core_gaps = [
+                TurnEvidenceGap(
+                    source_id="single-sql.performance-baseline",
+                    step_id=tool_id,
+                    code="SINGLE_SQL_CORE_EVIDENCE_MISSING",
+                    detail=detail,
+                    retryable=True,
+                )
+                for tool_id, detail in required_core.items()
+                if tool_id not in observed
+            ]
+            if profile_core_gaps:
+                gaps.extend(profile_core_gaps)
+                reasons.append(
+                    "单 SQL 性能基线缺少游标、执行计划或计划对象统计信息"
+                )
         requested_window = bool(task_frame.get("time_scope"))
         cumulative_only = bool(facts) and all(
             fact.measurement_semantics
@@ -360,6 +393,8 @@ class DbaEvidenceAssessmentHandler:
         investigation = InvestigationAssessment.model_validate(result.output)
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
         if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
+            assessed_status = SufficiencyStatus.PARTIAL
+        if profile_core_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
             assessed_status = SufficiencyStatus.PARTIAL
         can_auto_collect_more = (
             assessed_status

@@ -132,6 +132,23 @@ class _AssessmentModel:
         )
 
 
+class _AnswerableAssessmentModel(_AssessmentModel):
+    async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        result = await super().generate_structured(**kwargs)
+        return StructuredModelResult(
+            output=result.output.model_copy(
+                update={
+                    "sufficiency_status": "ANSWERABLE",
+                    "remaining_unknowns": (),
+                    "evidence_gaps": (),
+                    "next_action": "ANSWER",
+                    "reason": "模型认为已有证据足以形成完整结论",
+                }
+            ),
+            receipt=result.receipt,
+        )
+
+
 class _InvalidAssessmentModel:
     async def generate_structured(self, **_) -> StructuredModelResult:
         raise AIOpsModelError(
@@ -311,13 +328,19 @@ class _ProgressUow:
         self.commit_count += 1
 
 
-def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
+def _context(
+    *,
+    artifacts=(),
+    recent: bool = False,
+    task_frame_overrides: dict | None = None,
+) -> TaskExecutionContext:
     task_frame = {
         "objectives": ["ASSESS"],
         "problem_statement": "分析最近十五分钟的 Top SQL",
         "success_criteria": ["识别主要 SQL 负载"],
         "time_scope": "最近十五分钟" if recent else None,
     }
+    task_frame.update(task_frame_overrides or {})
     return TaskExecutionContext(
         run_id=str(uuid7()),
         task_id=str(uuid7()),
@@ -407,7 +430,12 @@ def _proposal_artifact(*, mode: str = "ADVISORY") -> dict:
     }
 
 
-def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
+def _tool_artifact(
+    *,
+    semantics: str,
+    row_count: int = 1,
+    tool_id: str = "db.sql.top_current",
+) -> dict:
     artifact_id = str(uuid7())
     rows = [["abc123", 120.5]] if row_count else []
     return {
@@ -416,7 +444,7 @@ def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
         "payload": {
             "schema_version": "DBA_TOOL_RESULT.v1",
             "source_type": "PLAYBOOK",
-            "source_id": "oracle.sql.top_current",
+            "source_id": tool_id,
             "source_version": "1.0.0",
             "definition_hash": "b" * 64,
             "output_schema": "oracle.sql.top_current.output.v1",
@@ -425,15 +453,15 @@ def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
             "status": "SUCCEEDED",
             "tool_outcomes": [
                 {
-                    "step_id": "top_sql",
-                    "tool_id": "db.sql.top_current",
+                    "step_id": tool_id,
+                    "tool_id": tool_id,
                     "tool_version": "1.0.0",
                     "status": "SUCCEEDED",
                     "observation": {
                         "schema_version": "DATABASE_OBSERVATION.v1",
                         "executor_request_id": str(uuid7()),
                         "target_id": str(uuid7()),
-                        "tool_id": "db.sql.top_current",
+                        "tool_id": tool_id,
                         "tool_version": "1.0.0",
                         "variant": "oracle-19-current",
                         "template_sha256": "c" * 64,
@@ -820,6 +848,142 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
         self.assertIsNone(result.investigation)
         self.assertEqual(1, len(result.evidence))
+
+    def test_single_sql_missing_object_statistics_is_not_answerable(
+        self,
+    ) -> None:
+        artifacts = tuple(
+            _tool_artifact(
+                semantics="CURRENT_ACTIVITY",
+                tool_id=tool_id,
+            )
+            for tool_id in (
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+            )
+        )
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=artifacts,
+                    task_frame_overrides={
+                        "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                        "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertTrue(
+            any(
+                gap.step_id == "db.sql.object_statistics"
+                and gap.code == "SINGLE_SQL_CORE_EVIDENCE_MISSING"
+                for gap in result.gaps
+            )
+        )
+
+    def test_model_cannot_override_missing_single_sql_core_evidence(
+        self,
+    ) -> None:
+        artifacts = tuple(
+            _tool_artifact(
+                semantics="CURRENT_ACTIVITY",
+                tool_id=tool_id,
+            )
+            for tool_id in (
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+            )
+        )
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=_AnswerableAssessmentModel(),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=artifacts,
+                    task_frame_overrides={
+                        "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                        "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertTrue(
+            any(
+                gap.step_id == "db.sql.object_statistics"
+                for gap in result.gaps
+            )
+        )
+
+    def test_single_sql_core_evidence_is_answerable(self) -> None:
+        artifacts = tuple(
+            _tool_artifact(
+                semantics="CURRENT_ACTIVITY",
+                tool_id=tool_id,
+            )
+            for tool_id in (
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+            )
+        )
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=artifacts,
+                    task_frame_overrides={
+                        "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                        "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertFalse(
+            any(
+                gap.code == "SINGLE_SQL_CORE_EVIDENCE_MISSING"
+                for gap in result.gaps
+            )
+        )
+
+    def test_single_sql_empty_plan_monitor_does_not_block_answer(self) -> None:
+        artifacts = tuple(
+            _tool_artifact(
+                semantics="CURRENT_ACTIVITY",
+                row_count=0 if tool_id == "db.sql.plan_monitor" else 1,
+                tool_id=tool_id,
+            )
+            for tool_id in (
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+                "db.sql.plan_monitor",
+            )
+        )
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=artifacts,
+                    task_frame_overrides={
+                        "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                        "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertFalse(
+            any(
+                gap.step_id == "db.sql.plan_monitor"
+                for gap in result.gaps
+            )
+        )
 
     def test_chat_monitor_health_uses_run_domain(self) -> None:
         source_id = uuid7()
