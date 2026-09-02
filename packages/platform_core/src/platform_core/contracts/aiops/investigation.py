@@ -19,7 +19,7 @@ INPUT_ENVELOPE_SCHEMA_VERSION = "aiops.input-envelope.v1"
 TASK_FRAME_SCHEMA_VERSION = "aiops.task-frame.v1"
 INVESTIGATION_PLAN_SCHEMA_VERSION = "aiops.investigation-plan.v1"
 INVESTIGATION_ASSESSMENT_SCHEMA_VERSION = "aiops.investigation-assessment.v1"
-COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v1"
+COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v2"
 
 
 class InputContentType(StrEnum):
@@ -222,11 +222,12 @@ class InvestigationPlanningOutput(AIOpsContract):
 
 class CompactPlanningMode(StrEnum):
     READ_ONLY_LOOKUP = "READ_ONLY_LOOKUP"
+    CONTROLLED_ACTION = "CONTROLLED_ACTION"
     FULL_INVESTIGATION = "FULL_INVESTIGATION"
 
 
 class CompactPlanningOutput(AIOpsContract):
-    """为低歧义只读问题生成的精简计划或完整规划路由结果。"""
+    """生成精简查询、受控动作前置核验或完整规划路由结果。"""
 
     schema_version: str = COMPACT_PLANNING_SCHEMA_VERSION
     planning_mode: CompactPlanningMode
@@ -243,9 +244,12 @@ class CompactPlanningOutput(AIOpsContract):
         action_tools = {item.tool_id for item in self.actions}
         if not action_tools <= selected:
             raise ValueError("精简计划动作必须来自已选择工具")
-        if self.planning_mode == CompactPlanningMode.READ_ONLY_LOOKUP:
+        if self.planning_mode in {
+            CompactPlanningMode.READ_ONLY_LOOKUP,
+            CompactPlanningMode.CONTROLLED_ACTION,
+        }:
             if not self.actions:
-                raise ValueError("明确只读查询必须生成至少一个调查动作")
+                raise ValueError("精简查询或受控动作必须生成至少一个只读核验动作")
         elif self.actions:
             raise ValueError("完整调查路由阶段不得提前生成调查动作")
         return self

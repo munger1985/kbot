@@ -368,7 +368,10 @@ class TurnPlanningService:
                 },
             ],
         )
-        if compact.planning_mode == CompactPlanningMode.READ_ONLY_LOOKUP:
+        if compact.planning_mode in {
+            CompactPlanningMode.READ_ONLY_LOOKUP,
+            CompactPlanningMode.CONTROLLED_ACTION,
+        }:
             output = self._compact_investigation_output(
                 question=compact_question,
                 compact=compact,
@@ -471,11 +474,15 @@ class TurnPlanningService:
         compact,
         target_context: dict,
     ) -> InvestigationPlanningOutput:
-        """把精简只读计划提升为统一调查契约，复用现有校验与编译链。"""
+        """把精简查询或受控动作提升为统一调查契约。"""
         display_name = str(
             target_context.get("display_name")
             or target_context.get("target_id")
             or "当前 Target"
+        )
+        controlled_action = (
+            compact.planning_mode
+            == CompactPlanningMode.CONTROLLED_ACTION
         )
         return InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
@@ -492,14 +499,25 @@ class TurnPlanningService:
                 explicit_question=question,
             ),
             task_frame=TaskFrame(
-                objectives=(TaskObjective.UNDERSTAND,),
+                objectives=(
+                    (TaskObjective.CHANGE,)
+                    if controlled_action
+                    else (TaskObjective.UNDERSTAND,)
+                ),
                 problem_statement=compact.problem_statement,
                 database_context=dict(target_context),
                 known_facts=(f"当前逻辑 Target 为 {display_name}",),
                 unknowns=(),
-                constraints=("仅执行当前 Target 的只读诊断查询",),
+                constraints=(
+                    (
+                        "仅自动执行当前 Target 的只读前置核验；"
+                        "已登记动作必须等待人工审批"
+                        if controlled_action
+                        else "仅执行当前 Target 的只读诊断查询"
+                    ),
+                ),
                 success_criteria=compact.success_criteria,
-                requires_change=False,
+                requires_change=controlled_action,
             ),
             plan=InvestigationPlan(
                 revision_no=1,

@@ -313,6 +313,7 @@ def load_settings(
         "database",
         "endpoints",
         "paths",
+        "aiops",
         "integrations",
         "notifications",
         "ui",
@@ -369,6 +370,7 @@ def load_settings(
     database = deployment.get("database") or {}
     endpoints_override = deployment.get("endpoints") or {}
     paths = deployment.get("paths") or {}
+    aiops = deployment.get("aiops") or {}
     integrations = deployment.get("integrations") or {}
     notifications = deployment.get("notifications") or {}
     ui = deployment.get("ui") or {}
@@ -376,12 +378,23 @@ def load_settings(
         ("database", database),
         ("endpoints", endpoints_override),
         ("paths", paths),
+        ("aiops", aiops),
         ("integrations", integrations),
         ("notifications", notifications),
         ("ui", ui),
     ):
         if not isinstance(value, dict):
             raise ValueError(f"kbot.toml 的 [{name}] 必须是对象")
+    unknown_aiops = set(aiops) - {
+        "agent_execution_enabled",
+        "mutation_enabled",
+    }
+    if unknown_aiops:
+        names = "、".join(sorted(unknown_aiops))
+        raise ValueError(f"[aiops] 包含未知字段：{names}")
+    for name in ("agent_execution_enabled", "mutation_enabled"):
+        if name in aiops and not isinstance(aiops[name], bool):
+            raise ValueError(f"[aiops].{name} 必须是布尔值")
 
     resource_dir = Path(
         os.getenv("KBOT_RESOURCE_DIR")
@@ -441,6 +454,16 @@ def load_settings(
                 "embedding": {"cache_dir": str(data_dir / "models")}
             },
             "aiops_agent": {
+                "executor": {
+                    "mutation_enabled": bool(
+                        aiops.get("mutation_enabled", False)
+                    )
+                },
+                "management": {
+                    "agent_execution_enabled": bool(
+                        aiops.get("agent_execution_enabled", False)
+                    )
+                },
                 "limits": {
                     "conversation_upload_store_root": str(
                         data_dir / "aiops" / "conversation_uploads"

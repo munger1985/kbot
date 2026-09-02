@@ -197,6 +197,19 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="turn-compact-2",
             )
 
+    async def test_compact_controlled_action_requires_readonly_precheck(self):
+        with self.assertRaisesRegex(ValueError, "只读核验动作"):
+            CompactPlanningOutput.model_validate(
+                {
+                    "planning_mode": "CONTROLLED_ACTION",
+                    "problem_statement": "收集表统计信息",
+                    "success_criteria": ["生成审批提案"],
+                    "selected_tool_ids": ["db.table.statistics"],
+                    "actions": [],
+                    "public_reasoning_summary": "先核验后审批",
+                }
+            )
+
     async def test_user_alert_log_can_be_answered_without_external_tool(self) -> None:
         model = _Model(_output())
         reasoner = InvestigationReasoner(model, _Prompts())

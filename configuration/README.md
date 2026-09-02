@@ -42,6 +42,11 @@ port = 1521
 service_name = "kbot4"
 username = "kbot"
 
+[aiops]
+# 部署级 Kill Switch；完成受控动作验收后按部署显式改为 true。
+agent_execution_enabled = false
+mutation_enabled = false
+
 ```
 
 `data_dir` 自动派生 Knowledge Core、Agent附件、AIOps正文和模型缓存目录。Docling
@@ -50,6 +55,9 @@ username = "kbot"
 
 `api_docs_enabled = true` 会启用 Main API 的离线 Swagger UI（`/docs`）和
 ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
+
+`[aiops]` 中两个开关必须同时为 `true`，审批后执行链才可签发一次性 Mutation Grant；
+它们不会替代 Agent–Target 的动作选择、对象范围、执行凭据或逐条人工审批。默认关闭。
 
 浏览器直连 Main API 时，使用 `api_allowed_origins` 列出允许的门户来源。每项必须
 精确包含协议、主机和端口，例如 `https://portal.example.com` 或

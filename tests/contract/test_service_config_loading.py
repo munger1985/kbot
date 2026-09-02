@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_runtime.config import AgentRuntimeSettings
+from aiops_agent.config import AIOpsSettings
 from knowledge_core.config import KnowledgeCoreSettings
 from km_asset_app.config import KmAssetAppSettings
 from main_api.config import MainApiSettings
@@ -91,6 +92,25 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 agent.attachments.local_storage_path,
                 "/srv/kbot/agent_runtime",
             )
+
+    def test_aiops_execution_switches_are_loaded_from_deployment_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_config(Path(directory))
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "[aiops]\n"
+                    "agent_execution_enabled=true\n"
+                    "mutation_enabled=true\n"
+                )
+
+            settings = load_settings(
+                AIOpsSettings,
+                service="aiops_agent",
+                config_file=path,
+            )
+
+            self.assertTrue(settings.management.agent_execution_enabled)
+            self.assertTrue(settings.executor.mutation_enabled)
 
     def test_wildcard_cors_origin_is_preserved(self):
         with tempfile.TemporaryDirectory() as directory:

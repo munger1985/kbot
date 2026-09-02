@@ -21,6 +21,12 @@ port = 1521
 service_name = "kbot4"
 username = "kbot"
 
+# AIOps 已登记受控动作的部署级 Kill Switch。只有完成非生产验收后才启用；
+# Agent 仍需按 Target 显式选择动作并由人工逐条审批。
+[aiops]
+agent_execution_enabled = false
+mutation_enabled = false
+
 # 只有向 KBot 以外的系统开放模型 API 时才增加。
 # [[model_api_keys]]
 # key_id = "model-client"

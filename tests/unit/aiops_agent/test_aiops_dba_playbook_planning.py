@@ -646,6 +646,56 @@ class _CompactLookupReasoner(_PastedLogReasoner):
         raise AssertionError("明确只读问题不应进入完整调查 Planner")
 
 
+class _CompactControlledActionReasoner(_CompactLookupReasoner):
+    async def plan_compact(self, **kwargs):
+        self.compact_calls.append(kwargs)
+        output = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
+                "success_criteria": [
+                    "核验表状态并生成统计信息收集审批提案"
+                ],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "核验目标表当前统计信息状态和动作前置条件",
+                        "tool_id": "db.table.statistics",
+                        "input": {
+                            "schema_name": "TPCC",
+                            "table_name": "ORDER_BIG",
+                        },
+                        "expected_evidence_kind": "TABLE_STATISTICS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": (
+                    "先只读核验目标表，再生成受控动作审批提案"
+                ),
+            }
+        )
+        digest = "a" * 64
+        return StructuredModelResult(
+            output=output,
+            receipt=ModelInvocationReceipt(
+                purpose="aiops.compact-planning",
+                schema_id="CompactPlanningOutput",
+                model_technical_name="planner-model",
+                model_revision="2",
+                prompt_id="aiops_agent.compact_planner",
+                prompt_version="1.0.0",
+                prompt_sha256=digest,
+                input_sha256=digest,
+                output_sha256=digest,
+                duration_ms=1,
+            ),
+        )
+
+    async def plan(self, **_kwargs):
+        raise AssertionError("明确受控动作不应进入复杂调查 Planner")
+
+
 class _FrozenToolExecutor:
     def __init__(self) -> None:
         self.task_keys = []
@@ -772,6 +822,58 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             [item.tool_id for item in uow.tool_invocations],
         )
 
+    async def test_controlled_action_uses_compact_precheck_and_change_chain(self):
+        uow = _PlanningUow()
+        question = "搜集表 TPCC.ORDER_BIG 的统计信息"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        uow.target.capabilities_json["privileges"] = [
+            "V_$INSTANCE",
+            "V_$DATABASE",
+            "DBA_TABLES",
+            "DBA_TAB_STATISTICS",
+        ]
+        reasoner = _CompactControlledActionReasoner()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        snapshot = uow.run.plan_snapshot_json
+        self.assertEqual(
+            "CONTROLLED_ACTION", snapshot["planning_route"]["mode"]
+        )
+        self.assertTrue(
+            snapshot["answer_context"]["task_frame"]["requires_change"]
+        )
+        self.assertEqual(
+            ["db.instance.identity", "db.table.statistics"],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        task_keys = {item.task_key for item in uow.tasks}
+        self.assertIn("change:action-plan", task_keys)
+        self.assertIn("change:proposal", task_keys)
+
     async def test_chat_tool_claim_projects_started_progress(self):
         turn_id = uuid7()
         task_id = uuid7()
@@ -884,6 +986,44 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (TaskObjective.UNDERSTAND,),
             investigation.task_frame.objectives,
+        )
+
+    def test_controlled_action_is_promoted_without_complex_investigation(self):
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
+                "success_criteria": ["生成等待人工审批的受控动作"],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "核验目标表统计信息状态",
+                        "tool_id": "db.table.statistics",
+                        "input": {
+                            "schema_name": "TPCC",
+                            "table_name": "ORDER_BIG",
+                        },
+                        "expected_evidence_kind": "TABLE_STATISTICS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "先核验再提交受控动作",
+            }
+        )
+
+        investigation = TurnPlanningService._compact_investigation_output(
+            question="搜集表 TPCC.ORDER_BIG 的统计信息",
+            compact=compact,
+            target_context={"display_name": "Oracle Test DB"},
+        )
+
+        self.assertTrue(investigation.task_frame.requires_change)
+        self.assertEqual(
+            (TaskObjective.CHANGE,), investigation.task_frame.objectives
+        )
+        self.assertIn(
+            "人工审批", investigation.task_frame.constraints[0]
         )
 
     async def test_replan_uses_snapshots_and_persists_supported_revision(

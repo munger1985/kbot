@@ -1578,6 +1578,110 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
             {"session_id": 42, "serial_number": 9, "instance_id": 1},
         )
 
+    def test_stale_table_statistics_create_gather_approval_action(self) -> None:
+        base = self._context()
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=(
+                TurnEvidenceFact(
+                    evidence_ref="artifact:statistics#row-0",
+                    artifact_id="statistics",
+                    source_id="oracle.table.statistics",
+                    step_id="statistics",
+                    tool_id="db.table.statistics",
+                    trust_level="SOURCE_VERIFIED",
+                    measurement_semantics=(
+                        MeasurementSemantics.CURRENT_ACTIVITY
+                    ),
+                    presentation_kind="TABLE",
+                    captured_at="2026-09-02T09:23:35+00:00",
+                    columns=(
+                        {"name": "owner"},
+                        {"name": "table_name"},
+                        {"name": "partitioned"},
+                        {"name": "temporary"},
+                        {"name": "last_analyzed"},
+                        {"name": "stale_stats"},
+                        {"name": "stattype_locked"},
+                    ),
+                    rows=(
+                        (
+                            "TPCC",
+                            "ORDER_BIG",
+                            "NO",
+                            "N",
+                            "2026-09-02T07:41:31+00:00",
+                            "YES",
+                            None,
+                        ),
+                    ),
+                    row_count=1,
+                ),
+            ),
+        )
+        context = base.__class__(
+            **{
+                **base.__dict__,
+                "plan_snapshot": {
+                    "capability_snapshot": {
+                        "target_capabilities": ["dba_catalog_views"]
+                    },
+                    "answer_context": {
+                        "task_frame": {"requires_change": True}
+                    },
+                    "change_context": {
+                        "target": {
+                            "db_type": "ORACLE",
+                            "version_code": "19.0.0",
+                            "environment": "PROD",
+                            "status": "ENABLED",
+                            "connectivity_status": "CONNECTED",
+                            "execution_secret_configured": True,
+                        },
+                        "policy": {"rules": {}},
+                        "controlled_action_execution": {
+                            "enabled": True,
+                            "allowed_action_ids": [
+                                "db.statistics.gather"
+                            ],
+                            "object_scopes": {
+                                "schemas": ["TPCC"],
+                                "exclude_system_objects": True,
+                            },
+                        },
+                    },
+                },
+                "input_artifacts": (
+                    {
+                        "schema_version": "DBA_SUFFICIENCY.v1",
+                        "payload": assessment.model_dump(mode="json"),
+                    },
+                ),
+            }
+        )
+
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(context)
+        )
+
+        self.assertEqual("AGENT_EXECUTE", plan.decision)
+        self.assertEqual(
+            "db.statistics.gather", plan.actions[0].action_template_id
+        )
+        self.assertEqual(
+            {
+                "table_ref": {
+                    "schema": "TPCC",
+                    "object_type": "TABLE",
+                    "object_name": "ORDER_BIG",
+                }
+            },
+            plan.actions[0].canonical_parameters,
+        )
+
     def test_user_provided_turn_facts_never_authorize_action(self) -> None:
         plan = asyncio.run(
             ChatActionPlanHandler(
