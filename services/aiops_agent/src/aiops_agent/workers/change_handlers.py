@@ -63,8 +63,6 @@ def _object_in_scope(parameters: dict[str, Any], policy: dict[str, Any]) -> bool
         if isinstance(value, dict)
         and {"schema", "object_type", "object_name"}.issubset(value)
     )
-    if not object_refs:
-        return True
     scopes = dict(policy.get("object_scopes") or {})
     allowed = {str(item).upper() for item in scopes.get("schemas", ())}
     for object_ref in object_refs:
@@ -75,6 +73,41 @@ def _object_in_scope(parameters: dict[str, Any], policy: dict[str, Any]) -> bool
             scopes.get("exclude_system_objects", True)
             and schema in _SYSTEM_SCHEMAS
         ):
+            return False
+    if "parameter_name" in parameters:
+        allowed_parameters = {
+            str(item.get("name", "")).lower(): {
+                str(value).upper()
+                for value in item.get("allowed_values", ())
+            }
+            for item in scopes.get("dynamic_parameters", ())
+            if isinstance(item, dict)
+        }
+        name = str(parameters["parameter_name"]).lower()
+        value = str(parameters.get("parameter_value", "")).upper()
+        if value not in allowed_parameters.get(name, set()):
+            return False
+    if "resource_plan_name" in parameters:
+        plans = {
+            str(item).upper()
+            for item in scopes.get("resource_manager_plans", ())
+        }
+        if str(parameters["resource_plan_name"]).upper() not in plans:
+            return False
+    if "grantee_name" in parameters:
+        grantees = {
+            str(item).upper()
+            for item in scopes.get("privilege_grantees", ())
+        }
+        if str(parameters["grantee_name"]).upper() not in grantees:
+            return False
+        privilege_key = (
+            "object_privileges" if "object_ref" in parameters else "system_privileges"
+        )
+        privileges = {
+            str(item).upper() for item in scopes.get(privilege_key, ())
+        }
+        if str(parameters.get("privilege", "")).upper() not in privileges:
             return False
     return True
 
@@ -947,16 +980,157 @@ class ActionVerificationHandler:
                 evidence_hashes=hashes,
             )
         if scope.action_template_id in {
+            "db.parameter.set",
+            "db.resource_manager.plan.switch",
+            "db.user.privilege.grant",
+            "db.user.privilege.revoke",
+        }:
+            if scope.action_template_id == "db.parameter.set":
+                tool_id = "db.parameter.dynamic_state"
+            elif scope.action_template_id == "db.resource_manager.plan.switch":
+                tool_id = "db.resource_manager.plan_state"
+            else:
+                tool_id = (
+                    "db.user.object_privilege_state"
+                    if "object_ref" in parameters
+                    else "db.user.system_privilege_state"
+                )
+            observation = successful.get(tool_id)
+            if observation is None:
+                return self._result(
+                    scope,
+                    status="INCONCLUSIVE",
+                    summary="缺少配置或权限状态，不能确认动作效果",
+                    gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+                    evidence_hashes=hashes,
+                )
+            names = [
+                str(column.name).lower() for column in observation.columns
+            ]
+            rows = [dict(zip(names, row)) for row in observation.rows]
+            if scope.action_template_id == "db.parameter.set":
+                matched = [
+                    row
+                    for row in rows
+                    if str(row.get("parameter_name", "")).lower()
+                    == str(parameters["parameter_name"]).lower()
+                ]
+                achieved = bool(matched) and str(
+                    matched[0].get("current_value") or ""
+                ).upper() == str(parameters["parameter_value"]).upper()
+            elif scope.action_template_id == "db.resource_manager.plan.switch":
+                matched = [
+                    row
+                    for row in rows
+                    if str(row.get("resource_plan_name", "")).upper()
+                    == str(parameters["resource_plan_name"]).upper()
+                ]
+                achieved = bool(matched) and str(
+                    matched[0].get("current_plan_name") or ""
+                ).upper() == str(parameters["resource_plan_name"]).upper()
+            else:
+                matched = self._matching_privilege_rows(rows, parameters)
+                expected = scope.action_template_id.endswith(".grant")
+                achieved = bool(matched) and (
+                    str(matched[0].get("is_granted") or "").upper() == "YES"
+                ) == expected
+            if not matched:
+                return self._result(
+                    scope,
+                    status="ADVERSE",
+                    summary="目标配置、对象或用户在执行后不可见，需 DBA 立即复核",
+                    effect_achieved=False,
+                    adverse_effect=True,
+                    evidence_hashes=hashes,
+                )
+            return self._result(
+                scope,
+                status="VERIFIED" if achieved else "NOT_ACHIEVED",
+                summary=(
+                    "配置或权限状态已达到批准目标"
+                    if achieved
+                    else "配置或权限状态尚未达到批准目标"
+                ),
+                effect_achieved=achieved,
+                adverse_effect=False,
+                evidence_hashes=hashes,
+            )
+        if scope.action_template_id in {
+            "db.storage.datafile.resize",
+            "db.storage.tempfile.resize",
+            "db.storage.datafile.autoextend",
+            "db.storage.tempfile.autoextend",
+        }:
+            datafile = ".datafile." in scope.action_template_id
+            resize = scope.action_template_id.endswith(".resize")
+            tool_id = (
+                "db.storage.datafile.action_state"
+                if datafile
+                else "db.storage.tempfile.action_state"
+            )
+            observation = successful.get(tool_id)
+            if observation is None:
+                return self._result(
+                    scope,
+                    status="INCONCLUSIVE",
+                    summary="缺少文件状态，不能确认存储变更效果",
+                    gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+                    evidence_hashes=hashes,
+                )
+            matched = self._matching_file_rows(
+                observation, str(parameters["file_name"])
+            )
+            if not matched:
+                return self._result(
+                    scope,
+                    status="ADVERSE",
+                    summary="目标数据库文件在执行后不可见，需 DBA 立即复核",
+                    effect_achieved=False,
+                    adverse_effect=True,
+                    evidence_hashes=hashes,
+                )
+            row = matched[0]
+            if resize:
+                achieved = int(row.get("current_size_mb") or 0) >= int(
+                    parameters["new_size_mb"]
+                )
+            else:
+                achieved = (
+                    str(row.get("autoextensible") or "").upper() == "YES"
+                    and int(row.get("current_next_mb") or 0)
+                    == int(parameters["next_mb"])
+                    and int(row.get("current_max_size_mb") or 0)
+                    == int(parameters["max_size_mb"])
+                )
+            return self._result(
+                scope,
+                status="VERIFIED" if achieved else "NOT_ACHIEVED",
+                summary=(
+                    "数据库文件已达到批准的存储目标"
+                    if achieved
+                    else "数据库文件尚未达到批准的存储目标"
+                ),
+                effect_achieved=achieved,
+                adverse_effect=False,
+                evidence_hashes=hashes,
+            )
+        if scope.action_template_id in {
             "db.index.rebuild",
             "db.index.partition.rebuild",
+            "db.index.coalesce",
         }:
             partition_action = (
                 scope.action_template_id == "db.index.partition.rebuild"
             )
+            coalesce_action = scope.action_template_id == "db.index.coalesce"
             tool_id = (
                 "db.index.partition.health"
                 if partition_action
-                else "db.index.health"
+                else (
+                    "db.index.coalesce_candidate"
+                    if coalesce_action
+                    else "db.index.health"
+                )
             )
             observation = successful.get(tool_id)
             if observation is None:
@@ -992,16 +1166,22 @@ class ActionVerificationHandler:
                 str(row.get("status", "")).upper() == expected_status
                 for row in matched
             )
+            if valid:
+                summary = f"{subject}状态为 {expected_status}，" + (
+                    "合并后状态已通过只读观测验证"
+                    if coalesce_action
+                    else "重建效果已通过只读观测验证"
+                )
+            else:
+                summary = f"{subject}仍不是 {expected_status}，" + (
+                    "合并后状态异常"
+                    if coalesce_action
+                    else "重建未达到预期效果"
+                )
             return self._result(
                 scope,
                 status="VERIFIED" if valid else "NOT_ACHIEVED",
-                summary=(
-                    f"{subject}状态为 {expected_status}，"
-                    "重建效果已通过只读观测验证"
-                    if valid
-                    else f"{subject}仍不是 {expected_status}，"
-                    "重建未达到预期效果"
-                ),
+                summary=summary,
                 effect_achieved=valid,
                 adverse_effect=False,
                 evidence_hashes=hashes,
@@ -1173,6 +1353,41 @@ class ActionVerificationHandler:
             == str(user_ref["object_name"]).upper()
             and str(row.get("oracle_maintained", "")).upper() == "N"
             and str(row.get("common", "")).upper() == "NO"
+        )
+
+    @staticmethod
+    def _matching_file_rows(observation, file_name: str):
+        names = [str(column.name).lower() for column in observation.columns]
+        rows = [dict(zip(names, row)) for row in observation.rows]
+        return tuple(
+            row
+            for row in rows
+            if str(row.get("file_name", "")) == file_name
+            and str(row.get("status", "")).upper() == "AVAILABLE"
+            and str(row.get("online_status", "")).upper() == "ONLINE"
+        )
+
+    @staticmethod
+    def _matching_privilege_rows(rows, parameters):
+        object_ref = dict(parameters.get("object_ref") or {})
+        return tuple(
+            row
+            for row in rows
+            if str(row.get("grantee_name", "")).upper()
+            == str(parameters["grantee_name"]).upper()
+            and str(row.get("privilege", "")).upper()
+            == str(parameters["privilege"]).upper()
+            and (
+                not object_ref
+                or (
+                    str(row.get("owner", "")).upper()
+                    == str(object_ref["schema"]).upper()
+                    and str(row.get("object_name", "")).upper()
+                    == str(object_ref["object_name"]).upper()
+                    and str(row.get("object_type", "")).upper()
+                    == str(object_ref["object_type"]).upper()
+                )
+            )
         )
 
     @staticmethod

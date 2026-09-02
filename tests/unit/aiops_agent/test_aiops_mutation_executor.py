@@ -312,6 +312,137 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             cursor.calls[1][0],
         )
 
+    async def test_rechecks_unlocked_index_before_coalesce(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.index.coalesce",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "index_maintenance"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                }
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("NOT EXISTS", cursor.calls[0][0])
+        self.assertEqual(
+            {"schema_name": "APP", "index_name": "IX_ORDERS"},
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            'ALTER INDEX "APP"."IX_ORDERS" COALESCE', cursor.calls[1][0]
+        )
+
+    async def test_rechecks_storage_target_before_growing_datafile(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.storage.datafile.resize",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {"file_name": "+DATA/DB/data01.dbf", "new_size_mb": 2048},
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("DBA_DATA_FILES", cursor.calls[0][0])
+        self.assertEqual(
+            {"file_name": "+DATA/DB/data01.dbf", "new_size_mb": 2048},
+            cursor.calls[0][1],
+        )
+        self.assertEqual(
+            "ALTER DATABASE DATAFILE '+DATA/DB/data01.dbf' RESIZE 2048M",
+            cursor.calls[1][0],
+        )
+
+    async def test_rechecks_dynamic_parameter_and_resource_plan(self):
+        cases = (
+            (
+                "db.parameter.set",
+                {"parameter_name": "cursor_sharing", "parameter_value": "FORCE"},
+                "V$PARAMETER",
+                "ALTER SYSTEM SET cursor_sharing = FORCE SCOPE=MEMORY",
+            ),
+            (
+                "db.resource_manager.plan.switch",
+                {"resource_plan_name": "APP_PLAN"},
+                "DBA_RSRC_PLANS",
+                "ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = 'APP_PLAN' SCOPE=BOTH",
+            ),
+        )
+        for action_id, parameters, precondition, command in cases:
+            with self.subTest(action_id=action_id):
+                template = ActionRegistry.load().resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={
+                        "dba_catalog_views",
+                        "dynamic_performance_views",
+                    },
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                self.action = ActionRenderer().render(template, parameters)
+                cursor = _OracleMutationCursor()
+                result = await self._execute(cursor)
+                self.assertTrue(result.bounded_result["accepted"])
+                self.assertIn(precondition, cursor.calls[0][0])
+                self.assertEqual(command, cursor.calls[1][0])
+
+    async def test_rechecks_exact_object_privilege_before_grant(self):
+        registry = ActionRegistry.load()
+        template = next(
+            item
+            for item in registry.templates
+            if item.definition.action_template_id == "db.user.privilege.grant"
+            and item.definition.variant == "oracle_registered_object_privilege"
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "privilege": "SELECT",
+                "object_ref": {
+                    "schema": "APP",
+                    "object_type": "TABLE",
+                    "object_name": "ORDERS",
+                },
+                "grantee_name": "REPORTER",
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("DBA_TAB_PRIVS", cursor.calls[0][0])
+        self.assertEqual(0, cursor.calls[0][1]["require_granted"])
+        self.assertEqual(
+            'GRANT SELECT ON "APP"."ORDERS" TO "REPORTER"',
+            cursor.calls[1][0],
+        )
+
     async def test_rechecks_exact_partition_before_partition_rebuild(self):
         template = ActionRegistry.load().resolve(
             action_template_id="db.index.partition.rebuild",

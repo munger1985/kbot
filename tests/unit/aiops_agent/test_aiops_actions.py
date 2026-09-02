@@ -28,6 +28,7 @@ from aiops_agent.workers.change_handlers import (
     ActionPlanHandler,
     ChatActionPlanHandler,
     ProposalSnapshotHandler,
+    _object_in_scope,
 )
 from platform_core.contracts.aiops import (
     MeasurementSemantics,
@@ -44,7 +45,7 @@ class ActionCatalogTest(unittest.TestCase):
         self.registry = ActionRegistry.load()
 
     def test_registry_has_exact_oracle_and_mysql_variants(self) -> None:
-        self.assertEqual(len(self.registry.templates), 53)
+        self.assertEqual(len(self.registry.templates), 55)
         modes = {
             item.definition.action_template_id: item.definition.execution_mode
             for item in self.registry.templates
@@ -141,7 +142,6 @@ class ActionCatalogTest(unittest.TestCase):
         self.assertTrue(
             {
                 "db.storage.datafile.add",
-                "db.parameter.set",
                 "db.backup.start",
                 "db.ha.log_apply.start",
                 "db.pdb.open",
@@ -204,6 +204,232 @@ class ActionCatalogTest(unittest.TestCase):
                     "online": True,
                 },
             )
+
+    def test_oracle_index_coalesce_uses_exact_verified_object(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.index.coalesce",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "index_maintenance"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        rendered = ActionRenderer().render(
+            template,
+            {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                }
+            },
+        )
+        self.assertEqual(
+            'ALTER INDEX "APP"."IX_ORDERS" COALESCE', rendered.command_text
+        )
+
+    def test_oracle_storage_actions_are_growth_only_and_bounded(self) -> None:
+        cases = {
+            "db.storage.datafile.resize": (
+                {"file_name": "+DATA/DB/data01.dbf", "new_size_mb": 2048},
+                "ALTER DATABASE DATAFILE '+DATA/DB/data01.dbf' RESIZE 2048M",
+            ),
+            "db.storage.tempfile.resize": (
+                {"file_name": "/u02/oradata/temp01.dbf", "new_size_mb": 4096},
+                "ALTER DATABASE TEMPFILE '/u02/oradata/temp01.dbf' RESIZE 4096M",
+            ),
+            "db.storage.datafile.autoextend": (
+                {
+                    "file_name": "+DATA/DB/data01.dbf",
+                    "next_mb": 128,
+                    "max_size_mb": 8192,
+                },
+                "ALTER DATABASE DATAFILE '+DATA/DB/data01.dbf' AUTOEXTEND "
+                "ON NEXT 128M MAXSIZE 8192M",
+            ),
+            "db.storage.tempfile.autoextend": (
+                {
+                    "file_name": "/u02/oradata/temp01.dbf",
+                    "next_mb": 256,
+                    "max_size_mb": 16384,
+                },
+                "ALTER DATABASE TEMPFILE '/u02/oradata/temp01.dbf' AUTOEXTEND "
+                "ON NEXT 256M MAXSIZE 16384M",
+            ),
+        }
+        for action_id, (parameters, command) in cases.items():
+            with self.subTest(action_id=action_id):
+                template = self.registry.resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                self.assertEqual(
+                    command, ActionRenderer().render(template, parameters).command_text
+                )
+        template = self.registry.resolve(
+            action_template_id="db.storage.datafile.resize",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "dynamic_performance_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        with self.assertRaises(ValueError):
+            ActionRenderer().render(
+                template,
+                {"file_name": "x.dbf'; DROP TABLE T;--", "new_size_mb": 2048},
+            )
+
+    def test_parameter_resource_and_privilege_commands_are_exact(self) -> None:
+        parameter = self.registry.resolve(
+            action_template_id="db.parameter.set",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "dynamic_performance_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.assertEqual(
+            "ALTER SYSTEM SET cursor_sharing = FORCE SCOPE=MEMORY",
+            ActionRenderer().render(
+                parameter,
+                {"parameter_name": "cursor_sharing", "parameter_value": "FORCE"},
+            ).command_text,
+        )
+        with self.assertRaises(ValueError):
+            ActionRenderer().render(
+                parameter,
+                {"parameter_name": "cursor_sharing", "parameter_value": "ALL"},
+            )
+
+        resource_plan = self.registry.resolve(
+            action_template_id="db.resource_manager.plan.switch",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views", "dynamic_performance_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.assertEqual(
+            "ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = 'APP_PLAN' SCOPE=BOTH",
+            ActionRenderer().render(
+                resource_plan, {"resource_plan_name": "APP_PLAN"}
+            ).command_text,
+        )
+
+        templates = {
+            item.definition.variant: item
+            for item in self.registry.templates
+            if item.definition.action_template_id == "db.user.privilege.grant"
+        }
+        system_grant = ActionRenderer().render(
+            templates["oracle_registered_system_privilege"],
+            {"grantee_name": "APPUSER", "privilege": "CREATE SESSION"},
+        )
+        self.assertEqual('GRANT CREATE SESSION TO "APPUSER"', system_grant.command_text)
+        object_grant = ActionRenderer().render(
+            templates["oracle_registered_object_privilege"],
+            {
+                "privilege": "SELECT",
+                "object_ref": {
+                    "schema": "APP",
+                    "object_type": "TABLE",
+                    "object_name": "ORDERS",
+                },
+                "grantee_name": "REPORTER",
+            },
+        )
+        self.assertEqual(
+            'GRANT SELECT ON "APP"."ORDERS" TO "REPORTER"',
+            object_grant.command_text,
+        )
+        with self.assertRaises(LookupError):
+            self.registry.resolve(
+                action_template_id="db.user.privilege.grant",
+                version="1.0.0",
+                db_type="ORACLE",
+                db_version="19.0.0",
+                capabilities={"dba_catalog_views"},
+                entitlements=set(),
+                environment="PROD",
+            )
+        resolved = self.registry.resolve(
+            action_template_id="db.user.privilege.grant",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+            template_hash=templates[
+                "oracle_registered_object_privilege"
+            ].template_hash,
+        )
+        self.assertEqual("oracle_registered_object_privilege", resolved.definition.variant)
+
+    def test_sensitive_action_targets_require_agent_registration(self) -> None:
+        policy = {
+            "object_scopes": {
+                "schemas": ["APP"],
+                "dynamic_parameters": [
+                    {
+                        "name": "cursor_sharing",
+                        "allowed_values": ["EXACT", "FORCE"],
+                    }
+                ],
+                "resource_manager_plans": ["APP_PLAN"],
+                "privilege_grantees": ["REPORTER"],
+                "system_privileges": ["CREATE SESSION"],
+                "object_privileges": ["SELECT"],
+            }
+        }
+        self.assertTrue(
+            _object_in_scope(
+                {
+                    "parameter_name": "cursor_sharing",
+                    "parameter_value": "FORCE",
+                },
+                policy,
+            )
+        )
+        self.assertFalse(
+            _object_in_scope(
+                {
+                    "parameter_name": "statistics_level",
+                    "parameter_value": "ALL",
+                },
+                policy,
+            )
+        )
+        self.assertTrue(
+            _object_in_scope(
+                {
+                    "privilege": "SELECT",
+                    "object_ref": {
+                        "schema": "APP",
+                        "object_type": "TABLE",
+                        "object_name": "ORDERS",
+                    },
+                    "grantee_name": "REPORTER",
+                },
+                policy,
+            )
+        )
+        self.assertFalse(
+            _object_in_scope(
+                {"grantee_name": "REPORTER", "privilege": "CREATE TABLE"},
+                policy,
+            )
+        )
 
     def test_oracle_cancel_sql_has_exact_typed_command(self) -> None:
         template = self.registry.resolve(
@@ -539,6 +765,209 @@ class OracleIndexActionCompilerTest(unittest.TestCase):
             db_type="ORACLE",
         )
         self.assertIsNone(insufficient)
+
+    def test_index_coalesce_requires_valid_unlocked_normal_index(self):
+        columns = (
+            "owner",
+            "index_name",
+            "status",
+            "partitioned",
+            "index_type",
+            "active_table_locks",
+        )
+        compiler = ActionCompilerRegistry()
+        compiled = compiler.compile_turn(
+            compiler_id="oracle-index-coalesce.v1",
+            assessment=self._assessment(
+                tool_id="db.index.coalesce_candidate",
+                columns=columns,
+                row=("APP", "IX_ORDERS", "VALID", "NO", "NORMAL", 0),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNotNone(compiled)
+        self.assertEqual(
+            "IX_ORDERS", compiled.parameters["index_ref"]["object_name"]
+        )
+        blocked = compiler.compile_turn(
+            compiler_id="oracle-index-coalesce.v1",
+            assessment=self._assessment(
+                tool_id="db.index.coalesce_candidate",
+                columns=columns,
+                row=("APP", "IX_ORDERS", "VALID", "NO", "NORMAL", 1),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(blocked)
+
+    def test_storage_compilers_reject_shrink_and_unbounded_autoextend(self):
+        columns = (
+            "file_name",
+            "current_size_mb",
+            "current_max_size_mb",
+            "autoextensible",
+            "current_next_mb",
+            "requested_size_mb",
+            "requested_next_mb",
+            "requested_max_size_mb",
+            "status",
+            "online_status",
+        )
+        compiler = ActionCompilerRegistry()
+        grow = compiler.compile_turn(
+            compiler_id="oracle-datafile-resize.v1",
+            assessment=self._assessment(
+                tool_id="db.storage.datafile.action_state",
+                columns=columns,
+                row=("+DATA/DB/data01.dbf", 1024, 1024, "NO", 0, 2048, 0, 0, "AVAILABLE", "ONLINE"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual(2048, grow.parameters["new_size_mb"])
+        shrink = compiler.compile_turn(
+            compiler_id="oracle-datafile-resize.v1",
+            assessment=self._assessment(
+                tool_id="db.storage.datafile.action_state",
+                columns=columns,
+                row=(
+                    "+DATA/DB/data01.dbf",
+                    1024,
+                    1024,
+                    "NO",
+                    0,
+                    512,
+                    0,
+                    0,
+                    "AVAILABLE",
+                    "ONLINE",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(shrink)
+        bounded = compiler.compile_turn(
+            compiler_id="oracle-datafile-autoextend.v1",
+            assessment=self._assessment(
+                tool_id="db.storage.datafile.action_state",
+                columns=columns,
+                row=(
+                    "+DATA/DB/data01.dbf",
+                    1024,
+                    1024,
+                    "NO",
+                    0,
+                    0,
+                    128,
+                    4096,
+                    "AVAILABLE",
+                    "ONLINE",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual(4096, bounded.parameters["max_size_mb"])
+        unbounded = compiler.compile_turn(
+            compiler_id="oracle-datafile-autoextend.v1",
+            assessment=self._assessment(
+                tool_id="db.storage.datafile.action_state",
+                columns=columns,
+                row=(
+                    "+DATA/DB/data01.dbf",
+                    1024,
+                    1024,
+                    "NO",
+                    0,
+                    0,
+                    128,
+                    0,
+                    "AVAILABLE",
+                    "ONLINE",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(unbounded)
+
+    def test_parameter_resource_and_privilege_compilers_use_verified_state(self):
+        compiler = ActionCompilerRegistry()
+        parameter = compiler.compile_turn(
+            compiler_id="oracle-dynamic-parameter-set.v1",
+            assessment=self._assessment(
+                tool_id="db.parameter.dynamic_state",
+                columns=(
+                    "parameter_name",
+                    "current_value",
+                    "issys_modifiable",
+                    "requested_value",
+                ),
+                row=("cursor_sharing", "EXACT", "IMMEDIATE", "FORCE"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual(
+            {"parameter_name": "cursor_sharing", "parameter_value": "FORCE"},
+            parameter.parameters,
+        )
+        invalid_pair = compiler.compile_turn(
+            compiler_id="oracle-dynamic-parameter-set.v1",
+            assessment=self._assessment(
+                tool_id="db.parameter.dynamic_state",
+                columns=(
+                    "parameter_name",
+                    "current_value",
+                    "issys_modifiable",
+                    "requested_value",
+                ),
+                row=("cursor_sharing", "EXACT", "IMMEDIATE", "ALL"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(invalid_pair)
+        resource_plan = compiler.compile_turn(
+            compiler_id="oracle-resource-manager-plan-switch.v1",
+            assessment=self._assessment(
+                tool_id="db.resource_manager.plan_state",
+                columns=("resource_plan_name", "status", "current_plan_name"),
+                row=("APP_PLAN", "ACTIVE", "OLD_PLAN"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual("APP_PLAN", resource_plan.parameters["resource_plan_name"])
+        system_grant = compiler.compile_turn(
+            compiler_id="oracle-system-privilege-grant.v1",
+            assessment=self._assessment(
+                tool_id="db.user.system_privilege_state",
+                columns=(
+                    "grantee_name",
+                    "privilege",
+                    "is_granted",
+                    "oracle_maintained",
+                    "common",
+                ),
+                row=("APPUSER", "CREATE SESSION", "NO", "N", "NO"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual("CREATE SESSION", system_grant.parameters["privilege"])
+        object_revoke = compiler.compile_turn(
+            compiler_id="oracle-object-privilege-revoke.v1",
+            assessment=self._assessment(
+                tool_id="db.user.object_privilege_state",
+                columns=(
+                    "owner",
+                    "object_name",
+                    "object_type",
+                    "grantee_name",
+                    "privilege",
+                    "is_granted",
+                    "oracle_maintained",
+                    "common",
+                ),
+                row=("APP", "ORDERS", "TABLE", "REPORTER", "SELECT", "YES", "N", "NO"),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertEqual("ORDERS", object_revoke.parameters["object_ref"]["object_name"])
 
     def test_offline_rebuild_is_not_compiled_while_table_is_locked(self):
         columns = (

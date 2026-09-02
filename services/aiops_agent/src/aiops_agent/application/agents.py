@@ -49,9 +49,38 @@ class AgentModelBindings(_Model):
     diagnosis_llm: UUID | None = None
 
 
+class ControlledDynamicParameterRule(_Model):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    allowed_values: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_values(self):
+        supported = {
+            "cursor_sharing": {"EXACT", "FORCE"},
+            "optimizer_mode": {"ALL_ROWS", "FIRST_ROWS"},
+            "statistics_level": {"BASIC", "TYPICAL", "ALL"},
+        }
+        normalized = [value.upper() for value in self.allowed_values]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("动态参数允许值不能重复")
+        if any(
+            re.fullmatch(r"[A-Za-z0-9_]{1,128}", value) is None
+            for value in self.allowed_values
+        ):
+            raise ValueError("动态参数允许值格式无效")
+        if self.name not in supported or not set(normalized) <= supported[self.name]:
+            raise ValueError("动态参数或允许值不在受控动作 Catalog")
+        return self
+
+
 class ControlledActionObjectScopes(_Model):
     schemas: tuple[str, ...] = ()
     exclude_system_objects: bool = True
+    dynamic_parameters: tuple[ControlledDynamicParameterRule, ...] = ()
+    resource_manager_plans: tuple[str, ...] = ()
+    privilege_grantees: tuple[str, ...] = ()
+    system_privileges: tuple[str, ...] = ()
+    object_privileges: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_schemas(self):
@@ -60,6 +89,56 @@ class ControlledActionObjectScopes(_Model):
         for schema in self.schemas:
             if re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]{0,127}", schema) is None:
                 raise ValueError("受控动作 Schema 名称格式无效")
+        parameter_names = [item.name.lower() for item in self.dynamic_parameters]
+        if len(set(parameter_names)) != len(parameter_names):
+            raise ValueError("动态参数白名单不能重复")
+        for label, values in (
+            ("Resource Manager Plan", self.resource_manager_plans),
+            ("授权用户", self.privilege_grantees),
+        ):
+            normalized = [value.upper() for value in values]
+            if len(set(normalized)) != len(normalized):
+                raise ValueError(f"{label} 白名单不能重复")
+            if any(
+                re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]{0,127}", value)
+                is None
+                for value in values
+            ):
+                raise ValueError(f"{label} 格式无效")
+        supported_privileges = {
+            "系统权限": {
+                "CREATE SESSION",
+                "CREATE TABLE",
+                "CREATE VIEW",
+                "CREATE PROCEDURE",
+                "CREATE SEQUENCE",
+                "CREATE SYNONYM",
+                "CREATE TRIGGER",
+                "CREATE TYPE",
+            },
+            "对象权限": {
+                "SELECT",
+                "READ",
+                "INSERT",
+                "UPDATE",
+                "DELETE",
+                "EXECUTE",
+            },
+        }
+        for label, values in (
+            ("系统权限", self.system_privileges),
+            ("对象权限", self.object_privileges),
+        ):
+            normalized = [value.upper() for value in values]
+            if len(set(normalized)) != len(normalized):
+                raise ValueError(f"{label} 白名单不能重复")
+            if any(
+                re.fullmatch(r"[A-Za-z][A-Za-z ]{0,63}", value) is None
+                for value in values
+            ):
+                raise ValueError(f"{label} 格式无效")
+            if not set(normalized) <= supported_privileges[label]:
+                raise ValueError(f"{label} 不在受控动作 Catalog")
         return self
 
 
@@ -301,6 +380,7 @@ class AIOpsAgentService:
                     {
                         "action_id": item.definition.action_template_id,
                         "version": item.definition.version,
+                        "variant": item.definition.variant,
                         "action_family": item.definition.action_family,
                         "effect_class": item.definition.effect_class,
                         "execution_mode": item.definition.execution_mode,

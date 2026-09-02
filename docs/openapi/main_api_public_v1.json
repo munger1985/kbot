@@ -448,10 +448,42 @@
       "AIOpsControlledActionObjectScopes": {
         "additionalProperties": false,
         "properties": {
+          "dynamic_parameters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AIOpsControlledDynamicParameterRule"
+            },
+            "title": "Dynamic Parameters",
+            "type": "array"
+          },
           "exclude_system_objects": {
             "default": true,
             "title": "Exclude System Objects",
             "type": "boolean"
+          },
+          "object_privileges": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Object Privileges",
+            "type": "array"
+          },
+          "privilege_grantees": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Privilege Grantees",
+            "type": "array"
+          },
+          "resource_manager_plans": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Resource Manager Plans",
+            "type": "array"
           },
           "schemas": {
             "default": [],
@@ -460,9 +492,42 @@
             },
             "title": "Schemas",
             "type": "array"
+          },
+          "system_privileges": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "System Privileges",
+            "type": "array"
           }
         },
         "title": "AIOpsControlledActionObjectScopes",
+        "type": "object"
+      },
+      "AIOpsControlledDynamicParameterRule": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_values": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Allowed Values",
+            "type": "array"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "allowed_values"
+        ],
+        "title": "AIOpsControlledDynamicParameterRule",
         "type": "object"
       },
       "AIOpsConversationTurnPayload": {

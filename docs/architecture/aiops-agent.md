@@ -190,9 +190,9 @@ Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入�
 方案固定使用单人审批，不接入 OA 或双人审批；`DROP`、`TRUNCATE`、归档清理等破坏性操作只
 生成供 DBA 人工执行的命令，不能进入 DB Executor。当前可执行范围仍以代码中的 Action
 Catalog 为准。
-当前 Oracle 已实现普通索引和分区索引重建的审批后执行代码切片；提案参数只能来自
-`SOURCE_VERIFIED` 对象事实，并包含表空间余量和活动锁检查。`db.index.coalesce` 因尚无
-通用且只读的可信碎片判定依据，保持 `PLANNED/UNSUPPORTED`。
+当前 Oracle 已实现普通索引、分区索引重建和普通非分区索引 coalesce 的审批后执行代码切片；
+提案参数只能来自 `SOURCE_VERIFIED` 对象事实，并包含表空间余量或活动锁检查。coalesce 只允许
+状态为 `VALID`、无活动对象锁的普通索引，不把模型生成的碎片判断或自由 SQL 带入 Executor。
 会话领域除断开阻塞会话外，也已登记 `db.session.cancel_sql`：执行前再次核对实例、SID、
 SERIAL# 和 SQL_ID，执行后确认旧 SQL 已消失且原会话仍存在。
 对象维护已登记 `db.object.compile` 离线代码切片，支持 Oracle 19c+ 的 `PROCEDURE`、
@@ -205,6 +205,16 @@ SERIAL# 和 SQL_ID，执行后确认旧 SQL 已消失且原会话仍存在。
 run/enable/disable/stop 四种动作，各自只消费动作专用状态事实；同一对象出现冲突动作意图时
 失败关闭。用户维护支持本地非系统用户的锁定、解锁和密码过期，不接收或保存密码。以上切片均
 未完成真实 Oracle 权限、负载和失败场景验收。
+存储维护支持已有在线 datafile/tempfile 的只增不减 resize，以及设置有限的 autoextend
+`NEXT`/`MAXSIZE`；禁止缩小文件和 `UNLIMITED`，新增文件仍保持不支持。参数维护只开放 Catalog
+固定的即时动态参数并使用 `SCOPE=MEMORY`，Resource Manager 只允许切换到 Agent–Target 中预登记
+的 ACTIVE Plan。精确系统权限和对象权限 grant/revoke 仅面向预登记的本地应用用户、权限及对象
+范围，不支持角色、ANY 权限、ADMIN/GRANT OPTION 或通配对象。Agent 配置变更后，审批和执行阶段
+都会重新检查这些白名单。
+
+OEM、OCI、Ansible、RMAN 以及其他外部执行器本阶段不实现。备份、恢复、高可用、实例/监听器、
+补丁升级等外部动作继续保持 `PLANNED/UNSUPPORTED`；其中 DROP、TRUNCATE、归档/备份删除、
+restore/recover、强制 failover 等破坏性动作只展示固定命令供 DBA 人工执行，永不进入 Executor。
 
 ## 巡检与报告
 

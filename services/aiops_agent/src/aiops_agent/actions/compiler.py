@@ -142,6 +142,44 @@ def _oracle_index_from_turn(assessment, db_type: str):
     return None
 
 
+def _oracle_index_coalesce_from_turn(assessment, db_type: str):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.index.coalesce_candidate"
+    ):
+        owner = row.get("owner")
+        index_name = row.get("index_name")
+        status = str(row.get("status") or "").upper()
+        partitioned = str(row.get("partitioned") or "").upper()
+        index_type = str(row.get("index_type") or "").upper()
+        active_locks = int(row.get("active_table_locks") or 0)
+        if (
+            not owner
+            or not index_name
+            or status != "VALID"
+            or partitioned != "NO"
+            or index_type not in {"NORMAL", "NORMAL/REV"}
+            or active_locks != 0
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "index_ref": {
+                    "schema": str(owner),
+                    "object_type": "INDEX",
+                    "object_name": str(index_name),
+                }
+            },
+            fact_refs={"index_ref": evidence_ref},
+            rationale=(
+                "索引身份、VALID 状态、非分区普通索引类型和无活动对象锁"
+                "来自本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
 def _oracle_index_partition_from_turn(assessment, db_type: str):
     if db_type != "ORACLE":
         return None
@@ -190,6 +228,127 @@ def _oracle_index_partition_from_turn(assessment, db_type: str):
             ),
         )
     return None
+
+
+def _oracle_storage_from_turn(
+    assessment,
+    db_type: str,
+    *,
+    tool_id: str,
+    operation: str,
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(assessment, tool_id):
+        file_name = str(row.get("file_name") or "")
+        status = str(row.get("status") or "").upper()
+        online_status = str(row.get("online_status") or "").upper()
+        autoextensible = str(row.get("autoextensible") or "").upper()
+        try:
+            current_size_mb = int(row.get("current_size_mb"))
+            current_next_mb = int(row.get("current_next_mb") or 0)
+            current_max_size_mb = int(row.get("current_max_size_mb") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (
+            not file_name
+            or status != "AVAILABLE"
+            or online_status != "ONLINE"
+            or current_size_mb < 1
+        ):
+            continue
+        if operation == "resize":
+            try:
+                requested_size_mb = int(row.get("requested_size_mb"))
+            except (TypeError, ValueError):
+                continue
+            if not current_size_mb < requested_size_mb <= 1048576:
+                continue
+            return CompiledActionParameters(
+                parameters={
+                    "file_name": file_name,
+                    "new_size_mb": requested_size_mb,
+                },
+                fact_refs={
+                    "file_name": evidence_ref,
+                    "new_size_mb": evidence_ref,
+                    "current_size_mb": evidence_ref,
+                },
+                rationale=(
+                    "文件身份、在线可用状态、当前大小和受限增长目标来自"
+                    "本轮动作专用数据库直连可信事实"
+                ),
+            )
+        try:
+            requested_next_mb = int(row.get("requested_next_mb"))
+            requested_max_size_mb = int(row.get("requested_max_size_mb"))
+        except (TypeError, ValueError):
+            continue
+        if (
+            not 1 <= requested_next_mb <= 1024
+            or not current_size_mb < requested_max_size_mb <= 1048576
+            or requested_next_mb > requested_max_size_mb - current_size_mb
+            or (
+                autoextensible == "YES"
+                and current_next_mb == requested_next_mb
+                and current_max_size_mb == requested_max_size_mb
+            )
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "file_name": file_name,
+                "next_mb": requested_next_mb,
+                "max_size_mb": requested_max_size_mb,
+            },
+            fact_refs={
+                "file_name": evidence_ref,
+                "next_mb": evidence_ref,
+                "max_size_mb": evidence_ref,
+                "current_autoextend_state": evidence_ref,
+            },
+            rationale=(
+                "文件身份、在线可用状态、当前自动扩展状态以及有限 NEXT 和"
+                "MAXSIZE 目标来自本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_datafile_resize_from_turn(assessment, db_type: str):
+    return _oracle_storage_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.storage.datafile.action_state",
+        operation="resize",
+    )
+
+
+def _oracle_tempfile_resize_from_turn(assessment, db_type: str):
+    return _oracle_storage_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.storage.tempfile.action_state",
+        operation="resize",
+    )
+
+
+def _oracle_datafile_autoextend_from_turn(assessment, db_type: str):
+    return _oracle_storage_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.storage.datafile.action_state",
+        operation="autoextend",
+    )
+
+
+def _oracle_tempfile_autoextend_from_turn(assessment, db_type: str):
+    return _oracle_storage_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.storage.tempfile.action_state",
+        operation="autoextend",
+    )
 
 
 def _oracle_object_compile_from_turn(assessment, db_type: str):
@@ -539,11 +698,201 @@ def _oracle_user_password_expire_from_turn(assessment, db_type: str):
     return None
 
 
+_DYNAMIC_PARAMETER_VALUES = {
+    "cursor_sharing": {"EXACT", "FORCE"},
+    "optimizer_mode": {"ALL_ROWS", "FIRST_ROWS"},
+    "statistics_level": {"BASIC", "TYPICAL", "ALL"},
+}
+_SYSTEM_PRIVILEGES = {
+    "CREATE SESSION",
+    "CREATE TABLE",
+    "CREATE VIEW",
+    "CREATE PROCEDURE",
+    "CREATE SEQUENCE",
+    "CREATE SYNONYM",
+    "CREATE TRIGGER",
+    "CREATE TYPE",
+}
+_OBJECT_PRIVILEGE_TYPES = {
+    "SELECT": {"TABLE", "VIEW", "SEQUENCE"},
+    "READ": {"TABLE", "VIEW"},
+    "INSERT": {"TABLE", "VIEW"},
+    "UPDATE": {"TABLE", "VIEW"},
+    "DELETE": {"TABLE", "VIEW"},
+    "EXECUTE": {"PROCEDURE", "FUNCTION", "PACKAGE", "TYPE"},
+}
+
+
+def _oracle_dynamic_parameter_from_turn(assessment, db_type: str):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.parameter.dynamic_state"
+    ):
+        name = str(row.get("parameter_name") or "").lower()
+        current = str(row.get("current_value") or "").upper()
+        requested = str(row.get("requested_value") or "").upper()
+        modifiable = str(row.get("issys_modifiable") or "").upper()
+        if (
+            requested not in _DYNAMIC_PARAMETER_VALUES.get(name, set())
+            or current == requested
+            or modifiable != "IMMEDIATE"
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "parameter_name": name,
+                "parameter_value": requested,
+            },
+            fact_refs={
+                "parameter_name": evidence_ref,
+                "parameter_value": evidence_ref,
+                "current_value": evidence_ref,
+            },
+            rationale=(
+                "动态参数身份、当前值、即时可修改属性和受限目标值来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_resource_plan_from_turn(assessment, db_type: str):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.resource_manager.plan_state"
+    ):
+        plan_name = str(row.get("resource_plan_name") or "")
+        current_plan = str(row.get("current_plan_name") or "")
+        status = str(row.get("status") or "").upper()
+        if not plan_name or status != "ACTIVE" or plan_name.upper() == current_plan.upper():
+            continue
+        return CompiledActionParameters(
+            parameters={"resource_plan_name": plan_name},
+            fact_refs={
+                "resource_plan_name": evidence_ref,
+                "current_plan_name": evidence_ref,
+            },
+            rationale=(
+                "Resource Manager Plan 身份、ACTIVE 状态和当前 Plan 来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_system_privilege_from_turn(
+    assessment, db_type: str, *, require_granted: bool
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.user.system_privilege_state"
+    ):
+        grantee = str(row.get("grantee_name") or "")
+        privilege = str(row.get("privilege") or "").upper()
+        granted = str(row.get("is_granted") or "").upper() == "YES"
+        if (
+            not grantee
+            or privilege not in _SYSTEM_PRIVILEGES
+            or granted != require_granted
+            or str(row.get("oracle_maintained") or "").upper() != "N"
+            or str(row.get("common") or "").upper() != "NO"
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={"grantee_name": grantee, "privilege": privilege},
+            fact_refs={"grantee_name": evidence_ref, "privilege": evidence_ref},
+            rationale=(
+                "本地应用用户身份、精确系统权限及当前授权状态来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_system_privilege_grant_from_turn(assessment, db_type: str):
+    return _oracle_system_privilege_from_turn(
+        assessment, db_type, require_granted=False
+    )
+
+
+def _oracle_system_privilege_revoke_from_turn(assessment, db_type: str):
+    return _oracle_system_privilege_from_turn(
+        assessment, db_type, require_granted=True
+    )
+
+
+def _oracle_object_privilege_from_turn(
+    assessment, db_type: str, *, require_granted: bool
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.user.object_privilege_state"
+    ):
+        owner = str(row.get("owner") or "")
+        object_name = str(row.get("object_name") or "")
+        object_type = str(row.get("object_type") or "").upper()
+        grantee = str(row.get("grantee_name") or "")
+        privilege = str(row.get("privilege") or "").upper()
+        granted = str(row.get("is_granted") or "").upper() == "YES"
+        if (
+            not owner
+            or not object_name
+            or not grantee
+            or object_type not in _OBJECT_PRIVILEGE_TYPES.get(privilege, set())
+            or granted != require_granted
+            or str(row.get("oracle_maintained") or "").upper() != "N"
+            or str(row.get("common") or "").upper() != "NO"
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "privilege": privilege,
+                "object_ref": {
+                    "schema": owner,
+                    "object_type": object_type,
+                    "object_name": object_name,
+                },
+                "grantee_name": grantee,
+            },
+            fact_refs={
+                "privilege": evidence_ref,
+                "object_ref": evidence_ref,
+                "grantee_name": evidence_ref,
+            },
+            rationale=(
+                "有效对象、本地应用用户、精确对象权限及当前授权状态来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_object_privilege_grant_from_turn(assessment, db_type: str):
+    return _oracle_object_privilege_from_turn(
+        assessment, db_type, require_granted=False
+    )
+
+
+def _oracle_object_privilege_revoke_from_turn(assessment, db_type: str):
+    return _oracle_object_privilege_from_turn(
+        assessment, db_type, require_granted=True
+    )
+
+
 _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]] = {
     "session-terminate.v1": _session_from_turn,
     "oracle-session-cancel-sql.v1": _oracle_cancel_sql_from_turn,
     "oracle-index-rebuild.v1": _oracle_index_from_turn,
+    "oracle-index-coalesce.v1": _oracle_index_coalesce_from_turn,
     "oracle-index-partition-rebuild.v1": _oracle_index_partition_from_turn,
+    "oracle-datafile-resize.v1": _oracle_datafile_resize_from_turn,
+    "oracle-tempfile-resize.v1": _oracle_tempfile_resize_from_turn,
+    "oracle-datafile-autoextend.v1": _oracle_datafile_autoextend_from_turn,
+    "oracle-tempfile-autoextend.v1": _oracle_tempfile_autoextend_from_turn,
     "oracle-object-compile.v1": _oracle_object_compile_from_turn,
     "oracle-table-statistics-gather.v1": (
         _oracle_table_statistics_gather_from_turn
@@ -564,6 +913,20 @@ _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]
     "oracle-user-unlock.v1": _oracle_user_unlock_from_turn,
     "oracle-user-password-expire.v1": (
         _oracle_user_password_expire_from_turn
+    ),
+    "oracle-dynamic-parameter-set.v1": _oracle_dynamic_parameter_from_turn,
+    "oracle-resource-manager-plan-switch.v1": _oracle_resource_plan_from_turn,
+    "oracle-system-privilege-grant.v1": (
+        _oracle_system_privilege_grant_from_turn
+    ),
+    "oracle-system-privilege-revoke.v1": (
+        _oracle_system_privilege_revoke_from_turn
+    ),
+    "oracle-object-privilege-grant.v1": (
+        _oracle_object_privilege_grant_from_turn
+    ),
+    "oracle-object-privilege-revoke.v1": (
+        _oracle_object_privilege_revoke_from_turn
     ),
 }
 

@@ -83,9 +83,19 @@ class AIOpsManualApprovalPayload(_Payload):
     comment: str | None = Field(default=None, max_length=1000)
 
 
+class AIOpsControlledDynamicParameterRule(_Payload):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    allowed_values: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+
 class AIOpsControlledActionObjectScopes(_Payload):
     schemas: tuple[str, ...] = ()
     exclude_system_objects: bool = True
+    dynamic_parameters: tuple[AIOpsControlledDynamicParameterRule, ...] = ()
+    resource_manager_plans: tuple[str, ...] = ()
+    privilege_grantees: tuple[str, ...] = ()
+    system_privileges: tuple[str, ...] = ()
+    object_privileges: tuple[str, ...] = ()
 
 
 class AIOpsTargetControlledActionExecution(_Payload):

@@ -6,6 +6,7 @@ from aiops_agent.application.agents import (
     AIOpsAgentError,
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
+    TargetControlledActionExecution,
     UpdateAIOpsAgentCommand,
 )
 from pydantic import ValidationError
@@ -131,6 +132,36 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_controlled_action_scope_registers_sensitive_targets(self):
+        policy = TargetControlledActionExecution(
+            target_id=uuid7(),
+            enabled=True,
+            allowed_action_ids=("db.parameter.set", "db.user.privilege.grant"),
+            object_scopes={
+                "schemas": ("APP",),
+                "dynamic_parameters": (
+                    {"name": "cursor_sharing", "allowed_values": ("EXACT", "FORCE")},
+                ),
+                "resource_manager_plans": ("APP_PLAN",),
+                "privilege_grantees": ("APPUSER",),
+                "system_privileges": ("CREATE SESSION",),
+                "object_privileges": ("SELECT",),
+            },
+        )
+
+        self.assertEqual(
+            ("FORCE",),
+            (policy.object_scopes.dynamic_parameters[0].allowed_values[1],),
+        )
+        self.assertEqual(("APPUSER",), policy.object_scopes.privilege_grantees)
+        with self.assertRaises(ValidationError):
+            TargetControlledActionExecution(
+                target_id=uuid7(),
+                enabled=True,
+                allowed_action_ids=("db.user.privilege.grant",),
+                object_scopes={"system_privileges": ("DROP ANY TABLE",)},
+            )
+
     async def test_create_inserts_version_before_current_version_pointer(self):
         repository = _AgentRepository()
         source_id = uuid7()

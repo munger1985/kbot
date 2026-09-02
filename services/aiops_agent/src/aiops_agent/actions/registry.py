@@ -126,6 +126,7 @@ class ActionRegistry:
         capabilities: set[str],
         entitlements: set[str],
         environment: str,
+        template_hash: str | None = None,
     ) -> ResolvedActionTemplate:
         match = re.search(r"\d+", db_version)
         if match is None:
@@ -143,6 +144,7 @@ class ActionRegistry:
             and set(item.definition.required_capabilities) <= capabilities
             and set(item.definition.required_entitlements) <= entitlements
             and environment in item.definition.environment_allowlist
+            and (template_hash is None or item.template_hash == template_hash)
         ]
         if len(candidates) != 1:
             raise LookupError("Action Template 没有唯一且精确的 Variant")

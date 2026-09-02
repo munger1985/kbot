@@ -1,0 +1,1 @@
+ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = '{{resource_plan_name}}' SCOPE=BOTH

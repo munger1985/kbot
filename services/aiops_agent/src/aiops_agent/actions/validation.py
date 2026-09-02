@@ -54,6 +54,13 @@ def _index_rebuild_pattern(*, rendered: bool) -> str:
     return r"ALTER INDEX \{\{index_ref\}\} REBUILD\{\{online\}\}"
 
 
+def _index_coalesce_pattern(*, rendered: bool) -> str:
+    if rendered:
+        identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
+        return rf"ALTER INDEX {identifier}\.{identifier} COALESCE"
+    return r"ALTER INDEX \{\{index_ref\}\} COALESCE"
+
+
 def _index_partition_rebuild_pattern(*, rendered: bool) -> str:
     if rendered:
         identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
@@ -65,6 +72,76 @@ def _index_partition_rebuild_pattern(*, rendered: bool) -> str:
         r"ALTER INDEX \{\{index_ref\}\} REBUILD PARTITION "
         r"\{\{partition_name\}\}\{\{online\}\}"
     )
+
+
+def _storage_pattern(
+    *, file_kind: str, operation: str, rendered: bool
+) -> str:
+    if rendered:
+        file_name = r"[-A-Za-z0-9_+./:\\]+"
+        if operation == "resize":
+            suffix = r"RESIZE [1-9][0-9]{0,6}M"
+        else:
+            suffix = (
+                r"AUTOEXTEND ON NEXT [1-9][0-9]{0,3}M "
+                r"MAXSIZE [1-9][0-9]{0,6}M"
+            )
+    else:
+        file_name = r"\{\{file_name\}\}"
+        if operation == "resize":
+            suffix = r"RESIZE \{\{new_size_mb\}\}M"
+        else:
+            suffix = (
+                r"AUTOEXTEND ON NEXT \{\{next_mb\}\}M "
+                r"MAXSIZE \{\{max_size_mb\}\}M"
+            )
+    return rf"ALTER DATABASE {file_kind} '{file_name}' {suffix}"
+
+
+def _dynamic_parameter_pattern(*, rendered: bool) -> str:
+    if not rendered:
+        return (
+            r"ALTER SYSTEM SET \{\{parameter_name\}\} = "
+            r"\{\{parameter_value\}\} SCOPE=MEMORY"
+        )
+    assignment = (
+        r"(?:cursor_sharing = (?:EXACT|FORCE)|"
+        r"optimizer_mode = (?:ALL_ROWS|FIRST_ROWS)|"
+        r"statistics_level = (?:BASIC|TYPICAL|ALL))"
+    )
+    return rf"ALTER SYSTEM SET {assignment} SCOPE=MEMORY"
+
+
+def _resource_plan_pattern(*, rendered: bool) -> str:
+    plan_name = (
+        r"[A-Za-z][A-Za-z0-9_$#]{0,127}"
+        if rendered
+        else r"\{\{resource_plan_name\}\}"
+    )
+    return rf"ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = '{plan_name}' SCOPE=BOTH"
+
+
+def _privilege_pattern(
+    *, operation: str, object_privilege: bool, rendered: bool
+) -> str:
+    destination = "TO" if operation == "GRANT" else "FROM"
+    if not rendered:
+        object_clause = r" ON \{\{object_ref\}\}" if object_privilege else ""
+        return (
+            rf"{operation} \{{\{{privilege\}}\}}{object_clause} "
+            rf"{destination} \{{\{{grantee_name\}}\}}"
+        )
+    identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
+    if object_privilege:
+        privilege = r"(?:SELECT|READ|INSERT|UPDATE|DELETE|EXECUTE)"
+        object_clause = rf" ON {identifier}\.{identifier}"
+    else:
+        privilege = (
+            r"(?:CREATE SESSION|CREATE TABLE|CREATE VIEW|CREATE PROCEDURE|"
+            r"CREATE SEQUENCE|CREATE SYNONYM|CREATE TRIGGER|CREATE TYPE)"
+        )
+        object_clause = ""
+    return rf"{operation} {privilege}{object_clause} {destination} {identifier}"
 
 
 def _object_compile_pattern(*, rendered: bool) -> str:
@@ -192,10 +269,56 @@ def validate_action_template(
         if definition.db_type != "ORACLE":
             raise ValueError("索引重建 Validator 仅支持 Oracle")
         _exact(_index_rebuild_pattern(rendered=False), text)
+    elif definition.validator_id == "oracle-index-coalesce.v1":
+        if definition.db_type != "ORACLE":
+            raise ValueError("索引合并 Validator 仅支持 Oracle")
+        _exact(_index_coalesce_pattern(rendered=False), text)
     elif definition.validator_id == "oracle-index-partition-rebuild.v1":
         if definition.db_type != "ORACLE":
             raise ValueError("索引分区重建 Validator 仅支持 Oracle")
         _exact(_index_partition_rebuild_pattern(rendered=False), text)
+    elif definition.validator_id in {
+        "oracle-datafile-resize.v1",
+        "oracle-tempfile-resize.v1",
+        "oracle-datafile-autoextend.v1",
+        "oracle-tempfile-autoextend.v1",
+    }:
+        file_kind = (
+            "DATAFILE" if "datafile" in definition.validator_id else "TEMPFILE"
+        )
+        operation = (
+            "autoextend"
+            if "autoextend" in definition.validator_id
+            else "resize"
+        )
+        _exact(
+            _storage_pattern(
+                file_kind=file_kind,
+                operation=operation,
+                rendered=False,
+            ),
+            text,
+        )
+    elif definition.validator_id == "oracle-dynamic-parameter-set.v1":
+        _exact(_dynamic_parameter_pattern(rendered=False), text)
+    elif definition.validator_id == "oracle-resource-manager-plan-switch.v1":
+        _exact(_resource_plan_pattern(rendered=False), text)
+    elif definition.validator_id in {
+        "oracle-system-privilege-grant.v1",
+        "oracle-system-privilege-revoke.v1",
+        "oracle-object-privilege-grant.v1",
+        "oracle-object-privilege-revoke.v1",
+    }:
+        _exact(
+            _privilege_pattern(
+                operation=(
+                    "GRANT" if "-grant." in definition.validator_id else "REVOKE"
+                ),
+                object_privilege="-object-" in definition.validator_id,
+                rendered=False,
+            ),
+            text,
+        )
     elif definition.validator_id == "oracle-object-compile.v1":
         if definition.db_type != "ORACLE":
             raise ValueError("对象编译 Validator 仅支持 Oracle")
@@ -276,8 +399,52 @@ def validate_rendered_action(
         _exact(_cancel_sql_pattern(rendered=True), command)
     elif definition.validator_id == "oracle-index-rebuild.v1":
         _exact(_index_rebuild_pattern(rendered=True), command)
+    elif definition.validator_id == "oracle-index-coalesce.v1":
+        _exact(_index_coalesce_pattern(rendered=True), command)
     elif definition.validator_id == "oracle-index-partition-rebuild.v1":
         _exact(_index_partition_rebuild_pattern(rendered=True), command)
+    elif definition.validator_id in {
+        "oracle-datafile-resize.v1",
+        "oracle-tempfile-resize.v1",
+        "oracle-datafile-autoextend.v1",
+        "oracle-tempfile-autoextend.v1",
+    }:
+        file_kind = (
+            "DATAFILE" if "datafile" in definition.validator_id else "TEMPFILE"
+        )
+        operation = (
+            "autoextend"
+            if "autoextend" in definition.validator_id
+            else "resize"
+        )
+        _exact(
+            _storage_pattern(
+                file_kind=file_kind,
+                operation=operation,
+                rendered=True,
+            ),
+            command,
+        )
+    elif definition.validator_id == "oracle-dynamic-parameter-set.v1":
+        _exact(_dynamic_parameter_pattern(rendered=True), command)
+    elif definition.validator_id == "oracle-resource-manager-plan-switch.v1":
+        _exact(_resource_plan_pattern(rendered=True), command)
+    elif definition.validator_id in {
+        "oracle-system-privilege-grant.v1",
+        "oracle-system-privilege-revoke.v1",
+        "oracle-object-privilege-grant.v1",
+        "oracle-object-privilege-revoke.v1",
+    }:
+        _exact(
+            _privilege_pattern(
+                operation=(
+                    "GRANT" if "-grant." in definition.validator_id else "REVOKE"
+                ),
+                object_privilege="-object-" in definition.validator_id,
+                rendered=True,
+            ),
+            command,
+        )
     elif definition.validator_id == "oracle-object-compile.v1":
         _exact(_object_compile_pattern(rendered=True), command)
     elif definition.validator_id == "oracle-table-statistics-gather.v1":

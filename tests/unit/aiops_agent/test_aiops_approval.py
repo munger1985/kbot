@@ -23,6 +23,28 @@ from platform_core.identity import uuid7
 
 
 class ApprovalServiceTest(unittest.TestCase):
+    def test_approval_rechecks_sensitive_agent_scope(self) -> None:
+        binding = SimpleNamespace(
+            object_scopes_json={
+                "dynamic_parameters": [
+                    {
+                        "name": "cursor_sharing",
+                        "allowed_values": ["EXACT"],
+                    }
+                ]
+            }
+        )
+        proposal = SimpleNamespace(
+            canonical_object_ref_json=None,
+            parameters_json={
+                "parameter_name": "cursor_sharing",
+                "parameter_value": "FORCE",
+            },
+        )
+
+        with self.assertRaises(AIOpsApplicationError):
+            AIOpsChangeService._validate_object_scope(binding, proposal)
+
     def test_chat_proposal_block_tracks_approval_status(self) -> None:
         proposal_id = uuid7()
         run_id = uuid7()

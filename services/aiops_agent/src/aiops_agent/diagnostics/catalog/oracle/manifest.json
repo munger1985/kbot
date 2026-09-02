@@ -184,6 +184,47 @@
       "cost_level": "LOW"
     },
     {
+      "tool_id": "db.index.coalesce_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_unlocked_normal_index",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views", "index_maintenance"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_INDEXES", "DBA_SEGMENTS", "DBA_FREE_SPACE", "GV_$LOCKED_OBJECT", "DBA_OBJECTS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "index_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "index_name", "logical_type": "STRING", "nullable": false},
+        {"name": "table_owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_name", "logical_type": "STRING"},
+        {"name": "status", "logical_type": "STRING"},
+        {"name": "index_type", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "visibility", "logical_type": "STRING", "nullable": false},
+        {"name": "degree", "logical_type": "STRING"},
+        {"name": "leaf_blocks", "logical_type": "INTEGER"},
+        {"name": "num_rows", "logical_type": "INTEGER"},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "index_size_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "tablespace_free_mb", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "active_table_locks", "logical_type": "INTEGER", "nullable": false},
+        {"name": "online_supported", "logical_type": "STRING", "nullable": false},
+        {"name": "space_sufficient", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/index_health.sql",
+      "template_sha256": "d3923bae630bc9824c65fc8968affecb277f7188cdd941cf024bc1194384d0f3",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.index.partition.health",
       "version": "1.0.0",
       "db_type": "ORACLE",
@@ -925,6 +966,102 @@
       ],
       "template_ref": "sql/user_status.sql",
       "template_sha256": "27aaa8ad54215178892ecc9e977fb219060c2128e798e7d835692e356196fb8b",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.parameter.dynamic_state", "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_registered_immediate_parameter", "supported_version_min": 19, "supported_version_max_exclusive": 27, "required_capabilities": ["dba_catalog_views", "dynamic_performance_views"], "required_entitlements": [], "required_privileges": ["V_$PARAMETER"],
+      "parameters": [{"name": "parameter_name", "type": "string", "max_length": 64, "enum": ["cursor_sharing", "optimizer_mode", "statistics_level"]}, {"name": "parameter_value", "type": "string", "max_length": 128, "enum": ["EXACT", "FORCE", "ALL_ROWS", "FIRST_ROWS", "BASIC", "TYPICAL", "ALL"]}],
+      "output_columns": [{"name": "parameter_name", "logical_type": "STRING", "nullable": false}, {"name": "current_value", "logical_type": "STRING"}, {"name": "issys_modifiable", "logical_type": "STRING", "nullable": false}, {"name": "isinstance_modifiable", "logical_type": "STRING", "nullable": false}, {"name": "requested_value", "logical_type": "STRING", "nullable": false}],
+      "template_ref": "sql/dynamic_parameter_state.sql", "template_sha256": "1d66236a71fb8e6536a4e05a4df88430bd340460580bc6e49ecb72d321c06054", "timeout_seconds": 20, "max_rows": 1, "max_bytes": 131072, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.resource_manager.plan_state", "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_active_resource_plan", "supported_version_min": 19, "supported_version_max_exclusive": 27, "required_capabilities": ["dba_catalog_views", "dynamic_performance_views"], "required_entitlements": [], "required_privileges": ["DBA_RSRC_PLANS", "V_$PARAMETER"],
+      "parameters": [{"name": "resource_plan_name", "type": "string", "max_length": 128}],
+      "output_columns": [{"name": "resource_plan_name", "logical_type": "STRING", "nullable": false}, {"name": "status", "logical_type": "STRING", "nullable": false}, {"name": "mandatory", "logical_type": "STRING", "nullable": false}, {"name": "current_plan_name", "logical_type": "STRING", "nullable": false}],
+      "template_ref": "sql/resource_manager_plan_state.sql", "template_sha256": "efae3d12625a9625e0cb4655a1f5d47a8778926b1bc4ebe8709dd2753857435b", "timeout_seconds": 20, "max_rows": 1, "max_bytes": 131072, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.user.system_privilege_state", "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_local_user_exact_system_privilege", "supported_version_min": 19, "supported_version_max_exclusive": 27, "required_capabilities": ["dba_catalog_views"], "required_entitlements": [], "required_privileges": ["DBA_USERS", "DBA_SYS_PRIVS"],
+      "parameters": [{"name": "grantee_name", "type": "string", "max_length": 128}, {"name": "privilege", "type": "string", "max_length": 64, "enum": ["CREATE SESSION", "CREATE TABLE", "CREATE VIEW", "CREATE PROCEDURE", "CREATE SEQUENCE", "CREATE SYNONYM", "CREATE TRIGGER", "CREATE TYPE"]}],
+      "output_columns": [{"name": "grantee_name", "logical_type": "STRING", "nullable": false}, {"name": "privilege", "logical_type": "STRING", "nullable": false}, {"name": "is_granted", "logical_type": "STRING", "nullable": false}, {"name": "oracle_maintained", "logical_type": "STRING", "nullable": false}, {"name": "common", "logical_type": "STRING", "nullable": false}],
+      "template_ref": "sql/system_privilege_state.sql", "template_sha256": "9f3d6515a5854f3ffd6e3b214ba58c4e5ef9b72ddbc5e616c1a217b3d2d98107", "timeout_seconds": 20, "max_rows": 1, "max_bytes": 131072, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.user.object_privilege_state", "version": "1.0.0", "db_type": "ORACLE", "variant": "oracle_19_plus_local_user_exact_object_privilege", "supported_version_min": 19, "supported_version_max_exclusive": 27, "required_capabilities": ["dba_catalog_views"], "required_entitlements": [], "required_privileges": ["DBA_USERS", "DBA_OBJECTS", "DBA_TAB_PRIVS"],
+      "parameters": [{"name": "schema_name", "type": "string", "max_length": 128}, {"name": "object_name", "type": "string", "max_length": 128}, {"name": "object_type", "type": "string", "max_length": 30, "enum": ["TABLE", "VIEW", "SEQUENCE", "PROCEDURE", "FUNCTION", "PACKAGE", "TYPE"]}, {"name": "grantee_name", "type": "string", "max_length": 128}, {"name": "privilege", "type": "string", "max_length": 64, "enum": ["SELECT", "READ", "INSERT", "UPDATE", "DELETE", "EXECUTE"]}],
+      "output_columns": [{"name": "owner", "logical_type": "STRING", "nullable": false}, {"name": "object_name", "logical_type": "STRING", "nullable": false}, {"name": "object_type", "logical_type": "STRING", "nullable": false}, {"name": "grantee_name", "logical_type": "STRING", "nullable": false}, {"name": "privilege", "logical_type": "STRING", "nullable": false}, {"name": "is_granted", "logical_type": "STRING", "nullable": false}, {"name": "oracle_maintained", "logical_type": "STRING", "nullable": false}, {"name": "common", "logical_type": "STRING", "nullable": false}],
+      "template_ref": "sql/object_privilege_state.sql", "template_sha256": "faf54266b6ca0aea7daf9e063b12a2487c0c8bac1754c6e936c97ab86fa20a4f", "timeout_seconds": 20, "max_rows": 1, "max_bytes": 131072, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.storage.datafile.action_state",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_existing_online_datafile",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_DATA_FILES", "DBA_TABLESPACES"],
+      "parameters": [
+        {"name": "file_name", "type": "string", "max_length": 1024},
+        {"name": "new_size_mb", "type": "integer", "minimum": 0, "maximum": 1048576, "default": 0, "required": false},
+        {"name": "next_mb", "type": "integer", "minimum": 0, "maximum": 1024, "default": 0, "required": false},
+        {"name": "max_size_mb", "type": "integer", "minimum": 0, "maximum": 1048576, "default": 0, "required": false}
+      ],
+      "output_columns": [
+        {"name": "file_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_name", "logical_type": "STRING", "nullable": false},
+        {"name": "current_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "current_max_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "autoextensible", "logical_type": "STRING", "nullable": false},
+        {"name": "current_next_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_next_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_max_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "status", "logical_type": "STRING", "nullable": false},
+        {"name": "online_status", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/datafile_action_state.sql",
+      "template_sha256": "8a467d15d8daf170725b7ef918a1a6d3cb5f0afe7939a31390edb1fdab33578a",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.storage.tempfile.action_state",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_existing_available_tempfile",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_TEMP_FILES", "DBA_TABLESPACES"],
+      "parameters": [
+        {"name": "file_name", "type": "string", "max_length": 1024},
+        {"name": "new_size_mb", "type": "integer", "minimum": 0, "maximum": 1048576, "default": 0, "required": false},
+        {"name": "next_mb", "type": "integer", "minimum": 0, "maximum": 1024, "default": 0, "required": false},
+        {"name": "max_size_mb", "type": "integer", "minimum": 0, "maximum": 1048576, "default": 0, "required": false}
+      ],
+      "output_columns": [
+        {"name": "file_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_name", "logical_type": "STRING", "nullable": false},
+        {"name": "current_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "current_max_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "autoextensible", "logical_type": "STRING", "nullable": false},
+        {"name": "current_next_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_next_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "requested_max_size_mb", "logical_type": "INTEGER", "nullable": false},
+        {"name": "status", "logical_type": "STRING", "nullable": false},
+        {"name": "online_status", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/tempfile_action_state.sql",
+      "template_sha256": "3b2ceeac6827be22995333b538ce03c02877042785849fbfb30cc3f5447fd564",
       "timeout_seconds": 20,
       "max_rows": 1,
       "max_bytes": 131072,

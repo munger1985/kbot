@@ -237,7 +237,16 @@ class OracleMutationDriver:
                 "db.session.terminate",
                 "db.session.cancel_sql",
                 "db.index.rebuild",
+                "db.index.coalesce",
                 "db.index.partition.rebuild",
+                "db.storage.datafile.resize",
+                "db.storage.tempfile.resize",
+                "db.storage.datafile.autoextend",
+                "db.storage.tempfile.autoextend",
+                "db.parameter.set",
+                "db.resource_manager.plan.switch",
+                "db.user.privilege.grant",
+                "db.user.privilege.revoke",
                 "db.object.compile",
                 "db.statistics.gather",
                 "db.statistics.lock",
@@ -380,6 +389,31 @@ class OracleMutationDriver:
                     "index_name": object_ref["object_name"],
                 },
             )
+        elif action.action_template_id == "db.index.coalesce":
+            object_ref = dict(parameters["index_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_INDEXES i
+                 WHERE i.OWNER = :schema_name
+                   AND i.INDEX_NAME = :index_name
+                   AND i.STATUS = 'VALID'
+                   AND i.PARTITIONED = 'NO'
+                   AND i.INDEX_TYPE IN ('NORMAL', 'NORMAL/REV')
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM GV$LOCKED_OBJECT l
+                         JOIN DBA_OBJECTS o
+                           ON o.OBJECT_ID = l.OBJECT_ID
+                        WHERE o.OWNER = i.TABLE_OWNER
+                          AND o.OBJECT_NAME = i.TABLE_NAME
+                   )
+                """,
+                {
+                    "schema_name": object_ref["schema"],
+                    "index_name": object_ref["object_name"],
+                },
+            )
         elif action.action_template_id == "db.index.partition.rebuild":
             object_ref = dict(parameters["index_ref"])
             await cursor.execute(
@@ -401,6 +435,166 @@ class OracleMutationDriver:
                     "partition_name": parameters["partition_name"],
                 },
             )
+        elif action.action_template_id in {
+            "db.storage.datafile.resize",
+            "db.storage.tempfile.resize",
+        }:
+            datafile = action.action_template_id == "db.storage.datafile.resize"
+            view_name = "DBA_DATA_FILES" if datafile else "DBA_TEMP_FILES"
+            online_predicate = (
+                "AND ONLINE_STATUS = 'ONLINE'" if datafile else ""
+            )
+            await cursor.execute(
+                f"""
+                SELECT 1
+                  FROM {view_name}
+                 WHERE FILE_NAME = :file_name
+                   AND STATUS = 'AVAILABLE'
+                   {online_predicate}
+                   AND CEIL(BYTES / 1048576) < :new_size_mb
+                """,
+                {
+                    "file_name": parameters["file_name"],
+                    "new_size_mb": parameters["new_size_mb"],
+                },
+            )
+        elif action.action_template_id in {
+            "db.storage.datafile.autoextend",
+            "db.storage.tempfile.autoextend",
+        }:
+            datafile = (
+                action.action_template_id == "db.storage.datafile.autoextend"
+            )
+            view_name = "DBA_DATA_FILES" if datafile else "DBA_TEMP_FILES"
+            online_predicate = (
+                "AND ONLINE_STATUS = 'ONLINE'" if datafile else ""
+            )
+            await cursor.execute(
+                f"""
+                SELECT 1
+                  FROM {view_name} f
+                  JOIN DBA_TABLESPACES t
+                    ON t.TABLESPACE_NAME = f.TABLESPACE_NAME
+                 WHERE f.FILE_NAME = :file_name
+                   AND f.STATUS = 'AVAILABLE'
+                   {online_predicate.replace('ONLINE_STATUS', 'f.ONLINE_STATUS')}
+                   AND CEIL(f.BYTES / 1048576) < :max_size_mb
+                   AND :next_mb BETWEEN 1 AND 1024
+                   AND :max_size_mb BETWEEN 2 AND 1048576
+                   AND :next_mb <= :max_size_mb - CEIL(f.BYTES / 1048576)
+                   AND NOT (
+                       f.AUTOEXTENSIBLE = 'YES'
+                       AND ROUND(f.INCREMENT_BY * t.BLOCK_SIZE / 1048576) = :next_mb
+                       AND ROUND(f.MAXBYTES / 1048576) = :max_size_mb
+                   )
+                """,
+                {
+                    "file_name": parameters["file_name"],
+                    "next_mb": parameters["next_mb"],
+                    "max_size_mb": parameters["max_size_mb"],
+                },
+            )
+        elif action.action_template_id == "db.parameter.set":
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM V$PARAMETER
+                 WHERE NAME = :parameter_name
+                   AND ISSYS_MODIFIABLE = 'IMMEDIATE'
+                   AND UPPER(DISPLAY_VALUE) <> :parameter_value
+                """,
+                {
+                    "parameter_name": parameters["parameter_name"],
+                    "parameter_value": parameters["parameter_value"],
+                },
+            )
+        elif action.action_template_id == "db.resource_manager.plan.switch":
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_RSRC_PLANS p
+                 WHERE p.PLAN = :resource_plan_name
+                   AND p.STATUS = 'ACTIVE'
+                   AND p.PLAN <> NVL((
+                       SELECT UPPER(VALUE)
+                         FROM V$PARAMETER
+                        WHERE NAME = 'resource_manager_plan'
+                   ), ' ')
+                """,
+                {"resource_plan_name": parameters["resource_plan_name"]},
+            )
+        elif action.action_template_id in {
+            "db.user.privilege.grant",
+            "db.user.privilege.revoke",
+        }:
+            grant = action.action_template_id.endswith(".grant")
+            if "object_ref" in parameters:
+                object_ref = dict(parameters["object_ref"])
+                await cursor.execute(
+                    """
+                    SELECT 1
+                      FROM DBA_OBJECTS o
+                      JOIN DBA_USERS u
+                        ON u.USERNAME = :grantee_name
+                     WHERE o.OWNER = :schema_name
+                       AND o.OBJECT_NAME = :object_name
+                       AND o.OBJECT_TYPE = :object_type
+                       AND o.STATUS = 'VALID'
+                       AND u.ORACLE_MAINTAINED = 'N'
+                       AND u.COMMON = 'NO'
+                       AND (
+                            (:require_granted = 0 AND NOT EXISTS (
+                                SELECT 1 FROM DBA_TAB_PRIVS p
+                                 WHERE p.OWNER = o.OWNER
+                                   AND p.TABLE_NAME = o.OBJECT_NAME
+                                   AND p.GRANTEE = u.USERNAME
+                                   AND p.PRIVILEGE = :privilege
+                            ))
+                         OR (:require_granted = 1 AND EXISTS (
+                                SELECT 1 FROM DBA_TAB_PRIVS p
+                                 WHERE p.OWNER = o.OWNER
+                                   AND p.TABLE_NAME = o.OBJECT_NAME
+                                   AND p.GRANTEE = u.USERNAME
+                                   AND p.PRIVILEGE = :privilege
+                            ))
+                       )
+                    """,
+                    {
+                        "schema_name": object_ref["schema"],
+                        "object_name": object_ref["object_name"],
+                        "object_type": object_ref["object_type"],
+                        "grantee_name": parameters["grantee_name"],
+                        "privilege": parameters["privilege"],
+                        "require_granted": int(not grant),
+                    },
+                )
+            else:
+                await cursor.execute(
+                    """
+                    SELECT 1
+                      FROM DBA_USERS u
+                     WHERE u.USERNAME = :grantee_name
+                       AND u.ORACLE_MAINTAINED = 'N'
+                       AND u.COMMON = 'NO'
+                       AND (
+                            (:require_granted = 0 AND NOT EXISTS (
+                                SELECT 1 FROM DBA_SYS_PRIVS p
+                                 WHERE p.GRANTEE = u.USERNAME
+                                   AND p.PRIVILEGE = :privilege
+                            ))
+                         OR (:require_granted = 1 AND EXISTS (
+                                SELECT 1 FROM DBA_SYS_PRIVS p
+                                 WHERE p.GRANTEE = u.USERNAME
+                                   AND p.PRIVILEGE = :privilege
+                            ))
+                       )
+                    """,
+                    {
+                        "grantee_name": parameters["grantee_name"],
+                        "privilege": parameters["privilege"],
+                        "require_granted": int(not grant),
+                    },
+                )
         elif action.action_template_id == "db.object.compile":
             object_ref = dict(parameters["object_ref"])
             await cursor.execute(

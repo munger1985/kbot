@@ -119,6 +119,55 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
         self.assertEqual("VERIFIED", result.status)
         self.assertTrue(result.effect_achieved)
 
+    def test_coalesced_index_valid_is_verified(self) -> None:
+        target_id = str(uuid7())
+        scope = {
+            "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+            "proposal_id": str(uuid7()),
+            "source_run_id": str(uuid7()),
+            "result_artifact_id": str(uuid7()),
+            "action_template_id": "db.index.coalesce",
+            "canonical_parameters": {
+                "index_ref": {
+                    "schema": "APP",
+                    "object_type": "INDEX",
+                    "object_name": "IX_ORDERS",
+                }
+            },
+            "verification_tool_refs": ["db.index.coalesce_candidate"],
+            "source_result_status": "SUCCEEDED",
+        }
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="verify",
+            target_id=target_id,
+            agent_id=str(uuid7()),
+            trigger_type="API",
+            trace_id="trace-coalesce-verification",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={"advisory_verification": scope},
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+                    "payload": scope,
+                },
+                self._diagnostic(
+                    target_id=target_id,
+                    tool_id="db.index.coalesce_candidate",
+                    columns=("owner", "index_name", "status"),
+                    rows=(("APP", "IX_ORDERS", "VALID"),),
+                ),
+            ),
+        )
+
+        result = asyncio.run(ActionVerificationHandler().execute(context))
+
+        self.assertEqual("VERIFIED", result.status)
+        self.assertTrue(result.effect_achieved)
+
     def test_cancelled_sql_absence_is_verified_without_session_disconnect(self):
         target_id = str(uuid7())
         scope = {
@@ -381,6 +430,61 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
         self.assertEqual("ADVERSE", result.status)
         self.assertTrue(result.adverse_effect)
 
+    def test_storage_parameter_resource_and_privilege_effects_are_verified(self):
+        cases = (
+            (
+                "db.storage.datafile.resize",
+                {"file_name": "+DATA/DB/data01.dbf", "new_size_mb": 2048},
+                "db.storage.datafile.action_state",
+                (
+                    "file_name",
+                    "current_size_mb",
+                    "current_max_size_mb",
+                    "autoextensible",
+                    "current_next_mb",
+                    "status",
+                    "online_status",
+                ),
+                (("+DATA/DB/data01.dbf", 2048, 2048, "NO", 0, "AVAILABLE", "ONLINE"),),
+            ),
+            (
+                "db.parameter.set",
+                {"parameter_name": "cursor_sharing", "parameter_value": "FORCE"},
+                "db.parameter.dynamic_state",
+                ("parameter_name", "current_value"),
+                (("cursor_sharing", "FORCE"),),
+            ),
+            (
+                "db.resource_manager.plan.switch",
+                {"resource_plan_name": "APP_PLAN"},
+                "db.resource_manager.plan_state",
+                ("resource_plan_name", "current_plan_name"),
+                (("APP_PLAN", "APP_PLAN"),),
+            ),
+            (
+                "db.user.privilege.grant",
+                {"grantee_name": "APPUSER", "privilege": "CREATE SESSION"},
+                "db.user.system_privilege_state",
+                ("grantee_name", "privilege", "is_granted"),
+                (("APPUSER", "CREATE SESSION", "YES"),),
+            ),
+        )
+        for action_id, parameters, tool_id, columns, rows in cases:
+            with self.subTest(action_id=action_id):
+                result = asyncio.run(
+                    ActionVerificationHandler().execute(
+                        self._single_action_context(
+                            action_id=action_id,
+                            parameters=parameters,
+                            tool_id=tool_id,
+                            columns=columns,
+                            rows=rows,
+                        )
+                    )
+                )
+                self.assertEqual("VERIFIED", result.status)
+                self.assertTrue(result.effect_achieved)
+
     def test_blueprint_has_no_proposal_or_execute_task(self) -> None:
         blueprint = build_advisory_verification_blueprint(
             (
@@ -463,6 +567,52 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                         "blocking_session_id",
                     ),
                     rows=blocking_rows,
+                ),
+            ),
+        )
+
+    def _single_action_context(
+        self,
+        *,
+        action_id: str,
+        parameters: dict,
+        tool_id: str,
+        columns: tuple[str, ...],
+        rows: tuple,
+    ) -> TaskExecutionContext:
+        target_id = str(uuid7())
+        scope = {
+            "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+            "proposal_id": str(uuid7()),
+            "source_run_id": str(uuid7()),
+            "result_artifact_id": str(uuid7()),
+            "action_template_id": action_id,
+            "canonical_parameters": parameters,
+            "verification_tool_refs": [tool_id],
+            "source_result_status": "SUCCEEDED",
+        }
+        return TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="verify",
+            target_id=target_id,
+            agent_id=str(uuid7()),
+            trigger_type="API",
+            trace_id="trace-controlled-action-verification",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={"advisory_verification": scope},
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+                    "payload": scope,
+                },
+                self._diagnostic(
+                    target_id=target_id,
+                    tool_id=tool_id,
+                    columns=columns,
+                    rows=rows,
                 ),
             ),
         )

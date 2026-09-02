@@ -692,12 +692,18 @@ class AIOpsRuntimeService:
                 if proposal_snapshot.action_template_id in {
                     "db.index.rebuild",
                     "db.index.partition.rebuild",
+                    "db.index.coalesce",
                 }:
                     object_ref = dict(
                         proposal_snapshot.canonical_parameters["index_ref"]
                     )
                     for tool in database_diagnostic_snapshot["tools"]:
                         if tool["tool_id"] == "db.index.health":
+                            tool["parameters"] = {
+                                "schema_name": object_ref["schema"],
+                                "index_name": object_ref["object_name"],
+                            }
+                        elif tool["tool_id"] == "db.index.coalesce_candidate":
                             tool["parameters"] = {
                                 "schema_name": object_ref["schema"],
                                 "index_name": object_ref["object_name"],
@@ -712,6 +718,70 @@ class AIOpsRuntimeService:
                                 "schema_name": object_ref["schema"],
                                 "index_name": object_ref["object_name"],
                                 "partition_name": partition_name,
+                            }
+                elif proposal_snapshot.action_template_id in {
+                    "db.storage.datafile.resize",
+                    "db.storage.tempfile.resize",
+                    "db.storage.datafile.autoextend",
+                    "db.storage.tempfile.autoextend",
+                }:
+                    parameters = proposal_snapshot.canonical_parameters
+                    resize = proposal_snapshot.action_template_id.endswith(
+                        ".resize"
+                    )
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if str(tool["tool_id"]).endswith(".action_state"):
+                            tool["parameters"] = {
+                                "file_name": parameters["file_name"],
+                                "new_size_mb": (
+                                    parameters["new_size_mb"] if resize else 0
+                                ),
+                                "next_mb": (
+                                    0 if resize else parameters["next_mb"]
+                                ),
+                                "max_size_mb": (
+                                    0 if resize else parameters["max_size_mb"]
+                                ),
+                            }
+                elif proposal_snapshot.action_template_id == "db.parameter.set":
+                    parameters = proposal_snapshot.canonical_parameters
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.parameter.dynamic_state":
+                            tool["parameters"] = {
+                                "parameter_name": parameters["parameter_name"],
+                                "parameter_value": parameters["parameter_value"],
+                            }
+                elif (
+                    proposal_snapshot.action_template_id
+                    == "db.resource_manager.plan.switch"
+                ):
+                    parameters = proposal_snapshot.canonical_parameters
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.resource_manager.plan_state":
+                            tool["parameters"] = {
+                                "resource_plan_name": parameters[
+                                    "resource_plan_name"
+                                ]
+                            }
+                elif proposal_snapshot.action_template_id in {
+                    "db.user.privilege.grant",
+                    "db.user.privilege.revoke",
+                }:
+                    parameters = proposal_snapshot.canonical_parameters
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if tool["tool_id"] == "db.user.system_privilege_state":
+                            tool["parameters"] = {
+                                "grantee_name": parameters["grantee_name"],
+                                "privilege": parameters["privilege"],
+                            }
+                        elif tool["tool_id"] == "db.user.object_privilege_state":
+                            object_ref = dict(parameters["object_ref"])
+                            tool["parameters"] = {
+                                "schema_name": object_ref["schema"],
+                                "object_name": object_ref["object_name"],
+                                "object_type": object_ref["object_type"],
+                                "grantee_name": parameters["grantee_name"],
+                                "privilege": parameters["privilege"],
                             }
                 elif (
                     proposal_snapshot.action_template_id

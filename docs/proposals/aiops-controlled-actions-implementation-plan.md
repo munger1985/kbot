@@ -2,7 +2,7 @@
 
 版本：1.0
 
-状态：阶段 0、1、阶段 2 的普通/分区 Index Rebuild，以及阶段 3 的会话、对象编译、表统计信息、Scheduler 和本地应用用户账号状态首批代码切片已实施；其余动作和真实环境验收待实施
+状态：阶段 0、1，以及 Oracle 数据库内受控动作代码切片已实施；OEM、OCI、Ansible、RMAN 等外部动作与真实环境验收不在本阶段实施
 
 基准日期：2026-09-02
 
@@ -73,21 +73,22 @@ Catalog 加载、Proposal 创建和 Executor Claim 三个阶段都必须拒绝�
 | 索引与统计信息 | rebuild/coalesce index、分区索引修复、收集/锁定/解锁统计信息 | 单人审批后执行；不支持删除索引 |
 | 对象维护 | 编译指定对象、编译 Schema 无效对象 | 单人审批后执行；对象检查保持只读 |
 | Scheduler | 启用、停用、运行、停止指定 Job | 单人审批后执行 |
-| 存储容量 | 增加或扩容 datafile/tempfile、调整 autoextend | 单人审批后执行；删除文件只供人工执行 |
+| 存储容量 | 扩容已有 datafile/tempfile、调整有限 autoextend | 单人审批后执行；新增/缩小/删除文件不进入执行器 |
 | 参数与资源 | 修改明确 Allowlist 内的动态参数、切换已登记 Resource Manager Plan | 单人审批后执行 |
 | 用户与权限 | 锁定/解锁用户、过期密码、明确对象和权限的 grant/revoke | 单人审批后执行；删除用户只供人工执行 |
-| 备份维护 | 发起备份、校验、crosscheck | 单人审批后调用登记的执行器；删除备份只供人工执行 |
+| 备份维护 | 发起备份、校验、crosscheck | 本阶段不实现 RMAN/外部执行器；删除备份只供人工执行 |
 | 恢复与清理 | restore/recover、`RESETLOGS`、删除备份、清理归档 | `MANUAL_ONLY`，只展示命令和恢复说明 |
-| 高可用 | 启停日志应用、计划内 switchover | 单人审批后调用登记的执行器；强制 failover 只供人工执行 |
-| 实例和服务 | PDB、数据库服务、实例和监听器启停 | 单人审批后调用对应数据库或主机执行器 |
-| 补丁升级 | 预检查、补丁应用、升级 | 单人审批后调用已登记的 OEM、OCI 或自动化执行器；破坏性回退只供人工执行 |
+| 高可用 | 启停日志应用、计划内 switchover | 本阶段不实现外部执行器；强制 failover 只供人工执行 |
+| 实例和服务 | PDB、数据库服务、实例和监听器启停 | 本阶段不实现主机或外部执行器 |
+| 补丁升级 | 预检查、补丁应用、升级 | 本阶段不实现 OEM、OCI、Ansible 等外部编排 |
 | 破坏性数据操作 | `DROP`、`TRUNCATE`、任意 DML、删除分区或清空数据 | `MANUAL_ONLY`，永不进入 Executor |
 
-当前 Catalog 共登记 53 个数据库 Variant：16 个审批后可执行 Variant、7 个只展示命令的
-`MANUAL_ONLY` Variant，以及 30 个明确失败关闭的 `PLANNED/UNSUPPORTED` Variant。后者已经
-覆盖 Schema 批量编译、datafile/tempfile 增加/扩容/autoextend、参数和 Resource Manager、
-精确 grant/revoke、备份发起/校验/crosscheck、日志应用、PDB/服务/实例/监听器和补丁升级等
-目录项，并记录各自缺失的可信事实或外部执行协议；它们不会出现在可勾选执行动作中。
+当前 Catalog 共登记 55 个数据库 Variant：27 个审批后可执行 Variant、7 个只展示命令的
+`MANUAL_ONLY` Variant，以及 21 个明确失败关闭的 `PLANNED/UNSUPPORTED` Variant。审批后可执行
+范围包括 Oracle 会话、索引、对象、统计信息、Scheduler、用户状态、已有文件扩容/autoextend、
+白名单动态参数、Resource Manager Plan 和精确权限，以及 MySQL 断开连接。Schema 批量编译、
+datafile/tempfile 新增和所有 OEM/OCI/Ansible/RMAN 或主机类动作保持计划状态，不会出现在可勾选
+执行动作中。
 
 破坏性目录除表 `DROP`/`TRUNCATE` 和归档清理外，还登记了 restore、recover、备份删除和物理
 备库 failover 的固定人工命令。以上动作的 `executor_kind` 均为 `NONE`，Catalog 加载和 Executor
@@ -107,12 +108,21 @@ Claim 会双重阻止其进入自动执行链。任意 DML 和“其他 SQL”�
     "enabled": true,
     "allowed_action_ids": [
       "db.index.rebuild",
-      "db.statistics.gather",
-      "db.scheduler.job.run"
+      "db.storage.datafile.resize",
+      "db.parameter.set",
+      "db.resource_manager.plan.switch",
+      "db.user.privilege.grant"
     ],
     "object_scopes": {
       "schemas": ["APP_SCHEMA"],
-      "exclude_system_objects": true
+      "exclude_system_objects": true,
+      "dynamic_parameters": [
+        {"name": "cursor_sharing", "allowed_values": ["EXACT", "FORCE"]}
+      ],
+      "resource_manager_plans": ["APP_PLAN"],
+      "privilege_grantees": ["APPUSER", "REPORTER"],
+      "system_privileges": ["CREATE SESSION"],
+      "object_privileges": ["SELECT"]
     },
     "max_daily_executions": 10
   }
@@ -122,6 +132,10 @@ Claim 会双重阻止其进入自动执行链。任意 DML 和“其他 SQL”�
 `allowed_action_ids` 必须由用户从当前 Target 的兼容动作中显式选择。Catalog 新增动作时不能自动
 进入已发布 Agent 版本，避免一次总开关隐式授权未来全部动作。Policy 和 Agent 版本继续不可变；
 修改动作范围必须生成新版本，已经创建的 Run 继续使用冻结快照。
+
+动态参数的名称和值、Resource Manager Plan、授权用户和权限必须同时在 `object_scopes` 中预先
+登记。只勾选动作 ID 不构成对任意参数、Plan 或权限的授权；Proposal 创建、人工审批和执行 Claim
+都会按当前 Agent–Target 配置重新核对精确组合。
 
 不配置审批层级、OA 单号或双人审批。可保留对象范围、并发数、每日执行上限和全局 Kill Switch
 作为技术安全约束。
@@ -223,7 +237,8 @@ Action Plan 可以包含多条动作，但运行时一次只创建当前 ordinal
 把 Oracle/MySQL Driver 中对 `db.session.terminate` 的硬编码替换为动作执行器注册表：
 
 - 数据库内动作使用 `DATABASE` Executor；
-- RMAN、监听器、实例、补丁和高可用动作使用显式登记的 `EXTERNAL` Adapter；
+- 若未来恢复外部动作建设，RMAN、监听器、实例、补丁和高可用动作必须使用显式登记的
+  `EXTERNAL` Adapter；本阶段不实现或启用此类 Adapter；
 - Adapter 只接受签名 Grant 中的类型化动作和参数，不接受 Shell、脚本正文或自由命令。
 
 长时间动作需要异步租约、心跳、进度、取消和超时后的 `UNKNOWN` 处理。非幂等动作在网络断开后
@@ -281,18 +296,21 @@ KBot 4.0 直接更新规范 Oracle DDL、Entity、初始化、重建文件和 Ma
 ## 12. 实施阶段
 
 截至 2026-09-02，阶段 0、阶段 1 的通用契约、Agent–Target 显式授权、单人审批、人工结果
-回填、多动作逐条释放、Schema/API/UI，以及阶段 2 的普通和分区 Oracle Index Rebuild
-纵向切片已经完成代码改造和离线回归。两类重建均从只读事实校验对象类型、表空间余量和
-活动表锁，并在执行前重新确认精确对象；coalesce 和真实 Oracle 故障场景仍属于阶段 2 的
-扩展实现与环境验收范围；
+回填、多动作逐条释放、Schema/API/UI，以及阶段 2 的普通/分区 Oracle Index Rebuild 和
+Index Coalesce 纵向切片已经完成代码改造和离线回归。重建从只读事实校验对象类型、表空间余量
+和活动表锁；coalesce 只接受 `VALID`、非分区普通索引和无活动对象锁的专用事实。所有动作执行前
+都会重新确认精确对象；真实 Oracle 故障场景仍属于环境验收范围。
 阶段 3 已完成 `db.session.cancel_sql`、`db.object.compile`、`db.statistics.gather`、
 `db.statistics.lock`、`db.statistics.unlock`、`db.scheduler.job.run`、
 `db.scheduler.job.enable`、`db.scheduler.job.disable`、`db.scheduler.job.stop`、
 `db.user.lock`、`db.user.unlock` 和 `db.user.password.expire` 的离线代码切片。
 对象编译支持 Oracle 19c+ 的 `PROCEDURE`、`FUNCTION`、`PACKAGE`、`PACKAGE BODY`、
 `TRIGGER`、`VIEW`、`TYPE` 和 `TYPE BODY`；用户动作排除 Oracle 维护用户和 common user。
-其余阶段 3、4 目录条目明确标为 `PLANNED/UNSUPPORTED`，不能配置成可执行动作。
-阶段 5 未开始。
+阶段 3 还完成了已有 datafile/tempfile 的只增 resize 和有限 autoextend、Catalog 固定且
+Agent–Target 二次白名单的即时动态参数、预登记 Resource Manager Plan，以及本地应用用户的
+精确系统/对象权限 grant/revoke。datafile/tempfile 新增和 Schema 批量编译仍保持计划状态。
+阶段 4 的 OEM、OCI、Ansible、RMAN、主机和其他外部 Adapter 按当前产品边界不实施；阶段 5
+真实环境验收未开始。
 
 建议由两名后端、一名前端和一名兼职 DBA 按以下顺序投入。排期是设计评估，不是交付承诺；
 真实数据库和外部系统联调情况会直接影响阶段 3、4 的时长。
@@ -303,7 +321,7 @@ KBot 4.0 直接更新规范 Oracle DDL、Entity、初始化、重建文件和 Ma
 | 阶段 1 | 3～5 周 | 通用 Catalog、授权、Compiler、Executor、Verifier、Schema/API/UI |
 | 阶段 2 | 2～3 周 | Oracle Index Rebuild 真实纵向切片 |
 | 阶段 3 | 6～10 周 | Oracle 常用 DBA 动作 |
-| 阶段 4 | 6～10 周 | MySQL Variant 与 OEM/OCI/RMAN 等 Adapter |
+| 阶段 4 | 暂缓 | MySQL 扩展 Variant 与 OEM/OCI/Ansible/RMAN 等外部 Adapter（本阶段不实施） |
 | 阶段 5 | 2～4 周 | 非生产验收、生产逐动作启用和运行手册 |
 
 完整范围预计为 4～6 个月。若先只交付通用平台、Index Rebuild 和第一批 Oracle 常用动作，
@@ -338,8 +356,8 @@ KBot 4.0 直接更新规范 Oracle DDL、Entity、初始化、重建文件和 Ma
 失败场景。
 
 当前进度：普通及分区重建、ONLINE 选择、空间/锁事实、执行前复核和执行后状态验证已完成离线
-代码切片。`db.index.coalesce` 已登记为 `PLANNED/UNSUPPORTED`；在取得可通用、只读且可信的
-碎片判定依据前，不生成 coalesce 命令或审批入口。
+代码切片。`db.index.coalesce` 也已完成离线切片，但只把数据库确认的 `VALID`、非分区普通索引和
+无活动对象锁作为候选；系统不把通用碎片率猜测作为执行前提。
 
 ### 阶段 3：Oracle 常用动作
 
@@ -370,16 +388,22 @@ Scheduler enable/disable/stop 使用各自的状态候选 Tool，不从同一状
 仍不提供通用入口。以上阶段 3 切片均尚未完成真实 Oracle 权限、资源消耗、锁等待、运行失败和
 断线场景验收。
 
-尚未激活的动作不是普通编码遗漏：datafile/tempfile 扩容需要数据库外存储余量和文件系统/ASM
-事实，参数和授权动作需要可信的目标值/权限意图契约，RMAN、Data Guard、实例、监听器和补丁
-动作需要已确定的 OEM、OCI、Ansible 或其他外部执行协议、Target 定位和最小权限凭据。上述
-依赖未登记前保持 `PLANNED/UNSUPPORTED`；不得用自由 SQL、自由 Shell、用户文本回显或 Mock
-成功结果替代这些契约。
+已有 datafile/tempfile 的 resize 和 autoextend 已激活：只允许增长，单文件目标最大 1TB，
+`NEXT` 最大 1GB，`MAXSIZE` 必须有限，执行前后都重查精确文件。新增文件仍需要 ASM/文件系统
+余量和命名策略，因此保持 `PLANNED/UNSUPPORTED`。动态参数仅支持 Catalog 固定的
+`cursor_sharing`、`optimizer_mode`、`statistics_level` 合法值组合，使用 `SCOPE=MEMORY`；Agent
+还必须登记允许的参数和值。Resource Manager 只允许数据库中 ACTIVE 且 Agent 已登记的 Plan。
+grant/revoke 仅支持 Catalog 固定权限、预登记本地应用用户和对象范围，不支持角色、ANY 权限、
+ADMIN OPTION、GRANT OPTION 或自由权限文本。
 
-### 阶段 4：MySQL Variant 与外部 Adapter
+RMAN、Data Guard 外部编排、实例、监听器和补丁动作需要 OEM、OCI、Ansible、RMAN 或主机执行
+协议。本阶段明确不实现这些外部动作，目录项保持 `PLANNED/UNSUPPORTED`；不得用自由 SQL、自由
+Shell、用户文本回显或 Mock 成功结果替代外部契约。
+
+### 阶段 4：MySQL Variant 与外部 Adapter（本阶段不实施）
 
 - 为相同业务动作增加 MySQL 方言和能力 Variant；
-- 接入已登记的 OEM、OCI、RMAN 或自动化 Adapter；
+- 后续产品决策明确后再评估 OEM、OCI、Ansible、RMAN 或其他自动化 Adapter；
 - 保持相同的 Proposal、单人审批、一次性 Grant 和验证语义。
 
 门槛：数据库方言不能串用，外部 Adapter 不能执行请求携带的自由 Shell 或 SQL。

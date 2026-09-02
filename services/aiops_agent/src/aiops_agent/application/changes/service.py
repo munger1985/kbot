@@ -401,6 +401,7 @@ class AIOpsChangeService:
                     capabilities=capabilities,
                     entitlements=set(rules.get("entitlements", ())),
                     environment=target.environment,
+                    template_hash=proposal.action_template_hash,
                 )
                 rendered = self._renderer.render(
                     template, dict(proposal.parameters_json)
@@ -946,6 +947,7 @@ class AIOpsChangeService:
                     capabilities=capabilities,
                     entitlements=set(rules.get("entitlements", ())),
                     environment=target.environment,
+                    template_hash=proposal.action_template_hash,
                 )
                 rendered = self._renderer.render(
                     template, dict(proposal.parameters_json)
@@ -1351,22 +1353,64 @@ class AIOpsChangeService:
         object_ref = dict(
             getattr(proposal, "canonical_object_ref_json", None) or {}
         )
-        if not object_ref:
-            return
-        schema = str(object_ref.get("schema", "")).upper()
         scopes = dict(getattr(binding, "object_scopes_json", {}) or {})
-        allowed = {str(item).upper() for item in scopes.get("schemas", ())}
-        if allowed and schema not in allowed:
-            raise state_conflict("Proposal 数据库对象超出 Agent–Target 范围")
-        if scopes.get("exclude_system_objects", True) and schema in {
-            "SYS",
-            "SYSTEM",
-            "OUTLN",
-            "DBSNMP",
-            "XDB",
-            "AUDSYS",
-        }:
-            raise state_conflict("系统 Schema 对象不允许进入受控执行")
+        if object_ref:
+            schema = str(object_ref.get("schema", "")).upper()
+            allowed = {str(item).upper() for item in scopes.get("schemas", ())}
+            if allowed and schema not in allowed:
+                raise state_conflict("Proposal 数据库对象超出 Agent–Target 范围")
+            if scopes.get("exclude_system_objects", True) and schema in {
+                "SYS",
+                "SYSTEM",
+                "OUTLN",
+                "DBSNMP",
+                "XDB",
+                "AUDSYS",
+            }:
+                raise state_conflict("系统 Schema 对象不允许进入受控执行")
+        parameters = dict(getattr(proposal, "parameters_json", {}) or {})
+        if "parameter_name" in parameters:
+            allowed_parameters = {
+                str(item.get("name", "")).lower(): {
+                    str(value).upper()
+                    for value in item.get("allowed_values", ())
+                }
+                for item in scopes.get("dynamic_parameters", ())
+                if isinstance(item, dict)
+            }
+            if str(parameters.get("parameter_value", "")).upper() not in (
+                allowed_parameters.get(
+                    str(parameters["parameter_name"]).lower(), set()
+                )
+            ):
+                raise state_conflict("动态参数或目标值未在 Agent–Target 登记")
+        if "resource_plan_name" in parameters:
+            allowed_plans = {
+                str(item).upper()
+                for item in scopes.get("resource_manager_plans", ())
+            }
+            if str(parameters["resource_plan_name"]).upper() not in allowed_plans:
+                raise state_conflict("Resource Manager Plan 未在 Agent–Target 登记")
+        if "grantee_name" in parameters:
+            allowed_grantees = {
+                str(item).upper()
+                for item in scopes.get("privilege_grantees", ())
+            }
+            if str(parameters["grantee_name"]).upper() not in allowed_grantees:
+                raise state_conflict("授权用户未在 Agent–Target 登记")
+            privilege_scope = (
+                "object_privileges"
+                if "object_ref" in parameters
+                else "system_privileges"
+            )
+            allowed_privileges = {
+                str(item).upper()
+                for item in scopes.get(privilege_scope, ())
+            }
+            if str(parameters.get("privilege", "")).upper() not in (
+                allowed_privileges
+            ):
+                raise state_conflict("权限未在 Agent–Target 登记")
 
     @staticmethod
     def _artifact_ref(artifact) -> ArtifactRef:
