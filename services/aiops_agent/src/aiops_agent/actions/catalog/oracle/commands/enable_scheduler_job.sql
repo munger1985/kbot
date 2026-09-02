@@ -1,0 +1,1 @@
+BEGIN DBMS_SCHEDULER.ENABLE({{job_ref}}); END;

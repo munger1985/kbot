@@ -1,0 +1,1 @@
+ALTER USER {{user_ref}} ACCOUNT LOCK

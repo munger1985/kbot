@@ -2,7 +2,7 @@
 
 版本：1.0
 
-状态：阶段 0、1、阶段 2 的普通/分区 Index Rebuild，以及阶段 3 的取消当前 SQL、指定 PL/SQL 对象编译、单表统计信息收集和运行指定 Scheduler Job 代码切片已实施；其余动作和真实环境验收待实施
+状态：阶段 0、1、阶段 2 的普通/分区 Index Rebuild，以及阶段 3 的会话、对象编译、表统计信息、Scheduler 和本地应用用户账号状态首批代码切片已实施；其余动作和真实环境验收待实施
 
 基准日期：2026-09-02
 
@@ -82,6 +82,16 @@ Catalog 加载、Proposal 创建和 Executor Claim 三个阶段都必须拒绝�
 | 实例和服务 | PDB、数据库服务、实例和监听器启停 | 单人审批后调用对应数据库或主机执行器 |
 | 补丁升级 | 预检查、补丁应用、升级 | 单人审批后调用已登记的 OEM、OCI 或自动化执行器；破坏性回退只供人工执行 |
 | 破坏性数据操作 | `DROP`、`TRUNCATE`、任意 DML、删除分区或清空数据 | `MANUAL_ONLY`，永不进入 Executor |
+
+当前 Catalog 共登记 53 个数据库 Variant：16 个审批后可执行 Variant、7 个只展示命令的
+`MANUAL_ONLY` Variant，以及 30 个明确失败关闭的 `PLANNED/UNSUPPORTED` Variant。后者已经
+覆盖 Schema 批量编译、datafile/tempfile 增加/扩容/autoextend、参数和 Resource Manager、
+精确 grant/revoke、备份发起/校验/crosscheck、日志应用、PDB/服务/实例/监听器和补丁升级等
+目录项，并记录各自缺失的可信事实或外部执行协议；它们不会出现在可勾选执行动作中。
+
+破坏性目录除表 `DROP`/`TRUNCATE` 和归档清理外，还登记了 restore、recover、备份删除和物理
+备库 failover 的固定人工命令。以上动作的 `executor_kind` 均为 `NONE`，Catalog 加载和 Executor
+Claim 会双重阻止其进入自动执行链。任意 DML 和“其他 SQL”仍不提供通用入口。
 
 每个动作都必须有独立的数据库类型和版本 Variant。不能用一个“执行 SQL”动作代替上述目录。
 
@@ -275,11 +285,14 @@ KBot 4.0 直接更新规范 Oracle DDL、Entity、初始化、重建文件和 Ma
 纵向切片已经完成代码改造和离线回归。两类重建均从只读事实校验对象类型、表空间余量和
 活动表锁，并在执行前重新确认精确对象；coalesce 和真实 Oracle 故障场景仍属于阶段 2 的
 扩展实现与环境验收范围；
-阶段 3 已完成 `db.session.cancel_sql`、`db.object.compile`、`db.statistics.gather` 和
-`db.scheduler.job.run` 的离线代码切片。对象编译首批仅支持 Oracle 19c+ 的 `PROCEDURE`、
-`FUNCTION` 和 `PACKAGE`；统计信息首批仅支持统计缺失或过期、未锁定的普通表；Scheduler
-首批仅支持运行已启用且处于 `SCHEDULED` 的指定 Job。其余阶段 3、4 目录条目明确标为
-`PLANNED/UNSUPPORTED`，不能配置成可执行动作。阶段 5 未开始。
+阶段 3 已完成 `db.session.cancel_sql`、`db.object.compile`、`db.statistics.gather`、
+`db.statistics.lock`、`db.statistics.unlock`、`db.scheduler.job.run`、
+`db.scheduler.job.enable`、`db.scheduler.job.disable`、`db.scheduler.job.stop`、
+`db.user.lock`、`db.user.unlock` 和 `db.user.password.expire` 的离线代码切片。
+对象编译支持 Oracle 19c+ 的 `PROCEDURE`、`FUNCTION`、`PACKAGE`、`PACKAGE BODY`、
+`TRIGGER`、`VIEW`、`TYPE` 和 `TYPE BODY`；用户动作排除 Oracle 维护用户和 common user。
+其余阶段 3、4 目录条目明确标为 `PLANNED/UNSUPPORTED`，不能配置成可执行动作。
+阶段 5 未开始。
 
 建议由两名后端、一名前端和一名兼职 DBA 按以下顺序投入。排期是设计评估，不是交付承诺；
 真实数据库和外部系统联调情况会直接影响阶段 3、4 的时长。
@@ -341,17 +354,27 @@ KBot 4.0 直接更新规范 Oracle DDL、Entity、初始化、重建文件和 Ma
 
 当前进度：`db.session.cancel_sql` 已使用专用 `db.session.current_sql` 事实完成 Compiler、精确命令、
 执行前 SQL_ID 复核和执行后“SQL 消失但会话仍存在”验证。`db.object.compile` 已使用专用
-`db.object.status` 事实完成首批离线切片：仅把状态为 `INVALID` 的 Oracle `PROCEDURE`、
-`FUNCTION` 或 `PACKAGE` 编译成精确 `ALTER ... COMPILE` 命令，执行前重查对象身份、类型和
+`db.object.status` 事实完成离线切片：仅把状态为 `INVALID` 的 Oracle `PROCEDURE`、
+`FUNCTION`、`PACKAGE`、`PACKAGE BODY`、`TRIGGER`、`VIEW`、`TYPE` 或 `TYPE BODY`
+编译成精确 `ALTER ... COMPILE` 命令，执行前重查对象身份、类型和
 `INVALID` 状态，执行后要求同一对象为 `VALID`；对象消失记为 `ADVERSE`。
 `db.statistics.gather` 已完成单表统计信息收集切片：只接受非临时、统计未锁定且统计缺失或
 `STALE_STATS=YES` 的表，固定使用 `AUTO_SAMPLE_SIZE`、列直方图 AUTO、级联索引和
 `AUTO_INVALIDATE`，不接受模型提供采样参数或 PL/SQL；执行后要求 `LAST_ANALYZED` 非空且统计
 不再过期。`db.scheduler.job.run` 已完成指定 Job 运行切片：只接受已启用且处于 `SCHEDULED`
 的 Job，冻结执行前运行/失败计数，执行后要求 Job 正在运行，或运行计数增长且失败计数未增长。
-VIEW、TRIGGER、TYPE、Schema 批量编译，统计锁定/解锁，Scheduler enable/disable/stop 等动作
-待实施；其中 Scheduler 三种状态变更要先补动作意图选择约束，避免同一 Job 状态生成冲突提案。
-以上阶段 3 切片均尚未完成真实 Oracle 权限、资源消耗、锁等待、运行失败和断线场景验收。
+Scheduler enable/disable/stop 使用各自的状态候选 Tool，不从同一状态猜测相反意图；同一对象、
+同一动作族出现多个候选时以 `AMBIGUOUS_ACTION_INTENT` 失败关闭。统计锁定/解锁同样使用独立候选
+事实并在执行前、执行后复核状态。用户锁定、解锁和密码过期仅接受专用 `DBA_USERS` 事实，排除
+`ORACLE_MAINTAINED='Y'` 及 `COMMON='YES'`，且不接收、生成或记录任何密码。Schema 批量编译
+仍不提供通用入口。以上阶段 3 切片均尚未完成真实 Oracle 权限、资源消耗、锁等待、运行失败和
+断线场景验收。
+
+尚未激活的动作不是普通编码遗漏：datafile/tempfile 扩容需要数据库外存储余量和文件系统/ASM
+事实，参数和授权动作需要可信的目标值/权限意图契约，RMAN、Data Guard、实例、监听器和补丁
+动作需要已确定的 OEM、OCI、Ansible 或其他外部执行协议、Target 定位和最小权限凭据。上述
+依赖未登记前保持 `PLANNED/UNSUPPORTED`；不得用自由 SQL、自由 Shell、用户文本回显或 Mock
+成功结果替代这些契约。
 
 ### 阶段 4：MySQL Variant 与外部 Adapter
 

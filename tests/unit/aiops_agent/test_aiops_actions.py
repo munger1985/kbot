@@ -44,7 +44,7 @@ class ActionCatalogTest(unittest.TestCase):
         self.registry = ActionRegistry.load()
 
     def test_registry_has_exact_oracle_and_mysql_variants(self) -> None:
-        self.assertEqual(len(self.registry.templates), 20)
+        self.assertEqual(len(self.registry.templates), 53)
         modes = {
             item.definition.action_template_id: item.definition.execution_mode
             for item in self.registry.templates
@@ -52,6 +52,11 @@ class ActionCatalogTest(unittest.TestCase):
         self.assertEqual("MANUAL_ONLY", modes["db.table.drop"])
         self.assertEqual("MANUAL_ONLY", modes["db.table.truncate"])
         self.assertEqual("MANUAL_ONLY", modes["db.archive.cleanup"])
+        self.assertEqual("MANUAL_ONLY", modes["db.recovery.recover"])
+        self.assertEqual("MANUAL_ONLY", modes["db.backup.delete"])
+        self.assertEqual("MANUAL_ONLY", modes["db.ha.failover"])
+        self.assertEqual("UNSUPPORTED", modes["db.listener.stop"])
+        self.assertEqual("UNSUPPORTED", modes["db.database.upgrade"])
         oracle = self.registry.resolve(
             action_template_id="db.session.terminate",
             version="1.0.0",
@@ -94,6 +99,67 @@ class ActionCatalogTest(unittest.TestCase):
             'TRUNCATE TABLE "APP"."ORDERS_STAGING"',
             manual_rendered.command_text,
         )
+
+    def test_destructive_recovery_commands_are_manual_only(self) -> None:
+        expected = {
+            "db.recovery.restore": "RESTORE DATABASE",
+            "db.recovery.recover": "RECOVER DATABASE",
+            "db.backup.delete": "DELETE NOPROMPT BACKUP",
+            "db.ha.failover": (
+                "ALTER DATABASE ACTIVATE PHYSICAL STANDBY DATABASE"
+            ),
+        }
+        for action_id, command in expected.items():
+            with self.subTest(action_id=action_id):
+                template = self.registry.resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities=set(),
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                rendered = ActionRenderer().render(template, {})
+                self.assertEqual("MANUAL_ONLY", rendered.execution_mode)
+                self.assertEqual("NONE", rendered.executor_kind)
+                self.assertEqual(command, rendered.command_text)
+
+    def test_planned_inventory_is_visible_but_never_resolvable(self) -> None:
+        visible = self.registry.compatible(
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities=set(),
+            entitlements=set(),
+            environment="PROD",
+        )
+        planned = {
+            item.definition.action_template_id
+            for item in visible
+            if item.definition.status == "PLANNED"
+        }
+        self.assertTrue(
+            {
+                "db.storage.datafile.add",
+                "db.parameter.set",
+                "db.backup.start",
+                "db.ha.log_apply.start",
+                "db.pdb.open",
+                "db.listener.stop",
+                "db.patch.apply",
+            }
+            <= planned
+        )
+        with self.assertRaises(LookupError):
+            self.registry.resolve(
+                action_template_id="db.patch.apply",
+                version="1.0.0",
+                db_type="ORACLE",
+                db_version="19.0.0",
+                capabilities=set(),
+                entitlements=set(),
+                environment="PROD",
+            )
 
     def test_oracle_partition_rebuild_uses_quoted_verified_identifiers(
         self,
@@ -192,6 +258,38 @@ class ActionCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "类型.*不一致"):
             ActionRenderer().render(template, parameters)
 
+    def test_oracle_compile_supports_schema_object_kinds(self) -> None:
+        template = self.registry.resolve(
+            action_template_id="db.object.compile",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        expected = {
+            "VIEW": 'ALTER VIEW "APP"."OBJECT_A" COMPILE',
+            "TRIGGER": 'ALTER TRIGGER "APP"."OBJECT_A" COMPILE',
+            "TYPE": 'ALTER TYPE "APP"."OBJECT_A" COMPILE',
+            "PACKAGE BODY": 'ALTER PACKAGE "APP"."OBJECT_A" COMPILE BODY',
+            "TYPE BODY": 'ALTER TYPE "APP"."OBJECT_A" COMPILE BODY',
+        }
+        for object_type, command in expected.items():
+            with self.subTest(object_type=object_type):
+                rendered = ActionRenderer().render(
+                    template,
+                    {
+                        "object_type": object_type,
+                        "object_ref": {
+                            "schema": "APP",
+                            "object_type": object_type,
+                            "object_name": "OBJECT_A",
+                        },
+                    },
+                )
+                self.assertEqual(command, rendered.command_text)
+
     def test_oracle_table_statistics_uses_fixed_gather_strategy(self) -> None:
         template = self.registry.resolve(
             action_template_id="db.statistics.gather",
@@ -224,6 +322,40 @@ class ActionCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "标识符无效"):
             ActionRenderer().render(template, parameters)
 
+    def test_oracle_table_statistics_lock_commands_are_exact(self) -> None:
+        expected = {
+            "db.statistics.lock": (
+                "BEGIN DBMS_STATS.LOCK_TABLE_STATS(ownname => 'APP', "
+                "tabname => 'ORDERS'); END;"
+            ),
+            "db.statistics.unlock": (
+                "BEGIN DBMS_STATS.UNLOCK_TABLE_STATS(ownname => 'APP', "
+                "tabname => 'ORDERS'); END;"
+            ),
+        }
+        for action_id, command in expected.items():
+            with self.subTest(action_id=action_id):
+                template = self.registry.resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                rendered = ActionRenderer().render(
+                    template,
+                    {
+                        "table_ref": {
+                            "schema": "APP",
+                            "object_type": "TABLE",
+                            "object_name": "ORDERS",
+                        }
+                    },
+                )
+                self.assertEqual(command, rendered.command_text)
+
     def test_oracle_scheduler_run_binds_exact_registered_job(self) -> None:
         template = self.registry.resolve(
             action_template_id="db.scheduler.job.run",
@@ -253,6 +385,75 @@ class ActionCatalogTest(unittest.TestCase):
             "'\"APP\".\"NIGHTLY_JOB\"', use_current_session => FALSE); END;",
             rendered.command_text,
         )
+
+    def test_oracle_scheduler_state_commands_are_exact(self) -> None:
+        expected = {
+            "db.scheduler.job.enable": (
+                "BEGIN DBMS_SCHEDULER.ENABLE(name => "
+                "'\"APP\".\"NIGHTLY_JOB\"'); END;"
+            ),
+            "db.scheduler.job.disable": (
+                "BEGIN DBMS_SCHEDULER.DISABLE(name => "
+                "'\"APP\".\"NIGHTLY_JOB\"', force => FALSE); END;"
+            ),
+            "db.scheduler.job.stop": (
+                "BEGIN DBMS_SCHEDULER.STOP_JOB(job_name => "
+                "'\"APP\".\"NIGHTLY_JOB\"', force => FALSE); END;"
+            ),
+        }
+        for action_id, command in expected.items():
+            with self.subTest(action_id=action_id):
+                template = self.registry.resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                rendered = ActionRenderer().render(
+                    template,
+                    {
+                        "job_ref": {
+                            "schema": "APP",
+                            "object_type": "SCHEDULER_JOB",
+                            "object_name": "NIGHTLY_JOB",
+                        }
+                    },
+                )
+                self.assertEqual(command, rendered.command_text)
+
+    def test_oracle_user_state_commands_are_exact(self) -> None:
+        expected = {
+            "db.user.lock": 'ALTER USER "APPUSER" ACCOUNT LOCK',
+            "db.user.unlock": 'ALTER USER "APPUSER" ACCOUNT UNLOCK',
+            "db.user.password.expire": (
+                'ALTER USER "APPUSER" PASSWORD EXPIRE'
+            ),
+        }
+        for action_id, command in expected.items():
+            with self.subTest(action_id=action_id):
+                template = self.registry.resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                rendered = ActionRenderer().render(
+                    template,
+                    {
+                        "user_ref": {
+                            "schema": "APPUSER",
+                            "object_type": "USER",
+                            "object_name": "APPUSER",
+                        }
+                    },
+                )
+                self.assertEqual(command, rendered.command_text)
 
 
 class OracleIndexActionCompilerTest(unittest.TestCase):
@@ -498,6 +699,51 @@ class OracleIndexActionCompilerTest(unittest.TestCase):
         )
         self.assertIsNone(locked)
 
+    def test_statistics_lock_compilers_use_action_specific_facts(self):
+        columns = (
+            "owner",
+            "table_name",
+            "partitioned",
+            "temporary",
+            "last_analyzed",
+            "stale_stats",
+            "stattype_locked",
+        )
+        cases = (
+            (
+                "oracle-table-statistics-lock.v1",
+                "db.table.statistics.lock_candidate",
+                "2026-09-02T00:00:00Z",
+                None,
+            ),
+            (
+                "oracle-table-statistics-unlock.v1",
+                "db.table.statistics.unlock_candidate",
+                "2026-09-02T00:00:00Z",
+                "ALL",
+            ),
+        )
+        for compiler_id, tool_id, last_analyzed, locked in cases:
+            with self.subTest(compiler_id=compiler_id):
+                compiled = ActionCompilerRegistry().compile_turn(
+                    compiler_id=compiler_id,
+                    assessment=self._assessment(
+                        tool_id=tool_id,
+                        columns=columns,
+                        row=(
+                            "APP",
+                            "ORDERS",
+                            "NO",
+                            "N",
+                            last_analyzed,
+                            "NO",
+                            locked,
+                        ),
+                    ),
+                    db_type="ORACLE",
+                )
+                self.assertIsNotNone(compiled)
+
     def test_scheduler_run_requires_enabled_scheduled_job(self):
         compiler = ActionCompilerRegistry()
         columns = (
@@ -555,6 +801,151 @@ class OracleIndexActionCompilerTest(unittest.TestCase):
             db_type="ORACLE",
         )
         self.assertIsNone(running)
+
+    def test_scheduler_state_compilers_use_action_specific_facts(self):
+        columns = (
+            "owner",
+            "job_name",
+            "enabled",
+            "state",
+            "last_start_date",
+            "last_run_duration",
+            "run_count",
+            "failure_count",
+        )
+        cases = (
+            (
+                "oracle-scheduler-job-enable.v1",
+                "db.scheduler.job.enable_candidate",
+                "FALSE",
+                "DISABLED",
+            ),
+            (
+                "oracle-scheduler-job-disable.v1",
+                "db.scheduler.job.disable_candidate",
+                "TRUE",
+                "SCHEDULED",
+            ),
+            (
+                "oracle-scheduler-job-stop.v1",
+                "db.scheduler.job.stop_candidate",
+                "TRUE",
+                "RUNNING",
+            ),
+        )
+        for compiler_id, tool_id, enabled, state in cases:
+            with self.subTest(compiler_id=compiler_id):
+                compiled = ActionCompilerRegistry().compile_turn(
+                    compiler_id=compiler_id,
+                    assessment=self._assessment(
+                        tool_id=tool_id,
+                        columns=columns,
+                        row=(
+                            "APP",
+                            "NIGHTLY_JOB",
+                            enabled,
+                            state,
+                            None,
+                            None,
+                            0,
+                            0,
+                        ),
+                    ),
+                    db_type="ORACLE",
+                )
+                self.assertIsNotNone(compiled)
+                self.assertEqual(
+                    "NIGHTLY_JOB",
+                    compiled.parameters["job_ref"]["object_name"],
+                )
+
+    def test_user_state_compilers_exclude_system_and_wrong_state(self):
+        columns = (
+            "username",
+            "account_status",
+            "lock_date",
+            "expiry_date",
+            "profile",
+            "authentication_type",
+            "oracle_maintained",
+            "common",
+        )
+        cases = (
+            (
+                "oracle-user-lock.v1",
+                "db.user.lock_candidate",
+                "OPEN",
+            ),
+            (
+                "oracle-user-unlock.v1",
+                "db.user.unlock_candidate",
+                "LOCKED(TIMED)",
+            ),
+        )
+        for compiler_id, tool_id, status in cases:
+            with self.subTest(compiler_id=compiler_id):
+                compiled = ActionCompilerRegistry().compile_turn(
+                    compiler_id=compiler_id,
+                    assessment=self._assessment(
+                        tool_id=tool_id,
+                        columns=columns,
+                        row=(
+                            "APPUSER",
+                            status,
+                            None,
+                            None,
+                            "DEFAULT",
+                            "PASSWORD",
+                            "N",
+                            "NO",
+                        ),
+                    ),
+                    db_type="ORACLE",
+                )
+                self.assertIsNotNone(compiled)
+                self.assertEqual(
+                    "APPUSER", compiled.parameters["user_ref"]["object_name"]
+                )
+
+        system_user = ActionCompilerRegistry().compile_turn(
+            compiler_id="oracle-user-lock.v1",
+            assessment=self._assessment(
+                tool_id="db.user.lock_candidate",
+                columns=columns,
+                row=(
+                    "SYS",
+                    "OPEN",
+                    None,
+                    None,
+                    "DEFAULT",
+                    "PASSWORD",
+                    "Y",
+                    "YES",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNone(system_user)
+
+        password_expire = ActionCompilerRegistry().compile_turn(
+            compiler_id="oracle-user-password-expire.v1",
+            assessment=self._assessment(
+                tool_id="db.user.password_expire_candidate",
+                columns=columns,
+                row=(
+                    "APPUSER",
+                    "OPEN",
+                    None,
+                    None,
+                    "DEFAULT",
+                    "PASSWORD",
+                    "N",
+                    "NO",
+                ),
+            ),
+            db_type="ORACLE",
+        )
+        self.assertIsNotNone(password_expire)
 
     def test_renderer_rejects_unregistered_command_shape(self) -> None:
         oracle = self.registry.resolve(
@@ -780,6 +1171,93 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
         )
         self.assertEqual(plan.decision, "NO_ACTION")
         self.assertIn("AGENT_EXECUTION_NOT_ALLOWED", plan.decision_reasons)
+
+    def test_conflicting_actions_for_same_object_fail_closed(self) -> None:
+        base = self._context()
+        columns = (
+            {"name": "owner"},
+            {"name": "job_name"},
+            {"name": "enabled"},
+            {"name": "state"},
+            {"name": "run_count"},
+            {"name": "failure_count"},
+        )
+        facts = (
+            TurnEvidenceFact(
+                evidence_ref="artifact:enable#row-0",
+                artifact_id="enable",
+                source_id="oracle.scheduler",
+                step_id="enable",
+                tool_id="db.scheduler.job.enable_candidate",
+                trust_level="SOURCE_VERIFIED",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                presentation_kind="TABLE",
+                captured_at="2026-09-02T00:00:00+00:00",
+                columns=columns,
+                rows=(("APP", "JOB_A", "FALSE", "DISABLED", 0, 0),),
+                row_count=1,
+            ),
+            TurnEvidenceFact(
+                evidence_ref="artifact:disable#row-0",
+                artifact_id="disable",
+                source_id="oracle.scheduler",
+                step_id="disable",
+                tool_id="db.scheduler.job.disable_candidate",
+                trust_level="SOURCE_VERIFIED",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                presentation_kind="TABLE",
+                captured_at="2026-09-02T00:00:00+00:00",
+                columns=columns,
+                rows=(("APP", "JOB_A", "TRUE", "SCHEDULED", 0, 0),),
+                row_count=1,
+            ),
+        )
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=facts,
+        )
+        plan_snapshot = {
+            **base.plan_snapshot,
+            "capability_snapshot": {
+                "target_capabilities": ["dba_catalog_views"]
+            },
+            "change_context": {
+                **base.plan_snapshot["change_context"],
+                "controlled_action_execution": {
+                    "enabled": True,
+                    "allowed_action_ids": [
+                        "db.scheduler.job.enable",
+                        "db.scheduler.job.disable",
+                    ],
+                    "object_scopes": {
+                        "schemas": ["APP"],
+                        "exclude_system_objects": True,
+                    },
+                },
+            },
+        }
+        context = base.__class__(
+            **{
+                **base.__dict__,
+                "plan_snapshot": plan_snapshot,
+                "input_artifacts": (
+                    {
+                        "schema_version": "DBA_SUFFICIENCY.v1",
+                        "payload": assessment.model_dump(mode="json"),
+                    },
+                ),
+            }
+        )
+
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(context)
+        )
+
+        self.assertEqual("NO_ACTION", plan.decision)
+        self.assertIn("AMBIGUOUS_ACTION_INTENT", plan.decision_reasons)
 
     def test_next_action_is_released_only_after_verified_predecessor(self) -> None:
         first_plan = asyncio.run(

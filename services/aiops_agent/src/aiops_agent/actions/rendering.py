@@ -165,14 +165,20 @@ def _oracle_object_compile_renderer(
     ref = dict(parameters["object_ref"])
     if ref["object_type"] != object_type:
         raise ValueError("对象引用类型与编译类型不一致")
+    statement_type = object_type
+    compile_clause = ""
+    if object_type in {"PACKAGE BODY", "TYPE BODY"}:
+        statement_type = object_type.removesuffix(" BODY")
+        compile_clause = " BODY"
     object_name = (
         f'{_oracle_identifier(ref["schema"])}.'
         f'{_oracle_identifier(ref["object_name"])}'
     )
     return (
         template.strip()
-        .replace("{{object_type}}", object_type)
+        .replace("{{object_type}}", statement_type)
         .replace("{{object_ref}}", object_name)
+        + compile_clause
     )
 
 
@@ -201,6 +207,38 @@ def _oracle_scheduler_job_run_renderer(
     return template.strip().replace("{{job_ref}}", job_argument)
 
 
+def _oracle_scheduler_job_name_renderer(
+    template: str,
+    parameters: dict[str, Any],
+    definition,
+) -> str:
+    ref = dict(parameters["job_ref"])
+    qualified_name = (
+        f'{_oracle_identifier(ref["schema"])}.'
+        f'{_oracle_identifier(ref["object_name"])}'
+    )
+    argument_name = (
+        "job_name"
+        if definition.action_template_id == "db.scheduler.job.stop"
+        else "name"
+    )
+    return template.strip().replace(
+        "{{job_ref}}", f"{argument_name} => '{qualified_name}'"
+    )
+
+
+def _oracle_user_state_renderer(
+    template: str, parameters: dict[str, Any], definition
+) -> str:
+    del definition
+    ref = dict(parameters["user_ref"])
+    if ref["schema"] != ref["object_name"]:
+        raise ValueError("用户引用中的 Schema 与用户名不一致")
+    return template.strip().replace(
+        "{{user_ref}}", _oracle_identifier(ref["object_name"])
+    )
+
+
 _RENDERERS: dict[str, Callable[[str, dict[str, Any], Any], str]] = {
     "strict-scalar.v2": _strict_scalar_renderer,
     "oracle-index-rebuild.v1": _oracle_index_rebuild_renderer,
@@ -211,7 +249,17 @@ _RENDERERS: dict[str, Callable[[str, dict[str, Any], Any], str]] = {
     "oracle-table-statistics-gather.v1": (
         _oracle_table_statistics_gather_renderer
     ),
+    "oracle-table-statistics-lock.v1": (
+        _oracle_table_statistics_gather_renderer
+    ),
+    "oracle-table-statistics-unlock.v1": (
+        _oracle_table_statistics_gather_renderer
+    ),
     "oracle-scheduler-job-run.v1": _oracle_scheduler_job_run_renderer,
+    "oracle-scheduler-job-enable.v1": _oracle_scheduler_job_name_renderer,
+    "oracle-scheduler-job-disable.v1": _oracle_scheduler_job_name_renderer,
+    "oracle-scheduler-job-stop.v1": _oracle_scheduler_job_name_renderer,
+    "oracle-user-state.v1": _oracle_user_state_renderer,
 }
 
 

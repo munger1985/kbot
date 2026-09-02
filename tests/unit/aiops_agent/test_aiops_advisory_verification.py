@@ -240,6 +240,34 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
         self.assertEqual("NOT_ACHIEVED", result.status)
         self.assertFalse(result.effect_achieved)
 
+    def test_statistics_lock_state_changes_are_verified(self) -> None:
+        cases = (
+            ("db.statistics.lock", "ALL"),
+            ("db.statistics.unlock", None),
+        )
+        for action_id, locked in cases:
+            with self.subTest(action_id=action_id):
+                result = asyncio.run(
+                    ActionVerificationHandler().execute(
+                        self._statistics_context(
+                            action_id=action_id,
+                            rows=(
+                                (
+                                    "APP",
+                                    "ORDERS",
+                                    "NO",
+                                    "N",
+                                    "2026-09-02T03:00:00Z",
+                                    "NO",
+                                    locked,
+                                ),
+                            ),
+                        )
+                    )
+                )
+                self.assertEqual("VERIFIED", result.status)
+                self.assertTrue(result.effect_achieved)
+
     def test_scheduler_job_running_is_verified(self) -> None:
         result = asyncio.run(
             ActionVerificationHandler().execute(
@@ -285,6 +313,73 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
 
         self.assertEqual("NOT_ACHIEVED", result.status)
         self.assertFalse(result.effect_achieved)
+
+    def test_scheduler_state_changes_are_verified(self) -> None:
+        cases = (
+            ("db.scheduler.job.enable", "TRUE", "SCHEDULED"),
+            ("db.scheduler.job.disable", "FALSE", "DISABLED"),
+            ("db.scheduler.job.stop", "TRUE", "SCHEDULED"),
+        )
+        for action_id, enabled, state in cases:
+            with self.subTest(action_id=action_id):
+                result = asyncio.run(
+                    ActionVerificationHandler().execute(
+                        self._scheduler_context(
+                            action_id=action_id,
+                            rows=(
+                                (
+                                    "APP",
+                                    "NIGHTLY_JOB",
+                                    enabled,
+                                    state,
+                                    None,
+                                    None,
+                                    7,
+                                    1,
+                                ),
+                            ),
+                        )
+                    )
+                )
+                self.assertEqual("VERIFIED", result.status)
+                self.assertTrue(result.effect_achieved)
+
+    def test_user_lock_state_changes_are_verified(self) -> None:
+        cases = (
+            ("db.user.lock", "LOCKED"),
+            ("db.user.unlock", "OPEN"),
+            ("db.user.password.expire", "EXPIRED"),
+        )
+        for action_id, status in cases:
+            with self.subTest(action_id=action_id):
+                result = asyncio.run(
+                    ActionVerificationHandler().execute(
+                        self._user_context(
+                            action_id=action_id,
+                            rows=((
+                                "APPUSER",
+                                status,
+                                None,
+                                None,
+                                "DEFAULT",
+                                "PASSWORD",
+                                "N",
+                                "NO",
+                            ),),
+                        )
+                    )
+                )
+                self.assertEqual("VERIFIED", result.status)
+                self.assertTrue(result.effect_achieved)
+
+    def test_user_disappearance_after_state_change_is_adverse(self) -> None:
+        result = asyncio.run(
+            ActionVerificationHandler().execute(
+                self._user_context(action_id="db.user.lock", rows=())
+            )
+        )
+        self.assertEqual("ADVERSE", result.status)
+        self.assertTrue(result.adverse_effect)
 
     def test_blueprint_has_no_proposal_or_execute_task(self) -> None:
         blueprint = build_advisory_verification_blueprint(
@@ -422,14 +517,24 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
             ),
         )
 
-    def _statistics_context(self, *, rows: tuple) -> TaskExecutionContext:
+    def _statistics_context(
+        self,
+        *,
+        rows: tuple,
+        action_id: str = "db.statistics.gather",
+    ) -> TaskExecutionContext:
         target_id = str(uuid7())
+        tool_id = {
+            "db.statistics.gather": "db.table.statistics",
+            "db.statistics.lock": "db.table.statistics.lock_candidate",
+            "db.statistics.unlock": "db.table.statistics.unlock_candidate",
+        }[action_id]
         scope = {
             "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
             "proposal_id": str(uuid7()),
             "source_run_id": str(uuid7()),
             "result_artifact_id": str(uuid7()),
-            "action_template_id": "db.statistics.gather",
+            "action_template_id": action_id,
             "canonical_parameters": {
                 "table_ref": {
                     "schema": "APP",
@@ -437,7 +542,7 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                     "object_name": "ORDERS",
                 }
             },
-            "verification_tool_refs": ["db.table.statistics"],
+            "verification_tool_refs": [tool_id],
             "source_result_status": "SUCCEEDED",
         }
         return TaskExecutionContext(
@@ -459,7 +564,7 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                 },
                 self._diagnostic(
                     target_id=target_id,
-                    tool_id="db.table.statistics",
+                    tool_id=tool_id,
                     columns=(
                         "owner",
                         "table_name",
@@ -474,24 +579,38 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
             ),
         )
 
-    def _scheduler_context(self, *, rows: tuple) -> TaskExecutionContext:
+    def _scheduler_context(
+        self,
+        *,
+        rows: tuple,
+        action_id: str = "db.scheduler.job.run",
+    ) -> TaskExecutionContext:
         target_id = str(uuid7())
+        tool_id = {
+            "db.scheduler.job.run": "db.scheduler.job.status",
+            "db.scheduler.job.enable": "db.scheduler.job.enable_candidate",
+            "db.scheduler.job.disable": "db.scheduler.job.disable_candidate",
+            "db.scheduler.job.stop": "db.scheduler.job.stop_candidate",
+        }[action_id]
+        parameters = {
+            "job_ref": {
+                "schema": "APP",
+                "object_type": "SCHEDULER_JOB",
+                "object_name": "NIGHTLY_JOB",
+            }
+        }
+        if action_id == "db.scheduler.job.run":
+            parameters.update(
+                {"previous_run_count": 7, "previous_failure_count": 1}
+            )
         scope = {
             "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
             "proposal_id": str(uuid7()),
             "source_run_id": str(uuid7()),
             "result_artifact_id": str(uuid7()),
-            "action_template_id": "db.scheduler.job.run",
-            "canonical_parameters": {
-                "job_ref": {
-                    "schema": "APP",
-                    "object_type": "SCHEDULER_JOB",
-                    "object_name": "NIGHTLY_JOB",
-                },
-                "previous_run_count": 7,
-                "previous_failure_count": 1,
-            },
-            "verification_tool_refs": ["db.scheduler.job.status"],
+            "action_template_id": action_id,
+            "canonical_parameters": parameters,
+            "verification_tool_refs": [tool_id],
             "source_result_status": "SUCCEEDED",
         }
         return TaskExecutionContext(
@@ -513,7 +632,7 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                 },
                 self._diagnostic(
                     target_id=target_id,
-                    tool_id="db.scheduler.job.status",
+                    tool_id=tool_id,
                     columns=(
                         "owner",
                         "job_name",
@@ -523,6 +642,64 @@ class AdvisoryVerificationHandlerTest(unittest.TestCase):
                         "last_run_duration",
                         "run_count",
                         "failure_count",
+                    ),
+                    rows=rows,
+                ),
+            ),
+        )
+
+    def _user_context(self, *, action_id: str, rows: tuple) -> TaskExecutionContext:
+        target_id = str(uuid7())
+        tool_id = {
+            "db.user.lock": "db.user.lock_candidate",
+            "db.user.unlock": "db.user.unlock_candidate",
+            "db.user.password.expire": "db.user.password_expire_candidate",
+        }[action_id]
+        scope = {
+            "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+            "proposal_id": str(uuid7()),
+            "source_run_id": str(uuid7()),
+            "result_artifact_id": str(uuid7()),
+            "action_template_id": action_id,
+            "canonical_parameters": {
+                "user_ref": {
+                    "schema": "APPUSER",
+                    "object_type": "USER",
+                    "object_name": "APPUSER",
+                }
+            },
+            "verification_tool_refs": [tool_id],
+            "source_result_status": "SUCCEEDED",
+        }
+        return TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="verify",
+            target_id=target_id,
+            agent_id=str(uuid7()),
+            trigger_type="API",
+            trace_id="trace-user-verification",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={"advisory_verification": scope},
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "schema_version": "ADVISORY_VERIFICATION_SCOPE.v1",
+                    "payload": scope,
+                },
+                self._diagnostic(
+                    target_id=target_id,
+                    tool_id=tool_id,
+                    columns=(
+                        "username",
+                        "account_status",
+                        "lock_date",
+                        "expiry_date",
+                        "profile",
+                        "authentication_type",
+                        "oracle_maintained",
+                        "common",
                     ),
                     rows=rows,
                 ),

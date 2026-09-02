@@ -629,6 +629,99 @@
       "cost_level": "LOW"
     },
     {
+      "tool_id": "db.scheduler.job.enable_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_disabled_scheduler_job",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_SCHEDULER_JOBS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "job_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "job_name", "logical_type": "STRING", "nullable": false},
+        {"name": "enabled", "logical_type": "STRING", "nullable": false},
+        {"name": "state", "logical_type": "STRING", "nullable": false},
+        {"name": "last_start_date", "logical_type": "DATETIME"},
+        {"name": "last_run_duration", "logical_type": "STRING"},
+        {"name": "run_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "failure_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/scheduler_job_status.sql",
+      "template_sha256": "e9acb33c15b198e982ebc67d9fed752a22b748fd75fdb37299166ccc5c707d7f",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.scheduler.job.disable_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_idle_scheduler_job",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_SCHEDULER_JOBS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "job_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "job_name", "logical_type": "STRING", "nullable": false},
+        {"name": "enabled", "logical_type": "STRING", "nullable": false},
+        {"name": "state", "logical_type": "STRING", "nullable": false},
+        {"name": "last_start_date", "logical_type": "DATETIME"},
+        {"name": "last_run_duration", "logical_type": "STRING"},
+        {"name": "run_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "failure_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/scheduler_job_status.sql",
+      "template_sha256": "e9acb33c15b198e982ebc67d9fed752a22b748fd75fdb37299166ccc5c707d7f",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.scheduler.job.stop_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_running_scheduler_job",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_SCHEDULER_JOBS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "job_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "job_name", "logical_type": "STRING", "nullable": false},
+        {"name": "enabled", "logical_type": "STRING", "nullable": false},
+        {"name": "state", "logical_type": "STRING", "nullable": false},
+        {"name": "last_start_date", "logical_type": "DATETIME"},
+        {"name": "last_run_duration", "logical_type": "STRING"},
+        {"name": "run_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "failure_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/scheduler_job_status.sql",
+      "template_sha256": "e9acb33c15b198e982ebc67d9fed752a22b748fd75fdb37299166ccc5c707d7f",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.object.status",
       "version": "1.0.0",
       "db_type": "ORACLE",
@@ -641,7 +734,7 @@
       "parameters": [
         {"name": "schema_name", "type": "string", "max_length": 128},
         {"name": "object_name", "type": "string", "max_length": 128},
-        {"name": "object_type", "type": "string", "enum": ["PROCEDURE", "FUNCTION", "PACKAGE"], "max_length": 16}
+        {"name": "object_type", "type": "string", "enum": ["PROCEDURE", "FUNCTION", "PACKAGE", "PACKAGE BODY", "TRIGGER", "VIEW", "TYPE", "TYPE BODY"], "max_length": 16}
       ],
       "output_columns": [
         {"name": "owner", "logical_type": "STRING", "nullable": false},
@@ -682,6 +775,156 @@
       ],
       "template_ref": "sql/table_statistics.sql",
       "template_sha256": "64d838a26e25be14ef10330a09844015b86c9a8703cf57b3f63d071d75d57818",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.table.statistics.lock_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_unlocked_table_statistics",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_TABLES", "DBA_TAB_STATISTICS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "table_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "temporary", "logical_type": "STRING", "nullable": false},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "stale_stats", "logical_type": "STRING"},
+        {"name": "stattype_locked", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/table_statistics.sql",
+      "template_sha256": "64d838a26e25be14ef10330a09844015b86c9a8703cf57b3f63d071d75d57818",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.table.statistics.unlock_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_locked_table_statistics",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_TABLES", "DBA_TAB_STATISTICS"],
+      "parameters": [
+        {"name": "schema_name", "type": "string", "max_length": 128},
+        {"name": "table_name", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "owner", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "partitioned", "logical_type": "STRING", "nullable": false},
+        {"name": "temporary", "logical_type": "STRING", "nullable": false},
+        {"name": "last_analyzed", "logical_type": "DATETIME"},
+        {"name": "stale_stats", "logical_type": "STRING"},
+        {"name": "stattype_locked", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/table_statistics.sql",
+      "template_sha256": "64d838a26e25be14ef10330a09844015b86c9a8703cf57b3f63d071d75d57818",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.user.lock_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_unlocked_local_application_user",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_USERS"],
+      "parameters": [
+        {"name": "username", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "username", "logical_type": "STRING", "nullable": false},
+        {"name": "account_status", "logical_type": "STRING", "nullable": false},
+        {"name": "lock_date", "logical_type": "DATETIME"},
+        {"name": "expiry_date", "logical_type": "DATETIME"},
+        {"name": "profile", "logical_type": "STRING", "nullable": false},
+        {"name": "authentication_type", "logical_type": "STRING"},
+        {"name": "oracle_maintained", "logical_type": "STRING", "nullable": false},
+        {"name": "common", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/user_status.sql",
+      "template_sha256": "27aaa8ad54215178892ecc9e977fb219060c2128e798e7d835692e356196fb8b",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.user.unlock_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_locked_local_application_user",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_USERS"],
+      "parameters": [
+        {"name": "username", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "username", "logical_type": "STRING", "nullable": false},
+        {"name": "account_status", "logical_type": "STRING", "nullable": false},
+        {"name": "lock_date", "logical_type": "DATETIME"},
+        {"name": "expiry_date", "logical_type": "DATETIME"},
+        {"name": "profile", "logical_type": "STRING", "nullable": false},
+        {"name": "authentication_type", "logical_type": "STRING"},
+        {"name": "oracle_maintained", "logical_type": "STRING", "nullable": false},
+        {"name": "common", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/user_status.sql",
+      "template_sha256": "27aaa8ad54215178892ecc9e977fb219060c2128e798e7d835692e356196fb8b",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.user.password_expire_candidate",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_unexpired_local_application_user",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dba_catalog_views"],
+      "required_entitlements": [],
+      "required_privileges": ["DBA_USERS"],
+      "parameters": [
+        {"name": "username", "type": "string", "max_length": 128}
+      ],
+      "output_columns": [
+        {"name": "username", "logical_type": "STRING", "nullable": false},
+        {"name": "account_status", "logical_type": "STRING", "nullable": false},
+        {"name": "lock_date", "logical_type": "DATETIME"},
+        {"name": "expiry_date", "logical_type": "DATETIME"},
+        {"name": "profile", "logical_type": "STRING", "nullable": false},
+        {"name": "authentication_type", "logical_type": "STRING"},
+        {"name": "oracle_maintained", "logical_type": "STRING", "nullable": false},
+        {"name": "common", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/user_status.sql",
+      "template_sha256": "27aaa8ad54215178892ecc9e977fb219060c2128e798e7d835692e356196fb8b",
       "timeout_seconds": 20,
       "max_rows": 1,
       "max_bytes": 131072,

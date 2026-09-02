@@ -13,7 +13,12 @@ _SEMICOLON = re.compile(r";")
 _PLSQL_VALIDATORS = frozenset(
     {
         "oracle-table-statistics-gather.v1",
+        "oracle-table-statistics-lock.v1",
+        "oracle-table-statistics-unlock.v1",
         "oracle-scheduler-job-run.v1",
+        "oracle-scheduler-job-enable.v1",
+        "oracle-scheduler-job-disable.v1",
+        "oracle-scheduler-job-stop.v1",
     }
 )
 
@@ -63,10 +68,13 @@ def _index_partition_rebuild_pattern(*, rendered: bool) -> str:
 
 
 def _object_compile_pattern(*, rendered: bool) -> str:
-    object_type = r"(?:PROCEDURE|FUNCTION|PACKAGE)"
+    object_type = r"(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|VIEW|TYPE)"
     if rendered:
         identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
-        return rf"ALTER {object_type} {identifier}\.{identifier} COMPILE"
+        return (
+            rf"ALTER {object_type} {identifier}\.{identifier} "
+            r"COMPILE(?: BODY)?"
+        )
     return r"ALTER \{\{object_type\}\} \{\{object_ref\}\} COMPILE"
 
 
@@ -86,6 +94,17 @@ def _table_statistics_gather_pattern(*, rendered: bool) -> str:
     )
 
 
+def _table_statistics_state_pattern(operation: str, *, rendered: bool) -> str:
+    if rendered:
+        identifier = r"[A-Za-z][A-Za-z0-9_$#]{0,127}"
+        table_ref = (
+            rf"ownname => '{identifier}', tabname => '{identifier}'"
+        )
+    else:
+        table_ref = r"\{\{table_ref\}\}"
+    return rf"BEGIN DBMS_STATS\.{operation}\({table_ref}\); END;"
+
+
 def _scheduler_job_run_pattern(*, rendered: bool) -> str:
     if rendered:
         identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
@@ -96,6 +115,35 @@ def _scheduler_job_run_pattern(*, rendered: bool) -> str:
         rf"BEGIN DBMS_SCHEDULER\.RUN_JOB\({job_ref}, "
         r"use_current_session => FALSE\); END;"
     )
+
+
+def _scheduler_job_state_pattern(operation: str, *, rendered: bool) -> str:
+    if rendered:
+        identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
+        argument = "job_name" if operation == "STOP_JOB" else "name"
+        job_ref = rf"{argument} => '{identifier}\.{identifier}'"
+    else:
+        job_ref = r"\{\{job_ref\}\}"
+    suffix = ", force => FALSE" if operation in {"DISABLE", "STOP_JOB"} else ""
+    return rf"BEGIN DBMS_SCHEDULER\.{operation}\({job_ref}{suffix}\); END;"
+
+
+def _user_state_pattern(operation: str, *, rendered: bool) -> str:
+    user_ref = (
+        r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
+        if rendered
+        else r"\{\{user_ref\}\}"
+    )
+    return rf"ALTER USER {user_ref} ACCOUNT {operation}"
+
+
+def _user_password_expire_pattern(*, rendered: bool) -> str:
+    user_ref = (
+        r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
+        if rendered
+        else r"\{\{user_ref\}\}"
+    )
+    return rf"ALTER USER {user_ref} PASSWORD EXPIRE"
 
 
 def _object_pattern(prefix: str, placeholder: str, *, rendered: bool) -> str:
@@ -127,7 +175,7 @@ def validate_action_template(
         raise ValueError("Action 命令模板长度或结构无效")
     placeholders = _PLACEHOLDER.findall(text)
     expected = [item.name for item in definition.parameters]
-    if definition.validator_id == "oracle-scheduler-job-run.v1":
+    if definition.validator_id.startswith("oracle-scheduler-job-"):
         expected = ["job_ref"]
     if sorted(placeholders) != sorted(expected):
         raise ValueError("Action 命令占位符与参数定义不一致")
@@ -156,10 +204,36 @@ def validate_action_template(
         if definition.db_type != "ORACLE":
             raise ValueError("统计信息收集 Validator 仅支持 Oracle")
         _exact(_table_statistics_gather_pattern(rendered=False), text)
+    elif definition.validator_id == "oracle-table-statistics-lock.v1":
+        _exact(
+            _table_statistics_state_pattern(
+                "LOCK_TABLE_STATS", rendered=False
+            ),
+            text,
+        )
+    elif definition.validator_id == "oracle-table-statistics-unlock.v1":
+        _exact(
+            _table_statistics_state_pattern(
+                "UNLOCK_TABLE_STATS", rendered=False
+            ),
+            text,
+        )
     elif definition.validator_id == "oracle-scheduler-job-run.v1":
         if definition.db_type != "ORACLE":
             raise ValueError("Scheduler Job Validator 仅支持 Oracle")
         _exact(_scheduler_job_run_pattern(rendered=False), text)
+    elif definition.validator_id == "oracle-scheduler-job-enable.v1":
+        _exact(_scheduler_job_state_pattern("ENABLE", rendered=False), text)
+    elif definition.validator_id == "oracle-scheduler-job-disable.v1":
+        _exact(_scheduler_job_state_pattern("DISABLE", rendered=False), text)
+    elif definition.validator_id == "oracle-scheduler-job-stop.v1":
+        _exact(_scheduler_job_state_pattern("STOP_JOB", rendered=False), text)
+    elif definition.validator_id == "oracle-user-lock.v1":
+        _exact(_user_state_pattern("LOCK", rendered=False), text)
+    elif definition.validator_id == "oracle-user-unlock.v1":
+        _exact(_user_state_pattern("UNLOCK", rendered=False), text)
+    elif definition.validator_id == "oracle-user-password-expire.v1":
+        _exact(_user_password_expire_pattern(rendered=False), text)
     elif definition.validator_id == "manual-truncate-table.v1":
         _exact(_object_pattern("TRUNCATE TABLE", "table_ref", rendered=False), text)
     elif definition.validator_id == "manual-drop-table.v1":
@@ -171,6 +245,12 @@ def validate_action_template(
         )
     elif definition.validator_id == "manual-restore.v1":
         _exact(r"RESTORE DATABASE", text)
+    elif definition.validator_id == "manual-recover.v1":
+        _exact(r"RECOVER DATABASE", text)
+    elif definition.validator_id == "manual-backup-delete.v1":
+        _exact(r"DELETE NOPROMPT BACKUP", text)
+    elif definition.validator_id == "manual-ha-failover.v1":
+        _exact(r"ALTER DATABASE ACTIVATE PHYSICAL STANDBY DATABASE", text)
     elif definition.execution_mode != "UNSUPPORTED":
         raise ValueError("Action Validator 未登记")
 
@@ -202,8 +282,32 @@ def validate_rendered_action(
         _exact(_object_compile_pattern(rendered=True), command)
     elif definition.validator_id == "oracle-table-statistics-gather.v1":
         _exact(_table_statistics_gather_pattern(rendered=True), command)
+    elif definition.validator_id == "oracle-table-statistics-lock.v1":
+        _exact(
+            _table_statistics_state_pattern("LOCK_TABLE_STATS", rendered=True),
+            command,
+        )
+    elif definition.validator_id == "oracle-table-statistics-unlock.v1":
+        _exact(
+            _table_statistics_state_pattern(
+                "UNLOCK_TABLE_STATS", rendered=True
+            ),
+            command,
+        )
     elif definition.validator_id == "oracle-scheduler-job-run.v1":
         _exact(_scheduler_job_run_pattern(rendered=True), command)
+    elif definition.validator_id == "oracle-scheduler-job-enable.v1":
+        _exact(_scheduler_job_state_pattern("ENABLE", rendered=True), command)
+    elif definition.validator_id == "oracle-scheduler-job-disable.v1":
+        _exact(_scheduler_job_state_pattern("DISABLE", rendered=True), command)
+    elif definition.validator_id == "oracle-scheduler-job-stop.v1":
+        _exact(_scheduler_job_state_pattern("STOP_JOB", rendered=True), command)
+    elif definition.validator_id == "oracle-user-lock.v1":
+        _exact(_user_state_pattern("LOCK", rendered=True), command)
+    elif definition.validator_id == "oracle-user-unlock.v1":
+        _exact(_user_state_pattern("UNLOCK", rendered=True), command)
+    elif definition.validator_id == "oracle-user-password-expire.v1":
+        _exact(_user_password_expire_pattern(rendered=True), command)
     elif definition.validator_id == "manual-truncate-table.v1":
         _exact(_object_pattern("TRUNCATE TABLE", "table_ref", rendered=True), command)
     elif definition.validator_id == "manual-drop-table.v1":
@@ -215,5 +319,13 @@ def validate_rendered_action(
         )
     elif definition.validator_id == "manual-restore.v1":
         _exact(r"RESTORE DATABASE", command)
+    elif definition.validator_id == "manual-recover.v1":
+        _exact(r"RECOVER DATABASE", command)
+    elif definition.validator_id == "manual-backup-delete.v1":
+        _exact(r"DELETE NOPROMPT BACKUP", command)
+    elif definition.validator_id == "manual-ha-failover.v1":
+        _exact(
+            r"ALTER DATABASE ACTIVATE PHYSICAL STANDBY DATABASE", command
+        )
     else:
         raise ValueError("Action Validator 未登记")

@@ -195,17 +195,16 @@ Catalog 为准。
 通用且只读的可信碎片判定依据，保持 `PLANNED/UNSUPPORTED`。
 会话领域除断开阻塞会话外，也已登记 `db.session.cancel_sql`：执行前再次核对实例、SID、
 SERIAL# 和 SQL_ID，执行后确认旧 SQL 已消失且原会话仍存在。
-对象维护已登记首批 `db.object.compile` 离线代码切片，仅支持 Oracle 19c+ 的 `PROCEDURE`、
-`FUNCTION` 和 `PACKAGE`。参数只能来自本轮 `db.object.status` 的 `SOURCE_VERIFIED`、
+对象维护已登记 `db.object.compile` 离线代码切片，支持 Oracle 19c+ 的 `PROCEDURE`、
+`FUNCTION`、`PACKAGE`、`PACKAGE BODY`、`TRIGGER`、`VIEW`、`TYPE` 和 `TYPE BODY`。参数只能来自本轮 `db.object.status` 的 `SOURCE_VERIFIED`、
 `INVALID` 对象事实；执行前复核同一对象仍无效，执行后要求状态为 `VALID`，对象不可见时标记
-`ADVERSE`。VIEW、TRIGGER、TYPE 和 Schema 批量编译尚未进入可执行 Catalog，真实 Oracle
-权限、锁和失败场景也尚未验收。
+`ADVERSE`。不提供 Schema 批量编译入口，真实 Oracle 权限、锁和失败场景也尚未验收。
 统计信息维护已登记首批 `db.statistics.gather` 单表切片，仅处理数据库确认的非临时、统计未锁定
 且统计缺失或过期的表；收集策略固定，不接收模型生成的采样参数或 PL/SQL，执行后重新确认
-`LAST_ANALYZED` 和 `STALE_STATS`。Oracle Scheduler 已登记首批 `db.scheduler.job.run`，仅运行
-已启用且处于 `SCHEDULED` 的指定 Job，并用执行前后运行/失败计数验证结果。Job 的
-enable/disable/stop 尚未启用，需先为规划器增加互斥动作意图选择；以上切片均未完成真实 Oracle
-权限、负载和失败场景验收。
+`LAST_ANALYZED` 和 `STALE_STATS`，并支持独立审批的统计锁定和解锁。Oracle Scheduler 已登记
+run/enable/disable/stop 四种动作，各自只消费动作专用状态事实；同一对象出现冲突动作意图时
+失败关闭。用户维护支持本地非系统用户的锁定、解锁和密码过期，不接收或保存密码。以上切片均
+未完成真实 Oracle 权限、负载和失败场景验收。
 
 ## 巡检与报告
 

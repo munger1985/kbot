@@ -195,7 +195,16 @@ def _oracle_index_partition_from_turn(assessment, db_type: str):
 def _oracle_object_compile_from_turn(assessment, db_type: str):
     if db_type != "ORACLE":
         return None
-    allowed_types = {"PROCEDURE", "FUNCTION", "PACKAGE"}
+    allowed_types = {
+        "PROCEDURE",
+        "FUNCTION",
+        "PACKAGE",
+        "PACKAGE BODY",
+        "TRIGGER",
+        "VIEW",
+        "TYPE",
+        "TYPE BODY",
+    }
     for row, evidence_ref in _verified_turn_rows(assessment, "db.object.status"):
         owner = row.get("owner")
         object_name = row.get("object_name")
@@ -265,6 +274,64 @@ def _oracle_table_statistics_gather_from_turn(assessment, db_type: str):
     return None
 
 
+def _oracle_table_statistics_state_from_turn(
+    assessment,
+    db_type: str,
+    *,
+    tool_id: str,
+    require_locked: bool,
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(assessment, tool_id):
+        owner = row.get("owner")
+        table_name = row.get("table_name")
+        temporary = str(row.get("temporary") or "").upper()
+        last_analyzed = row.get("last_analyzed")
+        locked = bool(str(row.get("stattype_locked") or "").strip())
+        if (
+            not owner
+            or not table_name
+            or temporary != "N"
+            or locked != require_locked
+            or (not require_locked and last_analyzed is None)
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "table_ref": {
+                    "schema": str(owner),
+                    "object_type": "TABLE",
+                    "object_name": str(table_name),
+                }
+            },
+            fact_refs={"table_ref": evidence_ref},
+            rationale=(
+                "表身份、非临时属性和统计锁状态来自本轮动作专用"
+                "数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_table_statistics_lock_from_turn(assessment, db_type: str):
+    return _oracle_table_statistics_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.table.statistics.lock_candidate",
+        require_locked=False,
+    )
+
+
+def _oracle_table_statistics_unlock_from_turn(assessment, db_type: str):
+    return _oracle_table_statistics_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.table.statistics.unlock_candidate",
+        require_locked=True,
+    )
+
+
 def _oracle_scheduler_job_run_from_turn(assessment, db_type: str):
     if db_type != "ORACLE":
         return None
@@ -312,6 +379,166 @@ def _oracle_scheduler_job_run_from_turn(assessment, db_type: str):
     return None
 
 
+def _oracle_scheduler_job_state_from_turn(
+    assessment,
+    db_type: str,
+    *,
+    tool_id: str,
+    expected_enabled: str,
+    expected_state: str,
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(assessment, tool_id):
+        owner = row.get("owner")
+        job_name = row.get("job_name")
+        enabled = str(row.get("enabled") or "").upper()
+        state = str(row.get("state") or "").upper()
+        if (
+            not owner
+            or not job_name
+            or enabled != expected_enabled
+            or state != expected_state
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "job_ref": {
+                    "schema": str(owner),
+                    "object_type": "SCHEDULER_JOB",
+                    "object_name": str(job_name),
+                }
+            },
+            fact_refs={"job_ref": evidence_ref},
+            rationale=(
+                "Scheduler Job 身份、启用状态和运行状态来自本轮"
+                "动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_scheduler_job_enable_from_turn(assessment, db_type: str):
+    return _oracle_scheduler_job_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.scheduler.job.enable_candidate",
+        expected_enabled="FALSE",
+        expected_state="DISABLED",
+    )
+
+
+def _oracle_scheduler_job_disable_from_turn(assessment, db_type: str):
+    return _oracle_scheduler_job_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.scheduler.job.disable_candidate",
+        expected_enabled="TRUE",
+        expected_state="SCHEDULED",
+    )
+
+
+def _oracle_scheduler_job_stop_from_turn(assessment, db_type: str):
+    return _oracle_scheduler_job_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.scheduler.job.stop_candidate",
+        expected_enabled="TRUE",
+        expected_state="RUNNING",
+    )
+
+
+def _oracle_user_state_from_turn(
+    assessment,
+    db_type: str,
+    *,
+    tool_id: str,
+    require_locked: bool,
+):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(assessment, tool_id):
+        username = row.get("username")
+        account_status = str(row.get("account_status") or "").upper()
+        oracle_maintained = str(row.get("oracle_maintained") or "").upper()
+        common = str(row.get("common") or "").upper()
+        locked = "LOCKED" in account_status
+        if (
+            not username
+            or oracle_maintained != "N"
+            or common != "NO"
+            or locked != require_locked
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "user_ref": {
+                    "schema": str(username),
+                    "object_type": "USER",
+                    "object_name": str(username),
+                }
+            },
+            fact_refs={"user_ref": evidence_ref},
+            rationale=(
+                "用户身份、账号锁状态、非 Oracle 维护及本地用户属性来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
+def _oracle_user_lock_from_turn(assessment, db_type: str):
+    return _oracle_user_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.user.lock_candidate",
+        require_locked=False,
+    )
+
+
+def _oracle_user_unlock_from_turn(assessment, db_type: str):
+    return _oracle_user_state_from_turn(
+        assessment,
+        db_type,
+        tool_id="db.user.unlock_candidate",
+        require_locked=True,
+    )
+
+
+def _oracle_user_password_expire_from_turn(assessment, db_type: str):
+    if db_type != "ORACLE":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.user.password_expire_candidate"
+    ):
+        username = row.get("username")
+        account_status = str(row.get("account_status") or "").upper()
+        oracle_maintained = str(row.get("oracle_maintained") or "").upper()
+        common = str(row.get("common") or "").upper()
+        if (
+            not username
+            or "EXPIRED" in account_status
+            or oracle_maintained != "N"
+            or common != "NO"
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "user_ref": {
+                    "schema": str(username),
+                    "object_type": "USER",
+                    "object_name": str(username),
+                }
+            },
+            fact_refs={"user_ref": evidence_ref},
+            rationale=(
+                "用户身份、密码未过期、非 Oracle 维护及本地用户属性来自"
+                "本轮动作专用数据库直连可信事实"
+            ),
+        )
+    return None
+
+
 _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]] = {
     "session-terminate.v1": _session_from_turn,
     "oracle-session-cancel-sql.v1": _oracle_cancel_sql_from_turn,
@@ -321,7 +548,23 @@ _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]
     "oracle-table-statistics-gather.v1": (
         _oracle_table_statistics_gather_from_turn
     ),
+    "oracle-table-statistics-lock.v1": (
+        _oracle_table_statistics_lock_from_turn
+    ),
+    "oracle-table-statistics-unlock.v1": (
+        _oracle_table_statistics_unlock_from_turn
+    ),
     "oracle-scheduler-job-run.v1": _oracle_scheduler_job_run_from_turn,
+    "oracle-scheduler-job-enable.v1": _oracle_scheduler_job_enable_from_turn,
+    "oracle-scheduler-job-disable.v1": (
+        _oracle_scheduler_job_disable_from_turn
+    ),
+    "oracle-scheduler-job-stop.v1": _oracle_scheduler_job_stop_from_turn,
+    "oracle-user-lock.v1": _oracle_user_lock_from_turn,
+    "oracle-user-unlock.v1": _oracle_user_unlock_from_turn,
+    "oracle-user-password-expire.v1": (
+        _oracle_user_password_expire_from_turn
+    ),
 }
 
 

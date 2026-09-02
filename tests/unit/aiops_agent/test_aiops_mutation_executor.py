@@ -470,6 +470,47 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_rechecks_statistics_lock_state_before_change(self):
+        cases = (
+            ("db.statistics.lock", 0, "LOCK_TABLE_STATS"),
+            ("db.statistics.unlock", 1, "UNLOCK_TABLE_STATS"),
+        )
+        for action_id, require_locked, operation in cases:
+            with self.subTest(action_id=action_id):
+                template = ActionRegistry.load().resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                self.action = ActionRenderer().render(
+                    template,
+                    {
+                        "table_ref": {
+                            "schema": "APP",
+                            "object_type": "TABLE",
+                            "object_name": "ORDERS",
+                        }
+                    },
+                )
+                cursor = _OracleMutationCursor()
+
+                result = await self._execute(cursor)
+
+                self.assertTrue(result.bounded_result["accepted"])
+                self.assertEqual(
+                    {
+                        "schema_name": "APP",
+                        "table_name": "ORDERS",
+                        "require_locked": require_locked,
+                    },
+                    cursor.calls[0][1],
+                )
+                self.assertIn(operation, cursor.calls[1][0])
+
     async def test_rechecks_job_state_and_counts_before_running(self):
         template = ActionRegistry.load().resolve(
             action_template_id="db.scheduler.job.run",
@@ -513,6 +554,120 @@ class OracleIndexMutationDriverTest(unittest.IsolatedAsyncioTestCase):
             "'\"APP\".\"NIGHTLY_JOB\"', use_current_session => FALSE); END;",
             cursor.calls[1][0],
         )
+
+    async def test_rechecks_scheduler_state_before_state_change(self):
+        cases = (
+            ("db.scheduler.job.enable", "FALSE", "DISABLED"),
+            ("db.scheduler.job.disable", "TRUE", "SCHEDULED"),
+            ("db.scheduler.job.stop", "TRUE", "RUNNING"),
+        )
+        for action_id, enabled, state in cases:
+            with self.subTest(action_id=action_id):
+                template = ActionRegistry.load().resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                self.action = ActionRenderer().render(
+                    template,
+                    {
+                        "job_ref": {
+                            "schema": "APP",
+                            "object_type": "SCHEDULER_JOB",
+                            "object_name": "NIGHTLY_JOB",
+                        }
+                    },
+                )
+                cursor = _OracleMutationCursor()
+
+                result = await self._execute(cursor)
+
+                self.assertTrue(result.bounded_result["accepted"])
+                self.assertEqual(
+                    {
+                        "schema_name": "APP",
+                        "job_name": "NIGHTLY_JOB",
+                        "expected_enabled": enabled,
+                        "expected_state": state,
+                    },
+                    cursor.calls[0][1],
+                )
+                self.assertIn("DBMS_SCHEDULER", cursor.calls[1][0])
+
+    async def test_rechecks_local_application_user_before_state_change(self):
+        cases = (
+            ("db.user.lock", 0, "ACCOUNT LOCK"),
+            ("db.user.unlock", 1, "ACCOUNT UNLOCK"),
+        )
+        for action_id, require_locked, operation in cases:
+            with self.subTest(action_id=action_id):
+                template = ActionRegistry.load().resolve(
+                    action_template_id=action_id,
+                    version="1.0.0",
+                    db_type="ORACLE",
+                    db_version="19.0.0",
+                    capabilities={"dba_catalog_views"},
+                    entitlements=set(),
+                    environment="PROD",
+                )
+                self.action = ActionRenderer().render(
+                    template,
+                    {
+                        "user_ref": {
+                            "schema": "APPUSER",
+                            "object_type": "USER",
+                            "object_name": "APPUSER",
+                        }
+                    },
+                )
+                cursor = _OracleMutationCursor()
+
+                result = await self._execute(cursor)
+
+                self.assertTrue(result.bounded_result["accepted"])
+                self.assertIn("FROM DBA_USERS", cursor.calls[0][0])
+                self.assertIn("ORACLE_MAINTAINED = 'N'", cursor.calls[0][0])
+                self.assertEqual(
+                    {
+                        "username": "APPUSER",
+                        "require_locked": require_locked,
+                    },
+                    cursor.calls[0][1],
+                )
+                self.assertIn(operation, cursor.calls[1][0])
+
+    async def test_rechecks_unexpired_user_before_password_expiry(self):
+        template = ActionRegistry.load().resolve(
+            action_template_id="db.user.password.expire",
+            version="1.0.0",
+            db_type="ORACLE",
+            db_version="19.0.0",
+            capabilities={"dba_catalog_views"},
+            entitlements=set(),
+            environment="PROD",
+        )
+        self.action = ActionRenderer().render(
+            template,
+            {
+                "user_ref": {
+                    "schema": "APPUSER",
+                    "object_type": "USER",
+                    "object_name": "APPUSER",
+                }
+            },
+        )
+        cursor = _OracleMutationCursor()
+
+        result = await self._execute(cursor)
+
+        self.assertTrue(result.bounded_result["accepted"])
+        self.assertIn("ACCOUNT_STATUS NOT LIKE '%EXPIRED%'", cursor.calls[0][0])
+        self.assertEqual({"username": "APPUSER"}, cursor.calls[0][1])
+        self.assertIn("PASSWORD EXPIRE", cursor.calls[1][0])
 
     async def test_missing_index_rejects_before_mutation(self):
         cursor = _OracleMutationCursor(present=False)

@@ -1,0 +1,1 @@
+BEGIN DBMS_STATS.LOCK_TABLE_STATS({{table_ref}}); END;

@@ -240,7 +240,15 @@ class OracleMutationDriver:
                 "db.index.partition.rebuild",
                 "db.object.compile",
                 "db.statistics.gather",
+                "db.statistics.lock",
+                "db.statistics.unlock",
                 "db.scheduler.job.run",
+                "db.scheduler.job.enable",
+                "db.scheduler.job.disable",
+                "db.scheduler.job.stop",
+                "db.user.lock",
+                "db.user.unlock",
+                "db.user.password.expire",
             }
             or action.db_type != self.db_type
             or action.execution_mode != "EXECUTABLE_AFTER_APPROVAL"
@@ -435,6 +443,43 @@ class OracleMutationDriver:
                     "table_name": table_ref["object_name"],
                 },
             )
+        elif action.action_template_id in {
+            "db.statistics.lock",
+            "db.statistics.unlock",
+        }:
+            table_ref = dict(parameters["table_ref"])
+            require_locked = int(
+                action.action_template_id == "db.statistics.unlock"
+            )
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_TABLES t
+                  JOIN DBA_TAB_STATISTICS s
+                    ON s.OWNER = t.OWNER
+                   AND s.TABLE_NAME = t.TABLE_NAME
+                   AND s.PARTITION_NAME IS NULL
+                   AND s.SUBPARTITION_NAME IS NULL
+                   AND s.OBJECT_TYPE = 'TABLE'
+                 WHERE t.OWNER = :schema_name
+                   AND t.TABLE_NAME = :table_name
+                   AND t.NESTED = 'NO'
+                   AND t.SECONDARY = 'N'
+                   AND t.TEMPORARY = 'N'
+                   AND (
+                        (:require_locked = 0
+                         AND s.LAST_ANALYZED IS NOT NULL
+                         AND s.STATTYPE_LOCKED IS NULL)
+                     OR (:require_locked = 1
+                         AND s.STATTYPE_LOCKED IS NOT NULL)
+                   )
+                """,
+                {
+                    "schema_name": table_ref["schema"],
+                    "table_name": table_ref["object_name"],
+                    "require_locked": require_locked,
+                },
+            )
         elif action.action_template_id == "db.scheduler.job.run":
             job_ref = dict(parameters["job_ref"])
             await cursor.execute(
@@ -455,6 +500,71 @@ class OracleMutationDriver:
                     "previous_failure_count": parameters[
                         "previous_failure_count"
                     ],
+                },
+            )
+        elif action.action_template_id in {
+            "db.scheduler.job.enable",
+            "db.scheduler.job.disable",
+            "db.scheduler.job.stop",
+        }:
+            job_ref = dict(parameters["job_ref"])
+            expected = {
+                "db.scheduler.job.enable": ("FALSE", "DISABLED"),
+                "db.scheduler.job.disable": ("TRUE", "SCHEDULED"),
+                "db.scheduler.job.stop": ("TRUE", "RUNNING"),
+            }[action.action_template_id]
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_SCHEDULER_JOBS
+                 WHERE OWNER = :schema_name
+                   AND JOB_NAME = :job_name
+                   AND ENABLED = :expected_enabled
+                   AND STATE = :expected_state
+                """,
+                {
+                    "schema_name": job_ref["schema"],
+                    "job_name": job_ref["object_name"],
+                    "expected_enabled": expected[0],
+                    "expected_state": expected[1],
+                },
+            )
+        elif action.action_template_id == "db.user.password.expire":
+            user_ref = dict(parameters["user_ref"])
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_USERS
+                 WHERE USERNAME = :username
+                   AND ORACLE_MAINTAINED = 'N'
+                   AND COMMON = 'NO'
+                   AND ACCOUNT_STATUS NOT LIKE '%EXPIRED%'
+                """,
+                {"username": user_ref["object_name"]},
+            )
+        elif action.action_template_id in {
+            "db.user.lock",
+            "db.user.unlock",
+        }:
+            user_ref = dict(parameters["user_ref"])
+            require_locked = int(action.action_template_id == "db.user.unlock")
+            await cursor.execute(
+                """
+                SELECT 1
+                  FROM DBA_USERS
+                 WHERE USERNAME = :username
+                   AND ORACLE_MAINTAINED = 'N'
+                   AND COMMON = 'NO'
+                   AND (
+                        (:require_locked = 0
+                         AND ACCOUNT_STATUS NOT LIKE '%LOCKED%')
+                     OR (:require_locked = 1
+                         AND ACCOUNT_STATUS LIKE '%LOCKED%')
+                   )
+                """,
+                {
+                    "username": user_ref["object_name"],
+                    "require_locked": require_locked,
                 },
             )
         else:

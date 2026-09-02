@@ -1,0 +1,1 @@
+BEGIN DBMS_STATS.UNLOCK_TABLE_STATS({{table_ref}}); END;

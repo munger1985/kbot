@@ -410,6 +410,24 @@ class ChatActionPlanHandler:
                     rendered_action=rendered.model_dump(mode="json"),
                 )
             )
+        object_family_keys = set()
+        for action in actions:
+            object_ref = action.canonical_object_ref
+            if object_ref is None:
+                continue
+            key = (
+                action.action_family,
+                str(object_ref.get("schema", "")).upper(),
+                str(object_ref.get("object_type", "")).upper(),
+                str(object_ref.get("object_name", "")).upper(),
+            )
+            if key in object_family_keys:
+                return self._empty(
+                    context,
+                    policy_hash,
+                    "AMBIGUOUS_ACTION_INTENT",
+                )
+            object_family_keys.add(key)
         if not actions:
             return self._empty(
                 context,
@@ -728,6 +746,54 @@ class ActionVerificationHandler:
                 adverse_effect=False,
                 evidence_hashes=hashes,
             )
+        statistics_state_tools = {
+            "db.statistics.lock": "db.table.statistics.lock_candidate",
+            "db.statistics.unlock": "db.table.statistics.unlock_candidate",
+        }
+        if scope.action_template_id in statistics_state_tools:
+            observation = successful.get(
+                statistics_state_tools[scope.action_template_id]
+            )
+            if observation is None:
+                return self._result(
+                    scope,
+                    status="INCONCLUSIVE",
+                    summary="缺少表统计锁状态，不能确认状态变更效果",
+                    gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+                    evidence_hashes=hashes,
+                )
+            matched = self._matching_table_rows(
+                observation, dict(parameters["table_ref"])
+            )
+            if not matched:
+                return self._result(
+                    scope,
+                    status="ADVERSE",
+                    summary="目标表在统计锁状态变更后不可见",
+                    effect_achieved=False,
+                    adverse_effect=True,
+                    evidence_hashes=hashes,
+                )
+            locked = bool(
+                str(matched[0].get("stattype_locked") or "").strip()
+            )
+            achieved = (
+                locked
+                if scope.action_template_id == "db.statistics.lock"
+                else not locked
+            )
+            return self._result(
+                scope,
+                status="VERIFIED" if achieved else "NOT_ACHIEVED",
+                summary=(
+                    "表统计锁状态变更已验证"
+                    if achieved
+                    else "表统计锁状态尚未达到目标状态"
+                ),
+                effect_achieved=achieved,
+                adverse_effect=False,
+                evidence_hashes=hashes,
+            )
         if scope.action_template_id == "db.scheduler.job.run":
             observation = successful.get("db.scheduler.job.status")
             if observation is None:
@@ -773,6 +839,110 @@ class ActionVerificationHandler:
                     )
                 ),
                 effect_achieved=started,
+                adverse_effect=False,
+                evidence_hashes=hashes,
+            )
+        scheduler_state_tools = {
+            "db.scheduler.job.enable": "db.scheduler.job.enable_candidate",
+            "db.scheduler.job.disable": "db.scheduler.job.disable_candidate",
+            "db.scheduler.job.stop": "db.scheduler.job.stop_candidate",
+        }
+        if scope.action_template_id in scheduler_state_tools:
+            observation = successful.get(
+                scheduler_state_tools[scope.action_template_id]
+            )
+            if observation is None:
+                return self._result(
+                    scope,
+                    status="INCONCLUSIVE",
+                    summary="缺少 Scheduler Job 状态，不能确认状态变更效果",
+                    gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+                    evidence_hashes=hashes,
+                )
+            matched = self._matching_scheduler_job_rows(
+                observation, dict(parameters["job_ref"])
+            )
+            if not matched:
+                return self._result(
+                    scope,
+                    status="ADVERSE",
+                    summary="目标 Scheduler Job 在状态变更后不可见",
+                    effect_achieved=False,
+                    adverse_effect=True,
+                    evidence_hashes=hashes,
+                )
+            current = matched[0]
+            enabled = str(current.get("enabled") or "").upper()
+            state = str(current.get("state") or "").upper()
+            achieved = {
+                "db.scheduler.job.enable": (
+                    enabled == "TRUE" and state != "DISABLED"
+                ),
+                "db.scheduler.job.disable": (
+                    enabled == "FALSE" and state == "DISABLED"
+                ),
+                "db.scheduler.job.stop": state != "RUNNING",
+            }[scope.action_template_id]
+            return self._result(
+                scope,
+                status="VERIFIED" if achieved else "NOT_ACHIEVED",
+                summary=(
+                    "Scheduler Job 状态变更已验证"
+                    if achieved
+                    else "Scheduler Job 尚未达到目标状态"
+                ),
+                effect_achieved=achieved,
+                adverse_effect=False,
+                evidence_hashes=hashes,
+            )
+        user_state_tools = {
+            "db.user.lock": "db.user.lock_candidate",
+            "db.user.unlock": "db.user.unlock_candidate",
+            "db.user.password.expire": "db.user.password_expire_candidate",
+        }
+        if scope.action_template_id in user_state_tools:
+            observation = successful.get(
+                user_state_tools[scope.action_template_id]
+            )
+            if observation is None:
+                return self._result(
+                    scope,
+                    status="INCONCLUSIVE",
+                    summary="缺少用户账号状态，不能确认状态变更效果",
+                    gap_codes=("VERIFICATION_EVIDENCE_MISSING",),
+                    evidence_hashes=hashes,
+                )
+            matched = self._matching_user_rows(
+                observation, dict(parameters["user_ref"])
+            )
+            if not matched:
+                return self._result(
+                    scope,
+                    status="ADVERSE",
+                    summary="目标用户在账号状态变更后不可见",
+                    effect_achieved=False,
+                    adverse_effect=True,
+                    evidence_hashes=hashes,
+                )
+            account_status = str(
+                matched[0].get("account_status") or ""
+            ).upper()
+            locked = "LOCKED" in account_status
+            expired = "EXPIRED" in account_status
+            achieved = {
+                "db.user.lock": locked,
+                "db.user.unlock": not locked,
+                "db.user.password.expire": expired,
+            }[scope.action_template_id]
+            return self._result(
+                scope,
+                status="VERIFIED" if achieved else "NOT_ACHIEVED",
+                summary=(
+                    "用户账号锁状态变更已验证"
+                    if achieved
+                    else "用户账号锁状态尚未达到目标状态"
+                ),
+                effect_achieved=achieved,
                 adverse_effect=False,
                 evidence_hashes=hashes,
             )
@@ -990,6 +1160,19 @@ class ActionVerificationHandler:
             == str(job_ref["schema"]).upper()
             and str(row.get("job_name", "")).upper()
             == str(job_ref["object_name"]).upper()
+        )
+
+    @staticmethod
+    def _matching_user_rows(observation, user_ref):
+        names = [str(column.name).lower() for column in observation.columns]
+        rows = [dict(zip(names, row)) for row in observation.rows]
+        return tuple(
+            row
+            for row in rows
+            if str(row.get("username", "")).upper()
+            == str(user_ref["object_name"]).upper()
+            and str(row.get("oracle_maintained", "")).upper() == "N"
+            and str(row.get("common", "")).upper() == "NO"
         )
 
     @staticmethod

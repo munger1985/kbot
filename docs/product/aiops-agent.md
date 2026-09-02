@@ -436,11 +436,11 @@ Diagnosis
 当前已交付的自动执行动作仍以 Action Catalog 为准。Agent–Target 显式授权、破坏性动作
 固定人工执行、当前动作目录和后续实施状态见
 [AIOps 已登记受控动作设计与实施计划](../proposals/aiops-controlled-actions-implementation-plan.md)。
-其中普通及分区 Oracle Index Rebuild、取消当前 SQL、指定 Oracle `PROCEDURE`/`FUNCTION`/
-`PACKAGE` 编译、单表统计信息收集，以及运行已启用的 `SCHEDULED` Scheduler Job 已完成离线
-代码切片。统计收集策略由系统固定，Job 运行冻结并复核运行/失败计数；VIEW、TRIGGER、TYPE、
-Schema 批量编译、统计锁定/解锁和 Job enable/disable/stop 尚未启用。其他动作是否交付，以该
-计划的状态和运行时 Catalog 为准；上述切片尚未完成真实 Oracle 验收。
+其中普通及分区 Oracle Index Rebuild、取消当前 SQL、指定 Oracle Schema 对象编译、单表统计
+信息收集/锁定/解锁、Scheduler run/enable/disable/stop，以及本地非系统用户锁定、解锁和密码
+过期已完成离线代码切片。统计策略由系统固定，状态动作使用独立候选事实，冲突意图失败关闭；
+不提供 Schema 批量编译或密码设置入口。其他动作是否交付，以该计划的状态和运行时 Catalog
+为准；上述切片尚未完成真实 Oracle 验收。
 
 ## 处理前后对比
 

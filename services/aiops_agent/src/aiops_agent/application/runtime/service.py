@@ -734,31 +734,51 @@ class AIOpsRuntimeService:
                                 "object_name": object_ref["object_name"],
                                 "object_type": parameters["object_type"],
                             }
-                elif (
-                    proposal_snapshot.action_template_id
-                    == "db.statistics.gather"
-                ):
+                elif proposal_snapshot.action_template_id in {
+                    "db.statistics.gather",
+                    "db.statistics.lock",
+                    "db.statistics.unlock",
+                }:
                     table_ref = dict(
                         proposal_snapshot.canonical_parameters["table_ref"]
                     )
                     for tool in database_diagnostic_snapshot["tools"]:
-                        if tool["tool_id"] == "db.table.statistics":
+                        if str(tool["tool_id"]).startswith(
+                            "db.table.statistics"
+                        ):
                             tool["parameters"] = {
                                 "schema_name": table_ref["schema"],
                                 "table_name": table_ref["object_name"],
                             }
-                elif (
-                    proposal_snapshot.action_template_id
-                    == "db.scheduler.job.run"
-                ):
+                elif proposal_snapshot.action_template_id in {
+                    "db.scheduler.job.run",
+                    "db.scheduler.job.enable",
+                    "db.scheduler.job.disable",
+                    "db.scheduler.job.stop",
+                }:
                     job_ref = dict(
                         proposal_snapshot.canonical_parameters["job_ref"]
                     )
                     for tool in database_diagnostic_snapshot["tools"]:
-                        if tool["tool_id"] == "db.scheduler.job.status":
+                        if str(tool["tool_id"]).startswith(
+                            "db.scheduler.job."
+                        ):
                             tool["parameters"] = {
                                 "schema_name": job_ref["schema"],
                                 "job_name": job_ref["object_name"],
+                            }
+                elif proposal_snapshot.action_template_id in {
+                    "db.user.lock",
+                    "db.user.unlock",
+                    "db.user.password.expire",
+                }:
+                    user_ref = dict(
+                        proposal_snapshot.canonical_parameters["user_ref"]
+                    )
+                    for tool in database_diagnostic_snapshot["tools"]:
+                        if str(tool["tool_id"]).startswith("db.user."):
+                            tool["parameters"] = {
+                                "username": user_ref["object_name"]
                             }
                 verification["initial_gap_codes"] = tuple(
                     item["code"]

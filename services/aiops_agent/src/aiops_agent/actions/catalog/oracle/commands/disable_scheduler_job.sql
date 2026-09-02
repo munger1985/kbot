@@ -1,0 +1,1 @@
+BEGIN DBMS_SCHEDULER.DISABLE({{job_ref}}, force => FALSE); END;
