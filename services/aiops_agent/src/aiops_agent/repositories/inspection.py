@@ -1,6 +1,7 @@
 """巡检 Plan、Fire 和版本化 Report 聚合 Repository。"""
 
 from collections.abc import Callable, Collection
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -20,6 +21,14 @@ from aiops_agent.entities import (
     ReportEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
+
+
+@dataclass(frozen=True)
+class InspectionTurnState:
+    """Scheduler 收敛巡检所需的最小 Turn 状态投影。"""
+
+    turn_id: UUID
+    status: str
 
 
 class InspectionRepository(AIOpsRepository):
@@ -399,10 +408,14 @@ class InspectionRepository(AIOpsRepository):
 
     async def list_turns_for_fire(
         self, *, inspection_fire_id: UUID
-    ) -> list[OpsConversationTurnEntity]:
-        """返回由一次巡检 Fire 创建的全部 Agent Turn。"""
+    ) -> list[InspectionTurnState]:
+        """返回巡检 Fire 的最小 Turn 状态，避免加载无关 JSON 元数据。"""
+        self._check_active()
         statement = (
-            select(OpsConversationTurnEntity)
+            select(
+                OpsConversationTurnEntity.turn_id,
+                OpsConversationTurnEntity.status,
+            )
             .join(
                 OpsConversationEntity,
                 OpsConversationEntity.conversation_id
@@ -414,7 +427,14 @@ class InspectionRepository(AIOpsRepository):
             )
             .order_by(OpsConversationTurnEntity.turn_id)
         )
-        return list((await self._session.execute(statement)).scalars())
+        rows = (await self._session.execute(statement)).all()
+        return [
+            InspectionTurnState(
+                turn_id=row.turn_id,
+                status=row.status,
+            )
+            for row in rows
+        ]
 
     async def transition_fire(
         self,

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiops_agent.repositories.inspection import InspectionRepository
 from aiops_agent.scheduling import (
     AIOpsInspectionScheduler,
     resolve_due_schedule,
@@ -15,6 +16,7 @@ from aiops_agent.scheduling import (
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
+from sqlalchemy.dialects import oracle
 
 
 class ScheduleResolverTest(unittest.TestCase):
@@ -82,6 +84,33 @@ class ScheduleResolverTest(unittest.TestCase):
 
 
 class InspectionSchedulerTest(unittest.TestCase):
+    def test_fire_turn_query_only_projects_scheduler_state(self) -> None:
+        turn_id = uuid7()
+        result = SimpleNamespace(
+            all=lambda: [
+                SimpleNamespace(turn_id=turn_id, status="COMPLETED")
+            ]
+        )
+        session = SimpleNamespace(
+            execute=AsyncMock(return_value=result)
+        )
+        repository = InspectionRepository(session)
+
+        states = asyncio.run(
+            repository.list_turns_for_fire(
+                inspection_fire_id=uuid7()
+            )
+        )
+
+        statement = session.execute.await_args.args[0]
+        sql = str(statement.compile(dialect=oracle.dialect())).upper()
+        self.assertEqual(turn_id, states[0].turn_id)
+        self.assertEqual("COMPLETED", states[0].status)
+        self.assertIn(".TURN_ID", sql)
+        self.assertIn(".STATUS", sql)
+        self.assertNotIn("SUFFICIENCY_JSON", sql)
+        self.assertNotIn("ERROR_MESSAGE", sql)
+
     def test_agent_task_creates_standard_turns_for_current_targets(self) -> None:
         fire_id = uuid7()
         agent_id = uuid7()
