@@ -8206,6 +8206,12 @@
         "additionalProperties": false,
         "description": "用户可见的问题框架，不包含模型隐藏推理。",
         "properties": {
+          "action_intent": {
+            "default": "NONE",
+            "pattern": "^(NONE|ADVISORY|EXECUTE)$",
+            "title": "Action Intent",
+            "type": "string"
+          },
           "constraints": {
             "default": [],
             "items": {

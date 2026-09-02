@@ -480,6 +480,7 @@ class DbaAnswerComposeHandler:
 
     async def execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
         assessment = self._assessment(context.input_artifacts)
+        proposal_summary = self._proposal_summary(context.input_artifacts)
         if assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,
@@ -505,6 +506,7 @@ class DbaAnswerComposeHandler:
                 ),
                 "task_frame": dict(answer_context.get("task_frame", {})),
                 "sufficiency": assessment.model_dump(mode="json"),
+                "proposal_summary": proposal_summary,
             },
             deadline=self._deadline(context.deadline_at),
             idempotency_key=f"turn:{context.run_id}:answer:{context.attempt}",
@@ -546,6 +548,7 @@ class DbaAnswerComposeHandler:
     async def execute_stream(self, context: TaskExecutionContext):
         """使用模型原生SSE生成正文，校验后逐块投递用户可见增量。"""
         assessment = self._assessment(context.input_artifacts)
+        proposal_summary = self._proposal_summary(context.input_artifacts)
         if assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,
@@ -611,6 +614,7 @@ class DbaAnswerComposeHandler:
                     for item in assessment.gaps
                 ],
                 "evidence": evidence_payload,
+                "proposal_summary": proposal_summary,
                 "allowed_citation_labels": list(labels),
                 "previous_invalid_answer": answer or None,
                 "validation_error": validation_error or None,
@@ -708,6 +712,29 @@ class DbaAnswerComposeHandler:
     def _proposal_block(
         artifacts: tuple[dict[str, Any], ...]
     ) -> TurnAnswerBlock | None:
+        summary = DbaAnswerComposeHandler._proposal_summary(artifacts)
+        if summary is None:
+            return None
+        outcome = ProposalOutcome.model_validate(
+            next(
+                item["payload"]
+                for item in artifacts
+                if item.get("schema_version") == "PROPOSAL_OUTCOME.v1"
+            )
+        )
+        if outcome.status != "CREATED" or outcome.proposal is None:
+            return None
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.PROPOSAL_SUMMARY,
+            schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
+            payload=summary,
+            evidence_refs=outcome.proposal.evidence_refs,
+        )
+
+    @staticmethod
+    def _proposal_summary(
+        artifacts: tuple[dict[str, Any], ...]
+    ) -> dict[str, Any] | None:
         payload = next(
             (
                 item["payload"]
@@ -721,19 +748,49 @@ class DbaAnswerComposeHandler:
         outcome = ProposalOutcome.model_validate(payload)
         if outcome.status != "CREATED" or outcome.proposal is None:
             return None
-        proposal = outcome.proposal
-        return TurnAnswerBlock(
-            block_type=AnswerBlockType.PROPOSAL_SUMMARY,
-            schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
-            payload=proposal_summary_payload(proposal),
-            evidence_refs=proposal.evidence_refs,
-        )
+        return proposal_summary_payload(outcome.proposal)
 
     @staticmethod
     def _waiting_result(
         assessment: DbaSufficiencyAssessment,
         context: TaskExecutionContext,
     ) -> AIOpsTurnResult:
+        proposal_block = DbaAnswerComposeHandler._proposal_block(
+            context.input_artifacts
+        )
+        task_frame = dict(
+            dict(context.plan_snapshot.get("answer_context", {})).get(
+                "task_frame", {}
+            )
+        )
+        action_intent = str(task_frame.get("action_intent") or "")
+        if not action_intent and task_frame.get("requires_change"):
+            action_intent = "EXECUTE"
+        if proposal_block is not None:
+            advisory_requested = action_intent == "ADVISORY"
+            message = (
+                "已根据本轮核验事实和登记动作模板生成可执行语句；"
+                "本轮仅生成语句，不会申请审批或自动执行。"
+                if advisory_requested
+                else "已生成登记模板语句，但当前条件不支持自动执行；"
+                "你仍可查看并复制语句，由人工确认后执行。"
+            )
+            return AIOpsTurnResult(
+                status="COMPLETED" if advisory_requested else "PARTIAL",
+                sufficiency_status=(
+                    SufficiencyStatus.ANSWERABLE
+                    if advisory_requested
+                    else assessment.status
+                ),
+                blocks=(
+                    TurnAnswerBlock(
+                        block_type=AnswerBlockType.MARKDOWN,
+                        schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                        payload={"markdown": message},
+                    ),
+                    proposal_block,
+                ),
+            )
         if assessment.clarification_question:
             message = assessment.clarification_question
         else:

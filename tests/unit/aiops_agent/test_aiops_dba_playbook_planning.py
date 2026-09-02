@@ -609,6 +609,7 @@ class _CompactLookupReasoner(_PastedLogReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "action_intent": "NONE",
                 "problem_statement": "列出 TCC Schema 下的表",
                 "success_criteria": ["返回当前表清单"],
                 # 模拟模型生成了合法动作但漏填候选工具，由应用层统一补齐。
@@ -659,6 +660,7 @@ class _CompactControlledActionReasoner(_CompactLookupReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "action_intent": "EXECUTE",
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": [
                     "核验表状态并生成统计信息收集审批提案"
@@ -703,6 +705,17 @@ class _CompactControlledActionReasoner(_CompactLookupReasoner):
         raise AssertionError("明确受控动作不应进入复杂调查 Planner")
 
 
+class _CompactAdvisoryActionReasoner(_CompactControlledActionReasoner):
+    async def plan_compact(self, **kwargs):
+        routed = await super().plan_compact(**kwargs)
+        return StructuredModelResult(
+            output=routed.output.model_copy(
+                update={"action_intent": "ADVISORY"}
+            ),
+            receipt=routed.receipt,
+        )
+
+
 class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
     """模拟精简模型识别出受控动作，但没有生成可执行预检。"""
 
@@ -715,6 +728,7 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "action_intent": "EXECUTE",
                 "problem_statement": "按前一轮方案执行数据库受控动作",
                 "success_criteria": ["核验对象并生成审批提案"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -744,6 +758,7 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "action_intent": "EXECUTE",
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": ["生成等待人工审批的统计信息提案"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -767,6 +782,17 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
             question="按照修正基数估算的方案，搜集该表的统计信息",
             compact=compact,
             target_context=kwargs["target_context"],
+        )
+        # 模拟完整 Planner 仍按旧输出遗漏动作意图，由精简语义结果补回。
+        output = output.model_copy(
+            update={
+                "task_frame": output.task_frame.model_copy(
+                    update={
+                        "action_intent": "NONE",
+                        "requires_change": False,
+                    }
+                )
+            }
         )
         digest = "b" * 64
         return StructuredModelResult(
@@ -964,6 +990,54 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("change:action-plan", task_keys)
         self.assertIn("change:proposal", task_keys)
 
+    async def test_advisory_action_keeps_change_chain_without_execute_flag(self):
+        uow = _PlanningUow()
+        question = "生成搜集表 TPCC.ORDER_BIG 统计信息的语句"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        uow.target.capabilities_json["privileges"] = [
+            "V_$INSTANCE",
+            "V_$DATABASE",
+            "DBA_TABLES",
+            "DBA_TAB_STATISTICS",
+        ]
+        reasoner = _CompactAdvisoryActionReasoner()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in DiagnosticRegistry.load().tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=DiagnosticRegistry.load(),
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        task_frame = uow.run.plan_snapshot_json["answer_context"]["task_frame"]
+        self.assertEqual("ADVISORY", task_frame["action_intent"])
+        self.assertFalse(task_frame["requires_change"])
+        self.assertEqual(
+            ["db.table.statistics"],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        task_keys = {item.task_key for item in uow.tasks}
+        self.assertIn("change:action-plan", task_keys)
+        self.assertIn("change:proposal", task_keys)
+
     async def test_incomplete_compact_action_falls_back_to_contextual_planner(
         self,
     ):
@@ -1122,6 +1196,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "action_intent": "NONE",
                 "problem_statement": "列出 TCC Schema 下的表",
                 "success_criteria": ["返回表清单"],
                 "selected_tool_ids": ["db.oracle.readonly_query"],
@@ -1159,6 +1234,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "action_intent": "EXECUTE",
                 "problem_statement": "收集 TPCC.ORDER_BIG 的统计信息",
                 "success_criteria": ["生成等待人工审批的受控动作"],
                 "selected_tool_ids": ["db.table.statistics"],
@@ -1192,6 +1268,44 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "人工审批", investigation.task_frame.constraints[0]
         )
+
+    def test_advisory_action_generates_template_without_execution_request(self):
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "CONTROLLED_ACTION",
+                "action_intent": "ADVISORY",
+                "problem_statement": "生成 TPCC.ORDER_BIG 的统计信息收集语句",
+                "success_criteria": ["返回可复制的登记模板语句"],
+                "selected_tool_ids": ["db.table.statistics"],
+                "actions": [
+                    {
+                        "action_id": "a1",
+                        "question": "核验目标表统计信息状态",
+                        "tool_id": "db.table.statistics",
+                        "input": {
+                            "schema_name": "TPCC",
+                            "table_name": "ORDER_BIG",
+                        },
+                        "expected_evidence_kind": "TABLE_STATISTICS",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+                "public_reasoning_summary": "核验对象后生成登记模板语句",
+            }
+        )
+
+        investigation = TurnPlanningService._compact_investigation_output(
+            question="生成搜集该表统计信息的语句",
+            compact=compact,
+            target_context={"display_name": "Oracle Test DB"},
+        )
+
+        self.assertEqual("ADVISORY", investigation.task_frame.action_intent)
+        self.assertFalse(investigation.task_frame.requires_change)
+        self.assertEqual(
+            (TaskObjective.PLAN,), investigation.task_frame.objectives
+        )
+        self.assertIn("不申请执行", investigation.task_frame.constraints[0])
 
     async def test_replan_uses_snapshots_and_persists_supported_revision(
         self,

@@ -61,8 +61,10 @@ class _TestPrompts:
 class _AnswerModel:
     def __init__(self, *, evidence_refs: tuple[str, ...]) -> None:
         self.evidence_refs = evidence_refs
+        self.calls = []
 
     async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        self.calls.append(kwargs)
         digest = "a" * 64
         return StructuredModelResult(
             output=DbaAnswerDraft(
@@ -337,6 +339,72 @@ def _context(*, artifacts=(), recent: bool = False) -> TaskExecutionContext:
         policy_snapshot={},
         input_artifacts=artifacts,
     )
+
+
+def _proposal_artifact(*, mode: str = "ADVISORY") -> dict:
+    now = datetime.now(UTC)
+    return {
+        "artifact_id": str(uuid7()),
+        "schema_version": "PROPOSAL_OUTCOME.v1",
+        "payload": {
+            "schema_version": "PROPOSAL_OUTCOME.v1",
+            "status": "CREATED",
+            "proposal": {
+                "schema_version": "CHANGE_PROPOSAL_SNAPSHOT.v1",
+                "proposal_id": str(uuid7()),
+                "run_id": str(uuid7()),
+                "task_id": str(uuid7()),
+                "target_id": str(uuid7()),
+                "target_version": 1,
+                "solution_group_key": "turn:test:change",
+                "command_ordinal": 1,
+                "proposal_version": 1,
+                "mode": mode,
+                "action_family": "METADATA_REFRESH",
+                "effect_class": "METADATA_REFRESH",
+                "execution_mode": "EXECUTABLE_AFTER_APPROVAL",
+                "executor_kind": "DATABASE",
+                "canonical_object_ref": {
+                    "schema": "TPCC",
+                    "object_type": "TABLE",
+                    "object_name": "ORDER_BIG",
+                },
+                "action_template_id": "db.statistics.gather",
+                "action_template_version": "1.0.0",
+                "action_template_variant": "oracle_table",
+                "action_template_hash": "a" * 64,
+                "renderer_version": "strict-template.v2",
+                "canonical_parameters": {
+                    "table_ref": {
+                        "schema": "TPCC",
+                        "object_type": "TABLE",
+                        "object_name": "ORDER_BIG",
+                    }
+                },
+                "parameter_fact_refs": {
+                    "table_ref": "artifact:statistics#row-0"
+                },
+                "parameters_hash": "b" * 64,
+                "rendered_command": (
+                    "BEGIN SYS.DBMS_STATS.GATHER_TABLE_STATS("
+                    "ownname => 'TPCC', tabname => 'ORDER_BIG'); END;"
+                ),
+                "command_hash": "c" * 64,
+                "risk_level": "MEDIUM",
+                "lock_impact": "短时元数据锁",
+                "estimated_duration_seconds": 60,
+                "impact": "刷新表和索引统计信息",
+                "rationale": "表统计信息已陈旧",
+                "preconditions": ["db.table.statistics"],
+                "rollback_plan": "必要时恢复历史统计信息",
+                "verification_plan": ["db.table.statistics"],
+                "evidence_refs": ["artifact:statistics#row-0"],
+                "policy_decision_hash": "d" * 64,
+                "expires_at": (now + timedelta(minutes=15)).isoformat(),
+                "proposal_hash": "e" * 64,
+            },
+        },
+    }
 
 
 def _tool_artifact(*, semantics: str, row_count: int = 1) -> dict:
@@ -1314,6 +1382,87 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         self.assertNotIn(evidence_ref, result.blocks[0].payload["markdown"])
         self.assertEqual((evidence_ref,), result.blocks[0].evidence_refs)
+
+    def test_answer_model_receives_registered_proposal_summary(self) -> None:
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+        model = _AnswerModel(evidence_refs=(assessment.evidence[0].evidence_ref,))
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+                _proposal_artifact(),
+            )
+        )
+
+        result = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=model,
+                prompts=_TestPrompts(),
+            ).execute(context)
+        )
+
+        proposal = model.calls[0]["input_payload"]["proposal_summary"]
+        self.assertEqual("ADVISORY_READY", proposal["status"])
+        self.assertIn("DBMS_STATS", proposal["command_preview"])
+        self.assertEqual(
+            AnswerBlockType.PROPOSAL_SUMMARY,
+            result.blocks[-1].block_type,
+        )
+
+    def test_advisory_proposal_completes_without_execution_permission(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            reasons=("尚未核验 DBMS_STATS 执行权限",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+                _proposal_artifact(),
+            )
+        )
+        context = replace(
+            context,
+            plan_snapshot={
+                **context.plan_snapshot,
+                "answer_context": {
+                    **context.plan_snapshot["answer_context"],
+                    "task_frame": {
+                        "action_intent": "ADVISORY",
+                        "requires_change": False,
+                    },
+                },
+            },
+        )
+
+        result = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=_AnswerModel(evidence_refs=()),
+                prompts=_TestPrompts(),
+            ).execute(context)
+        )
+
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.sufficiency_status)
+        self.assertEqual(2, len(result.blocks))
+        self.assertIn("仅生成语句", result.blocks[0].payload["markdown"])
+        self.assertIn(
+            "DBMS_STATS", result.blocks[1].payload["command_preview"]
+        )
 
     def test_answer_rejects_reference_outside_current_turn(self) -> None:
         assessment = asyncio.run(

@@ -57,6 +57,7 @@ from aiops_agent.tools import (
     build_capability_snapshot,
 )
 from platform_core.contracts.aiops import (
+    ActionIntent,
     CompactPlanningMode,
     InputMaterial,
     InvestigationAction,
@@ -242,7 +243,9 @@ class TurnPlanningService:
                     else ()
                 ),
             ),
-            include_change=bool(investigation.task_frame.requires_change),
+            include_change=(
+                investigation.task_frame.action_intent != ActionIntent.NONE
+            ),
             investigation_actions=investigation.plan.actions,
         )
         execution_snapshot = self._tool_snapshot_builder.build(
@@ -350,13 +353,23 @@ class TurnPlanningService:
             tool_ids=candidate_tool_ids,
             playbook_ids=compact.selected_playbook_ids,
         )
-        compact_route_incomplete = (
+        compact_actions_missing = (
             compact.planning_mode
             in {
                 CompactPlanningMode.READ_ONLY_LOOKUP,
                 CompactPlanningMode.CONTROLLED_ACTION,
             }
             and not compact.actions
+        )
+        compact_route_mismatch = (
+            (
+                compact.planning_mode
+                == CompactPlanningMode.CONTROLLED_ACTION
+            )
+            != (compact.action_intent != ActionIntent.NONE)
+        )
+        compact_route_incomplete = (
+            compact_actions_missing or compact_route_mismatch
         )
         if compact_route_incomplete:
             # 精简模型已经完成语义选路，但可能因“该表”“按前述方案”等
@@ -379,6 +392,8 @@ class TurnPlanningService:
             public_summary = (
                 "精简路由已识别任务方向，但尚未形成可执行的前置核验，"
                 "正在结合对话上下文生成完整调查计划"
+                if compact_actions_missing
+                else "精简路由与动作意图不一致，正在由完整 Planner 重新确认用户诉求"
             )
         route_snapshot = {
             "mode": str(effective_mode),
@@ -395,7 +410,11 @@ class TurnPlanningService:
             route_snapshot.update(
                 {
                     "compact_mode": str(compact.planning_mode),
-                    "fallback_reason": "COMPACT_ACTIONS_MISSING",
+                    "fallback_reason": (
+                        "COMPACT_ACTIONS_MISSING"
+                        if compact_actions_missing
+                        else "COMPACT_ACTION_INTENT_MISMATCH"
+                    ),
                 }
             )
         await self._record_planning_route(
@@ -444,6 +463,27 @@ class TurnPlanningService:
             deadline=context.deadline,
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
+        if (
+            compact.action_intent != ActionIntent.NONE
+            and planned.output.task_frame.action_intent
+            == ActionIntent.NONE
+        ):
+            planned = StructuredModelResult(
+                output=planned.output.model_copy(
+                    update={
+                        "task_frame": planned.output.task_frame.model_copy(
+                            update={
+                                "action_intent": compact.action_intent,
+                                "requires_change": (
+                                    compact.action_intent
+                                    == ActionIntent.EXECUTE
+                                ),
+                            }
+                        )
+                    }
+                ),
+                receipt=planned.receipt,
+            )
         return planned, selected_tools, selected_playbooks, route_snapshot
 
     async def _record_planning_route(
@@ -529,10 +569,8 @@ class TurnPlanningService:
             or target_context.get("target_id")
             or "当前 Target"
         )
-        controlled_action = (
-            compact.planning_mode
-            == CompactPlanningMode.CONTROLLED_ACTION
-        )
+        action_intent = compact.action_intent
+        controlled_action = action_intent != ActionIntent.NONE
         return InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
                 materials=(
@@ -550,7 +588,9 @@ class TurnPlanningService:
             task_frame=TaskFrame(
                 objectives=(
                     (TaskObjective.CHANGE,)
-                    if controlled_action
+                    if action_intent == ActionIntent.EXECUTE
+                    else (TaskObjective.PLAN,)
+                    if action_intent == ActionIntent.ADVISORY
                     else (TaskObjective.UNDERSTAND,)
                 ),
                 problem_statement=compact.problem_statement,
@@ -560,13 +600,18 @@ class TurnPlanningService:
                 constraints=(
                     (
                         "仅自动执行当前 Target 的只读前置核验；"
-                        "已登记动作必须等待人工审批"
+                        + (
+                            "只生成登记模板语句，不申请执行"
+                            if action_intent == ActionIntent.ADVISORY
+                            else "已登记动作必须等待人工审批"
+                        )
                         if controlled_action
                         else "仅执行当前 Target 的只读诊断查询"
                     ),
                 ),
                 success_criteria=compact.success_criteria,
-                requires_change=controlled_action,
+                action_intent=action_intent,
+                requires_change=(action_intent == ActionIntent.EXECUTE),
             ),
             plan=InvestigationPlan(
                 revision_no=1,
@@ -952,6 +997,8 @@ class TurnPlanningService:
         task_frame = investigation.task_frame.model_copy(
             update={"database_context": dict(target_context)}
         )
+        if task_frame.action_intent == ActionIntent.ADVISORY:
+            return investigation.model_copy(update={"task_frame": task_frame})
         actions = list(investigation.plan.actions)
         database_actions = [
             action for action in actions if action.tool_id.startswith("db.")

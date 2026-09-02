@@ -124,6 +124,9 @@ def safe_plan_projection(
                 str(value)
                 for value in task_frame.get("success_criteria") or ()
             ],
+            "action_intent": str(
+                task_frame.get("action_intent") or "NONE"
+            ),
             "requires_change": bool(
                 task_frame.get("requires_change", False)
             ),

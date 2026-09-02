@@ -107,6 +107,14 @@ class TaskObjective(StrEnum):
     VERIFY = "VERIFY"
 
 
+class ActionIntent(StrEnum):
+    """用户对登记动作的真实诉求，不与执行权限混为一谈。"""
+
+    NONE = "NONE"
+    ADVISORY = "ADVISORY"
+    EXECUTE = "EXECUTE"
+
+
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
     objectives: tuple[TaskObjective, ...] = Field(
@@ -119,7 +127,32 @@ class TaskFrame(AIOpsContract):
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
+    action_intent: ActionIntent = Field(
+        default=ActionIntent.NONE,
+        description=(
+            "NONE表示不需要动作；ADVISORY表示只生成或展示登记模板语句、"
+            "不请求执行；EXECUTE表示请求系统在审批后执行。"
+        ),
+    )
     requires_change: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_action_intent(cls, value):
+        """兼容旧 Artifact，并令执行标志只表达真实执行诉求。"""
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "action_intent" not in normalized:
+            normalized["action_intent"] = (
+                ActionIntent.EXECUTE
+                if bool(normalized.get("requires_change"))
+                else ActionIntent.NONE
+            )
+        normalized["requires_change"] = (
+            str(normalized["action_intent"]) == ActionIntent.EXECUTE
+        )
+        return normalized
 
     @model_validator(mode="after")
     def validate_objectives(self) -> "TaskFrame":
@@ -236,6 +269,12 @@ class CompactPlanningOutput(AIOpsContract):
 
     schema_version: str = COMPACT_PLANNING_SCHEMA_VERSION
     planning_mode: CompactPlanningMode
+    action_intent: ActionIntent = Field(
+        description=(
+            "NONE表示只读回答；ADVISORY表示只生成或展示登记动作模板的语句、"
+            "不执行；EXECUTE表示用户明确要求审批后执行。"
+        )
+    )
     problem_statement: str = Field(min_length=1, max_length=2000)
     success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)
     selected_tool_ids: tuple[str, ...] = Field(default=(), max_length=5)

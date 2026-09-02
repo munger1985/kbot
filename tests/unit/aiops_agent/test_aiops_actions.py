@@ -1695,15 +1695,47 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
             plan.decision_reasons,
         )
 
-    def test_readonly_agent_never_creates_approval_action(self) -> None:
+    def test_readonly_agent_returns_advisory_instead_of_losing_sql(self) -> None:
         plan = asyncio.run(
             ChatActionPlanHandler(
                 registry=self.registry,
                 execution_enabled=True,
             ).execute(self._context(allow_execution=False))
         )
-        self.assertEqual(plan.decision, "NO_ACTION")
-        self.assertIn("AGENT_EXECUTION_NOT_ALLOWED", plan.decision_reasons)
+        self.assertEqual(plan.decision, "ADVISORY")
+        self.assertEqual("ADVISORY", plan.actions[0].mode)
+        self.assertIn(
+            "EXECUTION_UNAVAILABLE_ADVISORY_PROVIDED",
+            plan.decision_reasons,
+        )
+
+    def test_advisory_intent_never_requires_execution_configuration(self) -> None:
+        base = self._context(allow_execution=False)
+        context = base.__class__(
+            **{
+                **base.__dict__,
+                "plan_snapshot": {
+                    **base.plan_snapshot,
+                    "answer_context": {
+                        "task_frame": {
+                            "action_intent": "ADVISORY",
+                            "requires_change": False,
+                        }
+                    },
+                },
+            }
+        )
+
+        plan = asyncio.run(
+            ChatActionPlanHandler(
+                registry=self.registry,
+                execution_enabled=True,
+            ).execute(context)
+        )
+
+        self.assertEqual("ADVISORY", plan.decision)
+        self.assertEqual("ADVISORY", plan.actions[0].mode)
+        self.assertIn("USER_REQUESTED_ADVISORY", plan.decision_reasons)
 
     def test_conflicting_actions_for_same_object_fail_closed(self) -> None:
         base = self._context()
@@ -1939,7 +1971,10 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
                     "target_capabilities": ["session_management"]
                 },
                 "answer_context": {
-                    "task_frame": {"requires_change": True}
+                    "task_frame": {
+                        "action_intent": "EXECUTE",
+                        "requires_change": True,
+                    }
                 },
                 "change_context": {
                     "target": {

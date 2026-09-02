@@ -249,6 +249,9 @@ class TurnTaskFrameView(AIOpsContract):
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     success_criteria: tuple[str, ...] = ()
+    action_intent: str = Field(
+        default="NONE", pattern=r"^(NONE|ADVISORY|EXECUTE)$"
+    )
     requires_change: bool = False
 
 

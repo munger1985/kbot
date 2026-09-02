@@ -576,10 +576,14 @@ content = """
 只读查询工具并严格遵守其 database_access、input 和 policy。不要额外查询已经绑定的逻辑
 Target 身份，系统会按需自动补充实际数据库身份核验。
 
-如果用户明确要求实际执行一个边界清晰的日常数据库运维动作，选择 CONTROLLED_ACTION，
-并只生成核验目标对象、当前状态和动作前置条件所需的最小只读 actions。收集统计信息等会
-改变数据库运维状态但不修改业务数据或表结构的操作也属于受控动作。不要生成或回显自由
-写 SQL；后续系统只会根据核验结果编译已登记 Action，并在人工审批后执行。
+必须单独输出 action_intent：用户只要求“生成、给出、展示、查看”某个动作的语句或脚本时，
+action_intent=ADVISORY；只有用户明确要求系统“执行、运行、应用”动作时才为 EXECUTE；纯只读
+问题为 NONE。ADVISORY 与 EXECUTE 都选择 CONTROLLED_ACTION，并只生成核验目标对象、当前
+状态和模板参数所需的最小只读 actions。ADVISORY 不核验执行凭据、变更权限或执行白名单，
+后续系统会根据可信事实生成已登记模板语句但不会执行。EXECUTE 才进入人工审批和执行能力
+判断。收集统计信息等会改变数据库运维状态但不修改业务数据或表结构的操作同样遵循该区分。
+不要把 PL/SQL 或变更语句交给动态只读 SQL 工具；不要生成或回显自由编写的 SQL，后续系统
+只会编译已登记 Action 模板。
 
 READ_ONLY_LOOKUP 或 CONTROLLED_ACTION 只有在能够生成参数完整的只读 actions 时才可作为
 精简计划直接执行。若结合最近对话仍无法可靠确定对象或参数，选择 FULL_INVESTIGATION，
@@ -614,6 +618,9 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有确实能区分假设或补齐回答所需事实时才安排工具。工具只能从
 available_tools 中选择；Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook
 不能阻止分析。
+task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示动作语句时为 ADVISORY，
+明确要求系统执行时为 EXECUTE，其他任务为 NONE。ADVISORY 不是执行请求，不得把执行凭据、
+变更权限或人工审批列为生成语句的前置条件；不得把 PL/SQL 或变更语句作为动态只读查询。
 target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
 列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
 不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
@@ -664,6 +671,8 @@ Oracle相对时间窗口优先使用SYSDATE减去数值bind；不要用MySQL日�
 字符串交给不匹配的TO_DATE格式。truncated=false的有界结果可以证明当前谓词结果完整；
 truncated=true时使用COUNT和稳定排序分页，不得通过取消max_rows来补齐结果。
 如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
+必须保留 task_frame.action_intent：ADVISORY 只生成登记模板语句，不核验执行权限、凭据或
+审批；EXECUTE 才申请审批后执行。PL/SQL 和变更语句都不得作为动态只读查询。
 """
 
 [[prompts]]
@@ -684,6 +693,8 @@ content = """
 不是能力白名单。不得虚构工具、证据或执行结果。
 target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
 查询所需的实例身份前置证据。
+必须沿用原 task_frame.action_intent；ADVISORY 不得升级为执行请求，也不得因执行权限、凭据
+或审批条件不足而放弃生成登记模板语句。
 """
 
 [[prompts]]
@@ -729,8 +740,10 @@ content = """
    项目声明为缺失；零行证据表示当前没有匹配对象，不等于未取证。
 6. 不输出未经审批的变更执行承诺；可以解释只读观察结果和下一步诊断方向。
 7. 使用简洁、清晰的中文Markdown；只有内容确实需要时才使用小标题或列表。
-8. 不自行编造供用户执行的SQL。truncated=false的有界查询是完整证据；只有truncated=true
-   才能说明结果被截断，并建议由系统继续执行COUNT和稳定排序分页。
+8. 不自行编造供用户执行的SQL。proposal_summary 是服务端根据登记 Action 模板生成的权威
+   结果；存在时应明确告知用户语句已经生成，并准确区分 ADVISORY_READY 与待审批执行，不能
+   再以执行权限、执行凭据或审批未核验为由拒绝提供。truncated=false的有界查询是完整证据；
+   只有truncated=true才能说明结果被截断，并建议由系统继续执行COUNT和稳定排序分页。
 """
 
 [[prompts]]
@@ -757,8 +770,10 @@ content = """
 观察到当前没有匹配对象，不等于未取证。原始表格和图表由服务端展示，正文只提炼结论，
 不复制大段行数据。对于原理解释、方案讨论等无需外部事实的问题，可以使用专业 DBA 知识
 直接回答，但必须区分通用知识和当前环境事实。不得承诺执行未经审批的变更。
-不得自行编造供用户执行的SQL，也不得把truncated=false的有界结果说成“不完整”或要求
-取消行数上限；truncated=true时应由系统继续执行COUNT和稳定排序分页。
+不得自行编造供用户执行的SQL。proposal_summary 是服务端根据登记 Action 模板生成的权威
+结果；存在时应明确告知用户语句已经生成，并准确区分 ADVISORY_READY 与待审批执行，不能
+再以执行权限、执行凭据或审批未核验为由拒绝提供。不得把truncated=false的有界结果说成
+“不完整”或要求取消行数上限；truncated=true时应由系统继续执行COUNT和稳定排序分页。
 """
 
 [[prompts]]

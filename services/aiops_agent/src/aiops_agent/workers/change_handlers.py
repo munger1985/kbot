@@ -364,7 +364,14 @@ class ChatActionPlanHandler:
                 "task_frame", {}
             )
         )
-        if not bool(task_frame.get("requires_change")):
+        action_intent = str(task_frame.get("action_intent") or "")
+        if not action_intent:
+            action_intent = (
+                "EXECUTE"
+                if bool(task_frame.get("requires_change"))
+                else "NONE"
+            )
+        if action_intent == "NONE":
             return self._empty(context, policy_hash, "CHANGE_NOT_REQUESTED")
         capabilities = set(
             dict(context.plan_snapshot.get("capability_snapshot", {})).get(
@@ -383,8 +390,6 @@ class ChatActionPlanHandler:
         actions = []
         for template in templates:
             definition = template.definition
-            if definition.action_template_id not in allowed_actions:
-                continue
             compiled = self._compilers.compile_turn(
                 compiler_id=definition.compiler_id,
                 assessment=assessment,
@@ -399,9 +404,11 @@ class ChatActionPlanHandler:
             except ValueError:
                 continue
             can_execute = (
-                self._execution_enabled
+                action_intent == "EXECUTE"
+                and self._execution_enabled
                 and context.trigger_type == "CHAT"
                 and action_policy.get("enabled") is True
+                and definition.action_template_id in allowed_actions
                 and target.get("status") == "ENABLED"
                 and target.get("connectivity_status")
                 in {"CONNECTED", "DEGRADED"}
@@ -410,11 +417,6 @@ class ChatActionPlanHandler:
                 == "EXECUTABLE_AFTER_APPROVAL"
             )
             mode = "AGENT_EXECUTE" if can_execute else "ADVISORY"
-            if (
-                rendered.execution_mode == "EXECUTABLE_AFTER_APPROVAL"
-                and not can_execute
-            ):
-                continue
             actions.append(
                 ActionPlanItem(
                     ordinal=len(actions) + 1,
@@ -465,12 +467,11 @@ class ChatActionPlanHandler:
             return self._empty(
                 context,
                 policy_hash,
-                (
-                    "AGENT_EXECUTION_NOT_ALLOWED"
-                    if not allowed_actions
-                    else "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE"
-                ),
+                "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE",
             )
+        execution_selected = any(
+            item.mode == "AGENT_EXECUTE" for item in actions
+        )
         return ActionPlan(
             solution_group_key=f"turn:{context.run_id}:change",
             target_id=context.target_id,
@@ -478,10 +479,18 @@ class ChatActionPlanHandler:
             actions=tuple(actions),
             decision=(
                 "AGENT_EXECUTE"
-                if any(item.mode == "AGENT_EXECUTE" for item in actions)
+                if execution_selected
                 else "ADVISORY"
             ),
-            decision_reasons=("MUTATION_POLICY_ALLOWED",),
+            decision_reasons=(
+                (
+                    "MUTATION_POLICY_ALLOWED"
+                    if execution_selected
+                    else "USER_REQUESTED_ADVISORY"
+                    if action_intent == "ADVISORY"
+                    else "EXECUTION_UNAVAILABLE_ADVISORY_PROVIDED"
+                ),
+            ),
             policy_decision_hash=policy_hash,
             action_catalog_hash=self._registry.catalog_hash,
         )
