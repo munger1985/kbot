@@ -140,6 +140,78 @@ class AIOpsRunResultTest(unittest.TestCase):
         self.assertIsNone(result.final_artifact)
         self.assertIsNone(result.payload)
 
+    def test_situation_groups_repeated_events_by_monitoring_source(self) -> None:
+        now = datetime.now(UTC)
+        situation_id = uuid7()
+        source_id = uuid7()
+        run_id = uuid7()
+        situation = SimpleNamespace(
+            situation_id=situation_id,
+            target_id=uuid7(),
+            situation_type="database.alert_log_problem",
+            title="Oracle Alert Log 检测到异常",
+            summary="检测到 ORA-04031",
+            status="OPEN",
+            severity="CRITICAL",
+            event_count=342,
+            row_version=8,
+            first_observed_at=now,
+            last_observed_at=now,
+            resolved_at=None,
+        )
+        situations = SimpleNamespace(
+            get_situation_scoped=AsyncMock(return_value=situation),
+            summarize_sources_for_situation=AsyncMock(
+                return_value=[
+                    {
+                        "diagnostic_source_id": source_id,
+                        "display_name": "Oracle Alert Log",
+                        "source_type": "ALERTMANAGER",
+                        "event_count": 342,
+                        "latest_event_class": "database.alert_log_problem",
+                        "latest_severity": "CRITICAL",
+                        "latest_status": "OPEN",
+                        "latest_summary": "检测到 ORA-04031",
+                        "first_observed_at": now,
+                        "last_observed_at": now,
+                    }
+                ]
+            ),
+            list_events_for_situation=AsyncMock(return_value=[]),
+        )
+        runs = SimpleNamespace(
+            list_by_situation=AsyncMock(
+                return_value=[SimpleNamespace(ops_run_id=run_id)]
+            )
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: _context(
+                SimpleNamespace(situations=situations, runs=runs)
+            ),
+            blueprint_registry=Mock(),
+            handler_registry=Mock(),
+        )
+
+        result = asyncio.run(
+            service.get_situation(
+                situation_id=situation_id,
+                domain_id=200,
+            )
+        )
+
+        self.assertEqual(342, result.event_count)
+        self.assertEqual(1, len(result.monitoring_sources))
+        self.assertEqual(
+            "Oracle Alert Log",
+            result.monitoring_sources[0].display_name,
+        )
+        self.assertEqual(342, result.monitoring_sources[0].event_count)
+        self.assertEqual((run_id,), result.run_ids)
+        situations.list_events_for_situation.assert_awaited_once_with(
+            situation_id=situation_id,
+            limit=20,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

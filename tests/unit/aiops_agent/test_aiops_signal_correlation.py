@@ -567,6 +567,28 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SituationStateRepositoryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_situation_source_summary_uses_bounded_analytic_projection(
+        self,
+    ) -> None:
+        result = Mock()
+        result.mappings.return_value.all.return_value = []
+        session = Mock()
+        session.execute = AsyncMock(return_value=result)
+        repository = SituationRepository(session)
+
+        rows = await repository.summarize_sources_for_situation(
+            situation_id=uuid7()
+        )
+
+        self.assertEqual([], rows)
+        statement = session.execute.await_args.args[0]
+        sql = str(statement.compile(dialect=oracle.dialect())).upper()
+        self.assertIn("ROW_NUMBER() OVER", sql)
+        self.assertIn("COUNT(", sql)
+        self.assertIn("PARTITION BY", sql)
+        self.assertIn("KBOT_OPS_DIAGNOSTIC_SOURCE", sql)
+        self.assertIn("SOURCE_RANK =", sql)
+
     async def test_latest_auto_run_outbox_query_accepts_legacy_and_generation_keys(
         self,
     ) -> None:

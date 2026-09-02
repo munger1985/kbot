@@ -82,11 +82,32 @@
     return `<details class="ops-evidence"><summary>诊断依据 <span>${facts.length} 项已验证事实</span></summary><div class="ops-evidence-body">${rootRow}${factRows}${gapRows}</div></details>`;
   }
 
-  function situationEvidence(detail) {
-    const events = values(detail?.signal_events);
-    if (!events.length) return '<p class="ops-evidence-empty">当前情境没有可展示的监控信号。</p>';
-    const rows = events.map((item) => `<li><span>${esc(item.summary || item.event_class || "监控信号")}</span><small>${esc(item.event_class || item.signal_kind || "SIGNAL")} · ${esc(item.severity || "UNKNOWN")} · ${esc(item.normalized_status || "UNKNOWN")}${item.occurred_at ? ` · ${esc(shell.fmt(item.occurred_at))}` : ""}</small></li>`).join("");
-    return `<details class="ops-evidence" open><summary>关联监控信号 <span>${events.length} 条</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${rows}</ol></div></details>`;
+  function monitoringSourceSummary(detail) {
+    const sources = values(detail?.monitoring_sources);
+    if (!sources.length) return '<p class="ops-evidence-empty">当前情境没有可展示的监控来源。</p>';
+    const rows = sources.map((item) => `<li><span><strong>${esc(item.display_name || "未命名监控来源")}</strong> ${shell.badge(item.latest_status)}</span><small>${esc(item.source_type || "UNKNOWN")} · 累计 ${esc(item.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(item.last_observed_at))}</small></li>`).join("");
+    return `<details class="ops-evidence" open><summary>监控来源 <span>${sources.length} 个</span></summary><div class="ops-evidence-body"><ol class="ops-evidence-list">${rows}</ol></div></details>`;
+  }
+
+  function situationAlertContent(detail) {
+    const sources = values(detail?.monitoring_sources);
+    const latestRows = sources.map((item) => `<li><span>${esc(item.latest_summary || detail.summary || detail.title)}</span><small>${esc(item.latest_event_class || "ALERT")} · ${esc(item.latest_severity || detail.severity)} · ${esc(shell.fmt(item.last_observed_at))}</small></li>`).join("");
+    const content = latestRows || `<p>${esc(detail.summary || detail.title)}</p>`;
+    return `<details class="ops-evidence" open><summary>告警内容 <span>最新状态</span></summary><div class="ops-evidence-body">${latestRows ? `<ol class="ops-evidence-list">${content}</ol>` : content}</div></details>`;
+  }
+
+  function situationStatusText(status) {
+    const labels = {
+      OPEN: "持续告警，仍有未恢复信号",
+      RESOLVED: "已恢复",
+      ACKNOWLEDGED: "已确认",
+      INVESTIGATING: "诊断中",
+      DIAGNOSED: "已诊断",
+      MITIGATING: "处理中",
+      OBSERVING: "观察中",
+      SUPPRESSED: "已抑制",
+    };
+    return labels[String(status || "").toUpperCase()] || String(status || "未知状态");
   }
 
   function messageHtml(role, text, meta = "", supplemental = "") {
@@ -842,7 +863,7 @@
       } else {
         diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
       }
-      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${detail.event_count} 个监控信号 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${situationEvidence(detail)}${diagnosis}${continueForm(source, detail.title)}`;
+      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${esc(situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${continueForm(source, detail.title)}`;
       await bindContinue(source);
       const runActive = !run || !terminalRunStatuses.has(run.status);
       if (runActive) scheduleSituationRefresh(item, 3000);

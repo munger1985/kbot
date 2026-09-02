@@ -159,6 +159,22 @@ class SignalEventSummary(AIOpsContract):
     occurred_at: UtcDatetime
 
 
+class SituationMonitoringSourceSummary(AIOpsContract):
+    """告警情境中同一监控来源的聚合摘要。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    diagnostic_source_id: UUIDv7
+    display_name: str
+    source_type: str
+    event_count: int = Field(ge=1)
+    latest_event_class: str
+    latest_severity: str
+    latest_status: str
+    latest_summary: str | None = None
+    first_observed_at: UtcDatetime
+    last_observed_at: UtcDatetime
+
+
 class SituationSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     situation_id: UUIDv7
@@ -176,6 +192,7 @@ class SituationSummary(AIOpsContract):
 
 
 class SituationView(SituationSummary):
+    monitoring_sources: tuple[SituationMonitoringSourceSummary, ...] = ()
     signal_events: tuple[SignalEventSummary, ...] = ()
     run_ids: tuple[UUIDv7, ...] = ()
 

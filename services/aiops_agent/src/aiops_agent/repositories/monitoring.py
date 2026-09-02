@@ -365,6 +365,67 @@ class SituationRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def summarize_sources_for_situation(
+        self, *, situation_id: UUID
+    ) -> list[dict]:
+        """按监控来源聚合情境事件，并保留每个来源的最新告警内容。"""
+        self._check_active()
+        source_partition = SignalEventEntity.diagnostic_source_id
+        ranked = (
+            select(
+                SignalEventEntity.diagnostic_source_id.label(
+                    "diagnostic_source_id"
+                ),
+                DiagnosticSourceEntity.display_name.label("display_name"),
+                DiagnosticSourceEntity.source_type.label("source_type"),
+                SignalEventEntity.event_class.label("latest_event_class"),
+                SignalEventEntity.severity.label("latest_severity"),
+                SignalEventEntity.normalized_status.label("latest_status"),
+                SignalEventEntity.summary.label("latest_summary"),
+                func.count(SignalEventEntity.signal_event_id)
+                .over(partition_by=source_partition)
+                .label("event_count"),
+                func.min(SignalEventEntity.occurred_at)
+                .over(partition_by=source_partition)
+                .label("first_observed_at"),
+                func.max(SignalEventEntity.occurred_at)
+                .over(partition_by=source_partition)
+                .label("last_observed_at"),
+                func.row_number()
+                .over(
+                    partition_by=source_partition,
+                    order_by=(
+                        SignalEventEntity.occurred_at.desc(),
+                        SignalEventEntity.signal_event_id.desc(),
+                    ),
+                )
+                .label("source_rank"),
+            )
+            .select_from(SituationEventEntity)
+            .join(
+                SignalEventEntity,
+                SignalEventEntity.signal_event_id
+                == SituationEventEntity.signal_event_id,
+            )
+            .join(
+                DiagnosticSourceEntity,
+                DiagnosticSourceEntity.diagnostic_source_id
+                == SignalEventEntity.diagnostic_source_id,
+            )
+            .where(SituationEventEntity.situation_id == situation_id)
+            .subquery()
+        )
+        statement = (
+            select(ranked)
+            .where(ranked.c.source_rank == 1)
+            .order_by(
+                ranked.c.last_observed_at.desc(),
+                ranked.c.diagnostic_source_id,
+            )
+        )
+        rows = (await self._session.execute(statement)).mappings().all()
+        return [dict(row) for row in rows]
+
     async def get_event_by_source(
         self,
         *,

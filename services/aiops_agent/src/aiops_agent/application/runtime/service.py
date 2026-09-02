@@ -138,6 +138,7 @@ from platform_core.contracts.aiops.public import (
     ReportVersionSummary,
     ReportView,
     SignalEventSummary,
+    SituationMonitoringSourceSummary,
     SituationPage,
     SituationSummary,
     SituationView,
@@ -5287,10 +5288,22 @@ class AIOpsRuntimeService:
             )
             if situation is None:
                 raise resource_not_found("Situation")
-            events = await uow.situations.list_events_for_situation(situation_id=situation_id)
+            source_summaries = (
+                await uow.situations.summarize_sources_for_situation(
+                    situation_id=situation_id
+                )
+            )
+            events = await uow.situations.list_events_for_situation(
+                situation_id=situation_id,
+                limit=20,
+            )
             runs = await uow.runs.list_by_situation(situation_id=situation_id)
             return SituationView(
                 **self._situation_summary(situation).model_dump(),
+                monitoring_sources=tuple(
+                    SituationMonitoringSourceSummary(**item)
+                    for item in source_summaries
+                ),
                 signal_events=tuple(SignalEventSummary(
                     signal_event_id=item.signal_event_id,
                     diagnostic_source_id=item.diagnostic_source_id,

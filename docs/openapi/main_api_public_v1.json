@@ -8579,6 +8579,81 @@
         "title": "SignalEventSummary",
         "type": "object"
       },
+      "SituationMonitoringSourceSummary": {
+        "additionalProperties": false,
+        "description": "告警情境中同一监控来源的聚合摘要。",
+        "properties": {
+          "diagnostic_source_id": {
+            "format": "uuid",
+            "title": "Diagnostic Source Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "event_count": {
+            "minimum": 1.0,
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "first_observed_at": {
+            "format": "date-time",
+            "title": "First Observed At",
+            "type": "string"
+          },
+          "last_observed_at": {
+            "format": "date-time",
+            "title": "Last Observed At",
+            "type": "string"
+          },
+          "latest_event_class": {
+            "title": "Latest Event Class",
+            "type": "string"
+          },
+          "latest_severity": {
+            "title": "Latest Severity",
+            "type": "string"
+          },
+          "latest_status": {
+            "title": "Latest Status",
+            "type": "string"
+          },
+          "latest_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Summary"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "diagnostic_source_id",
+          "display_name",
+          "source_type",
+          "event_count",
+          "latest_event_class",
+          "latest_severity",
+          "latest_status",
+          "first_observed_at",
+          "last_observed_at"
+        ],
+        "title": "SituationMonitoringSourceSummary",
+        "type": "object"
+      },
       "SituationPage": {
         "additionalProperties": false,
         "properties": {
@@ -8726,6 +8801,14 @@
             "format": "date-time",
             "title": "Last Observed At",
             "type": "string"
+          },
+          "monitoring_sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SituationMonitoringSourceSummary"
+            },
+            "title": "Monitoring Sources",
+            "type": "array"
           },
           "resolved_at": {
             "anyOf": [

@@ -69,6 +69,10 @@ class SituationRepositoryPort(Protocol):
 
     async def add_situation(self, entity: SituationEntity) -> SituationEntity: ...
 
+    async def summarize_sources_for_situation(
+        self, *, situation_id: UUID
+    ) -> list[dict]: ...
+
 
 class OpsRunRepositoryPort(Protocol):
     async def add_run(self, entity: OpsRunEntity) -> OpsRunEntity: ...
