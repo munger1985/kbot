@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -90,6 +90,37 @@ class OutboxRepository(AIOpsRepository):
         self._check_active()
         statement = select(OutboxEntity).where(
             OutboxEntity.idempotency_key == idempotency_key
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_latest_by_idempotency_prefix(
+        self,
+        *,
+        aggregate_type: str,
+        aggregate_id: UUID,
+        idempotency_prefix: str,
+        event_type: str,
+    ) -> OutboxEntity | None:
+        """读取一个业务幂等范围内最近创建的 Outbox，兼容旧固定键。"""
+        self._check_active()
+        statement = (
+            select(OutboxEntity)
+            .where(
+                OutboxEntity.aggregate_type == aggregate_type,
+                OutboxEntity.aggregate_id == aggregate_id,
+                OutboxEntity.event_type == event_type,
+                or_(
+                    OutboxEntity.idempotency_key == idempotency_prefix,
+                    OutboxEntity.idempotency_key.like(
+                        f"{idempotency_prefix}:%"
+                    ),
+                ),
+            )
+            .order_by(
+                OutboxEntity.created_at.desc(),
+                OutboxEntity.outbox_id.desc(),
+            )
+            .limit(1)
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 

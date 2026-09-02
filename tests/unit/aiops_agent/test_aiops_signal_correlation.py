@@ -1,7 +1,7 @@
 """SignalEvent 与跨来源 Situation 确定性关联测试。"""
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -19,6 +19,7 @@ from aiops_agent.repositories.monitoring import (
     DiagnosticSourceRepository,
     SituationRepository,
 )
+from aiops_agent.repositories.messaging import OutboxRepository
 from platform_core.identity import uuid7
 from sqlalchemy.dialects import oracle
 
@@ -28,18 +29,27 @@ class SituationCorrelationTest(unittest.TestCase):
         first = _auto_run_idempotency_key(
             situation_id="situation-1",
             agent_id="agent-1",
+            signal_event_id="signal-1",
         )
         second = _auto_run_idempotency_key(
             situation_id="situation-2",
             agent_id="agent-1",
+            signal_event_id="signal-1",
+        )
+        next_generation = _auto_run_idempotency_key(
+            situation_id="situation-1",
+            agent_id="agent-1",
+            signal_event_id="signal-2",
         )
 
         self.assertNotEqual(first, second)
+        self.assertNotEqual(first, next_generation)
         self.assertEqual(
             first,
             _auto_run_idempotency_key(
                 situation_id="situation-1",
                 agent_id="agent-1",
+                signal_event_id="signal-1",
             ),
         )
 
@@ -192,7 +202,8 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
             now=datetime(2026, 9, 1, tzinfo=UTC),
         )
 
-        self.assertEqual(binding, result)
+        self.assertEqual(binding, result[0])
+        self.assertEqual(900, result[1])
 
     async def test_auto_agent_logs_target_fallback_selection(self) -> None:
         service = object.__new__(SignalEventIntakeService)
@@ -234,7 +245,7 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
                 now=datetime(2026, 9, 1, tzinfo=UTC),
             )
 
-        self.assertEqual(binding, result)
+        self.assertEqual(binding, result[0])
         self.assertEqual(
             "TARGET_AGENT_FALLBACK",
             log.bind.call_args.kwargs["reason"],
@@ -320,7 +331,7 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
             now=now,
         )
 
-        self.assertEqual(binding, result)
+        self.assertEqual(binding, result[0])
 
     async def test_recent_diagnosis_cools_down_same_situation(self) -> None:
         service = object.__new__(SignalEventIntakeService)
@@ -370,6 +381,148 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual("COOLDOWN_ACTIVE", log.bind.call_args.kwargs["reason"])
 
+    async def test_auto_run_deduplicates_in_progress_outbox(self) -> None:
+        for status in ("PENDING", "PUBLISHING", "RETRY_WAIT"):
+            with self.subTest(status=status):
+                service, uow, context = self._auto_run_enqueue_context(
+                    latest=SimpleNamespace(
+                        outbox_id=uuid7(),
+                        status=status,
+                    )
+                )
+                with patch(
+                    "aiops_agent.application.diagnostic_sources."
+                    "webhook_intake.logger"
+                ) as log:
+                    await service._enqueue_auto_run(
+                        uow=uow,
+                        cooldown_seconds=900,
+                        **context,
+                    )
+
+                uow.outbox.add.assert_not_awaited()
+                self.assertEqual(
+                    "OUTBOX_IN_PROGRESS",
+                    log.bind.call_args.kwargs["reason"],
+                )
+                self.assertEqual(
+                    status,
+                    log.bind.call_args.kwargs["outbox_status"],
+                )
+
+    async def test_auto_run_deduplicates_published_outbox_during_cooldown(
+        self,
+    ) -> None:
+        now = datetime(2026, 9, 2, tzinfo=UTC)
+        service, uow, context = self._auto_run_enqueue_context(
+            now=now,
+            latest=SimpleNamespace(
+                outbox_id=uuid7(),
+                status="PUBLISHED",
+                published_at=now - timedelta(seconds=899),
+                updated_at=now,
+                created_at=now,
+            ),
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            await service._enqueue_auto_run(
+                uow=uow,
+                cooldown_seconds=900,
+                **context,
+            )
+
+        uow.outbox.add.assert_not_awaited()
+        self.assertEqual(
+            "OUTBOX_COOLDOWN_ACTIVE",
+            log.bind.call_args.kwargs["reason"],
+        )
+
+    async def test_auto_run_requeues_published_outbox_after_cooldown(
+        self,
+    ) -> None:
+        now = datetime(2026, 9, 2, tzinfo=UTC)
+        service, uow, context = self._auto_run_enqueue_context(
+            now=now,
+            latest=SimpleNamespace(
+                outbox_id=uuid7(),
+                status="PUBLISHED",
+                published_at=now - timedelta(seconds=900),
+                updated_at=now,
+                created_at=now,
+            ),
+        )
+
+        await service._enqueue_auto_run(
+            uow=uow,
+            cooldown_seconds=900,
+            **context,
+        )
+
+        created = uow.outbox.add.await_args.args[0]
+        self.assertIn(
+            f":signal:{context['event_entity'].signal_event_id}",
+            created.idempotency_key,
+        )
+
+    async def test_auto_run_requeues_after_failed_outbox(self) -> None:
+        service, uow, context = self._auto_run_enqueue_context(
+            latest=SimpleNamespace(
+                outbox_id=uuid7(),
+                status="FAILED",
+            )
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            await service._enqueue_auto_run(
+                uow=uow,
+                cooldown_seconds=900,
+                **context,
+            )
+
+        uow.outbox.add.assert_awaited_once()
+        self.assertEqual(
+            "PREVIOUS_OUTBOX_FAILED",
+            log.bind.call_args.kwargs["reason"],
+        )
+
+    @staticmethod
+    def _auto_run_enqueue_context(*, latest=None, now=None):
+        service = object.__new__(SignalEventIntakeService)
+        current_time = now or datetime(2026, 9, 2, tzinfo=UTC)
+        target = SimpleNamespace(
+            domain_id=7,
+            target_id=uuid7(),
+        )
+        situation = SimpleNamespace(
+            situation_id=uuid7(),
+            severity="CRITICAL",
+        )
+        event_entity = SimpleNamespace(
+            signal_event_id=uuid7(),
+            diagnostic_source_id=uuid7(),
+            occurred_at=current_time,
+        )
+        outbox = SimpleNamespace(
+            get_latest_by_idempotency_prefix=AsyncMock(
+                return_value=latest
+            ),
+            get_by_idempotency=AsyncMock(return_value=None),
+            add=AsyncMock(),
+        )
+        return service, SimpleNamespace(outbox=outbox), {
+            "target": target,
+            "situation": situation,
+            "event_entity": event_entity,
+            "agent_id": uuid7(),
+            "trace_id": "trace-auto-alert",
+            "now": current_time,
+        }
+
     async def test_duplicate_unmatched_target_remains_rejected(self) -> None:
         uow = SimpleNamespace(
             situations=SimpleNamespace(
@@ -414,6 +567,31 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
 
 
 class SituationStateRepositoryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_latest_auto_run_outbox_query_accepts_legacy_and_generation_keys(
+        self,
+    ) -> None:
+        result = Mock()
+        result.scalar_one_or_none.return_value = None
+        session = Mock()
+        session.execute = AsyncMock(return_value=result)
+        repository = OutboxRepository(session)
+
+        await repository.get_latest_by_idempotency_prefix(
+            aggregate_type="SITUATION",
+            aggregate_id=uuid7(),
+            idempotency_prefix="situation:s1:agent:a1:observe-run",
+            event_type="OPS_SITUATION_AUTO_RUN_REQUESTED",
+        )
+
+        statement = session.execute.await_args.args[0]
+        sql = str(statement.compile(dialect=oracle.dialect())).upper()
+        self.assertIn("IDEMPOTENCY_KEY =", sql)
+        self.assertIn("IDEMPOTENCY_KEY LIKE", sql)
+        self.assertIn("AGGREGATE_TYPE =", sql)
+        self.assertIn("AGGREGATE_ID =", sql)
+        self.assertIn("EVENT_TYPE =", sql)
+        self.assertIn("ORDER BY", sql)
+
     async def test_webhook_route_uses_enablement_not_connectivity_as_gate(
         self,
     ) -> None:

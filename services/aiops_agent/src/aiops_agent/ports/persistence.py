@@ -136,6 +136,19 @@ class InboxRepositoryPort(Protocol):
 class OutboxRepositoryPort(Protocol):
     async def add(self, entity: OutboxEntity) -> OutboxEntity: ...
 
+    async def get_by_idempotency(
+        self, *, idempotency_key: str
+    ) -> OutboxEntity | None: ...
+
+    async def get_latest_by_idempotency_prefix(
+        self,
+        *,
+        aggregate_type: str,
+        aggregate_id: UUID,
+        idempotency_prefix: str,
+        event_type: str,
+    ) -> OutboxEntity | None: ...
+
     async def claim(
         self,
         *,

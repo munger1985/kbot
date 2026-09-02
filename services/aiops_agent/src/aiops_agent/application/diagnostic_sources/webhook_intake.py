@@ -49,11 +49,22 @@ _SEVERITY_RANK = {
 }
 
 
-def _auto_run_idempotency_key(
+def _auto_run_idempotency_prefix(
     *, situation_id: Any, agent_id: Any
 ) -> str:
-    """按 Situation 和 Agent 生成自动诊断请求幂等键。"""
+    """生成同一 Situation 与 Agent 的自动诊断幂等范围。"""
     return f"situation:{situation_id}:agent:{agent_id}:observe-run"
+
+
+def _auto_run_idempotency_key(
+    *, situation_id: Any, agent_id: Any, signal_event_id: Any
+) -> str:
+    """按触发 Signal Event 生成一代自动诊断请求幂等键。"""
+    prefix = _auto_run_idempotency_prefix(
+        situation_id=situation_id,
+        agent_id=agent_id,
+    )
+    return f"{prefix}:signal:{signal_event_id}"
 
 
 def _source_target_not_found() -> AIOpsApplicationError:
@@ -526,8 +537,9 @@ class SignalEventIntakeService:
                 situation.status = "RESOLVED"
                 situation.resolved_at = event.occurred_at
         auto_agent = None
+        auto_run_cooldown_seconds = 0
         if situation is not None and situation.status != "RESOLVED":
-            auto_agent = await self._resolve_auto_agent(
+            auto_agent_selection = await self._resolve_auto_agent(
                 uow=uow,
                 target=target,
                 source_id=source.diagnostic_source_id,
@@ -536,6 +548,8 @@ class SignalEventIntakeService:
                 fingerprint=situation.correlation_hash,
                 now=now,
             )
+            if auto_agent_selection is not None:
+                auto_agent, auto_run_cooldown_seconds = auto_agent_selection
         if (
             situation is not None
             and situation.status != "RESOLVED"
@@ -552,6 +566,7 @@ class SignalEventIntakeService:
                     situation=situation,
                     event_entity=entity,
                     agent_id=auto_agent.agent_id,
+                    cooldown_seconds=auto_run_cooldown_seconds,
                     trace_id=trace_id,
                     now=now,
                 )
@@ -702,7 +717,7 @@ class SignalEventIntakeService:
             severity=severity,
             agent_id=binding.agent_id,
         )
-        return binding
+        return binding, cooldown_seconds
 
     @staticmethod
     def _log_auto_agent_decision(
@@ -716,6 +731,8 @@ class SignalEventIntakeService:
         agent_id=None,
         minimum_severity: str | None = None,
         cooldown_seconds: int | None = None,
+        outbox_id=None,
+        outbox_status: str | None = None,
     ) -> None:
         """记录不含凭据和原始告警内容的自动诊断决策。"""
         logger.bind(
@@ -729,6 +746,8 @@ class SignalEventIntakeService:
             agent_id=str(agent_id) if agent_id is not None else None,
             minimum_severity=minimum_severity,
             cooldown_seconds=cooldown_seconds,
+            outbox_id=(str(outbox_id) if outbox_id is not None else None),
+            outbox_status=outbox_status,
         ).info(
             "自动告警诊断决策：decision={} reason={} target_id={} "
             "source_id={} situation_id={} severity={} agent_id={}",
@@ -749,19 +768,76 @@ class SignalEventIntakeService:
         situation,
         event_entity,
         agent_id,
+        cooldown_seconds: int,
         trace_id: str,
         now: datetime,
     ) -> None:
-        idempotency_key = _auto_run_idempotency_key(
+        idempotency_prefix = _auto_run_idempotency_prefix(
             situation_id=situation.situation_id,
             agent_id=agent_id,
         )
-        if (
-            await uow.outbox.get_by_idempotency(
-                idempotency_key=idempotency_key
+        latest = await uow.outbox.get_latest_by_idempotency_prefix(
+            aggregate_type="SITUATION",
+            aggregate_id=situation.situation_id,
+            idempotency_prefix=idempotency_prefix,
+            event_type="OPS_SITUATION_AUTO_RUN_REQUESTED",
+        )
+        if latest is not None and latest.status in {
+            "PENDING",
+            "PUBLISHING",
+            "RETRY_WAIT",
+        }:
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="OUTBOX_IN_PROGRESS",
+                target_id=target.target_id,
+                source_id=event_entity.diagnostic_source_id,
+                situation_id=situation.situation_id,
+                severity=situation.severity,
+                agent_id=agent_id,
+                cooldown_seconds=cooldown_seconds,
+                outbox_id=latest.outbox_id,
+                outbox_status=latest.status,
             )
-            is not None
-        ):
+            return
+        if latest is not None and latest.status == "PUBLISHED":
+            published_at = (
+                latest.published_at
+                or latest.updated_at
+                or latest.created_at
+            )
+            if (now - published_at).total_seconds() < cooldown_seconds:
+                self._log_auto_agent_decision(
+                    decision="SKIPPED",
+                    reason="OUTBOX_COOLDOWN_ACTIVE",
+                    target_id=target.target_id,
+                    source_id=event_entity.diagnostic_source_id,
+                    situation_id=situation.situation_id,
+                    severity=situation.severity,
+                    agent_id=agent_id,
+                    cooldown_seconds=cooldown_seconds,
+                    outbox_id=latest.outbox_id,
+                    outbox_status=latest.status,
+                )
+                return
+        idempotency_key = _auto_run_idempotency_key(
+            situation_id=situation.situation_id,
+            agent_id=agent_id,
+            signal_event_id=event_entity.signal_event_id,
+        )
+        if await uow.outbox.get_by_idempotency(
+            idempotency_key=idempotency_key
+        ) is not None:
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="SIGNAL_GENERATION_ALREADY_ENQUEUED",
+                target_id=target.target_id,
+                source_id=event_entity.diagnostic_source_id,
+                situation_id=situation.situation_id,
+                severity=situation.severity,
+                agent_id=agent_id,
+                cooldown_seconds=cooldown_seconds,
+            )
             return
         payload = {
             "domain_id": int(target.domain_id),
@@ -772,22 +848,37 @@ class SignalEventIntakeService:
             "occurred_at": event_entity.occurred_at.isoformat(),
             "trace_id": trace_id,
         }
-        await uow.outbox.add(
-            OutboxEntity(
-                outbox_id=uuid7(),
-                aggregate_type="SITUATION",
-                aggregate_id=situation.situation_id,
-                event_type="OPS_SITUATION_AUTO_RUN_REQUESTED",
-                idempotency_key=idempotency_key,
-                payload_json=payload,
-                payload_hash=hashlib.sha256(
-                    canonical_bytes(payload)
-                ).hexdigest(),
-                status="PENDING",
-                available_at=now,
-                max_attempts=8,
-                trace_id=trace_id,
-                created_at=now,
-                updated_at=now,
-            )
+        outbox = OutboxEntity(
+            outbox_id=uuid7(),
+            aggregate_type="SITUATION",
+            aggregate_id=situation.situation_id,
+            event_type="OPS_SITUATION_AUTO_RUN_REQUESTED",
+            idempotency_key=idempotency_key,
+            payload_json=payload,
+            payload_hash=hashlib.sha256(
+                canonical_bytes(payload)
+            ).hexdigest(),
+            status="PENDING",
+            available_at=now,
+            max_attempts=8,
+            trace_id=trace_id,
+            created_at=now,
+            updated_at=now,
+        )
+        await uow.outbox.add(outbox)
+        self._log_auto_agent_decision(
+            decision="ENQUEUED",
+            reason=(
+                "PREVIOUS_OUTBOX_FAILED"
+                if latest is not None and latest.status == "FAILED"
+                else "NEW_DIAGNOSIS_GENERATION"
+            ),
+            target_id=target.target_id,
+            source_id=event_entity.diagnostic_source_id,
+            situation_id=situation.situation_id,
+            severity=situation.severity,
+            agent_id=agent_id,
+            cooldown_seconds=cooldown_seconds,
+            outbox_id=outbox.outbox_id,
+            outbox_status=outbox.status,
         )
