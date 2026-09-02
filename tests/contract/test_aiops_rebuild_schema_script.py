@@ -31,6 +31,13 @@ UPGRADE_SCHEMA_19 = (
     / "operations"
     / "upgrade_aiops_schema_19.sql"
 )
+APPLY_SCHEMA_20 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_20.sql"
+)
 
 
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
@@ -137,6 +144,32 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("19 AS SCHEMA_VERSION", sql)
         self.assertIn("'aiops-oracle-v9' AS CONTRACT_VERSION", sql)
         self.assertNotIn("DROP TABLE", sql.upper())
+
+    def test_schema_20_apply_preserves_data_and_closes_execution_by_default(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_20.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        for column_name in (
+            "ACTION_FAMILY",
+            "EFFECT_CLASS",
+            "EXECUTION_MODE",
+            "EXECUTOR_KIND",
+            "CANONICAL_OBJECT_REF_JSON",
+            "LOCK_IMPACT",
+            "ESTIMATED_DURATION_SECONDS",
+            "CONTROLLED_ACTION_POLICY_JSON",
+        ):
+            self.assertIn(column_name, normalized)
+        self.assertIn("COALESCE(EXECUTION_MODE, 'MANUAL_ONLY')", normalized)
+        self.assertIn("COALESCE(EXECUTOR_KIND, 'NONE')", normalized)
+        self.assertIn("'ENABLED' VALUE 'FALSE' FORMAT JSON", normalized)
+        self.assertIn("20 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V10' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:
