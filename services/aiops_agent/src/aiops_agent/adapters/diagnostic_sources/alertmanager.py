@@ -114,6 +114,11 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
             event_class = str(
                 labels.get("event_class") or alertname
             )
+            metric_code = str(labels.get("metric_code", "")).strip()
+            window_seconds = str(
+                labels.get("diagnostic_window_seconds", "")
+            ).strip()
+            description = str(annotations.get("description", "")).strip()
             transition_at = (
                 str(item.get("endsAt", ""))
                 if status == SignalEventStatus.RESOLVED
@@ -148,6 +153,21 @@ class AlertmanagerAdapter(BaseDiagnosticSourceAdapter):
                         "event_class": event_class,
                         "status": status_text,
                         "target_label": _TARGET_LABEL,
+                        **(
+                            {"metric_code": metric_code[:128]}
+                            if metric_code
+                            else {}
+                        ),
+                        **(
+                            {"diagnostic_window_seconds": window_seconds[:16]}
+                            if window_seconds
+                            else {}
+                        ),
+                        **(
+                            {"description": description[:1000]}
+                            if description
+                            else {}
+                        ),
                     },
                     normalizer_version="alertmanager.v1",
                 )

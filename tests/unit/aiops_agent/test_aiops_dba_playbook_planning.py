@@ -270,6 +270,12 @@ class _PlanningUow:
                 summary="ORA-01653: unable to increase tablespace TEST01",
                 occurred_at=datetime.now(UTC),
                 evidence_locator_json={"target_key": "oracle-dev-190"},
+                payload_json={
+                    "provider_attributes": {
+                        "metric_code": "db.storage.utilization",
+                        "diagnostic_window_seconds": "600",
+                    }
+                },
             )
         ]
         self.message = SimpleNamespace(
@@ -1075,12 +1081,21 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             schema_version="DBA_TOOL_RESULT.v1",
             payload_json={},
         )
+        situation_evidence = _SessionBoundArtifact(
+            owner=uow,
+            artifact_id=uuid7(),
+            ops_run_id=uow.run.ops_run_id,
+            artifact_key="turn-source-run-evidence:1",
+            schema_version="SITUATION_EVIDENCE.v1",
+            payload_json={},
+        )
         uow.artifacts.extend(
             (
                 plan_artifact,
                 task_frame_artifact,
                 assessment_artifact,
                 prior_evidence,
+                situation_evidence,
             )
         )
         uow.turn.status = "REPLANNING"
@@ -1133,6 +1148,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("EVIDENCE_DRIVEN", uow.revisions[-1].revision_type)
         self.assertIn(
             "diagnostic:a1",
+            next(
+                task
+                for task in uow.tasks
+                if task.task_key == "evidence:assess:r2"
+            ).input_artifacts_json,
+        )
+        self.assertIn(
+            "turn-source-run-evidence:1",
             next(
                 task
                 for task in uow.tasks
@@ -1307,6 +1330,15 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         uow = _PlanningUow()
+        monitoring_builder = SimpleNamespace(
+            build=AsyncMock(
+                return_value={
+                    "bindings": [],
+                    "initial_gaps": [],
+                    "log_binding_ids": [],
+                }
+            )
+        )
         uow.run.plan_snapshot_json["source_situation_id"] = str(
             uow.situation.situation_id
         )
@@ -1326,6 +1358,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 diagnostic_registry=DiagnosticRegistry.load(),
             ),
             agent_catalog=_AgentCatalog(),
+            monitoring_snapshot_builder=monitoring_builder,
         )
 
         await service.execute(
@@ -1343,6 +1376,12 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "ORA-01653: unable to increase tablespace TEST01",
             inherited.payload_json["payload"]["signal_events"][0]["summary"],
         )
+        self.assertEqual(
+            "db.storage.utilization",
+            inherited.payload_json["payload"]["signal_events"][0][
+                "provider_attributes"
+            ]["metric_code"],
+        )
         linked = next(
             item
             for item in uow.evidence
@@ -1350,6 +1389,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("SITUATION", linked.source_kind)
         self.assertEqual("MONITORING_SIGNAL", linked.evidence_kind)
+        monitoring_builder.build.assert_awaited_once()
 
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
         uow = _PlanningUow()

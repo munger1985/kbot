@@ -357,6 +357,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("Agent 正在诊断", workspace)
         self.assertIn("scheduleSituationRefresh", workspace)
         self.assertIn("terminalRunStatuses", workspace)
+        self.assertIn('schemaVersion === "AIOPS_TURN_RESULT.v1"', workspace)
+        self.assertIn("conversationAnswerHtml(result)", workspace)
         self.assertIn("诊断过程", workspace)
         self.assertIn("ops-progress-timeline", workspace)
         self.assertIn('"assessment.started"', workspace)

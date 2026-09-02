@@ -552,6 +552,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: diagnostic_source.scrape_failed
+          metric_code: db.availability
+          diagnostic_window_seconds: "120"
         annotations:
           summary: "Oracle指标抓取失败"
           description: "{{ $labels.target_key }}连续2分钟无法完成数据库指标查询。"
@@ -562,6 +564,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: database.connection_pressure
+          metric_code: db.connection.utilization
+          diagnostic_window_seconds: "600"
         annotations:
           summary: "Oracle连接使用率过高"
           description: "{{ $labels.target_key }}连接使用率连续10分钟超过85%。"
@@ -572,6 +576,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: database.cpu_pressure
+          metric_code: db.cpu.utilization
+          diagnostic_window_seconds: "600"
         annotations:
           summary: "Oracle数据库主机CPU使用率过高"
           description: "{{ $labels.target_key }}最近一分钟CPU使用率连续10分钟超过90%。"
@@ -582,6 +588,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: database.response_slow
+          metric_code: db.response.latency
+          diagnostic_window_seconds: "300"
         annotations:
           summary: "Oracle监控查询响应缓慢"
           description: "{{ $labels.target_key }}的Exporter完整抓取耗时连续5分钟超过5秒。"
@@ -592,6 +600,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: database.sql_parse_errors
+          metric_code: db.error.rate
+          diagnostic_window_seconds: "300"
         annotations:
           summary: "Oracle SQL解析失败持续发生"
           description: "{{ $labels.target_key }}最近5分钟持续出现SQL解析失败。"
@@ -602,6 +612,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: warning
           event_class: database.storage_pressure
+          metric_code: db.storage.utilization
+          diagnostic_window_seconds: "600"
         annotations:
           summary: "Oracle表空间使用率过高"
           description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过85%。"
@@ -612,6 +624,8 @@ def _prometheus_rules() -> str:
         labels:
           severity: critical
           event_class: database.storage_critical
+          metric_code: db.storage.utilization
+          diagnostic_window_seconds: "300"
         annotations:
           summary: "Oracle表空间使用率严重不足"
           description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过95%。"

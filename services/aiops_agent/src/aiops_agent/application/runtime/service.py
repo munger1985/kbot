@@ -2220,6 +2220,7 @@ class AIOpsRuntimeService:
                 assessment=assessment,
                 deterministic_replan=deterministic_replan,
                 no_progress_count=int(turn.no_progress_count or 0),
+                current_plan_revision=int(turn.current_plan_revision or 1),
             )
             if should_replan:
                 await self._schedule_turn_replan(
@@ -2254,6 +2255,7 @@ class AIOpsRuntimeService:
         assessment: DbaSufficiencyAssessment,
         deterministic_replan: bool,
         no_progress_count: int,
+        current_plan_revision: int,
     ) -> bool:
         """只要持续取得进展，就在 Run 截止时间内继续自动补证。"""
         requested = (
@@ -2261,7 +2263,17 @@ class AIOpsRuntimeService:
             if assessment.investigation is not None
             else deterministic_replan
         )
-        return requested and no_progress_count < 2
+        blocked_by_model = (
+            assessment.investigation is not None
+            and assessment.investigation.next_action
+            in {"ASK_USER", "STOP_UNSAFE"}
+        )
+        return (
+            (requested or deterministic_replan)
+            and not blocked_by_model
+            and no_progress_count < 2
+            and current_plan_revision < 2
+        )
 
     async def _schedule_turn_replan(
         self,

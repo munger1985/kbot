@@ -262,9 +262,14 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
                         "alertname": "DatabaseDown",
                         "event_class": "database.unavailable",
                         "severity": "critical",
+                        "metric_code": "db.availability",
+                        "diagnostic_window_seconds": "300",
                         "target_id": "untrusted",
                     },
-                    "annotations": {"summary": "数据库探针不可用"},
+                    "annotations": {
+                        "summary": "数据库探针不可用",
+                        "description": "最近五分钟探针持续失败",
+                    },
                     "startsAt": now.isoformat(),
                     "fingerprint": "provider-fingerprint",
                 }
@@ -280,6 +285,17 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("database.unavailable", event.event_type)
         self.assertEqual(
             "DatabaseDown", event.provider_attributes["alertname"]
+        )
+        self.assertEqual(
+            "db.availability", event.provider_attributes["metric_code"]
+        )
+        self.assertEqual(
+            "300",
+            event.provider_attributes["diagnostic_window_seconds"],
+        )
+        self.assertEqual(
+            "最近五分钟探针持续失败",
+            event.provider_attributes["description"],
         )
         self.assertEqual("CRITICAL", event.severity)
         self.assertNotIn("target_id", event.provider_attributes)

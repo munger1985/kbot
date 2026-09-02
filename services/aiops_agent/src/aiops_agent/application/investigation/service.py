@@ -194,7 +194,11 @@ class TurnPlanningService:
             )
         )
         playbook_plan = build_playbook_plan(self._playbook_registry)
-        monitoring_requested = any(
+        alert_diagnosis = bool(
+            context.source_run_evidence
+            and context.source_run_evidence.get("source_kind") == "SITUATION"
+        )
+        monitoring_requested = alert_diagnosis or any(
             action.tool_id.startswith("monitor.")
             or action.tool_id.startswith("prometheus.")
             or action.tool_id.startswith("loki.")
@@ -585,7 +589,11 @@ class TurnPlanningService:
             )
         )
         playbook_plan = build_playbook_plan(self._playbook_registry)
-        monitoring_requested = any(
+        alert_diagnosis = bool(
+            context.source_run_evidence
+            and context.source_run_evidence.get("source_kind") == "SITUATION"
+        )
+        monitoring_requested = alert_diagnosis or any(
             action.tool_id in {"monitor.query_range", "loki.query_range"}
             for action in investigation.plan.actions
         )
@@ -615,6 +623,7 @@ class TurnPlanningService:
             in {
                 "USER_PROVIDED_INPUT.v1",
                 "SOURCE_RUN_EVIDENCE.v1",
+                "SITUATION_EVIDENCE.v1",
                 "DBA_TOOL_RESULT.v1",
                 "OBSERVATION_SET.v1",
                 "LOG_EVIDENCE_SET.v1",
@@ -1772,6 +1781,12 @@ class TurnPlanningService:
                                     "occurred_at": item.occurred_at.isoformat(),
                                     "evidence_locator": dict(
                                         item.evidence_locator_json or {}
+                                    ),
+                                    "provider_attributes": dict(
+                                        dict(item.payload_json or {}).get(
+                                            "provider_attributes"
+                                        )
+                                        or {}
                                     ),
                                 }
                                 for item in signal_events

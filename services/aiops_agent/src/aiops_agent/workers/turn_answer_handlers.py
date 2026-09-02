@@ -361,13 +361,18 @@ class DbaEvidenceAssessmentHandler:
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
         if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
             assessed_status = SufficiencyStatus.PARTIAL
+        can_auto_collect_more = (
+            assessed_status
+            in {SufficiencyStatus.PARTIAL, SufficiencyStatus.NEEDS_EVIDENCE}
+            and investigation.next_action not in {"ASK_USER", "STOP_UNSAFE"}
+        )
         semantic_gaps = tuple(
             TurnEvidenceGap(
                 source_id="investigation.assessment",
                 step_id=f"remaining-evidence-{index}",
                 code="INVESTIGATION_EVIDENCE_GAP",
                 detail=detail,
-                retryable=investigation.next_action == "REPLAN",
+                retryable=can_auto_collect_more,
             )
             for index, detail in enumerate(
                 investigation.evidence_gaps,

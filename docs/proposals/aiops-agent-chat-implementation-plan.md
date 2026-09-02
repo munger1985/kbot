@@ -53,8 +53,9 @@ Key或ID进入评估器；数据库访问决定由Agent Policy、Target状态、
 Artifact会复制为当前Turn的继承Evidence。一个Agent版本可绑定多个逻辑Target；聊天创建会话时
 必须先选择其中一个Target，会话冻结该Target，后续Turn不再接受Target覆盖。
 
-首轮Assessment若存在可重试的关键缺口，系统会冻结回答Task，通过Outbox可靠生成第二版
-Investigation Revision和Task DAG；无参数变化的重复Tool调用会被拒绝。第二轮结束后统一回答，
+首轮Assessment若存在系统仍可采集的关键缺口，系统会冻结回答Task，通过Outbox可靠生成第二版
+Investigation Revision和Task DAG；模型选择带限制回答不能跳过这次确定性补证，无参数变化的
+重复Tool调用会被拒绝。告警Turn还会主动尝试已授权、已绑定的指标和日志来源。第二轮结束后统一回答，
 重规划失败则回退到首轮真实证据，避免Turn卡在`REPLANNING`。当前调查预算固定为最多两轮。
 
 聊天中的变更意图现已进入独立的确定性链路：`DBA_SUFFICIENCY.v1 → ACTION_PLAN.v1 →

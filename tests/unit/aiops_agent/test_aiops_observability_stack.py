@@ -542,6 +542,8 @@ def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -
     assert "oracledb_tablespace_free_bytes" in rules
     assert 'expr: oracledb_tablespace_used_percent{job="oracle"}' in rules
     assert 'oracledb_tablespace_used_percent{job="oracle"} * 100' not in rules
+    assert "metric_code: db.error.rate" in rules
+    assert 'diagnostic_window_seconds: "300"' in rules
 
 
 def test_oracle_custom_metrics_use_pdb_compatible_sources() -> None:

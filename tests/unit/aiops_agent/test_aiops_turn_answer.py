@@ -714,6 +714,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(
             "SUPPORTED", result.investigation.hypothesis_updates["h1"]
         )
+        self.assertTrue(result.gaps[-1].retryable)
 
     def test_assessment_status_is_a_closed_contract_enum(self) -> None:
         payload = {
@@ -1066,7 +1067,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("INVESTIGATION_EVIDENCE_GAP", result.gaps[-1].code)
         self.assertTrue(result.gaps[-1].retryable)
 
-    def test_replan_is_not_stopped_by_second_round_when_progress_continues(
+    def test_partial_answer_replans_once_even_when_model_prefers_answer(
         self,
     ) -> None:
         assessment = DbaSufficiencyAssessment(
@@ -1075,9 +1076,9 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 round_no=2,
                 sufficiency_status="PARTIAL",
                 evidence_gaps=("缺少 PGA 峰值",),
-                next_action="REPLAN",
+                next_action="ANSWER",
                 progress_made=True,
-                reason="仍有数据库只读证据可获取",
+                reason="模型建议带限制回答，但系统仍可自动补证",
             ),
         )
 
@@ -1086,6 +1087,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=assessment,
                 deterministic_replan=True,
                 no_progress_count=0,
+                current_plan_revision=1,
             )
         )
         self.assertFalse(
@@ -1093,6 +1095,15 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=assessment,
                 deterministic_replan=True,
                 no_progress_count=2,
+                current_plan_revision=1,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=assessment,
+                deterministic_replan=True,
+                no_progress_count=0,
+                current_plan_revision=2,
             )
         )
 

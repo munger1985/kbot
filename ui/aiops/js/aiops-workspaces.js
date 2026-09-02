@@ -64,7 +64,22 @@
     return answer;
   }
 
+  function conversationAnswerHtml(result) {
+    const schemaVersion = result?.final_artifact?.schema_version;
+    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
+      const narrative = values(result?.payload?.blocks).filter(
+        (block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type),
+      );
+      return narrative.map(answerBlockHtml).join("")
+        || markdown.render("Agent 已完成诊断，但本轮没有生成可展示的文字结论。");
+    }
+    return markdown.render(conversationAnswerMarkdown(result));
+  }
+
   function evidenceDetails(result) {
+    if (result?.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1") {
+      return turnEvidenceHtml(values(result?.payload?.blocks));
+    }
     const payload = result?.payload || {};
     const facts = values(payload.facts);
     const gaps = values(payload.gaps);
@@ -372,6 +387,11 @@
       if (!evidence.has(normalizedKey)) evidence.set(normalizedKey, { label: normalizedLabel, meta });
     };
     blocks.forEach((block) => {
+      values(block.evidence_refs).forEach((item) => add(
+        item,
+        item,
+        "VERIFIED_EVIDENCE",
+      ));
       values(block.citations).forEach((item) => add(
         item.turn_evidence_id || `citation:${item.label || item.citation_no}`,
         item.label || `证据 ${item.citation_no}`,
@@ -855,7 +875,7 @@
         : { target_id: detail.target_id, source_situation_id: detail.situation_id };
       let diagnosis;
       if (hasFinalResult) {
-        diagnosis = `<div class="ops-result-markdown">${markdown.render(conversationAnswerMarkdown(result))}${evidenceDetails(result)}</div>`;
+        diagnosis = `<div class="ops-result-markdown">${conversationAnswerHtml(result)}${evidenceDetails(result)}</div>`;
       } else if (run && !terminalRunStatuses.has(run.status)) {
         diagnosis = `<div class="ops-empty">Agent 正在诊断，当前状态：${esc(run.status)}。页面会自动更新结果。</div>`;
       } else if (run) {
