@@ -8,13 +8,19 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from sqlalchemy import Text
+
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.contracts.change import ActionVerification
 from aiops_agent.contracts.report import ComparisonPlan
+from aiops_agent.entities import ReportEntity
 from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_report_summary_uses_clob_mapping(self) -> None:
+        self.assertIsInstance(ReportEntity.__table__.c.summary.type, Text)
+
     def test_scheduled_agent_turn_publishes_custom_report(self) -> None:
         run = SimpleNamespace(
             ops_run_id=uuid7(),
@@ -102,6 +108,89 @@ class InspectionReportPublishingTest(unittest.TestCase):
             result.payload_json["facts"][0]["markdown"],
             "数据库整体健康。",
         )
+
+    def test_scheduled_agent_turn_keeps_long_chinese_summary(self) -> None:
+        markdown = "数据库健康检查结论。" * 600
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            actor_id="system:inspection-scheduler",
+            target_id=uuid7(),
+            inspection_fire_id=uuid7(),
+            plan_snapshot_json={
+                "target": {"security_level": 2},
+                "client_metadata": {
+                    "inspection": {
+                        "template_id": "database_daily",
+                        "template_version": "1.0.0",
+                        "schedule_type": "DAILY",
+                        "timezone": "Asia/Shanghai",
+                        "period_start": "2026-07-22T16:00:00+00:00",
+                        "period_end": "2026-07-23T16:00:00+00:00",
+                    }
+                },
+            },
+        )
+        source = SimpleNamespace(
+            artifact_id=uuid7(),
+            schema_version="AIOPS_TURN_RESULT.v1",
+            content_hash="d" * 64,
+            payload_json={
+                "status": "COMPLETED",
+                "sufficiency_status": "ANSWERABLE",
+                "blocks": [
+                    {
+                        "block_type": "MARKDOWN",
+                        "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                        "payload": {"markdown": markdown},
+                        "evidence_refs": [],
+                    }
+                ],
+            },
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report)
+            ),
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+
+        asyncio.run(
+            service._publish_turn_inspection_report(
+                uow=uow,
+                run=run,
+                task=SimpleNamespace(ops_task_id=uuid7()),
+                source_artifact=source,
+                now=datetime(2026, 7, 24, tzinfo=UTC),
+                trace_id="trace-long-agent-inspection",
+            )
+        )
+
+        report = uow.inspections.publish_report.await_args.args[0]
+        self.assertGreater(len(markdown.encode("utf-8")), 4000)
+        self.assertEqual(markdown, report.summary)
 
     def test_schedule_result_publishes_report_content_and_projection(
         self,

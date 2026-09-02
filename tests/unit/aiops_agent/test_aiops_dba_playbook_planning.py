@@ -805,7 +805,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         task = SimpleNamespace(ops_task_id=task_id, task_key="diagnostic:a1")
         service = object.__new__(AIOpsRuntimeService)
 
-        await service._project_chat_task_started(
+        await service._project_turn_task_started(
             uow=uow,
             run=run,
             task=task,
@@ -1357,12 +1357,12 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], action["approval_reason_codes"])
         self.assertNotIn("policy_snapshot", str(projection))
 
-    async def test_terminal_task_failure_updates_chat_turn(self) -> None:
+    async def test_terminal_task_failure_updates_agent_turn(self) -> None:
         uow = _PlanningUow()
         runtime = object.__new__(AIOpsRuntimeService)
         now = datetime.now(UTC)
 
-        await runtime._project_chat_turn_failure(
+        await runtime._project_turn_failure(
             uow=uow,
             run=uow.run,
             error_code="HANDLER_TERMINAL_FAILURE",
@@ -1376,6 +1376,16 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(now, uow.turn.completed_at)
         self.assertEqual("turn.status", uow.events[-1].event_type)
         self.assertEqual("FAILED", uow.events[-1].payload_json["status"])
+
+    def test_all_agent_turn_workflows_use_the_same_projection(self) -> None:
+        from aiops_agent.application.runtime.service import (
+            _AGENT_TURN_WORKFLOWS,
+        )
+
+        self.assertEqual(
+            {"CHAT_TURN", "ALERT_DIAGNOSIS", "INSPECTION"},
+            set(_AGENT_TURN_WORKFLOWS),
+        )
 
 
 class DbaPlaybookFrameworkTest(unittest.TestCase):

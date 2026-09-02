@@ -3,7 +3,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Computed, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    Computed,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -219,7 +227,7 @@ class ReportEntity(BaseEntity):
     )
     content_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     content_hash: Mapped[str | None] = mapped_column(String(64))
-    summary: Mapped[str | None] = mapped_column(String(2000))
+    summary: Mapped[str | None] = mapped_column(Text)
     security_level: Mapped[int] = mapped_column(Numeric(3, 0), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

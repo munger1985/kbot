@@ -154,6 +154,7 @@ DECLARE
     l_bad_index_count PLS_INTEGER;
     l_workflow_kind_count PLS_INTEGER;
     l_required_column_count PLS_INTEGER;
+    l_report_summary_count PLS_INTEGER;
     l_task_type_constraint_count PLS_INTEGER;
     l_tool_class_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
@@ -258,6 +259,13 @@ BEGIN
        AND search_condition_vc NOT LIKE '%SKILL_INVOKE%';
 
     SELECT COUNT(*)
+      INTO l_report_summary_count
+      FROM user_tab_columns
+     WHERE table_name = 'KBOT_OPS_REPORT'
+       AND column_name = 'SUMMARY'
+       AND data_type = 'CLOB';
+
+    SELECT COUNT(*)
       INTO l_tool_class_constraint_count
       FROM user_constraints
      WHERE table_name = 'KBOT_OPS_TOOL_INVOCATION'
@@ -301,6 +309,9 @@ BEGIN
     END IF;
     IF l_required_column_count <> 8 THEN
         raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
+    END IF;
+    IF l_report_summary_count <> 1 THEN
+        raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
         raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema {schema_version} 合同不一致。');

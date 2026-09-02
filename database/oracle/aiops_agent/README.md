@@ -23,15 +23,15 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 18 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 19 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 18 / aiops-oracle-v8`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 19 / aiops-oracle-v9`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION` 和 Schema 18 关键列、约束，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION` 和 Schema 19 关键列、约束，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。

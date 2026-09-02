@@ -24,6 +24,13 @@ REBUILD_SCRIPT = (
     / "rebuild_aiops_schema.sql"
 )
 MANIFEST = SCHEMA_DIR / "schema_manifest.json"
+UPGRADE_SCHEMA_19 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "upgrade_aiops_schema_19.sql"
+)
 
 
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
@@ -74,6 +81,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("l_missing_table_count <> 0", self.sql)
         self.assertIn("l_missing_view_count <> 0", self.sql)
         self.assertIn("l_required_column_count <> 8", self.sql)
+        self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_task_type_constraint_count <> 1", self.sql)
         for table_name in self.manifest["tables"]:
             self.assertIn(f"'{table_name}'", self.sql)
@@ -101,6 +109,34 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             f"'{self.manifest['contract_version']}' AS CONTRACT_VERSION",
             body,
         )
+
+    def test_report_summary_uses_clob_without_clob_aggregation(self) -> None:
+        inspection_sql = (SCHEMA_DIR / "004_ops_inspection.sql").read_text(
+            encoding="utf-8"
+        )
+        views_sql = (SCHEMA_DIR / "006_ops_fks_views.sql").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertRegex(inspection_sql, r"(?m)^\s*SUMMARY CLOB,")
+        self.assertNotIn("MAX(SUMMARY)", views_sql)
+        self.assertIn("ROW_NUMBER() OVER", views_sql)
+
+    def test_schema_19_upgrade_is_incremental_and_repairs_orphan_turns(
+        self,
+    ) -> None:
+        sql = UPGRADE_SCHEMA_19.read_text(encoding="utf-8")
+
+        self.assertIn("SUMMARY_CLOB CLOB", sql)
+        self.assertIn("SUMMARY_CLOB = TO_CLOB(SUMMARY)", sql)
+        self.assertIn("DROP COLUMN SUMMARY", sql)
+        self.assertIn("RENAME COLUMN SUMMARY_CLOB TO SUMMARY", sql)
+        self.assertNotIn("MAX(SUMMARY)", sql)
+        self.assertIn("schema19-recovery:", sql)
+        self.assertIn("KBOT_OPS_TURN_EVENT", sql)
+        self.assertIn("19 AS SCHEMA_VERSION", sql)
+        self.assertIn("'aiops-oracle-v9' AS CONTRACT_VERSION", sql)
+        self.assertNotIn("DROP TABLE", sql.upper())
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:

@@ -141,6 +141,11 @@ from platform_core.contracts.aiops.types import ArtifactRef
 from platform_core.identity import uuid7
 
 
+_AGENT_TURN_WORKFLOWS = frozenset(
+    {"CHAT_TURN", "ALERT_DIAGNOSIS", "INSPECTION"}
+)
+
+
 def canonical_bytes(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -1447,8 +1452,8 @@ class AIOpsRuntimeService:
                     "trace_id": command.trace_id,
                 },
             )
-            if run.workflow_kind == "CHAT_TURN":
-                await self._project_chat_task_started(
+            if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                await self._project_turn_task_started(
                     uow=uow,
                     run=run,
                     task=task,
@@ -1461,20 +1466,20 @@ class AIOpsRuntimeService:
                 run, task, artifacts, lease_token=lease_token
             )
 
-    async def _project_chat_task_started(self, *, uow, run, task) -> None:
+    async def _project_turn_task_started(self, *, uow, run, task) -> None:
         """把后台 Task 领取投影为用户可见阶段，并同步 Tool 运行状态。"""
         link = await uow.turns.get_run_link_by_ops_run_id(
             ops_run_id=run.ops_run_id
         )
         if link is None:
-            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
         turn = await uow.turns.get_turn(
             domain_id=int(run.domain_id),
             turn_id=link.turn_id,
             lock=True,
         )
         if turn is None:
-            raise state_conflict("CHAT_TURN Task 缺少有效 Turn")
+            raise state_conflict("Agent Turn Task 缺少有效 Turn")
         invocation = await uow.turns.get_tool_invocation_by_task(
             ops_task_id=task.ops_task_id,
             lock=True,
@@ -1698,8 +1703,8 @@ class AIOpsRuntimeService:
             task.output_artifact_id = artifact.artifact_id
             task.completed_at = now
             self._clear_lease(task)
-            if run.workflow_kind == "CHAT_TURN":
-                await self._project_chat_turn_task(
+            if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                await self._project_turn_task(
                     uow=uow,
                     run=run,
                     task=task,
@@ -1943,7 +1948,7 @@ class AIOpsRuntimeService:
                     "trace_id": command.trace_id,
                 },
             )
-            if run.workflow_kind == "CHAT_TURN":
+            if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
                 link = await uow.turns.get_run_link_by_ops_run_id(
                     ops_run_id=run.ops_run_id
                 )
@@ -1958,7 +1963,7 @@ class AIOpsRuntimeService:
                 )
                 if turn is None:
                     raise state_conflict(
-                        "CHAT_TURN增量事件缺少有效Turn关联"
+                        "Agent Turn增量事件缺少有效Turn关联"
                     )
                 await self._append_turn_event(
                     uow,
@@ -1971,7 +1976,7 @@ class AIOpsRuntimeService:
                 run, task, int(event.sequence_no), None
             )
 
-    async def _project_chat_turn_task(
+    async def _project_turn_task(
         self,
         *,
         uow,
@@ -1985,7 +1990,7 @@ class AIOpsRuntimeService:
             ops_run_id=run.ops_run_id
         )
         if link is None:
-            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
         turn = await uow.turns.get_turn(
             domain_id=int(run.domain_id),
             turn_id=link.turn_id,
@@ -2178,7 +2183,7 @@ class AIOpsRuntimeService:
             },
         )
 
-    async def _project_chat_turn_failure(
+    async def _project_turn_failure(
         self,
         *,
         uow,
@@ -2187,12 +2192,34 @@ class AIOpsRuntimeService:
         public_summary: str,
         now: datetime,
     ) -> None:
-        """在 Task 终态失败事务内同步结束聊天 Turn。"""
+        """在 Task 终态失败事务内同步结束 Agent Turn。"""
+        await self._project_turn_terminal(
+            uow=uow,
+            run=run,
+            status="FAILED",
+            error_code=error_code,
+            public_summary=public_summary,
+            now=now,
+        )
+
+    async def _project_turn_terminal(
+        self,
+        *,
+        uow,
+        run,
+        status: str,
+        error_code: str | None,
+        public_summary: str,
+        now: datetime,
+    ) -> None:
+        """把 Run 的失败、取消或过期终态同步到 Agent Turn。"""
+        if status not in {"FAILED", "CANCELLED"}:
+            raise ValueError("Agent Turn 终态投影仅支持失败或取消")
         link = await uow.turns.get_run_link_by_ops_run_id(
             ops_run_id=run.ops_run_id
         )
         if link is None:
-            raise state_conflict("CHAT_TURN Run 缺少 Primary Turn 关联")
+            raise state_conflict("Agent Turn Run 缺少 Primary Turn 关联")
         turn = await uow.turns.get_turn(
             domain_id=int(run.domain_id),
             turn_id=link.turn_id,
@@ -2202,8 +2229,8 @@ class AIOpsRuntimeService:
             raise resource_not_found("Conversation Turn")
         if turn.status in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}:
             return
-        turn.status = "FAILED"
-        turn.error_domain = "EXECUTION"
+        turn.status = status
+        turn.error_domain = "EXECUTION" if error_code else None
         turn.error_code = error_code
         turn.error_message = public_summary
         turn.completed_at = now
@@ -2212,8 +2239,8 @@ class AIOpsRuntimeService:
             turn,
             event_type="turn.status",
             payload={
-                "status": "FAILED",
-                "error_domain": "EXECUTION",
+                "status": status,
+                "error_domain": "EXECUTION" if error_code else None,
                 "error_code": error_code,
                 "public_summary": public_summary,
             },
@@ -2695,7 +2722,7 @@ class AIOpsRuntimeService:
             if str(block.block_type) == "MARKDOWN"
         ).strip()
         status = "READY" if source.status == "COMPLETED" else "PARTIAL"
-        summary = markdown[:2000] or "Agent 已完成巡检，但未生成文字摘要"
+        summary = markdown or "Agent 已完成巡检，但未生成文字摘要"
         security_level = int(
             dict(plan.get("target") or {}).get("security_level") or 0
         )
@@ -3708,7 +3735,7 @@ class AIOpsRuntimeService:
                 ),
                 actor_id=run.actor_id,
             )
-            await self._project_chat_interaction_status(
+            await self._project_turn_interaction_status(
                 uow=uow,
                 run=run,
                 status="WAITING_USER",
@@ -4155,8 +4182,8 @@ class AIOpsRuntimeService:
                 run.error_code = command.error_code
                 run.error_message = policy.safe_message
                 run.completed_at = now
-                if run.workflow_kind == "CHAT_TURN":
-                    await self._project_chat_turn_failure(
+                if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                    await self._project_turn_failure(
                         uow=uow,
                         run=run,
                         error_code=command.error_code,
@@ -4257,6 +4284,15 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.CANCELLED.value
                 run.completed_at = now
+                if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                    await self._project_turn_terminal(
+                        uow=uow,
+                        run=run,
+                        status="CANCELLED",
+                        error_code=None,
+                        public_summary="诊断已取消",
+                        now=now,
+                    )
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     event_type="run.cancelled",
@@ -4300,6 +4336,15 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.EXPIRED.value
                 run.completed_at = now
+                if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                    await self._project_turn_terminal(
+                        uow=uow,
+                        run=run,
+                        status="FAILED",
+                        error_code="OPS_RUN_EXPIRED",
+                        public_summary="诊断运行超过截止时间",
+                        now=now,
+                    )
                 await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     event_type="run.expired",
@@ -4517,7 +4562,7 @@ class AIOpsRuntimeService:
                         "trace_id": trace_id,
                     },
                 )
-                await self._project_chat_interaction_status(
+                await self._project_turn_interaction_status(
                     uow=uow,
                     run=run,
                     status="COLLECTING",
@@ -4710,6 +4755,15 @@ class AIOpsRuntimeService:
                         )
                         run.status = DomainOpsRunStatus.CANCELLED.value
                         run.completed_at = now
+                        if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                            await self._project_turn_terminal(
+                                uow=uow,
+                                run=run,
+                                status="CANCELLED",
+                                error_code=None,
+                                public_summary="诊断已取消",
+                                now=now,
+                            )
                         await uow.runs.append_event(
                             ops_run_id=run.ops_run_id,
                             event_type="run.cancelled",
@@ -4761,6 +4815,14 @@ class AIOpsRuntimeService:
                             "WORKER_LEASE_EXPIRED"
                         ].safe_message
                         run.completed_at = now
+                        if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                            await self._project_turn_failure(
+                                uow=uow,
+                                run=run,
+                                error_code="WORKER_LEASE_EXPIRED",
+                                public_summary=run.error_message,
+                                now=now,
+                            )
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     ops_task_id=task.ops_task_id,
@@ -5876,7 +5938,7 @@ class AIOpsRuntimeService:
                     "trace_id": trace_id,
                 },
             )
-            await self._project_chat_interaction_status(
+            await self._project_turn_interaction_status(
                 uow=uow,
                 run=run,
                 status="COLLECTING",
@@ -6186,7 +6248,7 @@ class AIOpsRuntimeService:
             raise state_conflict("人工补证请求 Artifact 不存在或类型无效")
         return artifact
 
-    async def _project_chat_interaction_status(
+    async def _project_turn_interaction_status(
         self,
         *,
         uow,
@@ -6195,8 +6257,8 @@ class AIOpsRuntimeService:
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
-        """把 Run 的交互暂停或恢复同步到聊天 Turn。"""
-        if getattr(run, "workflow_kind", None) != "CHAT_TURN":
+        """把 Run 的交互暂停或恢复同步到 Agent Turn。"""
+        if getattr(run, "workflow_kind", None) not in _AGENT_TURN_WORKFLOWS:
             return
         link = await uow.turns.get_run_link_by_ops_run_id(
             ops_run_id=run.ops_run_id
@@ -6211,7 +6273,7 @@ class AIOpsRuntimeService:
             else None
         )
         if turn is None:
-            raise state_conflict("CHAT_TURN Run 缺少有效 Turn 关联")
+            raise state_conflict("Agent Turn Run 缺少有效 Turn 关联")
         turn.status = status
         await self._append_turn_event(
             uow,

@@ -1225,7 +1225,7 @@ CREATE TABLE KBOT_OPS_REPORT (
     GENERATED_BY_TASK_ID RAW(16) NOT NULL,
     CONTENT_ARTIFACT_ID RAW(16),
     CONTENT_HASH VARCHAR2(64 CHAR),
-    SUMMARY VARCHAR2(2000 CHAR),
+    SUMMARY CLOB,
     SECURITY_LEVEL NUMBER(3) NOT NULL,
     SCHEMA_VERSION VARCHAR2(64 CHAR) NOT NULL,
     CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -1709,12 +1709,21 @@ JOIN KBOT_OPS_TARGET t ON t.TARGET_ID = r.TARGET_ID
 LEFT JOIN (
     SELECT
         OPS_RUN_ID,
-        COUNT(*) AS REPORT_COUNT,
-        MAX(SUMMARY) KEEP (DENSE_RANK LAST ORDER BY UPDATED_AT)
-            AS LATEST_REPORT_SUMMARY
-    FROM KBOT_OPS_REPORT
-    WHERE IS_CURRENT = 1
-    GROUP BY OPS_RUN_ID
+        REPORT_COUNT,
+        SUMMARY AS LATEST_REPORT_SUMMARY
+    FROM (
+        SELECT
+            OPS_RUN_ID,
+            SUMMARY,
+            COUNT(*) OVER (PARTITION BY OPS_RUN_ID) AS REPORT_COUNT,
+            ROW_NUMBER() OVER (
+                PARTITION BY OPS_RUN_ID
+                ORDER BY UPDATED_AT DESC, REPORT_ID DESC
+            ) AS REPORT_ROW_NO
+        FROM KBOT_OPS_REPORT
+        WHERE IS_CURRENT = 1
+    )
+    WHERE REPORT_ROW_NO = 1
 ) report_info ON report_info.OPS_RUN_ID = r.OPS_RUN_ID;
 
 CREATE OR REPLACE VIEW KBOT_V_OPS_PENDING_APPROVAL AS
@@ -1863,8 +1872,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    18 AS SCHEMA_VERSION,
-    'aiops-oracle-v8' AS CONTRACT_VERSION
+    19 AS SCHEMA_VERSION,
+    'aiops-oracle-v9' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2761,6 +2770,7 @@ DECLARE
     l_bad_index_count PLS_INTEGER;
     l_workflow_kind_count PLS_INTEGER;
     l_required_column_count PLS_INTEGER;
+    l_report_summary_count PLS_INTEGER;
     l_task_type_constraint_count PLS_INTEGER;
     l_tool_class_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
@@ -2916,6 +2926,13 @@ BEGIN
        AND search_condition_vc NOT LIKE '%SKILL_INVOKE%';
 
     SELECT COUNT(*)
+      INTO l_report_summary_count
+      FROM user_tab_columns
+     WHERE table_name = 'KBOT_OPS_REPORT'
+       AND column_name = 'SUMMARY'
+       AND data_type = 'CLOB';
+
+    SELECT COUNT(*)
       INTO l_tool_class_constraint_count
       FROM user_constraints
      WHERE table_name = 'KBOT_OPS_TOOL_INVOCATION'
@@ -2958,17 +2975,20 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 8 THEN
-        raise_application_error(-20008, 'Schema 18 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 19 必需列缺失或允许为空。');
+    END IF;
+    IF l_report_summary_count <> 1 THEN
+        raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 18 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 19 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 18 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 19 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 18
-       OR l_contract_version <> 'aiops-oracle-v8' THEN
+       OR l_schema_version <> 19
+       OR l_contract_version <> 'aiops-oracle-v9' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -2978,7 +2998,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：43 张表、10 个视图，Schema Version '
-        || '18，合同 aiops-oracle-v8。'
+        || '19，合同 aiops-oracle-v9。'
     );
 END;
 /
