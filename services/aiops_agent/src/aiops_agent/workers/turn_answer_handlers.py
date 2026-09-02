@@ -809,28 +809,33 @@ class DbaAnswerComposeHandler:
                 continue
             seen_tools.add(tool_id)
             requests.append((gap, tool))
-        if not requests and not monitoring_gaps:
+        query_error_codes = {
+            "QUERY_INCOMPATIBLE",
+            "QUERY_OBJECT_UNAVAILABLE",
+            "QUERY_COLUMN_INVALID",
+            "QUERY_COLUMN_AMBIGUOUS",
+            "QUERY_SYNTAX_INVALID",
+            "QUERY_VALUE_FORMAT_INVALID",
+        }
+        manual_requests = [
+            (gap, tool)
+            for gap, tool in requests
+            if gap.code not in query_error_codes
+        ]
+        if not manual_requests and not monitoring_gaps:
             return None
         lines = [
             "\n### 要继续完成这次诊断",
             "",
         ]
-        if requests:
-            for gap, tool in requests:
+        if manual_requests:
+            for gap, tool in manual_requests:
                 tool_id = str(tool["tool_id"])
                 lines.append(
                     f"- `{tool_id}`：{gap.detail}（`{gap.code}`）"
                 )
-            request_codes = {gap.code for gap, _ in requests}
+            request_codes = {gap.code for gap, _ in manual_requests}
             permission_codes = {"AUTH_FAILED", "PRIVILEGE_MISSING"}
-            query_codes = {
-                "QUERY_INCOMPATIBLE",
-                "QUERY_OBJECT_UNAVAILABLE",
-                "QUERY_COLUMN_INVALID",
-                "QUERY_COLUMN_AMBIGUOUS",
-                "QUERY_SYNTAX_INVALID",
-                "QUERY_VALUE_FORMAT_INVALID",
-            }
             output_codes = {
                 "OUTPUT_COLUMNS_MISMATCH",
                 "OUTPUT_COLUMN_LIMIT_EXCEEDED",
@@ -844,17 +849,11 @@ class DbaAnswerComposeHandler:
                 lines.append(
                     "请检查 Target 只读凭据；只有上述认证或权限错误需要调整账号授权。"
                 )
-            if request_codes & query_codes:
-                lines.append(
-                    "数据库连接已进入查询阶段，请按错误码修正 SQL 的对象、列名、语法或版本兼容性。"
-                )
             if request_codes & output_codes:
                 lines.append(
                     "查询已经执行并进入结果校验阶段，该错误不表示 Target 缺少查询权限。"
                 )
-            if not request_codes & (
-                permission_codes | query_codes | output_codes
-            ):
+            if not request_codes & (permission_codes | output_codes):
                 lines.append("请按上述错误码检查对应的只读诊断链路。")
             lines.extend(
                 [
@@ -862,7 +861,7 @@ class DbaAnswerComposeHandler:
                     "再把结果以文字或截图粘贴到对话中：",
                 ]
             )
-            for gap, tool in requests:
+            for gap, tool in manual_requests:
                 sql = DbaAnswerComposeHandler._manual_sql(tool)
                 if not sql:
                     continue

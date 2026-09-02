@@ -887,6 +887,65 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertIn("ROWNUM <= 10", markdown)
         self.assertNotIn(":limit", markdown)
 
+    def test_query_column_error_never_repeats_failed_sql_to_user(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            gaps=(
+                TurnEvidenceGap(
+                    source_id="db.oracle.readonly_query",
+                    step_id="plan_monitor",
+                    code="QUERY_COLUMN_INVALID",
+                    detail="Oracle 返回 ORA-00904",
+                ),
+            ),
+            reasons=("动态只读查询包含无效列名",),
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            )
+        )
+        context = replace(
+            context,
+            plan_snapshot={
+                **context.plan_snapshot,
+                "investigation_execution": {
+                    "dynamic_invocations": {
+                        "dynamic:plan-monitor": {
+                            "action_id": "plan_monitor",
+                            "validated_query": {
+                                "normalized_sql": (
+                                    "SELECT cardinality FROM gv$sql_plan_monitor"
+                                ),
+                                "parameters": {},
+                            },
+                            "required_privileges": ["SELECT ANY DICTIONARY"],
+                        }
+                    }
+                },
+            },
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=_AnswerModel(evidence_refs=()),
+            prompts=_TestPrompts(),
+        )
+
+        result = asyncio.run(handler.execute(context))
+
+        self.assertEqual("PARTIAL", result.status)
+        self.assertFalse(
+            any(
+                block.block_type == AnswerBlockType.EVIDENCE_REQUEST
+                for block in result.blocks
+            )
+        )
+        markdown = result.blocks[0].payload["markdown"]
+        self.assertNotIn("cardinality FROM gv$sql_plan_monitor", markdown)
+
     def test_unmapped_gap_does_not_create_false_waiting_user(self) -> None:
         assessment = DbaSufficiencyAssessment(
             status=SufficiencyStatus.NEEDS_EVIDENCE,
@@ -920,7 +979,9 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("PARTIAL", result.status)
         self.assertEqual(1, len(result.blocks))
 
-    def test_dynamic_query_gap_uses_frozen_validated_sql(self) -> None:
+    def test_query_incompatible_error_never_repeats_failed_sql_to_user(
+        self,
+    ) -> None:
         assessment = DbaSufficiencyAssessment(
             status=SufficiencyStatus.NEEDS_EVIDENCE,
             gaps=(
@@ -976,15 +1037,16 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         result = asyncio.run(handler.execute(context))
 
-        self.assertEqual("WAITING_USER", result.status)
-        markdown = result.blocks[1].payload["markdown"]
-        self.assertIn("QUERY_INCOMPATIBLE", markdown)
-        self.assertIn("数据库连接已进入查询阶段", markdown)
-        self.assertNotIn("SELECT ANY DICTIONARY", markdown)
-        self.assertNotIn("所需对象权限", markdown)
-        self.assertIn("created >= SYSDATE - 7", markdown)
-        self.assertIn("FETCH FIRST 200 ROWS ONLY", markdown)
-        self.assertNotIn(":days", markdown)
+        self.assertEqual("PARTIAL", result.status)
+        self.assertFalse(
+            any(
+                block.block_type == AnswerBlockType.EVIDENCE_REQUEST
+                for block in result.blocks
+            )
+        )
+        markdown = result.blocks[0].payload["markdown"]
+        self.assertNotIn("created >= SYSDATE - 7", markdown)
+        self.assertNotIn("FETCH FIRST 200 ROWS ONLY", markdown)
 
     def test_output_validation_gap_does_not_claim_missing_privilege(
         self,

@@ -353,7 +353,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(54, len(registry.tools))
+        self.assertEqual(55, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -375,6 +375,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
             self.assertIn(("MYSQL", tool_id), pairs)
             self.assertIn(("POSTGRESQL", tool_id), pairs)
         self.assertIn(("ORACLE", "db.sql.top_current"), pairs)
+        self.assertIn(("ORACLE", "db.sql.plan_monitor"), pairs)
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
         )
@@ -405,6 +406,24 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertNotIn("parsing_schema_name", tool.sql.lower())
         self.assertNotIn("module", tool.sql.lower())
         self.assertNotIn("action", tool.sql.lower())
+
+    def test_oracle_plan_monitor_uses_documented_cardinality_column(self) -> None:
+        registry = DiagnosticRegistry.load()
+        tool = registry.resolve(
+            tool_id="db.sql.plan_monitor",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities={"dynamic_performance_views"},
+            entitlements=set(),
+        )
+
+        self.assertIn("plan_cardinality", tool.sql.lower())
+        self.assertNotIn("\n    cardinality,", tool.sql.lower())
+        self.assertEqual(
+            ("sql_id", "limit"),
+            tuple(parameter.name for parameter in tool.definition.parameters),
+        )
 
     def test_capability_and_entitlement_selection_is_exact(self) -> None:
         registry = DiagnosticRegistry.load()

@@ -58,6 +58,44 @@
       "cost_level": "LOW"
     },
     {
+      "tool_id": "db.sql.plan_monitor",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_gv_sql_plan_monitor",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [],
+      "required_privileges": ["GV_$SQL_PLAN_MONITOR"],
+      "parameters": [
+        {"name": "sql_id", "type": "string", "max_length": 13},
+        {"name": "limit", "type": "integer", "minimum": 1, "maximum": 200, "default": 200, "required": false}
+      ],
+      "output_columns": [
+        {"name": "sql_id", "logical_type": "STRING", "nullable": false},
+        {"name": "sql_exec_id", "logical_type": "INTEGER"},
+        {"name": "sql_exec_start", "logical_type": "DATETIME"},
+        {"name": "sql_plan_hash_value", "logical_type": "INTEGER"},
+        {"name": "plan_line_id", "logical_type": "INTEGER"},
+        {"name": "plan_operation", "logical_type": "STRING"},
+        {"name": "plan_options", "logical_type": "STRING"},
+        {"name": "plan_object_owner", "logical_type": "STRING"},
+        {"name": "plan_object_name", "logical_type": "STRING"},
+        {"name": "plan_cardinality", "logical_type": "INTEGER"},
+        {"name": "starts", "logical_type": "INTEGER"},
+        {"name": "output_rows", "logical_type": "INTEGER"},
+        {"name": "first_refresh_time", "logical_type": "DATETIME"},
+        {"name": "last_refresh_time", "logical_type": "DATETIME"},
+        {"name": "status", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/sql_plan_monitor.sql",
+      "template_sha256": "64145185d7a41d04340adcaa1bc686332b0e369363bbbd153af255b342b73ba0",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "MEDIUM"
+    },
+    {
       "tool_id": "db.session.active",
       "version": "1.0.0",
       "db_type": "ORACLE",
