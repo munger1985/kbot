@@ -838,6 +838,27 @@ class MainApiTest(unittest.TestCase):
             "X-Request-ID": "main-request-1",
         }
 
+    def test_cors_preflight_allows_aiops_upload_metadata_headers(self) -> None:
+        requested_headers = (
+            "authorization,content-type,x-file-name,"
+            "x-kbot-domain-id,x-kbot-user-id"
+        )
+
+        response = self.client.options(
+            "/api/v1/apps/aiops/conversation-uploads",
+            headers={
+                "Origin": "http://localhost:8080",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": requested_headers,
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            requested_headers,
+            response.headers["Access-Control-Allow-Headers"],
+        )
+
     def test_agent_binding_enriches_internal_owner_and_current_version(self) -> None:
         semantic_model_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a017")
         policy_binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a018")

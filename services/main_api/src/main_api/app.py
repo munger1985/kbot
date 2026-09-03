@@ -284,24 +284,10 @@ def create_main_api_app(
             allow_origins=config.allowed_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=[
-                "Authorization",
-                "Content-Type",
-                "Idempotency-Key",
-                "If-Match",
-                "Last-Event-ID",
-                "X-Request-ID",
-                "traceparent",
-                *(
-                    [
-                        "X-KBot-Domain-ID",
-                        "X-KBot-Test-Auth",
-                        "X-KBot-User-ID",
-                    ]
-                    if settings.platform.debug
-                    else []
-                ),
-            ],
+            # 请求头名称不是授权边界。允许浏览器声明扩展请求头，避免上传
+            # 元数据等公开 API 契约与一份独立 CORS 名单发生漂移；身份、
+            # Domain 和功能权限仍由认证中间件及路由逐项校验。
+            allow_headers=["*"],
         )
     app.include_router(knowledge_router)
     app.include_router(auth_router)
