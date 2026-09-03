@@ -17,8 +17,12 @@ _DANGEROUS = re.compile(
     r"insert|update|delete|merge|replace|create|alter|drop|truncate|"
     r"grant|revoke|commit|rollback|savepoint|call|execute|exec|begin|"
     r"declare|lock|for\s+update|into\s+(?:out|dump)file|load_file|"
-    r"dbms_[a-z0-9_]+|utl_[a-z0-9_]+|sleep|benchmark"
+    r"sleep|benchmark"
     r")\b",
+    re.IGNORECASE,
+)
+_PACKAGE_CALL = re.compile(
+    r"\b((?:dbms|utl)_[a-z0-9_$#]+)\s*\.",
     re.IGNORECASE,
 )
 
@@ -91,6 +95,17 @@ def validate_readonly_template(
     dangerous = _DANGEROUS.search(code)
     if dangerous:
         raise ValueError(f"诊断模板包含禁止结构：{dangerous.group(0)}")
+    referenced_packages = {
+        match.group(1).upper() for match in _PACKAGE_CALL.finditer(code)
+    }
+    undeclared_packages = referenced_packages - set(
+        definition.allowed_packages
+    )
+    if undeclared_packages:
+        raise ValueError(
+            "诊断模板包含未声明数据库包："
+            + "、".join(sorted(undeclared_packages))
+        )
     binds = set(_BIND_PATTERN.findall(code.lower()))
     declared = {item.name for item in definition.parameters}
     if binds != declared:
@@ -100,10 +115,19 @@ def validate_readonly_template(
         )
     if re.search(r"[%][(][a-zA-Z_]", code) or "{{" in code or "${" in code:
         raise ValueError("SQL 模板禁止动态字符串插值")
-    validate_readonly_ast(sql, db_type=str(definition.db_type))
+    validate_readonly_ast(
+        sql,
+        db_type=str(definition.db_type),
+        allowed_packages=set(definition.allowed_packages),
+    )
 
 
-def validate_readonly_ast(sql: str, *, db_type: str) -> None:
+def validate_readonly_ast(
+    sql: str,
+    *,
+    db_type: str,
+    allowed_packages: set[str] | None = None,
+) -> None:
     """使用显式数据库方言复核固定目录 SQL 的只读结构。"""
     dialect = {
         "ORACLE": "oracle",
@@ -121,8 +145,14 @@ def validate_readonly_ast(sql: str, *, db_type: str) -> None:
     expression = statements[0]
     if expression.find(exp.Lock) is not None:
         raise ValueError("SQL 模板禁止锁语义")
-    if expression.find(exp.Dot) is not None:
-        raise ValueError("SQL 模板禁止包函数或不透明点表达式")
+    package_allowlist = allowed_packages or set()
+    for dot in expression.find_all(exp.Dot):
+        if not (
+            isinstance(dot.this, exp.Identifier)
+            and str(dot.this.name).upper() in package_allowlist
+            and isinstance(dot.expression, exp.Func)
+        ):
+            raise ValueError("SQL 模板禁止未声明包函数或不透明点表达式")
     if any("@" in str(table.name or "") for table in expression.find_all(exp.Table)):
         raise ValueError("SQL 模板禁止数据库链路")
 

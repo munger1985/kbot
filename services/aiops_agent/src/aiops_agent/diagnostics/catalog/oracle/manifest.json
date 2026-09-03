@@ -153,6 +153,31 @@
       "cost_level": "MEDIUM"
     },
     {
+      "tool_id": "db.sql.display_cursor",
+      "description": "使用 DBMS_XPLAN DISPLAY_CURSOR 和 ALLSTATS LAST 查询指定 SQL_ID 的格式化实际执行计划；缺少运行时行源统计时仍返回可用计划并由回答说明边界",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_dbms_xplan_allstats_last",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [],
+      "required_privileges": ["V_$SQL", "V_$SQL_PLAN", "V_$SQL_PLAN_STATISTICS_ALL"],
+      "allowed_packages": ["DBMS_XPLAN"],
+      "parameters": [
+        {"name": "sql_id", "type": "string", "max_length": 13}
+      ],
+      "output_columns": [
+        {"name": "plan_table_output", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/sql_display_cursor.sql",
+      "template_sha256": "b11e42ac5c2eb0e1e7363c1d4e75401f9c2f5c1e4c12eb90557830350d13979e",
+      "timeout_seconds": 20,
+      "max_rows": 1000,
+      "max_bytes": 4194304,
+      "cost_level": "MEDIUM"
+    },
+    {
       "tool_id": "db.sql.object_statistics",
       "version": "1.0.0",
       "db_type": "ORACLE",

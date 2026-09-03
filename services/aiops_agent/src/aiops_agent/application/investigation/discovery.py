@@ -70,7 +70,8 @@ def available_tools(
                 "可以查询 V$/GV$、DBA_/CDB_/ALL_ 以及 AWR/ASH 系统视图；"
                 "仅在固定目录工具不能回答问题时使用，优先显式投影并使用 bind 参数；"
                 "查询结果按诊断账号实际可见内容原样返回，不做业务字段脱敏；"
-                "SQL 只能使用 policy.allowed_functions 中列出的函数"
+                "SQL 只能使用 policy.allowed_functions 中列出的函数；"
+                "包函数只能使用 policy.allowed_packages 中列出的 DBMS_XPLAN"
             ),
             "database_access": {
                 "granted_system_privileges": [
@@ -93,6 +94,7 @@ def available_tools(
             },
             "policy": {
                 "allowed_functions": list(dynamic_policy.allowed_functions),
+                "allowed_packages": list(dynamic_policy.allowed_packages),
                 "max_rows": dynamic_policy.max_rows,
                 "max_sql_chars": dynamic_policy.max_sql_chars,
                 "max_bind_count": dynamic_policy.max_bind_count,

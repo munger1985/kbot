@@ -1029,6 +1029,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 "db.sql.cursor_details",
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
+                "db.sql.display_cursor",
                 "db.sql.plan_monitor",
             ],
             [item.tool_id for item in uow.tool_invocations],
@@ -2885,21 +2886,26 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 for item in diagnostics.tools
             )
         )
-        discovered = {
-            item["tool_id"]
-            for item in ToolExecutionSnapshotBuilder(
-                playbook_registry=registry,
-                diagnostic_registry=diagnostics,
-            ).discover_tools(snapshot)
-        }
+        discovered_tools = ToolExecutionSnapshotBuilder(
+            playbook_registry=registry,
+            diagnostic_registry=diagnostics,
+        ).discover_tools(snapshot)
+        discovered = {item["tool_id"] for item in discovered_tools}
         self.assertTrue(
             {
                 "db.sql.cursor_details",
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
+                "db.sql.display_cursor",
             }
             <= discovered
         )
+        display_cursor = next(
+            item
+            for item in discovered_tools
+            if item["tool_id"] == "db.sql.display_cursor"
+        )
+        self.assertIn("ALLSTATS LAST", display_cursor["description"])
         self.assertEqual(
             frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),
             snapshot.available_source_capabilities,

@@ -74,11 +74,12 @@ class DiagnosticExecutionGrant(AIOpsContract):
 class OracleDynamicQueryPolicyGrant(AIOpsContract):
     """随 Grant 冻结并由 Executor 重放的 Oracle 动态查询策略。"""
 
-    schema_version: Literal["ORACLE_DYNAMIC_QUERY_POLICY.v3"] = (
-        "ORACLE_DYNAMIC_QUERY_POLICY.v3"
+    schema_version: Literal["ORACLE_DYNAMIC_QUERY_POLICY.v4"] = (
+        "ORACLE_DYNAMIC_QUERY_POLICY.v4"
     )
     allowed_objects: tuple[str, ...] = ()
     allowed_functions: tuple[str, ...]
+    allowed_packages: tuple[str, ...]
     max_rows: int = Field(ge=1, le=1000)
     max_sql_chars: int = Field(ge=1, le=100_000)
     max_bind_count: int = Field(ge=0, le=128)

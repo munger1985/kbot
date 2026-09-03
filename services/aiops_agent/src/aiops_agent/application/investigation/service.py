@@ -417,7 +417,7 @@ class TurnPlanningService:
         if single_sql_id is not None and not compact_route_incomplete:
             public_summary = (
                 f"已识别单 SQL 性能调查对象 {single_sql_id}，"
-                "将执行游标、计划、计划对象统计和实时计划监控基线"
+                "将执行游标、计划、对象统计、DBMS_XPLAN 和实时计划监控基线"
             )
         if compact_route_incomplete:
             public_summary = (
@@ -565,6 +565,7 @@ class TurnPlanningService:
                 "db.sql.cursor_details",
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
+                "db.sql.display_cursor",
                 "db.sql.plan_monitor",
             )
         return ()
@@ -616,6 +617,13 @@ class TurnPlanningService:
                 {"sql_id": sql_id},
                 MeasurementSemantics.CURRENT_ACTIVITY,
                 False,
+            ),
+            (
+                "DBMS_XPLAN ALLSTATS LAST 格式化执行计划",
+                "db.sql.display_cursor",
+                {"sql_id": sql_id},
+                MeasurementSemantics.CURRENT_ACTIVITY,
+                True,
             ),
             (
                 "可用的实时执行行源统计",

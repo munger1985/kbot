@@ -574,7 +574,7 @@ content = """
 必须输出 diagnostic_profile 和 subject_ref。用户要求分析一个明确 SQL_ID 的性能、执行计划、
 资源消耗或调优问题时，选择 SINGLE_SQL_PERFORMANCE，并在 subject_ref.sql_id 中原样提取后
 转为小写；这是只读诊断，action_intent 必须为 NONE。该档案由服务端展开游标、完整执行计划、
-计划对象统计信息和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
+计划对象统计信息、DBMS_XPLAN ALLSTATS LAST 和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
 
 如果问题目标明确、没有用户粘贴证据、不要求根因推演或变更，并且现有工具可以直接查询，
@@ -640,6 +640,8 @@ db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，S
 清单外的同义函数、系统函数或自定义函数；应优先显式列出最小必要列，若确有诊断必要，
 系统诊断视图的星号投影和显式列查询都按只读边界自动执行，结果按诊断账号实际可见内容
 原样返回；固定目录工具能够回答时优先使用固定工具。生成Oracle诊断SQL时必须读取该工具的database_access：
+policy.allowed_packages 是包函数白名单；允许使用 DBMS_XPLAN 的查询函数获取格式化执行计划，
+但其他 Oracle 包仍禁止调用，外层仍必须是单条只读 SELECT。
 诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、DBA_、CDB_、ALL_及
 AWR/ASH系统视图；不得生成超出工具对象范围的应用Schema、数据库链路或非SELECT语句。
 AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
@@ -670,8 +672,9 @@ InvestigationPlanningOutput。
 必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
 available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
 数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
-函数白名单，SQL 不得使用清单外函数；同时必须遵循该工具的database_access、input和
-policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、
+函数白名单，SQL 不得使用清单外函数；policy.allowed_packages 是包函数白名单，允许使用
+DBMS_XPLAN 查询函数获取格式化执行计划，其他 Oracle 包仍禁止调用；同时必须遵循该工具的
+database_access、input和policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、
 DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
 系统诊断视图的星号投影和显式列查询都允许在只读边界内自动执行，结果按诊断账号实际
@@ -726,8 +729,9 @@ CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状
 当 task_frame.diagnostic_profile=SINGLE_SQL_PERFORMANCE 时，必须分别核对
 db.sql.cursor_details、db.sql.execution_plan 和 db.sql.object_statistics。缺少任一核心证据时，
 不得把“统计信息正常/过旧”“基数估算准确/错误”或完整根因标记为 ANSWERABLE；系统仍可补证
-时选择 REPLAN，否则只能输出有明确边界的 PARTIAL。db.sql.plan_monitor 是可选的实时证据，
-零行只表示当前没有保留实时监控记录，不能抵消执行计划或对象统计信息证据。
+时选择 REPLAN，否则只能输出有明确边界的 PARTIAL。db.sql.display_cursor 和
+db.sql.plan_monitor 是可选的实时证据，零行只表示当前没有保留对应运行时记录，不能抵消
+执行计划或对象统计信息证据。
 """
 
 [[prompts]]

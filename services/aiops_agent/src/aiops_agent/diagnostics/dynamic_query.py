@@ -87,9 +87,10 @@ class DynamicQueryPolicySnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v3"
+    schema_version: str = "ORACLE_DYNAMIC_QUERY_POLICY.v4"
     allowed_objects: tuple[str, ...] = ()
     allowed_functions: tuple[str, ...] = tuple(sorted(_SAFE_FUNCTIONS))
+    allowed_packages: tuple[str, ...] = ("DBMS_XPLAN",)
     max_rows: int = Field(default=200, ge=1, le=1000)
     max_sql_chars: int = Field(default=20_000, ge=1, le=100_000)
     max_bind_count: int = Field(default=32, ge=0, le=128)
@@ -126,6 +127,9 @@ class OracleDynamicQueryPolicy:
         }
         self._allowed_functions = {
             value.upper() for value in snapshot.allowed_functions
+        }
+        self._allowed_packages = {
+            value.upper() for value in snapshot.allowed_packages
         }
 
     def validate(
@@ -223,15 +227,28 @@ class OracleDynamicQueryPolicy:
                 "DYNAMIC_SQL_LOCK_FORBIDDEN",
                 "动态 SQL 禁止 FOR UPDATE 或其他锁语义",
             )
-        if expression.find(exp.Dot) is not None:
-            raise DynamicQueryRejected(
-                "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
-                "动态 SQL 禁止包函数、成员调用或不透明点表达式",
-            )
+        package_functions: set[int] = set()
+        for dot in expression.find_all(exp.Dot):
+            if not self._allowed_package_call(dot):
+                raise DynamicQueryRejected(
+                    "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
+                    "动态 SQL 只允许策略声明的只读包函数",
+                )
+            package_functions.add(id(dot.expression))
+        table_wrappers = {
+            id(table.this)
+            for table in expression.find_all(exp.Table)
+            if self._table_function_package(table) is not None
+        }
         for function in expression.find_all(exp.Func):
             # sqlglot 将 AND/OR 连接符也纳入 Func 继承体系；它们是 SQL
             # 语法节点而非可调用函数，不能参与函数白名单判断。
             if isinstance(function, exp.Connector):
+                continue
+            if (
+                id(function) in package_functions
+                or id(function) in table_wrappers
+            ):
                 continue
             name = function.sql_name().upper()
             if name == "ANONYMOUS":
@@ -242,6 +259,30 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
                     f"动态 SQL 函数不在允许清单：{name or 'UNKNOWN'}",
                 )
+
+    def _allowed_package_call(self, expression: exp.Dot) -> bool:
+        package = expression.this
+        return (
+            isinstance(package, exp.Identifier)
+            and str(package.name).upper() in self._allowed_packages
+            and isinstance(expression.expression, exp.Func)
+        )
+
+    def _table_function_package(self, table: exp.Table) -> str | None:
+        wrapper = table.this
+        if not isinstance(wrapper, exp.Anonymous):
+            return None
+        if str(wrapper.name).upper() != "TABLE":
+            return None
+        calls = [
+            dot
+            for dot in wrapper.find_all(exp.Dot)
+            if self._allowed_package_call(dot)
+        ]
+        if len(calls) != 1:
+            return None
+        return str(calls[0].this.name).upper()
+
     def _projected_columns(self, expression: exp.Select) -> tuple[str, ...]:
         columns: list[str] = []
         for projection in expression.expressions:
@@ -267,8 +308,14 @@ class OracleDynamicQueryPolicy:
             str(cte.alias_or_name).lower()
             for cte in expression.find_all(exp.CTE)
         }
-        objects: set[str] = set()
+        objects = {
+            f"sys.{str(dot.this.name).lower()}"
+            for dot in expression.find_all(exp.Dot)
+            if self._allowed_package_call(dot)
+        }
         for table in expression.find_all(exp.Table):
+            if self._table_function_package(table) is not None:
+                continue
             name = str(table.name or "")
             if name.lower() in cte_names:
                 continue

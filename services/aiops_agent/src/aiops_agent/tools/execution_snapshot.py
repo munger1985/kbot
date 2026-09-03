@@ -110,13 +110,16 @@ class ToolExecutionSnapshotBuilder:
             output_names = tuple(
                 column.name for column in definition.output_columns
             )
+            purpose = definition.description or (
+                f"受控只读数据库观测：{definition.tool_id}"
+            )
             discovered.append(
                 {
                     "tool_id": definition.tool_id,
                     "version": definition.version,
                     "tool_class": "ORACLE_SQL",
                     "description": (
-                        f"受控只读数据库观测：{definition.tool_id}；"
+                        f"{purpose}；"
                         f"返回字段：{', '.join(output_names)}"
                     ),
                     "input": {

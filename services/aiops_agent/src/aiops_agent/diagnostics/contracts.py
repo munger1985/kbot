@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -50,6 +51,7 @@ class DiagnosticToolDefinition(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     tool_id: str = Field(pattern=r"^db\.[a-z0-9_.-]{1,124}$")
+    description: str = Field(default="", max_length=500)
     version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
     db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
     variant: str = Field(min_length=1, max_length=128)
@@ -58,6 +60,7 @@ class DiagnosticToolDefinition(BaseModel):
     required_capabilities: tuple[str, ...] = ()
     required_entitlements: tuple[str, ...] = ()
     required_privileges: tuple[str, ...] = ()
+    allowed_packages: tuple[str, ...] = ()
     parameters: tuple[DiagnosticParameter, ...] = ()
     output_columns: tuple[DiagnosticOutputColumn, ...]
     template_ref: str = Field(pattern=r"^[a-zA-Z0-9_./-]+\.sql$")
@@ -77,4 +80,9 @@ class DiagnosticToolDefinition(BaseModel):
         columns = [item.name for item in self.output_columns]
         if len(columns) != len(set(columns)):
             raise ValueError("输出列名称不能重复")
+        if len(self.allowed_packages) != len(set(self.allowed_packages)) or any(
+            re.fullmatch(r"[A-Z][A-Z0-9_$#]{0,127}", item) is None
+            for item in self.allowed_packages
+        ):
+            raise ValueError("允许的数据库包名称无效或重复")
         return self

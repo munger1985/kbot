@@ -353,7 +353,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(58, len(registry.tools))
+        self.assertEqual(59, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -378,6 +378,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertIn(("ORACLE", "db.sql.plan_monitor"), pairs)
         self.assertIn(("ORACLE", "db.sql.cursor_details"), pairs)
         self.assertIn(("ORACLE", "db.sql.execution_plan"), pairs)
+        self.assertIn(("ORACLE", "db.sql.display_cursor"), pairs)
         self.assertIn(("ORACLE", "db.sql.object_statistics"), pairs)
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
@@ -428,6 +429,22 @@ class DiagnosticCatalogTest(unittest.TestCase):
             tuple(parameter.name for parameter in tool.definition.parameters),
         )
 
+    def test_oracle_display_cursor_is_fixed_to_allstats_last(self) -> None:
+        tool = DiagnosticRegistry.load().resolve(
+            tool_id="db.sql.display_cursor",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities={"dynamic_performance_views"},
+            entitlements=set(),
+        )
+
+        self.assertEqual(("DBMS_XPLAN",), tool.definition.allowed_packages)
+        self.assertIn("dbms_xplan.display_cursor", tool.sql.lower())
+        self.assertIn("'ALLSTATS LAST'", tool.sql)
+        self.assertIn(":sql_id", tool.sql)
+        self.assertIn("格式化实际执行计划", tool.definition.description)
+
     def test_oracle_single_sql_baseline_contracts_are_loadable(self) -> None:
         registry = DiagnosticRegistry.load()
         expected = {
@@ -442,6 +459,10 @@ class DiagnosticCatalogTest(unittest.TestCase):
             "db.sql.object_statistics": (
                 ("sql_id",),
                 {"last_analyzed", "stale_stats", "stattype_locked"},
+            ),
+            "db.sql.display_cursor": (
+                ("sql_id",),
+                {"plan_table_output"},
             ),
         }
         for tool_id, (parameters, columns) in expected.items():

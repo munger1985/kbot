@@ -178,6 +178,41 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
         )
 
+    def test_dbms_xplan_package_queries_are_allowed(self) -> None:
+        current = self.policy.validate(
+            "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR("
+            "NULL, NULL, 'ALLSTATS LAST'))"
+        )
+        historical = self.policy.validate(
+            "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR(:sql_id))",
+            {"sql_id": "6tjx7su0q5ttj"},
+        )
+
+        self.assertEqual(
+            ("sys.dbms_xplan",),
+            current.referenced_objects,
+        )
+        self.assertEqual(("*",), current.projected_columns)
+        self.assertIn("FETCH FIRST 50 ROWS ONLY", current.normalized_sql)
+        self.assertEqual(
+            ("sys.dbms_xplan",),
+            historical.referenced_objects,
+        )
+
+    def test_only_declared_database_packages_are_allowed(self) -> None:
+        restricted = OracleDynamicQueryPolicy(
+            DynamicQueryPolicySnapshot(allowed_packages=())
+        )
+        with self.assertRaises(DynamicQueryRejected) as raised:
+            restricted.validate(
+                "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR())"
+            )
+
+        self.assertEqual(
+            "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
+            raised.exception.code,
+        )
+
     def test_projection_alias_and_bind_parameters_are_strict(self) -> None:
         self._assert_rejected(
             "SELECT sid + 1 FROM v$session",
@@ -618,9 +653,14 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             list(DynamicQueryPolicySnapshot().allowed_functions),
             dynamic_tool["policy"]["allowed_functions"],
         )
+        self.assertEqual(
+            ["DBMS_XPLAN"],
+            dynamic_tool["policy"]["allowed_packages"],
+        )
         self.assertIn(
             "policy.allowed_functions", dynamic_tool["description"]
         )
+        self.assertIn("policy.allowed_packages", dynamic_tool["description"])
         self.assertEqual(
             "AUTO_EXECUTE_BOUNDED",
             dynamic_tool["policy"]["star_projection_behavior"],
