@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -60,6 +61,15 @@ class AIOpsClientError(RuntimeError):
         self.status_code = status_code
         self.code = code
         self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class AIOpsBinaryResponse:
+    """AIOps 二进制下载响应，保留安全的展示头。"""
+
+    body: bytes
+    media_type: str
+    headers: dict[str, str]
 
 
 class _BaseAIOpsClient:
@@ -140,6 +150,51 @@ class _BaseAIOpsClient:
                 status_code=503,
                 code="OPS_UPSTREAM_UNAVAILABLE",
                 message="AIOps 服务暂时不可用",
+                retryable=True,
+            ) from exc
+
+    async def _bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        headers = {
+            "Accept": "application/pdf",
+            **self._auth.headers(auth_context),
+        }
+        session = await self._get_session()
+        try:
+            async with session.request(
+                method, f"{self._base_url}{path}", headers=headers,
+                timeout=self._timeout,
+            ) as response:
+                body = await response.read()
+                if response.status >= 400:
+                    try:
+                        payload = json.loads(body.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = {"code": "OPS_UPSTREAM_UNAVAILABLE"}
+                    self._raise_error(response.status, payload)
+                forwarded = {
+                    name: value for name, value in response.headers.items()
+                    if name.lower() in {"content-disposition", "cache-control"}
+                }
+                return AIOpsBinaryResponse(
+                    body=body,
+                    media_type=response.headers.get(
+                        "Content-Type", "application/octet-stream"
+                    ).split(";", 1)[0],
+                    headers=forwarded,
+                )
+        except AIOpsClientError:
+            raise
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise AIOpsClientError(
+                status_code=503,
+                code="OPS_UPSTREAM_UNAVAILABLE",
+                message="AIOps 报告下载服务暂时不可用",
                 retryable=True,
             ) from exc
 
@@ -913,6 +968,43 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "GET",
             f"{INTERNAL_API_V1}/aiops/reports/{report_id}",
+            auth_context=auth_context,
+        )
+
+    async def generate_user_report(
+        self,
+        *,
+        ops_run_id: UUID,
+        template_ref: str,
+        period_kind: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/reports:generate",
+            payload={
+                "ops_run_id": str(ops_run_id),
+                "template_ref": template_ref,
+                "period_kind": period_kind,
+            },
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def get_report_presentation(
+        self, report_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/reports/{report_id}/presentation",
+            auth_context=auth_context,
+        )
+
+    async def download_report_pdf(
+        self, report_id: UUID, *, auth_context: AuthContext
+    ) -> AIOpsBinaryResponse:
+        return await self._bytes(
+            "GET", f"{INTERNAL_API_V1}/aiops/reports/{report_id}/pdf",
             auth_context=auth_context,
         )
 

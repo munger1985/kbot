@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 20
-                              AND contract_version = 'aiops-oracle-v10'
+                              AND schema_version = 21
+                              AND contract_version = 'aiops-oracle-v11'
                             """
                         )
                     )
@@ -127,6 +127,17 @@ class AIOpsProcessRuntime:
                         )
                     )
                 ).scalar_one_or_none()
+                report_source_table = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT COUNT(*)
+                            FROM USER_TABLES
+                            WHERE TABLE_NAME = 'KBOT_OPS_REPORT_SOURCE'
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
                 tool_class_constraint = (
                     await session.execute(
                         text(
@@ -149,6 +160,7 @@ class AIOpsProcessRuntime:
                 integrity_ready = (
                     required_columns == 8
                     and report_summary_column == 1
+                    and report_source_table == 1
                     and task_type_constraint == 1
                     and tool_class_constraint == 1
                 )

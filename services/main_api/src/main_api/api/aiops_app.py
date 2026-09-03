@@ -860,7 +860,8 @@ async def stream_conversation_turn_events(
 
 @router.get("/report-templates")
 async def list_report_templates(request: Request):
-    await _require(request, "aiops:plan_manage")
+    # 业务用户需要在三个工作入口选择可用模板；模板写操作仍由管理员控制。
+    await _require(request, "aiops:use")
     return await _client(request).report_template_request(
         "GET", "", auth_context=request.state.auth_context
     )

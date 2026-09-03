@@ -146,5 +146,33 @@
     }
   }
 
-  globalThis.KBotAIOpsAuth = { clear, load, login, request, stream, uuid };
+  async function download(path, fileName) {
+    const session = load();
+    if (!session?.access_token) {
+      location.replace("./login.html");
+      throw new Error("请先登录 AIOps");
+    }
+    const response = await fetch(`${baseUrl()}${path}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/pdf",
+        Authorization: `Bearer ${session.access_token}`,
+        "X-Request-ID": uuid(),
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.text();
+      let parsed = payload;
+      try { parsed = payload ? JSON.parse(payload) : null; } catch (_) { /* 保留原始错误文本。 */ }
+      throw new Error(errorMessage(parsed, response.status));
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  globalThis.KBotAIOpsAuth = { clear, load, login, request, stream, download, uuid };
 })();

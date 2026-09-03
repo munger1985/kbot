@@ -6,6 +6,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -60,6 +62,17 @@ def get_service(request: Request) -> AIOpsRuntimeService:
 
 Service = Annotated[AIOpsRuntimeService, Depends(get_service)]
 Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
+
+
+class GenerateUserReportRequest(BaseModel):
+    """业务用户从已完成诊断显式创建正式报告。"""
+
+    model_config = ConfigDict(extra="forbid")
+    ops_run_id: UUID
+    template_ref: str = Field(
+        default="system:diagnosis.standard", min_length=1, max_length=128
+    )
+    period_kind: str = Field(default="AD_HOC", max_length=16)
 
 
 def _scope(request: Request, context: AuthContext) -> int:
@@ -283,9 +296,94 @@ async def get_report(
 ) -> ReportView:
     require_service_scope(request, "aiops.run")
     domain_id = _scope(request, context)
+    _ensure_agent_authorized(
+        context,
+        await service.get_report_source_agent_id(
+            report_id=report_id, domain_id=domain_id
+        ),
+    )
     return await service.get_report(
         report_id=report_id,
         domain_id=domain_id,
+    )
+
+
+@router.post("/reports:generate", status_code=201)
+async def generate_user_report(
+    body: GenerateUserReportRequest,
+    request: Request,
+    service: Service,
+    context: Auth,
+):
+    """只在用户明确操作后，从终态诊断结果创建报告。"""
+    require_service_scope(request, "aiops.run")
+    domain_id = _scope(request, context)
+    run = await service.get_run(ops_run_id=body.ops_run_id, domain_id=domain_id)
+    _ensure_agent_authorized(context, run.agent_id)
+    template = await request.app.state.report_template_service.resolve(
+        domain_id=domain_id, template_ref=body.template_ref
+    )
+    report = await service.generate_user_report(
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        ops_run_id=body.ops_run_id,
+        template=template,
+        period_kind=body.period_kind,
+        trace_id=request.headers.get("X-Request-ID", str(body.ops_run_id)),
+    )
+    return {
+        "report_id": str(report.report_id),
+        "status": report.status,
+        "template_ref": report.template_id,
+        "report_version": int(report.report_version),
+    }
+
+
+@router.get("/reports/{report_id}/presentation")
+async def get_report_presentation(
+    report_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+):
+    require_service_scope(request, "aiops.run")
+    domain_id = _scope(request, context)
+    _ensure_agent_authorized(
+        context,
+        await service.get_report_source_agent_id(
+            report_id=report_id, domain_id=domain_id
+        ),
+    )
+    return await service.get_report_presentation(report_id=report_id, domain_id=domain_id)
+
+
+@router.get("/reports/{report_id}/pdf")
+async def download_report_pdf(
+    report_id: UUID,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> Response:
+    require_service_scope(request, "aiops.run")
+    domain_id = _scope(request, context)
+    _ensure_agent_authorized(
+        context,
+        await service.get_report_source_agent_id(
+            report_id=report_id, domain_id=domain_id
+        ),
+    )
+    content = await service.render_report_pdf(
+        report_id=report_id, domain_id=domain_id
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="aiops-report-{report_id}.pdf"'
+            ),
+            "Cache-Control": "private, no-store",
+        },
     )
 
 

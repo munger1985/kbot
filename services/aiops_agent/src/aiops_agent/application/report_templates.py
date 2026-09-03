@@ -7,6 +7,13 @@ from typing import Any
 from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
+from aiops_agent.application.reporting import (
+    ReportTemplate,
+    list_system_templates,
+    resolve_system_template,
+    template_summary,
+    validate_template_definition,
+)
 from aiops_agent.entities import InspectionReportTemplateEntity, InspectionReportTemplateVersionEntity
 from platform_core.identity import uuid7
 
@@ -31,13 +38,29 @@ class InspectionReportTemplateService:
     def __init__(self, *, uow_factory): self._uow_factory = uow_factory
 
     async def list(self, *, domain_id: int):
+        result = list_system_templates()
         async with self._uow_factory() as uow:
             rows = await uow.inspections.list_report_templates(domain_id=domain_id)
-            result = []
             for row in rows:
                 version = await uow.inspections.get_report_template_version(template_version_id=row.current_version_id)
                 if version is None: raise state_conflict("巡检报告模板当前版本不存在")
-                result.append({**self._view(row), "version_no": int(version.version_no), "content_hash": version.content_hash})
+                definition = dict(version.definition_json)
+                definition.setdefault("display_name", row.display_name)
+                template = validate_template_definition(definition)
+                result.append({
+                    **self._view(row),
+                    **template_summary(ReportTemplate(
+                        template_ref=f"domain:{row.template_id}",
+                        version=str(version.version_no),
+                        display_name=row.display_name,
+                        applicable_source_kinds=template.applicable_source_kinds,
+                        allowed_period_kinds=template.allowed_period_kinds,
+                        sections=template.sections,
+                        definition=definition,
+                    )),
+                    "version_no": int(version.version_no),
+                    "content_hash": version.content_hash,
+                })
             return result
 
     async def get(self, *, domain_id: int, template_id: UUID):
@@ -51,6 +74,8 @@ class InspectionReportTemplateService:
     async def create(self, *, domain_id: int, actor_id: str, display_name: str, definition: dict[str, Any]):
         _validate(definition); display_name = display_name.strip()
         if not display_name: raise validation_failed("巡检报告模板名称不能为空")
+        definition = {**definition, "display_name": display_name}
+        validate_template_definition(definition)
         async with self._uow_factory() as uow:
             template_id, version_id = uuid7(), uuid7(); digest = self._hash(definition)
             row = InspectionReportTemplateEntity(template_id=template_id, domain_id=domain_id, display_name=display_name, status="ACTIVE", current_version_id=version_id, created_by=actor_id, updated_by=actor_id)
@@ -64,10 +89,43 @@ class InspectionReportTemplateService:
             row = await uow.inspections.get_report_template(domain_id=domain_id, template_id=template_id, lock=True)
             if row is None: raise resource_not_found("InspectionReportTemplate")
             if int(row.row_version) != expected_row_version: raise state_conflict("巡检报告模板版本已变化")
+            definition = {**definition, "display_name": row.display_name}
+            validate_template_definition(definition)
             version_id, number, digest = uuid7(), await uow.inspections.next_report_template_version(template_id=template_id), self._hash(definition)
             await uow.inspections.add_report_template_version(InspectionReportTemplateVersionEntity(template_version_id=version_id, domain_id=domain_id, template_id=template_id, version_no=number, definition_json=definition, content_hash=digest, created_by=actor_id))
             row.current_version_id, row.updated_by = version_id, actor_id
             await uow.commit(); return {**self._view(row), "definition": definition, "content_hash": digest, "version_no": number}
+
+    async def resolve(self, *, domain_id: int, template_ref: str) -> ReportTemplate:
+        """解析系统或当前 Domain 私有模板，并返回可冻结的定义。"""
+        system = resolve_system_template(template_ref)
+        if system is not None:
+            return system
+        if not template_ref.startswith("domain:"):
+            raise validation_failed("报告模板引用无效")
+        try:
+            template_id = UUID(template_ref.removeprefix("domain:"))
+        except ValueError as exc:
+            raise validation_failed("报告模板引用无效") from exc
+        async with self._uow_factory() as uow:
+            row = await uow.inspections.get_report_template(domain_id=domain_id, template_id=template_id)
+            if row is None or row.status != "ACTIVE":
+                raise resource_not_found("ReportTemplate")
+            version = await uow.inspections.get_report_template_version(template_version_id=row.current_version_id)
+            if version is None:
+                raise state_conflict("报告模板当前版本不存在")
+            definition = dict(version.definition_json)
+            definition.setdefault("display_name", row.display_name)
+            template = validate_template_definition(definition)
+            return ReportTemplate(
+                template_ref=template_ref,
+                version=str(version.version_no),
+                display_name=row.display_name,
+                applicable_source_kinds=template.applicable_source_kinds,
+                allowed_period_kinds=template.allowed_period_kinds,
+                sections=template.sections,
+                definition=definition,
+            )
 
     @staticmethod
     def _hash(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()

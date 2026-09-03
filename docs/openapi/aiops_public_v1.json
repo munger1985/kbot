@@ -3021,6 +3021,31 @@
         "title": "RejectionCommand",
         "type": "object"
       },
+      "ReportGenerationPayload": {
+        "description": "业务用户显式生成正式报告的请求。",
+        "properties": {
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "period_kind": {
+            "default": "AD_HOC",
+            "title": "Period Kind",
+            "type": "string"
+          },
+          "template_ref": {
+            "default": "system:diagnosis.standard",
+            "title": "Template Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id"
+        ],
+        "title": "ReportGenerationPayload",
+        "type": "object"
+      },
       "ReportPage": {
         "additionalProperties": false,
         "properties": {
@@ -7144,6 +7169,90 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/reports/{report_id}/pdf": {
+      "get": {
+        "description": "下载服务端生成的只读 PDF 报告。",
+        "operationId": "download_report_pdf_api_v1_apps_aiops_reports__report_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Report Pdf",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/reports/{report_id}/presentation": {
+      "get": {
+        "description": "取得报告预览所需的冻结展示投影。",
+        "operationId": "get_report_presentation_api_v1_apps_aiops_reports__report_id__presentation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report Presentation",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/reports/{report_id}/versions": {
       "get": {
         "operationId": "list_report_versions_api_v1_apps_aiops_reports__report_id__versions_get",
@@ -7211,6 +7320,57 @@
           }
         },
         "summary": "List Report Versions",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/reports:generate": {
+      "post": {
+        "description": "由用户明确确认后，基于终态诊断生成正式报告。",
+        "operationId": "generate_report_api_v1_apps_aiops_reports_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportGenerationPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Report",
         "tags": [
           "AIOps"
         ]

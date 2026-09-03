@@ -21,8 +21,8 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 选择专业 DBA Skill：
 
 ```text
-告警 → Situation → Diagnostic Run → Blueprint → 报告或诊断结论
-人工对话/巡检 → Conversation Turn → Agent Plan → 本轮证据 → 回答或巡检报告
+告警 → Situation → Diagnostic Run → Blueprint → 诊断结论 → 用户选择报告或深入诊断
+人工对话/巡检 → Conversation Turn → Agent Plan → 本轮证据 → 回答或正式报告
 变更请求 → Change Proposal → 人工审批 → 受控执行 → 同口径验证
 ```
 
@@ -41,13 +41,15 @@ Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业
    当前环境可用的最小 Skill 集。回答直接处理用户当前问题，并按服务端展示契约选择
    自然段、列表、表格或数据图形。引用证据默认折叠，不重复堆入回答正文。
 2. **告警诊断**：展示监控告警触发的 Situation、自动诊断进度和只读诊断结果。自动
-   Run 永不执行变更；用户可从该结果继续对话，新的 Chat Run 继承原告警、时间窗口、
-   证据和结论。只有进入人工对话后，才按 Agent 的变更权限展示逐条审批入口。
+   Run 永不执行变更或自动生成报告；用户可显式生成正式诊断报告，或从该结果继续
+   对话，新的 Chat Run 继承原告警、时间窗口、证据和结论。只有进入人工对话后，才按
+   Agent 的变更权限展示逐条审批入口。
 3. **日常巡检**：展示计划触发的 Inspection Fire、巡检报告、异常 Finding 和建议。
    用户可从报告继续对话，沿用巡检证据深入定位；审批与执行规则与告警续聊一致。
 
-固定标题、发现、建议和数据缺口等报告结构只属于日常巡检及正式报告 Artifact，不作为
-智能诊断或告警续聊中每一轮 Agent 消息的统一格式。
+固定标题、发现、建议和数据缺口等报告结构只属于正式报告 Artifact，不作为智能诊断
+或告警续聊中每一轮 Agent 消息的统一格式。报告生成、模板、周期与导出规则见
+[AIOps 正式报告与导出设计](aiops-reporting.md)。
 
 三个入口共享一个会话工作区。`DiagnosticRun`、`DiagnosisReport`、`ChangeProposal`、
 Evidence 和时间线仍是后端权威资源，但在页面中作为当前问题的上下文、结果和待办

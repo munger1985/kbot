@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 20,
-  "contract_version": "aiops-oracle-v10",
+  "schema_version": 21,
+  "contract_version": "aiops-oracle-v11",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "name": "004_ops_inspection.sql",
-      "statements": 19,
-      "sha256": "fa590f5b790598baaf0b509eb7b6bba58f747b40502c89ebb5f752009ff4fc82"
+      "statements": 22,
+      "sha256": "3eda6463ef053eabee38ebe8e894c559cbb3f93e17289d6c0e074e938198d2d7"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 35,
-      "sha256": "cddfa7684d6627fcd2ecfdbf141c20a07af72de362bf91e3225f21e1966cab9c"
+      "sha256": "049e3a6b45f9433e4d6df1148420ab9fd757c3b6012cdbc05f803254b7c59158"
     },
     {
       "name": "007_ops_agents.sql",
@@ -66,6 +66,7 @@
     "KBOT_OPS_INSPECTION_PLAN",
     "KBOT_OPS_INSPECTION_FIRE",
     "KBOT_OPS_REPORT",
+    "KBOT_OPS_REPORT_SOURCE",
     "KBOT_OPS_INBOX",
     "KBOT_OPS_OUTBOX",
     "KBOT_OPS_AGENT",
@@ -134,6 +135,8 @@
     {"constraint": "FK_OPS_AGENT_CURRENT_VERSION", "index": "IX_OPS_AGENT_CURRENT_VERSION", "table": "KBOT_OPS_AGENT", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_INSP_PLAN_AGENT", "index": "IX_OPS_INSP_PLAN_AGENT", "table": "KBOT_OPS_INSPECTION_PLAN", "columns": ["AGENT_ID", "DOMAIN_ID", "STATUS"]},
     {"constraint": "FK_OPS_RPT_TPL_VER_DOMAIN", "index": "IX_OPS_RPT_TPL_VER_DOMAIN", "table": "KBOT_OPS_REPORT_TEMPLATE_VER", "columns": ["DOMAIN_ID"]},
+    {"constraint": "FK_OPS_RPT_SOURCE_RUN", "index": "IX_OPS_RPT_SOURCE_RUN", "table": "KBOT_OPS_REPORT_SOURCE", "columns": ["OPS_RUN_ID"]},
+    {"constraint": "FK_OPS_RPT_SOURCE_ART", "index": "IX_OPS_RPT_SOURCE_ART", "table": "KBOT_OPS_REPORT_SOURCE", "columns": ["SOURCE_ARTIFACT_ID"]},
     {"constraint": "FK_OPS_RPT_TPL_CURRENT_VERSION", "index": "IX_OPS_RPT_TPL_CURRENT_VERSION", "table": "KBOT_OPS_REPORT_TEMPLATE", "columns": ["CURRENT_VERSION_ID"]},
     {"constraint": "FK_OPS_CONV_AGENT", "index": "IX_OPS_CONV_AGENT", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_ID"]},
     {"constraint": "FK_OPS_CONV_AGENT_VER_OWNER", "index": "IX_OPS_CONV_AGENT_VER", "table": "KBOT_OPS_CONVERSATION", "columns": ["AGENT_VERSION_ID", "AGENT_ID"]},

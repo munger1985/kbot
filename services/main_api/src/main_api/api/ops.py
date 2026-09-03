@@ -147,6 +147,14 @@ def require_if_match(
 IfMatch = Annotated[str, Depends(require_if_match)]
 
 
+class ReportGenerationPayload(BaseModel):
+    """业务用户显式生成正式报告的请求。"""
+
+    ops_run_id: UUID
+    template_ref: str = "system:diagnosis.standard"
+    period_kind: str = "AD_HOC"
+
+
 def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
@@ -223,6 +231,43 @@ async def get_report(
         auth_context=request.state.auth_context,
     )
     return ReportView.model_validate(payload)
+
+
+@router.post("/reports:generate", status_code=status.HTTP_201_CREATED)
+async def generate_report(
+    payload: ReportGenerationPayload,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+):
+    """由用户明确确认后，基于终态诊断生成正式报告。"""
+    return await _client(request).generate_user_report(
+        ops_run_id=payload.ops_run_id,
+        template_ref=payload.template_ref,
+        period_kind=payload.period_kind,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/reports/{report_id}/presentation")
+async def get_report_presentation(report_id: UUID, request: Request):
+    """取得报告预览所需的冻结展示投影。"""
+    return await _client(request).get_report_presentation(
+        report_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/reports/{report_id}/pdf")
+async def download_report_pdf(report_id: UUID, request: Request) -> Response:
+    """下载服务端生成的只读 PDF 报告。"""
+    result = await _client(request).download_report_pdf(
+        report_id, auth_context=request.state.auth_context
+    )
+    return Response(
+        content=result.body,
+        media_type=result.media_type,
+        headers=result.headers,
+    )
 
 
 @router.get("/reports", response_model=ReportPage)

@@ -19,6 +19,7 @@ from aiops_agent.entities import (
     OpsRunEntity,
     OutboxEntity,
     ReportEntity,
+    ReportSourceEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
@@ -51,6 +52,11 @@ class InspectionRepository(AIOpsRepository):
 
     async def add_report(self, entity: ReportEntity) -> ReportEntity:
         return await self._add(entity)
+
+    async def add_report_sources(
+        self, entities: list[ReportSourceEntity]
+    ) -> list[ReportSourceEntity]:
+        return await self._add_all(entities)
 
     async def add_report_template(self, entity): return await self._add(entity)
     async def add_report_template_version(self, entity): return await self._add(entity)
@@ -518,6 +524,22 @@ class InspectionRepository(AIOpsRepository):
             select(ReportEntity)
             .where(
                 ReportEntity.ops_run_id == ops_run_id,
+                ReportEntity.is_current == 1,
+            )
+            .order_by(ReportEntity.report_version.desc())
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def get_current_report_for_run_template(
+        self, *, ops_run_id: UUID, template_id: str
+    ) -> ReportEntity | None:
+        """按 Run 和冻结模板精确读取当前报告，保证重复请求可重放。"""
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .where(
+                ReportEntity.ops_run_id == ops_run_id,
+                ReportEntity.template_id == template_id,
                 ReportEntity.is_current == 1,
             )
             .order_by(ReportEntity.report_version.desc())

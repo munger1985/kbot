@@ -106,6 +106,30 @@ class OpsRunRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_completed_inspection_runs(
+        self,
+        *,
+        domain_id: int,
+        target_id: UUID,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> list[OpsRunEntity]:
+        """读取一个完整自然周期内可追溯的单 Target 巡检结果。"""
+        self._check_active()
+        statement = (
+            select(OpsRunEntity)
+            .where(
+                OpsRunEntity.domain_id == domain_id,
+                OpsRunEntity.target_id == target_id,
+                OpsRunEntity.trigger_type == "SCHEDULE",
+                OpsRunEntity.status.in_(("COMPLETED", "PARTIAL", "FAILED", "CANCELLED")),
+                OpsRunEntity.completed_at >= period_start,
+                OpsRunEntity.completed_at < period_end,
+            )
+            .order_by(OpsRunEntity.completed_at, OpsRunEntity.ops_run_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
     async def get_by_idempotency(
         self,
         *,

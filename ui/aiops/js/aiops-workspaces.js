@@ -424,6 +424,61 @@
     return `<details class="ops-evidence"><summary>诊断依据 <span>${rows.length} 项证据${dataBlocks.length ? ` · ${dataBlocks.length} 份原始结果` : ""}${gapRows.length ? ` · ${gapRows.length} 项缺口` : ""}</span></summary><div class="ops-evidence-body">${evidenceRows}${evidenceData}${missingRows}</div></details>`;
   }
 
+  function reportAction(runId, sourceKind, periodKind = "AD_HOC") {
+    if (!runId) return "";
+    return `<div class="ops-filter-actions"><button type="button" class="primary" data-generate-report="${esc(runId)}" data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
+  }
+
+  async function openReportGenerator(button) {
+    button.disabled = true;
+    try {
+      const sourceKind = button.dataset.reportSourceKind;
+      const periodKind = button.dataset.reportPeriodKind;
+      const rows = await KBotAIOpsAuth.request(`${api}/report-templates`);
+      const templates = values(rows).filter((item) => values(item.applicable_source_kinds).includes(sourceKind)
+        && (sourceKind === "INSPECTION" || values(item.allowed_period_kinds).includes(periodKind)));
+      if (!templates.length) throw new Error("当前诊断没有可用的报告模板");
+      const periods = sourceKind === "INSPECTION"
+        ? ["DAILY", "MONTHLY", "QUARTERLY", "ANNUAL"] : [periodKind];
+      const periodLabels = { DAILY: "日常报告", MONTHLY: "月度报告", QUARTERLY: "季度报告", ANNUAL: "年度报告", AD_HOC: "单次诊断报告" };
+      const dialog = document.createElement("dialog");
+      dialog.className = "ops-dialog";
+      dialog.innerHTML = `<form method="dialog"><header><h2>生成正式报告</h2><p>报告将冻结当前已验证事实、证据引用和数据缺口。</p></header><div class="ops-dialog-body">${sourceKind === "INSPECTION" ? `<label class="ops-field">报告周期<select name="period_kind">${periods.map((kind) => `<option value="${kind}">${periodLabels[kind]}</option>`).join("")}</select></label>` : ""}<label class="ops-field">报告模板<select name="template_ref"></select></label><p class="ops-connection-result">周期报告只汇总最近一个完整自然周期内的巡检结果。</p></div><footer><button value="cancel">取消</button><button class="primary" value="confirm">生成报告</button></footer></form>`;
+      document.body.append(dialog);
+      const templateSelect = dialog.querySelector('[name="template_ref"]');
+      const periodSelect = dialog.querySelector('[name="period_kind"]');
+      const populateTemplates = () => {
+        const selectedPeriod = periodSelect?.value || periodKind;
+        const available = templates.filter((item) => values(item.allowed_period_kinds).includes(selectedPeriod));
+        templateSelect.innerHTML = available.map((item) => `<option value="${esc(item.template_ref)}">${esc(item.display_name)}</option>`).join("");
+        if (!available.length) templateSelect.innerHTML = '<option value="">当前周期没有可用模板</option>';
+      };
+      periodSelect?.addEventListener("change", populateTemplates); populateTemplates();
+      dialog.addEventListener("close", async () => {
+        try {
+          if (dialog.returnValue !== "confirm") return;
+          const templateRef = templateSelect.value;
+          const selectedPeriod = periodSelect?.value || periodKind;
+          if (!templateRef) throw new Error("当前周期没有可用模板");
+          const result = await KBotAIOpsAuth.request(`${api}/reports:generate`, {
+            method: "POST",
+            headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+            body: JSON.stringify({ ops_run_id: button.dataset.generateReport, template_ref: templateRef, period_kind: selectedPeriod }),
+          });
+          location.href = `./report-detail.html?id=${encodeURIComponent(result.report_id)}`;
+        } catch (error) { shell.toast(error.message); }
+        finally { dialog.remove(); }
+      }, { once: true });
+      dialog.showModal();
+    } catch (error) { shell.toast(error.message); button.disabled = false; }
+  }
+
+  function bindReportActions(root = document) {
+    root.querySelectorAll("[data-generate-report]").forEach((button) => {
+      button.onclick = () => openReportGenerator(button);
+    });
+  }
+
   function turnHtml(turn) {
     const messages = values(turn.messages);
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
@@ -436,7 +491,9 @@
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${progress}${answer}`;
+    const report = settled && turn.ops_run_id
+      ? reportAction(turn.ops_run_id, "CHAT") : "";
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${progress}${answer}${report}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -468,6 +525,7 @@
     }));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
+    bindReportActions(panel);
     resumeActiveTurns(conversation.conversation_id, turns);
   }
 
@@ -883,8 +941,10 @@
       } else {
         diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
       }
-      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${esc(situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${continueForm(source, detail.title)}`;
+      const report = hasFinalResult ? reportAction(run.ops_run_id, "ALERT") : "";
+      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status)} · ${esc(situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${report}${continueForm(source, detail.title)}`;
       await bindContinue(source);
+      bindReportActions(panel);
       const runActive = !run || !terminalRunStatuses.has(run.status);
       if (runActive) scheduleSituationRefresh(item, 3000);
       else if (detail.status !== "RESOLVED") scheduleSituationRefresh(item, 15000);
@@ -910,8 +970,9 @@
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
     const source = run ? { target_id: run.target_id, source_run_id: run.ops_run_id } : null;
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${reportAction(run?.ops_run_id, "INSPECTION", "DAILY")}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     if (source) await bindContinue(source);
+    bindReportActions(panel);
   }
 
   async function initCases(page) {

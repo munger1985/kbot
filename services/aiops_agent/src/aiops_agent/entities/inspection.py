@@ -239,3 +239,23 @@ class ReportEntity(BaseEntity):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class ReportSourceEntity(BaseEntity):
+    """正式报告冻结时关联的原始 Run 与不可变证据产物。"""
+
+    __tablename__ = "KBOT_OPS_REPORT_SOURCE"
+
+    report_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    source_artifact_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), nullable=False
+    )
+    source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )

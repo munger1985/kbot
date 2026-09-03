@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 from sqlalchemy import Text
 
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.application.reporting import resolve_system_template
 from aiops_agent.contracts.change import ActionVerification
 from aiops_agent.contracts.report import ComparisonPlan
 from aiops_agent.entities import ReportEntity
@@ -70,7 +71,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
 
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
-                publish_report=AsyncMock(side_effect=publish_report)
+                publish_report=AsyncMock(side_effect=publish_report),
+                add_report_sources=AsyncMock(),
             ),
             runs=SimpleNamespace(
                 add_artifact=AsyncMock(side_effect=add_artifact),
@@ -158,7 +160,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
 
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
-                publish_report=AsyncMock(side_effect=publish_report)
+                publish_report=AsyncMock(side_effect=publish_report),
+                add_report_sources=AsyncMock(),
             ),
             runs=SimpleNamespace(
                 add_artifact=AsyncMock(side_effect=add_artifact),
@@ -365,7 +368,8 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
 
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
-                publish_report=AsyncMock(side_effect=publish_report)
+                publish_report=AsyncMock(side_effect=publish_report),
+                add_report_sources=AsyncMock(),
             ),
             runs=SimpleNamespace(
                 add_artifact=AsyncMock(side_effect=add_artifact),
@@ -391,15 +395,22 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
                 source_artifact=source,
                 now=datetime(2026, 7, 24, 2, tzinfo=UTC),
                 trace_id="trace-diagnosis-report",
+                template=resolve_system_template("system:diagnosis.standard"),
+                actor_id="operator-1",
             )
         )
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
         report = uow.inspections.publish_report.await_args.args[0]
-        self.assertEqual(report.report_type, "PERFORMANCE")
+        self.assertEqual(report.report_type, "INCIDENT")
+        self.assertEqual(report.template_id, "system:diagnosis.standard")
         self.assertEqual(report.status, "READY")
         content = uow.runs.add_artifact.await_args.args[0]
         self.assertEqual(content.schema_version, "REPORT_CONTENT.v1")
         self.assertIn("锁等待导致响应时间升高", content.payload_json["summary"])
+        uow.inspections.add_report_sources.assert_awaited_once()
+        source = uow.inspections.add_report_sources.await_args.args[0][0]
+        self.assertEqual(source.ops_run_id, run_id)
+        self.assertEqual(source.source_artifact_id, source_id)
 
 
 class ComparisonReportPublishingTest(unittest.TestCase):

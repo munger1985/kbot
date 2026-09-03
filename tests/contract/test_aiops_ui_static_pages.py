@@ -29,6 +29,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
         "inspection-plans", "inspection-plan-detail",
+        "report-templates",
         "api-clients",
         "login",
     }
@@ -48,7 +49,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(8, len(scripts))
+        self.assertEqual(9, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -346,7 +347,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["runs", "诊断运行"]', shell)
         self.assertNotIn('["reports", "报告中心"]', shell)
-        self.assertNotIn('["report-templates", "报告模板"]', shell)
+        self.assertIn('["report-templates", "报告模板"]', shell)
+        business_workspace = shell.split('["资源配置"', 1)[0]
+        self.assertNotIn('["report-templates", "报告模板"]', business_workspace)
         self.assertIn("source_run_id", workspace)
         self.assertIn("source_situation_id", workspace)
         self.assertIn("正在等待 Agent 自动诊断任务启动", workspace)
@@ -448,9 +451,21 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("upload", workspace.lower())
         for obsolete in (
             "dashboard.html", "runs.html", "reports.html",
-            "changes.html", "notifications.html", "report-templates.html",
+            "changes.html", "notifications.html",
         ):
             self.assertFalse((AIOPS_ROOT / obsolete).exists())
+
+    def test_report_template_configuration_is_not_a_business_entry(self):
+        page = (AIOPS_ROOT / "report-templates.html").read_text(
+            encoding="utf-8"
+        )
+        script = (AIOPS_ROOT / "js" / "aiops-report-templates.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("系统预设模板只读", page)
+        self.assertIn("证据边界（必选）", page)
+        self.assertIn("/report-templates", script)
+        self.assertIn("REPORT_TEMPLATE.v1", script)
 
 
 if __name__ == "__main__":

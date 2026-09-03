@@ -8,7 +8,7 @@
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],
       ["knowledge-core", "Knowledge Core"], ["agents", "AIOps Agent"],
-      ["inspection-plans", "巡检计划"],
+      ["inspection-plans", "巡检计划"], ["report-templates", "报告模板"],
       ["api-clients", "API 客户端"],
     ]],
   ];

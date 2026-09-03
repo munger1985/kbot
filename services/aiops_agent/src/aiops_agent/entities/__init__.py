@@ -12,6 +12,7 @@ from .inspection import (
     InspectionReportTemplateEntity,
     InspectionReportTemplateVersionEntity,
     ReportEntity,
+    ReportSourceEntity,
 )
 from .messaging import InboxEntity, OutboxEntity
 from .notification import NotificationSubscriptionEntity
@@ -80,6 +81,7 @@ __all__ = [
     "NotificationSubscriptionEntity",
     "PolicyEntity",
     "ReportEntity",
+    "ReportSourceEntity",
     "TargetBindingEntity",
     "TargetEntity",
     "TargetSourceBindingEntity",

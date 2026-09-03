@@ -2567,6 +2567,35 @@
         "title": "FinalDiagnosisRef",
         "type": "object"
       },
+      "GenerateUserReportRequest": {
+        "additionalProperties": false,
+        "description": "业务用户从已完成诊断显式创建正式报告。",
+        "properties": {
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "period_kind": {
+            "default": "AD_HOC",
+            "maxLength": 16,
+            "title": "Period Kind",
+            "type": "string"
+          },
+          "template_ref": {
+            "default": "system:diagnosis.standard",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Template Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id"
+        ],
+        "title": "GenerateUserReportRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -13073,6 +13102,88 @@
         ]
       }
     },
+    "/internal/v1/aiops/reports/{report_id}/pdf": {
+      "get": {
+        "operationId": "download_report_pdf_internal_v1_aiops_reports__report_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Report Pdf",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/reports/{report_id}/presentation": {
+      "get": {
+        "operationId": "get_report_presentation_internal_v1_aiops_reports__report_id__presentation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report Presentation",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
     "/internal/v1/aiops/reports/{report_id}/versions": {
       "get": {
         "operationId": "list_report_versions_internal_v1_aiops_reports__report_id__versions_get",
@@ -13140,6 +13251,46 @@
           }
         },
         "summary": "List Report Versions",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/reports:generate": {
+      "post": {
+        "description": "只在用户明确操作后，从终态诊断结果创建报告。",
+        "operationId": "generate_user_report_internal_v1_aiops_reports_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateUserReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate User Report",
         "tags": [
           "AIOps Runtime"
         ]

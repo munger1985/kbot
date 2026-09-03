@@ -369,12 +369,26 @@
     }
   }
 
+  function reportPresentationHtml(data) {
+    const sections = Array.isArray(data.sections) ? data.sections : [];
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2>${shell.escape(data.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")}</p></div><button class="primary" type="button" data-download-report>下载 PDF</button></header>${sections.map((section) => `<section class="ops-panel"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}</h3></div><div class="ops-panel-body"><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+  }
+
   async function renderDetail(page) {
     const id = new URLSearchParams(location.search).get("id");
     const paths = { "run-detail": "/runs/", "report-detail": "/reports/", "target-detail": "/targets/", "diagnostic-source-detail": "/diagnostic-sources/", "inspection-plan-detail": "/inspection-plans/" };
     const panel = document.getElementById("ops-detail");
     if (!id) { panel.innerHTML = '<div class="ops-error">URL 缺少资源 id</div>'; return; }
     try {
+      if (page === "report-detail") {
+        const data = await KBotAIOpsAuth.request(appApi + `/reports/${encodeURIComponent(id)}/presentation`);
+        panel.innerHTML = reportPresentationHtml(data);
+        panel.querySelector("[data-download-report]").onclick = () => KBotAIOpsAuth.download(
+          appApi + `/reports/${encodeURIComponent(id)}/pdf`,
+          `aiops-report-${id}.pdf`,
+        ).catch((error) => shell.toast(error.message));
+        return;
+      }
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
       panel.innerHTML = `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "target-detail") await initializeTargetSubscription(id, data);

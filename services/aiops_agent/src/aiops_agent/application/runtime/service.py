@@ -52,6 +52,7 @@ from aiops_agent.entities import (
     OpsTurnEvidenceEntity,
     OutboxEntity,
     ReportEntity,
+    ReportSourceEntity,
 )
 from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.tool_execution import (
@@ -76,6 +77,15 @@ from aiops_agent.contracts.report import (
     ComparisonPlan,
     ComparisonResult,
     ReportContent,
+)
+from aiops_agent.application.reporting import (
+    ReportTemplate,
+    closed_period_window,
+    normalize_report_source,
+    render_pdf,
+    report_presentation,
+    resolve_system_template,
+    validate_template_definition,
 )
 from aiops_agent.orchestration import (
     BlueprintRegistry,
@@ -1925,37 +1935,8 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.COMPLETED.value
                 final_artifact = artifact
-                if (
-                    run.trigger_type == "SCHEDULE"
-                    and run.inspection_fire_id is not None
-                    and artifact.schema_version
-                    == "DB_DIAGNOSTIC_REPORT.v1"
-                ):
-                    final_artifact = (
-                        await self._publish_inspection_report(
-                            uow=uow,
-                            run=run,
-                            task=task,
-                            source_artifact=artifact,
-                            now=now,
-                            trace_id=command.trace_id,
-                        )
-                    )
-                if (
-                    run.trigger_type == "SCHEDULE"
-                    and run.inspection_fire_id is not None
-                    and artifact.schema_version == "AIOPS_TURN_RESULT.v1"
-                ):
-                    final_artifact = (
-                        await self._publish_turn_inspection_report(
-                            uow=uow,
-                            run=run,
-                            task=task,
-                            source_artifact=artifact,
-                            now=now,
-                            trace_id=command.trace_id,
-                        )
-                    )
+                # 巡检、告警和智能诊断均只保留原始终态产物。正式报告只能
+                # 经用户显式请求进入统一报告生成器，不能在 Run 完成时自动创建。
                 if artifact.schema_version == "ACTION_VERIFICATION.v1":
                     final_artifact = (
                         await self._publish_comparison_report(
@@ -1966,20 +1947,6 @@ class AIOpsRuntimeService:
                             now=now,
                             trace_id=command.trace_id,
                         )
-                    )
-                if (
-                    artifact.schema_version
-                    == "DIAGNOSIS_REPORT_DRAFT.v1"
-                    and (artifact.payload_json or {}).get("output_kind")
-                    == "DIAGNOSIS_REPORT"
-                ):
-                    await self._publish_diagnosis_report(
-                        uow=uow,
-                        run=run,
-                        task=task,
-                        source_artifact=artifact,
-                        now=now,
-                        trace_id=command.trace_id,
                     )
                 run.final_artifact_id = final_artifact.artifact_id
                 run.completed_at = now
@@ -3195,35 +3162,41 @@ class AIOpsRuntimeService:
         source_artifact,
         now: datetime,
         trace_id: str,
-    ) -> None:
-        """仅在动态决策要求留档时发布正式诊断报告。"""
+        template: ReportTemplate,
+        actor_id: str,
+        source_override: dict[str, Any] | None = None,
+        period_start_override: datetime | None = None,
+        period_end_override: datetime | None = None,
+        period_kind: str = "AD_HOC",
+    ) -> ReportEntity:
+        """由用户显式请求，把终态诊断冻结为正式报告。"""
         assert uow.inspections is not None
         plan = dict(run.plan_snapshot_json or {})
-        source = dict(source_artifact.payload_json or {})
         question = str(
             plan.get("diagnosis", {}).get("question_summary") or ""
         )
-        performance_keywords = (
-            "性能",
-            "慢",
-            "响应",
-            "吞吐",
-            "连接",
-            "锁",
-            "等待",
-            "performance",
-            "latency",
+        trigger_type = getattr(run, "trigger_type", "CHAT")
+        source_kind = (
+            "CHAT" if trigger_type == "CHAT"
+            else "INSPECTION" if trigger_type == "SCHEDULE"
+            else "ALERT"
+        )
+        source = source_override or normalize_report_source(
+            schema_version=source_artifact.schema_version,
+            payload=dict(source_artifact.payload_json or {}),
+            source_kind=source_kind,
         )
         report_type = (
-            "PERFORMANCE"
-            if any(item in question.lower() for item in performance_keywords)
+            {
+                "DAILY": "INSPECTION_DAILY",
+                "MONTHLY": "INSPECTION_MONTHLY",
+                "QUARTERLY": "INSPECTION_QUARTERLY",
+                "ANNUAL": "INSPECTION_ANNUAL",
+            }.get(period_kind, "INSPECTION_CUSTOM")
+            if source_kind == "INSPECTION"
             else "INCIDENT"
         )
-        report_key = (
-            "diagnosis.performance"
-            if report_type == "PERFORMANCE"
-            else "diagnosis.incident"
-        )
+        report_key = template.template_ref.removeprefix("system:")
         root = dict(source.get("root_cause") or {})
         grade = str(root.get("effective_level") or "INCONCLUSIVE")
         status = (
@@ -3253,20 +3226,31 @@ class AIOpsRuntimeService:
                 if item
             )
         )
+        inspection = dict(
+            plan.get("client_metadata", {}).get("inspection", {})
+        )
+        period_start = period_start_override or run.created_at
+        period_end = period_end_override or now
+        if source_kind == "INSPECTION" and period_start_override is None:
+            try:
+                period_start = datetime.fromisoformat(
+                    str(inspection["period_start"])
+                )
+                period_end = datetime.fromisoformat(
+                    str(inspection["period_end"])
+                )
+            except (KeyError, ValueError):
+                pass
         content = ReportContent(
             report_key=report_key,
             report_type=report_type,
             ops_run_id=str(run.ops_run_id),
             target_id=str(run.target_id),
-            title=(
-                "数据库性能诊断报告"
-                if report_type == "PERFORMANCE"
-                else "数据库故障诊断报告"
-            ),
+            title=template.display_name,
             status=status,
             summary=summary,
-            period_start=run.created_at,
-            period_end=now,
+            period_start=period_start,
+            period_end=period_end,
             scope={
                 "question_summary": question,
                 "root_cause_grade": grade,
@@ -3276,6 +3260,14 @@ class AIOpsRuntimeService:
                 "effective_capabilities": dict(
                     plan.get("effective_capabilities") or {}
                 ),
+                "diagnosis_rationale": rationale,
+                "source_kind": source_kind,
+                "source_situation_id": plan.get("source_situation_id"),
+                "inspection_coverage": source.get(
+                    "inspection_coverage",
+                    rationale if source_kind == "INSPECTION" else None,
+                ),
+                "report_period_kind": period_kind,
             },
             facts=tuple(
                 {
@@ -3295,6 +3287,11 @@ class AIOpsRuntimeService:
                     "content_hash": source_artifact.content_hash,
                     "schema_version": source_artifact.schema_version,
                 },
+                *tuple(
+                    dict(item)
+                    for item in source.get("evidence_refs", ())
+                    if isinstance(item, dict)
+                ),
             ),
             recommendations=recommendations,
             provenance={
@@ -3303,6 +3300,12 @@ class AIOpsRuntimeService:
                 "model_receipt_hashes": list(
                     source.get("model_receipt_hashes") or ()
                 ),
+                "template": {
+                    "template_ref": template.template_ref,
+                    "version": template.version,
+                    "content_hash": template.content_hash,
+                    "definition": template.definition,
+                },
             },
         )
         payload = content.model_dump(mode="json")
@@ -3337,10 +3340,10 @@ class AIOpsRuntimeService:
                 report_type=report_type,
                 title=content.title,
                 status=status,
-                period_start=run.created_at,
-                period_end=now,
-                template_id="diagnosis.dynamic",
-                template_version="1",
+                period_start=period_start,
+                period_end=period_end,
+                template_id=template.template_ref,
+                template_version=template.version,
                 generated_by_task_id=task.ops_task_id,
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
@@ -3349,6 +3352,34 @@ class AIOpsRuntimeService:
                 schema_version="REPORT_CONTENT.v1",
             )
         )
+        source_rows = [
+            ReportSourceEntity(
+                report_id=report.report_id,
+                ops_run_id=run.ops_run_id,
+                source_artifact_id=source_artifact.artifact_id,
+                source_kind=source_kind,
+                content_hash=source_artifact.content_hash,
+                observed_at=getattr(run, "completed_at", None) or now,
+            )
+        ]
+        for evidence in source.get("evidence_refs", ()):
+            if not isinstance(evidence, dict) or not evidence.get("source_run_id"):
+                continue
+            try:
+                evidence_run_id = UUID(str(evidence["source_run_id"]))
+                if evidence_run_id == run.ops_run_id:
+                    continue
+                source_rows.append(ReportSourceEntity(
+                    report_id=report.report_id,
+                    ops_run_id=evidence_run_id,
+                    source_artifact_id=UUID(str(evidence["artifact_id"])),
+                    source_kind="INSPECTION",
+                    content_hash=str(evidence["content_hash"]),
+                    observed_at=datetime.fromisoformat(str(evidence["observed_at"])),
+                ))
+            except (KeyError, TypeError, ValueError):
+                raise state_conflict("周期报告来源引用不完整") from None
+        await uow.inspections.add_report_sources(source_rows)
         await uow.runs.append_event(
             ops_run_id=run.ops_run_id,
             ops_task_id=task.ops_task_id,
@@ -3385,8 +3416,9 @@ class AIOpsRuntimeService:
         await uow.platform_notifications.emit_report_ready(
             run=run,
             report=report,
-            actor_id=run.actor_id,
+            actor_id=actor_id,
         )
+        return report
 
     async def _publish_comparison_report(
         self,
@@ -5641,6 +5673,248 @@ class AIOpsRuntimeService:
                 corrected_from_report_id=report.supersedes_report_id,
                 published_at=report.created_at,
             )
+
+    async def generate_user_report(
+        self,
+        *,
+        domain_id: int,
+        actor_id: str,
+        ops_run_id: UUID,
+        template: ReportTemplate,
+        period_kind: str,
+        trace_id: str,
+    ) -> ReportEntity:
+        """从完成的聊天或告警诊断显式创建正式报告。"""
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            run = await uow.runs.get_run_scoped(
+                ops_run_id=ops_run_id, domain_id=domain_id, lock=True
+            )
+            if run is None:
+                raise resource_not_found("OpsRun")
+            source_kind = (
+                "CHAT" if run.trigger_type == "CHAT"
+                else "INSPECTION" if run.trigger_type == "SCHEDULE"
+                else "ALERT"
+            )
+            if source_kind not in template.applicable_source_kinds:
+                raise validation_failed("所选报告模板不适用于当前诊断入口")
+            if source_kind != "INSPECTION":
+                period_kind = "AD_HOC"
+            elif period_kind not in {"DAILY", "MONTHLY", "QUARTERLY", "ANNUAL"}:
+                raise validation_failed("巡检报告周期无效")
+            if period_kind not in template.allowed_period_kinds:
+                raise validation_failed("所选报告模板不适用于当前报告周期")
+            if run.status not in {"COMPLETED", "PARTIAL"}:
+                raise state_conflict("诊断尚未结束，暂不能生成正式报告")
+            if run.final_artifact_id is None:
+                raise state_conflict("诊断未形成可报告的最终结果")
+            source_artifact = await uow.runs.get_artifact(
+                artifact_id=run.final_artifact_id
+            )
+            if source_artifact is None:
+                raise state_conflict("诊断最终结果引用不完整")
+            if source_artifact.schema_version not in {
+                "DIAGNOSIS_REPORT_DRAFT.v1", "AIOPS_TURN_RESULT.v1",
+                "DB_DIAGNOSTIC_REPORT.v1",
+            }:
+                raise validation_failed("当前诊断结果不支持生成正式报告")
+            task = next(
+                (
+                    item for item in await uow.runs.list_tasks(
+                        ops_run_id=run.ops_run_id
+                    )
+                    if item.output_artifact_id == source_artifact.artifact_id
+                ),
+                None,
+            )
+            if task is None:
+                raise state_conflict("诊断最终结果缺少生成任务")
+            now = await uow.runs.database_now()
+            source_override = None
+            period_start = None
+            period_end = None
+            if source_kind == "INSPECTION" and period_kind != "DAILY":
+                inspection = dict(
+                    dict(run.plan_snapshot_json or {}).get(
+                        "client_metadata", {}
+                    ).get("inspection", {})
+                )
+                timezone = str(inspection.get("timezone") or "UTC")
+                period_start, period_end = closed_period_window(
+                    period_kind=period_kind, timezone=timezone, now=now
+                )
+                period_runs = await uow.runs.list_completed_inspection_runs(
+                    domain_id=domain_id,
+                    target_id=run.target_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                if not period_runs:
+                    raise state_conflict("当前完整报告周期内没有可汇总的巡检结果")
+                if run.ops_run_id not in {
+                    item.ops_run_id for item in period_runs
+                }:
+                    raise validation_failed(
+                        "请从该完整报告周期内的巡检结果发起周期报告"
+                    )
+                source_override = await self._aggregate_inspection_sources(
+                    uow=uow, runs=period_runs, period_kind=period_kind,
+                    period_start=period_start, period_end=period_end,
+                )
+            current = await uow.inspections.get_current_report_for_run_template(
+                ops_run_id=run.ops_run_id,
+                template_id=template.template_ref,
+            )
+            if current is not None and (
+                period_start is None or current.period_start == period_start
+            ):
+                return current
+            report = await self._publish_diagnosis_report(
+                uow=uow,
+                run=run,
+                task=task,
+                source_artifact=source_artifact,
+                now=now,
+                trace_id=trace_id,
+                template=template,
+                actor_id=actor_id,
+                source_override=source_override,
+                period_start_override=period_start,
+                period_end_override=period_end,
+                period_kind=period_kind,
+            )
+            await uow.commit()
+            return report
+
+    async def _aggregate_inspection_sources(
+        self, *, uow, runs, period_kind: str, period_start: datetime,
+        period_end: datetime,
+    ) -> dict[str, Any]:
+        """以同一 Target 的终态巡检产物构建可复现的周期 ReportContext。"""
+        facts, gaps, evidence_refs = [], [], []
+        partial_count = 0
+        failed_count = 0
+        for item in runs:
+            failed_count += getattr(item, "status", "COMPLETED") in {
+                "FAILED", "CANCELLED"
+            }
+            if item.final_artifact_id is None:
+                partial_count += 1
+                gaps.append({
+                    "code": "MISSING_FINAL_ARTIFACT",
+                    "source_run_id": str(item.ops_run_id),
+                })
+                continue
+            artifact = await uow.runs.get_artifact(
+                artifact_id=item.final_artifact_id
+            )
+            if artifact is None:
+                partial_count += 1
+                gaps.append({
+                    "code": "MISSING_FINAL_ARTIFACT",
+                    "source_run_id": str(item.ops_run_id),
+                })
+                continue
+            source = normalize_report_source(
+                schema_version=artifact.schema_version,
+                payload=dict(artifact.payload_json or {}),
+                source_kind="INSPECTION",
+            )
+            partial_count += source["status"] != "READY"
+            facts.extend(source.get("facts") or ())
+            gaps.extend(source.get("gaps") or ())
+            evidence_refs.append({
+                "artifact_id": str(artifact.artifact_id),
+                "content_hash": artifact.content_hash,
+                "schema_version": artifact.schema_version,
+                "source_run_id": str(item.ops_run_id),
+                "observed_at": item.completed_at.isoformat(),
+            })
+        return {
+            "status": "PARTIAL" if partial_count or gaps else "READY",
+            "root_cause": {"effective_level": "INCONCLUSIVE"},
+            "diagnosis_rationale": (
+                f"{period_kind} 周期覆盖 {len(runs)} 次巡检，"
+                f"其中 {partial_count} 次结果不完整，{failed_count} 次执行失败。"
+            ),
+            "facts": tuple(facts), "gaps": tuple(gaps), "solution": {},
+            "evidence_refs": tuple(evidence_refs),
+            "inspection_coverage": (
+                f"报告时间窗内完成 {len(runs)} 次巡检，"
+                f"不完整结果 {partial_count} 次，执行失败 {failed_count} 次。"
+            ),
+            "period_start": period_start, "period_end": period_end,
+        }
+
+    async def get_report_presentation(
+        self,
+        *,
+        report_id: UUID,
+        domain_id: int,
+    ) -> dict[str, Any]:
+        """读取冻结内容和模板快照，供预览和 PDF 共用。"""
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            report = await uow.inspections.get_current_report_scoped(
+                report_id=report_id, domain_id=domain_id
+            )
+            if report is None or report.content_artifact_id is None:
+                raise resource_not_found("Report")
+            artifact = await uow.runs.get_artifact(
+                artifact_id=report.content_artifact_id
+            )
+            if artifact is None or artifact.content_hash != report.content_hash:
+                raise state_conflict("Report 内容引用不完整")
+            payload = dict(artifact.payload_json or {})
+            snapshot = dict(
+                dict(payload.get("provenance") or {}).get("template") or {}
+            )
+            definition = snapshot.get("definition")
+            if isinstance(definition, dict):
+                checked = validate_template_definition(definition)
+                template = ReportTemplate(
+                    template_ref=str(snapshot.get("template_ref") or report.template_id),
+                    version=str(snapshot.get("version") or report.template_version),
+                    display_name=checked.display_name,
+                    applicable_source_kinds=checked.applicable_source_kinds,
+                    allowed_period_kinds=checked.allowed_period_kinds,
+                    sections=checked.sections,
+                    definition=definition,
+                )
+            else:
+                template = resolve_system_template(str(report.template_id))
+                if template is None:
+                    raise state_conflict("历史报告缺少可重现的模板快照")
+            return report_presentation(payload=payload, template=template)
+
+    async def get_report_source_agent_id(
+        self, *, report_id: UUID, domain_id: int,
+    ) -> UUID:
+        """在展示或下载前复核报告来源 Agent 的私有授权范围。"""
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            report = await uow.inspections.get_current_report_scoped(
+                report_id=report_id, domain_id=domain_id
+            )
+            if report is None:
+                raise resource_not_found("Report")
+            run = await uow.runs.get_run_scoped(
+                ops_run_id=report.ops_run_id, domain_id=domain_id
+            )
+            if run is None:
+                raise state_conflict("Report 来源 Run 不完整")
+            return run.agent_id
+
+    async def render_report_pdf(
+        self,
+        *,
+        report_id: UUID,
+        domain_id: int,
+    ) -> bytes:
+        return render_pdf(await self.get_report_presentation(
+            report_id=report_id, domain_id=domain_id
+        ))
 
     def _decode_cursor(
         self,

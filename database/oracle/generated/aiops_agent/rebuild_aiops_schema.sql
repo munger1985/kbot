@@ -1257,7 +1257,9 @@ CREATE TABLE KBOT_OPS_REPORT (
     CONSTRAINT CK_OPS_REPORT_TYPE CHECK (
         REPORT_TYPE IN (
             'INCIDENT', 'PERFORMANCE', 'INSPECTION_DAILY',
-            'INSPECTION_WEEKLY', 'INSPECTION_CUSTOM', 'COMPARISON'
+            'INSPECTION_WEEKLY', 'INSPECTION_MONTHLY',
+            'INSPECTION_QUARTERLY', 'INSPECTION_ANNUAL',
+            'INSPECTION_CUSTOM', 'COMPARISON'
         )
     ),
     CONSTRAINT CK_OPS_REPORT_STATUS
@@ -1294,6 +1296,32 @@ CREATE INDEX IX_OPS_REPORT_SUPERSEDES
     ON KBOT_OPS_REPORT (SUPERSEDES_REPORT_ID);
 CREATE INDEX IX_OPS_REPORT_CONTENT
     ON KBOT_OPS_REPORT (CONTENT_ARTIFACT_ID);
+
+CREATE TABLE KBOT_OPS_REPORT_SOURCE (
+    REPORT_ID RAW(16) NOT NULL,
+    OPS_RUN_ID RAW(16) NOT NULL,
+    SOURCE_ARTIFACT_ID RAW(16) NOT NULL,
+    SOURCE_KIND VARCHAR2(16 CHAR) NOT NULL,
+    CONTENT_HASH VARCHAR2(64 CHAR) NOT NULL,
+    OBSERVED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT PK_OPS_REPORT_SOURCE PRIMARY KEY (REPORT_ID, OPS_RUN_ID),
+    CONSTRAINT FK_OPS_RPT_SOURCE_REPORT FOREIGN KEY (REPORT_ID)
+        REFERENCES KBOT_OPS_REPORT (REPORT_ID) ON DELETE CASCADE,
+    CONSTRAINT FK_OPS_RPT_SOURCE_RUN FOREIGN KEY (OPS_RUN_ID)
+        REFERENCES KBOT_OPS_RUN (OPS_RUN_ID),
+    CONSTRAINT FK_OPS_RPT_SOURCE_ART FOREIGN KEY (SOURCE_ARTIFACT_ID)
+        REFERENCES KBOT_OPS_ARTIFACT (ARTIFACT_ID),
+    CONSTRAINT CK_OPS_RPT_SOURCE_KIND CHECK (
+        SOURCE_KIND IN ('CHAT', 'ALERT', 'INSPECTION')
+    ),
+    CONSTRAINT CK_OPS_RPT_SOURCE_HASH CHECK (LENGTH(CONTENT_HASH) = 64)
+);
+
+CREATE INDEX IX_OPS_RPT_SOURCE_RUN
+    ON KBOT_OPS_REPORT_SOURCE (OPS_RUN_ID);
+CREATE INDEX IX_OPS_RPT_SOURCE_ART
+    ON KBOT_OPS_REPORT_SOURCE (SOURCE_ARTIFACT_ID);
 
 COMMENT ON COLUMN KBOT_OPS_INSPECTION_PLAN.CRON_EXPRESSION IS
     '规范五段 Cron；应用按 IANA 时区预计算 NEXT_RUN_AT';
@@ -1884,8 +1912,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    20 AS SCHEMA_VERSION,
-    'aiops-oracle-v10' AS CONTRACT_VERSION
+    21 AS SCHEMA_VERSION,
+    'aiops-oracle-v11' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2823,6 +2851,7 @@ BEGIN
           'KBOT_OPS_INSPECTION_PLAN',
           'KBOT_OPS_INSPECTION_FIRE',
           'KBOT_OPS_REPORT',
+          'KBOT_OPS_REPORT_SOURCE',
           'KBOT_OPS_INBOX',
           'KBOT_OPS_OUTBOX',
           'KBOT_OPS_AGENT',
@@ -2970,7 +2999,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 43 OR l_view_count <> 10 THEN
+    IF l_table_count <> 44 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -2996,20 +3025,20 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 15 THEN
-        raise_application_error(-20008, 'Schema 20 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 21 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 20 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 21 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 20 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 21 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 20
-       OR l_contract_version <> 'aiops-oracle-v10' THEN
+       OR l_schema_version <> 21
+       OR l_contract_version <> 'aiops-oracle-v11' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3018,8 +3047,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：43 张表、10 个视图，Schema Version '
-        || '20，合同 aiops-oracle-v10。'
+        '验证通过：44 张表、10 个视图，Schema Version '
+        || '21，合同 aiops-oracle-v11。'
     );
 END;
 /
