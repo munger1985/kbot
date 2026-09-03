@@ -98,8 +98,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_19_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 8, 1, 1, 1))
+    async def test_ready_requires_schema_21_contract_integrity(self) -> None:
+        session = _SchemaSession((1, 8, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -115,8 +115,8 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             checks,
         )
 
-    async def test_ready_rejects_partial_schema_19_contract(self) -> None:
-        session = _SchemaSession((1, 7, 1, 1, 1))
+    async def test_ready_rejects_partial_schema_21_contract(self) -> None:
+        session = _SchemaSession((1, 7, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -135,7 +135,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_ready_rejects_dynamic_tool_class_constraint_drift(
         self,
     ) -> None:
-        session = _SchemaSession((1, 8, 1, 1, 0))
+        session = _SchemaSession((1, 8, 1, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -152,7 +152,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_ready_rejects_non_clob_report_summary(self) -> None:
-        session = _SchemaSession((1, 8, 1, 0, 1))
+        session = _SchemaSession((1, 8, 1, 0, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

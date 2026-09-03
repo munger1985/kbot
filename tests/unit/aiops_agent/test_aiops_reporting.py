@@ -316,11 +316,11 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
         created_at = datetime(2026, 7, 24, 1, tzinfo=UTC)
         run = SimpleNamespace(
             ops_run_id=run_id,
+            domain_id=8,
             actor_id="portal:user-1",
             target_id=target_id,
             created_at=created_at,
             plan_snapshot_json={
-                "target": {"security_level": 3},
                 "diagnosis": {
                     "question_summary": "分析数据库响应变慢"
                 },
@@ -371,6 +371,11 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
                 publish_report=AsyncMock(side_effect=publish_report),
                 add_report_sources=AsyncMock(),
             ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(
+                    return_value=SimpleNamespace(security_level=3)
+                ),
+            ),
             runs=SimpleNamespace(
                 add_artifact=AsyncMock(side_effect=add_artifact),
                 append_event=AsyncMock(),
@@ -404,6 +409,11 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
         self.assertEqual(report.report_type, "INCIDENT")
         self.assertEqual(report.template_id, "system:diagnosis.standard")
         self.assertEqual(report.status, "READY")
+        self.assertEqual(report.security_level, 3)
+        uow.targets.get_scoped.assert_awaited_once_with(
+            target_id=target_id,
+            domain_id=8,
+        )
         content = uow.runs.add_artifact.await_args.args[0]
         self.assertEqual(content.schema_version, "REPORT_CONTENT.v1")
         self.assertIn("锁等待导致响应时间升高", content.payload_json["summary"])

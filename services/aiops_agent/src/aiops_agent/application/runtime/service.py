@@ -2859,8 +2859,10 @@ class AIOpsRuntimeService:
         ).strip()
         status = "READY" if source.status == "COMPLETED" else "PARTIAL"
         summary = markdown or "Agent 已完成巡检，但未生成文字摘要"
-        security_level = int(
-            dict(plan.get("target") or {}).get("security_level") or 0
+        security_level = await self._report_security_level(
+            uow=uow,
+            run=run,
+            plan=plan,
         )
         content = ReportContent(
             report_key=report_key,
@@ -3069,6 +3071,11 @@ class AIOpsRuntimeService:
         )
         payload = content.model_dump(mode="json")
         content_hash = sha256_json(payload)
+        security_level = await self._report_security_level(
+            uow=uow,
+            run=run,
+            plan=plan,
+        )
         report_artifact = await uow.runs.add_artifact(
             OpsArtifactEntity(
                 ops_run_id=run.ops_run_id,
@@ -3087,7 +3094,7 @@ class AIOpsRuntimeService:
                     ),
                 },
                 trust_level="SOURCE_VERIFIED",
-                security_level=int(plan["target"]["security_level"]),
+                security_level=security_level,
             )
         )
         report = await uow.inspections.publish_report(
@@ -3109,7 +3116,7 @@ class AIOpsRuntimeService:
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
                 summary=summary,
-                security_level=int(plan["target"]["security_level"]),
+                security_level=security_level,
                 schema_version="REPORT_CONTENT.v1",
             )
         )
@@ -3152,6 +3159,28 @@ class AIOpsRuntimeService:
             actor_id=run.actor_id,
         )
         return report_artifact
+
+    async def _report_security_level(
+        self,
+        *,
+        uow,
+        run,
+        plan: dict[str, Any],
+    ) -> int:
+        """优先使用 Run 快照；旧 Run 缺失时读取权威 Target。"""
+        target_snapshot = plan.get("target")
+        if (
+            isinstance(target_snapshot, dict)
+            and "security_level" in target_snapshot
+        ):
+            return int(target_snapshot["security_level"])
+        target = await uow.targets.get_scoped(
+            target_id=run.target_id,
+            domain_id=int(run.domain_id),
+        )
+        if target is None:
+            raise resource_not_found("Target")
+        return int(target.security_level)
 
     async def _publish_diagnosis_report(
         self,
@@ -3310,6 +3339,11 @@ class AIOpsRuntimeService:
         )
         payload = content.model_dump(mode="json")
         content_hash = sha256_json(payload)
+        security_level = await self._report_security_level(
+            uow=uow,
+            run=run,
+            plan=plan,
+        )
         report_artifact = await uow.runs.add_artifact(
             OpsArtifactEntity(
                 ops_run_id=run.ops_run_id,
@@ -3326,7 +3360,7 @@ class AIOpsRuntimeService:
                     "source_artifact_id": str(source_artifact.artifact_id),
                 },
                 trust_level="SOURCE_VERIFIED",
-                security_level=int(plan["target"]["security_level"]),
+                security_level=security_level,
             )
         )
         report = await uow.inspections.publish_report(
@@ -3348,7 +3382,7 @@ class AIOpsRuntimeService:
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
                 summary=summary,
-                security_level=int(plan["target"]["security_level"]),
+                security_level=security_level,
                 schema_version="REPORT_CONTENT.v1",
             )
         )
