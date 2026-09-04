@@ -324,9 +324,9 @@ def _pdf_text(value: str) -> str:
 
 
 def _pdf_to_unicode_cmap(lines: list[str]) -> bytes:
-    """为本次 PDF 实际使用的 UTF-16BE 字符生成显式 ToUnicode 映射。"""
-    codepoints = sorted({
-        ord(character)
+    """为本次 PDF 实际使用的 GB1 CID 生成显式 Unicode 映射。"""
+    mappings = sorted({
+        (_pdf_gb1_cid(ord(character)), ord(character))
         for line in lines
         for character in line
     })
@@ -337,12 +337,12 @@ def _pdf_to_unicode_cmap(lines: list[str]) -> bytes:
         b"/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n",
         b"1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
     ]
-    for start in range(0, len(codepoints), 100):
-        chunk = codepoints[start:start + 100]
+    for start in range(0, len(mappings), 100):
+        chunk = mappings[start:start + 100]
         parts.append(f"{len(chunk)} beginbfchar\n".encode())
         parts.extend(
-            f"<{codepoint:04X}> <{codepoint:04X}>\n".encode()
-            for codepoint in chunk
+            f"<{cid:04X}> <{codepoint:04X}>\n".encode()
+            for cid, codepoint in chunk
         )
         parts.append(b"endbfchar\n")
     parts.extend((
@@ -374,35 +374,12 @@ def _pdf_gb1_cid(codepoint: int) -> int | None:
     return None
 
 
-def _pdf_embedded_gb1_cmap(lines: list[str]) -> bytes:
-    """为实际输出字符创建内嵌编码 CMap，避免阅读器依赖本机映射表。"""
-    codepoints = sorted({ord(character) for line in lines for character in line})
-    entries: list[tuple[int, int]] = []
-    for codepoint in codepoints:
-        cid = _pdf_gb1_cid(codepoint)
-        if cid is None:
-            raise ValueError(f"PDF 不支持字符 U+{codepoint:04X}")
-        entries.append((codepoint, cid))
-    parts = [
-        b"/CIDInit /ProcSet findresource begin\n",
-        b"12 dict begin\nbegincmap\n",
-        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> def\n",
-        b"/CMapName /KBot-AIOps-GB1-H def\n/CMapType 1 def\n",
-        b"1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
-    ]
-    for start in range(0, len(entries), 100):
-        chunk = entries[start:start + 100]
-        parts.append(f"{len(chunk)} begincidchar\n".encode())
-        parts.extend(
-            f"<{codepoint:04X}> {cid}\n".encode()
-            for codepoint, cid in chunk
-        )
-        parts.append(b"endcidchar\n")
-    parts.extend((
-        b"endcmap\nCMapName currentdict /CMap defineresource pop\n",
-        b"end\nend",
-    ))
-    return b"".join(parts)
+def _pdf_cid_text(line: str) -> bytes:
+    """将 Unicode 文本转换为 STSong-Light 可直接显示的 GB1 CID 字节。"""
+    return b"".join(
+        _pdf_gb1_cid(ord(character)).to_bytes(2, "big")
+        for character in line
+    )
 
 
 def render_pdf(presentation: dict[str, Any]) -> bytes:
@@ -421,15 +398,10 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     ]
     pages = [wrapped[index:index + 45] for index in range(0, max(len(wrapped), 1), 45)]
     objects: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>"]
-    page_ids = [8 + index * 2 for index in range(len(pages))]
+    page_ids = [7 + index * 2 for index in range(len(pages))]
     objects.append((f"<< /Type /Pages /Kids [{' '.join(f'{item} 0 R' for item in page_ids)}] /Count {len(page_ids)} >>").encode())
-    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding 5 0 R /DescendantFonts [4 0 R] /ToUnicode 6 0 R >>")
+    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /Identity-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>")
     objects.append(b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> /DW 1000 >>")
-    encoding_cmap = _pdf_embedded_gb1_cmap(wrapped)
-    objects.append(
-        b"<< /Length " + str(len(encoding_cmap)).encode() + b" >>\nstream\n"
-        + encoding_cmap + b"\nendstream"
-    )
     to_unicode = _pdf_to_unicode_cmap(wrapped)
     objects.append(
         b"<< /Length " + str(len(to_unicode)).encode() + b" >>\nstream\n"
@@ -439,7 +411,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     for page, page_id in zip(pages, page_ids):
         stream = b"BT\n/F1 10 Tf\n50 790 Td\n14 TL\n"
         for line in page:
-            encoded = line[:240].encode("utf-16-be").hex().upper().encode()
+            encoded = _pdf_cid_text(line[:240]).hex().upper().encode()
             stream += b"<" + encoded + b"> Tj\nT*\n"
         stream += b"ET\n"
         content_id = page_id + 1
