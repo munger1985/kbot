@@ -66,6 +66,7 @@ class FormalReportingTest(unittest.TestCase):
         self.assertNotIn(b"FEFF", pdf)
         self.assertIn(b"/ToUnicode 5 0 R", pdf)
         self.assertIn(b"/CMapName /Adobe-Identity-UCS", pdf)
+        self.assertIn(b"<9501> <9501>", pdf)
 
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(

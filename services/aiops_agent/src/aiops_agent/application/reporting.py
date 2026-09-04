@@ -310,12 +310,54 @@ def report_presentation(
     }
 
 
+def _pdf_text(value: str) -> str:
+    """将 PDF CMap 不能稳定表达的字符替换为可见占位符。"""
+    return "".join(
+        character
+        if 0x20 <= ord(character) <= 0xFFFF
+        else "?"
+        for character in value
+    )
+
+
+def _pdf_to_unicode_cmap(lines: list[str]) -> bytes:
+    """为本次 PDF 实际使用的 UTF-16BE 字符生成显式 ToUnicode 映射。"""
+    codepoints = sorted({
+        ord(character)
+        for line in lines
+        for character in line
+    })
+    parts = [
+        b"/CIDInit /ProcSet findresource begin\n",
+        b"12 dict begin\nbegincmap\n",
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n",
+        b"/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n",
+        b"1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
+    ]
+    for start in range(0, len(codepoints), 100):
+        chunk = codepoints[start:start + 100]
+        parts.append(f"{len(chunk)} beginbfchar\n".encode())
+        parts.extend(
+            f"<{codepoint:04X}> <{codepoint:04X}>\n".encode()
+            for codepoint in chunk
+        )
+        parts.append(b"endbfchar\n")
+    parts.extend((
+        b"endcmap\nCMapName currentdict /CMap defineresource pop\n",
+        b"end\nend",
+    ))
+    return b"".join(parts)
+
+
 def render_pdf(presentation: dict[str, Any]) -> bytes:
     """生成不依赖浏览器的最小 PDF；使用 PDF 标准中文 CID 字体。"""
-    lines = [str(presentation.get("title") or "AIOps 正式报告"), ""]
+    lines = [_pdf_text(str(presentation.get("title") or "AIOps 正式报告")), ""]
     for section in presentation.get("sections") or ():
-        lines.append(str(section.get("kind") or "章节"))
-        lines.extend(f"- {item}" for item in section.get("items") or ())
+        lines.append(_pdf_text(str(section.get("kind") or "章节")))
+        lines.extend(
+            _pdf_text(f"- {item}")
+            for item in section.get("items") or ()
+        )
         lines.append("")
     wrapped = [
         line for text in lines
@@ -327,22 +369,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     objects.append((f"<< /Type /Pages /Kids [{' '.join(f'{item} 0 R' for item in page_ids)}] /Count {len(page_ids)} >>").encode())
     objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>")
     objects.append(b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> /DW 1000 >>")
-    to_unicode = b"""/CIDInit /ProcSet findresource begin
-12 dict begin
-begincmap
-/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
-/CMapName /Adobe-Identity-UCS def
-/CMapType 2 def
-1 begincodespacerange
-<0000> <FFFF>
-endcodespacerange
-1 beginbfrange
-<0000> <FFFF> <0000>
-endbfrange
-endcmap
-CMapName currentdict /CMap defineresource pop
-end
-end"""
+    to_unicode = _pdf_to_unicode_cmap(wrapped)
     objects.append(
         b"<< /Length " + str(len(to_unicode)).encode() + b" >>\nstream\n"
         + to_unicode + b"\nendstream"
