@@ -3,7 +3,7 @@
   const sections = [
     ["业务工作区", [
       ["chat", "智能诊断"], ["situations", "告警诊断"],
-      ["inspections", "日常巡检"],
+      ["inspections", "日常巡检"], ["reports", "报告中心"],
     ]],
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],

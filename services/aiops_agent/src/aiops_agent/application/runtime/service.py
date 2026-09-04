@@ -143,6 +143,7 @@ from platform_core.contracts.aiops.public import (
     OpsRunSummary,
     PendingInputView,
     ReportPage,
+    ReportSectionEdit,
     ReportSummary,
     ReportVersionPage,
     ReportVersionSummary,
@@ -5673,7 +5674,7 @@ class AIOpsRuntimeService:
     ) -> ReportView:
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
-            report = await uow.inspections.get_current_report_scoped(
+            report = await uow.inspections.get_report_scoped(
                 report_id=report_id,
                 domain_id=domain_id,
             )
@@ -5688,25 +5689,179 @@ class AIOpsRuntimeService:
                 or artifact.content_hash != report.content_hash
             ):
                 raise state_conflict("Report 内容引用不完整")
-            return ReportView(
-                report_id=report.report_id,
-                report_key=report.report_key,
-                report_type=report.report_type,
-                report_version=int(report.report_version),
-                status=report.status,
-                target_id=report.target_id,
-                period_start=report.period_start,
-                period_end=report.period_end,
-                summary=report.summary,
-                content_artifact=ArtifactRef(
-                    artifact_id=artifact.artifact_id,
-                    artifact_type=artifact.artifact_type,
-                    schema_version=artifact.schema_version,
-                    content_hash=artifact.content_hash,
-                ),
-                corrected_from_report_id=report.supersedes_report_id,
-                published_at=report.created_at,
+            return self._report_view(report, artifact)
+
+    async def edit_report(
+        self,
+        *,
+        report_id: UUID,
+        domain_id: int,
+        actor_id: str,
+        expected_report_version: int,
+        title: str,
+        sections: tuple[ReportSectionEdit, ...],
+        trace_id: str,
+    ) -> ReportView:
+        """冻结人工展示编辑为下一版报告，不改写已有事实和证据。"""
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            report = await uow.inspections.get_report_scoped(
+                report_id=report_id, domain_id=domain_id, lock=True
             )
+            if report is None:
+                raise resource_not_found("Report")
+            if not report.is_current:
+                raise state_conflict("报告已更新，请刷新后再编辑")
+            if int(report.report_version) != expected_report_version:
+                raise state_conflict("报告版本已变化，请刷新后再编辑")
+            if report.content_artifact_id is None:
+                raise state_conflict("Report 内容引用不完整")
+            artifact = await uow.runs.get_artifact(
+                artifact_id=report.content_artifact_id
+            )
+            if (
+                artifact is None
+                or artifact.schema_version != "REPORT_CONTENT.v1"
+                or artifact.content_hash != report.content_hash
+            ):
+                raise state_conflict("Report 内容引用不完整")
+            content = ReportContent.model_validate(
+                dict(artifact.payload_json or {})
+            )
+            snapshot = dict(content.provenance.get("template") or {})
+            definition = snapshot.get("definition")
+            if isinstance(definition, dict):
+                template = validate_template_definition(definition)
+            else:
+                template = resolve_system_template(str(report.template_id))
+            if template is None:
+                raise state_conflict("历史报告缺少可重现的模板快照")
+            protected = {"EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"}
+            overrides: dict[str, tuple[str, ...]] = {}
+            for section in sections:
+                if section.kind in protected:
+                    raise validation_failed("证据边界和证据索引不能人工编辑")
+                if section.kind not in template.sections:
+                    raise validation_failed("报告包含不属于模板的章节")
+                if section.kind in overrides:
+                    raise validation_failed("同一报告章节只能编辑一次")
+                overrides[section.kind] = tuple(
+                    item.strip() for item in section.items if item.strip()
+                )
+                if not overrides[section.kind]:
+                    raise validation_failed("报告章节不能保存为空")
+            clean_title = title.strip()
+            if not clean_title:
+                raise validation_failed("报告标题不能为空")
+            now = await uow.runs.database_now()
+            version = int(report.report_version) + 1
+            provenance = dict(content.provenance)
+            provenance["human_presentation_edit"] = {
+                "actor_id": actor_id,
+                "edited_at": now.isoformat(),
+                "base_report_id": str(report.report_id),
+                "base_content_hash": report.content_hash,
+            }
+            updated_content = content.model_copy(update={
+                "title": clean_title,
+                "presentation_overrides": overrides,
+                "provenance": provenance,
+            })
+            payload = updated_content.model_dump(mode="json")
+            content_hash = sha256_json(payload)
+            report_artifact = await uow.runs.add_artifact(
+                OpsArtifactEntity(
+                    ops_run_id=report.ops_run_id,
+                    ops_task_id=report.generated_by_task_id,
+                    artifact_key=f"report:{report.report_key}:v{version}",
+                    artifact_type="REPORT_CONTENT",
+                    schema_version="REPORT_CONTENT.v1",
+                    payload_json=payload,
+                    content_hash=content_hash,
+                    byte_size=len(canonical_bytes(payload)),
+                    provenance_json={
+                        "producer": "aiops.report-editor",
+                        "producer_version": "1",
+                        "base_artifact_id": str(artifact.artifact_id),
+                        "actor_id": actor_id,
+                    },
+                    trust_level="USER_PROVIDED",
+                    security_level=int(report.security_level),
+                )
+            )
+            summary = overrides.get("EXECUTIVE_SUMMARY", (content.summary,))[0]
+            saved = await uow.inspections.publish_report(
+                ReportEntity(
+                    report_id=uuid7(),
+                    ops_run_id=report.ops_run_id,
+                    target_id=report.target_id,
+                    report_key=report.report_key,
+                    report_version=version,
+                    supersedes_report_id=report.report_id,
+                    is_current=0,
+                    report_type=report.report_type,
+                    title=updated_content.title,
+                    status=report.status,
+                    period_start=report.period_start,
+                    period_end=report.period_end,
+                    baseline_start=report.baseline_start,
+                    baseline_end=report.baseline_end,
+                    after_start=report.after_start,
+                    after_end=report.after_end,
+                    result=report.result,
+                    template_id=report.template_id,
+                    template_version=report.template_version,
+                    generated_by_task_id=report.generated_by_task_id,
+                    content_artifact_id=report_artifact.artifact_id,
+                    content_hash=content_hash,
+                    summary=summary,
+                    security_level=int(report.security_level),
+                    schema_version="REPORT_CONTENT.v1",
+                )
+            )
+            sources = await uow.inspections.list_report_sources(
+                report_id=report.report_id
+            )
+            if sources:
+                await uow.inspections.add_report_sources([
+                    ReportSourceEntity(
+                        report_id=saved.report_id,
+                        ops_run_id=source.ops_run_id,
+                        source_artifact_id=source.source_artifact_id,
+                        source_kind=source.source_kind,
+                        content_hash=source.content_hash,
+                        observed_at=source.observed_at,
+                    )
+                    for source in sources
+                ])
+            await uow.runs.append_event(
+                ops_run_id=saved.ops_run_id,
+                ops_task_id=saved.generated_by_task_id,
+                event_type="report.edited",
+                event_key=f"report:{saved.report_id}:edited",
+                visibility="USER",
+                payload_json={
+                    "report_id": str(saved.report_id),
+                    "supersedes_report_id": str(report.report_id),
+                    "report_version": version,
+                    "trace_id": trace_id,
+                },
+            )
+            await self._add_outbox(
+                uow,
+                aggregate_id=saved.report_id,
+                event_type="OPS_REPORT_EDITED",
+                idempotency_key=f"report:{saved.report_id}:edited",
+                payload={
+                    "report_id": str(saved.report_id),
+                    "ops_run_id": str(saved.ops_run_id),
+                    "report_version": version,
+                },
+                trace_id=trace_id,
+                now=now,
+            )
+            await uow.commit()
+            return self._report_view(saved, report_artifact)
 
     async def generate_user_report(
         self,
@@ -5890,7 +6045,7 @@ class AIOpsRuntimeService:
         """读取冻结内容和模板快照，供预览和 PDF 共用。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
-            report = await uow.inspections.get_current_report_scoped(
+            report = await uow.inspections.get_report_scoped(
                 report_id=report_id, domain_id=domain_id
             )
             if report is None or report.content_artifact_id is None:
@@ -5928,7 +6083,7 @@ class AIOpsRuntimeService:
         """在展示或下载前复核报告来源 Agent 的私有授权范围。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
-            report = await uow.inspections.get_current_report_scoped(
+            report = await uow.inspections.get_report_scoped(
                 report_id=report_id, domain_id=domain_id
             )
             if report is None:
@@ -6149,6 +6304,30 @@ class AIOpsRuntimeService:
         )
 
     @staticmethod
+    def _report_view(report, artifact) -> ReportView:
+        """将已校验的报告及其内容产物映射为公开视图。"""
+        return ReportView(
+            report_id=report.report_id,
+            report_key=report.report_key,
+            report_type=report.report_type,
+            report_version=int(report.report_version),
+            title=report.title,
+            status=report.status,
+            target_id=report.target_id,
+            period_start=report.period_start,
+            period_end=report.period_end,
+            summary=report.summary,
+            content_artifact=ArtifactRef(
+                artifact_id=artifact.artifact_id,
+                artifact_type=artifact.artifact_type,
+                schema_version=artifact.schema_version,
+                content_hash=artifact.content_hash,
+            ),
+            corrected_from_report_id=report.supersedes_report_id,
+            published_at=report.created_at,
+        )
+
+    @staticmethod
     def _report_summary(report) -> ReportSummary:
         if (
             report.period_start is None
@@ -6161,6 +6340,7 @@ class AIOpsRuntimeService:
             report_key=report.report_key,
             report_type=report.report_type,
             report_version=int(report.report_version),
+            title=report.title,
             status=report.status,
             target_id=report.target_id,
             period_start=report.period_start,

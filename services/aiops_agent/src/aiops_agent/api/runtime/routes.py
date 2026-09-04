@@ -46,6 +46,7 @@ from platform_core.contracts.aiops.public import (
     OpsRunPage,
     OpsRunSummary,
     ReportPage,
+    ReportEdit,
     ReportVersionPage,
     ReportView,
     SituationPage,
@@ -73,6 +74,12 @@ class GenerateUserReportRequest(BaseModel):
         default="system:diagnosis.standard", min_length=1, max_length=128
     )
     period_kind: str = Field(default="AD_HOC", max_length=16)
+
+
+class EditReportRequest(ReportEdit):
+    """内部调用携带当前报告版本，避免并发覆盖。"""
+
+    expected_report_version: int = Field(ge=1)
 
 
 def _scope(request: Request, context: AuthContext) -> int:
@@ -337,6 +344,34 @@ async def generate_user_report(
         "template_ref": report.template_id,
         "report_version": int(report.report_version),
     }
+
+
+@router.patch("/reports/{report_id}", response_model=ReportView)
+async def edit_report(
+    report_id: UUID,
+    body: EditReportRequest,
+    request: Request,
+    service: Service,
+    context: Auth,
+) -> ReportView:
+    """将人工展示编辑作为不可变报告新版本保存。"""
+    require_service_scope(request, "aiops.run")
+    domain_id = _scope(request, context)
+    _ensure_agent_authorized(
+        context,
+        await service.get_report_source_agent_id(
+            report_id=report_id, domain_id=domain_id
+        ),
+    )
+    return await service.edit_report(
+        report_id=report_id,
+        domain_id=domain_id,
+        actor_id=context.asserted_user_id or context.client_id,
+        expected_report_version=body.expected_report_version,
+        title=body.title,
+        sections=body.sections,
+        trace_id=request.headers.get("X-Request-ID", str(report_id)),
+    )
 
 
 @router.get("/reports/{report_id}/presentation")

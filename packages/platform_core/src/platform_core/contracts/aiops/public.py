@@ -361,6 +361,7 @@ class ReportSummary(AIOpsContract):
     report_key: str
     report_type: ReportType
     report_version: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=512)
     status: ReportStatus
     target_id: UUIDv7
     period_start: UtcDatetime
@@ -390,6 +391,20 @@ class ReportVersionSummary(AIOpsContract):
 class ReportVersionPage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     items: tuple[ReportVersionSummary, ...] = ()
+
+
+class ReportSectionEdit(AIOpsContract):
+    """人工维护的报告展示章节；不接收或修改冻结证据。"""
+
+    kind: str = Field(min_length=1, max_length=64)
+    items: tuple[str, ...] = Field(min_length=1, max_length=100)
+
+
+class ReportEdit(AIOpsContract):
+    """创建一个带人工展示编辑的新报告版本。"""
+
+    title: str = Field(min_length=1, max_length=512)
+    sections: tuple[ReportSectionEdit, ...] = Field(default=(), max_length=32)
 
 
 class UploadSession(AIOpsContract):

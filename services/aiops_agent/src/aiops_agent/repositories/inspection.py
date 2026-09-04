@@ -59,6 +59,16 @@ class InspectionRepository(AIOpsRepository):
     ) -> list[ReportSourceEntity]:
         return await self._add_all(entities)
 
+    async def list_report_sources(
+        self, *, report_id: UUID
+    ) -> list[ReportSourceEntity]:
+        """读取一个冻结报告的来源链，供版本化编辑时原样继承。"""
+        self._check_active()
+        statement = select(ReportSourceEntity).where(
+            ReportSourceEntity.report_id == report_id
+        )
+        return list((await self._session.execute(statement)).scalars())
+
     async def add_report_template(self, entity): return await self._add(entity)
     async def add_report_template_version(self, entity): return await self._add(entity)
 
@@ -552,6 +562,7 @@ class InspectionRepository(AIOpsRepository):
         *,
         report_id: UUID,
         domain_id: int,
+        lock: bool = False,
     ) -> ReportEntity | None:
         self._check_active()
         statement = (
@@ -565,6 +576,8 @@ class InspectionRepository(AIOpsRepository):
                 TargetEntity.domain_id == domain_id,
             )
         )
+        if lock:
+            statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def page_current_reports(

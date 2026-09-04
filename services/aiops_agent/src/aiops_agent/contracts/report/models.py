@@ -19,6 +19,9 @@ class ReportContent(BaseModel):
         "PERFORMANCE",
         "INSPECTION_DAILY",
         "INSPECTION_WEEKLY",
+        "INSPECTION_MONTHLY",
+        "INSPECTION_QUARTERLY",
+        "INSPECTION_ANNUAL",
         "INSPECTION_CUSTOM",
         "COMPARISON",
     ]
@@ -34,4 +37,8 @@ class ReportContent(BaseModel):
     gaps: tuple[dict[str, Any], ...] = ()
     evidence_refs: tuple[dict[str, str], ...] = ()
     recommendations: tuple[str, ...] = ()
+    # 人工编辑只作用于展示投影；原始事实、证据索引和数据缺口保持冻结。
+    presentation_overrides: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict
+    )
     provenance: dict[str, Any] = Field(default_factory=dict)

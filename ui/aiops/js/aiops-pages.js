@@ -8,6 +8,7 @@
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
+    reports: { path: "/reports", cols: [["title", "报告"], ["report_type", "类型"], ["report_version", "当前版本"], ["status", "状态", "badge"], ["period_end", "报告截止时间", "date"], ["summary", "摘要"]], detail: "report-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
   function cell(item, [key, , type]) {
@@ -369,9 +370,71 @@
     }
   }
 
-  function reportPresentationHtml(data) {
+  const protectedReportSections = new Set(["EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"]);
+
+  function reportPresentationHtml(data, report, versions) {
     const sections = Array.isArray(data.sections) ? data.sections : [];
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2>${shell.escape(data.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")}</p></div><button class="primary" type="button" data-download-report>下载 PDF</button></header>${sections.map((section) => `<section class="ops-panel"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}</h3></div><div class="ops-panel-body"><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
+    const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header><section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+  }
+
+  function beginReportEdit(panel, data, report, versions) {
+    const sections = Array.isArray(data.sections) ? data.sections : [];
+    const editableSections = sections.filter((section) => !protectedReportSections.has(section.kind));
+    panel.innerHTML = `<article class="ops-report-presentation"><header class="ops-head"><div><label>报告标题 <input data-report-title-input maxlength="512" value="${shell.escape(data.title || report.title || "")}"></label><p>人工编辑仅修改展示文字，已冻结的证据边界和证据索引不会变化。</p></div><div class="ops-actions"><button type="button" data-write-ready data-cancel-report-edit>取消</button><button class="primary" type="button" data-write-ready data-save-report-edit>保存为新版本</button></div></header>${editableSections.map((section) => `<section class="ops-panel"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}</h3></div><div class="ops-panel-body"><textarea data-report-edit-section="${shell.escape(section.kind)}" rows="6">${shell.escape((section.items || []).join("\n"))}</textarea></div></section>`).join("")}</article>`;
+    panel.querySelector("[data-cancel-report-edit]").onclick = () => {
+      void renderReportDetail(report.report_id);
+    };
+    panel.querySelector("[data-save-report-edit]").onclick = async (event) => {
+      const button = event.currentTarget;
+      const title = panel.querySelector("[data-report-title-input]").value.trim();
+      const edited = [...panel.querySelectorAll("[data-report-edit-section]")].map((input) => ({
+        kind: input.dataset.reportEditSection,
+        items: input.value.split("\n").map((line) => line.trim()).filter(Boolean),
+      }));
+      if (!title) { shell.toast("报告标题不能为空"); return; }
+      if (edited.some((section) => !section.items.length)) {
+        shell.toast("报告章节不能为空");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const saved = await KBotAIOpsAuth.request(appApi + `/reports/${encodeURIComponent(report.report_id)}`, {
+          method: "PATCH",
+          headers: { "If-Match": `"rv-${report.report_version}"` },
+          body: JSON.stringify({ title, sections: edited }),
+        });
+        shell.toast("已保存为新的报告版本");
+        location.replace(`report-detail.html?id=${encodeURIComponent(saved.report_id)}`);
+      } catch (error) {
+        shell.toast(error.message);
+        button.disabled = false;
+      }
+    };
+  }
+
+  async function renderReportDetail(id) {
+    const panel = document.getElementById("ops-detail");
+    const encodedId = encodeURIComponent(id);
+    const [data, report, versions] = await Promise.all([
+      KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/presentation`),
+      KBotAIOpsAuth.request(appApi + `/reports/${encodedId}`),
+      KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/versions`),
+    ]);
+    panel.innerHTML = reportPresentationHtml(data, report, versions);
+    panel.querySelector("[data-download-report]").onclick = () => KBotAIOpsAuth.download(
+      appApi + `/reports/${encodedId}/pdf`,
+      `aiops-report-${id}.pdf`,
+    ).catch((error) => shell.toast(error.message));
+    const editButton = panel.querySelector("[data-edit-report]");
+    if (editButton) editButton.onclick = () => beginReportEdit(panel, data, report, versions);
+    panel.querySelector("[data-report-version]").onchange = (event) => {
+      const selected = event.currentTarget.value;
+      if (selected && selected !== String(report.report_id)) {
+        location.href = `report-detail.html?id=${encodeURIComponent(selected)}`;
+      }
+    };
   }
 
   async function renderDetail(page) {
@@ -381,12 +444,7 @@
     if (!id) { panel.innerHTML = '<div class="ops-error">URL 缺少资源 id</div>'; return; }
     try {
       if (page === "report-detail") {
-        const data = await KBotAIOpsAuth.request(appApi + `/reports/${encodeURIComponent(id)}/presentation`);
-        panel.innerHTML = reportPresentationHtml(data);
-        panel.querySelector("[data-download-report]").onclick = () => KBotAIOpsAuth.download(
-          appApi + `/reports/${encodeURIComponent(id)}/pdf`,
-          `aiops-report-${id}.pdf`,
-        ).catch((error) => shell.toast(error.message));
+        await renderReportDetail(id);
         return;
       }
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));

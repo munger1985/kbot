@@ -1001,6 +1001,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def edit_report(
+        self,
+        report_id: UUID,
+        payload: dict[str, Any],
+        *,
+        expected_report_version: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{INTERNAL_API_V1}/aiops/reports/{report_id}",
+            payload={
+                **payload,
+                "expected_report_version": expected_report_version,
+            },
+            auth_context=auth_context,
+        )
+
     async def download_report_pdf(
         self, report_id: UUID, *, auth_context: AuthContext
     ) -> AIOpsBinaryResponse:

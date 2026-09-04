@@ -259,6 +259,7 @@ def report_presentation(
     facts = list(payload.get("facts") or ())
     gaps = list(payload.get("gaps") or ())
     recommendations = list(payload.get("recommendations") or ())
+    overrides = dict(payload.get("presentation_overrides") or {})
     scope = dict(payload.get("scope") or {})
     root_grade = str(scope.get("root_cause_grade") or "INCONCLUSIVE")
     section_data: list[dict[str, Any]] = []
@@ -290,7 +291,15 @@ def report_presentation(
                 f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
                 for item in list(payload.get("evidence_refs") or ())
             ] or ["未记录可公开的证据索引。"]
-        section_data.append({"kind": kind, "items": body})
+        if kind not in {"EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"}:
+            edited = overrides.get(kind)
+            if isinstance(edited, (list, tuple)) and edited:
+                body = [str(item) for item in edited]
+        section_data.append({
+            "kind": kind,
+            "items": body,
+            "human_edited": kind in overrides,
+        })
     return {
         "schema_version": "REPORT_PRESENTATION.v1",
         "title": payload.get("title") or template.display_name,

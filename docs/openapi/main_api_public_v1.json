@@ -7600,6 +7600,32 @@
         "title": "RejectionCommand",
         "type": "object"
       },
+      "ReportEdit": {
+        "additionalProperties": false,
+        "description": "创建一个带人工展示编辑的新报告版本。",
+        "properties": {
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportSectionEdit"
+            },
+            "maxItems": 32,
+            "title": "Sections",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ReportEdit",
+        "type": "object"
+      },
       "ReportGenerationPayload": {
         "description": "业务用户显式生成正式报告的请求。",
         "properties": {
@@ -7662,6 +7688,33 @@
         "title": "ReportPage",
         "type": "object"
       },
+      "ReportSectionEdit": {
+        "additionalProperties": false,
+        "description": "人工维护的报告展示章节；不接收或修改冻结证据。",
+        "properties": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "items"
+        ],
+        "title": "ReportSectionEdit",
+        "type": "object"
+      },
       "ReportStatus": {
         "enum": [
           "GENERATING",
@@ -7718,6 +7771,12 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
@@ -7725,6 +7784,7 @@
           "report_key",
           "report_type",
           "report_version",
+          "title",
           "status",
           "target_id",
           "period_start",
@@ -7783,6 +7843,9 @@
           "PERFORMANCE",
           "INSPECTION_DAILY",
           "INSPECTION_WEEKLY",
+          "INSPECTION_MONTHLY",
+          "INSPECTION_QUARTERLY",
+          "INSPECTION_ANNUAL",
           "INSPECTION_CUSTOM",
           "COMPARISON"
         ],
@@ -7941,6 +8004,12 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
@@ -7948,6 +8017,7 @@
           "report_key",
           "report_type",
           "report_version",
+          "title",
           "status",
           "target_id",
           "period_start",
@@ -14597,6 +14667,74 @@
           }
         },
         "summary": "Get Report",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "patch": {
+        "description": "保存人工展示编辑，并创建可追溯的新报告版本。",
+        "operationId": "edit_report_api_v1_apps_aiops_reports__report_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Report",
         "tags": [
           "AIOps"
         ]

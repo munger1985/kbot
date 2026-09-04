@@ -68,6 +68,7 @@ from platform_core.contracts.aiops import (
     SituationPage,
     SituationView,
     RejectionCommand,
+    ReportEdit,
     ReportPage,
     ReportVersionPage,
     ReportView,
@@ -153,6 +154,24 @@ class ReportGenerationPayload(BaseModel):
     ops_run_id: UUID
     template_ref: str = "system:diagnosis.standard"
     period_kind: str = "AD_HOC"
+
+
+def _expected_etag_version(value: str) -> int:
+    try:
+        if not value.startswith('"rv-') or not value.endswith('"'):
+            raise ValueError
+        version = int(value[4:-1])
+        if version < 1:
+            raise ValueError
+        return version
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPS_ETAG_INVALID",
+                "message": "If-Match 格式必须为 \"rv-<version>\"",
+            },
+        ) from exc
 
 
 def _client(request: Request) -> AIOpsManagementClient:
@@ -247,6 +266,23 @@ async def generate_report(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
+
+
+@router.patch("/reports/{report_id}", response_model=ReportView)
+async def edit_report(
+    report_id: UUID,
+    payload: ReportEdit,
+    request: Request,
+    if_match: IfMatch,
+) -> ReportView:
+    """保存人工展示编辑，并创建可追溯的新报告版本。"""
+    result = await _client(request).edit_report(
+        report_id,
+        payload.model_dump(mode="json"),
+        expected_report_version=_expected_etag_version(if_match),
+        auth_context=request.state.auth_context,
+    )
+    return ReportView.model_validate(result)
 
 
 @router.get("/reports/{report_id}/presentation")

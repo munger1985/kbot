@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "run-detail", "report-detail", "inspections",
+        "chat", "situations", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
@@ -357,7 +357,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("/manual-result", workspace)
         self.assertIn("data-copy-code", workspace)
 
-    def test_business_workspace_has_exact_three_entry_points(self):
+    def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
@@ -368,7 +368,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('["situations", "告警诊断"]', shell)
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["runs", "诊断运行"]', shell)
-        self.assertNotIn('["reports", "报告中心"]', shell)
+        self.assertIn('["reports", "报告中心"]', shell)
         self.assertIn('["report-templates", "报告模板"]', shell)
         business_workspace = shell.split('["资源配置"', 1)[0]
         self.assertNotIn('["report-templates", "报告模板"]', business_workspace)
@@ -475,10 +475,24 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
-            "dashboard.html", "runs.html", "reports.html",
+            "dashboard.html", "runs.html",
             "changes.html", "notifications.html",
         ):
             self.assertFalse((AIOPS_ROOT / obsolete).exists())
+
+    def test_report_center_supports_history_download_and_versioned_editing(self):
+        page = (AIOPS_ROOT / "reports.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("查看已生成的正式报告", page)
+        self.assertIn('reports: { path: "/reports"', script)
+        self.assertIn("data-report-version", script)
+        self.assertIn("data-download-report", script)
+        self.assertIn("data-edit-report", script)
+        self.assertIn('method: "PATCH"', script)
+        self.assertIn('"If-Match": `"rv-${report.report_version}"`', script)
+        self.assertIn("不会覆盖旧版", script)
 
     def test_report_template_configuration_is_not_a_business_entry(self):
         page = (AIOPS_ROOT / "report-templates.html").read_text(

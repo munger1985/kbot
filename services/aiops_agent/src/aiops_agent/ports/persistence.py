@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         OpsTaskEntity,
         OutboxEntity,
         PolicyEntity,
+        ReportSourceEntity,
         TargetEntity,
     )
 
@@ -114,6 +115,14 @@ class InspectionRepositoryPort(Protocol):
     async def add_plan(
         self, entity: InspectionPlanEntity
     ) -> InspectionPlanEntity: ...
+
+    async def add_report_sources(
+        self, entities: list[ReportSourceEntity]
+    ) -> list[ReportSourceEntity]: ...
+
+    async def list_report_sources(
+        self, *, report_id: UUID
+    ) -> list[ReportSourceEntity]: ...
 
     async def claim_due_plan(
         self,

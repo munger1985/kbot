@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, Mock
 
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.contracts.report import ReportContent
+from aiops_agent.application.reporting import SYSTEM_REPORT_TEMPLATES
+from platform_core.contracts.aiops import ReportSectionEdit
 from platform_core.identity import uuid7
 
 
@@ -40,6 +43,7 @@ class ReportQueryTest(unittest.TestCase):
                 report_key=f"inspection.daily.{offset}",
                 report_type="INSPECTION_DAILY",
                 report_version=1,
+                title="日常巡检报告",
                 status="READY",
                 target_id=uuid7(),
                 period_start=now - timedelta(days=1),
@@ -124,6 +128,90 @@ class ReportQueryTest(unittest.TestCase):
         self.assertEqual(page_scope["ops_run_id"], source_run_id)
         self.assertEqual(
             page_scope["report_key"], "comparison.action.example"
+        )
+
+    def test_edit_report_creates_new_version_without_changing_evidence(self) -> None:
+        now = datetime(2026, 9, 4, tzinfo=UTC)
+        report_id, artifact_id, task_id, target_id, run_id = (
+            uuid7(), uuid7(), uuid7(), uuid7(), uuid7()
+        )
+        template = SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"]
+        content = ReportContent(
+            report_key="diagnosis.standard",
+            report_type="INCIDENT",
+            ops_run_id=str(run_id),
+            target_id=str(target_id),
+            title="原报告",
+            status="READY",
+            summary="原摘要",
+            period_start=now - timedelta(hours=1),
+            period_end=now,
+            scope={},
+            evidence_refs=({"artifact_id": "evidence-1", "content_hash": "b" * 64},),
+            provenance={"template": {
+                "template_ref": template.template_ref,
+                "version": template.version,
+                "definition": template.definition,
+            }},
+        )
+        report = SimpleNamespace(
+            report_id=report_id, ops_run_id=run_id, target_id=target_id,
+            report_key="diagnosis.standard", report_version=1, is_current=1,
+            report_type="INCIDENT", title="原报告", status="READY",
+            period_start=now - timedelta(hours=1), period_end=now,
+            baseline_start=None, baseline_end=None, after_start=None,
+            after_end=None, result=None, template_id=template.template_ref,
+            template_version=template.version, generated_by_task_id=task_id,
+            content_artifact_id=artifact_id, content_hash="a" * 64,
+            summary="原摘要", security_level=1, created_at=now,
+        )
+        source_artifact = SimpleNamespace(
+            artifact_id=artifact_id, schema_version="REPORT_CONTENT.v1",
+            content_hash="a" * 64, payload_json=content.model_dump(mode="json"),
+            artifact_type="REPORT_CONTENT",
+        )
+        saved_artifact = SimpleNamespace(
+            artifact_id=uuid7(), artifact_type="REPORT_CONTENT",
+            schema_version="REPORT_CONTENT.v1", content_hash="c" * 64,
+        )
+        inspections = SimpleNamespace(
+            get_report_scoped=AsyncMock(return_value=report),
+            publish_report=AsyncMock(side_effect=lambda entity: entity),
+            list_report_sources=AsyncMock(return_value=[]),
+            add_report_sources=AsyncMock(),
+        )
+        runs = SimpleNamespace(
+            get_artifact=AsyncMock(return_value=source_artifact),
+            database_now=AsyncMock(return_value=now),
+            add_artifact=AsyncMock(return_value=saved_artifact),
+            append_event=AsyncMock(),
+        )
+        uow = SimpleNamespace(
+            inspections=inspections, runs=runs,
+            outbox=SimpleNamespace(add=AsyncMock()), commit=AsyncMock(),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: _context(uow), blueprint_registry=Mock(),
+            handler_registry=Mock(),
+        )
+        result = asyncio.run(service.edit_report(
+            report_id=report_id, domain_id=200, actor_id="user-1",
+            expected_report_version=1, title="修订报告",
+            sections=(ReportSectionEdit(
+                kind="EXECUTIVE_SUMMARY", items=("修订摘要",),
+            ),),
+            trace_id="trace-1",
+        ))
+        self.assertEqual(result.report_version, 2)
+        self.assertEqual(result.title, "修订报告")
+        self.assertEqual(result.corrected_from_report_id, report_id)
+        published = inspections.publish_report.await_args.args[0]
+        self.assertEqual(published.supersedes_report_id, report_id)
+        artifact_payload = runs.add_artifact.await_args.args[0].payload_json
+        self.assertEqual(artifact_payload["evidence_refs"], content.model_dump(mode="json")["evidence_refs"])
+        self.assertEqual(
+            artifact_payload["presentation_overrides"]["EXECUTIVE_SUMMARY"],
+            ["修订摘要"],
         )
 
 
