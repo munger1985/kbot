@@ -61,10 +61,11 @@ class FormalReportingTest(unittest.TestCase):
         self.assertIn("EVIDENCE_BOUNDARY", kinds)
         pdf = render_pdf(presentation)
         self.assertTrue(pdf.startswith(b"%PDF-1.4"))
-        # 内容流写入实际 GB1 CID，避免阅读器把 Unicode 码元误作字形编号。
+        # 内容流使用内嵌字体的 CID，不能再依赖阅读器安装中文字体。
         self.assertIn(b"/Encoding /Identity-H", pdf)
+        self.assertIn(b"/FontFile2 7 0 R", pdf)
         self.assertNotIn(b"FEFF", pdf)
-        self.assertIn(b"/ToUnicode 5 0 R", pdf)
+        self.assertIn(b"/ToUnicode 8 0 R", pdf)
         self.assertIn(b"/CMapName /Adobe-Identity-UCS", pdf)
         self.assertNotIn("锁等待持续升高".encode("utf-16-be").hex().upper().encode(), pdf)
 
