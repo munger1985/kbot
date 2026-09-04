@@ -322,7 +322,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     for page, page_id in zip(pages, page_ids):
         stream = b"BT\n/F1 10 Tf\n50 790 Td\n14 TL\n"
         for line in page:
-            encoded = ("\ufeff" + line[:240]).encode("utf-16-be").hex().upper().encode()
+            encoded = line[:240].encode("utf-16-be").hex().upper().encode()
             stream += b"<" + encoded + b"> Tj\nT*\n"
         stream += b"ET\n"
         content_id = page_id + 1

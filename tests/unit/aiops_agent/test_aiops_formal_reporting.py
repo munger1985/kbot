@@ -61,8 +61,9 @@ class FormalReportingTest(unittest.TestCase):
         self.assertIn("EVIDENCE_BOUNDARY", kinds)
         pdf = render_pdf(presentation)
         self.assertTrue(pdf.startswith(b"%PDF-1.4"))
-        # PDF 文本按规范以十六进制字符串写入内容流，不能直接查找原始 UTF-16 字节。
+        # UniGB-UCS2-H 文本直接写入 UTF-16BE 码元，不能附带 BOM。
         self.assertIn("锁等待持续升高".encode("utf-16-be").hex().upper().encode(), pdf)
+        self.assertNotIn(b"FEFF", pdf)
 
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(
