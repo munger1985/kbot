@@ -858,7 +858,9 @@
         return shell.toast("诊断材料不能超过 20 MiB");
       }
       state.selectedFile = file;
-      document.getElementById("upload-preview").textContent = file ? `待上传：${file.name}` : "";
+      document.getElementById("upload-preview").textContent = file
+        ? `已选择：${file.name}（点击发送时上传）`
+        : "";
     };
     await loadConversationList();
   }

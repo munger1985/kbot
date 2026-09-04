@@ -70,6 +70,19 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('document.execCommand("copy")', renderer)
         self.assertIn("kbot-markdown.js?v=20260827_1", chat)
 
+    def test_chat_selects_attachment_before_submitting_it(self):
+        chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("选择诊断材料", chat)
+        self.assertIn("点击“发送”时上传", chat)
+        change_handler = workspace.split(
+            'document.getElementById("evidence-file").onchange =', 1
+        )[1].split("await loadConversationList();", 1)[0]
+        self.assertNotIn("conversation-uploads", change_handler)
+        self.assertIn("点击发送时上传", change_handler)
+
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")
