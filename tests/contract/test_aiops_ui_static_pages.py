@@ -469,6 +469,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("?agent_id=${encodeURIComponent(selectedAgent)}", workspace)
         self.assertIn("archiveConversation", workspace)
         self.assertIn('method: "DELETE"', workspace)
+        self.assertIn('class="ops-workspace-delete"', workspace)
+        self.assertIn('data-delete-id="${esc(item.conversation_id)}"', workspace)
+        self.assertIn("会话将从聊天历史中移除", workspace)
         self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
