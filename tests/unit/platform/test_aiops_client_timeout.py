@@ -37,11 +37,6 @@ class _SharedSession:
         self.request_kwargs = kwargs
         return _Response()
 
-    def post(self, url, **kwargs):
-        del url
-        self.request_kwargs = kwargs
-        return _Response()
-
 
 class AIOpsClientTimeoutTest(unittest.IsolatedAsyncioTestCase):
     async def test_shared_session_does_not_override_aiops_timeout(self):
@@ -63,29 +58,6 @@ class AIOpsClientTimeoutTest(unittest.IsolatedAsyncioTestCase):
         timeout = session.request_kwargs["timeout"]
         self.assertIsInstance(timeout, aiohttp.ClientTimeout)
         self.assertEqual(17, timeout.total)
-
-    async def test_upload_uses_its_configured_timeout(self):
-        session = _SharedSession()
-        client = _BaseAIOpsClient(
-            base_url="http://aiops.internal",
-            auth=_Auth(),
-            timeout_seconds=17,
-            upload_timeout_seconds=73,
-            session=session,
-        )
-
-        result = await client._upload(
-            "/internal/v1/test-upload",
-            auth_context=object(),
-            file_name="evidence.png",
-            media_type="image/png",
-            body=b"image",
-        )
-
-        self.assertEqual({"status": "ok"}, result)
-        timeout = session.request_kwargs["timeout"]
-        self.assertIsInstance(timeout, aiohttp.ClientTimeout)
-        self.assertEqual(73, timeout.total)
 
 
 if __name__ == "__main__":

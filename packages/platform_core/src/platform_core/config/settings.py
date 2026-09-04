@@ -47,7 +47,6 @@ class ServiceDependencyConfig(BaseModel):
     base_url: str
     audience: str
     timeout_seconds: int = Field(default=120, ge=1, le=3600)
-    upload_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
 
 class LogConfig(BaseModel):

@@ -64,7 +64,6 @@ class ServiceConfigLoadingTest(unittest.TestCase):
                 settings.knowledge_core.audience,
                 "kbot-knowledge-core-api",
             )
-            self.assertEqual(600, settings.aiops.upload_timeout_seconds)
 
     def test_data_directory_is_derived_for_each_service(self):
         with tempfile.TemporaryDirectory() as directory:
