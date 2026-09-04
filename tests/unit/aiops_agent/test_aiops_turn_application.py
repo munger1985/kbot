@@ -653,6 +653,53 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(turn.turn_id), receipt["turn_id"])
         TurnReceipt.model_validate(receipt)
 
+    async def test_start_persists_uploaded_file_descriptor(self) -> None:
+        uow = _Uow()
+        upload_id = str(uuid7())
+        stored = SimpleNamespace(
+            upload_id=upload_id,
+            file_name="database-alert.png",
+            media_type="image/png",
+        )
+        upload_store = SimpleNamespace(
+            get=lambda **_: stored,
+            preserve=lambda value: value,
+        )
+        service = ConversationTurnService(
+            uow_factory=lambda: uow,
+            upload_store=upload_store,
+        )
+
+        await service.start(
+            domain_id=7,
+            actor_id="dba@example.com",
+            trace_id="trace-upload",
+            conversation_create=ConversationCreate(
+                agent_id=uow.agent.agent_id,
+                target_id=uow.target.target_id,
+                source=ConversationSourceContext(),
+            ),
+            first_turn=TurnCreate(
+                content=(
+                    {
+                        "content_type": "IMAGE",
+                        "upload_id": upload_id,
+                        "media_type": "image/png",
+                    },
+                ),
+                idempotency_key="request-upload",
+            ),
+        )
+
+        self.assertEqual(1, len(uow.turns.input_items))
+        item = uow.turns.input_items[0]
+        self.assertEqual("IMAGE", item.content_type)
+        self.assertEqual("image/png", item.media_type)
+        self.assertEqual(
+            "[用户上传文件：database-alert.png]",
+            item.content_text,
+        )
+
     async def test_situation_source_is_validated_and_forwarded(self) -> None:
         uow = _Uow()
         service = ConversationTurnService(uow_factory=lambda: uow)

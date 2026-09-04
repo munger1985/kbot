@@ -896,7 +896,11 @@ class ConversationTurnService:
                         if item.upload_id
                         else item.media_type
                     ),
-                    content_text=item.text,
+                    content_text=(
+                        item.text
+                        if item.text is not None
+                        else f"[用户上传文件：{upload_metadata[item.upload_id].file_name}]"
+                    ),
                 )
             )
         await uow.turns.add_event(event)
