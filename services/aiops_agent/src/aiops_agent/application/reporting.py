@@ -181,6 +181,25 @@ def resolve_report_template_reference(template_ref: str) -> ReportTemplate | Non
     return resolve_system_template(f"system:{template_ref}")
 
 
+def resolve_historical_report_template(
+    *, template_ref: str, report_type: str,
+) -> ReportTemplate | None:
+    """为缺少模板快照的历史报告解析确定性的系统报告模板。"""
+    resolved = resolve_report_template_reference(template_ref)
+    if resolved is not None:
+        return resolved
+    report_type_templates = {
+        "INSPECTION_DAILY": "system:inspection.daily",
+        "INSPECTION_MONTHLY": "system:inspection.monthly",
+        "INSPECTION_QUARTERLY": "system:inspection.quarterly",
+        "INSPECTION_ANNUAL": "system:inspection.annual",
+        "INCIDENT": "system:diagnosis.standard",
+        "PERFORMANCE": "system:diagnosis.standard",
+    }
+    template = report_type_templates.get(report_type)
+    return resolve_system_template(template) if template else None
+
+
 def validate_template_definition(definition: dict[str, Any]) -> ReportTemplate:
     """校验 Domain 模板的受控章节 DSL。"""
     source_kinds = tuple(str(item) for item in definition.get(

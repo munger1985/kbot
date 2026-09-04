@@ -15,6 +15,7 @@ from aiops_agent.application.reporting import (
     render_pdf,
     report_presentation,
     normalize_report_source,
+    resolve_historical_report_template,
     resolve_report_template_reference,
     validate_template_definition,
 )
@@ -39,6 +40,15 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(
             SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
             resolve_report_template_reference("diagnosis.standard"),
+        )
+
+    def test_historical_daily_inspection_template_is_resolvable(self) -> None:
+        self.assertEqual(
+            SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            resolve_historical_report_template(
+                template_ref="01a00000-0000-7000-8000-000000000000",
+                report_type="INSPECTION_DAILY",
+            ),
         )
 
     def test_custom_template_cannot_hide_evidence_boundary(self) -> None:
