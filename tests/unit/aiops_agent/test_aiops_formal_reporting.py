@@ -83,6 +83,25 @@ class FormalReportingTest(unittest.TestCase):
         self.assertNotIn(b"FEFF", pdf)
         self.assertIn(b"/ToUnicode", pdf)
 
+    def test_inspection_markdown_facts_are_not_serialized_as_dicts(self) -> None:
+        template = SYSTEM_REPORT_TEMPLATES["system:inspection.daily"]
+        presentation = report_presentation(
+            template=template,
+            payload={
+                "summary": "巡检已完成",
+                "facts": [{
+                    "kind": "agent_health_inspection",
+                    "markdown": "# 巡检报告\n\n## 主要发现\n\n### 表空间容量临界\n\n使用率达到 **96.88%**。",
+                }],
+                "gaps": (),
+            },
+        )
+        findings = next(item for item in presentation["sections"] if item["kind"] == "FINDINGS")
+        self.assertEqual(
+            ["【主要发现】", "【表空间容量临界】", "使用率达到 96.88%。"],
+            findings["items"],
+        )
+
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(
             schema_version="DB_DIAGNOSTIC_REPORT.v1",

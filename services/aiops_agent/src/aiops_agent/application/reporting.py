@@ -59,6 +59,55 @@ _ALLOWED_SECTIONS = frozenset(
 )
 
 
+def _markdown_report_items(value: str) -> list[str]:
+    """将巡检 Markdown 归一为报告章节可展示的段落项。"""
+    items: list[str] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            items.append(" ".join(paragraph))
+            paragraph.clear()
+
+    for raw_line in value.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush()
+            continue
+        if line.startswith("#"):
+            flush()
+            title = line.lstrip("#").strip()
+            if title and not line.startswith("# "):
+                items.append(f"【{title}】")
+            continue
+        if line.startswith(("- ", "* ")):
+            flush()
+            items.append(line[2:].strip())
+            continue
+        if len(line) > 3 and line[0].isdigit() and ". " in line[:4]:
+            flush()
+            items.append(line)
+            continue
+        paragraph.append(line)
+    flush()
+    return [
+        item.replace("**", "").replace("`", "")
+        for item in items
+        if item
+    ]
+
+
+def _report_fact_items(facts: list[dict[str, Any]]) -> list[str]:
+    """按事实语义生成可直接进入 FINDINGS 的可读段落。"""
+    result: list[str] = []
+    for fact in facts:
+        if str(fact.get("kind") or "") == "agent_health_inspection":
+            result.extend(_markdown_report_items(str(fact.get("markdown") or "")))
+            continue
+        result.append(str(fact.get("summary") or fact.get("fact_summary") or fact))
+    return result
+
+
 def closed_period_window(
     *, period_kind: str, timezone: str, now: datetime,
 ) -> tuple[datetime, datetime]:
@@ -315,7 +364,7 @@ def report_presentation(
         elif kind == "TREND":
             body = [str(item) for item in list(scope.get("trends") or ())] or ["当前报告范围内没有可复现的趋势数据。"]
         elif kind == "FINDINGS":
-            body = [str(item.get("summary") or item.get("fact_summary") or item) for item in facts] or ["未记录已验证发现。"]
+            body = _report_fact_items(facts) or ["未记录已验证发现。"]
         elif kind == "ROOT_CAUSE":
             body = [f"根因评估等级：{root_grade}", str(scope.get("diagnosis_rationale") or "当前结论以证据边界章节为准。")]
         elif kind == "RECOMMENDATIONS":
@@ -469,6 +518,9 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
         label = _REPORT_SECTION_NAMES.get(kind, kind)
         story.append(Paragraph(_pdf_paragraph(label), section))
         for detail in item.get("items") or ():
-            story.append(Paragraph(_pdf_paragraph(detail), body, bulletText="•"))
+            if str(detail).startswith("【") and str(detail).endswith("】"):
+                story.append(Paragraph(_pdf_paragraph(str(detail)[1:-1]), section))
+            else:
+                story.append(Paragraph(_pdf_paragraph(detail), body, bulletText="•"))
     document.build(story, onFirstPage=_report_page_chrome, onLaterPages=_report_page_chrome)
     return buffer.getvalue()
