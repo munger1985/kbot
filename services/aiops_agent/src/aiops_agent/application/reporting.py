@@ -13,9 +13,13 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from aiops_agent.application.errors import validation_failed
 
@@ -333,57 +337,111 @@ def _pdf_report_font_name() -> str:
     return font_name
 
 
-def _wrap_pdf_line(line: str, *, font_name: str, font_size: float, width: float) -> list[str]:
-    """按字体真实字宽换行，保留中英文连续文本与复制语义。"""
-    if not line:
-        return [""]
-    result: list[str] = []
-    current = ""
-    for character in line:
-        candidate = current + character
-        if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > width:
-            result.append(current)
-            current = character
-        else:
-            current = candidate
-    result.append(current)
-    return result
+_REPORT_SECTION_NAMES = {
+    "EXECUTIVE_SUMMARY": "执行摘要",
+    "SCOPE": "报告范围",
+    "ALERT_TIMELINE": "告警时间线",
+    "INSPECTION_COVERAGE": "巡检覆盖情况",
+    "RISK_OVERVIEW": "风险概览",
+    "TREND": "趋势分析",
+    "FINDINGS": "核验发现",
+    "ROOT_CAUSE": "根因分析",
+    "RECOMMENDATIONS": "处置建议",
+    "ACTIONS": "已执行动作",
+    "EVIDENCE_BOUNDARY": "证据边界",
+    "EVIDENCE_APPENDIX": "证据附录",
+}
+
+
+def _pdf_paragraph(value: object) -> str:
+    """将报告原文安全转换为 PDF 段落文本。"""
+    from html import escape
+
+    return escape(_pdf_text(str(value))).replace("\n", "<br/>")
+
+
+def _report_page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:
+    """绘制正式报告的统一页眉、页脚与页码。"""
+    canvas.saveState()
+    width, height = A4
+    canvas.setStrokeColor(colors.HexColor("#1D4E6D"))
+    canvas.setLineWidth(0.6)
+    canvas.line(20 * mm, height - 16 * mm, width - 20 * mm, height - 16 * mm)
+    canvas.setFont(_pdf_report_font_name(), 7.5)
+    canvas.setFillColor(colors.HexColor("#466274"))
+    canvas.drawString(20 * mm, height - 12 * mm, "KBot AIOps  ·  正式诊断报告")
+    canvas.drawRightString(width - 20 * mm, 12 * mm, f"第 {document.page} 页")
+    canvas.setStrokeColor(colors.HexColor("#CAD4DB"))
+    canvas.line(20 * mm, 16 * mm, width - 20 * mm, 16 * mm)
+    canvas.restoreState()
 
 
 def render_pdf(presentation: dict[str, Any]) -> bytes:
     """以标准 PDF 生成器输出可显示、复制和搜索的中文报告。"""
-    lines = [_pdf_text(str(presentation.get("title") or "AIOps 正式报告")), ""]
-    for section in presentation.get("sections") or ():
-        lines.append(_pdf_text(str(section.get("kind") or "章节")))
-        lines.extend(
-            _pdf_text(f"- {item}")
-            for item in section.get("items") or ()
-        )
-        lines.append("")
     font_name = _pdf_report_font_name()
     buffer = BytesIO()
-    document = Canvas(buffer, pagesize=A4, pageCompression=1)
-    document.setTitle(str(presentation.get("title") or "AIOps 正式报告"))
-    page_width, page_height = A4
-    x_position, y_position = 50, page_height - 50
-    line_height, body_size, section_size = 16, 10, 12
-
-    def write(text: str, *, size: float, gap_after: float = 0) -> None:
-        nonlocal y_position
-        for row in _wrap_pdf_line(text, font_name=font_name, font_size=size, width=page_width - 100):
-            if y_position < 50 + line_height:
-                document.showPage()
-                y_position = page_height - 50
-            document.setFont(font_name, size)
-            document.drawString(x_position, y_position, row)
-            y_position -= line_height
-        y_position -= gap_after
-
-    write(lines[0], size=16, gap_after=12)
-    for section in presentation.get("sections") or ():
-        write(_pdf_text(str(section.get("kind") or "章节")), size=section_size, gap_after=2)
-        for item in section.get("items") or ():
-            write(_pdf_text(f"- {item}"), size=body_size, gap_after=2)
-        y_position -= 8
-    document.save()
+    document = SimpleDocTemplate(
+        buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=25 * mm, bottomMargin=23 * mm,
+        title=str(presentation.get("title") or "AIOps 正式报告"),
+        author="KBot AIOps",
+    )
+    body = ParagraphStyle(
+        "报告正文", fontName=font_name, fontSize=9.5, leading=16,
+        textColor=colors.HexColor("#263238"), wordWrap="CJK", spaceAfter=4,
+    )
+    section = ParagraphStyle(
+        "章节标题", parent=body, fontSize=14, leading=20,
+        textColor=colors.HexColor("#163E59"), spaceBefore=10, spaceAfter=8,
+    )
+    cover_title = ParagraphStyle(
+        "封面标题", parent=body, fontSize=24, leading=32,
+        textColor=colors.HexColor("#163E59"), spaceAfter=7,
+    )
+    cover_subtitle = ParagraphStyle(
+        "封面副标题", parent=body, fontSize=10, leading=16,
+        textColor=colors.HexColor("#557080"), spaceAfter=20,
+    )
+    story = [Spacer(1, 38 * mm)]
+    story.append(Paragraph(_pdf_paragraph(presentation.get("title") or "AIOps 正式报告"), cover_title))
+    template = dict(presentation.get("template") or {})
+    story.append(Paragraph(_pdf_paragraph(template.get("display_name") or "系统诊断报告"), cover_subtitle))
+    report = dict(presentation.get("report") or {})
+    metadata = [
+        ["报告状态", _pdf_paragraph(presentation.get("status") or "UNKNOWN")],
+        ["报告周期", _pdf_paragraph(f"{report.get('period_start') or '未提供'} 至 {report.get('period_end') or '未提供'}")],
+        ["报告模板", _pdf_paragraph(template.get("template_ref") or "未提供")],
+    ]
+    info_table = Table(metadata, colWidths=(32 * mm, 128 * mm), hAlign="LEFT")
+    info_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("LEADING", (0, 0), (-1, -1), 15),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#466274")),
+        ("TEXTCOLOR", (1, 0), (1, -1), colors.HexColor("#1E2D36")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EAF0F3")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CAD4DB")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.extend((info_table, Spacer(1, 16 * mm)))
+    summary = next((item for item in presentation.get("sections") or () if item.get("kind") == "EXECUTIVE_SUMMARY"), None)
+    if summary:
+        story.append(Paragraph("执行摘要", section))
+        for item in summary.get("items") or ():
+            story.append(Paragraph(_pdf_paragraph(item), body, bulletText="•"))
+    story.append(PageBreak())
+    story.append(Paragraph("详细诊断", cover_title))
+    for item in presentation.get("sections") or ():
+        kind = str(item.get("kind") or "章节")
+        if kind == "EXECUTIVE_SUMMARY":
+            continue
+        if kind == "EVIDENCE_APPENDIX":
+            story.append(PageBreak())
+        label = _REPORT_SECTION_NAMES.get(kind, kind)
+        story.append(Paragraph(_pdf_paragraph(label), section))
+        for detail in item.get("items") or ():
+            story.append(Paragraph(_pdf_paragraph(detail), body, bulletText="•"))
+    document.build(story, onFirstPage=_report_page_chrome, onLaterPages=_report_page_chrome)
     return buffer.getvalue()
