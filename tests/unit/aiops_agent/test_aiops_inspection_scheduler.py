@@ -84,6 +84,25 @@ class ScheduleResolverTest(unittest.TestCase):
 
 
 class InspectionSchedulerTest(unittest.TestCase):
+    def test_current_report_query_is_scoped_by_report_target_domain(self) -> None:
+        result = SimpleNamespace(scalar_one_or_none=lambda: None)
+        session = SimpleNamespace(execute=AsyncMock(return_value=result))
+        repository = InspectionRepository(session)
+
+        report = asyncio.run(
+            repository.get_current_report_scoped(
+                report_id=uuid7(),
+                domain_id=200,
+            )
+        )
+
+        statement = session.execute.await_args.args[0]
+        sql = str(statement.compile(dialect=oracle.dialect())).upper()
+        self.assertIsNone(report)
+        self.assertIn("KBOT_OPS_REPORT", sql)
+        self.assertIn("KBOT_OPS_TARGET", sql)
+        self.assertIn(".DOMAIN_ID", sql)
+
     def test_fire_turn_query_only_projects_scheduler_state(self) -> None:
         turn_id = uuid7()
         result = SimpleNamespace(

@@ -20,6 +20,7 @@ from aiops_agent.entities import (
     OutboxEntity,
     ReportEntity,
     ReportSourceEntity,
+    TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
