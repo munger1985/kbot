@@ -21,6 +21,7 @@ PROMPT_KEYS = {
     "grounding_verify": "aiops_agent.grounding_verify",
     "answer_compose": "aiops_agent.answer_compose",
     "answer_stream": "aiops_agent.answer_stream",
+    "image_evidence_extract": "aiops_agent.image_evidence_extract",
 }
 
 DIAGNOSIS_PROMPT_IDS = (

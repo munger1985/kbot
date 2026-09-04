@@ -28,6 +28,29 @@ class _ImageModel:
         }
 
 
+class _ImagePrompt:
+    content = "从图片提取经过核对的运维证据。"
+
+    @staticmethod
+    def ref() -> dict[str, str]:
+        return {
+            "prompt_id": "aiops_agent.image_evidence_extract",
+            "prompt_version": "1.0.0",
+            "prompt_sha256": "a" * 64,
+            "prompt_version_id": "01946b49-9f24-7f14-8000-000000000002",
+            "prompt_source": "DATABASE",
+        }
+
+
+class _ImagePromptRegistry:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def resolve(self, prompt_id: str):
+        self.calls.append(prompt_id)
+        return _ImagePrompt()
+
+
 class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -109,9 +132,11 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             chunks=_chunks(b"not-a-real-image-but-bounded"),
         )
         image_model = _ImageModel()
+        prompts = _ImagePromptRegistry()
         resolver = ConversationInputResolver(
             upload_store=self.store,
             image_model_client=image_model,
+            prompt_registry=prompts,
             max_extracted_chars=1000,
         )
         content, uploads = await resolver.resolve(
@@ -139,6 +164,12 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("VLM", uploads[1].extraction_mode)
         self.assertIsInstance(uploads[1].model_id, UUID)
         self.assertEqual(1, len(image_model.calls))
+        self.assertEqual(["image_evidence_extract"], prompts.calls)
+        self.assertEqual(_ImagePrompt.content, image_model.calls[0]["prompt_content"])
+        self.assertEqual(
+            "aiops_agent.image_evidence_extract",
+            uploads[1].prompt_ref["prompt_id"],
+        )
 
 
 if __name__ == "__main__":

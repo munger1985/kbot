@@ -162,6 +162,7 @@ def create_aiops_worker_probe(
                 ocr_config=resolved.clients.model_ocr,
                 vlm_config=resolved.clients.model_vlm,
             ),
+            prompt_registry=diagnosis_prompts,
             max_extracted_chars=resolved.limits.max_input_chars,
         )
         knowledge_core_client = KnowledgeCoreClient(

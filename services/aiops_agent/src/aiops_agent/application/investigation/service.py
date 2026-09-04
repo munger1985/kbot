@@ -2434,6 +2434,7 @@ class TurnPlanningService:
                                 else None
                             ),
                             "model_revision": upload.model_revision,
+                            "prompt": upload.prompt_ref,
                             "extraction_error": upload.extraction_error,
                         },
                         producer="aiops.input-extraction",

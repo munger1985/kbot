@@ -34,6 +34,7 @@ class ImageEvidenceModelClient:
         model_id,
         mime_type: str,
         content_base64: str,
+        prompt_content: str | None = None,
     ) -> dict:
         config = self._ocr if mode == "OCR" else self._vlm
         definition = await self._catalogs[mode].get_model(model_id)
@@ -51,6 +52,9 @@ class ImageEvidenceModelClient:
                 "mime_type": mime_type,
             }
         else:
+            prompt = str(prompt_content or "").strip()
+            if not prompt:
+                raise ValueError("VLM 图片解析必须提供已登记 Prompt")
             payload = {
                 "served_model_name": definition["served_model_name"],
                 "stream": False,
@@ -60,7 +64,7 @@ class ImageEvidenceModelClient:
                         "content": [
                             {
                                 "type": "text",
-                                "text": "提取并解释运维截图中可见的事实、数值、错误和表格，不猜测不可见内容。",
+                                "text": prompt,
                             },
                             {
                                 "type": "image_url",

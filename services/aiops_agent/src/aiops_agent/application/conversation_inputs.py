@@ -21,6 +21,7 @@ class ResolvedConversationUpload:
     extraction_mode: str
     model_id: UUID | None = None
     model_revision: str | None = None
+    prompt_ref: dict[str, str] | None = None
     extraction_error: str | None = None
 
 
@@ -45,10 +46,16 @@ class ConversationInputResolver:
     )
 
     def __init__(
-        self, *, upload_store, image_model_client=None, max_extracted_chars: int
+        self,
+        *,
+        upload_store,
+        image_model_client=None,
+        prompt_registry=None,
+        max_extracted_chars: int,
     ) -> None:
         self._upload_store = upload_store
         self._image_model_client = image_model_client
+        self._prompt_registry = prompt_registry
         self._max_extracted_chars = max_extracted_chars
 
     async def resolve(
@@ -170,11 +177,19 @@ class ConversationInputResolver:
             )
         model_id = UUID(str(capability["default_model_id"]))
         try:
+            prompt = None
+            if mode == "VLM":
+                if self._prompt_registry is None:
+                    raise RuntimeError("VLM 图片解析 Prompt Registry 不可用")
+                prompt = await self._prompt_registry.resolve(
+                    "image_evidence_extract"
+                )
             result = await self._image_model_client.process(
                 mode=mode,
                 model_id=model_id,
                 mime_type=stored.media_type,
                 content_base64=base64.b64encode(raw).decode("ascii"),
+                prompt_content=(prompt.content if prompt is not None else None),
             )
             text = self._bounded(str(result.get("text") or "").strip())
             if not text:
@@ -185,6 +200,7 @@ class ConversationInputResolver:
                 extraction_mode=mode,
                 model_id=model_id,
                 model_revision=str(result.get("model_revision") or model_id),
+                prompt_ref=(prompt.ref() if prompt is not None else None),
             )
         except Exception as exc:
             return ResolvedConversationUpload(

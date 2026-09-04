@@ -105,8 +105,9 @@ ANSWERING → COMPLETED / PARTIAL
 Turn顶层`source_run_id`引用。文件和图片先调用`POST /api/v1/apps/aiops/conversation-uploads`
 上传原始有界文件流，再以`upload_id`提交Turn，不在JSON中传输无界Base64。上传引用绑定
 Domain和当前用户，默认24小时内可提交；被Turn接收后原文进入长期Artifact区，文本按UTF-8
-提取，图片按Agent配置优先使用VLM、其次OCR。提取失败保留原始Artifact并形成可审计解析缺口，
-不能丢弃同一Turn中的其他问题或证据。
+提取，图片按Agent配置优先使用VLM、其次OCR。VLM 图片理解必须经统一 Prompt Registry 从数据库
+解析已发布版本，派生Artifact记录 Prompt 标识、版本、Hash和版本标识；不得在调用代码中硬编码
+业务提示词。提取失败保留原始Artifact并形成可审计解析缺口，不能丢弃同一Turn中的其他问题或证据。
 
 输入理解输出`TURN_INPUT_ENVELOPE.v1`：`request_fragments`、`material_items`、`systems`、
 `target_hints`、`time_anchors`、`error_codes`、`stated_facts`、`user_hypotheses`、
