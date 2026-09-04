@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import textwrap
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
+from importlib.resources import files
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -314,7 +317,7 @@ def _pdf_text(value: str) -> str:
     """将 PDF CMap 不能稳定表达的字符替换为可见占位符。"""
     return "".join(
         character
-        if 0x20 <= ord(character) <= 0xFFFF
+        if 0x20 <= ord(character) <= 0xFFFF and _pdf_gb1_cid(ord(character)) is not None
         else "?"
         for character in value
     )
@@ -349,8 +352,61 @@ def _pdf_to_unicode_cmap(lines: list[str]) -> bytes:
     return b"".join(parts)
 
 
+@lru_cache(maxsize=1)
+def _pdf_gb1_cid_ranges() -> tuple[tuple[int, int, int], ...]:
+    """读取随服务发布的 Adobe GB1 码位到 CID 映射范围。"""
+    source = files("aiops_agent").joinpath(
+        "resources/pdf/UniGB-UCS2-H.cmap"
+    ).read_text(encoding="ascii")
+    return tuple(
+        (int(start, 16), int(end, 16), int(cid))
+        for start, end, cid in re.findall(
+            r"<([0-9A-Fa-f]{4})>\s+<([0-9A-Fa-f]{4})>\s+(\d+)", source
+        )
+    )
+
+
+def _pdf_gb1_cid(codepoint: int) -> int | None:
+    """返回 Adobe GB1 字符集内码位对应的 CID。"""
+    for start, end, first_cid in _pdf_gb1_cid_ranges():
+        if start <= codepoint <= end:
+            return first_cid + codepoint - start
+    return None
+
+
+def _pdf_embedded_gb1_cmap(lines: list[str]) -> bytes:
+    """为实际输出字符创建内嵌编码 CMap，避免阅读器依赖本机映射表。"""
+    codepoints = sorted({ord(character) for line in lines for character in line})
+    entries: list[tuple[int, int]] = []
+    for codepoint in codepoints:
+        cid = _pdf_gb1_cid(codepoint)
+        if cid is None:
+            raise ValueError(f"PDF 不支持字符 U+{codepoint:04X}")
+        entries.append((codepoint, cid))
+    parts = [
+        b"/CIDInit /ProcSet findresource begin\n",
+        b"12 dict begin\nbegincmap\n",
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> def\n",
+        b"/CMapName /KBot-AIOps-GB1-H def\n/CMapType 1 def\n",
+        b"1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
+    ]
+    for start in range(0, len(entries), 100):
+        chunk = entries[start:start + 100]
+        parts.append(f"{len(chunk)} begincidchar\n".encode())
+        parts.extend(
+            f"<{codepoint:04X}> {cid}\n".encode()
+            for codepoint, cid in chunk
+        )
+        parts.append(b"endcidchar\n")
+    parts.extend((
+        b"endcmap\nCMapName currentdict /CMap defineresource pop\n",
+        b"end\nend",
+    ))
+    return b"".join(parts)
+
+
 def render_pdf(presentation: dict[str, Any]) -> bytes:
-    """生成不依赖浏览器的最小 PDF；使用 PDF 标准中文 CID 字体。"""
+    """生成可在主流阅读器中显示与复制中文的最小 PDF。"""
     lines = [_pdf_text(str(presentation.get("title") or "AIOps 正式报告")), ""]
     for section in presentation.get("sections") or ():
         lines.append(_pdf_text(str(section.get("kind") or "章节")))
@@ -365,10 +421,15 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     ]
     pages = [wrapped[index:index + 45] for index in range(0, max(len(wrapped), 1), 45)]
     objects: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>"]
-    page_ids = [7 + index * 2 for index in range(len(pages))]
+    page_ids = [8 + index * 2 for index in range(len(pages))]
     objects.append((f"<< /Type /Pages /Kids [{' '.join(f'{item} 0 R' for item in page_ids)}] /Count {len(page_ids)} >>").encode())
-    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>")
+    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding 5 0 R /DescendantFonts [4 0 R] /ToUnicode 6 0 R >>")
     objects.append(b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> /DW 1000 >>")
+    encoding_cmap = _pdf_embedded_gb1_cmap(wrapped)
+    objects.append(
+        b"<< /Length " + str(len(encoding_cmap)).encode() + b" >>\nstream\n"
+        + encoding_cmap + b"\nendstream"
+    )
     to_unicode = _pdf_to_unicode_cmap(wrapped)
     objects.append(
         b"<< /Length " + str(len(to_unicode)).encode() + b" >>\nstream\n"

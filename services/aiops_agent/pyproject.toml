@@ -35,5 +35,6 @@ aiops_agent = [
   "diagnostics/catalog/**/*.json",
   "diagnostics/catalog/**/*.sql",
   "playbooks/catalog/**/*.json",
+  "resources/**/*.cmap",
   "resources/**/*.json",
 ]
