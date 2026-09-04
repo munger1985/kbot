@@ -60,14 +60,11 @@ class FormalReportingTest(unittest.TestCase):
         kinds = [item["kind"] for item in presentation["sections"]]
         self.assertIn("EVIDENCE_BOUNDARY", kinds)
         pdf = render_pdf(presentation)
-        self.assertTrue(pdf.startswith(b"%PDF-1.4"))
-        # 内容流使用内嵌字体的 CID，不能再依赖阅读器安装中文字体。
-        self.assertIn(b"/Encoding /Identity-H", pdf)
-        self.assertIn(b"/FontFile2 7 0 R", pdf)
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        # 标准生成器必须嵌入字体和 Unicode 映射，不能依赖阅读器安装中文字体。
+        self.assertIn(b"/FontFile2", pdf)
         self.assertNotIn(b"FEFF", pdf)
-        self.assertIn(b"/ToUnicode 8 0 R", pdf)
-        self.assertIn(b"/CMapName /Adobe-Identity-UCS", pdf)
-        self.assertNotIn("锁等待持续升高".encode("utf-16-be").hex().upper().encode(), pdf)
+        self.assertIn(b"/ToUnicode", pdf)
 
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(

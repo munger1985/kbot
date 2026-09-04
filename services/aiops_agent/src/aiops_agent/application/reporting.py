@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import json
-import struct
-import textwrap
-import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from importlib.resources import files
+from importlib.resources import as_file, files
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen.canvas import Canvas
 
 from aiops_agent.application.errors import validation_failed
 
@@ -319,98 +322,36 @@ def _pdf_text(value: str) -> str:
     return "".join(character if 0x20 <= ord(character) <= 0xFFFF else "?" for character in value)
 
 
-@dataclass(frozen=True)
-class _PdfFont:
-    """PDF 内嵌字体文件及其 Unicode 到字形编号映射。"""
-
-    program: bytes
-    glyph_ids: dict[int, int]
-
-
-def _ttc_face_as_ttf(collection: bytes) -> tuple[bytes, dict[bytes, bytes]]:
-    """从 TrueType Collection 取出首字体，重建为可嵌入的独立 TTF。"""
-    if collection[:4] != b"ttcf":
-        raise ValueError("报告字体不是 TrueType Collection")
-    face_offset = struct.unpack_from(">I", collection, 12)[0]
-    _, table_count, _, _, _ = struct.unpack_from(">IHHHH", collection, face_offset)
-    records = [
-        struct.unpack_from(">4sIII", collection, face_offset + 12 + index * 16)
-        for index in range(table_count)
-    ]
-    tables = {tag: bytearray(collection[offset:offset + length]) for tag, _, offset, length in records}
-    if b"head" not in tables or len(tables[b"head"]) < 12:
-        raise ValueError("报告字体缺少 head 表")
-    tables[b"head"][8:12] = b"\0\0\0\0"
-    offset = (12 + table_count * 16 + 3) & ~3
-    positions: dict[bytes, int] = {}
-    for tag, _, _, _ in records:
-        positions[tag] = offset
-        offset += (len(tables[tag]) + 3) & ~3
-    output = bytearray(offset)
-    output[:12] = collection[face_offset:face_offset + 12]
-    for index, (tag, _, _, _) in enumerate(records):
-        data = tables[tag]
-        checksum = sum(int.from_bytes(data[pos:pos + 4].ljust(4, b"\0"), "big") for pos in range(0, len(data), 4)) & 0xFFFFFFFF
-        struct.pack_into(">4sIII", output, 12 + index * 16, tag, checksum, positions[tag], len(data))
-        output[positions[tag]:positions[tag] + len(data)] = data
-    checksum = sum(int.from_bytes(output[pos:pos + 4], "big") for pos in range(0, len(output), 4)) & 0xFFFFFFFF
-    struct.pack_into(">I", output, positions[b"head"] + 8, (0xB1B0AFBA - checksum) & 0xFFFFFFFF)
-    return bytes(output), {tag: bytes(data) for tag, data in tables.items()}
+@lru_cache(maxsize=1)
+def _pdf_report_font_name() -> str:
+    """注册随服务发布的中文 TrueType 字体，供标准 PDF 生成器使用。"""
+    font_name = "KBotWQYMicroHei"
+    if font_name not in pdfmetrics.getRegisteredFontNames():
+        resource = files("aiops_agent").joinpath("resources/fonts/wqy-microhei.ttc")
+        with as_file(resource) as path:
+            pdfmetrics.registerFont(TTFont(font_name, str(path), subfontIndex=0))
+    return font_name
 
 
-def _ttf_glyph_ids(cmap: bytes) -> dict[int, int]:
-    """读取 TTF Unicode cmap，采用覆盖完整 Unicode 的格式 12。"""
-    table_count = struct.unpack_from(">H", cmap, 2)[0]
-    candidates = []
-    for index in range(table_count):
-        platform, encoding, offset = struct.unpack_from(">HHI", cmap, 4 + index * 8)
-        candidates.append((struct.unpack_from(">H", cmap, offset)[0] == 12, platform == 3 and encoding == 10, offset))
-    _, _, offset = max(candidates)
-    if struct.unpack_from(">H", cmap, offset)[0] != 12:
-        raise ValueError("报告字体不包含 Unicode 格式 12 cmap")
-    group_count = struct.unpack_from(">I", cmap, offset + 12)[0]
-    result: dict[int, int] = {}
-    for index in range(group_count):
-        start, end, glyph = struct.unpack_from(">III", cmap, offset + 16 + index * 12)
-        result.update({codepoint: glyph + codepoint - start for codepoint in range(start, end + 1)})
+def _wrap_pdf_line(line: str, *, font_name: str, font_size: float, width: float) -> list[str]:
+    """按字体真实字宽换行，保留中英文连续文本与复制语义。"""
+    if not line:
+        return [""]
+    result: list[str] = []
+    current = ""
+    for character in line:
+        candidate = current + character
+        if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > width:
+            result.append(current)
+            current = character
+        else:
+            current = candidate
+    result.append(current)
     return result
 
 
-@lru_cache(maxsize=1)
-def _pdf_font() -> _PdfFont:
-    """加载随服务发布的可嵌入中文字体。"""
-    collection = files("aiops_agent").joinpath("resources/fonts/wqy-microhei.ttc").read_bytes()
-    program, tables = _ttc_face_as_ttf(collection)
-    return _PdfFont(program=program, glyph_ids=_ttf_glyph_ids(tables[b"cmap"]))
-
-
-def _pdf_to_unicode_cmap(cid_by_codepoint: dict[int, int]) -> bytes:
-    """为本次 PDF 实际使用的内嵌字体 CID 生成 Unicode 映射。"""
-    mappings = sorted((cid, codepoint) for codepoint, cid in cid_by_codepoint.items())
-    parts = [
-        b"/CIDInit /ProcSet findresource begin\n",
-        b"12 dict begin\nbegincmap\n",
-        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n",
-        b"/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n",
-        b"1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
-    ]
-    for start in range(0, len(mappings), 100):
-        chunk = mappings[start:start + 100]
-        parts.append(f"{len(chunk)} beginbfchar\n".encode())
-        parts.extend(
-            f"<{cid:04X}> <{codepoint:04X}>\n".encode()
-            for cid, codepoint in chunk
-        )
-        parts.append(b"endbfchar\n")
-    parts.extend((
-        b"endcmap\nCMapName currentdict /CMap defineresource pop\n",
-        b"end\nend",
-    ))
-    return b"".join(parts)
-
-
 def render_pdf(presentation: dict[str, Any]) -> bytes:
-    """生成可在主流阅读器中显示与复制中文的最小 PDF。"""
+    """以标准 PDF 生成器输出可显示、复制和搜索的中文报告。"""
     lines = [_pdf_text(str(presentation.get("title") or "AIOps 正式报告")), ""]
     for section in presentation.get("sections") or ():
         lines.append(_pdf_text(str(section.get("kind") or "章节")))
@@ -419,51 +360,30 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
             for item in section.get("items") or ()
         )
         lines.append("")
-    wrapped = [
-        line for text in lines
-        for line in (textwrap.wrap(text, width=42) or [""])
-    ]
-    font = _pdf_font()
-    codepoints = sorted({ord(character) for line in wrapped for character in line})
-    missing = [codepoint for codepoint in codepoints if not font.glyph_ids.get(codepoint)]
-    if missing:
-        raise ValueError(f"报告字体不支持字符 U+{missing[0]:04X}")
-    cid_by_codepoint = {codepoint: index for index, codepoint in enumerate(codepoints, start=1)}
-    pages = [wrapped[index:index + 45] for index in range(0, max(len(wrapped), 1), 45)]
-    objects: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>"]
-    page_ids = [10 + index * 2 for index in range(len(pages))]
-    objects.append((f"<< /Type /Pages /Kids [{' '.join(f'{item} 0 R' for item in page_ids)}] /Count {len(page_ids)} >>").encode())
-    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /KBotWQYMicroHei /Encoding /Identity-H /DescendantFonts [4 0 R] /ToUnicode 8 0 R >>")
-    objects.append(b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /KBotWQYMicroHei /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 5 0 R /CIDToGIDMap 6 0 R /DW 1000 >>")
-    objects.append(b"<< /Type /FontDescriptor /FontName /KBotWQYMicroHei /Flags 4 /FontBBox [-1000 -1000 2000 2000] /ItalicAngle 0 /Ascent 1000 /Descent -300 /CapHeight 700 /StemV 80 /FontFile2 7 0 R >>")
-    cid_to_gid = b"\0\0" + b"".join(font.glyph_ids[codepoint].to_bytes(2, "big") for codepoint in codepoints)
-    objects.append(b"<< /Length " + str(len(cid_to_gid)).encode() + b" >>\nstream\n" + cid_to_gid + b"\nendstream")
-    compressed_font = zlib.compress(font.program, level=9)
-    objects.append(b"<< /Length " + str(len(compressed_font)).encode() + b" /Filter /FlateDecode /Length1 " + str(len(font.program)).encode() + b" >>\nstream\n" + compressed_font + b"\nendstream")
-    to_unicode = _pdf_to_unicode_cmap(cid_by_codepoint)
-    objects.append(
-        b"<< /Length " + str(len(to_unicode)).encode() + b" >>\nstream\n"
-        + to_unicode + b"\nendstream"
-    )
-    objects.append(b"<< /Producer (KBot AIOps) /Title (AIOps Report) >>")
-    for page, page_id in zip(pages, page_ids):
-        stream = b"BT\n/F1 10 Tf\n50 790 Td\n14 TL\n"
-        for line in page:
-            encoded = b"".join(cid_by_codepoint[ord(character)].to_bytes(2, "big") for character in line[:240]).hex().upper().encode()
-            stream += b"<" + encoded + b"> Tj\nT*\n"
-        stream += b"ET\n"
-        content_id = page_id + 1
-        objects.append((f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>").encode())
-        objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"endstream")
-    output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for index, body in enumerate(objects, start=1):
-        offsets.append(len(output))
-        output.extend(f"{index} 0 obj\n".encode())
-        output.extend(body)
-        output.extend(b"\nendobj\n")
-    xref = len(output)
-    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
-    output.extend(b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:]))
-    output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 9 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
-    return bytes(output)
+    font_name = _pdf_report_font_name()
+    buffer = BytesIO()
+    document = Canvas(buffer, pagesize=A4, pageCompression=1)
+    document.setTitle(str(presentation.get("title") or "AIOps 正式报告"))
+    page_width, page_height = A4
+    x_position, y_position = 50, page_height - 50
+    line_height, body_size, section_size = 16, 10, 12
+
+    def write(text: str, *, size: float, gap_after: float = 0) -> None:
+        nonlocal y_position
+        for row in _wrap_pdf_line(text, font_name=font_name, font_size=size, width=page_width - 100):
+            if y_position < 50 + line_height:
+                document.showPage()
+                y_position = page_height - 50
+            document.setFont(font_name, size)
+            document.drawString(x_position, y_position, row)
+            y_position -= line_height
+        y_position -= gap_after
+
+    write(lines[0], size=16, gap_after=12)
+    for section in presentation.get("sections") or ():
+        write(_pdf_text(str(section.get("kind") or "章节")), size=section_size, gap_after=2)
+        for item in section.get("items") or ():
+            write(_pdf_text(f"- {item}"), size=body_size, gap_after=2)
+        y_position -= 8
+    document.save()
+    return buffer.getvalue()

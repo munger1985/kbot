@@ -18,6 +18,7 @@ dependencies = [
   "oracledb==3.4.2",
   "pydantic==2.12.5",
   "python-jose==3.5.0",
+  "reportlab==4.4.10",
   "promql-parser==0.10.0",
   "sqlglot==30.17.0",
   "SQLAlchemy==2.0.46",
