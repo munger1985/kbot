@@ -64,6 +64,8 @@ class FormalReportingTest(unittest.TestCase):
         # UniGB-UCS2-H 文本直接写入 UTF-16BE 码元，不能附带 BOM。
         self.assertIn("锁等待持续升高".encode("utf-16-be").hex().upper().encode(), pdf)
         self.assertNotIn(b"FEFF", pdf)
+        self.assertIn(b"/ToUnicode 5 0 R", pdf)
+        self.assertIn(b"/CMapName /Adobe-Identity-UCS", pdf)
 
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(

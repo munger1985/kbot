@@ -323,10 +323,30 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     ]
     pages = [wrapped[index:index + 45] for index in range(0, max(len(wrapped), 1), 45)]
     objects: list[bytes] = [b"<< /Type /Catalog /Pages 2 0 R >>"]
-    page_ids = [6 + index * 2 for index in range(len(pages))]
+    page_ids = [7 + index * 2 for index in range(len(pages))]
     objects.append((f"<< /Type /Pages /Kids [{' '.join(f'{item} 0 R' for item in page_ids)}] /Count {len(page_ids)} >>").encode())
-    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [4 0 R] >>")
+    objects.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>")
     objects.append(b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> /DW 1000 >>")
+    to_unicode = b"""/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfrange
+<0000> <FFFF> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end"""
+    objects.append(
+        b"<< /Length " + str(len(to_unicode)).encode() + b" >>\nstream\n"
+        + to_unicode + b"\nendstream"
+    )
     objects.append(b"<< /Producer (KBot AIOps) /Title (AIOps Report) >>")
     for page, page_id in zip(pages, page_ids):
         stream = b"BT\n/F1 10 Tf\n50 790 Td\n14 TL\n"
@@ -347,5 +367,5 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     xref = len(output)
     output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
     output.extend(b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:]))
-    output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
+    output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
     return bytes(output)
