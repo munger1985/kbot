@@ -165,7 +165,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("shell.toast(error.message)", agent)
         self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
         self.assertIn("controlled_change_enabled", agent)
-        self.assertIn("实际执行仍逐条审批", agent)
+        self.assertIn("受控动作逐次审批", agent)
         self.assertNotIn("selected && !executionConfigured", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
@@ -313,7 +313,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-inspection-action="${action}"', pages_script)
         self.assertIn('/inspection-plans/${encodeURIComponent(item.plan_id)}/${button.dataset.inspectionAction}', pages_script)
 
-    def test_agent_form_owns_resources_and_policy_inputs(self):
+    def test_agent_form_owns_resources_and_approval_is_not_a_policy_input(self):
         page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(
             encoding="utf-8"
@@ -322,15 +322,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('name="target_ids"', script)
         self.assertIn('id="agent-targets"', page)
         self.assertNotIn('name="allow_change_execution"', page)
-        self.assertIn('id="agent-controlled-actions"', page)
-        self.assertIn('controlled_action_execution:', script)
-        self.assertIn('/action-catalog/', script)
-        self.assertIn("data-action-dynamic-parameters", script)
-        self.assertIn("data-action-resource-plans", script)
-        self.assertIn("data-action-privilege-grantees", script)
-        self.assertIn("data-action-system-privileges", script)
-        self.assertIn("data-action-object-privileges", script)
-        self.assertIn("parseDynamicParameters", script)
+        self.assertNotIn('id="agent-controlled-actions"', page)
+        self.assertNotIn("controlled_action_execution", script)
+        self.assertNotIn('/action-catalog/', script)
+        self.assertIn("受控动作逐次审批", script)
         self.assertIn('name="auto_alert_enabled"', page)
         self.assertIn('name="diagnosis_model_id" required', page)
         self.assertIn('name="planner_model_id" required', page)

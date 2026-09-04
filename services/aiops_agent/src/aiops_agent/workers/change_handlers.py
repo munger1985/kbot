@@ -64,6 +64,8 @@ def _object_in_scope(parameters: dict[str, Any], policy: dict[str, Any]) -> bool
         and {"schema", "object_type", "object_name"}.issubset(value)
     )
     scopes = dict(policy.get("object_scopes") or {})
+    if scopes.get("approval_controls_execution") is True:
+        return True
     allowed = {str(item).upper() for item in scopes.get("schemas", ())}
     for object_ref in object_refs:
         schema = str(object_ref.get("schema", "")).upper()

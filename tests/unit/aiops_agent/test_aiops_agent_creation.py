@@ -2,11 +2,11 @@
 
 import unittest
 from types import SimpleNamespace
+from aiops_agent.actions import ActionRegistry
 from aiops_agent.application.agents import (
     AIOpsAgentError,
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
-    TargetControlledActionExecution,
     UpdateAIOpsAgentCommand,
 )
 from pydantic import ValidationError
@@ -132,34 +132,15 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
-    async def test_controlled_action_scope_registers_sensitive_targets(self):
-        policy = TargetControlledActionExecution(
-            target_id=uuid7(),
-            enabled=True,
-            allowed_action_ids=("db.parameter.set", "db.user.privilege.grant"),
-            object_scopes={
-                "schemas": ("APP",),
-                "dynamic_parameters": (
-                    {"name": "cursor_sharing", "allowed_values": ("EXACT", "FORCE")},
-                ),
-                "resource_manager_plans": ("APP_PLAN",),
-                "privilege_grantees": ("APPUSER",),
-                "system_privileges": ("CREATE SESSION",),
-                "object_privileges": ("SELECT",),
-            },
-        )
-
-        self.assertEqual(
-            ("FORCE",),
-            (policy.object_scopes.dynamic_parameters[0].allowed_values[1],),
-        )
-        self.assertEqual(("APPUSER",), policy.object_scopes.privilege_grantees)
+    async def test_controlled_actions_are_not_agent_input(self):
         with self.assertRaises(ValidationError):
-            TargetControlledActionExecution(
-                target_id=uuid7(),
-                enabled=True,
-                allowed_action_ids=("db.user.privilege.grant",),
-                object_scopes={"system_privileges": ("DROP ANY TABLE",)},
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库诊断助手",
+                diagnostic_source_ids=(uuid7(),),
+                target_ids=(uuid7(),),
+                controlled_action_execution=(),
+                actor_id="kbotui_dev",
             )
 
     async def test_create_inserts_version_before_current_version_pointer(self):
@@ -304,7 +285,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="kbotui_dev",
             )
 
-    async def test_change_permission_requires_change_capable_target(self):
+    async def test_target_without_change_capability_creates_agent_without_actions(self):
         source_id = uuid7()
         target_id = uuid7()
         target = SimpleNamespace(
@@ -313,6 +294,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             db_type="ORACLE",
             status="ENABLED",
             connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
             controlled_change_enabled=False,
             execution_credential_id=None,
             version_code=None,
@@ -323,26 +305,57 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
 
-        with self.assertRaises(AIOpsAgentError) as raised:
-            await service.create(
-                CreateAIOpsAgentCommand(
-                    domain_id=100,
-                    display_name="数据库变更助手",
-                    diagnostic_source_ids=(source_id,),
-                    target_ids=(target_id,),
-                    controlled_action_execution=(
-                        {
-                            "target_id": target_id,
-                            "enabled": True,
-                            "allowed_action_ids": (
-                                "db.session.terminate",
-                            ),
-                        },
-                    ),
-                    actor_id="kbotui_dev",
-                )
+        result = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库变更助手",
+                diagnostic_source_ids=(source_id,),
+                target_ids=(target_id,),
+                actor_id="kbotui_dev",
             )
-        self.assertEqual("AIOPS_AGENT_CHANGE_TARGET_REQUIRED", raised.exception.code)
+        )
+        self.assertEqual([], result["controlled_action_execution"])
+
+    async def test_change_capable_target_enables_all_compatible_actions(self):
+        source_id = uuid7()
+        target = SimpleNamespace(
+            target_id=uuid7(),
+            display_name="受控测试库",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            execution_credential_id=uuid7(),
+            version_code="19c",
+            environment="DEV",
+            capabilities_json={"session_management": True},
+        )
+        unit_of_work = _UnitOfWork(
+            _AgentRepository(), source_id, target=target
+        )
+        service = AIOpsAgentService(
+            uow_factory=lambda: unit_of_work,
+            action_registry=ActionRegistry.load(),
+        )
+
+        result = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库变更助手",
+                diagnostic_source_ids=(source_id,),
+                target_ids=(target.target_id,),
+                actor_id="kbotui_dev",
+            )
+        )
+
+        policy = result["controlled_action_execution"][0]
+        self.assertTrue(policy["enabled"])
+        self.assertIn("db.session.terminate", policy["allowed_action_ids"])
+        self.assertEqual(
+            {"approval_controls_execution": True},
+            policy["object_scopes"],
+        )
 
 
 if __name__ == "__main__":

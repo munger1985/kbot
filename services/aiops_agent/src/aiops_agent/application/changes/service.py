@@ -1354,6 +1354,8 @@ class AIOpsChangeService:
             getattr(proposal, "canonical_object_ref_json", None) or {}
         )
         scopes = dict(getattr(binding, "object_scopes_json", {}) or {})
+        if scopes.get("approval_controls_execution") is True:
+            return
         if object_ref:
             schema = str(object_ref.get("schema", "")).upper()
             allowed = {str(item).upper() for item in scopes.get("schemas", ())}

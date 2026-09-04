@@ -83,47 +83,11 @@ class AIOpsManualApprovalPayload(_Payload):
     comment: str | None = Field(default=None, max_length=1000)
 
 
-class AIOpsControlledDynamicParameterRule(_Payload):
-    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    allowed_values: tuple[str, ...] = Field(min_length=1, max_length=32)
-
-
-class AIOpsControlledActionObjectScopes(_Payload):
-    schemas: tuple[str, ...] = ()
-    exclude_system_objects: bool = True
-    dynamic_parameters: tuple[AIOpsControlledDynamicParameterRule, ...] = ()
-    resource_manager_plans: tuple[str, ...] = ()
-    privilege_grantees: tuple[str, ...] = ()
-    system_privileges: tuple[str, ...] = ()
-    object_privileges: tuple[str, ...] = ()
-
-
-class AIOpsTargetControlledActionExecution(_Payload):
-    target_id: UUID
-    enabled: bool = False
-    allowed_action_ids: tuple[str, ...] = ()
-    object_scopes: AIOpsControlledActionObjectScopes = Field(
-        default_factory=AIOpsControlledActionObjectScopes
-    )
-    max_daily_executions: int | None = Field(default=None, ge=1, le=10000)
-
-    @model_validator(mode="after")
-    def validate_selection(self):
-        if self.enabled != bool(self.allowed_action_ids):
-            raise ValueError("启用受控动作时必须明确选择至少一个动作")
-        if len(set(self.allowed_action_ids)) != len(self.allowed_action_ids):
-            raise ValueError("受控动作不能重复")
-        return self
-
-
 class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    controlled_action_execution: tuple[
-        AIOpsTargetControlledActionExecution, ...
-    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -146,9 +110,6 @@ class AIOpsAgentUpdatePayload(_Payload):
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
-    controlled_action_execution: tuple[
-        AIOpsTargetControlledActionExecution, ...
-    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"

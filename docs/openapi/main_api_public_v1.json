@@ -32,14 +32,6 @@
             "title": "Config",
             "type": "object"
           },
-          "controlled_action_execution": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
-            },
-            "title": "Controlled Action Execution",
-            "type": "array"
-          },
           "description": {
             "anyOf": [
               {
@@ -241,20 +233,6 @@
             ],
             "title": "Config"
           },
-          "controlled_action_execution": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Controlled Action Execution"
-          },
           "description": {
             "anyOf": [
               {
@@ -445,91 +423,6 @@
         "title": "AIOpsCollectionStatusPayload",
         "type": "object"
       },
-      "AIOpsControlledActionObjectScopes": {
-        "additionalProperties": false,
-        "properties": {
-          "dynamic_parameters": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/AIOpsControlledDynamicParameterRule"
-            },
-            "title": "Dynamic Parameters",
-            "type": "array"
-          },
-          "exclude_system_objects": {
-            "default": true,
-            "title": "Exclude System Objects",
-            "type": "boolean"
-          },
-          "object_privileges": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Object Privileges",
-            "type": "array"
-          },
-          "privilege_grantees": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Privilege Grantees",
-            "type": "array"
-          },
-          "resource_manager_plans": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Resource Manager Plans",
-            "type": "array"
-          },
-          "schemas": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Schemas",
-            "type": "array"
-          },
-          "system_privileges": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "System Privileges",
-            "type": "array"
-          }
-        },
-        "title": "AIOpsControlledActionObjectScopes",
-        "type": "object"
-      },
-      "AIOpsControlledDynamicParameterRule": {
-        "additionalProperties": false,
-        "properties": {
-          "allowed_values": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Allowed Values",
-            "type": "array"
-          },
-          "name": {
-            "pattern": "^[a-z][a-z0-9_]{0,63}$",
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "allowed_values"
-        ],
-        "title": "AIOpsControlledDynamicParameterRule",
-        "type": "object"
-      },
       "AIOpsConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
@@ -624,50 +517,6 @@
           "new_password"
         ],
         "title": "AIOpsPasswordChangePayload",
-        "type": "object"
-      },
-      "AIOpsTargetControlledActionExecution": {
-        "additionalProperties": false,
-        "properties": {
-          "allowed_action_ids": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Action Ids",
-            "type": "array"
-          },
-          "enabled": {
-            "default": false,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "maximum": 10000.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "object_scopes": {
-            "$ref": "#/components/schemas/AIOpsControlledActionObjectScopes"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target_id"
-        ],
-        "title": "AIOpsTargetControlledActionExecution",
         "type": "object"
       },
       "AgentActivatePayload": {

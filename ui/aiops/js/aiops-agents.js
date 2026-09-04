@@ -11,24 +11,11 @@
   let bindingTargetId = "";
   const bindingsByTarget = new Map();
   const draftsByTarget = new Map();
-  const actionCatalogsByTarget = new Map();
   let editing = null;
 
   const escape = (value) => shell.escape(value ?? "—");
   const sourceName = (id) => sources.find((item) => item.source_id === id)?.display_name || shell.short(id);
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
-  const csv = (value) => String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
-  const dynamicParameterText = (rules) => (rules || []).map((item) => `${item.name}=${(item.allowed_values || []).join("|")}`).join(";");
-
-  function parseDynamicParameters(value) {
-    return String(value || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => {
-      const [name, rawValues, ...extra] = item.split("=");
-      const allowedValues = String(rawValues || "").split("|").map((value) => value.trim()).filter(Boolean);
-      if (!name?.trim() || extra.length || !allowedValues.length) throw new Error("动态参数白名单格式应为 parameter=VALUE1|VALUE2，多个参数用分号分隔。");
-      return { name: name.trim(), allowed_values: allowedValues };
-    });
-  }
-
   function showResult(message = "", tone = "") {
     const result = document.getElementById("agent-result");
     result.textContent = message;
@@ -54,8 +41,7 @@
     body.innerHTML = agents.map((agent) => {
       const sourceNames = (agent.diagnostic_source_ids || []).map((id) => escape(sourceName(id)));
       const targetNames = (agent.target_ids || []).map((id) => escape(targetName(id)));
-      const actionCount = (agent.controlled_action_execution || []).reduce((count, item) => count + (item.allowed_action_ids || []).length, 0);
-      const access = actionCount ? `诊断 + ${actionCount} 个受控动作` : "诊断";
+      const access = "诊断；受控动作逐次审批";
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
@@ -259,57 +245,7 @@
     else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；保存时会补齐或更新。`;
   }
 
-  async function loadActionCatalogs(targetIds) {
-    await Promise.all(targetIds.map(async (targetId) => {
-      if (actionCatalogsByTarget.has(targetId)) return;
-      const catalog = await KBotAIOpsAuth.request(`${api}/action-catalog/${encodeURIComponent(targetId)}`);
-      actionCatalogsByTarget.set(targetId, catalog);
-    }));
-  }
-
-  function renderControlledActions() {
-    const selected = selectedTargetIds();
-    const container = document.getElementById("agent-controlled-actions");
-    if (!selected.length) {
-      container.innerHTML = '<small>请先选择逻辑 Target。</small>';
-      return;
-    }
-    container.innerHTML = selected.map((targetId) => {
-      const target = targets.find((item) => item.target_id === targetId);
-      const catalog = actionCatalogsByTarget.get(targetId);
-      if (!catalog) return `<article class="agent-source-card"><strong>${escape(target?.display_name)}</strong><small>正在读取动作目录…</small></article>`;
-      const configured = (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId) || {};
-      const selectedActions = new Set(configured.allowed_action_ids || []);
-      const actions = [...new Map((catalog.actions || []).filter((item) => item.execution_mode === "EXECUTABLE_AFTER_APPROVAL").map((item) => [item.action_id, item])).values()];
-      const choices = actions.length ? actions.map((action) => `<label class="agent-switch-row">
-        <input type="checkbox" data-action-target="${escape(targetId)}" value="${escape(action.action_id)}" ${selectedActions.has(action.action_id) ? "checked" : ""} ${action.currently_executable ? "" : "disabled"}>
-        <span><strong>${escape(action.action_id)}</strong><small>${escape(action.action_family)} · ${escape(action.risk_level)} · ${escape(action.lock_impact)}</small></span>
-      </label>`).join("") : "<small>当前 Target 没有可授权的受控动作。</small>";
-      const advisory = (catalog.actions || []).filter((item) => item.execution_mode !== "EXECUTABLE_AFTER_APPROVAL").map((action) => `<div class="agent-switch-row"><span><strong>${escape(action.action_id)}</strong><small>${action.execution_mode === "MANUAL_ONLY" ? "仅列出命令，由 DBA 人工执行" : "已登记，执行器尚未实现"} · ${escape(action.action_family)}</small></span></div>`).join("");
-      const scopes = configured.object_scopes || {};
-      return `<article class="agent-source-card" data-action-policy-target="${escape(targetId)}">
-        <strong>${escape(target?.display_name)}</strong><small>每条命令仍需一位有权用户单独审批</small>${choices}${advisory}
-        <div class="ops-form"><div class="ops-field span-8"><label>允许的 Schema（逗号分隔）</label><input data-action-schemas value="${escape((scopes.schemas || []).join(","))}" placeholder="APP_SCHEMA"></div>
-        <div class="ops-field span-4"><label>每日执行上限</label><input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></div></div>
-        <div class="ops-form">
-          <div class="ops-field span-12"><label>动态参数白名单</label><input data-action-dynamic-parameters value="${escape(dynamicParameterText(scopes.dynamic_parameters))}" placeholder="cursor_sharing=EXACT|FORCE;statistics_level=TYPICAL|ALL"><small>参数和值都必须预登记；多个参数用分号分隔。</small></div>
-          <div class="ops-field span-6"><label>Resource Manager Plan（逗号分隔）</label><input data-action-resource-plans value="${escape((scopes.resource_manager_plans || []).join(","))}" placeholder="APP_PLAN"></div>
-          <div class="ops-field span-6"><label>允许授权的本地用户（逗号分隔）</label><input data-action-privilege-grantees value="${escape((scopes.privilege_grantees || []).join(","))}" placeholder="APPUSER,REPORTER"></div>
-          <div class="ops-field span-6"><label>系统权限白名单（逗号分隔）</label><input data-action-system-privileges value="${escape((scopes.system_privileges || []).join(","))}" placeholder="CREATE SESSION"></div>
-          <div class="ops-field span-6"><label>对象权限白名单（逗号分隔）</label><input data-action-object-privileges value="${escape((scopes.object_privileges || []).join(","))}" placeholder="SELECT,EXECUTE"></div>
-        </div>
-      </article>`;
-    }).join("");
-  }
-
   function toggleTargetFields() {
-    const selected = selectedTargetIds();
-    const changeTargets = targets.filter((item) => selected.includes(item.target_id) && item.controlled_change_enabled);
-    document.getElementById("agent-change-help").textContent = changeTargets.length
-      ? `当前有 ${changeTargets.length} 个 Target 可配置；必须逐项选择，实际执行仍逐条审批。`
-      : "所选 Target 均未启用受控变更；请先在运维目标中配置。";
-    renderControlledActions();
-    loadActionCatalogs(changeTargets.map((item) => item.target_id)).then(renderControlledActions).catch((error) => showResult(`读取动作目录失败：${error.message}`, "bad"));
     syncMappingTargetOptions();
     syncSourceMappingVisibility();
   }
@@ -469,35 +405,12 @@
       };
     }
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
-    const controlledActionExecution = targetIds.map((targetId) => {
-      const card = document.querySelector(`[data-action-policy-target="${CSS.escape(targetId)}"]`);
-      if (!card) return null;
-      const actionIds = [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value);
-      if (!actionIds.length) return null;
-      const schemas = csv(card.querySelector("[data-action-schemas]").value);
-      return {
-        target_id: targetId,
-        enabled: true,
-        allowed_action_ids: actionIds,
-        object_scopes: {
-          schemas,
-          exclude_system_objects: true,
-          dynamic_parameters: parseDynamicParameters(card.querySelector("[data-action-dynamic-parameters]").value),
-          resource_manager_plans: csv(card.querySelector("[data-action-resource-plans]").value),
-          privilege_grantees: csv(card.querySelector("[data-action-privilege-grantees]").value),
-          system_privileges: csv(card.querySelector("[data-action-system-privileges]").value),
-          object_privileges: csv(card.querySelector("[data-action-object-privileges]").value),
-        },
-        max_daily_executions: Number(card.querySelector("[data-action-limit]").value),
-      };
-    }).filter(Boolean);
     return {
       display_name: form.elements.display_name.value.trim(),
       description: form.elements.description.value.trim() || null,
       status: editing ? form.elements.status.value : "DRAFT",
       diagnostic_source_ids: selectedSources,
       target_ids: targetIds,
-      controlled_action_execution: controlledActionExecution,
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
       alert_cooldown_minutes: autoAlertEnabled ? Number(form.elements.alert_cooldown_minutes.value) : (editing?.alert_cooldown_minutes ?? 15),

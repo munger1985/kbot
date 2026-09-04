@@ -11,7 +11,6 @@ from aiops_agent.application.agents import (
     AIOpsAgentError,
     AgentImageCapabilities,
     AgentModelBindings,
-    TargetControlledActionExecution,
     CreateAIOpsAgentCommand,
     UpdateAIOpsAgentCommand,
     UpsertAIOpsAgentGrantCommand,
@@ -31,9 +30,6 @@ class AgentCreateRequest(_Request):
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
-    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -58,9 +54,6 @@ class AgentUpdateRequest(_Request):
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
-    controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
-    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
