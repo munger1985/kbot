@@ -257,6 +257,40 @@ class NotificationSubscriptionRoutingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         publish.assert_not_awaited()
 
+    async def test_report_notification_truncates_long_summary(self) -> None:
+        uow = SimpleNamespace(
+            notification_subscriptions=SimpleNamespace(
+                recipient_actor_ids=AsyncMock(return_value=())
+            ),
+        )
+        repository = PlatformNotificationRepository(uow)
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            domain_id=100,
+            target_id=uuid7(),
+            situation_id=None,
+            actor_id="portal-user-1",
+            trace_id="trace-5",
+        )
+        report = SimpleNamespace(
+            report_id=uuid7(),
+            summary="诊断结论" * 251,
+        )
+
+        with patch(
+            "aiops_agent.repositories.platform_notification.publish_notification",
+            new=AsyncMock(),
+        ) as publish:
+            await repository.emit_report_ready(
+                run=run,
+                report=report,
+                actor_id=run.actor_id,
+            )
+
+        summary = publish.await_args.kwargs["envelope"].summary
+        self.assertEqual(1000, len(summary))
+        self.assertTrue(summary.endswith("…"))
+
     async def test_large_subscription_set_is_split_by_envelope_limit(self) -> None:
         recipients = tuple(f"portal-user-{index:03d}" for index in range(51))
         uow = SimpleNamespace(

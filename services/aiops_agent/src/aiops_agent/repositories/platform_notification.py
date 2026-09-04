@@ -4,6 +4,17 @@ from platform_core.notifications import NotificationEnvelope, publish_notificati
 
 
 _MAX_RECIPIENTS_PER_EVENT = 50
+_MAX_NOTIFICATION_SUMMARY_LENGTH = 1000
+
+
+def _notification_summary(value: object, *, fallback: str) -> str:
+    """将业务长摘要收敛为平台通知可安全承载的简要说明。"""
+    summary = str(value or "").strip()
+    if not summary:
+        return fallback
+    if len(summary) <= _MAX_NOTIFICATION_SUMMARY_LENGTH:
+        return summary
+    return f"{summary[:_MAX_NOTIFICATION_SUMMARY_LENGTH - 1]}…"
 
 
 class PlatformNotificationRepository:
@@ -205,7 +216,10 @@ class PlatformNotificationRepository:
                 resource_id=str(report.report_id),
                 resource_name="AIOps 报告",
                 initiator_actor_id=run.actor_id,
-                summary=report.summary or "报告已生成",
+                summary=_notification_summary(
+                    report.summary,
+                    fallback="报告已生成",
+                ),
                 correlation_id=run.trace_id,
                 operation_id=str(run.ops_run_id),
                 safe_data={"target_id": str(run.target_id)},
