@@ -247,6 +247,7 @@ timeout_seconds = 300
 [dependencies.main_api.aiops]
 endpoint = "aiops"
 timeout_seconds = 120
+upload_timeout_seconds = 600
 
 [dependencies.main_api.model_embedding]
 endpoint = "model_embedding"

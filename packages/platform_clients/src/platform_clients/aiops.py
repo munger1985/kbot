@@ -79,11 +79,15 @@ class _BaseAIOpsClient:
         base_url: str,
         auth: AIOpsClientAuth,
         timeout_seconds: int = 120,
+        upload_timeout_seconds: int | None = None,
         session: aiohttp.ClientSession | None = None,
     ):
         self._base_url = base_url.rstrip("/")
         self._auth = auth
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._upload_timeout = aiohttp.ClientTimeout(
+            total=upload_timeout_seconds or timeout_seconds
+        )
         self._session = session
         self._owns_session = session is None
 
@@ -219,7 +223,7 @@ class _BaseAIOpsClient:
                 f"{self._base_url}{path}",
                 headers=headers,
                 data=body,
-                timeout=self._timeout,
+                timeout=self._upload_timeout,
             ) as response:
                 payload = await self._response_payload(response)
                 if response.status >= 400:

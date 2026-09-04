@@ -171,6 +171,7 @@ async def lifespan(app: FastAPI):
             service_identity_codec=create_service_identity_codec(),
         ),
         timeout_seconds=settings.aiops.timeout_seconds,
+        upload_timeout_seconds=settings.aiops.upload_timeout_seconds,
         session=client_session,
     )
     logger.info("Main API 已启动，公开前缀=/api/v1")
