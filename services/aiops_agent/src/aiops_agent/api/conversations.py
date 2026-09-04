@@ -3,7 +3,7 @@
 from uuid import UUID
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -225,6 +225,40 @@ async def get_turn(
         conversation_id=conversation_id,
         turn_id=turn_id,
         actor_id=actor_id,
+    )
+
+
+@router.get("/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content")
+async def get_uploaded_input_content(
+    conversation_id: UUID,
+    turn_id: UUID,
+    item_no: int,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    """返回已固化图片证据的字节流，访问范围限制在所属会话。"""
+    if item_no < 1:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_INPUT_ITEM_INVALID", "message": "输入序号必须大于零"},
+        )
+    domain_id, actor_id = _scope(request, context)
+    content, media_type = (
+        await request.app.state.conversation_turn_service.get_uploaded_input_content(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            item_no=item_no,
+            actor_id=actor_id,
+        )
+    )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

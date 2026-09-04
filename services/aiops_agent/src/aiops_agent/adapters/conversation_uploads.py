@@ -152,11 +152,25 @@ class LocalConversationUploadStore:
         return stored
 
     def read(self, stored: StoredConversationUpload) -> bytes:
-        payload_path = self._payload_path(stored.payload_uri)
+        return self.read_artifact(
+            payload_uri=stored.payload_uri,
+            content_hash=stored.content_hash,
+            byte_size=stored.byte_size,
+        )
+
+    def read_artifact(
+        self,
+        *,
+        payload_uri: str,
+        content_hash: str,
+        byte_size: int,
+    ) -> bytes:
+        """读取已关联 Artifact 的正文，并再次校验其完整性。"""
+        payload_path = self._payload_path(payload_uri)
         content = payload_path.read_bytes()
-        if len(content) != stored.byte_size:
+        if len(content) != byte_size:
             raise ValueError("上传文件大小与登记信息不一致")
-        if hashlib.sha256(content).hexdigest() != stored.content_hash:
+        if hashlib.sha256(content).hexdigest() != content_hash:
             raise ValueError("上传文件完整性校验失败")
         return content
 

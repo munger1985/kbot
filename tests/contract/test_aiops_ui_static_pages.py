@@ -83,6 +83,20 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("conversation-uploads", change_handler)
         self.assertIn("点击发送时上传", change_handler)
 
+    def test_chat_reloads_images_through_authenticated_api(self):
+        auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
+            encoding="utf-8"
+        )
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("async function requestBlob", auth)
+        self.assertIn("Authorization: `Bearer ${session.access_token}`", auth)
+        self.assertIn("imageAttachmentsHtml", workspace)
+        self.assertIn("hydrateConversationImages", workspace)
+        self.assertIn("/inputs/${item.item_no}/content", workspace)
+        self.assertNotIn("file://", workspace)
+
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")

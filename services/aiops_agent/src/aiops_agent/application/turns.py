@@ -634,6 +634,117 @@ class ConversationTurnService:
                 ),
             }
 
+    async def get_uploaded_input_content(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        item_no: int,
+        actor_id: str,
+    ) -> tuple[bytes, str]:
+        """读取当前用户会话中已固化的图片证据，绝不暴露本地存储地址。"""
+        if self._upload_store is None:
+            raise self._error(
+                "AIOPS_UPLOAD_STORE_UNAVAILABLE", "对话上传存储当前不可用"
+            )
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                domain_id=domain_id,
+                conversation_id=conversation_id,
+            )
+            turn = await uow.turns.get_turn(
+                domain_id=domain_id,
+                turn_id=turn_id,
+            )
+            if (
+                conversation is None
+                or conversation.created_by != actor_id
+                or turn is None
+                or turn.conversation_id != conversation_id
+            ):
+                raise resource_not_found("Conversation Turn")
+            input_item = next(
+                (
+                    row
+                    for row in await uow.turns.list_input_items(turn_id=turn_id)
+                    if int(row.item_no) == item_no
+                ),
+                None,
+            )
+            if input_item is None or not str(
+                input_item.media_type or ""
+            ).startswith("image/"):
+                raise resource_not_found("Conversation Image Input")
+            link = await uow.turns.get_run_link(
+                turn_id=turn_id,
+                purpose="PRIMARY",
+            )
+            source = (
+                await uow.runs.get_artifact(
+                    artifact_id=input_item.source_artifact_id
+                )
+                if link is not None
+                else None
+            )
+            media_type = str(input_item.media_type)
+            if (
+                source is not None
+                and link is not None
+                and source.ops_run_id == link.ops_run_id
+                and source.artifact_type == "USER_UPLOAD_SOURCE"
+                and source.payload_uri
+            ):
+                payload_uri = source.payload_uri
+                content_hash = source.content_hash
+                byte_size = int(source.byte_size)
+                upload_id = None
+            else:
+                message = next(
+                    (
+                        row
+                        for row in await uow.turns.list_messages(turn_id=turn_id)
+                        if row.message_id == input_item.message_id
+                    ),
+                    None,
+                )
+                content = list(
+                    dict(getattr(message, "payload_json", {}) or {}).get(
+                        "content", []
+                    )
+                )
+                item = (
+                    content[item_no - 1]
+                    if len(content) >= item_no and isinstance(
+                        content[item_no - 1], dict
+                    )
+                    else {}
+                )
+                upload_id = str(item.get("upload_id") or "")
+                payload_uri = None
+                content_hash = None
+                byte_size = None
+                if not upload_id or str(item.get("media_type") or "") != media_type:
+                    raise resource_not_found("Conversation Image Input")
+        try:
+            if upload_id is not None:
+                stored = self._upload_store.get(
+                    upload_id=upload_id,
+                    domain_id=domain_id,
+                    actor_id=actor_id,
+                )
+                return self._upload_store.read(stored), media_type
+            return (
+                self._upload_store.read_artifact(
+                    payload_uri=payload_uri,
+                    content_hash=content_hash,
+                    byte_size=byte_size,
+                ),
+                media_type,
+            )
+        except (OSError, ValueError) as exc:
+            raise resource_not_found("Conversation Image Input") from exc
+
     async def list_events(
         self,
         *,

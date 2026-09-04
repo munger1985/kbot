@@ -101,6 +101,32 @@
     }
   }
 
+  async function requestBlob(path, options = {}) {
+    const session = load();
+    if (!session?.access_token) {
+      location.replace("./login.html");
+      throw new Error("请先登录 AIOps");
+    }
+    const response = await fetch(`${baseUrl()}${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: {
+        Accept: "image/*",
+        "X-Request-ID": uuid(),
+        Authorization: `Bearer ${session.access_token}`,
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let payload = text;
+      try { payload = text ? JSON.parse(text) : null; } catch (_) { /* 保留原始错误文本。 */ }
+      if (response.status === 401) clear();
+      throw new Error(errorMessage(payload, response.status));
+    }
+    return response.blob();
+  }
+
   async function stream(path, onEvent, options = {}) {
     const session = load();
     if (!session?.access_token) {
@@ -174,5 +200,5 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  globalThis.KBotAIOpsAuth = { clear, load, login, request, stream, download, uuid };
+  globalThis.KBotAIOpsAuth = { clear, load, login, request, requestBlob, stream, download, uuid };
 })();

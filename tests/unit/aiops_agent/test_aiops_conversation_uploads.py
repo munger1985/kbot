@@ -60,6 +60,14 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
                 )
             ),
         )
+        self.assertEqual(
+            b"ORA-27157",
+            self.store.read_artifact(
+                payload_uri=preserved.payload_uri,
+                content_hash=preserved.content_hash,
+                byte_size=preserved.byte_size,
+            ),
+        )
         with self.assertRaises(PermissionError):
             self.store.get(
                 upload_id=stored.upload_id,

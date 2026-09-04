@@ -7,7 +7,7 @@ from urllib.parse import unquote
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
@@ -776,6 +776,36 @@ async def get_conversation_turn(
         conversation_id,
         turn_id,
         auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/conversations/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content")
+async def download_conversation_input_image(
+    conversation_id: UUID,
+    turn_id: UUID,
+    item_no: int,
+    request: Request,
+):
+    """代理已固化的会话图片，不向浏览器公开 AIOps 本地存储地址。"""
+    if item_no < 1:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_INPUT_ITEM_INVALID", "message": "输入序号必须大于零"},
+        )
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_conversation_input_image(
+        conversation_id,
+        turn_id,
+        item_no,
+        auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type=upstream.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

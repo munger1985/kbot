@@ -209,6 +209,9 @@ class _TurnRepository:
     async def list_messages(self, *, turn_id):
         return [row for row in self.messages if row.turn_id == turn_id]
 
+    async def list_input_items(self, *, turn_id):
+        return [row for row in self.input_items if row.turn_id == turn_id]
+
     async def add_answer_block(self, row):
         self.answer_blocks.append(row)
         return row
@@ -699,6 +702,58 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             "[用户上传文件：database-alert.png]",
             item.content_text,
         )
+
+    async def test_uploaded_image_is_readable_before_worker_creates_artifact(
+        self,
+    ) -> None:
+        uow = _Uow()
+        upload_id = str(uuid7())
+        stored = SimpleNamespace(
+            upload_id=upload_id,
+            file_name="database-alert.png",
+            media_type="image/png",
+        )
+        upload_store = SimpleNamespace(
+            get=lambda **_: stored,
+            preserve=lambda value: value,
+            read=lambda value: b"image-content",
+        )
+        service = ConversationTurnService(
+            uow_factory=lambda: uow,
+            upload_store=upload_store,
+        )
+
+        receipt = await service.start(
+            domain_id=7,
+            actor_id="dba@example.com",
+            trace_id="trace-upload-read",
+            conversation_create=ConversationCreate(
+                agent_id=uow.agent.agent_id,
+                target_id=uow.target.target_id,
+                source=ConversationSourceContext(),
+            ),
+            first_turn=TurnCreate(
+                content=(
+                    {
+                        "content_type": "IMAGE",
+                        "upload_id": upload_id,
+                        "media_type": "image/png",
+                    },
+                ),
+                idempotency_key="request-upload-read",
+            ),
+        )
+
+        content, media_type = await service.get_uploaded_input_content(
+            domain_id=7,
+            conversation_id=uow.conversation_rows[0].conversation_id,
+            turn_id=UUID(receipt["turn_id"]),
+            item_no=1,
+            actor_id="dba@example.com",
+        )
+
+        self.assertEqual(b"image-content", content)
+        self.assertEqual("image/png", media_type)
 
     async def test_situation_source_is_validated_and_forwarded(self) -> None:
         uow = _Uow()

@@ -159,9 +159,10 @@ class _BaseAIOpsClient:
         path: str,
         *,
         auth_context: AuthContext,
+        accept: str = "application/pdf",
     ) -> AIOpsBinaryResponse:
         headers = {
-            "Accept": "application/pdf",
+            "Accept": accept,
             **self._auth.headers(auth_context),
         }
         session = await self._get_session()
@@ -1443,6 +1444,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
                 f"/turns/{turn_id}"
             ),
             auth_context=auth_context,
+        )
+
+    async def download_conversation_input_image(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        item_no: int,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        return await self._bytes(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/inputs/{item_no}/content"
+            ),
+            auth_context=auth_context,
+            accept="image/*",
         )
 
     async def list_conversation_turn_events(

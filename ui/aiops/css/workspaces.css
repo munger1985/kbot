@@ -33,6 +33,10 @@
 @keyframes ops-typewriter-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ops-message.agent.is-typing .ops-message-content::after { animation: none; } }
 .ops-message-meta { margin-top: 7px; color: var(--muted); font-size: 11px; }
+.ops-image-attachments { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+.ops-image-attachments figure { margin: 0; }
+.ops-conversation-image { display: block; width: 100%; max-height: 420px; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.ops-image-attachments figcaption { margin-top: 5px; color: var(--muted); font-size: 11px; }
 .ops-composer { padding: 16px 20px; border-top: 1px solid var(--line); background: #fff; }
 .ops-composer textarea { width: 100%; min-height: 92px; padding: 12px; border: 1px solid #aeb7c6; resize: vertical; }
 .ops-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }

@@ -130,6 +130,30 @@
     return `<article class="ops-message ${user ? "user" : "agent"}"><div class="ops-avatar">${user ? "我" : "AI"}</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${markdown.render(text)}</div>${supplemental}${meta ? `<div class="ops-message-meta">${esc(meta)}</div>` : ""}</div></article>`;
   }
 
+  function imageAttachmentsHtml(conversationId, turn) {
+    const user = values(turn.messages).find((item) => item.message_type === "USER_MESSAGE");
+    const content = values(user?.payload?.content);
+    const images = content
+      .map((item, index) => ({ ...item, item_no: index + 1 }))
+      .filter((item) => item.content_type === "IMAGE" && String(item.media_type || "").startsWith("image/"));
+    if (!images.length) return "";
+    return `<div class="ops-image-attachments">${images.map((item) => `<figure><img class="ops-conversation-image" alt="用户上传的诊断截图" data-image-content-path="${esc(`${api}/conversations/${conversationId}/turns/${turn.turn_id}/inputs/${item.item_no}/content`)}"><figcaption>诊断截图 · 将作为本轮证据保存</figcaption></figure>`).join("")}</div>`;
+  }
+
+  async function hydrateConversationImages(root) {
+    const images = Array.from(root.querySelectorAll("img[data-image-content-path]"));
+    await Promise.all(images.map(async (image) => {
+      try {
+        const blob = await KBotAIOpsAuth.requestBlob(image.dataset.imageContentPath);
+        const url = URL.createObjectURL(blob);
+        image.src = url;
+        image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+      } catch (_) {
+        image.closest("figure")?.remove();
+      }
+    }));
+  }
+
   function investigationPlanHtml(plan) {
     const actions = values(plan?.actions);
     const frame = plan?.task_frame || {};
@@ -493,7 +517,7 @@
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
     const report = settled && turn.ops_run_id
       ? reportAction(turn.ops_run_id, "CHAT") : "";
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at)) : ""}${plan}${progress}${answer}${report}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}${report}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -504,6 +528,7 @@
     const panel = document.getElementById("message-list");
     panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
     turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
+    await hydrateConversationImages(panel);
     await Promise.all(turns.filter((turn) => turn.status === "WAITING_USER" && turn.ops_run_id).map(async (turn) => {
       const progress = panel.querySelector(`[data-turn-progress="${String(turn.turn_id)}"]`);
       if (!progress) return;

@@ -12127,6 +12127,67 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content": {
+      "get": {
+        "description": "代理已固化的会话图片，不向浏览器公开 AIOps 本地存储地址。",
+        "operationId": "download_conversation_input_image_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__inputs__item_no__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_no",
+            "required": true,
+            "schema": {
+              "title": "Item No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Conversation Input Image",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/diagnostic-sources": {
       "get": {
         "operationId": "list_diagnostic_sources_api_v1_apps_aiops_diagnostic_sources_get",

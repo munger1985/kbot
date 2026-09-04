@@ -11948,6 +11948,67 @@
         ]
       }
     },
+    "/internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content": {
+      "get": {
+        "description": "返回已固化图片证据的字节流，访问范围限制在所属会话。",
+        "operationId": "get_uploaded_input_content_internal_v1_aiops_conversations__conversation_id__turns__turn_id__inputs__item_no__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_no",
+            "required": true,
+            "schema": {
+              "title": "Item No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Uploaded Input Content",
+        "tags": [
+          "AIOps Conversations"
+        ]
+      }
+    },
     "/internal/v1/aiops/credentials:issue": {
       "post": {
         "description": "仅向已验证的 Executor 发放且消费一次连接材料。",
