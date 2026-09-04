@@ -15,6 +15,7 @@ from aiops_agent.application.reporting import (
     render_pdf,
     report_presentation,
     normalize_report_source,
+    resolve_report_template_reference,
     validate_template_definition,
 )
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
@@ -32,6 +33,12 @@ class FormalReportingTest(unittest.TestCase):
                 "system:inspection.annual",
             },
             set(SYSTEM_REPORT_TEMPLATES),
+        )
+
+    def test_historical_system_template_reference_is_resolvable(self) -> None:
+        self.assertEqual(
+            SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            resolve_report_template_reference("diagnosis.standard"),
         )
 
     def test_custom_template_cannot_hide_evidence_boundary(self) -> None:

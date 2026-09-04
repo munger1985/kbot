@@ -173,6 +173,14 @@ def resolve_system_template(template_ref: str) -> ReportTemplate | None:
     return SYSTEM_REPORT_TEMPLATES.get(template_ref)
 
 
+def resolve_report_template_reference(template_ref: str) -> ReportTemplate | None:
+    """解析报告冻结的系统模板标识，兼容早期未带 system 前缀的快照。"""
+    direct = resolve_system_template(template_ref)
+    if direct is not None or template_ref.startswith("system:"):
+        return direct
+    return resolve_system_template(f"system:{template_ref}")
+
+
 def validate_template_definition(definition: dict[str, Any]) -> ReportTemplate:
     """校验 Domain 模板的受控章节 DSL。"""
     source_kinds = tuple(str(item) for item in definition.get(

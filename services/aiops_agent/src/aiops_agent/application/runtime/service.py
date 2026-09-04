@@ -84,6 +84,7 @@ from aiops_agent.application.reporting import (
     normalize_report_source,
     render_pdf,
     report_presentation,
+    resolve_report_template_reference,
     resolve_system_template,
     validate_template_definition,
 )
@@ -5733,7 +5734,7 @@ class AIOpsRuntimeService:
             if isinstance(definition, dict):
                 template = validate_template_definition(definition)
             else:
-                template = resolve_system_template(str(report.template_id))
+                template = resolve_report_template_reference(str(report.template_id))
             if template is None:
                 raise state_conflict("历史报告缺少可重现的模板快照")
             protected = {"EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"}
@@ -6072,7 +6073,7 @@ class AIOpsRuntimeService:
                     definition=definition,
                 )
             else:
-                template = resolve_system_template(str(report.template_id))
+                template = resolve_report_template_reference(str(report.template_id))
                 if template is None:
                     raise state_conflict("历史报告缺少可重现的模板快照")
             return report_presentation(payload=payload, template=template)
