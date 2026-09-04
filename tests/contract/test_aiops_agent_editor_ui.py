@@ -29,7 +29,19 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20260902-2", page)
+        self.assertIn("aiops-agents.js?v=20260904-1", page)
+
+    def test_image_capability_selects_use_catalog_categories(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        script = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('name="ocr_model_id"', page)
+        self.assertIn('name="vlm_model_id"', page)
+        self.assertIn('renderImageModelOptions("agent-ocr-model", 6', script)
+        self.assertIn('renderImageModelOptions("agent-vlm-model", 5', script)
+        self.assertIn("image_capabilities: imageCapabilities", script)
+        self.assertIn("allowed_model_ids: [ocrModelId]", script)
+        self.assertIn("allowed_model_ids: [vlmModelId]", script)
 
 
 if __name__ == "__main__":

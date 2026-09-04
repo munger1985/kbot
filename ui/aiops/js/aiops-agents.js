@@ -146,6 +146,15 @@
     document.getElementById("agent-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
       : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
+    renderImageModelOptions("agent-ocr-model", 6, "不启用 OCR", "OCR");
+    renderImageModelOptions("agent-vlm-model", 5, "不启用 VLM", "VLM");
+  }
+
+  function renderImageModelOptions(elementId, category, disabledLabel, capabilityName) {
+    const imageModels = models.filter((model) => Number(model.category) === category);
+    document.getElementById(elementId).innerHTML = imageModels.length
+      ? `<option value="">${disabledLabel}</option>` + imageModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
+      : `<option value="">没有已启用的 ${capabilityName} 模型</option>`;
   }
 
   function bindingFor(sourceId) {
@@ -408,6 +417,8 @@
     form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15;
     form.elements.planner_model_id.value = editing.models?.planner_llm || "";
     form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
+    form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
+    form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
     form.elements.instruction.value = editing.instruction || "";
     form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => {
       input.checked = (editing.diagnostic_source_ids || []).includes(input.value);
@@ -440,8 +451,23 @@
     if (!targetIds.length) throw new Error("至少选择一个逻辑 Target。");
     const plannerModelId = form.elements.planner_model_id.value.trim();
     const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
+    const ocrModelId = form.elements.ocr_model_id.value.trim();
+    const vlmModelId = form.elements.vlm_model_id.value.trim();
     if (!plannerModelId) throw new Error("请选择规划模型。");
     if (!diagnosisModelId) throw new Error("请选择诊断模型。");
+    const imageCapabilities = {};
+    if (ocrModelId) {
+      imageCapabilities.ocr = {
+        allowed_model_ids: [ocrModelId],
+        default_model_id: ocrModelId,
+      };
+    }
+    if (vlmModelId) {
+      imageCapabilities.vlm = {
+        allowed_model_ids: [vlmModelId],
+        default_model_id: vlmModelId,
+      };
+    }
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
     const controlledActionExecution = targetIds.map((targetId) => {
       const card = document.querySelector(`[data-action-policy-target="${CSS.escape(targetId)}"]`);
@@ -480,7 +506,7 @@
         diagnosis_llm: diagnosisModelId,
       },
       instruction: form.elements.instruction.value.trim() || null,
-      image_capabilities: {},
+      image_capabilities: imageCapabilities,
       config: {},
     };
   }

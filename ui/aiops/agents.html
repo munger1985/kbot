@@ -90,8 +90,36 @@
           </div>
         </section>
 
-        <section class="agent-form-section" aria-labelledby="agent-section-evidence">
+        <section class="agent-form-section" aria-labelledby="agent-section-image">
           <div class="agent-section-index">02</div>
+          <div class="agent-section-content">
+            <div class="agent-section-heading">
+              <div>
+                <h3 id="agent-section-image">图片诊断能力</h3>
+                <p>可选。未配置时，图片仅作为原始证据保存，不会被模型解读；同时配置时优先使用 VLM。</p>
+              </div>
+            </div>
+            <div class="ops-form">
+              <div class="ops-field span-6">
+                <label for="agent-ocr-model">OCR 模型</label>
+                <select id="agent-ocr-model" name="ocr_model_id">
+                  <option value="">不启用 OCR</option>
+                </select>
+                <small>提取截图中的文字、数值和错误码。</small>
+              </div>
+              <div class="ops-field span-6">
+                <label for="agent-vlm-model">VLM 模型</label>
+                <select id="agent-vlm-model" name="vlm_model_id">
+                  <option value="">不启用 VLM</option>
+                </select>
+                <small>理解告警截图、图表、界面状态和可见上下文；配置后优先于 OCR。</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="agent-form-section" aria-labelledby="agent-section-evidence">
+          <div class="agent-section-index">03</div>
           <div class="agent-section-content">
             <div class="agent-section-heading">
               <div>
@@ -126,7 +154,7 @@
         </section>
 
         <section class="agent-form-section" aria-labelledby="agent-section-automation">
-          <div class="agent-section-index">03</div>
+          <div class="agent-section-index">04</div>
           <div class="agent-section-content">
             <div class="agent-section-heading">
               <div><h3 id="agent-section-automation">自动告警诊断</h3><p>最低级别和冷却时间只适用于告警自动触发，不影响聊天诊断、人工运行和计划巡检。</p></div>
@@ -170,6 +198,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20260902-2"></script>
+  <script src="./js/aiops-agents.js?v=20260904-1"></script>
 </body>
 </html>
