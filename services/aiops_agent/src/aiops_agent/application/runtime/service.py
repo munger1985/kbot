@@ -6054,9 +6054,11 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if artifact is None or artifact.content_hash != report.content_hash:
+            if artifact is None:
                 raise state_conflict("Report 内容引用不完整")
             payload = dict(artifact.payload_json or {})
+            if artifact.content_hash != sha256_json(payload):
+                raise state_conflict("Report 内容引用不完整")
             snapshot = dict(
                 dict(payload.get("provenance") or {}).get("template") or {}
             )
