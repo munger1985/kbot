@@ -38,6 +38,13 @@ APPLY_SCHEMA_20 = (
     / "operations"
     / "apply_aiops_schema_20.sql"
 )
+APPLY_SCHEMA_21 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_21.sql"
+)
 
 
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
@@ -170,6 +177,24 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("'ENABLED' VALUE 'FALSE' FORMAT JSON", normalized)
         self.assertIn("20 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V10' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_21_apply_is_incremental_and_matches_reporting_contract(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_21.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("KBOT_OPS_REPORT_SOURCE", normalized)
+        self.assertIn("IX_OPS_RPT_SOURCE_RUN", normalized)
+        self.assertIn("IX_OPS_RPT_SOURCE_ART", normalized)
+        self.assertIn("INSPECTION_MONTHLY", normalized)
+        self.assertIn("INSPECTION_QUARTERLY", normalized)
+        self.assertIn("INSPECTION_ANNUAL", normalized)
+        self.assertIn("21 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V11' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:

@@ -676,7 +676,7 @@ class OpsRunRepository(AIOpsRepository):
         ops_task_id: UUID | None = None,
         event_key: str | None = None,
     ) -> OpsRunEventEntity:
-        """锁定 Run 后分配严格单调的 SSE 序号并追加事件。"""
+        """锁定 Run 后按事件键幂等追加 SSE 事件。"""
         self._check_active()
         run = (
             await self._session.execute(
@@ -687,6 +687,13 @@ class OpsRunRepository(AIOpsRepository):
         ).scalar_one_or_none()
         if run is None:
             raise StateConflictError(f"Ops Run 不存在：{ops_run_id}")
+        if event_key is not None:
+            existing = await self.get_event_by_key(
+                ops_run_id=ops_run_id,
+                event_key=event_key,
+            )
+            if existing is not None:
+                return existing
         current = (
             await self._session.execute(
                 select(
