@@ -315,6 +315,22 @@ class InvestigationAssessment(AIOpsContract):
     )
     progress_made: bool
     reason: str = Field(min_length=1, max_length=2000)
+    clarification_question: str | None = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_clarification(self) -> "InvestigationAssessment":
+        """确保要求用户补充时能交付一条可展示的具体问题。"""
+        needs_clarification = (
+            self.sufficiency_status == SufficiencyStatus.NEEDS_CLARIFICATION
+        )
+        asks_user = self.next_action == "ASK_USER"
+        if needs_clarification != asks_user:
+            raise ValueError(
+                "NEEDS_CLARIFICATION 必须与 ASK_USER 一起使用"
+            )
+        if needs_clarification and not self.clarification_question:
+            raise ValueError("NEEDS_CLARIFICATION 必须包含澄清问题")
+        return self
 
 
 class ToolDefinition(AIOpsContract):

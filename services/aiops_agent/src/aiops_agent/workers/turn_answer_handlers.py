@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from loguru import logger
+from pydantic import ValidationError
 
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.change import ProposalOutcome
@@ -390,7 +391,20 @@ class DbaEvidenceAssessmentHandler:
                 exc.code,
             )
             return deterministic
-        investigation = InvestigationAssessment.model_validate(result.output)
+        try:
+            # 不能直接校验已构造的 Pydantic 实例：model_copy(update=...)
+            # 会绕过其校验器。先转成原始数据，确保每次都重跑完整契约校验。
+            investigation = InvestigationAssessment.model_validate(
+                result.output.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValidationError) as exc:
+            logger.warning(
+                "调查证据模型评估结果不完整，降级为不可安全回答："
+                "task_id={} error={}",
+                context.task_id,
+                str(exc),
+            )
+            return self._incomplete_model_assessment(deterministic)
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
         if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
             assessed_status = SufficiencyStatus.PARTIAL
@@ -415,8 +429,9 @@ class DbaEvidenceAssessmentHandler:
             )
             if detail
         )
-        return deterministic.model_copy(
-            update={
+        return DbaSufficiencyAssessment.model_validate(
+            {
+                **deterministic.model_dump(mode="python"),
                 "status": assessed_status,
                 "gaps": tuple((*deterministic.gaps, *semantic_gaps)),
                 "reasons": tuple(
@@ -424,8 +439,39 @@ class DbaEvidenceAssessmentHandler:
                         (*deterministic.reasons, investigation.reason)
                     )
                 ),
-                "investigation": investigation,
+                "clarification_question": (
+                    investigation.clarification_question
+                    if assessed_status
+                    == SufficiencyStatus.NEEDS_CLARIFICATION
+                    else None
+                ),
+                "investigation": investigation.model_dump(mode="python"),
             }
+        )
+
+    @staticmethod
+    def _incomplete_model_assessment(
+        deterministic: DbaSufficiencyAssessment,
+    ) -> DbaSufficiencyAssessment:
+        """把不能安全展示的模型评估转为可恢复的证据不足结果。"""
+        return DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_EVIDENCE,
+            evidence=deterministic.evidence,
+            gaps=(
+                *deterministic.gaps,
+                TurnEvidenceGap(
+                    source_id="investigation.assessment",
+                    step_id="model-output",
+                    code="INVESTIGATION_ASSESSMENT_INCOMPLETE",
+                    detail="调查评估未生成符合契约的澄清问题",
+                    retryable=False,
+                ),
+            ),
+            reasons=tuple(
+                dict.fromkeys(
+                    (*deterministic.reasons, "调查评估结果不完整，无法安全形成结论")
+                )
+            ),
         )
 
     @staticmethod

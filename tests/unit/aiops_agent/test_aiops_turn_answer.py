@@ -116,6 +116,7 @@ class _AssessmentModel:
                 next_action="ANSWER",
                 progress_made=True,
                 reason="现有证据足以给出有边界的回答",
+                clarification_question=None,
             ),
             receipt=ModelInvocationReceipt(
                 purpose=kwargs["purpose"],
@@ -149,6 +150,38 @@ class _AnswerableAssessmentModel(_AssessmentModel):
         )
 
 
+class _ClarificationAssessmentModel(_AssessmentModel):
+    async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        result = await super().generate_structured(**kwargs)
+        return StructuredModelResult(
+            output=result.output.model_copy(
+                update={
+                    "sufficiency_status": "NEEDS_CLARIFICATION",
+                    "next_action": "ASK_USER",
+                    "reason": "需要确认告警是否仍在发生",
+                    "clarification_question": "请确认该告警当前是否仍在发生？",
+                }
+            ),
+            receipt=result.receipt,
+        )
+
+
+class _IncompleteClarificationAssessmentModel(_AssessmentModel):
+    async def generate_structured(self, **kwargs) -> StructuredModelResult:
+        result = await super().generate_structured(**kwargs)
+        return StructuredModelResult(
+            # 故意模拟 model_copy 绕过模型校验后的不完整结果。
+            output=result.output.model_copy(
+                update={
+                    "sufficiency_status": "NEEDS_CLARIFICATION",
+                    "next_action": "ASK_USER",
+                    "reason": "需要确认告警是否仍在发生",
+                }
+            ),
+            receipt=result.receipt,
+        )
+
+
 class _InvalidAssessmentModel:
     async def generate_structured(self, **_) -> StructuredModelResult:
         raise AIOpsModelError(
@@ -171,6 +204,7 @@ class _NeedsMoreEvidenceAssessmentModel:
                 next_action="REPLAN",
                 progress_made=True,
                 reason="仍可通过数据库只读工具补充 PGA 峰值",
+                clarification_question=None,
             ),
             receipt=ModelInvocationReceipt(
                 purpose=kwargs["purpose"],
@@ -828,6 +862,67 @@ class DbaTurnAnswerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sufficiency_status"):
             InvestigationAssessment.model_validate(payload)
 
+    def test_assessment_clarification_requires_a_displayable_question(self) -> None:
+        payload = {
+            "round_no": 1,
+            "sufficiency_status": "NEEDS_CLARIFICATION",
+            "verified_facts": (),
+            "remaining_unknowns": ("告警是否仍在发生",),
+            "hypothesis_updates": {},
+            "evidence_gaps": (),
+            "next_action": "ASK_USER",
+            "progress_made": True,
+            "reason": "需要确认告警是否仍在发生",
+            "clarification_question": None,
+        }
+
+        with self.assertRaisesRegex(ValueError, "澄清问题"):
+            InvestigationAssessment.model_validate(payload)
+
+        result = InvestigationAssessment.model_validate(
+            {
+                **payload,
+                "clarification_question": "请确认该告警当前是否仍在发生？",
+            }
+        )
+        self.assertEqual("ASK_USER", result.next_action)
+
+    def test_model_clarification_is_preserved_in_sufficiency_result(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=_ClarificationAssessmentModel(),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_tool_artifact(semantics="CURRENT_ACTIVITY"),)
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.NEEDS_CLARIFICATION, result.status)
+        self.assertEqual(
+            "请确认该告警当前是否仍在发生？",
+            result.clarification_question,
+        )
+
+    def test_incomplete_model_clarification_degrades_without_task_failure(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=_IncompleteClarificationAssessmentModel(),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_tool_artifact(semantics="CURRENT_ACTIVITY"),)
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.NEEDS_EVIDENCE, result.status)
+        self.assertEqual(
+            "INVESTIGATION_ASSESSMENT_INCOMPLETE", result.gaps[-1].code
+        )
+        self.assertIsNone(result.clarification_question)
+
     def test_invalid_model_assessment_falls_back_to_deterministic_result(
         self,
     ) -> None:
@@ -1373,6 +1468,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 next_action="ANSWER",
                 progress_made=True,
                 reason="模型建议带限制回答，但系统仍可自动补证",
+                clarification_question=None,
             ),
         )
 
