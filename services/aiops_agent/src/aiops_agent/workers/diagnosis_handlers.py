@@ -137,6 +137,7 @@ class BuildEvidenceIndexHandler:
         source_schemas = {
             "OBSERVATION_SET.v1",
             "LOG_EVIDENCE_SET.v1",
+            "ATTACHMENT_EVIDENCE_SET.v1",
             "DATABASE_DIAGNOSTIC_RESULT.v1",
             "DIAGNOSIS_EVIDENCE_COLLECTION.v1",
             "EVIDENCE_INDEX.v1",

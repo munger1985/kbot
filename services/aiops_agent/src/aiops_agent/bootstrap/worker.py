@@ -154,12 +154,13 @@ def create_aiops_worker_probe(
             timeout_seconds=resolved.clients.model_serving.timeout_seconds,
             session=client_session,
         )
+        conversation_upload_store = LocalConversationUploadStore(
+            Path(resolved.limits.conversation_upload_store_root),
+            max_bytes=resolved.limits.max_artifact_bytes,
+            ttl_seconds=resolved.limits.conversation_upload_ttl_seconds,
+        )
         conversation_input_resolver = ConversationInputResolver(
-            upload_store=LocalConversationUploadStore(
-                Path(resolved.limits.conversation_upload_store_root),
-                max_bytes=resolved.limits.max_artifact_bytes,
-                ttl_seconds=resolved.limits.conversation_upload_ttl_seconds,
-            ),
+            upload_store=conversation_upload_store,
             image_model_client=ImageEvidenceModelClient(
                 caller_service=config.service_name,
                 ocr_config=resolved.clients.model_ocr,
@@ -202,6 +203,7 @@ def create_aiops_worker_probe(
             action_execution_enabled=(
                 resolved.management.agent_execution_enabled
             ),
+            conversation_upload_store=conversation_upload_store,
         )
         monitoring_snapshot_builder = MonitoringSnapshotBuilder(
             metric_catalog=metric_catalog,

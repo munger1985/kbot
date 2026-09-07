@@ -2167,6 +2167,15 @@ class AIOpsRuntimeService:
                 artifact=artifact,
                 payload=payload,
             )
+        elif artifact.schema_version == "ATTACHMENT_EVIDENCE_SET.v1":
+            await self._project_attachment_search_result(
+                uow=uow,
+                turn=turn,
+                task=task,
+                artifact=artifact,
+                payload=payload,
+                now=now,
+            )
         elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
             assessment = DbaSufficiencyAssessment.model_validate(payload)
             turn.sufficiency_status = str(assessment.status)
@@ -2680,6 +2689,75 @@ class AIOpsRuntimeService:
                 "entry_count": len(result.entries),
                 "gap_count": len(result.gaps),
                 "public_summary": "Oracle Alert Log 查询已经完成",
+            },
+        )
+
+    async def _project_attachment_search_result(
+        self,
+        *,
+        uow,
+        turn,
+        task,
+        artifact,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        """把受控附件检索登记为用户提供的可引用证据。"""
+        from aiops_agent.workers.attachment_handlers import AttachmentEvidenceSet
+
+        result = AttachmentEvidenceSet.model_validate(payload)
+        tool_row = next(
+            (
+                item
+                for item in await uow.turns.list_tool_invocations(
+                    turn_id=turn.turn_id, lock=True
+                )
+                if item.tool_id == "artifact.search"
+                and str(item.action_id)
+                == str(task.task_key).removeprefix("attachment:").split(":", 1)[0]
+                and str(dict(item.input_json or {}).get("upload_id"))
+                == result.upload_id
+            ),
+            None,
+        )
+        if tool_row is not None:
+            tool_row.status = "SUCCEEDED" if result.matches else "NO_DATA"
+            tool_row.output_artifact_id = artifact.artifact_id
+            tool_row.completed_at = now
+        existing = await uow.turns.get_evidence_by_artifact(
+            turn_id=turn.turn_id,
+            artifact_id=artifact.artifact_id,
+        )
+        if result.matches and existing is None:
+            await uow.turns.add_evidence(
+                OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(),
+                    turn_id=turn.turn_id,
+                    artifact_id=artifact.artifact_id,
+                    tool_invocation_id=(
+                        tool_row.tool_invocation_id if tool_row is not None else None
+                    ),
+                    source_kind="USER",
+                    evidence_kind="USER_FILE",
+                    confidence=1,
+                    evidence_role="SUPPORTS",
+                    measurement_semantics="NOT_APPLICABLE",
+                    observed_at=now,
+                    freshness_status="UNKNOWN",
+                    usage_reason=(
+                        f"用户上传的 {result.file_name} 已通过受控检索"
+                    ),
+                    linked_by="aiops.attachment-search",
+                )
+            )
+        await self._append_turn_event(
+            uow,
+            turn,
+            event_type="tool.completed",
+            payload={
+                "source_id": "user.uploaded-diagnostic-material",
+                "match_count": len(result.matches),
+                "public_summary": "上传诊断材料检索已经完成",
             },
         )
 

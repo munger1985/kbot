@@ -155,10 +155,25 @@ def create_runtime_handler_registry(
     diagnosis_caller_service: str | None = None,
     action_registry=None,
     action_execution_enabled: bool = False,
+    conversation_upload_store=None,
 ) -> HandlerRegistry:
     """组合运行内核及各阶段 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
     manifests = list(kernel.manifests)
+    if conversation_upload_store is not None:
+        from .attachment_handlers import AttachmentSearchHandler
+
+        manifests.append(
+            HandlerManifest(
+                handler_id="evidence.attachment-search",
+                version="1",
+                output_schema_version="ATTACHMENT_EVIDENCE_SET.v1",
+                idempotent=True,
+                implementation=AttachmentSearchHandler(
+                    upload_store=conversation_upload_store
+                ),
+            )
+        )
     database_diagnostic_handler = None
     if diagnostic_source_registry is not None and secret_store is not None:
         from .evidence_handlers import (

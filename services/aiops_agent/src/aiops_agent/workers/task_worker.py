@@ -282,6 +282,8 @@ class AIOpsTaskWorker:
 
     @staticmethod
     def _artifact_trust_level(schema_version: str) -> str:
+        if schema_version == "ATTACHMENT_EVIDENCE_SET.v1":
+            return "USER_PROVIDED"
         if schema_version in {
             "DIAGNOSIS_ROUND_DRAFT.v1",
             "DIAGNOSIS_ROUND_ASSESSMENT.v1",

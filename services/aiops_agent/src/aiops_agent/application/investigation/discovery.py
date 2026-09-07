@@ -20,6 +20,8 @@ from platform_core.contracts.aiops.playbooks import (
 def available_tools(
     snapshot_builder: ToolExecutionSnapshotBuilder,
     capabilities: DbaCapabilitySnapshot,
+    *,
+    searchable_uploads: tuple[object, ...] = (),
 ) -> tuple[dict, ...]:
     """向模型暴露当前数据库类型可用的原子只读工具，不暴露 SQL 模板。"""
     tools = {
@@ -53,6 +55,32 @@ def available_tools(
             "input": {
                 "query": "${binding_selector} 加字面量过滤",
                 "window_seconds": "60 到 3600 秒",
+            },
+        }
+    if searchable_uploads:
+        tools[("artifact.search", "1.0.0")] = {
+            "tool_id": "artifact.search",
+            "version": "1.0.0",
+            "tool_class": "USER_EVIDENCE",
+            "description": (
+                "在本轮用户上传的文本诊断材料中执行受控字面量检索；"
+                "只能使用输入材料清单中列出的 upload_id 和 terms，"
+                "不可读取文件路径、全文或执行命令。"
+            ),
+            "input": {
+                "upload_id": "输入材料中列出的上传标识",
+                "terms": "1 到 3 个字面量检索词",
+                "context_lines": "1 到 50 行",
+            },
+            "policy": {
+                "allowed_upload_ids": [
+                    str(item.upload_id) for item in searchable_uploads
+                ],
+                "term_count": "1..3",
+                "term_max_chars": 160,
+                "context_lines": "1..50",
+                "max_matches_per_term": 6,
+                "max_result_bytes": 524288,
             },
         }
     if (

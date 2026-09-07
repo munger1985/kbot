@@ -260,6 +260,7 @@ def create_aiops_api(
             action_execution_enabled=(
                 resolved.management.agent_execution_enabled
             ),
+            conversation_upload_store=conversation_upload_store,
         )
         app.state.diagnostic_source_registry = diagnostic_source_registry
         app.state.diagnostic_source_secret_store = secret_store

@@ -28,6 +28,7 @@ from aiops_agent.application.investigation.discovery import (
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.query_freezing import (
+    prepare_attachment_searches,
     prepare_dynamic_queries,
     prepare_source_queries,
 )
@@ -175,7 +176,13 @@ class TurnPlanningService:
             context.capabilities
         )
         discovered_tools = available_tools(
-            self._tool_snapshot_builder, context.capabilities
+            self._tool_snapshot_builder,
+            context.capabilities,
+            searchable_uploads=tuple(
+                item
+                for item in context.resolved_uploads
+                if item.searchable_payload_uri is not None
+            ),
         )
         discovered_playbooks = available_playbooks(
             self._playbook_registry, context.capabilities
@@ -192,7 +199,7 @@ class TurnPlanningService:
                 target_context=context.target_context,
                 available_tools=planning_tools,
             )
-            investigation, dynamic_queries, source_queries = (
+            investigation, dynamic_queries, source_queries, attachment_searches = (
                 self._prepare_query_inputs(
                     investigation=investigation,
                     context=context,
@@ -218,6 +225,14 @@ class TurnPlanningService:
                     revision_no=1,
                 )
             )
+            attachment_searches = tuple(
+                source_queries.get("attachment_search", ())
+            )
+            source_queries = {
+                key: value
+                for key, value in source_queries.items()
+                if key != "attachment_search"
+            }
             planning_receipt = planned.receipt
         playbook_plan = build_playbook_plan(self._playbook_registry)
         alert_diagnosis = bool(
@@ -287,6 +302,7 @@ class TurnPlanningService:
                     "monitor.query_range",
                     "loki.query_range",
                     "db.oracle.readonly_query",
+                    "artifact.search",
                 }
             ),
         )
@@ -302,6 +318,7 @@ class TurnPlanningService:
             planning_route=planning_route,
             monitoring_requested=monitoring_requested,
             monitoring_execution=monitoring_execution,
+            attachment_searches=attachment_searches,
         )
 
     async def _plan_template_inspection(
@@ -1053,6 +1070,14 @@ class TurnPlanningService:
                 revision_no=revision_no,
             )
         )
+        attachment_searches = tuple(
+            source_queries.get("attachment_search", ())
+        )
+        source_queries = {
+            key: value
+            for key, value in source_queries.items()
+            if key != "attachment_search"
+        }
         playbook_plan = build_playbook_plan(self._playbook_registry)
         alert_diagnosis = bool(
             context.source_run_evidence
@@ -1092,6 +1117,7 @@ class TurnPlanningService:
                 "DBA_TOOL_RESULT.v1",
                 "OBSERVATION_SET.v1",
                 "LOG_EVIDENCE_SET.v1",
+                "ATTACHMENT_EVIDENCE_SET.v1",
             }
         )
         compiled = self._task_compiler.compile(
@@ -1117,6 +1143,7 @@ class TurnPlanningService:
                     "monitor.query_range",
                     "loki.query_range",
                     "db.oracle.readonly_query",
+                    "artifact.search",
                 }
             ),
         )
@@ -1131,6 +1158,7 @@ class TurnPlanningService:
             diagnosis_model_snapshot=diagnosis_model_snapshot,
             planner_model_snapshot=planner_model_snapshot,
             monitoring_execution=monitoring_execution,
+            attachment_searches=attachment_searches,
         )
 
     async def _load_replan_inputs(
@@ -1205,13 +1233,22 @@ class TurnPlanningService:
             receipt=planned.receipt,
         )
         try:
-            investigation, dynamic_queries, source_queries = (
+            investigation, dynamic_queries, source_queries, attachment_searches = (
                 self._prepare_query_inputs(
                     investigation=planned.output,
                     context=context,
                 )
             )
-            return planned, investigation, dynamic_queries, source_queries
+            return (
+                planned,
+                investigation,
+                dynamic_queries,
+                (
+                    {**source_queries, "attachment_search": attachment_searches}
+                    if attachment_searches
+                    else source_queries
+                ),
+            )
         except InvestigationPlanValidationError as exc:
             logger.warning(
                 "AIOps Tool 输入未通过策略，正在请求模型修正："
@@ -1248,21 +1285,30 @@ class TurnPlanningService:
                 receipt=repaired.receipt,
             )
             try:
-                investigation, dynamic_queries, source_queries = (
+                investigation, dynamic_queries, source_queries, attachment_searches = (
                     self._prepare_query_inputs(
                         investigation=repaired.output,
                         context=context,
                     )
                 )
             except InvestigationPlanValidationError:
-                investigation, dynamic_queries, source_queries = (
+                investigation, dynamic_queries, source_queries, attachment_searches = (
                     self._prepare_valid_query_subset(
                         investigation=repaired.output,
                         context=context,
                         revision_no=revision_no,
                     )
                 )
-            return repaired, investigation, dynamic_queries, source_queries
+            return (
+                repaired,
+                investigation,
+                dynamic_queries,
+                (
+                    {**source_queries, "attachment_search": attachment_searches}
+                    if attachment_searches
+                    else source_queries
+                ),
+            )
 
     def _prepare_valid_query_subset(
         self,
@@ -1285,7 +1331,7 @@ class TurnPlanningService:
                 update={"plan": isolated_plan}
             )
             try:
-                prepared, _, _ = self._prepare_query_inputs(
+                prepared, _, _, _ = self._prepare_query_inputs(
                     investigation=isolated,
                     context=context,
                 )
@@ -1471,6 +1517,10 @@ class TurnPlanningService:
             investigation
         )
         investigation, source_queries = prepare_source_queries(investigation)
+        investigation, attachment_searches = prepare_attachment_searches(
+            investigation,
+            getattr(context, "resolved_uploads", ()),
+        )
         direct_actions = tuple(
             action
             for action in investigation.plan.actions
@@ -1479,10 +1529,11 @@ class TurnPlanningService:
                 "monitor.query_range",
                 "loki.query_range",
                 "db.oracle.readonly_query",
+                "artifact.search",
             }
         )
         if not direct_actions:
-            return investigation, dynamic_queries, source_queries
+            return investigation, dynamic_queries, source_queries, attachment_searches
         try:
             normalized = self._tool_snapshot_builder.validate_direct_actions(
                 actions=direct_actions,
@@ -1503,6 +1554,7 @@ class TurnPlanningService:
             investigation.model_copy(update={"plan": plan}),
             dynamic_queries,
             source_queries,
+            attachment_searches,
         )
 
     async def _persist_replan(
@@ -1518,6 +1570,7 @@ class TurnPlanningService:
         diagnosis_model_snapshot: dict,
         planner_model_snapshot: dict,
         monitoring_execution: dict,
+        attachment_searches: tuple[dict, ...],
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -1661,6 +1714,18 @@ class TurnPlanningService:
                     strict=True,
                 )
             }
+            attachment_task_by_action = {
+                action.action_id: task_ids[task_key]
+                for action, task_key in zip(
+                    (
+                        item
+                        for item in investigation.plan.actions
+                        if item.tool_id == "artifact.search"
+                    ),
+                    compiled.attachment_search_task_keys,
+                    strict=True,
+                )
+            }
             diagnostic_task_by_action = {
                 action.action_id: task_ids[task_key]
                 for action, task_key in zip(
@@ -1672,6 +1737,7 @@ class TurnPlanningService:
                             "monitor.query_range",
                             "loki.query_range",
                             "db.oracle.readonly_query",
+                            "artifact.search",
                         }
                     ),
                     compiled.diagnostic_task_keys,
@@ -1692,6 +1758,8 @@ class TurnPlanningService:
                     task_id = log_task_id
                 elif action.tool_id == "db.oracle.readonly_query":
                     task_id = dynamic_task_by_action[action.action_id]
+                elif action.tool_id == "artifact.search":
+                    task_id = attachment_task_by_action[action.action_id]
                 else:
                     task_id = diagnostic_task_by_action[action.action_id]
                 await uow.turns.add_tool_invocation(
@@ -1779,6 +1847,7 @@ class TurnPlanningService:
                 **dict(run.plan_snapshot_json or {}),
                 "investigation_execution": execution_snapshot,
                 "monitoring": monitoring_execution,
+                "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
                     "input_envelope": investigation.input_envelope.model_dump(
@@ -2589,6 +2658,14 @@ class TurnPlanningService:
                             "media_type": upload.media_type,
                             "text": upload.extracted_text,
                             "extraction_mode": upload.extraction_mode,
+                            "searchable": {
+                                "content_hash": upload.searchable_content_hash,
+                                "byte_size": upload.searchable_byte_size,
+                                "char_count": upload.extracted_char_count,
+                                "line_count": upload.line_count,
+                            }
+                            if upload.searchable_payload_uri is not None
+                            else None,
                             "model_id": (
                                 str(upload.model_id)
                                 if upload.model_id
@@ -2660,6 +2737,7 @@ class TurnPlanningService:
         planning_route: dict,
         monitoring_requested: bool,
         monitoring_execution: dict,
+        attachment_searches: tuple[dict, ...],
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -2921,6 +2999,18 @@ class TurnPlanningService:
                     strict=True,
                 )
             }
+            attachment_task_by_action = {
+                action.action_id: task_ids[task_key]
+                for action, task_key in zip(
+                    (
+                        item
+                        for item in investigation.plan.actions
+                        if item.tool_id == "artifact.search"
+                    ),
+                    compiled.attachment_search_task_keys,
+                    strict=True,
+                )
+            }
             for ordinal, action in enumerate(
                 investigation.plan.actions, start=1
             ):
@@ -2937,6 +3027,8 @@ class TurnPlanningService:
                     task_id = log_task_id
                 elif action.tool_id == "db.oracle.readonly_query":
                     task_id = dynamic_task_by_action[action.action_id]
+                elif action.tool_id == "artifact.search":
+                    task_id = attachment_task_by_action[action.action_id]
                 else:
                     task_id = next(
                         task_ids[task_key]
@@ -2949,6 +3041,7 @@ class TurnPlanningService:
                                     "monitor.query_range",
                                     "loki.query_range",
                                     "db.oracle.readonly_query",
+                                    "artifact.search",
                                 }
                             ),
                             compiled.diagnostic_task_keys,
@@ -3016,9 +3109,12 @@ class TurnPlanningService:
                     if monitoring_requested
                     else {}
                 ),
+                "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
-                    "input_envelope": investigation.input_envelope.model_dump(mode="json"),
+                    "input_envelope": investigation.input_envelope.model_dump(
+                        mode="json"
+                    ),
                     "task_frame": investigation.task_frame.model_dump(mode="json"),
                     "investigation_plan": investigation.plan.model_dump(
                         mode="json"

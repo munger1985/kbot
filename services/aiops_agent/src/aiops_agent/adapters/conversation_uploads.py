@@ -176,6 +176,40 @@ class LocalConversationUploadStore:
             raise ValueError("上传文件完整性校验失败")
         return content
 
+    def store_searchable_text(
+        self, *, upload_id: str, text: str
+    ) -> tuple[str, str, int]:
+        """保存完整规范文本，供受控检索使用，原始上传文件保持不变。"""
+        try:
+            normalized_id = str(UUID(str(upload_id)))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("上传文件引用无效") from exc
+        content = text.encode("utf-8")
+        destination = self._artifact_root / f"{normalized_id}.search.txt"
+        temporary = self._artifact_root / f".{normalized_id}.search.tmp"
+        if destination.exists():
+            existing = destination.read_bytes()
+            return (
+                destination.as_uri(),
+                hashlib.sha256(existing).hexdigest(),
+                len(existing),
+            )
+        try:
+            with temporary.open("xb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temporary, 0o600)
+            temporary.replace(destination)
+            return (
+                destination.as_uri(),
+                hashlib.sha256(content).hexdigest(),
+                len(content),
+            )
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
     def preserve(
         self, stored: StoredConversationUpload
     ) -> StoredConversationUpload:
@@ -208,6 +242,10 @@ class LocalConversationUploadStore:
         if not payload_path.is_relative_to(self._root):
             raise ValueError("上传文件存储地址越界")
         return payload_path
+
+    def artifact_path(self, payload_uri: str) -> Path:
+        """仅供受控 Handler 使用已验证的 Artifact 文件路径。"""
+        return self._payload_path(payload_uri)
 
 
 __all__ = ["LocalConversationUploadStore", "StoredConversationUpload"]

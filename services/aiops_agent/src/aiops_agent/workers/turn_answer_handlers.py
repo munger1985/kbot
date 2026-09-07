@@ -18,6 +18,7 @@ from aiops_agent.application.changes.proposal_snapshot import (
     proposal_summary_payload,
 )
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
+from aiops_agent.workers.attachment_handlers import AttachmentEvidenceSet
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     is_turn_evidence_outcome,
@@ -220,6 +221,43 @@ class DbaEvidenceAssessmentHandler:
                             code=gap.code,
                             detail=gap.detail,
                             retryable=gap.retryable,
+                        )
+                    )
+                continue
+            if schema_version == "ATTACHMENT_EVIDENCE_SET.v1":
+                result = AttachmentEvidenceSet.model_validate(artifact["payload"])
+                if result.matches:
+                    artifact_id = str(artifact["artifact_id"])
+                    facts.append(
+                        TurnEvidenceFact(
+                            evidence_ref=f"artifact:{artifact_id}#attachment-search",
+                            artifact_id=artifact_id,
+                            source_id="user.uploaded-diagnostic-material",
+                            step_id="attachment-search",
+                            tool_id="artifact.search",
+                            trust_level="USER_PROVIDED",
+                            measurement_semantics=(
+                                MeasurementSemantics.NOT_APPLICABLE
+                            ),
+                            presentation_kind="TABLE",
+                            captured_at=datetime.now().isoformat(),
+                            columns=(
+                                {"name": "line_start", "logical_type": "INTEGER"},
+                                {"name": "line_end", "logical_type": "INTEGER"},
+                                {"name": "text", "logical_type": "STRING"},
+                                {"name": "match_terms", "logical_type": "JSON"},
+                            ),
+                            rows=tuple(
+                                (
+                                    item.line_start,
+                                    item.line_end,
+                                    item.text,
+                                    list(item.match_terms),
+                                )
+                                for item in result.matches
+                            ),
+                            row_count=len(result.matches),
+                            truncated=result.truncated,
                         )
                     )
                 continue

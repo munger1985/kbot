@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
@@ -147,3 +149,78 @@ def prepare_source_queries(investigation):
             "ad_hoc_log_queries": log_queries,
         },
     )
+
+
+def prepare_attachment_searches(investigation, searchable_uploads):
+    """冻结用户附件检索条件，模型不能指定路径、正则或命令参数。"""
+    uploads = {
+        str(item.upload_id): item
+        for item in searchable_uploads
+        if getattr(item, "searchable_payload_uri", None)
+    }
+    actions = []
+    searches = []
+    for action in investigation.plan.actions:
+        if action.tool_id != "artifact.search":
+            actions.append(action)
+            continue
+        payload = dict(action.input)
+        if set(payload) - {"upload_id", "terms", "context_lines"} or (
+            "upload_id" not in payload or "terms" not in payload
+        ):
+            raise InvestigationPlanValidationError(
+                "附件检索输入只能包含 upload_id、terms 与 context_lines"
+            )
+        upload_id = payload.get("upload_id")
+        terms = payload.get("terms")
+        context_lines = payload.get("context_lines", 8)
+        if not isinstance(upload_id, str) or upload_id not in uploads:
+            raise InvestigationPlanValidationError("附件检索引用不属于本轮的上传材料")
+        if (
+            not isinstance(terms, (list, tuple))
+            or not 1 <= len(terms) <= 3
+            or not all(
+                isinstance(term, str)
+                and term.strip()
+                and len(term.strip()) <= 160
+                and not re.search(r"[\x00-\x1f\x7f]", term)
+                for term in terms
+            )
+        ):
+            raise InvestigationPlanValidationError(
+                "附件检索 terms 必须是 1 到 3 个不含控制字符的字面量"
+            )
+        if (
+            not isinstance(context_lines, int)
+            or isinstance(context_lines, bool)
+            or not 1 <= context_lines <= 50
+        ):
+            raise InvestigationPlanValidationError(
+                "附件检索 context_lines 必须介于 1 到 50"
+            )
+        normalized_input = {
+            "upload_id": upload_id,
+            "terms": [term.strip() for term in terms],
+            "context_lines": context_lines,
+        }
+        upload = uploads[upload_id]
+        actions.append(action.model_copy(update={"input": normalized_input}))
+        searches.append(
+            {
+                "action_id": action.action_id,
+                "upload_id": upload_id,
+                "file_name": str(upload.file_name),
+                "content_hash": str(upload.searchable_content_hash),
+                "payload_uri": str(upload.searchable_payload_uri),
+                "byte_size": int(upload.searchable_byte_size),
+                "line_count": int(upload.line_count),
+                "terms": normalized_input["terms"],
+                "context_lines": context_lines,
+                "max_matches_per_term": 6,
+                "max_result_bytes": 524288,
+            }
+        )
+    updated_plan = investigation.plan.model_copy(
+        update={"actions": tuple(actions)}
+    )
+    return investigation.model_copy(update={"plan": updated_plan}), tuple(searches)

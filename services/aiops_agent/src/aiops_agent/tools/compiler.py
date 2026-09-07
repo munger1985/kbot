@@ -22,6 +22,7 @@ class CompiledInvestigationPlan:
     monitoring_task_keys: tuple[str, ...]
     log_task_keys: tuple[str, ...]
     dynamic_task_keys: tuple[str, ...]
+    attachment_search_task_keys: tuple[str, ...]
     assessment_task_key: str
     action_plan_task_key: str | None
     proposal_task_key: str | None
@@ -132,6 +133,7 @@ class InvestigationTaskCompiler:
                 "monitor.query_range",
                 "loki.query_range",
                 "db.oracle.readonly_query",
+                "artifact.search",
             }
         )
         direct_key_by_action = {
@@ -147,6 +149,15 @@ class InvestigationTaskCompiler:
             action.action_id: f"dynamic:{action.action_id}{suffix}"
             for action in dynamic_actions
         }
+        attachment_actions = tuple(
+            action
+            for action in investigation_actions
+            if action.tool_id == "artifact.search"
+        )
+        attachment_key_by_action = {
+            action.action_id: f"attachment:{action.action_id}{suffix}"
+            for action in attachment_actions
+        }
         action_task_keys: dict[str, tuple[str, ...]] = {
             str(item.action_id): (task_keys[item.ordinal],)
             for item in plan.items
@@ -157,6 +168,10 @@ class InvestigationTaskCompiler:
                 action_task_keys[action.action_id] = tuple(monitoring_keys)
             elif action.tool_id == "loki.query_range":
                 action_task_keys[action.action_id] = tuple(log_keys)
+            elif action.tool_id == "artifact.search":
+                action_task_keys[action.action_id] = (
+                    attachment_key_by_action[action.action_id],
+                )
         action_task_keys.update(
             {
                 action_id: (task_key,)
@@ -234,12 +249,33 @@ class InvestigationTaskCompiler:
                     priority=48,
                 )
             )
+        attachment_keys: list[str] = []
+        for action in attachment_actions:
+            task_key = attachment_key_by_action[action.action_id]
+            attachment_keys.append(task_key)
+            dependencies = dependencies_for(action, require_identity=False)
+            tasks.append(
+                TaskSpec(
+                    task_key=task_key,
+                    task_type="TOOL_INVOKE",
+                    handler_id="evidence.attachment-search",
+                    handler_version="1",
+                    input_schema_version="ATTACHMENT_SEARCH_INPUT.v1",
+                    output_schema_version="ATTACHMENT_EVIDENCE_SET.v1",
+                    depends_on=dependencies,
+                    input_artifact_keys=dependencies,
+                    timeout_seconds=20,
+                    max_attempts=2,
+                    priority=44,
+                )
+            )
         evidence_task_keys = (
             *invocation_keys,
             *diagnostic_keys,
             *monitoring_keys,
             *log_keys,
             *dynamic_keys,
+            *attachment_keys,
         )
         evidence_artifact_keys = (
             *user_evidence_artifact_keys,
@@ -326,6 +362,7 @@ class InvestigationTaskCompiler:
             monitoring_task_keys=tuple(monitoring_keys),
             log_task_keys=tuple(log_keys),
             dynamic_task_keys=tuple(dynamic_keys),
+            attachment_search_task_keys=tuple(attachment_keys),
             assessment_task_key=assessment_task_key,
             action_plan_task_key=action_plan_task_key,
             proposal_task_key=proposal_task_key,

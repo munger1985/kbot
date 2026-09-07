@@ -21,6 +21,11 @@ class ResolvedConversationUpload:
     payload_uri: str
     extracted_text: str
     extraction_mode: str
+    searchable_payload_uri: str | None = None
+    searchable_content_hash: str | None = None
+    searchable_byte_size: int = 0
+    extracted_char_count: int = 0
+    line_count: int = 0
     model_id: UUID | None = None
     model_revision: str | None = None
     prompt_ref: dict[str, str] | None = None
@@ -136,7 +141,7 @@ class ConversationInputResolver:
                     "upload_id": stored.upload_id,
                     "file_name": stored.file_name,
                     "media_type": stored.media_type,
-                    "text": resolved.extracted_text,
+                    "text": self._manifest_text(resolved),
                     "extraction_mode": resolved.extraction_mode,
                     **(
                         {"extraction_error": resolved.extraction_error}
@@ -203,10 +208,21 @@ class ConversationInputResolver:
                     extraction_mode = "HTML_TEXT_EXTRACT"
                 if not text:
                     raise ValueError("文件没有可用于诊断的正文")
+                searchable_uri, searchable_hash, searchable_size = (
+                    self._upload_store.store_searchable_text(
+                        upload_id=stored.upload_id,
+                        text=text,
+                    )
+                )
                 return ResolvedConversationUpload(
                     **common,
-                    extracted_text=self._bounded(text),
+                    extracted_text="",
                     extraction_mode=extraction_mode,
+                    searchable_payload_uri=searchable_uri,
+                    searchable_content_hash=searchable_hash,
+                    searchable_byte_size=searchable_size,
+                    extracted_char_count=len(text),
+                    line_count=text.count("\n") + 1,
                 )
             except (UnicodeDecodeError, ValueError) as exc:
                 return ResolvedConversationUpload(
@@ -284,6 +300,17 @@ class ConversationInputResolver:
             text[: self._max_extracted_chars]
             + "\n\n[附件正文已按单轮输入上限截断]"
         )
+
+    @staticmethod
+    def _manifest_text(upload: ResolvedConversationUpload) -> str:
+        """只向规划模型展示材料清单；文本正文仅能由受控检索读取。"""
+        if upload.searchable_payload_uri is not None:
+            return (
+                f"[诊断材料：{upload.file_name}；类型：{upload.extraction_mode}；"
+                f"可检索正文：{upload.extracted_char_count} 字符、"
+                f"{upload.line_count} 行。请使用 artifact.search 查询具体证据。]"
+            )
+        return upload.extracted_text
 
     @staticmethod
     def _decode_text(raw: bytes) -> str:

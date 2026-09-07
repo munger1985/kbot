@@ -158,7 +158,8 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
                 }
             },
         )
-        self.assertIn("v$sqlstats", content[0]["text"])
+        self.assertIn("artifact.search", content[0]["text"])
+        self.assertNotIn("v$sqlstats", content[0]["text"])
         self.assertIn("ORA-27157", content[1]["text"])
         self.assertEqual("TEXT_DECODE", uploads[0].extraction_mode)
         self.assertEqual("VLM", uploads[1].extraction_mode)
@@ -206,11 +207,12 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             image_capabilities={},
         )
 
-        self.assertIn("AWR Report", content[0]["text"])
-        self.assertIn("Top Timed Events", content[0]["text"])
+        self.assertIn("artifact.search", content[0]["text"])
+        self.assertNotIn("AWR Report", content[0]["text"])
         self.assertNotIn("ignore_this_instruction", content[0]["text"])
         self.assertEqual("HTML_TEXT_EXTRACT", uploads[0].extraction_mode)
-        self.assertIn("ORA-00600: 内部错误", content[1]["text"])
+        self.assertIn("artifact.search", content[1]["text"])
+        self.assertNotIn("ORA-00600: 内部错误", content[1]["text"])
         self.assertEqual("TEXT_DECODE", uploads[1].extraction_mode)
 
 

@@ -14,6 +14,8 @@ def tool_class_for(tool_id: str) -> str:
         return "LOKI"
     if tool_id == "db.oracle.readonly_query":
         return "ORACLE_SQL_DYNAMIC"
+    if tool_id == "artifact.search":
+        return "USER_EVIDENCE"
     return "ORACLE_SQL"
 
 

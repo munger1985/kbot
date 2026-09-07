@@ -52,6 +52,7 @@ def _fact(
     window_end=None,
     captured_at=None,
     quality_flags: tuple[str, ...] = (),
+    trust_level: str = "SOURCE_VERIFIED",
 ) -> EvidenceFact:
     basis = {
         "artifact_id": artifact_id,
@@ -65,7 +66,7 @@ def _fact(
         source_json_pointer=pointer,
         source_type=source_type,
         source_group_id=source_group_id,
-        trust_level="SOURCE_VERIFIED",
+        trust_level=trust_level,
         target_id=target_id,
         observed_subject=target_id,
         metric_or_fact_type=fact_type,
@@ -360,6 +361,34 @@ def normalize_evidence_artifacts(
                     )
                 )
             gaps.extend(payload.get("gaps", []))
+        elif schema == "ATTACHMENT_EVIDENCE_SET.v1":
+            source_group = f"attachment:{artifact_id}"
+            flags = ("TRUNCATED",) if payload.get("truncated") else ()
+            for match_index, match in enumerate(payload.get("matches", [])):
+                facts.append(
+                    _fact(
+                        artifact_id=artifact_id,
+                        pointer=f"/matches/{match_index}",
+                        source_type="USER_ATTACHMENT",
+                        source_group_id=source_group,
+                        target_id=target_id,
+                        fact_type="artifact.search",
+                        value={
+                            "file_name": payload.get("file_name"),
+                            "line_start": match.get("line_start"),
+                            "line_end": match.get("line_end"),
+                            "text": match.get("text"),
+                            "match_terms": match.get("match_terms", []),
+                        },
+                        quality_flags=flags,
+                        trust_level="USER_PROVIDED",
+                        summary=(
+                            f"用户上传材料 {payload.get('file_name', '')} 的"
+                            f"第 {match.get('line_start')}-{match.get('line_end')} 行："
+                            f"{match.get('text', '')}"
+                        ),
+                    )
+                )
         elif schema == "DATABASE_DIAGNOSTIC_RESULT.v1":
             if payload.get("status") != "SUCCEEDED":
                 if payload.get("gap"):
