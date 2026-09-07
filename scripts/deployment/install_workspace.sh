@@ -94,6 +94,35 @@ if [[ "$mode" != "development" && "$mode" != "production" ]]; then
     exit 2
 fi
 
+ensure_ripgrep() {
+    if command -v rg >/dev/null 2>&1; then
+        echo "系统依赖已就绪：ripgrep"
+        return 0
+    fi
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "缺少 AIOps 附件检索依赖 ripgrep，且当前系统不支持 apt-get 安装。" >&2
+        echo "请先安装 ripgrep 并确认 rg --version 可执行。" >&2
+        exit 1
+    fi
+    echo "正在安装 AIOps 附件检索依赖：ripgrep"
+    if [[ "${EUID}" -eq 0 ]]; then
+        apt-get update
+        apt-get install -y ripgrep
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y ripgrep
+    else
+        echo "安装 ripgrep 需要 root 或 sudo 权限。" >&2
+        exit 1
+    fi
+    if ! command -v rg >/dev/null 2>&1; then
+        echo "ripgrep 安装完成后仍未找到 rg 命令。" >&2
+        exit 1
+    fi
+}
+
+ensure_ripgrep
+
 members=(
     "packages/platform_core"
     "packages/platform_clients"
