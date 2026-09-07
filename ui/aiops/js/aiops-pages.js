@@ -8,7 +8,7 @@
     targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
-    reports: { path: "/reports", cols: [["title", "报告"], ["report_type", "类型"], ["report_version", "当前版本"], ["status", "状态", "badge"], ["period_end", "报告截止时间", "date"], ["summary", "摘要"]], detail: "report-detail.html?id=" },
+    reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
   function cell(item, [key, , type]) {
@@ -60,6 +60,38 @@
     if (type === "date") return shell.escape(shell.fmt(value));
     if (type === "id") return `<code>${shell.escape(shell.short(value))}</code>`;
     return shell.escape(value ?? "—");
+  }
+  function reportTypeLabel(value) {
+    return {
+      INCIDENT: "告警诊断",
+      PERFORMANCE: "性能分析",
+      INSPECTION_DAILY: "日常巡检",
+      INSPECTION_WEEKLY: "周度巡检",
+      INSPECTION_CUSTOM: "定期巡检",
+      COMPARISON: "处置验证",
+    }[value] || value || "正式报告";
+  }
+  function reportRow(item, detail) {
+    const publishedAt = item.published_at || item.created_at;
+    const period = item.period_start && item.period_end
+      ? `${shell.fmt(item.period_start)} 至 ${shell.fmt(item.period_end)}`
+      : "未标注报告周期";
+    return `<a class="ops-report-row" href="${detail}${encodeURIComponent(item.report_id)}"><div class="ops-report-primary"><div class="ops-report-kicker"><span>${shell.escape(reportTypeLabel(item.report_type))}</span><span>v${shell.escape(item.report_version)}</span></div><strong>${shell.escape(item.title || "正式报告")}</strong><p>${shell.escape(item.summary || "报告未提供摘要")}</p></div><div class="ops-report-meta"><small>实际发布</small><time>${shell.escape(shell.fmt(publishedAt))}</time></div><div class="ops-report-meta ops-report-period"><small>覆盖周期</small><time>${shell.escape(period)}</time></div><div class="ops-report-state">${shell.badge(item.status)}<span>查看报告</span></div></a>`;
+  }
+  async function renderReportList(cfg) {
+    const list = document.getElementById("ops-report-list");
+    const count = document.getElementById("ops-report-count");
+    try {
+      const payload = await KBotAIOpsAuth.request(appApi + cfg.path);
+      const items = Array.isArray(payload) ? payload : payload?.items || [];
+      count.textContent = `当前范围 ${items.length} 份正式报告`;
+      list.innerHTML = items.length
+        ? items.map((item) => reportRow(item, cfg.detail)).join("")
+        : '<div class="ops-empty">当前范围内暂无正式报告</div>';
+    } catch (error) {
+      count.textContent = "";
+      list.innerHTML = `<div class="ops-empty">${shell.escape(error.message)}</div>`;
+    }
   }
   function scheduleSourceReload() {
     if (sourceReloadTimer || sourceReloadAttempts >= 6) return;
@@ -135,6 +167,10 @@
   }
   async function renderList(page) {
     const cfg = configs[page];
+    if (cfg.render === "report-list") {
+      await renderReportList(cfg);
+      return;
+    }
     const head = document.getElementById("ops-table-head");
     const body = document.getElementById("ops-table-body");
     head.innerHTML = `<tr>${cfg.cols.map((col) => `<th>${col[1]}</th>`).join("")}</tr>`;

@@ -367,12 +367,12 @@ class ReportSummary(AIOpsContract):
     period_start: UtcDatetime
     period_end: UtcDatetime
     summary: str
+    published_at: UtcDatetime | None = None
 
 
 class ReportView(ReportSummary):
     content_artifact: ArtifactRef
     corrected_from_report_id: UUIDv7 | None = None
-    published_at: UtcDatetime | None = None
 
 
 class ReportPage(CursorPage):

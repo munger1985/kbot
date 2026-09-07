@@ -75,6 +75,7 @@ class ReportQueryTest(unittest.TestCase):
             )
         )
         self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].published_at, now - timedelta(seconds=1))
         self.assertTrue(result.has_more)
         self.assertEqual(result.next_cursor, "signed-next")
         kwargs = inspections.page_current_reports.await_args.kwargs

@@ -6575,6 +6575,7 @@ class AIOpsRuntimeService:
             period_start=report.period_start,
             period_end=report.period_end,
             summary=report.summary,
+            published_at=report.created_at,
         )
 
     async def get_pending_input(

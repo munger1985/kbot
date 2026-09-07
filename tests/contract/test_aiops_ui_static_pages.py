@@ -486,6 +486,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertIn("查看已生成的正式报告", page)
+        self.assertIn("ops-report-list", page)
+        self.assertIn("实际发布时间", page)
         self.assertIn('reports: { path: "/reports"', script)
         self.assertIn("data-report-version", script)
         self.assertIn("data-download-report", script)

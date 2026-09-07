@@ -7738,6 +7738,18 @@
             "title": "Period Start",
             "type": "string"
           },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
           "report_id": {
             "format": "uuid",
             "title": "Report Id",
