@@ -26,6 +26,9 @@ from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.application.configuration.schedule import (
+    InspectionTemplateRegistry,
+)
 from aiops_agent.application.investigation import (
     InvestigationReasoner,
     TurnPlanningService,
@@ -265,6 +268,9 @@ def create_aiops_worker_probe(
                 turn_queue_service=turn_queue_service,
                 conversation_turn_service=ConversationTurnService(
                     uow_factory=runtime.uow_factory,
+                    inspection_template_registry=InspectionTemplateRegistry(
+                        resolved.management.inspection_templates
+                    ),
                 ),
                 turn_planner_service=TurnPlannerService(
                     uow_factory=runtime.uow_factory,

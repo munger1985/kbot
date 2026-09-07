@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -34,6 +34,8 @@ class TurnPlanningContext:
     capabilities: DbaCapabilitySnapshot
     database_execution: dict
     change_context: dict
+    workflow_kind: str = "CHAT_TURN"
+    inspection: dict = field(default_factory=dict)
     source_run_evidence: dict | None = None
     raw_uploads: tuple[ConversationUploadSource, ...] = ()
     resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()

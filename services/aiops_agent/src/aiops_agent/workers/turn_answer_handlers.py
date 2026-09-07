@@ -283,6 +283,42 @@ class DbaEvidenceAssessmentHandler:
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         task_frame = dict(answer_context.get("task_frame", {}))
+        inspection = dict(
+            dict(context.plan_snapshot.get("client_metadata", {})).get(
+                "inspection", {}
+            )
+        )
+        if context.trigger_type == "SCHEDULE":
+            planned_tool_ids = {
+                str(item.get("tool_id") or "")
+                for item in dict(
+                    answer_context.get("investigation_plan", {})
+                ).get("actions", ())
+                if isinstance(item, dict)
+            }
+            for step in inspection.get("evidence_steps", ()):
+                if not isinstance(step, dict):
+                    continue
+                tool_id = str(step.get("tool_id") or "")
+                if not tool_id or tool_id in planned_tool_ids:
+                    continue
+                gaps.append(
+                    TurnEvidenceGap(
+                        source_id="inspection.template",
+                        step_id=tool_id,
+                        code="INSPECTION_FIXED_TOOL_UNAVAILABLE",
+                        detail=(
+                            "当前 Target 不满足模板固定工具的版本、能力、"
+                            f"授权或目录要求：{step.get('title') or tool_id}"
+                        ),
+                        retryable=False,
+                    )
+                )
+            if any(
+                item.code == "INSPECTION_FIXED_TOOL_UNAVAILABLE"
+                for item in gaps
+            ):
+                reasons.append("部分模板固定取证工具当前不可用")
         profile_core_gaps: list[TurnEvidenceGap] = []
         if (
             str(task_frame.get("diagnostic_profile"))
@@ -623,6 +659,9 @@ class DbaAnswerComposeHandler:
             status=status,
             sufficiency_status=assessment.status,
             blocks=tuple(blocks),
+            evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons,
             model_receipt=result.receipt.model_dump(mode="json"),
         )
 
@@ -762,6 +801,9 @@ class DbaAnswerComposeHandler:
             ),
             sufficiency_status=assessment.status,
             blocks=tuple(blocks),
+            evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons,
             answer_streamed=True,
             model_receipt={
                 "purpose": "aiops.dba-answer-stream",
@@ -871,6 +913,9 @@ class DbaAnswerComposeHandler:
                     ),
                     proposal_block,
                 ),
+                evidence=assessment.evidence,
+                evidence_gaps=assessment.gaps,
+                assessment_reasons=assessment.reasons,
             )
         if assessment.clarification_question:
             message = assessment.clarification_question
@@ -893,13 +938,16 @@ class DbaAnswerComposeHandler:
         )
         if evidence_request is not None:
             blocks.append(evidence_request)
-        waiting_for_user = bool(
+        waiting_for_user = context.trigger_type != "SCHEDULE" and bool(
             assessment.clarification_question or evidence_request is not None
         )
         return AIOpsTurnResult(
             status="WAITING_USER" if waiting_for_user else "PARTIAL",
             sufficiency_status=assessment.status,
             blocks=tuple(blocks),
+            evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons,
         )
 
     @staticmethod

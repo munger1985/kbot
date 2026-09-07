@@ -14,6 +14,10 @@ from aiops_agent.scheduling import (
     resolve_due_schedule,
 )
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.application.configuration.schedule import (
+    InspectionTemplateRegistry,
+)
+from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
 from sqlalchemy.dialects import oracle
@@ -175,7 +179,12 @@ class InspectionSchedulerTest(unittest.TestCase):
         )
         context = AsyncMock()
         context.__aenter__.return_value = uow
-        service = ConversationTurnService(uow_factory=lambda: context)
+        service = ConversationTurnService(
+            uow_factory=lambda: context,
+            inspection_template_registry=InspectionTemplateRegistry(
+                AIOpsManagementConfig().inspection_templates
+            ),
+        )
         service._require_existing_target = AsyncMock()
         service._create_turn = AsyncMock(
             return_value={"status": "QUEUED"}
@@ -188,6 +197,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             "plan_display_name": "数据库日报",
             "template_id": "database_daily",
             "template_version": "1.0.0",
+            "schedule_resolver_version": "1.0.0",
             "schedule_type": "DAILY",
             "timezone": "Asia/Shanghai",
             "period_start": "2026-07-22T16:00:00+00:00",
@@ -212,6 +222,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             execution = call.kwargs["execution_context"]
             self.assertEqual(execution["trigger_type"], "SCHEDULE")
             self.assertEqual(execution["inspection_fire_id"], str(fire_id))
+            self.assertTrue(execution["inspection"]["evidence_steps"])
         uow.commit.assert_awaited_once()
 
     def test_due_plan_atomically_creates_fire_and_single_agent_request(
@@ -341,7 +352,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         worked = asyncio.run(scheduler.run_once())
         self.assertTrue(worked)
         self.assertEqual(fire.status, "PARTIAL")
-        self.assertEqual(fire.completed_count, 1)
+        self.assertEqual(fire.completed_count, 2)
         self.assertEqual(fire.failed_count, 0)
         self.assertEqual(fire.target_count, 2)
         self.assertEqual(fire.run_count, 1)

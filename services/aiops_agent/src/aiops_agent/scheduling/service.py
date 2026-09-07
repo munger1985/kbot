@@ -110,6 +110,9 @@ class AIOpsInspectionScheduler:
                 "timezone": plan.timezone,
                 "template_id": plan.template_id,
                 "template_version": plan.template_version,
+                "schedule_resolver_version": (
+                    plan.schedule_resolver_version
+                ),
                 "timeout_seconds": int(plan.timeout_seconds),
                 "period_start": resolution.period_start.isoformat(),
                 "period_end": resolution.period_end.isoformat(),
@@ -238,7 +241,13 @@ class AIOpsInspectionScheduler:
             }
             if any(item.status not in turn_terminal for item in turns):
                 return False
-            completed = sum(item.status == "COMPLETED" for item in turns)
+            completed = sum(
+                item.status in {"COMPLETED", "PARTIAL", "WAITING_USER"}
+                for item in turns
+            )
+            fully_completed = sum(
+                item.status == "COMPLETED" for item in turns
+            )
             partial = sum(
                 item.status in {"PARTIAL", "WAITING_USER"}
                 for item in turns
@@ -246,7 +255,7 @@ class AIOpsInspectionScheduler:
             failed = sum(
                 item.status in {"FAILED", "CANCELLED"} for item in turns
             )
-            if completed == len(turns):
+            if fully_completed == len(turns):
                 status = "COMPLETED"
             elif completed or partial:
                 status = "PARTIAL"
@@ -284,6 +293,9 @@ class AIOpsInspectionScheduler:
             "plan_display_name": snapshot["display_name"],
             "template_id": snapshot["template_id"],
             "template_version": snapshot["template_version"],
+            "schedule_resolver_version": snapshot[
+                "schedule_resolver_version"
+            ],
             "schedule_type": snapshot["schedule_type"],
             "timezone": snapshot["timezone"],
             "period_start": snapshot["period_start"],

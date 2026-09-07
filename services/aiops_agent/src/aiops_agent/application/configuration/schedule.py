@@ -124,3 +124,23 @@ class InspectionTemplateRegistry:
             raise validation_failed(
                 "模板覆盖包含未允许字段：" + ", ".join(sorted(unsupported))
             )
+
+    def execution_steps(
+        self,
+        *,
+        template_id: str,
+        template_version: str,
+        schedule_resolver_version: str,
+    ) -> tuple[dict, ...]:
+        """返回已登记模板的固定取证契约，禁止回退为自由规划。"""
+        registration = self.validate(
+            template_id=template_id,
+            template_version=template_version,
+            schedule_resolver_version=schedule_resolver_version,
+        )
+        if not registration.evidence_steps:
+            raise validation_failed("巡检模板未声明固定取证步骤")
+        return tuple(
+            item.model_dump(mode="json")
+            for item in registration.evidence_steps
+        )

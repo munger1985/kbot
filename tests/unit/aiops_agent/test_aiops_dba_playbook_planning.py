@@ -232,6 +232,7 @@ class _PlanningUow:
             agent_version_id=self.version.agent_version_id,
             target_id=self.target.target_id,
             status="RUNNING",
+            workflow_kind="CHAT_TURN",
             trace_id="trace-planning",
             deadline_at=None,
             plan_snapshot_json={},
@@ -937,6 +938,89 @@ class _RetryableGapExecutorClient(_GapExecutorClient):
 
 
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_inspection_uses_frozen_fixed_tools_without_model_planning(
+        self,
+    ) -> None:
+        uow = _PlanningUow()
+        question = "执行数据库日常健康巡检"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        uow.run.workflow_kind = "INSPECTION"
+        uow.run.plan_snapshot_json = {
+            "client_metadata": {
+                "inspection": {
+                    "template_id": "database_daily",
+                    "template_version": "1.0.0",
+                    "evidence_steps": [
+                        {
+                            "title": "实例性能指标",
+                            "tool_id": "db.instance.performance",
+                            "input": {},
+                            "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                        },
+                        {
+                            "title": "会话资源利用率",
+                            "tool_id": "db.resource.session_utilization",
+                            "input": {},
+                            "expected_evidence_kind": "SESSION_UTILIZATION",
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                        },
+                    ],
+                }
+            }
+        }
+        uow.target.capabilities_json = {
+            "capabilities": [
+                "DB_READONLY",
+                "dynamic_performance_views",
+            ],
+            "privileges": ["SELECT ANY DICTIONARY"],
+        }
+        reasoner = _CompactLookupReasoner()
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=diagnostics,
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual([], reasoner.compact_calls)
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.instance.performance",
+                "db.resource.session_utilization",
+            ],
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        self.assertNotIn(
+            "investigation_model_receipt", uow.run.plan_snapshot_json
+        )
+        self.assertEqual(
+            "TEMPLATE_FIXED_INSPECTION",
+            uow.run.plan_snapshot_json["planning_route"]["mode"],
+        )
+
     async def test_plain_readonly_question_uses_compact_planner_end_to_end(self):
         uow = _PlanningUow()
         question = "数据库用户 TCC 下有哪些表？"

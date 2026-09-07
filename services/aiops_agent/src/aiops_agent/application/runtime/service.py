@@ -2191,7 +2191,7 @@ class AIOpsRuntimeService:
                 no_progress_count=int(turn.no_progress_count or 0),
                 current_plan_revision=int(turn.current_plan_revision or 1),
             )
-            if should_replan:
+            if should_replan and run.workflow_kind != "INSPECTION":
                 await self._schedule_turn_replan(
                     uow=uow,
                     run=run,
@@ -2861,6 +2861,26 @@ class AIOpsRuntimeService:
         ).strip()
         status = "READY" if source.status == "COMPLETED" else "PARTIAL"
         summary = markdown or "Agent 已完成巡检，但未生成文字摘要"
+        evidence_facts = tuple(
+            {
+                "kind": "inspection_evidence",
+                "summary": (
+                    f"{item.tool_id}：已取得 {item.row_count} 条"
+                    "可验证观测"
+                    + ("（结果已截断）" if item.truncated else "")
+                ),
+                "tool_id": item.tool_id,
+                "evidence_ref": item.evidence_ref,
+            }
+            for item in source.evidence
+        )
+        recommendations = (
+            (
+                "请先处理本报告列出的数据缺口，再重新执行同一巡检模板。",
+            )
+            if source.evidence_gaps
+            else ("继续按既定周期执行该巡检模板并关注趋势变化。",)
+        )
         security_level = await self._report_security_level(
             uow=uow,
             run=run,
@@ -2889,6 +2909,10 @@ class AIOpsRuntimeService:
                     "markdown": markdown,
                     "sufficiency_status": str(source.sufficiency_status),
                 },
+                *evidence_facts,
+            ),
+            gaps=tuple(
+                item.model_dump(mode="json") for item in source.evidence_gaps
             ),
             evidence_refs=(
                 {
@@ -2902,6 +2926,7 @@ class AIOpsRuntimeService:
                 "llm_used": True,
                 "source_turn_result_hash": source_artifact.content_hash,
             },
+            recommendations=recommendations,
         )
         payload = content.model_dump(mode="json")
         content_hash = sha256_json(payload)

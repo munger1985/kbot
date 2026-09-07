@@ -37,9 +37,16 @@ from platform_core.identity import uuid7
 class ConversationTurnService:
     """在单一 UoW 内接收一轮用户问题并可靠投递规划任务。"""
 
-    def __init__(self, *, uow_factory, upload_store=None):
+    def __init__(
+        self,
+        *,
+        uow_factory,
+        upload_store=None,
+        inspection_template_registry=None,
+    ):
         self._uow_factory = uow_factory
         self._upload_store = upload_store
+        self._inspection_template_registry = inspection_template_registry
 
     async def start(
         self,
@@ -269,6 +276,18 @@ class ConversationTurnService:
         fire_id = UUID(str(payload["inspection_fire_id"]))
         actor_id = str(payload["actor_id"])
         trace_id = str(payload["trace_id"])
+        if self._inspection_template_registry is None:
+            raise self._error(
+                "AIOPS_INSPECTION_TEMPLATE_REGISTRY_MISSING",
+                "巡检固定取证模板未配置，不能以自由规划方式执行",
+            )
+        evidence_steps = self._inspection_template_registry.execution_steps(
+            template_id=str(payload["template_id"]),
+            template_version=str(payload["template_version"]),
+            schedule_resolver_version=str(
+                payload["schedule_resolver_version"]
+            ),
+        )
         async with self._uow_factory() as uow:
             fire = await uow.inspections.get_fire(
                 inspection_fire_id=fire_id,
@@ -319,8 +338,8 @@ class ConversationTurnService:
                 "请对你负责的数据库执行本期健康巡检并生成巡检报告。"
                 f"观测窗口为 [{period_start.isoformat()}, {period_end.isoformat()})，"
                 f"巡检周期类型为 {schedule_type}。"
-                "请自主规划只读诊断步骤、执行取证、评估健康风险，"
-                "并给出有证据支持的结论和建议。"
+                "本次巡检将执行模板声明的固定只读取证步骤，"
+                "并基于实际证据评估健康风险、结论和建议。"
             )
             deadline_at = datetime.now(UTC) + timedelta(
                 seconds=int(payload["timeout_seconds"])
@@ -379,10 +398,14 @@ class ConversationTurnService:
                                 "template_version": payload[
                                     "template_version"
                                 ],
+                                "schedule_resolver_version": payload[
+                                    "schedule_resolver_version"
+                                ],
                                 "schedule_type": schedule_type,
                                 "timezone": payload["timezone"],
                                 "period_start": period_start.isoformat(),
                                 "period_end": period_end.isoformat(),
+                                "evidence_steps": evidence_steps,
                             },
                         },
                     )

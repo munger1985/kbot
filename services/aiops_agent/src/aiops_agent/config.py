@@ -15,6 +15,7 @@ from platform_core.config import (
     Settings,
     load_settings,
 )
+from platform_core.contracts.aiops import MeasurementSemantics
 
 
 class AIOpsApiConfig(ServiceConfig):
@@ -170,11 +171,34 @@ class AIOpsDiagnosisConfig(BaseModel):
     max_evidence_facts: int = Field(default=256, ge=1, le=2000)
 
 
+class InspectionEvidenceStep(BaseModel):
+    """巡检模板声明的一项固定目录取证步骤。"""
+
+    title: str = Field(min_length=1, max_length=256)
+    tool_id: str = Field(
+        pattern=r"^[a-z][a-z0-9_.-]{0,127}$",
+    )
+    input: dict[str, object] = Field(default_factory=dict)
+    expected_evidence_kind: str = Field(min_length=1, max_length=128)
+    measurement_semantics: MeasurementSemantics = (
+        MeasurementSemantics.CURRENT_ACTIVITY
+    )
+    optional: bool = False
+
+
 class InspectionTemplateRegistration(BaseModel):
     template_id: str = Field(min_length=1, max_length=128)
     template_version: str = Field(min_length=1, max_length=64)
     schedule_resolver_version: str = Field(min_length=1, max_length=64)
     allowed_override_keys: tuple[str, ...] = ()
+    evidence_steps: tuple[InspectionEvidenceStep, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_evidence_steps(self) -> "InspectionTemplateRegistration":
+        tool_ids = [item.tool_id for item in self.evidence_steps]
+        if len(tool_ids) != len(set(tool_ids)):
+            raise ValueError("巡检模板的固定取证工具不能重复")
+        return self
 
 
 class AIOpsManagementConfig(BaseModel):
@@ -194,6 +218,51 @@ class AIOpsManagementConfig(BaseModel):
                 "thresholds",
                 "window",
                 "optional_checks",
+            ),
+            evidence_steps=(
+                InspectionEvidenceStep(
+                    title="实例性能指标",
+                    tool_id="db.instance.performance",
+                    expected_evidence_kind="INSTANCE_PERFORMANCE",
+                ),
+                InspectionEvidenceStep(
+                    title="会话资源利用率",
+                    tool_id="db.resource.session_utilization",
+                    expected_evidence_kind="SESSION_UTILIZATION",
+                ),
+                InspectionEvidenceStep(
+                    title="等待类别汇总",
+                    tool_id="db.wait.class_summary",
+                    expected_evidence_kind="WAIT_CLASS_SUMMARY",
+                ),
+                InspectionEvidenceStep(
+                    title="表空间容量",
+                    tool_id="db.storage.capacity",
+                    expected_evidence_kind="STORAGE_CAPACITY",
+                ),
+                InspectionEvidenceStep(
+                    title="归档与恢复区状态",
+                    tool_id="db.archive.status",
+                    expected_evidence_kind="ARCHIVE_STATUS",
+                ),
+                InspectionEvidenceStep(
+                    title="近期告警日志",
+                    tool_id="db.alert.recent",
+                    input={"hours": 24, "limit": 50},
+                    expected_evidence_kind="ALERT_LOG",
+                    measurement_semantics=(
+                        MeasurementSemantics.HISTORICAL_SAMPLES
+                    ),
+                ),
+                InspectionEvidenceStep(
+                    title="失败的调度作业",
+                    tool_id="db.scheduler.failed_jobs",
+                    input={"hours": 24, "limit": 50},
+                    expected_evidence_kind="SCHEDULER_HEALTH",
+                    measurement_semantics=(
+                        MeasurementSemantics.HISTORICAL_SAMPLES
+                    ),
+                ),
             ),
         ),
     )

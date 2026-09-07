@@ -195,6 +195,124 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertGreater(len(markdown.encode("utf-8")), 4000)
         self.assertEqual(markdown, report.summary)
 
+    def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
+        self,
+    ) -> None:
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            actor_id="system:inspection-scheduler",
+            target_id=uuid7(),
+            inspection_fire_id=uuid7(),
+            plan_snapshot_json={
+                "target": {"security_level": 2},
+                "client_metadata": {
+                    "inspection": {
+                        "template_id": "database_daily",
+                        "template_version": "1.0.0",
+                        "schedule_type": "DAILY",
+                        "timezone": "Asia/Shanghai",
+                        "period_start": "2026-07-22T16:00:00+00:00",
+                        "period_end": "2026-07-23T16:00:00+00:00",
+                    }
+                },
+            },
+        )
+        source = SimpleNamespace(
+            artifact_id=uuid7(),
+            schema_version="AIOPS_TURN_RESULT.v1",
+            content_hash="e" * 64,
+            payload_json={
+                "schema_version": "AIOPS_TURN_RESULT.v1",
+                "status": "PARTIAL",
+                "sufficiency_status": "PARTIAL",
+                "blocks": [
+                    {
+                        "block_type": "MARKDOWN",
+                        "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                        "payload": {"markdown": "已完成可用健康检查。"},
+                        "evidence_refs": [],
+                    }
+                ],
+                "evidence": [
+                    {
+                        "evidence_ref": "artifact:test#performance",
+                        "artifact_id": str(uuid7()),
+                        "source_id": "db.instance.performance",
+                        "step_id": "performance",
+                        "tool_id": "db.instance.performance",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                        "presentation_kind": "TABLE",
+                        "captured_at": "2026-07-23T01:00:00+00:00",
+                        "columns": [],
+                        "rows": [],
+                        "row_count": 1,
+                    }
+                ],
+                "evidence_gaps": [
+                    {
+                        "source_id": "inspection.template",
+                        "step_id": "db.alert.recent",
+                        "code": "INSPECTION_FIXED_TOOL_UNAVAILABLE",
+                        "detail": "当前 Target 未配置告警日志目录权限",
+                    }
+                ],
+                "assessment_reasons": ["部分模板固定取证工具当前不可用"],
+            },
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report),
+                add_report_sources=AsyncMock(),
+            ),
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(
+                add=AsyncMock(side_effect=lambda entity: entity)
+            ),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+
+        asyncio.run(
+            service._publish_turn_inspection_report(
+                uow=uow,
+                run=run,
+                task=SimpleNamespace(ops_task_id=uuid7()),
+                source_artifact=source,
+                now=datetime(2026, 7, 24, tzinfo=UTC),
+                trace_id="trace-inspection-projection",
+            )
+        )
+
+        artifact = uow.runs.add_artifact.await_args.args[0]
+        self.assertEqual("PARTIAL", artifact.payload_json["status"])
+        self.assertEqual(
+            "INSPECTION_FIXED_TOOL_UNAVAILABLE",
+            artifact.payload_json["gaps"][0]["code"],
+        )
+        self.assertIn(
+            "db.instance.performance",
+            artifact.payload_json["facts"][1]["summary"],
+        )
+        self.assertTrue(artifact.payload_json["recommendations"])
+
     def test_schedule_result_publishes_report_content_and_projection(
         self,
     ) -> None:

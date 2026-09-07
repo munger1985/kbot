@@ -95,6 +95,9 @@ class AIOpsTurnResult(BaseModel):
     status: Literal["COMPLETED", "PARTIAL", "WAITING_USER"]
     sufficiency_status: SufficiencyStatus
     blocks: tuple[TurnAnswerBlock, ...]
+    evidence: tuple[TurnEvidenceFact, ...] = ()
+    evidence_gaps: tuple[TurnEvidenceGap, ...] = ()
+    assessment_reasons: tuple[str, ...] = ()
     answer_streamed: bool = False
     model_receipt: dict[str, Any] | None = None
 

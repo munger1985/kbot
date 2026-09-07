@@ -171,30 +171,54 @@ class TurnPlanningService:
                 trace_id=context.trace_id,
             )
         )
+        fixed_tools = self._tool_snapshot_builder.discover_tools(
+            context.capabilities
+        )
         discovered_tools = available_tools(
             self._tool_snapshot_builder, context.capabilities
         )
         discovered_playbooks = available_playbooks(
             self._playbook_registry, context.capabilities
         )
-        planned, planning_tools, planning_playbooks, planning_route = (
-            await self._plan_initial(
-                context=context,
-                available_tools=discovered_tools,
-                available_playbooks=discovered_playbooks,
-                planner_model_snapshot=planner_model_snapshot,
+        if context.workflow_kind == "INSPECTION":
+            investigation, planning_tools, planning_route = (
+                await self._plan_template_inspection(
+                    context=context,
+                    fixed_tools=fixed_tools,
+                )
             )
-        )
-        planned, investigation, dynamic_queries, source_queries = (
-            await self._prepare_queries_with_repair(
-                context=context,
-                planned=planned,
+            investigation = self._bind_target_to_plan(
+                investigation=investigation,
+                target_context=context.target_context,
                 available_tools=planning_tools,
-                available_playbooks=planning_playbooks,
-                model_snapshot=planner_model_snapshot,
-                revision_no=1,
             )
-        )
+            investigation, dynamic_queries, source_queries = (
+                self._prepare_query_inputs(
+                    investigation=investigation,
+                    context=context,
+                )
+            )
+            planning_receipt = None
+        else:
+            planned, planning_tools, planning_playbooks, planning_route = (
+                await self._plan_initial(
+                    context=context,
+                    available_tools=discovered_tools,
+                    available_playbooks=discovered_playbooks,
+                    planner_model_snapshot=planner_model_snapshot,
+                )
+            )
+            planned, investigation, dynamic_queries, source_queries = (
+                await self._prepare_queries_with_repair(
+                    context=context,
+                    planned=planned,
+                    available_tools=planning_tools,
+                    available_playbooks=planning_playbooks,
+                    model_snapshot=planner_model_snapshot,
+                    revision_no=1,
+                )
+            )
+            planning_receipt = planned.receipt
         playbook_plan = build_playbook_plan(self._playbook_registry)
         alert_diagnosis = bool(
             context.source_run_evidence
@@ -269,7 +293,7 @@ class TurnPlanningService:
         return await self._persist(
             context=context,
             investigation=investigation,
-            planning_receipt=planned.receipt,
+            planning_receipt=planning_receipt,
             playbook_plan=playbook_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
@@ -279,6 +303,132 @@ class TurnPlanningService:
             monitoring_requested=monitoring_requested,
             monitoring_execution=monitoring_execution,
         )
+
+    async def _plan_template_inspection(
+        self,
+        *,
+        context: TurnPlanningContext,
+        fixed_tools: tuple[dict, ...],
+    ) -> tuple[InvestigationPlanningOutput, tuple[dict, ...], dict]:
+        """按冻结模板建立巡检计划，不把临时查询能力交给模型。"""
+        inspection = dict(context.inspection)
+        template_id = str(inspection.get("template_id") or "")
+        template_version = str(inspection.get("template_version") or "")
+        configured_steps = tuple(inspection.get("evidence_steps") or ())
+        if not template_id or not template_version or not configured_steps:
+            raise InvestigationPlanValidationError(
+                "巡检执行上下文缺少已冻结的固定取证模板"
+            )
+        tool_index = {
+            str(item["tool_id"]): item for item in fixed_tools
+        }
+        actions: list[InvestigationAction] = []
+        unavailable: list[str] = []
+        for step in configured_steps:
+            if not isinstance(step, dict):
+                raise InvestigationPlanValidationError("巡检模板步骤格式无效")
+            tool_id = str(step.get("tool_id") or "")
+            title = str(step.get("title") or tool_id)
+            if tool_id not in tool_index:
+                unavailable.append(title)
+                continue
+            actions.append(
+                InvestigationAction(
+                    action_id=f"a{len(actions) + 1}",
+                    question=f"巡检{title}，确认当前状态和异常信号。",
+                    tool_id=tool_id,
+                    input=dict(step.get("input") or {}),
+                    expected_evidence_kind=str(
+                        step.get("expected_evidence_kind") or "INSPECTION"
+                    ),
+                    measurement_semantics=MeasurementSemantics(
+                        str(
+                            step.get("measurement_semantics")
+                            or MeasurementSemantics.CURRENT_ACTIVITY
+                        )
+                    ),
+                    optional=bool(step.get("optional", False)),
+                )
+            )
+        display_name = str(
+            context.target_context.get("display_name")
+            or context.target_context.get("target_id")
+            or "当前 Target"
+        )
+        task_frame = TaskFrame(
+            objectives=(TaskObjective.DIAGNOSE, TaskObjective.ASSESS),
+            problem_statement=(
+                f"按巡检模板 {template_id}@{template_version} "
+                f"评估 {display_name} 的数据库健康状态"
+            ),
+            database_context=dict(context.target_context),
+            known_facts=(
+                f"当前逻辑 Target 为 {display_name}",
+                "本轮只执行模板声明的固定目录只读工具",
+            ),
+            unknowns=tuple(
+                ["模板声明的健康证据是否存在异常"]
+                + [f"固定工具当前不可用：{item}" for item in unavailable]
+            ),
+            constraints=(
+                "仅执行当前 Target 的固定目录只读巡检工具，不生成动态 SQL、PromQL 或 LogQL",
+            ),
+            success_criteria=(
+                "完成全部可用的模板固定取证步骤",
+                "明确展示已验证发现、处置建议和数据缺口",
+            ),
+            action_intent=ActionIntent.NONE,
+            subject_ref={
+                "inspection_template_id": template_id,
+                "inspection_template_version": template_version,
+            },
+        )
+        output = InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=context.question[:2000],
+                        key_facts=(
+                            f"巡检模板：{template_id}@{template_version}",
+                            f"固定取证步骤：{len(configured_steps)} 项",
+                        ),
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=context.question,
+            ),
+            task_frame=task_frame,
+            plan=InvestigationPlan(revision_no=1, actions=tuple(actions)),
+        )
+        route = {
+            "mode": "TEMPLATE_FIXED_INSPECTION",
+            "public_summary": (
+                f"已按模板 {template_id}@{template_version} 建立固定只读取证计划"
+            ),
+        }
+        await self._record_planning_route(
+            context=context,
+            mode=route["mode"],
+            public_summary=route["public_summary"],
+            public_sections=[
+                {
+                    "title": "巡检执行方式",
+                    "items": [
+                        "仅执行已登记的固定目录工具，不进行模型生成的临时查询"
+                    ],
+                },
+                {
+                    "title": "模板覆盖",
+                    "items": [
+                        f"已配置 {len(configured_steps)} 项，当前可执行 {len(actions)} 项"
+                    ],
+                },
+            ],
+        )
+        return output, fixed_tools, route
 
     async def _plan_initial(
         self,
@@ -846,6 +996,11 @@ class TurnPlanningService:
         if revision_no != 2:
             raise state_conflict("当前调查预算最多允许两轮")
         context = await self._prepare(payload, revision_no=revision_no)
+        if context.workflow_kind == "INSPECTION":
+            return await self.fall_back_from_replan(
+                payload,
+                error_code="AIOPS_INSPECTION_TEMPLATE_REPLAN_BLOCKED",
+            )
         inputs = await self._load_replan_inputs(
             context=context,
             assessment_artifact_id=UUID(
@@ -2226,6 +2381,12 @@ class TurnPlanningService:
                         controlled_action_execution
                     ),
                 },
+                workflow_kind=str(run.workflow_kind),
+                inspection=dict(
+                    dict(run.plan_snapshot_json or {}).get(
+                        "client_metadata", {}
+                    ).get("inspection", {})
+                ),
                 source_run_evidence=source_run_evidence,
             )
 
@@ -2839,7 +3000,15 @@ class TurnPlanningService:
                 "investigation_plan_artifact_id": str(plan_artifact.artifact_id),
                 "playbook_plan_artifact_id": str(playbook_artifact.artifact_id),
                 "playbook_catalog_hash": playbook_plan.catalog_hash,
-                "investigation_model_receipt": planning_receipt.model_dump(mode="json"),
+                **(
+                    {
+                        "investigation_model_receipt": (
+                            planning_receipt.model_dump(mode="json")
+                        )
+                    }
+                    if planning_receipt is not None
+                    else {}
+                ),
                 "planning_route": dict(planning_route),
                 "investigation_execution": execution_snapshot,
                 **(
