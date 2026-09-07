@@ -1009,6 +1009,39 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         }.issubset(query_plan.dimensions))
         self.assertEqual(1000, query_plan.limit)
 
+    def test_non_metadata_query_result_evidence_is_repaired(self):
+        """规划模型误用查询证据时，详情请求仍可进入正文取证流程。"""
+        cases = (
+            ("SEMANTIC_CONCEPT", ["CONTENT"], "RELATED_TO", "financial fraud"),
+            ("EXACT_PHRASE", ["CONTENT"], "CONTAINS", "risk assessment"),
+            ("CONTENT_TYPE", ["CONTENT"], "EQ_OR_RELATED", "presentation"),
+            ("IDENTIFIER", ["asset_id"], "EQ", "ASSET-6"),
+        )
+        for kind, field_scope, operator, value in cases:
+            with self.subTest(kind=kind):
+                normalized = AssetSearchPlanner.normalize_response(
+                    question="Give me detail on No.6 asset",
+                    language="en-US",
+                    response={
+                        "operation": "ANSWER",
+                        "target": "CONTENT",
+                        "criteria": [{
+                            "criterion_id": "c1",
+                            "kind": kind,
+                            "field_scope": field_scope,
+                            "operator": operator,
+                            "values": [value],
+                            "evidence_requirement": "QUERY_RESULT",
+                        }],
+                        "eligibility_expression": {
+                            "node_type": "REF", "criterion_id": "c1",
+                        },
+                    },
+                )
+
+                plan = AssetSearchPlanV1.model_validate(normalized)
+                self.assertEqual("CONTENT", plan.criteria[0].evidence_requirement)
+
     def test_list_normalizes_string_result_assets_without_crashing(self):
         normalized = AssetSearchPlanner.normalize_response(
             question="找几个关于 OAC 的 Asset，最好关于金融欺诈的案例",

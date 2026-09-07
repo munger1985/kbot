@@ -169,6 +169,10 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
         evidence_requirement = (
             "QUERY_RESULT" if kind == "METADATA" else "CONTENT"
         )
+    # 非元数据条件必须由正文或可搜索元数据共同支撑。规划模型偶尔会
+    # 为任意条件套用 QUERY_RESULT；在进入合同校验前确定性纠正该偏差。
+    if kind != "METADATA" and evidence_requirement == "QUERY_RESULT":
+        evidence_requirement = "CONTENT"
     if kind not in {"METADATA", "IDENTIFIER"} and any(
         field in {"TITLE", "PRODUCT", "SOLUTION"}
         for field in field_scope
