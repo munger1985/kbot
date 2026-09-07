@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
 from uuid import UUID
 
@@ -38,11 +40,52 @@ class ConversationUploadSource:
     payload_uri: str
 
 
+class _HtmlEvidenceExtractor(HTMLParser):
+    """从 AWR/ASH HTML 中提取可供调查的可见正文，不执行页面内容。"""
+
+    _BLOCK_TAGS = frozenset(
+        {
+            "article", "br", "caption", "div", "h1", "h2", "h3", "h4",
+            "h5", "h6", "li", "p", "pre", "table", "td", "th", "tr",
+        }
+    )
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        del attrs
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "template"}:
+            self._ignored_depth += 1
+        elif not self._ignored_depth and normalized in self._BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "template"}:
+            self._ignored_depth = max(0, self._ignored_depth - 1)
+        elif not self._ignored_depth and normalized in self._BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored_depth:
+            self._parts.append(data)
+
+    def text(self) -> str:
+        return re.sub(r"\n{3,}", "\n\n", "".join(self._parts)).strip()
+
+
 class ConversationInputResolver:
     """解析文本或图片附件；单个附件失败只形成可见缺口。"""
 
     _TEXT_MEDIA_TYPES = frozenset(
-        {"text/plain", "text/csv", "application/json", "application/sql"}
+        {
+            "text/plain", "text/html", "application/xhtml+xml", "text/csv",
+            "application/json", "application/sql",
+        }
     )
 
     def __init__(
@@ -150,20 +193,33 @@ class ConversationInputResolver:
         }
         if stored.media_type in self._TEXT_MEDIA_TYPES:
             try:
-                text = self._bounded(raw.decode("utf-8-sig"))
+                text = self._decode_text(raw)
+                extraction_mode = "TEXT_DECODE"
+                if stored.media_type in {"text/html", "application/xhtml+xml"}:
+                    extractor = _HtmlEvidenceExtractor()
+                    extractor.feed(text)
+                    extractor.close()
+                    text = extractor.text()
+                    extraction_mode = "HTML_TEXT_EXTRACT"
+                if not text:
+                    raise ValueError("文件没有可用于诊断的正文")
                 return ResolvedConversationUpload(
                     **common,
-                    extracted_text=text,
-                    extraction_mode="TEXT_DECODE",
+                    extracted_text=self._bounded(text),
+                    extraction_mode=extraction_mode,
                 )
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, ValueError) as exc:
                 return ResolvedConversationUpload(
                     **common,
                     extracted_text=(
-                        f"文件 {stored.file_name} 不是有效 UTF-8 文本，未能提取正文。"
+                        f"文件 {stored.file_name} 未能提取可用文本正文。"
                     ),
                     extraction_mode="TEXT_DECODE",
-                    extraction_error="INPUT_TEXT_ENCODING_INVALID",
+                    extraction_error=(
+                        "INPUT_TEXT_ENCODING_INVALID"
+                        if isinstance(exc, UnicodeDecodeError)
+                        else "INPUT_TEXT_EXTRACTION_EMPTY"
+                    ),
                 )
         mode, capability = self._image_capability(image_capabilities)
         if mode is None or capability is None or self._image_model_client is None:
@@ -227,6 +283,20 @@ class ConversationInputResolver:
         return (
             text[: self._max_extracted_chars]
             + "\n\n[附件正文已按单轮输入上限截断]"
+        )
+
+    @staticmethod
+    def _decode_text(raw: bytes) -> str:
+        """支持数据库日志常见字符集，拒绝含 NUL 的疑似二进制输入。"""
+        for encoding in ("utf-8-sig", "utf-16", "gb18030"):
+            try:
+                text = raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            if "\x00" not in text:
+                return text
+        raise UnicodeDecodeError(
+            "diagnostic-text", raw, 0, min(1, len(raw)), "不支持的文本编码"
         )
 
 

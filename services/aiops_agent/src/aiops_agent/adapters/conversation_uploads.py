@@ -35,6 +35,8 @@ class LocalConversationUploadStore:
     _ALLOWED_MEDIA_TYPES = frozenset(
         {
             "text/plain",
+            "text/html",
+            "application/xhtml+xml",
             "text/csv",
             "application/json",
             "application/sql",

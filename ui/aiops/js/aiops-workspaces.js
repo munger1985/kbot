@@ -4,7 +4,8 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   const markdown = globalThis.KBotMarkdown;
-  const state = { agents: [], targets: [], conversation: null, selectedFile: null };
+  const state = { agents: [], targets: [], conversation: null, selectedFiles: [] };
+  const maxDiagnosticFiles = 15;
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
   const activeTurnFollowers = new Set();
@@ -28,7 +29,8 @@
 
   function uploadMediaType(file) {
     const suffix = String(file.name || "").toLowerCase().split(".").pop();
-    if (["log", "txt"].includes(suffix)) return "text/plain";
+    if (["log", "txt", "trc", "trace", "out", "lst"].includes(suffix)) return "text/plain";
+    if (["html", "htm"].includes(suffix)) return "text/html";
     if (suffix === "csv") return "text/csv";
     if (suffix === "json") return "application/json";
     if (suffix === "sql") return "application/sql";
@@ -801,18 +803,18 @@
     const targetId = document.getElementById("target-select").value;
     const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
     const text = form.elements.message.value.trim();
-    const selectedFile = state.selectedFile;
+    const selectedFiles = state.selectedFiles;
     if (!agentId) return shell.toast("请先选择 Agent");
     if (!targetId) return shell.toast("请先选择逻辑 Target");
     if (!values(agent?.target_ids).includes(targetId)) return shell.toast("当前 Agent 未绑定所选 Target");
-    if (!text && !selectedFile) return shell.toast("请输入问题或上传诊断材料");
+    if (!text && !selectedFiles.length) return shell.toast("请输入问题或上传诊断材料");
     button.disabled = true;
     try {
       const path = state.conversation
         ? `${api}/conversations/${state.conversation.conversation_id}/turns`
         : `${api}/conversations`;
       const content = text ? [{ content_type: "TEXT", text }] : [];
-      if (selectedFile) {
+      for (const selectedFile of selectedFiles) {
         const uploaded = await KBotAIOpsAuth.request(`${api}/conversation-uploads`, {
           method: "POST",
           headers: {
@@ -835,11 +837,11 @@
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
         body: JSON.stringify(body),
       });
-      form.reset(); state.selectedFile = null; document.getElementById("upload-preview").textContent = "";
+      form.reset(); state.selectedFiles = []; document.getElementById("upload-preview").textContent = "";
       const panel = document.getElementById("message-list");
       const submittedText = [
         text,
-        selectedFile ? `已上传诊断材料：${selectedFile.name}` : "",
+        ...selectedFiles.map((file) => `已上传诊断材料：${file.name}`),
       ].filter(Boolean).join("\n\n");
       panel.insertAdjacentHTML("beforeend", messageHtml("USER", submittedText));
       panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在建立诊断计划：先固定执行上下文，再理解问题并选择证据…</section>');
@@ -876,15 +878,20 @@
     };
     document.getElementById("conversation-form").onsubmit = submitConversation;
     document.getElementById("evidence-file").onchange = (event) => {
-      const file = event.target.files[0] || null;
-      if (file && file.size > 20 * 1024 * 1024) {
+      const files = Array.from(event.target.files || []);
+      if (files.length > maxDiagnosticFiles) {
         event.target.value = "";
-        state.selectedFile = null;
-        return shell.toast("诊断材料不能超过 20 MiB");
+        state.selectedFiles = [];
+        return shell.toast(`单次最多选择 ${maxDiagnosticFiles} 份诊断材料`);
       }
-      state.selectedFile = file;
-      document.getElementById("upload-preview").textContent = file
-        ? `已选择：${file.name}（点击发送时上传）`
+      if (files.some((file) => file.size > 20 * 1024 * 1024)) {
+        event.target.value = "";
+        state.selectedFiles = [];
+        return shell.toast("每份诊断材料不能超过 20 MiB");
+      }
+      state.selectedFiles = files;
+      document.getElementById("upload-preview").textContent = files.length
+        ? `已选择 ${files.length} 份诊断材料：${files.map((file) => file.name).join("、")}（点击发送时上传）`
         : "";
     };
     await loadConversationList();

@@ -77,11 +77,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         )
         self.assertIn("选择诊断材料", chat)
         self.assertIn("点击“发送”时上传", chat)
+        self.assertIn('id="evidence-file" type="file" multiple', chat)
+        self.assertIn(".trc,.trace", chat)
+        self.assertIn("AWR/ASH（HTML/TXT）", chat)
         change_handler = workspace.split(
             'document.getElementById("evidence-file").onchange =', 1
         )[1].split("await loadConversationList();", 1)[0]
         self.assertNotIn("conversation-uploads", change_handler)
         self.assertIn("点击发送时上传", change_handler)
+        self.assertIn("selectedFiles", workspace)
+        self.assertIn("HTML_TEXT_EXTRACT", (ROOT / "services" / "aiops_agent" / "src" / "aiops_agent" / "application" / "conversation_inputs.py").read_text(encoding="utf-8"))
 
     def test_chat_reloads_images_through_authenticated_api(self):
         auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(

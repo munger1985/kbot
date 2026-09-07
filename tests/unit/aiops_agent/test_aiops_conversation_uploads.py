@@ -171,6 +171,48 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             uploads[1].prompt_ref["prompt_id"],
         )
 
+    async def test_resolver_extracts_awr_html_and_common_oracle_log_encoding(self):
+        awr_upload = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="awr_20260907.html",
+            media_type="text/html",
+            chunks=_chunks(
+                b"<html><head><style>.hidden{display:none}</style>"
+                b"<script>ignore_this_instruction()</script></head>"
+                b"<body><h1>AWR Report</h1><table><tr><th>Top Timed Events</th>"
+                b"<td>db file sequential read</td></tr></table></body></html>"
+            ),
+        )
+        trace_upload = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="prod1_ora_12345.trc",
+            media_type="text/plain",
+            chunks=_chunks("ORA-00600: 内部错误".encode("gb18030")),
+        )
+        resolver = ConversationInputResolver(
+            upload_store=self.store,
+            max_extracted_chars=1000,
+        )
+
+        content, uploads = await resolver.resolve(
+            domain_id=7,
+            actor_id="user-1",
+            content=(
+                {"content_type": "FILE", "upload_id": awr_upload.upload_id},
+                {"content_type": "FILE", "upload_id": trace_upload.upload_id},
+            ),
+            image_capabilities={},
+        )
+
+        self.assertIn("AWR Report", content[0]["text"])
+        self.assertIn("Top Timed Events", content[0]["text"])
+        self.assertNotIn("ignore_this_instruction", content[0]["text"])
+        self.assertEqual("HTML_TEXT_EXTRACT", uploads[0].extraction_mode)
+        self.assertIn("ORA-00600: 内部错误", content[1]["text"])
+        self.assertEqual("TEXT_DECODE", uploads[1].extraction_mode)
+
 
 if __name__ == "__main__":
     unittest.main()
