@@ -459,18 +459,40 @@ class LogEvidenceHandler:
     ) -> LogEvidenceSet:
         monitoring = context.plan_snapshot["monitoring"]
         binding_id = context.task_key.removeprefix("log:")
-        snapshot = next(
-            item
-            for item in monitoring["bindings"]
-            if item["binding_id"] == binding_id
-        )
-        source = snapshot["source"]
         window = monitoring["window"]
         query_fingerprint = hashlib.sha256(
             (
                 f"{binding_id}|{window['start']}|{window['end']}"
             ).encode("utf-8")
         ).hexdigest()
+        snapshot = next(
+            (
+                item
+                for item in monitoring["bindings"]
+                if item["binding_id"] == binding_id
+            ),
+            None,
+        )
+        if snapshot is None:
+            return LogEvidenceSet(
+                target_id=context.target_id,
+                binding_id=binding_id,
+                source_id="",
+                window_start=_parse_time(window["start"]),
+                window_end=_parse_time(window["end"]),
+                gaps=(
+                    ObservationGap(
+                        source_id="",
+                        binding_id=binding_id,
+                        code="SOURCE_CONFIGURATION_INVALID",
+                        detail="日志任务引用的冻结监控绑定不存在",
+                    ),
+                ),
+                collected_at=datetime.now(UTC),
+                query_fingerprint=query_fingerprint,
+                provenance={"missing_binding_snapshot": True},
+            )
+        source = snapshot["source"]
         try:
             locator = LogSourceLocator.model_validate(
                 snapshot["source_locator"]

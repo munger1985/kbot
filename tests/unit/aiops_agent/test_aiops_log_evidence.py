@@ -19,6 +19,8 @@ from aiops_agent.ports.diagnostic_source import (
     LogEvidenceRequest,
     LogSourceLocator,
 )
+from aiops_agent.workers.evidence_handlers import LogEvidenceHandler
+from aiops_agent.workers.handlers import TaskExecutionContext
 
 
 class _LokiResponse:
@@ -176,6 +178,45 @@ class LogEvidenceIndexTest(unittest.TestCase):
         self.assertIn(
             "log:logs-1", tasks["diagnosis:evidence:r0"].depends_on
         )
+
+
+class LogEvidenceHandlerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_frozen_binding_returns_evidence_gap(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        handler = LogEvidenceHandler(
+            diagnostic_source_registry=object(),
+            secret_store=object(),
+        )
+        result = await handler.execute(
+            TaskExecutionContext(
+                run_id="run-1",
+                task_id="task-1",
+                task_key="log:missing-binding",
+                target_id="target-1",
+                agent_id="agent-1",
+                trigger_type="ALERT",
+                trace_id="trace-1",
+                attempt=1,
+                deadline_at=None,
+                plan_snapshot={
+                    "monitoring": {
+                        "window": {
+                            "start": (now - timedelta(minutes=5)).isoformat(),
+                            "end": now.isoformat(),
+                        },
+                        "bindings": [],
+                    }
+                },
+                policy_snapshot={},
+                input_artifacts=(),
+            )
+        )
+
+        self.assertEqual((), result.entries)
+        self.assertEqual("", result.source_id)
+        self.assertEqual("SOURCE_CONFIGURATION_INVALID", result.gaps[0].code)
+        self.assertEqual("missing-binding", result.gaps[0].binding_id)
+        self.assertTrue(result.provenance["missing_binding_snapshot"])
 
 
 if __name__ == "__main__":

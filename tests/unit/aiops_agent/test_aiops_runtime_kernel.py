@@ -3,7 +3,7 @@
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from pydantic import ValidationError
 
@@ -30,7 +30,7 @@ from aiops_agent.workers import (
     TaskExecutionContext,
     create_kernel_handler_registry,
 )
-from platform_core.contracts.aiops import ArtifactInput
+from platform_core.contracts.aiops import ArtifactInput, FailOpsTaskCommand
 from platform_core.persistence.orm import UniversalTimestamp
 from platform_core.identity import uuid7
 
@@ -260,6 +260,96 @@ class RuntimeLeaseValidationTest(unittest.TestCase):
                 now=now,
                 allow_expired=True,
             )
+
+
+class RuntimeTerminalFailureTest(unittest.IsolatedAsyncioTestCase):
+    async def test_parallel_task_failure_does_not_retransition_terminal_run(self) -> None:
+        now = datetime.now(UTC)
+        run_id = uuid7()
+        task_id = uuid7()
+        events = []
+        task = SimpleNamespace(
+            ops_task_id=task_id,
+            task_key="log:binding-2",
+            task_type="TOOL_INVOKE",
+            handler_id="evidence.log-query",
+            handler_version="1",
+            status="RUNNING",
+            error_code=None,
+            error_message=None,
+            available_at=now,
+            completed_at=None,
+            lease_owner="worker-1",
+            lease_token=uuid7(),
+            lease_until=now,
+            heartbeat_at=now,
+            attempt_count=1,
+            max_attempts=1,
+            depends_on_json=[],
+            row_version=1,
+        )
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            status="FAILED",
+            error_code="FIRST_FAILURE",
+            error_message="首个失败原因",
+            completed_at=now,
+            row_version=1,
+        )
+
+        class _Runs:
+            async def database_now(self):
+                return now
+
+            async def get_event_by_key(self, **kwargs):
+                del kwargs
+                return None
+
+            async def list_tasks(self, **kwargs):
+                del kwargs
+                return [task]
+
+            async def append_event(self, **kwargs):
+                events.append(kwargs)
+                return SimpleNamespace(sequence_no=len(events))
+
+        class _Uow:
+            runs = _Runs()
+            platform_notifications = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                del args
+
+            async def commit(self):
+                return None
+
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._uow_factory = lambda: _Uow()
+        runtime._lock_run_task = AsyncMock(return_value=(run, task))
+        runtime._ensure_lease = Mock()
+        runtime._handlers = SimpleNamespace(
+            resolve=lambda *_: SimpleNamespace(idempotent=False)
+        )
+
+        receipt = await runtime.fail_task(
+            FailOpsTaskCommand(
+                task_id=task_id,
+                worker_id="worker-1",
+                lease_token=task.lease_token,
+                idempotency_key="parallel-failure",
+                trace_id="trace-parallel-failure",
+                error_code="HANDLER_TERMINAL_FAILURE",
+            )
+        )
+
+        self.assertEqual("FAILED", receipt.task_status)
+        self.assertEqual("FAILED", receipt.run_status)
+        self.assertEqual("FIRST_FAILURE", run.error_code)
+        self.assertEqual(1, len(events))
+        self.assertEqual("task.status", events[0]["event_type"])
 
 
 class BlueprintRegistryTest(unittest.TestCase):

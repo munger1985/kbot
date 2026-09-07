@@ -4593,40 +4593,41 @@ class AIOpsRuntimeService:
             )
             if not retry:
                 self._block_unreachable(tasks, failed_key=task.task_key)
-                ensure_run_transition(
-                    DomainOpsRunStatus(run.status),
-                    DomainOpsRunStatus.FAILED,
-                )
-                run.status = DomainOpsRunStatus.FAILED.value
-                run.error_code = command.error_code
-                run.error_message = policy.safe_message
-                run.completed_at = now
-                if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
-                    await self._project_turn_failure(
-                        uow=uow,
-                        run=run,
-                        error_code=command.error_code,
-                        public_summary=policy.safe_message,
-                        now=now,
+                if DomainOpsRunStatus(run.status) not in TERMINAL_RUN_STATUSES:
+                    ensure_run_transition(
+                        DomainOpsRunStatus(run.status),
+                        DomainOpsRunStatus.FAILED,
                     )
-                event = await uow.runs.append_event(
-                    ops_run_id=run.ops_run_id,
-                    event_type="run.failed",
-                    event_key=f"run:{run.ops_run_id}:terminal",
-                    visibility="USER",
-                    payload_json={
-                        "status": DomainOpsRunStatus.FAILED.value,
-                        "error_code": command.error_code,
-                        "trace_id": command.trace_id,
-                    },
-                )
-                assert uow.platform_notifications is not None
-                await uow.platform_notifications.emit_run_event(
-                    run=run,
-                    event_type="aiops.run.failed",
-                    summary=policy.safe_message,
-                    actor_id=run.actor_id,
-                )
+                    run.status = DomainOpsRunStatus.FAILED.value
+                    run.error_code = command.error_code
+                    run.error_message = policy.safe_message
+                    run.completed_at = now
+                    if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                        await self._project_turn_failure(
+                            uow=uow,
+                            run=run,
+                            error_code=command.error_code,
+                            public_summary=policy.safe_message,
+                            now=now,
+                        )
+                    await uow.runs.append_event(
+                        ops_run_id=run.ops_run_id,
+                        event_type="run.failed",
+                        event_key=f"run:{run.ops_run_id}:terminal",
+                        visibility="USER",
+                        payload_json={
+                            "status": DomainOpsRunStatus.FAILED.value,
+                            "error_code": command.error_code,
+                            "trace_id": command.trace_id,
+                        },
+                    )
+                    assert uow.platform_notifications is not None
+                    await uow.platform_notifications.emit_run_event(
+                        run=run,
+                        event_type="aiops.run.failed",
+                        summary=policy.safe_message,
+                        actor_id=run.actor_id,
+                    )
             await uow.commit()
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), None
