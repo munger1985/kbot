@@ -106,9 +106,9 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(
             result.payload_json["report_type"], "INSPECTION_CUSTOM"
         )
-        self.assertEqual(
-            result.payload_json["facts"][0]["markdown"],
+        self.assertIn(
             "数据库整体健康。",
+            [item.get("markdown") for item in result.payload_json["facts"]],
         )
 
     def test_scheduled_agent_turn_keeps_long_chinese_summary(self) -> None:
@@ -128,7 +128,27 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         "timezone": "Asia/Shanghai",
                         "period_start": "2026-07-22T16:00:00+00:00",
                         "period_end": "2026-07-23T16:00:00+00:00",
+                        "evidence_steps": [
+                            {
+                                "title": "实例性能指标",
+                                "tool_id": "db.instance.performance",
+                                "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                            },
+                            {
+                                "title": "近期告警日志",
+                                "tool_id": "db.alert.recent",
+                                "expected_evidence_kind": "ALERT_LOG",
+                            },
+                        ],
                     }
+                },
+                "answer_context": {
+                    "investigation_plan": {
+                        "actions": [
+                            {"action_id": "a1", "tool_id": "db.instance.performance"},
+                            {"action_id": "a2", "tool_id": "db.alert.recent"},
+                        ],
+                    },
                 },
             },
         )
@@ -191,9 +211,121 @@ class InspectionReportPublishingTest(unittest.TestCase):
             )
         )
 
-        report = uow.inspections.publish_report.await_args.args[0]
+        artifact = uow.runs.add_artifact.await_args.args[0]
         self.assertGreater(len(markdown.encode("utf-8")), 4000)
-        self.assertEqual(markdown, report.summary)
+        self.assertIn(
+            markdown,
+            [item.get("markdown") for item in artifact.payload_json["facts"]],
+        )
+
+    def test_scheduled_agent_turn_lists_every_normal_template_check(self) -> None:
+        """正常或零行结果也必须作为巡检报告的检查项目保留。"""
+        run = SimpleNamespace(
+            ops_run_id=uuid7(), actor_id="system:inspection-scheduler",
+            target_id=uuid7(), inspection_fire_id=uuid7(),
+            plan_snapshot_json={
+                "target": {"security_level": 2},
+                "client_metadata": {"inspection": {
+                    "template_id": "database_daily",
+                    "template_version": "1.0.0", "schedule_type": "DAILY",
+                    "timezone": "Asia/Shanghai",
+                    "period_start": "2026-07-22T16:00:00+00:00",
+                    "period_end": "2026-07-23T16:00:00+00:00",
+                    "evidence_steps": [
+                        {"title": "实例性能指标", "tool_id": "db.instance.performance", "expected_evidence_kind": "INSTANCE_PERFORMANCE"},
+                        {"title": "近期告警日志", "tool_id": "db.alert.recent", "expected_evidence_kind": "ALERT_LOG"},
+                    ],
+                }},
+            },
+        )
+        source = SimpleNamespace(
+            artifact_id=uuid7(), schema_version="AIOPS_TURN_RESULT.v1",
+            content_hash="f" * 64,
+            payload_json={
+                "schema_version": "AIOPS_TURN_RESULT.v1",
+                "status": "COMPLETED", "sufficiency_status": "ANSWERABLE",
+                "blocks": [{
+                    "block_type": "MARKDOWN",
+                    "schema_version": "AIOPS_MARKDOWN_BLOCK.v1",
+                    "payload": {"markdown": "本期指标均处于正常范围。"},
+                    "evidence_refs": [],
+                }],
+                "evidence": [
+                    {
+                        "evidence_ref": "artifact:test#performance",
+                        "artifact_id": str(uuid7()),
+                        "source_id": "db.instance.performance",
+                        "step_id": "performance",
+                        "tool_id": "db.instance.performance",
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                        "presentation_kind": "TABLE",
+                        "captured_at": "2026-07-23T01:00:00+00:00",
+                        "columns": [], "rows": [], "row_count": 1,
+                    },
+                    {
+                        "evidence_ref": "artifact:test#alerts",
+                        "artifact_id": str(uuid7()),
+                        "source_id": "db.alert.recent", "step_id": "alerts",
+                        "tool_id": "db.alert.recent",
+                        "measurement_semantics": "HISTORICAL_SAMPLES",
+                        "presentation_kind": "TABLE",
+                        "captured_at": "2026-07-23T01:00:00+00:00",
+                        "columns": [], "rows": [], "row_count": 0,
+                    },
+                ],
+            },
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                publish_report=AsyncMock(side_effect=publish_report),
+            ),
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(add=AsyncMock(side_effect=lambda entity: entity)),
+            platform_notifications=SimpleNamespace(emit_report_ready=AsyncMock()),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(), blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+
+        asyncio.run(service._publish_turn_inspection_report(
+            uow=uow, run=run, task=SimpleNamespace(ops_task_id=uuid7()),
+            source_artifact=source, now=datetime(2026, 7, 24, tzinfo=UTC),
+            trace_id="trace-normal-inspection",
+        ))
+
+        payload = uow.runs.add_artifact.await_args.args[0].payload_json
+        self.assertEqual("READY", payload["status"])
+        self.assertEqual([], payload["gaps"])
+        self.assertEqual(
+            ["实例性能指标", "近期告警日志"],
+            [item["title"] for item in payload["facts"][:2]],
+        )
+        self.assertTrue(all(
+            "检查已完成" in item["summary"]
+            for item in payload["facts"][:2]
+        ))
+        self.assertIn("2/2", payload["summary"])
+        self.assertTrue(payload["recommendations"])
+        report = uow.inspections.publish_report.await_args.args[0]
+        self.assertEqual("system:inspection.daily", report.template_id)
+        self.assertEqual("1", report.template_version)
+        self.assertEqual(
+            "system:inspection.daily",
+            payload["provenance"]["template"]["template_ref"],
+        )
 
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
         self,
@@ -213,7 +345,30 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         "timezone": "Asia/Shanghai",
                         "period_start": "2026-07-22T16:00:00+00:00",
                         "period_end": "2026-07-23T16:00:00+00:00",
+                        "evidence_steps": [
+                            {
+                                "title": "实例性能指标",
+                                "tool_id": "db.instance.performance",
+                                "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                            },
+                            {
+                                "title": "近期告警日志",
+                                "tool_id": "db.alert.recent",
+                                "expected_evidence_kind": "ALERT_LOG",
+                            },
+                        ],
                     }
+                },
+                "answer_context": {
+                    "investigation_plan": {
+                        "actions": [
+                            {
+                                "action_id": "a1",
+                                "tool_id": "db.instance.performance",
+                            },
+                            {"action_id": "a2", "tool_id": "db.alert.recent"},
+                        ],
+                    },
                 },
             },
         )
@@ -251,7 +406,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                 "evidence_gaps": [
                     {
                         "source_id": "inspection.template",
-                        "step_id": "db.alert.recent",
+                        "step_id": "a2",
                         "code": "INSPECTION_FIXED_TOOL_UNAVAILABLE",
                         "detail": "当前 Target 未配置告警日志目录权限",
                     }
@@ -307,10 +462,14 @@ class InspectionReportPublishingTest(unittest.TestCase):
             "INSPECTION_FIXED_TOOL_UNAVAILABLE",
             artifact.payload_json["gaps"][0]["code"],
         )
-        self.assertIn(
-            "db.instance.performance",
-            artifact.payload_json["facts"][1]["summary"],
+        self.assertNotIn(
+            "INSPECTION_OBSERVATION_MISSING",
+            [item["code"] for item in artifact.payload_json["gaps"]],
         )
+        self.assertTrue(any(
+            item.get("tool_id") == "db.instance.performance"
+            for item in artifact.payload_json["facts"]
+        ))
         self.assertTrue(artifact.payload_json["recommendations"])
 
     def test_schedule_result_publishes_report_content_and_projection(

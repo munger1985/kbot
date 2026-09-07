@@ -997,7 +997,10 @@
     let run = null; let result = null;
     if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
     const source = run ? { target_id: run.target_id, source_run_id: run.ops_run_id } : null;
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${reportAction(run?.ops_run_id, "INSPECTION", "DAILY")}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
+      ? ""
+      : reportAction(run?.ops_run_id, "INSPECTION", "DAILY");
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     if (source) await bindContinue(source);
     bindReportActions(panel);
   }

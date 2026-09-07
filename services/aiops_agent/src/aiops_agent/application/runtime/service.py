@@ -1937,8 +1937,6 @@ class AIOpsRuntimeService:
                 )
                 run.status = DomainOpsRunStatus.COMPLETED.value
                 final_artifact = artifact
-                # 巡检、告警和智能诊断均只保留原始终态产物。正式报告只能
-                # 经用户显式请求进入统一报告生成器，不能在 Run 完成时自动创建。
                 if artifact.schema_version == "ACTION_VERIFICATION.v1":
                     final_artifact = (
                         await self._publish_comparison_report(
@@ -1949,6 +1947,27 @@ class AIOpsRuntimeService:
                             now=now,
                             trace_id=command.trace_id,
                         )
+                    )
+                elif (
+                    run.trigger_type == "SCHEDULE"
+                    and run.workflow_kind == "INSPECTION"
+                    and artifact.schema_version == "AIOPS_TURN_RESULT.v1"
+                    and str(
+                        dict(run.plan_snapshot_json or {}).get(
+                            "client_metadata", {}
+                        ).get("inspection", {}).get("schedule_type")
+                        or ""
+                    ) == "DAILY"
+                ):
+                    # 定时巡检的交付物是报告而非对话回答。保留原始 Turn
+                    # 产物作为报告来源，并将模板化报告设为 Run 的展示终态。
+                    final_artifact = await self._publish_turn_inspection_report(
+                        uow=uow,
+                        run=run,
+                        task=task,
+                        source_artifact=artifact,
+                        now=now,
+                        trace_id=command.trace_id,
                     )
                 run.final_artifact_id = final_artifact.artifact_id
                 run.completed_at = now
@@ -2847,6 +2866,9 @@ class AIOpsRuntimeService:
             "DAILY": "数据库日常巡检报告",
             "WEEKLY": "数据库周度巡检报告",
         }.get(schedule_type, "数据库定期巡检报告")
+        report_template = resolve_system_template(
+            "system:inspection.daily"
+        ) if schedule_type == "DAILY" else None
         period_start = datetime.fromisoformat(
             str(inspection["period_start"])
         )
@@ -2859,21 +2881,37 @@ class AIOpsRuntimeService:
             for block in source.blocks
             if str(block.block_type) == "MARKDOWN"
         ).strip()
-        status = "READY" if source.status == "COMPLETED" else "PARTIAL"
-        summary = markdown or "Agent 已完成巡检，但未生成文字摘要"
-        evidence_facts = tuple(
-            {
-                "kind": "inspection_evidence",
-                "summary": (
-                    f"{item.tool_id}：已取得 {item.row_count} 条"
-                    "可验证观测"
-                    + ("（结果已截断）" if item.truncated else "")
-                ),
-                "tool_id": item.tool_id,
-                "evidence_ref": item.evidence_ref,
-            }
-            for item in source.evidence
+        facts, gaps, coverage_summary = self._inspection_report_projection(
+            inspection=inspection,
+            source=source,
+            action_tool_ids={
+                str(item.get("action_id") or ""): str(
+                    item.get("tool_id") or ""
+                )
+                for item in dict(
+                    plan.get("answer_context", {})
+                ).get("investigation_plan", {}).get("actions", ())
+                if isinstance(item, dict)
+                and str(item.get("action_id") or "")
+                and str(item.get("tool_id") or "")
+            },
         )
+        if markdown:
+            facts = (
+                *facts,
+                {
+                    "kind": "agent_health_inspection",
+                    "summary": "巡检结论",
+                    "markdown": markdown,
+                    "sufficiency_status": str(source.sufficiency_status),
+                },
+            )
+        status = (
+            "READY"
+            if source.status == "COMPLETED" and not gaps
+            else "PARTIAL"
+        )
+        summary = coverage_summary
         recommendations = (
             (
                 "请先处理本报告列出的数据缺口，再重新执行同一巡检模板。",
@@ -2902,18 +2940,10 @@ class AIOpsRuntimeService:
                 "template_version": inspection["template_version"],
                 "schedule_type": schedule_type,
                 "timezone": inspection["timezone"],
+                "inspection_coverage": coverage_summary,
             },
-            facts=(
-                {
-                    "kind": "agent_health_inspection",
-                    "markdown": markdown,
-                    "sufficiency_status": str(source.sufficiency_status),
-                },
-                *evidence_facts,
-            ),
-            gaps=tuple(
-                item.model_dump(mode="json") for item in source.evidence_gaps
-            ),
+            facts=facts,
+            gaps=gaps,
             evidence_refs=(
                 {
                     "artifact_id": str(source_artifact.artifact_id),
@@ -2925,6 +2955,16 @@ class AIOpsRuntimeService:
                 "producer": "aiops.agent-turn",
                 "llm_used": True,
                 "source_turn_result_hash": source_artifact.content_hash,
+                "template": (
+                    {
+                        "template_ref": report_template.template_ref,
+                        "version": report_template.version,
+                        "content_hash": report_template.content_hash,
+                        "definition": report_template.definition,
+                    }
+                    if report_template is not None
+                    else {}
+                ),
             },
             recommendations=recommendations,
         )
@@ -2962,8 +3002,16 @@ class AIOpsRuntimeService:
                 status=status,
                 period_start=period_start,
                 period_end=period_end,
-                template_id=inspection["template_id"],
-                template_version=inspection["template_version"],
+                template_id=(
+                    report_template.template_ref
+                    if report_template is not None
+                    else inspection["template_id"]
+                ),
+                template_version=(
+                    report_template.version
+                    if report_template is not None
+                    else inspection["template_version"]
+                ),
                 generated_by_task_id=task.ops_task_id,
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
@@ -3011,6 +3059,136 @@ class AIOpsRuntimeService:
             actor_id=run.actor_id,
         )
         return report_artifact
+
+    @staticmethod
+    def _inspection_report_projection(
+        *,
+        inspection: dict[str, Any],
+        source: AIOpsTurnResult,
+        action_tool_ids: dict[str, str],
+    ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], str]:
+        """把冻结模板的每项检查投影为报告条目，不能因正常零行而省略。"""
+        steps = tuple(
+            item
+            for item in inspection.get("evidence_steps", ())
+            if isinstance(item, dict) and str(item.get("tool_id") or "")
+        )
+        evidence_by_tool: dict[str, list] = {}
+        for item in source.evidence:
+            evidence_by_tool.setdefault(item.tool_id, []).append(item)
+        gaps = [item.model_dump(mode="json") for item in source.evidence_gaps]
+        gaps_by_step: dict[str, list[dict[str, Any]]] = {}
+        for item in gaps:
+            step_id = str(item.get("step_id") or "")
+            gaps_by_step.setdefault(
+                action_tool_ids.get(step_id, step_id), []
+            ).append(item)
+
+        facts: list[dict[str, Any]] = []
+        covered_count = 0
+        step_tool_ids = {str(item["tool_id"]) for item in steps}
+        for step in steps:
+            tool_id = str(step["tool_id"])
+            title = str(step.get("title") or tool_id)
+            observations = evidence_by_tool.get(tool_id, [])
+            step_gaps = gaps_by_step.get(tool_id, [])
+            if observations:
+                covered_count += 1
+                row_count = sum(item.row_count for item in observations)
+                truncated = any(item.truncated for item in observations)
+                facts.append(
+                    {
+                        "kind": "inspection_check",
+                        "title": title,
+                        "summary": (
+                            f"{title}：检查已完成，采集 {row_count} 条"
+                            "可验证观测"
+                            + ("（结果已截断）" if truncated else "")
+                        ),
+                        "check_status": "OBSERVED",
+                        "tool_id": tool_id,
+                        "expected_evidence_kind": str(
+                            step.get("expected_evidence_kind") or ""
+                        ),
+                        "evidence_refs": [
+                            item.evidence_ref for item in observations
+                        ],
+                    }
+                )
+                continue
+            if step_gaps:
+                detail = str(step_gaps[0].get("detail") or "未取得有效观测")
+                facts.append(
+                    {
+                        "kind": "inspection_check",
+                        "title": title,
+                        "summary": f"{title}：检查未完成，{detail}",
+                        "check_status": "GAP",
+                        "tool_id": tool_id,
+                    }
+                )
+                continue
+            missing_gap = {
+                "source_id": "inspection.report",
+                "step_id": tool_id,
+                "code": "INSPECTION_OBSERVATION_MISSING",
+                "detail": f"模板检查项未形成可验证观测：{title}",
+                "retryable": False,
+            }
+            gaps.append(missing_gap)
+            facts.append(
+                {
+                    "kind": "inspection_check",
+                    "title": title,
+                    "summary": f"{title}：未形成可验证观测，已列入数据缺口",
+                    "check_status": "MISSING",
+                    "tool_id": tool_id,
+                }
+            )
+
+        for tool_id, observations in evidence_by_tool.items():
+            if tool_id in step_tool_ids:
+                continue
+            row_count = sum(item.row_count for item in observations)
+            facts.append(
+                {
+                    "kind": "inspection_evidence",
+                    "title": tool_id,
+                    "summary": f"{tool_id}：采集 {row_count} 条可验证观测",
+                    "check_status": "OBSERVED",
+                    "tool_id": tool_id,
+                    "evidence_refs": [
+                        item.evidence_ref for item in observations
+                    ],
+                }
+            )
+
+        if not steps:
+            facts.append(
+                {
+                    "kind": "inspection_coverage",
+                    "summary": "本期巡检未记录冻结的模板检查项。",
+                    "check_status": "MISSING",
+                }
+            )
+            gaps.append(
+                {
+                    "source_id": "inspection.report",
+                    "step_id": "template",
+                    "code": "INSPECTION_TEMPLATE_STEPS_MISSING",
+                    "detail": "巡检 Run 未保存冻结的模板检查项",
+                    "retryable": False,
+                }
+            )
+        coverage_summary = (
+            f"本期按冻结巡检模板完成 {covered_count}/{len(steps)} 项检查"
+            + (
+                "，所有计划检查均已形成可追溯观测。"
+                if steps and covered_count == len(steps) and not gaps
+                else f"，其中 {len(gaps)} 项存在数据缺口或未完成。"
+            )
+        )
+        return tuple(facts), tuple(gaps), coverage_summary
 
     async def _publish_inspection_report(
         self,
@@ -3258,7 +3436,7 @@ class AIOpsRuntimeService:
         status = (
             "READY"
             if source.get("status") == "READY"
-            and grade != "INCONCLUSIVE"
+            and (source_kind == "INSPECTION" or grade != "INCONCLUSIVE")
             else "PARTIAL"
         )
         rationale = str(
@@ -3335,7 +3513,8 @@ class AIOpsRuntimeService:
                 for item in source.get("facts", ())
             ),
             gaps=tuple(
-                {"code": str(code)} for code in source.get("gaps", ())
+                dict(item) if isinstance(item, dict) else {"code": str(item)}
+                for item in source.get("gaps", ())
             ),
             evidence_refs=(
                 {
@@ -5934,15 +6113,32 @@ class AIOpsRuntimeService:
                 raise state_conflict("诊断最终结果引用不完整")
             if source_artifact.schema_version not in {
                 "DIAGNOSIS_REPORT_DRAFT.v1", "AIOPS_TURN_RESULT.v1",
-                "DB_DIAGNOSTIC_REPORT.v1",
+                "DB_DIAGNOSTIC_REPORT.v1", "REPORT_CONTENT.v1",
             }:
                 raise validation_failed("当前诊断结果不支持生成正式报告")
+            task_artifact_id = source_artifact.artifact_id
+            if source_artifact.schema_version == "REPORT_CONTENT.v1":
+                source_artifact_id = str(
+                    dict(source_artifact.provenance_json or {}).get(
+                        "source_artifact_id"
+                    )
+                    or ""
+                )
+                if source_artifact_id:
+                    try:
+                        parent_artifact = await uow.runs.get_artifact(
+                            artifact_id=UUID(source_artifact_id)
+                        )
+                    except ValueError:
+                        parent_artifact = None
+                    if parent_artifact is not None:
+                        task_artifact_id = parent_artifact.artifact_id
             task = next(
                 (
                     item for item in await uow.runs.list_tasks(
                         ops_run_id=run.ops_run_id
                     )
-                    if item.output_artifact_id == source_artifact.artifact_id
+                    if item.output_artifact_id == task_artifact_id
                 ),
                 None,
             )

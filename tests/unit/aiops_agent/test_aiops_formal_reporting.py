@@ -118,6 +118,31 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual("INCONCLUSIVE", source["root_cause"]["effective_level"])
         self.assertEqual("已完成 8 项观测", source["facts"][0]["summary"])
 
+    def test_template_inspection_report_is_reusable_for_periodic_rollup(self) -> None:
+        source = normalize_report_source(
+            schema_version="REPORT_CONTENT.v1",
+            source_kind="INSPECTION",
+            payload={
+                "status": "READY",
+                "summary": "本期按冻结巡检模板完成 2/2 项检查。",
+                "scope": {"inspection_coverage": "已完成 2/2 项检查"},
+                "facts": [
+                    {"summary": "实例性能指标：检查已完成"},
+                    {"summary": "近期告警日志：检查已完成，采集 0 条观测"},
+                ],
+                "gaps": [],
+                "recommendations": ["继续按既定周期执行巡检。"],
+                "evidence_refs": [],
+            },
+        )
+        self.assertEqual("READY", source["status"])
+        self.assertEqual("已完成 2/2 项检查", source["inspection_coverage"])
+        self.assertEqual(2, len(source["facts"]))
+        self.assertEqual(
+            ("继续按既定周期执行巡检。",),
+            source["solution"]["long_term_remediations"],
+        )
+
     def test_closed_monthly_window_uses_report_timezone(self) -> None:
         start, end = closed_period_window(
             period_kind="MONTHLY",

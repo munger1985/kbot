@@ -319,6 +319,29 @@ def normalize_report_source(
             "solution": {},
             "evidence_refs": tuple(evidence),
         }
+    if schema_version == "REPORT_CONTENT.v1":
+        scope = dict(payload.get("scope") or {})
+        return {
+            "status": str(payload.get("status") or "PARTIAL"),
+            "root_cause": {
+                "effective_level": str(
+                    scope.get("root_cause_grade") or "INCONCLUSIVE"
+                ),
+            },
+            "diagnosis_rationale": str(payload.get("summary") or ""),
+            "facts": tuple(
+                dict(item) for item in payload.get("facts", ())
+                if isinstance(item, dict)
+            ),
+            "gaps": tuple(payload.get("gaps", ())),
+            "solution": {
+                "long_term_remediations": tuple(
+                    payload.get("recommendations", ())
+                ),
+            },
+            "evidence_refs": tuple(payload.get("evidence_refs", ())),
+            "inspection_coverage": scope.get("inspection_coverage"),
+        }
     if schema_version == "DB_DIAGNOSTIC_REPORT.v1" and source_kind == "INSPECTION":
         observation_count = int(payload.get("observation_count") or 0)
         return {
