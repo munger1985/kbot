@@ -378,6 +378,16 @@ def report_presentation(
             body = [str(payload.get("summary") or "未形成摘要")]
         elif kind == "SCOPE":
             body = [f"报告时间窗：{payload.get('period_start')} 至 {payload.get('period_end')}"]
+            conversation = dict(scope.get("conversation") or {})
+            if conversation:
+                body.append(
+                    f"会话：{conversation.get('title') or '未命名诊断'}；"
+                    f"覆盖 {conversation.get('turn_count') or 0} 个 Turn。"
+                )
+                body.extend(
+                    f"诊断问题：{item}"
+                    for item in conversation.get("question_summaries") or ()
+                )
         elif kind == "ALERT_TIMELINE":
             body = [str(scope.get("alert_summary") or "本报告未关联告警时间线")]
         elif kind == "INSPECTION_COVERAGE":

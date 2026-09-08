@@ -170,6 +170,145 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(2, len(result["evidence_refs"]))
         self.assertIn("完成 2 次巡检", result["inspection_coverage"])
 
+    def test_conversation_report_aggregates_all_completed_turns(self) -> None:
+        first_turn, second_turn = uuid7(), uuid7()
+        first_run, second_run = uuid7(), uuid7()
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(), blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        result = service._aggregate_conversation_sources(
+            conversation=SimpleNamespace(
+                conversation_id=uuid7(), title="生产库锁等待排查"
+            ),
+            source_rows=[
+                (
+                    SimpleNamespace(turn_id=first_turn, turn_no=1),
+                    SimpleNamespace(
+                        ops_run_id=first_run,
+                        completed_at=datetime(2026, 9, 1, 1, tzinfo=UTC),
+                        created_at=datetime(2026, 9, 1, tzinfo=UTC),
+                        plan_snapshot_json={"diagnosis": {"question_summary": "确认锁等待"}},
+                    ),
+                    SimpleNamespace(
+                        artifact_id=uuid7(), content_hash="a" * 64,
+                        schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                        payload_json={
+                            "status": "READY",
+                            "root_cause": {"effective_level": "POSSIBLE"},
+                            "diagnosis_rationale": "锁等待来自未提交事务。",
+                            "facts": [{"summary": "锁等待持续升高"}],
+                            "solution": {"immediate_mitigations": ["确认阻塞会话"]},
+                        },
+                    ),
+                ),
+                (
+                    SimpleNamespace(turn_id=second_turn, turn_no=2),
+                    SimpleNamespace(
+                        ops_run_id=second_run,
+                        completed_at=datetime(2026, 9, 1, 2, tzinfo=UTC),
+                        created_at=datetime(2026, 9, 1, 1, tzinfo=UTC),
+                        plan_snapshot_json={"diagnosis": {"question_summary": "验证根因"}},
+                    ),
+                    SimpleNamespace(
+                        artifact_id=uuid7(), content_hash="b" * 64,
+                        schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                        payload_json={
+                            "status": "READY",
+                            "root_cause": {"effective_level": "CONFIRMED"},
+                            "diagnosis_rationale": "阻塞会话已定位。",
+                            "facts": [{"summary": "阻塞会话已确认"}],
+                            "solution": {"long_term_remediations": ["优化事务边界"]},
+                        },
+                    ),
+                ),
+            ],
+            missing_turns=[{"code": "MISSING_FINAL_RESULT", "turn_no": 3}],
+        )
+        self.assertEqual("PARTIAL", result["status"])
+        self.assertEqual("CONFIRMED", result["root_cause"]["effective_level"])
+        self.assertEqual(4, len(result["facts"]))
+        self.assertEqual(2, len(result["evidence_refs"]))
+        self.assertEqual(3, result["conversation"]["turn_count"])
+        self.assertEqual(
+            ["确认锁等待", "验证根因"],
+            result["conversation"]["question_summaries"],
+        )
+
+    def test_generate_conversation_report_freezes_every_completed_turn(self) -> None:
+        conversation_id, first_turn, second_turn = uuid7(), uuid7(), uuid7()
+        first_run, second_run = uuid7(), uuid7()
+        first_artifact, second_artifact = uuid7(), uuid7()
+        now = datetime(2026, 9, 1, 3, tzinfo=UTC)
+        conversation = SimpleNamespace(
+            conversation_id=conversation_id, created_by="operator-1",
+            title="生产库锁等待排查", agent_id=uuid7(),
+        )
+        turns = [
+            SimpleNamespace(turn_id=first_turn, turn_no=1, status="COMPLETED"),
+            SimpleNamespace(turn_id=second_turn, turn_no=2, status="PARTIAL"),
+        ]
+        runs = {
+            first_turn: SimpleNamespace(
+                ops_run_id=first_run, status="COMPLETED", final_artifact_id=first_artifact,
+                created_at=datetime(2026, 9, 1, tzinfo=UTC), started_at=None,
+                completed_at=datetime(2026, 9, 1, 1, tzinfo=UTC),
+                plan_snapshot_json={"diagnosis": {"question_summary": "确认锁等待"}},
+            ),
+            second_turn: SimpleNamespace(
+                ops_run_id=second_run, status="PARTIAL", final_artifact_id=second_artifact,
+                created_at=datetime(2026, 9, 1, 1, tzinfo=UTC), started_at=None,
+                completed_at=datetime(2026, 9, 1, 2, tzinfo=UTC),
+                plan_snapshot_json={"diagnosis": {"question_summary": "验证根因"}},
+            ),
+        }
+        artifacts = {
+            first_artifact: SimpleNamespace(
+                artifact_id=first_artifact, content_hash="a" * 64,
+                schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                payload_json={"status": "READY", "diagnosis_rationale": "锁等待来自未提交事务。", "facts": [{"summary": "锁等待持续升高"}]},
+            ),
+            second_artifact: SimpleNamespace(
+                artifact_id=second_artifact, content_hash="b" * 64,
+                schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                payload_json={"status": "PARTIAL", "diagnosis_rationale": "阻塞会话已定位。", "facts": [{"summary": "阻塞会话已确认"}]},
+            ),
+        }
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(),
+            conversations=SimpleNamespace(get_conversation=AsyncMock(return_value=conversation)),
+            turns=SimpleNamespace(
+                list_all_turns=AsyncMock(return_value=turns),
+                get_run_link=AsyncMock(side_effect=lambda *, turn_id, purpose: SimpleNamespace(ops_run_id=runs[turn_id].ops_run_id)),
+            ),
+            runs=SimpleNamespace(
+                get_run_scoped=AsyncMock(side_effect=lambda *, ops_run_id, domain_id, lock: next(run for run in runs.values() if run.ops_run_id == ops_run_id)),
+                get_artifact=AsyncMock(side_effect=lambda *, artifact_id: artifacts[artifact_id]),
+                list_tasks=AsyncMock(return_value=[SimpleNamespace(output_artifact_id=second_artifact)]),
+                database_now=AsyncMock(return_value=now),
+            ),
+            commit=AsyncMock(),
+        )
+
+        class UnitOfWorkContext:
+            async def __aenter__(self): return uow
+            async def __aexit__(self, exc_type, exc, traceback): return None
+
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: UnitOfWorkContext(), blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        service._publish_diagnosis_report = AsyncMock(return_value=SimpleNamespace(report_id=uuid7()))
+        asyncio.run(service.generate_conversation_report(
+            domain_id=8, actor_id="operator-1", conversation_id=conversation_id,
+            template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"], trace_id="trace-session-report",
+        ))
+        source_override = service._publish_diagnosis_report.await_args.kwargs["source_override"]
+        self.assertEqual(4, len(source_override["facts"]))
+        self.assertEqual(2, len(source_override["evidence_refs"]))
+        self.assertEqual("PARTIAL", source_override["status"])
+        uow.commit.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

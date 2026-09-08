@@ -3575,6 +3575,7 @@ class AIOpsRuntimeService:
                 "diagnosis_rationale": rationale,
                 "source_kind": source_kind,
                 "source_situation_id": plan.get("source_situation_id"),
+                "conversation": dict(source.get("conversation") or {}),
                 "inspection_coverage": source.get(
                     "inspection_coverage",
                     rationale if source_kind == "INSPECTION" else None,
@@ -3603,7 +3604,11 @@ class AIOpsRuntimeService:
                 *tuple(
                     dict(item)
                     for item in source.get("evidence_refs", ())
-                    if isinstance(item, dict)
+                    if (
+                        isinstance(item, dict)
+                        and str(item.get("artifact_id") or "")
+                        != str(source_artifact.artifact_id)
+                    )
                 ),
             ),
             recommendations=recommendations,
@@ -3680,18 +3685,20 @@ class AIOpsRuntimeService:
                 observed_at=getattr(run, "completed_at", None) or now,
             )
         ]
+        recorded_source_runs = {run.ops_run_id}
         for evidence in source.get("evidence_refs", ()):
             if not isinstance(evidence, dict) or not evidence.get("source_run_id"):
                 continue
             try:
                 evidence_run_id = UUID(str(evidence["source_run_id"]))
-                if evidence_run_id == run.ops_run_id:
+                if evidence_run_id in recorded_source_runs:
                     continue
+                recorded_source_runs.add(evidence_run_id)
                 source_rows.append(ReportSourceEntity(
                     report_id=report.report_id,
                     ops_run_id=evidence_run_id,
                     source_artifact_id=UUID(str(evidence["artifact_id"])),
-                    source_kind="INSPECTION",
+                    source_kind=str(evidence.get("source_kind") or source_kind),
                     content_hash=str(evidence["content_hash"]),
                     observed_at=datetime.fromisoformat(str(evidence["observed_at"])),
                 ))
@@ -6278,6 +6285,256 @@ class AIOpsRuntimeService:
             )
             await uow.commit()
             return report
+
+    async def get_conversation_source_agent_id(
+        self,
+        *,
+        conversation_id: UUID,
+        domain_id: int,
+        actor_id: str,
+    ) -> UUID:
+        """在生成前确认会话归属，并返回用于私有授权校验的 Agent。"""
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                conversation_id=conversation_id,
+                domain_id=domain_id,
+            )
+            if conversation is None or conversation.created_by != actor_id:
+                raise resource_not_found("Conversation")
+            return conversation.agent_id
+
+    async def generate_conversation_report(
+        self,
+        *,
+        domain_id: int,
+        actor_id: str,
+        conversation_id: UUID,
+        template: ReportTemplate,
+        trace_id: str,
+    ) -> ReportEntity:
+        """冻结一个智能诊断 Session 内全部已终态 Turn 的报告上下文。"""
+        async with self._uow_factory() as uow:
+            assert uow.inspections is not None
+            conversation = await uow.conversations.get_conversation(
+                conversation_id=conversation_id,
+                domain_id=domain_id,
+                lock=True,
+            )
+            if conversation is None or conversation.created_by != actor_id:
+                raise resource_not_found("Conversation")
+            if "CHAT" not in template.applicable_source_kinds:
+                raise validation_failed("所选报告模板不适用于智能诊断会话")
+            if "AD_HOC" not in template.allowed_period_kinds:
+                raise validation_failed("所选报告模板不适用于会话诊断报告")
+            turns = await uow.turns.list_all_turns(
+                conversation_id=conversation_id
+            )
+            if not turns:
+                raise state_conflict("当前会话尚无可生成报告的诊断内容")
+            active_turns = [
+                turn for turn in turns
+                if turn.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}
+            ]
+            if active_turns:
+                raise state_conflict("会话仍有进行中的诊断，暂不能生成正式报告")
+
+            source_rows: list[tuple[Any, Any, Any]] = []
+            missing_turns: list[dict[str, Any]] = []
+            for turn in turns:
+                link = await uow.turns.get_run_link(
+                    turn_id=turn.turn_id, purpose="PRIMARY"
+                )
+                if link is None:
+                    missing_turns.append({
+                        "code": "MISSING_PRIMARY_RUN",
+                        "turn_id": str(turn.turn_id),
+                        "turn_no": int(turn.turn_no),
+                    })
+                    continue
+                run = await uow.runs.get_run_scoped(
+                    ops_run_id=link.ops_run_id,
+                    domain_id=domain_id,
+                    lock=True,
+                )
+                if (
+                    run is None
+                    or run.status not in {"COMPLETED", "PARTIAL"}
+                    or run.final_artifact_id is None
+                ):
+                    missing_turns.append({
+                        "code": "MISSING_FINAL_RESULT",
+                        "turn_id": str(turn.turn_id),
+                        "turn_no": int(turn.turn_no),
+                    })
+                    continue
+                artifact = await uow.runs.get_artifact(
+                    artifact_id=run.final_artifact_id
+                )
+                if artifact is None or artifact.schema_version not in {
+                    "DIAGNOSIS_REPORT_DRAFT.v1", "AIOPS_TURN_RESULT.v1",
+                    "DB_DIAGNOSTIC_REPORT.v1", "REPORT_CONTENT.v1",
+                }:
+                    missing_turns.append({
+                        "code": "UNREPORTABLE_FINAL_RESULT",
+                        "turn_id": str(turn.turn_id),
+                        "turn_no": int(turn.turn_no),
+                    })
+                    continue
+                source_rows.append((turn, run, artifact))
+            if not source_rows:
+                raise state_conflict("当前会话尚未形成可报告的诊断结果")
+
+            _, anchor_run, anchor_artifact = source_rows[-1]
+            task_artifact_id = anchor_artifact.artifact_id
+            if anchor_artifact.schema_version == "REPORT_CONTENT.v1":
+                source_artifact_id = str(
+                    dict(anchor_artifact.provenance_json or {}).get(
+                        "source_artifact_id"
+                    ) or ""
+                )
+                if source_artifact_id:
+                    try:
+                        parent_artifact = await uow.runs.get_artifact(
+                            artifact_id=UUID(source_artifact_id)
+                        )
+                    except ValueError:
+                        parent_artifact = None
+                    if parent_artifact is not None:
+                        task_artifact_id = parent_artifact.artifact_id
+            task = next(
+                (
+                    item for item in await uow.runs.list_tasks(
+                        ops_run_id=anchor_run.ops_run_id
+                    )
+                    if item.output_artifact_id == task_artifact_id
+                ),
+                None,
+            )
+            if task is None:
+                raise state_conflict("会话最终诊断结果缺少生成任务")
+            now = await uow.runs.database_now()
+            source_override = self._aggregate_conversation_sources(
+                conversation=conversation,
+                source_rows=source_rows,
+                missing_turns=missing_turns,
+            )
+            report = await self._publish_diagnosis_report(
+                uow=uow,
+                run=anchor_run,
+                task=task,
+                source_artifact=anchor_artifact,
+                now=now,
+                trace_id=trace_id,
+                template=template,
+                actor_id=actor_id,
+                source_override=source_override,
+                period_start_override=(
+                    getattr(source_rows[0][1], "started_at", None)
+                    or source_rows[0][1].created_at
+                ),
+                period_end_override=now,
+            )
+            await uow.commit()
+            return report
+
+    def _aggregate_conversation_sources(
+        self,
+        *,
+        conversation,
+        source_rows: list[tuple[Any, Any, Any]],
+        missing_turns: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """将会话内各 Turn 的冻结结果聚合为单份可追溯 ReportContext。"""
+        facts: list[dict[str, Any]] = []
+        gaps = list(missing_turns)
+        evidence_refs: list[dict[str, str]] = []
+        recommendations: list[str] = []
+        reasons: list[str] = []
+        questions: list[str] = []
+        grade_rank = {"INCONCLUSIVE": 0, "POSSIBLE": 1, "PROBABLE": 2, "CONFIRMED": 3}
+        effective_grade = "INCONCLUSIVE"
+        ready = not missing_turns
+        for turn, run, artifact in source_rows:
+            source = normalize_report_source(
+                schema_version=artifact.schema_version,
+                payload=dict(artifact.payload_json or {}),
+                source_kind="CHAT",
+            )
+            facts.extend(source.get("facts") or ())
+            turn_rationale = str(
+                source.get("diagnosis_rationale") or ""
+            ).strip()
+            if turn_rationale:
+                facts.append({
+                    "summary": (
+                        f"第 {int(turn.turn_no)} 轮诊断结论：{turn_rationale}"
+                    ),
+                    "turn_id": str(turn.turn_id),
+                })
+            gaps.extend(source.get("gaps") or ())
+            ready = ready and source.get("status") == "READY"
+            root = dict(source.get("root_cause") or {})
+            grade = str(root.get("effective_level") or "INCONCLUSIVE")
+            if grade_rank.get(grade, 0) > grade_rank[effective_grade]:
+                effective_grade = grade
+            solution = dict(source.get("solution") or {})
+            recommendations.extend(
+                str(item)
+                for key in ("immediate_mitigations", "long_term_remediations")
+                for item in solution.get(key, ())
+                if item
+            )
+            reasons.extend(str(item) for item in source.get("report_decision_reasons") or ())
+            question = str(
+                dict(run.plan_snapshot_json or {}).get("diagnosis", {}).get(
+                    "question_summary"
+                ) or ""
+            ).strip()
+            if question:
+                questions.append(question)
+            evidence_refs.append({
+                "artifact_id": str(artifact.artifact_id),
+                "content_hash": artifact.content_hash,
+                "schema_version": artifact.schema_version,
+                "source_run_id": str(run.ops_run_id),
+                "source_kind": "CHAT",
+                "observed_at": (
+                    (run.completed_at or run.created_at).isoformat()
+                ),
+            })
+            for reference in source.get("evidence_refs") or ():
+                if isinstance(reference, dict):
+                    evidence_refs.append({
+                        key: str(value) for key, value in reference.items()
+                        if value is not None
+                    })
+        rationale = (
+            f"本报告冻结会话“{conversation.title or '未命名诊断'}”的 "
+            f"{len(source_rows)} 个已完成 Turn"
+        )
+        if missing_turns:
+            rationale += f"；另有 {len(missing_turns)} 个 Turn 未形成可报告终态结果。"
+        else:
+            rationale += "。"
+        return {
+            "status": "READY" if ready and not gaps else "PARTIAL",
+            "root_cause": {"effective_level": effective_grade},
+            "diagnosis_rationale": rationale,
+            "facts": tuple(facts),
+            "gaps": tuple(gaps),
+            "solution": {
+                "long_term_remediations": tuple(dict.fromkeys(recommendations)),
+            },
+            "evidence_refs": tuple(evidence_refs),
+            "report_decision_reasons": tuple(dict.fromkeys(reasons)),
+            "conversation": {
+                "conversation_id": str(conversation.conversation_id),
+                "title": conversation.title,
+                "turn_count": len(source_rows) + len(missing_turns),
+                "included_turn_ids": [str(turn.turn_id) for turn, _, _ in source_rows],
+                "question_summaries": list(dict.fromkeys(questions)),
+            },
+        }
 
     async def _aggregate_inspection_sources(
         self, *, uow, runs, period_kind: str, period_start: datetime,

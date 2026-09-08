@@ -451,6 +451,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("request.sql_text", workspace)
         self.assertIn("request.parameters", workspace)
         self.assertIn("turn.ops_run_id", workspace)
+        self.assertIn("data-generate-report-conversation", workspace)
+        self.assertIn("conversation_id: conversationId", workspace)
+        self.assertIn("全部已完成 Turn", workspace)
+        self.assertNotIn("${plan}${progress}${answer}${report}", workspace)
         self.assertIn('["WAITING_INPUT", "WAITING_APPROVAL"]', workspace)
         self.assertIn(
             "includes(run?.status)",

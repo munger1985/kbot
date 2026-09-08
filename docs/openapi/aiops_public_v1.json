@@ -3048,12 +3048,31 @@
         "type": "object"
       },
       "ReportGenerationPayload": {
-        "description": "业务用户显式生成正式报告的请求。",
+        "description": "业务用户从完整会话或终态自动诊断显式生成正式报告。",
         "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "ops_run_id": {
-            "format": "uuid",
-            "title": "Ops Run Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ops Run Id"
           },
           "period_kind": {
             "default": "AD_HOC",
@@ -3066,9 +3085,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "ops_run_id"
-        ],
         "title": "ReportGenerationPayload",
         "type": "object"
       },
@@ -7477,7 +7493,7 @@
     },
     "/api/v1/apps/aiops/reports:generate": {
       "post": {
-        "description": "由用户明确确认后，基于终态诊断生成正式报告。",
+        "description": "由用户明确确认后，基于完整会话或终态诊断生成正式报告。",
         "operationId": "generate_report_api_v1_apps_aiops_reports_generate_post",
         "parameters": [
           {

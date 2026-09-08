@@ -17,7 +17,7 @@ from fastapi import (
     Response,
     status,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from starlette.responses import StreamingResponse
 
 from platform_clients.aiops import AIOpsManagementClient
@@ -149,11 +149,20 @@ IfMatch = Annotated[str, Depends(require_if_match)]
 
 
 class ReportGenerationPayload(BaseModel):
-    """业务用户显式生成正式报告的请求。"""
+    """业务用户从完整会话或终态自动诊断显式生成正式报告。"""
 
-    ops_run_id: UUID
+    conversation_id: UUID | None = None
+    ops_run_id: UUID | None = None
     template_ref: str = "system:diagnosis.standard"
     period_kind: str = "AD_HOC"
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "ReportGenerationPayload":
+        if (self.conversation_id is None) == (self.ops_run_id is None):
+            raise ValueError("必须且只能选择一个报告来源")
+        if self.conversation_id is not None and self.period_kind != "AD_HOC":
+            raise ValueError("会话诊断报告仅支持 AD_HOC 周期")
+        return self
 
 
 def _expected_etag_version(value: str) -> int:
@@ -258,8 +267,9 @@ async def generate_report(
     request: Request,
     idempotency_key: IdempotencyKey,
 ):
-    """由用户明确确认后，基于终态诊断生成正式报告。"""
+    """由用户明确确认后，基于完整会话或终态诊断生成正式报告。"""
     return await _client(request).generate_user_report(
+        conversation_id=payload.conversation_id,
         ops_run_id=payload.ops_run_id,
         template_ref=payload.template_ref,
         period_kind=payload.period_kind,

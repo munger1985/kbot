@@ -22,7 +22,8 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 
 ```text
 告警 → Situation → Diagnostic Run → Blueprint → 诊断结论 → 用户选择报告或深入诊断
-人工对话/巡检 → Conversation Turn → Agent Plan → 本轮证据 → 回答或正式报告
+人工对话 → Conversation Turn → Agent Plan → 本轮证据 → 会话级正式报告
+巡检 → Conversation Turn → Agent Plan → 本轮证据 → 巡检正式报告
 变更请求 → Change Proposal → 人工审批 → 受控执行 → 同口径验证
 ```
 

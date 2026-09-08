@@ -2601,12 +2601,31 @@
       },
       "GenerateUserReportRequest": {
         "additionalProperties": false,
-        "description": "业务用户从已完成诊断显式创建正式报告。",
+        "description": "业务用户从完整会话或终态自动诊断显式创建正式报告。",
         "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "ops_run_id": {
-            "format": "uuid",
-            "title": "Ops Run Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ops Run Id"
           },
           "period_kind": {
             "default": "AD_HOC",
@@ -2622,9 +2641,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "ops_run_id"
-        ],
         "title": "GenerateUserReportRequest",
         "type": "object"
       },
@@ -13459,7 +13475,7 @@
     },
     "/internal/v1/aiops/reports:generate": {
       "post": {
-        "description": "只在用户明确操作后，从终态诊断结果创建报告。",
+        "description": "只在用户明确操作后，从完整会话或终态诊断结果创建报告。",
         "operationId": "generate_user_report_internal_v1_aiops_reports_generate_post",
         "requestBody": {
           "content": {

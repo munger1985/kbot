@@ -64,9 +64,10 @@ Chat Run / Alert Situation + Run / Inspection 时间窗
 
 ### 智能诊断
 
-已结束的 Turn 显示“生成正式报告”。用户选择适用模板后，系统只以该 Turn
-及其继承的告警或巡检来源生成报告。资料不足时可以生成 PARTIAL 报告，但在
-确认前必须说明该报告包含证据边界。
+会话中没有进行中的 Turn，且至少一个 Turn 已形成终态诊断结果时，会话底部显示唯一的
+“生成正式报告”入口。用户选择适用模板后，系统冻结该 Session 全部已结束 Turn 的诊断
+结果、证据引用和数据缺口；不会为每个 Turn 单独生成报告。任何 Turn 未形成可报告终态
+结果时，报告明确记录相应的数据缺口并以 PARTIAL 状态发布。
 
 ### 告警诊断
 
@@ -91,7 +92,8 @@ GET  /api/v1/apps/aiops/reports/{report_id}/presentation
 GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 ```
 
-生成请求仅可选择来源 Run 和模板，不可提交事实正文。所有写请求带
+生成请求仅可选择来源 Session 或来源 Run 和模板，不可提交事实正文。智能诊断使用
+`conversation_id`，告警和巡检继续使用 `ops_run_id`；二者必须且只能选择其一。所有写请求带
 `Idempotency-Key`；模板更新带并发版本校验。当前报告状态为 `READY`、`PARTIAL`
 或 `FAILED`，PDF 根据冻结内容同步渲染，导出不会修改正式报告。
 

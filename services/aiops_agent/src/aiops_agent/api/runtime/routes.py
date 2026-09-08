@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -66,14 +66,23 @@ Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 
 class GenerateUserReportRequest(BaseModel):
-    """业务用户从已完成诊断显式创建正式报告。"""
+    """业务用户从完整会话或终态自动诊断显式创建正式报告。"""
 
     model_config = ConfigDict(extra="forbid")
-    ops_run_id: UUID
+    conversation_id: UUID | None = None
+    ops_run_id: UUID | None = None
     template_ref: str = Field(
         default="system:diagnosis.standard", min_length=1, max_length=128
     )
     period_kind: str = Field(default="AD_HOC", max_length=16)
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "GenerateUserReportRequest":
+        if (self.conversation_id is None) == (self.ops_run_id is None):
+            raise ValueError("必须且只能选择一个报告来源")
+        if self.conversation_id is not None and self.period_kind != "AD_HOC":
+            raise ValueError("会话诊断报告仅支持 AD_HOC 周期")
+        return self
 
 
 class EditReportRequest(ReportEdit):
@@ -322,22 +331,43 @@ async def generate_user_report(
     service: Service,
     context: Auth,
 ):
-    """只在用户明确操作后，从终态诊断结果创建报告。"""
+    """只在用户明确操作后，从完整会话或终态诊断结果创建报告。"""
     require_service_scope(request, "aiops.run")
     domain_id = _scope(request, context)
-    run = await service.get_run(ops_run_id=body.ops_run_id, domain_id=domain_id)
-    _ensure_agent_authorized(context, run.agent_id)
     template = await request.app.state.report_template_service.resolve(
         domain_id=domain_id, template_ref=body.template_ref
     )
-    report = await service.generate_user_report(
-        domain_id=domain_id,
-        actor_id=context.asserted_user_id or context.client_id,
-        ops_run_id=body.ops_run_id,
-        template=template,
-        period_kind=body.period_kind,
-        trace_id=request.headers.get("X-Request-ID", str(body.ops_run_id)),
-    )
+    actor_id = context.asserted_user_id or context.client_id
+    if body.conversation_id is not None:
+        agent_id = await service.get_conversation_source_agent_id(
+            conversation_id=body.conversation_id,
+            domain_id=domain_id,
+            actor_id=actor_id,
+        )
+        _ensure_agent_authorized(context, agent_id)
+        report = await service.generate_conversation_report(
+            domain_id=domain_id,
+            actor_id=actor_id,
+            conversation_id=body.conversation_id,
+            template=template,
+            trace_id=request.headers.get(
+                "X-Request-ID", str(body.conversation_id)
+            ),
+        )
+    else:
+        assert body.ops_run_id is not None
+        run = await service.get_run(
+            ops_run_id=body.ops_run_id, domain_id=domain_id
+        )
+        _ensure_agent_authorized(context, run.agent_id)
+        report = await service.generate_user_report(
+            domain_id=domain_id,
+            actor_id=actor_id,
+            ops_run_id=body.ops_run_id,
+            template=template,
+            period_kind=body.period_kind,
+            trace_id=request.headers.get("X-Request-ID", str(body.ops_run_id)),
+        )
     return {
         "report_id": str(report.report_id),
         "status": report.status,

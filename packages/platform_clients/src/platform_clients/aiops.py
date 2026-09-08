@@ -975,7 +975,8 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def generate_user_report(
         self,
         *,
-        ops_run_id: UUID,
+        conversation_id: UUID | None,
+        ops_run_id: UUID | None,
         template_ref: str,
         period_kind: str,
         idempotency_key: str,
@@ -984,7 +985,10 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "POST", f"{INTERNAL_API_V1}/aiops/reports:generate",
             payload={
-                "ops_run_id": str(ops_run_id),
+                "conversation_id": (
+                    str(conversation_id) if conversation_id is not None else None
+                ),
+                "ops_run_id": str(ops_run_id) if ops_run_id is not None else None,
                 "template_ref": template_ref,
                 "period_kind": period_kind,
             },
