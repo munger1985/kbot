@@ -518,6 +518,7 @@ def main() -> int:
         "'LOKI'",
         "'ORACLE_SQL'",
         "'ORACLE_SQL_DYNAMIC'",
+        "'USER_EVIDENCE'",
     }
     if tool_class_constraint is None or not all(
         value in tool_class_constraint.group(1)

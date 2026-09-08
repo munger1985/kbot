@@ -28,6 +28,7 @@ class _ScalarResult:
 class _SchemaSession:
     def __init__(self, values) -> None:
         self._values = list(values)
+        self.statements = []
 
     async def __aenter__(self):
         return self
@@ -35,7 +36,8 @@ class _SchemaSession:
     async def __aexit__(self, *_):
         return False
 
-    async def execute(self, _statement):
+    async def execute(self, statement):
+        self.statements.append(str(statement))
         return _ScalarResult(self._values.pop(0))
 
 
@@ -98,7 +100,7 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_21_contract_integrity(self) -> None:
+    async def test_ready_requires_schema_22_contract_integrity(self) -> None:
         session = _SchemaSession((1, 8, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
@@ -114,8 +116,11 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
+        self.assertIn("schema_version = 22", session.statements[0])
+        self.assertIn("aiops-oracle-v12", session.statements[0])
+        self.assertIn("USER_EVIDENCE", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_21_contract(self) -> None:
+    async def test_ready_rejects_partial_schema_22_contract(self) -> None:
         session = _SchemaSession((1, 7, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),

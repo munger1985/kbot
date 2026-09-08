@@ -284,7 +284,8 @@ BEGIN
        AND search_condition_vc LIKE '%''PROMETHEUS''%'
        AND search_condition_vc LIKE '%''LOKI''%'
        AND search_condition_vc LIKE '%''ORACLE_SQL''%'
-       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%';
+       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%'
+       AND search_condition_vc LIKE '%''USER_EVIDENCE''%';
 
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version

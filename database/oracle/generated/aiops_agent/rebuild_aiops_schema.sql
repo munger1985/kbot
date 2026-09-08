@@ -1912,8 +1912,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    21 AS SCHEMA_VERSION,
-    'aiops-oracle-v11' AS CONTRACT_VERSION
+    22 AS SCHEMA_VERSION,
+    'aiops-oracle-v12' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2526,7 +2526,7 @@ CREATE TABLE KBOT_OPS_TOOL_INVOCATION (
     CONSTRAINT UK_OPS_TOOL_INV_ACTION UNIQUE (REVISION_ID, ACTION_ID),
     CONSTRAINT CK_OPS_TOOL_INV_CLASS CHECK (TOOL_CLASS IN (
         'PROMETHEUS', 'LOKI', 'ORACLE_SQL', 'ORACLE_SQL_DYNAMIC',
-        'HOST', 'MEDIA', 'REASONING'
+        'USER_EVIDENCE', 'HOST', 'MEDIA', 'REASONING'
     )),
     CONSTRAINT CK_OPS_TOOL_INV_STATUS CHECK (STATUS IN (
         'PLANNED', 'READY', 'RUNNING', 'SUCCEEDED', 'NO_DATA',
@@ -2993,7 +2993,8 @@ BEGIN
        AND search_condition_vc LIKE '%''PROMETHEUS''%'
        AND search_condition_vc LIKE '%''LOKI''%'
        AND search_condition_vc LIKE '%''ORACLE_SQL''%'
-       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%';
+       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%'
+       AND search_condition_vc LIKE '%''USER_EVIDENCE''%';
 
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
@@ -3025,20 +3026,20 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 15 THEN
-        raise_application_error(-20008, 'Schema 21 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 22 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 21 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 22 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 21 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 22 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 21
-       OR l_contract_version <> 'aiops-oracle-v11' THEN
+       OR l_schema_version <> 22
+       OR l_contract_version <> 'aiops-oracle-v12' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3048,7 +3049,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：44 张表、10 个视图，Schema Version '
-        || '21，合同 aiops-oracle-v11。'
+        || '22，合同 aiops-oracle-v12。'
     );
 END;
 /

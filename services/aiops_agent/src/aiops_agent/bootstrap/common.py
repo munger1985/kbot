@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 21
-                              AND contract_version = 'aiops-oracle-v11'
+                              AND schema_version = 22
+                              AND contract_version = 'aiops-oracle-v12'
                             """
                         )
                     )
@@ -153,6 +153,7 @@ class AIOpsProcessRuntime:
                               AND SEARCH_CONDITION_VC LIKE '%''LOKI''%'
                               AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL''%'
                               AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL_DYNAMIC''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''USER_EVIDENCE''%'
                             """
                         )
                     )

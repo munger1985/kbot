@@ -45,6 +45,13 @@ APPLY_SCHEMA_21 = (
     / "operations"
     / "apply_aiops_schema_21.sql"
 )
+APPLY_SCHEMA_22 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_22.sql"
+)
 
 
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
@@ -97,6 +104,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("l_required_column_count <> 15", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_task_type_constraint_count <> 1", self.sql)
+        self.assertIn("''USER_EVIDENCE''", self.sql)
         for table_name in self.manifest["tables"]:
             self.assertIn(f"'{table_name}'", self.sql)
         for view_name in self.manifest["views"]:
@@ -195,6 +203,20 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("INSPECTION_ANNUAL", normalized)
         self.assertIn("21 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V11' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_22_apply_preserves_data_and_allows_user_evidence(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_22.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("DROP CONSTRAINT CK_OPS_TOOL_INV_CLASS", normalized)
+        self.assertIn("'USER_EVIDENCE'", normalized)
+        self.assertIn("22 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V12' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:
