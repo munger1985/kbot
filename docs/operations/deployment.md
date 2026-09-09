@@ -124,6 +124,20 @@ KBOT_CONDA_ENV=kbot4 bash scripts/deployment/install_workspace.sh
 
 ### Conda OCR 依赖
 
+Ubuntu 24.04 开发机可使用以下命令全新安装独立的 `model_ocr` 服务运行时，并让它与
+Docling Parser 共用同一 Conda 环境内的 Tesseract、`tesserocr` 和语言包：
+
+```bash
+KBOT_CONDA_ENV=kbot4 \
+KBOT_DOCLING_MODELS_DIR=/home/chris/models/docling_models \
+bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
+```
+
+安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
+RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
+`kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
+工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。
+
 Knowledge Core Parser 默认通过 Docling 的 `TesseractOcrOptions` 执行中英文 OCR。
 `requirements.txt` 中的 Docling 不包含可选的 Tesseract Python 绑定，因此使用 Conda
 环境部署时，还必须在 KBot 实际运行的同一个环境中安装 `tesseract` 和 `tesserocr`：
@@ -160,8 +174,9 @@ python -c "import tesserocr; print(tesserocr.tesseract_version()); print(tessero
 信息的样图通过 OCR 服务的模型连接测试验证。
 
 已有 Schema 首次启用类别 6 前，由 Schema Owner 执行
-`database/oracle/operations/enable_model_serving_ocr_category.sql`；新建空 Schema 已由
-`database/oracle/model_serving/001_model_registry.sql` 包含该约束。
+`database/oracle/operations/enable_model_serving_ocr_category.sql`。该脚本幂等删除旧的
+`CK_AI_MODEL_CATEGORY`；类别定义与 Provider 的匹配由 Model Serving 应用层校验，不以
+数据库检查约束固化，便于后续类别演进。
 
 KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
 一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过

@@ -1,0 +1,24 @@
+[Unit]
+Description=KBot Model Serving OCR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@KBOT_RUNTIME_USER@
+Group=@KBOT_RUNTIME_GROUP@
+WorkingDirectory=@KBOT_SOURCE_ROOT@
+EnvironmentFile=@KBOT_SOURCE_ROOT@/.env
+Environment=KBOT_CONFIG_FILE=@KBOT_SOURCE_ROOT@/configuration/kbot.toml
+Environment=KBOT_INSTALL_MODE=development
+Environment=KBOT_PYTHON=@KBOT_PYTHON@
+Environment=TESSDATA_PREFIX=@TESSDATA_PREFIX@
+ExecStart=@KBOT_SOURCE_ROOT@/scripts/deployment/run_service.sh model_serving.entrypoints.ocr
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
