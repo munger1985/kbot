@@ -16,6 +16,7 @@ dependencies = [
   "kbot-platform-clients==4.0.0",
   "kbot-platform-core==4.0.0",
   "oracledb==3.4.2",
+  "Pillow==12.2.0",
   "pydantic==2.12.5",
   "python-jose==3.5.0",
   "reportlab==4.4.10",

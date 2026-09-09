@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,12 @@ from aiops_agent.application.conversation_inputs import ConversationInputResolve
 async def _chunks(*values: bytes):
     for value in values:
         yield value
+
+
+_PNG_CONTENT = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUB"
+    "AScY42YAAAAASUVORK5CYII="
+)
 
 
 class _ImageModel:
@@ -114,6 +121,14 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
                 media_type="application/zip",
                 chunks=_chunks(b"zip"),
             )
+        with self.assertRaisesRegex(ValueError, "无法识别"):
+            await self.store.store(
+                domain_id=7,
+                actor_id="user-1",
+                file_name="unknown-upload",
+                media_type="application/octet-stream",
+                chunks=_chunks(b"not-an-image"),
+            )
         with self.assertRaisesRegex(ValueError, "超过"):
             await self.store.store(
                 domain_id=7,
@@ -136,7 +151,7 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             actor_id="user-1",
             file_name="error.png",
             media_type="image/png",
-            chunks=_chunks(b"not-a-real-image-but-bounded"),
+            chunks=_chunks(_PNG_CONTENT),
         )
         image_model = _ImageModel()
         prompts = _ImagePromptRegistry()
@@ -185,7 +200,7 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             actor_id="user-1",
             file_name="error.png",
             media_type="image/png",
-            chunks=_chunks(b"private-image-content"),
+            chunks=_chunks(_PNG_CONTENT),
         )
         resolver = ConversationInputResolver(
             upload_store=self.store,
@@ -216,7 +231,40 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("run-123", logged)
         self.assertIn("agent-456", logged)
         self.assertIn("trace-789", logged)
-        self.assertNotIn("private-image-content", logged)
+        self.assertNotIn(_PNG_CONTENT.decode("latin1"), logged)
+
+    async def test_corrects_text_declared_screenshot_to_image_media_type(self):
+        stored = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="database-alert.txt",
+            media_type="text/plain",
+            chunks=_chunks(_PNG_CONTENT),
+        )
+
+        self.assertEqual("image/png", stored.media_type)
+        image_model = _ImageModel()
+        resolver = ConversationInputResolver(
+            upload_store=self.store,
+            image_model_client=image_model,
+            prompt_registry=_ImagePromptRegistry(),
+            max_extracted_chars=1000,
+        )
+        _, uploads = await resolver.resolve(
+            domain_id=7,
+            actor_id="user-1",
+            content=(
+                {"content_type": "IMAGE", "upload_id": stored.upload_id},
+            ),
+            image_capabilities={
+                "vlm": {
+                    "default_model_id": "01946b49-9f24-7f14-8000-000000000001"
+                }
+            },
+        )
+
+        self.assertEqual("VLM", uploads[0].extraction_mode)
+        self.assertEqual(1, len(image_model.calls))
 
     async def test_resolver_extracts_awr_html_and_common_oracle_log_encoding(self):
         awr_upload = await self.store.store(

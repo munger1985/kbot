@@ -12,6 +12,8 @@ from typing import AsyncIterator
 from urllib.parse import unquote, urlparse
 from uuid import UUID
 
+from PIL import Image, UnidentifiedImageError
+
 from platform_core.identity import uuid7
 
 
@@ -45,6 +47,15 @@ class LocalConversationUploadStore:
             "image/webp",
         }
     )
+    _PENDING_MEDIA_TYPES = frozenset({"application/octet-stream"})
+    _IMAGE_MEDIA_TYPES = frozenset(
+        {"image/png", "image/jpeg", "image/webp"}
+    )
+    _IMAGE_FORMAT_MEDIA_TYPES = {
+        "PNG": "image/png",
+        "JPEG": "image/jpeg",
+        "WEBP": "image/webp",
+    }
 
     def __init__(
         self,
@@ -72,7 +83,9 @@ class LocalConversationUploadStore:
         chunks: AsyncIterator[bytes],
     ) -> StoredConversationUpload:
         normalized_media_type = media_type.split(";", 1)[0].strip().lower()
-        if normalized_media_type not in self._ALLOWED_MEDIA_TYPES:
+        if normalized_media_type not in (
+            self._ALLOWED_MEDIA_TYPES | self._PENDING_MEDIA_TYPES
+        ):
             raise ValueError("仅支持文本、JSON、CSV、SQL 和 PNG/JPEG/WebP 图片")
         safe_name = Path(file_name).name.strip()[:256]
         if not safe_name or safe_name in {".", ".."}:
@@ -97,6 +110,10 @@ class LocalConversationUploadStore:
                 os.fsync(stream.fileno())
             if byte_size == 0:
                 raise ValueError("上传文件不能为空")
+            normalized_media_type = self._resolved_media_type(
+                declared_media_type=normalized_media_type,
+                payload_path=temporary_path,
+            )
             temporary_path.replace(payload_path)
             expires_at = datetime.now(UTC) + self._ttl
             metadata = {
@@ -125,6 +142,30 @@ class LocalConversationUploadStore:
             if not metadata_path.exists():
                 payload_path.unlink(missing_ok=True)
             raise
+
+    @classmethod
+    def _resolved_media_type(
+        cls, *, declared_media_type: str, payload_path: Path
+    ) -> str:
+        """以受限图片解码结果校正浏览器提交的 MIME 类型。"""
+        detected_media_type = cls._detect_image_media_type(payload_path)
+        if detected_media_type is not None:
+            return detected_media_type
+        if declared_media_type in cls._IMAGE_MEDIA_TYPES:
+            raise ValueError("声明为图片的上传内容无法识别为 PNG/JPEG/WebP 图片")
+        if declared_media_type in cls._PENDING_MEDIA_TYPES:
+            raise ValueError("未声明类型的上传内容无法识别为受支持图片")
+        return declared_media_type
+
+    @classmethod
+    def _detect_image_media_type(cls, payload_path: Path) -> str | None:
+        """只接受可被 Pillow 校验的受支持图片格式。"""
+        try:
+            with Image.open(payload_path) as image:
+                image.verify()
+                return cls._IMAGE_FORMAT_MEDIA_TYPES.get(str(image.format))
+        except (UnidentifiedImageError, OSError, SyntaxError):
+            return None
 
     def get(
         self, *, upload_id: str, domain_id: int, actor_id: str
