@@ -96,6 +96,29 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
         )
         self.assertEqual(result.referenced_objects, ("sys.x$kcbwh",))
 
+    def test_virtual_column_requires_tab_cols_dictionary_view(self) -> None:
+        with self.assertRaises(DynamicQueryRejected) as raised:
+            self.policy.validate(
+                "SELECT c.column_name AS column_name, "
+                "c.virtual_column AS virtual_column "
+                "FROM all_tab_columns c "
+                "WHERE c.owner = :owner AND c.table_name = :table_name",
+                {"owner": "APP", "table_name": "ORDERS"},
+            )
+
+        self.assertEqual(
+            "DYNAMIC_SQL_DICTIONARY_COLUMN_INVALID", raised.exception.code
+        )
+
+        validated = self.policy.validate(
+            "SELECT c.column_name AS column_name, "
+            "c.virtual_column AS virtual_column "
+            "FROM all_tab_cols c "
+            "WHERE c.owner = :owner AND c.table_name = :table_name",
+            {"owner": "APP", "table_name": "ORDERS"},
+        )
+        self.assertIn("all_tab_cols", validated.normalized_sql.lower())
+
     def test_existing_lower_limit_is_preserved(self) -> None:
         result = self.policy.validate(
             "SELECT sid FROM v$session FETCH FIRST 10 ROWS ONLY"

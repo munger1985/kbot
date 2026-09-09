@@ -72,6 +72,9 @@ _SQLGLOT_ORACLE_FUNCTION_NAMES = {
     "STR_TO_DATE": "TO_DATE",
     "SUBSTRING": "SUBSTR",
 }
+_VIRTUAL_COLUMN_SOURCE_VIEWS = frozenset(
+    {"ALL_TAB_COLS", "DBA_TAB_COLS", "USER_TAB_COLS", "CDB_TAB_COLS"}
+)
 
 
 class DynamicQueryRejected(ValueError):
@@ -161,6 +164,7 @@ class OracleDynamicQueryPolicy:
                 "动态 SQL 只允许单条 SELECT 或带 WITH 的 SELECT",
             )
         self._validate_nodes(expression)
+        self._validate_oracle_dictionary_columns(expression)
         projected_columns = self._projected_columns(expression)
         column_sensitivities = ("PUBLIC",) * len(projected_columns)
         referenced_objects = self._referenced_objects(expression)
@@ -267,6 +271,30 @@ class OracleDynamicQueryPolicy:
             and str(package.name).upper() in self._allowed_packages
             and isinstance(expression.expression, exp.Func)
         )
+
+    @staticmethod
+    def _validate_oracle_dictionary_columns(expression: exp.Select) -> None:
+        """校验 Oracle 数据字典中需要特定视图承载的字段。"""
+        source_by_alias = {
+            str(table.alias_or_name).upper(): str(table.name).upper()
+            for table in expression.find_all(exp.Table)
+        }
+        for column in expression.find_all(exp.Column):
+            if str(column.name).upper() != "VIRTUAL_COLUMN":
+                continue
+            qualifier = str(column.table or "").upper()
+            source_view = source_by_alias.get(qualifier)
+            if source_view in _VIRTUAL_COLUMN_SOURCE_VIEWS:
+                continue
+            if not qualifier and len(source_by_alias) == 1:
+                source_view = next(iter(source_by_alias.values()))
+                if source_view in _VIRTUAL_COLUMN_SOURCE_VIEWS:
+                    continue
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_DICTIONARY_COLUMN_INVALID",
+                "VIRTUAL_COLUMN 只能从 ALL_TAB_COLS、DBA_TAB_COLS、"
+                "USER_TAB_COLS 或 CDB_TAB_COLS 查询",
+            )
 
     def _table_function_package(self, table: exp.Table) -> str | None:
         wrapper = table.this
