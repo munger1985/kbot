@@ -156,12 +156,22 @@ RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建�
   python -m pip install --no-cache-dir --force-reinstall --no-deps onnxruntime==1.29.0
 ```
 
+若导入 `tesserocr` 时出现 `libtiff.so.6`、`jpeg12_write_raw_data` 等动态库 ABI 错误，执行：
+
+```bash
+/home/ubuntu/anaconda3/bin/conda install -y -n kbot4 \
+  --override-channels -c conda-forge --strict-channel-priority --force-reinstall \
+  tesseract tesserocr libtiff libjpeg-turbo
+```
+
 Knowledge Core Parser 默认通过 Docling 的 `TesseractOcrOptions` 执行中英文 OCR。
 `requirements.txt` 中的 Docling 不包含可选的 Tesseract Python 绑定，因此使用 Conda
 环境部署时，还必须在 KBot 实际运行的同一个环境中安装 `tesseract` 和 `tesserocr`：
 
 ```bash
-conda install -n kbot4 -c conda-forge tesseract tesserocr
+conda install -n kbot4 --override-channels -c conda-forge \
+  --strict-channel-priority --force-reinstall \
+  tesseract tesserocr libtiff libjpeg-turbo
 ```
 
 激活环境后，将 Tesseract 语言数据目录保存为该环境的持久变量：

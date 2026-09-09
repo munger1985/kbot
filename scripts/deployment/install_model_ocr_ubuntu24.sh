@@ -62,9 +62,11 @@ fi
 
 cd "$KBOT_SOURCE_ROOT"
 if [[ "$SKIP_RUNTIME_INSTALL" == false ]]; then
-    echo "安装 Conda OCR 依赖：$CONDA_ENV_NAME"
-    "$conda_bin" install -y -n "$CONDA_ENV_NAME" -c conda-forge \
-        scikit-image python-bidi tesseract tesserocr
+    # Tesseract 及其图像编解码动态库必须来自同一 channel，避免 libtiff/libjpeg ABI 混用。
+    echo "从 conda-forge 统一安装 OCR 原生依赖：$CONDA_ENV_NAME"
+    "$conda_bin" install -y -n "$CONDA_ENV_NAME" \
+        --override-channels -c conda-forge --strict-channel-priority --force-reinstall \
+        scikit-image python-bidi tesseract tesserocr libtiff libjpeg-turbo
 
     echo "安装 KBot 工作区及 Python OCR 依赖"
     KBOT_CONDA_ENV="$CONDA_ENV_NAME" bash scripts/deployment/install_workspace.sh

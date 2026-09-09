@@ -16,6 +16,9 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         source = INSTALLER.read_text(encoding="utf-8")
 
         self.assertIn("tesseract tesserocr", source)
+        self.assertIn("libtiff libjpeg-turbo", source)
+        self.assertIn("--strict-channel-priority --force-reinstall", source)
+        self.assertIn("--override-channels -c conda-forge", source)
         self.assertNotIn("'onnxruntime=1.29.0=*_cpu'", source)
         self.assertIn("--force-reinstall --no-deps onnxruntime==1.29.0", source)
         self.assertIn("scripts/deployment/install_workspace.sh", source)
