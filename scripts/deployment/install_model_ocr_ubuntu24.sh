@@ -6,7 +6,7 @@ set -euo pipefail
 
 KBOT_SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONDA_ENV_NAME="${KBOT_CONDA_ENV:-kbot4}"
-DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-/home/chris/models/docling_models}"
+DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}"
 INSTALL_SYSTEMD_SERVICE=false
 SKIP_RUNTIME_INSTALL=false
 
@@ -64,10 +64,15 @@ cd "$KBOT_SOURCE_ROOT"
 if [[ "$SKIP_RUNTIME_INSTALL" == false ]]; then
     echo "安装 Conda OCR 依赖：$CONDA_ENV_NAME"
     "$conda_bin" install -y -n "$CONDA_ENV_NAME" -c conda-forge \
-        'onnxruntime=1.29.0=*_cpu' scikit-image python-bidi tesseract tesserocr
+        scikit-image python-bidi tesseract tesserocr
 
     echo "安装 KBot 工作区及 Python OCR 依赖"
     KBOT_CONDA_ENV="$CONDA_ENV_NAME" bash scripts/deployment/install_workspace.sh
+
+    # onnxruntime 由 pip 单独管理，避免其 Conda 原生扩展与 pip Python 接口混装。
+    echo "统一安装 CPU 版 ONNX Runtime"
+    "$conda_bin" run -n "$CONDA_ENV_NAME" python -m pip install \
+        --no-cache-dir --force-reinstall --no-deps onnxruntime==1.29.0
 else
     echo "按参数跳过依赖安装，仅验证并部署已有 OCR 运行时。"
 fi

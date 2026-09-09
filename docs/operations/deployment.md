@@ -129,7 +129,7 @@ Docling Parser 共用同一 Conda 环境内的 Tesseract、`tesserocr` 和语言
 
 ```bash
 KBOT_CONDA_ENV=kbot4 \
-KBOT_DOCLING_MODELS_DIR=/home/chris/models/docling_models \
+KBOT_DOCLING_MODELS_DIR=/home/ubuntu/models/docling_models \
 bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
 ```
 
@@ -147,6 +147,14 @@ bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
 RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
 工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。
+
+若旧环境曾混用 Conda 与 pip 安装 `onnxruntime`，出现 `OrtEpAssignedNode` 导入错误时，先以
+实际 Conda 路径执行以下修复，再重新运行安装器：
+
+```bash
+/home/ubuntu/anaconda3/bin/conda run -n kbot4 \
+  python -m pip install --no-cache-dir --force-reinstall --no-deps onnxruntime==1.29.0
+```
 
 Knowledge Core Parser 默认通过 Docling 的 `TesseractOcrOptions` 执行中英文 OCR。
 `requirements.txt` 中的 Docling 不包含可选的 Tesseract Python 绑定，因此使用 Conda

@@ -16,8 +16,11 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         source = INSTALLER.read_text(encoding="utf-8")
 
         self.assertIn("tesseract tesserocr", source)
+        self.assertNotIn("'onnxruntime=1.29.0=*_cpu'", source)
+        self.assertIn("--force-reinstall --no-deps onnxruntime==1.29.0", source)
         self.assertIn("scripts/deployment/install_workspace.sh", source)
         self.assertIn("--skip-runtime-install", source)
+        self.assertIn('${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}', source)
         self.assertIn('"$HOME/miniconda3/bin/conda"', source)
         self.assertIn('"/opt/miniconda3/bin/conda"', source)
         self.assertIn("RapidOCR 本地模型加载验证通过", source)
