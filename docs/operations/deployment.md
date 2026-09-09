@@ -154,6 +154,15 @@ python -c "import tesserocr; print(tesserocr.tesseract_version()); print(tessero
 实际环境名。Parser 进程由 systemd 或其他进程管理器启动时，也必须继承该环境保存的
 `TESSDATA_PREFIX`，否则 Docling 可能能导入 `tesserocr`，但仍无法加载中文语言数据。
 
+`model_ocr` 为 AIOps 对话图片提供独立 OCR；其 `local_tesseract` 可复用以上 Tesseract
+二进制和语言包，但不会调用 Docling。选择 `local_easyocr` 或 `local_rapidocr` 时，安装
+工作区依赖后由对应 Provider 按模型目录参数加载本地模型；生产环境应先以一张不含敏感
+信息的样图通过 OCR 服务的模型连接测试验证。
+
+已有 Schema 首次启用类别 6 前，由 Schema Owner 执行
+`database/oracle/operations/enable_model_serving_ocr_category.sql`；新建空 Schema 已由
+`database/oracle/model_serving/001_model_registry.sql` 包含该约束。
+
 KBot 与其他使用 `platform_core`、`agent_runtime` 等相同 Import 名的项目不能同时在
 一个 Python 环境中以 editable 模式安装。遇到来源冲突时应使用 KBot 专用环境，不能通过
 调整 `PYTHONPATH` 或忽略来源检查绕过。

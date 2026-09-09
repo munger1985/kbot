@@ -1,82 +1,85 @@
-"""与 Docling 解耦、可共享模型文件路径的 OCR 运行时。"""
+"""对话图片文字提取的 OCR 业务服务。"""
 
-import asyncio
 import base64
 import binascii
-import json
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
-from platform_core.dictionary import ModelCategory, OCRProvider
+from .model import OCRModel
+from .model_pool import OCRModelPool
 
 
 class OCRService:
-    def __init__(self, *, uow_factory):
+    """以共享模型池管理 OCR 模型的加载、失效和推理。"""
+
+    def __init__(self, *, uow_factory: Callable | None = None):
+        self._model_pool = OCRModelPool()
         self._uow_factory = uow_factory
-        self._engines: dict[UUID, object] = {}
+        self._initialized = False
+
+    def bind_session_factory(self, session_factory: Callable) -> None:
+        self._model_pool.set_session_factory(session_factory)
+
+    def bind_uow_factory(self, uow_factory: Callable) -> None:
+        self._uow_factory = uow_factory
+
+    async def initialize(self) -> None:
+        if not self._initialized:
+            await self._model_pool.initialize()
+            self._initialized = True
+
+    async def warmup(self) -> None:
+        if not self._initialized:
+            await self.initialize()
+        await self._model_pool.warmup()
+
+    async def shutdown(self) -> None:
+        if self._initialized:
+            await self._model_pool.shutdown()
+            self._initialized = False
+
+    async def invalidate_model(self, served_model_name: str) -> None:
+        if self._initialized:
+            await self._model_pool.unload_model(served_model_name)
+
+    def is_model_loaded(self, served_model_name: str) -> bool:
+        return self._model_pool.is_model_loaded(served_model_name)
 
     async def infer(
         self, *, model_id: UUID, image_base64: str
     ) -> dict[str, Any]:
-        async with self._uow_factory() as uow:
-            assert uow.models is not None
-            model = await uow.models.get_by_id(model_id)
-            if (
-                int(model.category) != ModelCategory.OCR.value
-                or int(model.status) != 1
-            ):
-                raise LookupError("OCR 模型不存在或未激活")
-            provider = str(model.provider)
-            params = dict(model.model_params or {})
-            revision = str(
-                params.get("revision") or model.provider_model_name
-            )
         try:
             image = base64.b64decode(image_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("image_base64 无效") from exc
         if not image:
             raise ValueError("图片内容为空")
-        if provider == OCRProvider.DOCLING.value:
-            result = await asyncio.to_thread(
-                self._run_rapidocr, model_id, image, params
-            )
-        elif provider == OCRProvider.DEEPSEEK_OCR.value:
-            raise RuntimeError("DeepSeek OCR Provider 尚未配置推理适配器")
-        else:
-            raise ValueError("不支持的 OCR Provider")
-        raw_blocks = result.to_json() or []
-        blocks = (
-            json.loads(raw_blocks)
-            if isinstance(raw_blocks, str)
-            else raw_blocks
+        model_data = await self._model_definition(model_id)
+        if not self._initialized:
+            await self.initialize()
+        model: OCRModel = await self._model_pool.load_model(
+            model_data["served_model_name"],
         )
-        if isinstance(blocks, dict):
-            blocks = blocks.get("res") or blocks.get("result") or [blocks]
+        text, blocks = await model.infer(image)
         return {
             "model_id": model_id,
-            "provider": provider,
-            "text": "\n".join(result.txts or ()),
-            "blocks": list(blocks),
-            "model_revision": revision,
+            "provider": model.provider,
+            "text": text,
+            "blocks": blocks,
+            "model_revision": model.revision,
         }
 
-    def is_model_loaded(self, served_model_name: str) -> bool:
-        """OCR 引擎按模型 UUID 缓存，目录名称不作为缓存键。"""
-        return False
+    async def _model_definition(self, model_id: UUID) -> dict[str, Any]:
+        if self._uow_factory is None:
+            raise RuntimeError("OCR 服务未配置模型目录事务工厂")
+        async with self._uow_factory() as uow:
+            from platform_core.dictionary import ModelCategory, Status
 
-    async def invalidate_model(self, served_model_name: str) -> None:
-        """目录变化时清空轻量引擎缓存，避免继续使用旧参数。"""
-        self._engines.clear()
-
-    def _run_rapidocr(self, model_id: UUID, image: bytes, params: dict):
-        from rapidocr import RapidOCR
-
-        engine = self._engines.get(model_id)
-        if engine is None:
-            engine = RapidOCR(
-                config_path=params.get("config_path"),
-                params=params.get("rapidocr_params"),
-            )
-            self._engines[model_id] = engine
-        return engine(image)
+            assert uow.models is not None
+            model = await uow.models.get_by_id(model_id)
+            if (
+                int(model.category) != ModelCategory.OCR.value
+                or int(model.status) != Status.ENABLED.value
+            ):
+                raise LookupError("OCR 模型不存在或未启用")
+            return self._model_pool._map_entity_to_dict(model)

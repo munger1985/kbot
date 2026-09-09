@@ -29,6 +29,17 @@ _EMBEDDING_PARAMS = (
 )
 _VLM_PARAMS = ("max_tokens", "temperature", *_COMMON_REMOTE)
 _VISUAL_PARAMS = ("model_path", "device", "dimension", *_COMMON_REMOTE)
+_OCR_LOCAL_PARAMS = (
+    "model_path", "languages", "device", "num_threads", "timeout_seconds",
+)
+_OCR_RAPIDOCR_PARAMS = (
+    *_OCR_LOCAL_PARAMS, "config_path", "rapidocr_params",
+)
+_OCR_EASYOCR_PARAMS = (*_OCR_LOCAL_PARAMS, "download_enabled")
+_OCR_TESSERACT_PARAMS = (*_OCR_LOCAL_PARAMS, "executable")
+_OCR_DEEPSEEK_PARAMS = (
+    "prompt", "max_tokens", "temperature", "timeout_seconds",
+)
 
 PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     **{
@@ -76,6 +87,20 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
         )
         for provider in ("api_qwen", "chatgpt")
     },
+    (ModelCategory.OCR.value, "local_rapidocr"): _ProviderSchema(
+        ("model_params.model_path",), _OCR_RAPIDOCR_PARAMS,
+        secret_fields=(),
+    ),
+    (ModelCategory.OCR.value, "local_easyocr"): _ProviderSchema(
+        ("model_params.model_path",), _OCR_EASYOCR_PARAMS,
+        secret_fields=(),
+    ),
+    (ModelCategory.OCR.value, "local_tesseract"): _ProviderSchema(
+        (), _OCR_TESSERACT_PARAMS, secret_fields=(),
+    ),
+    (ModelCategory.OCR.value, "api_deepseek_ocr"): _ProviderSchema(
+        ("api_endpoint", "api_key"), _OCR_DEEPSEEK_PARAMS,
+    ),
 }
 
 

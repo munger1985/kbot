@@ -191,18 +191,19 @@ class VLMProvider(str, Enum):
     CHATGPT = "chatgpt"
 
 class OCRProvider(str, Enum):
-    """OCR provider enumeration."""
-    EASYOCR = "easyocr"
-    TESSERACT = "tesseract"
-    RAPIDOCR = "rapidocr"
-    DEEPSEEK_OCR = "deepseek_ocr"
+    """由 Model Serving 托管、供业务图片文字提取使用的 OCR 提供方。"""
+
+    LOCAL_RAPIDOCR = "local_rapidocr"
+    LOCAL_EASYOCR = "local_easyocr"
+    LOCAL_TESSERACT = "local_tesseract"
+    API_DEEPSEEK_OCR = "api_deepseek_ocr"
 
 # OCR 引擎中文标签映射
 OCR_ENGINE_LABELS: dict[str, str] = {
-    "easyocr": "EasyOCR",
-    "tesseract": "Tesseract",
-    "rapidocr": "RapidOCR",
-    "deepseek_ocr": "DeepSeek OCR",
+    "local_rapidocr": "RapidOCR",
+    "local_easyocr": "EasyOCR",
+    "local_tesseract": "Tesseract OCR",
+    "api_deepseek_ocr": "DeepSeek OCR",
 }
 
 # Service type enumeration

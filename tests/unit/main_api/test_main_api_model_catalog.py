@@ -28,7 +28,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
         _configure_model_config_clients(app)
 
         clients = app.state.model_config_clients
-        self.assertEqual(4, len(clients))
+        self.assertEqual(5, len(clients))
         self.assertEqual(
             tuple(
                 dependency.base_url.rstrip("/").replace(
@@ -39,6 +39,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     settings.model_llm,
                     settings.model_visual,
                     settings.model_vlm,
+                    settings.model_ocr,
                 )
             ),
             tuple(client.base_url for client in clients),
@@ -59,6 +60,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
     def test_catalog_returns_only_enabled_models_and_keeps_uuid(self):
         llm_id = uuid7()
         embedding_id = uuid7()
+        ocr_id = uuid7()
         app = FastAPI()
         app.state.model_config_clients = (
             _ModelClient(
@@ -94,6 +96,26 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     }
                 ]
             ),
+            _ModelClient(
+                [
+                    {
+                        "model_id": str(ocr_id),
+                        "served_model_name": "ocr-prod",
+                        "display_name": "OCR Prod",
+                        "category": 6,
+                        "provider": "local_tesseract",
+                        "status": "ACTIVE",
+                    },
+                    {
+                        "model_id": str(uuid7()),
+                        "served_model_name": "ocr-draft",
+                        "display_name": "OCR Draft",
+                        "category": 6,
+                        "provider": "local_tesseract",
+                        "status": "DRAFT",
+                    },
+                ]
+            ),
         )
         app.include_router(router)
 
@@ -102,10 +124,10 @@ class MainApiModelCatalogTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         payload = response.json()
         self.assertEqual(
-            [str(llm_id), str(embedding_id)],
+            [str(llm_id), str(embedding_id), str(ocr_id)],
             [row["model_id"] for row in payload],
         )
-        self.assertEqual([1, 2], [row["category"] for row in payload])
+        self.assertEqual([1, 2, 6], [row["category"] for row in payload])
 
 
 if __name__ == "__main__":

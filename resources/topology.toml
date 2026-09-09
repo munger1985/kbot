@@ -264,6 +264,10 @@ timeout_seconds = 120
 endpoint = "model_vlm"
 timeout_seconds = 120
 
+[dependencies.main_api.model_ocr]
+endpoint = "model_ocr"
+timeout_seconds = 120
+
 [dependencies.knowledge_core.embedding]
 endpoint = "model_embedding"
 timeout_seconds = 300

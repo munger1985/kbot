@@ -25,8 +25,10 @@ config = settings.ocr
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     runtime = create_database_runtime()
-    factory = create_model_serving_uow_factory(runtime.session_factory)
-    service = OCRService(uow_factory=factory)
+    service = OCRService(
+        uow_factory=create_model_serving_uow_factory(runtime.session_factory),
+    )
+    service.bind_session_factory(runtime.session_factory)
     app.state.service_name = config.service_name
     app.state.ocr_service = service
     app.state.model_registry = create_model_registry(
@@ -35,8 +37,13 @@ async def lifespan(app: FastAPI):
         service_name=config.service_name,
         settings=settings,
     )
-    yield
-    await runtime.close()
+    await service.initialize()
+    await service.warmup()
+    try:
+        yield
+    finally:
+        await service.shutdown()
+        await runtime.close()
 
 
 app: FastAPI = FastAPIOffline(

@@ -156,7 +156,7 @@
             "title": "Api Endpoint"
           },
           "category": {
-            "maximum": 5.0,
+            "maximum": 6.0,
             "minimum": 1.0,
             "title": "Category",
             "type": "integer"
@@ -254,7 +254,7 @@
             "title": "Api Key"
           },
           "category": {
-            "maximum": 5.0,
+            "maximum": 6.0,
             "minimum": 1.0,
             "title": "Category",
             "type": "integer"
@@ -349,7 +349,7 @@
             "type": "array"
           },
           "category": {
-            "maximum": 5.0,
+            "maximum": 6.0,
             "minimum": 1.0,
             "title": "Category",
             "type": "integer"

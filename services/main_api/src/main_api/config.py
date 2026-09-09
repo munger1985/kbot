@@ -130,6 +130,12 @@ class MainApiSettings(Settings):
             audience="kbot-model-vlm",
         )
     )
+    model_ocr: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18096",
+            audience="kbot-model-ocr",
+        )
+    )
     integrations: MainApiIntegrationConfig = Field(
         default_factory=MainApiIntegrationConfig
     )

@@ -53,6 +53,8 @@ Collection 和 App 私有 Agent 的模型绑定保存模型 UUID；运行时 Exe
 Collection 的文本 Embedding 是必选且不可原地替换；VLM 和视觉 Embedding 可选。
 Agent 可为路由、上下文、回答和记忆分别绑定不同模型。
 
-`model_ocr` 是 Model Serving 的通用 OCR 进程。DeepSeek OCR 则是 Parser 的独立
-OpenAI 兼容依赖，不登记到 Model Serving，也不由 Model Pool 托管；两者不是同一
-部署单元。
+`model_ocr` 是 AIOps 对话图片文字提取的独立 OCR 进程，目录类别为 `6`，支持
+`local_tesseract`、`local_easyocr`、`local_rapidocr` 与 `api_deepseek_ocr`。它不调用
+Knowledge Core 的 Docling 解析链路；部署可复用同一台主机的 Tesseract 二进制和语言包，
+但模型目录、模型池、进程和调用链均独立。Knowledge Core Parser 仍按既有配置使用
+Docling 及其独立的 DeepSeek OCR 增强端点。
