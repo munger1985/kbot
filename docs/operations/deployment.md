@@ -133,6 +133,16 @@ KBOT_DOCLING_MODELS_DIR=/home/chris/models/docling_models \
 bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
 ```
 
+安装器会依次识别 `CONDA_EXE`、当前 `PATH`，以及当前用户和 `/opt` 下的
+`anaconda3`/`miniconda3`。若 Conda 安装在其他位置，请显式指定其可执行文件，例如：
+
+```bash
+CONDA_EXE=/srv/miniconda3/bin/conda \
+KBOT_CONDA_ENV=kbot4 \
+KBOT_DOCLING_MODELS_DIR=/data/docling_models \
+bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
+```
+
 安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
 RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA

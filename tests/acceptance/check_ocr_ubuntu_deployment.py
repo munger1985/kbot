@@ -18,6 +18,8 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn("tesseract tesserocr", source)
         self.assertIn("scripts/deployment/install_workspace.sh", source)
         self.assertIn("--skip-runtime-install", source)
+        self.assertIn('"$HOME/miniconda3/bin/conda"', source)
+        self.assertIn('"/opt/miniconda3/bin/conda"', source)
         self.assertIn("RapidOCR 本地模型加载验证通过", source)
         self.assertIn("EasyOCR 本地模型加载验证通过", source)
 

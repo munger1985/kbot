@@ -23,11 +23,27 @@ for argument in "$@"; do
 done
 
 find_conda() {
-    if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
-        printf '%s\n' "${CONDA_EXE}"
+    local candidate="${CONDA_EXE:-}"
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+        printf '%s\n' "$candidate"
         return 0
     fi
-    command -v conda
+    candidate="$(command -v conda || true)"
+    if [[ -n "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    for candidate in \
+        "$HOME/anaconda3/bin/conda" \
+        "$HOME/miniconda3/bin/conda" \
+        "/opt/anaconda3/bin/conda" \
+        "/opt/miniconda3/bin/conda"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
 }
 
 conda_bin="$(find_conda || true)"
