@@ -80,7 +80,16 @@ if [[ "$DOWNLOAD_MODELS" == true ]]; then
     echo "下载 Docling OCR 模型：$DOCLING_MODELS_DIR"
     mkdir -p "$DOCLING_MODELS_DIR"
     "$conda_bin" run -n "$CONDA_ENV_NAME" \
-        docling-tools models download rapidocr easyocr --output-dir "$DOCLING_MODELS_DIR"
+        docling-tools models download rapidocr easyocr --force --output-dir "$DOCLING_MODELS_DIR"
+    # Docling 的 EasyOCR 下载器默认不包含中文识别模型；按 KBot 的 ch_sim/en 配置补齐权重。
+    KBOT_DOCLING_MODELS_DIR="$DOCLING_MODELS_DIR" "$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
+from pathlib import Path
+import easyocr
+import os
+model_dir = Path(os.environ["KBOT_DOCLING_MODELS_DIR"]) / "EasyOcr"
+easyocr.Reader(["ch_sim", "en"], gpu=False, model_storage_directory=str(model_dir), download_enabled=True, verbose=False)
+print("EasyOCR 中英文模型下载验证通过")
+'
 fi
 if [[ ! -d "$DOCLING_MODELS_DIR" ]]; then
     echo "Docling 模型目录不存在：$DOCLING_MODELS_DIR；可追加 --download-models 下载 OCR 模型。" >&2

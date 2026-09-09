@@ -144,8 +144,9 @@ bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
 ```
 
 `--download-models` 会通过 `docling-tools` 下载 RapidOCR 与 EasyOCR 的 Docling 模型到
-`KBOT_DOCLING_MODELS_DIR`；它不会下载无关的全量模型包。若该目录已有由运维同步的模型文件，
-可省略该参数。安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
+`KBOT_DOCLING_MODELS_DIR`，并用 EasyOCR 补齐 KBot 所需的中文 `ch_sim` 与英文权重；它不会下载
+无关的全量模型包。若该目录已有由运维同步的模型文件，可省略该参数。指定该参数时会强制补齐这两个
+OCR 模型的缺失或不完整文件。安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
 RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
 工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。
