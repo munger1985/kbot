@@ -28,6 +28,8 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn('"/opt/miniconda3/bin/conda"', source)
         self.assertIn("RapidOCR 本地模型加载验证通过", source)
         self.assertIn("EasyOCR 本地模型加载验证通过", source)
+        self.assertIn("Tesseract Python 绑定导入通过", source)
+        self.assertNotIn("import easyocr\nimport onnxruntime\nimport tesserocr", source)
 
     def test_systemd_unit_uses_the_same_tessdata_environment(self) -> None:
         source = UNIT_TEMPLATE.read_text(encoding="utf-8")

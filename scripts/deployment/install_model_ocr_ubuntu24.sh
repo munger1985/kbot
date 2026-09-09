@@ -88,13 +88,17 @@ fi
 
 echo "验证 Docling 与本地 OCR 依赖"
 "$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
+import tesserocr
+print("Tesseract:", tesserocr.tesseract_version())
+print("Tesseract Python 绑定导入通过")
+'
+# EasyOCR 会加载 PyTorch 自带的图像库；与 tesserocr 分进程验证，避免库全局加载顺序造成伪失败。
+"$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
 import easyocr
 import onnxruntime
-import tesserocr
 from rapidocr import RapidOCR
 print("EasyOCR:", easyocr.__version__)
 print("ONNX Runtime:", onnxruntime.__version__)
-print("Tesseract:", tesserocr.tesseract_version())
 print("RapidOCR:", RapidOCR.__module__)
 '
 "$conda_bin" run -n "$CONDA_ENV_NAME" tesseract --list-langs | grep -Ex 'chi_sim|eng' >/dev/null

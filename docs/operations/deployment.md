@@ -148,6 +148,10 @@ RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建�
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
 工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。
 
+安装验证会将 Tesseract/Docling 与 EasyOCR/RapidOCR 放在独立 Python 进程中执行。EasyOCR 的
+PyTorch 依赖会加载自己的图像库，不能与 `tesserocr` 合并为一次导入验证，否则可能产生不影响
+两个独立服务运行的动态库加载顺序错误。
+
 若旧环境曾混用 Conda 与 pip 安装 `onnxruntime`，出现 `OrtEpAssignedNode` 导入错误时，先以
 实际 Conda 路径执行以下修复，再重新运行安装器：
 
