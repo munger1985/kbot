@@ -23,6 +23,8 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn("--force-reinstall --no-deps onnxruntime==1.29.0", source)
         self.assertIn("scripts/deployment/install_workspace.sh", source)
         self.assertIn("--skip-runtime-install", source)
+        self.assertIn("--download-models", source)
+        self.assertIn("docling-tools models download rapidocr easyocr", source)
         self.assertIn('${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}', source)
         self.assertIn('"$HOME/miniconda3/bin/conda"', source)
         self.assertIn('"/opt/miniconda3/bin/conda"', source)

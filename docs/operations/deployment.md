@@ -130,7 +130,7 @@ Docling Parser 共用同一 Conda 环境内的 Tesseract、`tesserocr` 和语言
 ```bash
 KBOT_CONDA_ENV=kbot4 \
 KBOT_DOCLING_MODELS_DIR=/home/ubuntu/models/docling_models \
-bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
+bash scripts/deployment/install_model_ocr_ubuntu24.sh --download-models --install-service
 ```
 
 安装器会依次识别 `CONDA_EXE`、当前 `PATH`，以及当前用户和 `/opt` 下的
@@ -143,7 +143,9 @@ KBOT_DOCLING_MODELS_DIR=/data/docling_models \
 bash scripts/deployment/install_model_ocr_ubuntu24.sh --install-service
 ```
 
-安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
+`--download-models` 会通过 `docling-tools` 下载 RapidOCR 与 EasyOCR 的 Docling 模型到
+`KBOT_DOCLING_MODELS_DIR`；它不会下载无关的全量模型包。若该目录已有由运维同步的模型文件，
+可省略该参数。安装器会安装 `easyocr`、`rapidocr`、`onnxruntime`、`tesseract` 与 `tesserocr`，验证本地
 RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
 工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。

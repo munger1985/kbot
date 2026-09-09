@@ -9,13 +9,15 @@ CONDA_ENV_NAME="${KBOT_CONDA_ENV:-kbot4}"
 DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}"
 INSTALL_SYSTEMD_SERVICE=false
 SKIP_RUNTIME_INSTALL=false
+DOWNLOAD_MODELS=false
 
 usage() {
-    echo "Usage: $0 [--install-service] [--skip-runtime-install]" >&2
+    echo "Usage: $0 [--download-models] [--install-service] [--skip-runtime-install]" >&2
 }
 
 for argument in "$@"; do
     case "$argument" in
+        --download-models) DOWNLOAD_MODELS=true ;;
         --install-service) INSTALL_SYSTEMD_SERVICE=true ;;
         --skip-runtime-install) SKIP_RUNTIME_INSTALL=true ;;
         *) usage; exit 2 ;;
@@ -55,11 +57,6 @@ if ! "$conda_bin" env list | awk 'NF > 1 && $1 !~ /^#/ {print $1}' | grep -Fxq "
     echo "Conda 环境不存在：$CONDA_ENV_NAME" >&2
     exit 1
 fi
-if [[ ! -d "$DOCLING_MODELS_DIR" ]]; then
-    echo "Docling 模型目录不存在：$DOCLING_MODELS_DIR" >&2
-    exit 1
-fi
-
 cd "$KBOT_SOURCE_ROOT"
 if [[ "$SKIP_RUNTIME_INSTALL" == false ]]; then
     # Tesseract 及其图像编解码动态库必须来自同一 channel，避免 libtiff/libjpeg ABI 混用。
@@ -77,6 +74,17 @@ if [[ "$SKIP_RUNTIME_INSTALL" == false ]]; then
         --no-cache-dir --force-reinstall --no-deps onnxruntime==1.29.0
 else
     echo "按参数跳过依赖安装，仅验证并部署已有 OCR 运行时。"
+fi
+
+if [[ "$DOWNLOAD_MODELS" == true ]]; then
+    echo "下载 Docling OCR 模型：$DOCLING_MODELS_DIR"
+    mkdir -p "$DOCLING_MODELS_DIR"
+    "$conda_bin" run -n "$CONDA_ENV_NAME" \
+        docling-tools models download rapidocr easyocr --output-dir "$DOCLING_MODELS_DIR"
+fi
+if [[ ! -d "$DOCLING_MODELS_DIR" ]]; then
+    echo "Docling 模型目录不存在：$DOCLING_MODELS_DIR；可追加 --download-models 下载 OCR 模型。" >&2
+    exit 1
 fi
 
 python_bin="$($conda_bin run -n "$CONDA_ENV_NAME" python -c 'import sys; print(sys.executable)')"
