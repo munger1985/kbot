@@ -9,6 +9,8 @@ from html.parser import HTMLParser
 from typing import Any
 from uuid import UUID
 
+from loguru import logger
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedConversationUpload:
@@ -113,6 +115,9 @@ class ConversationInputResolver:
         actor_id: str,
         content: tuple[dict, ...],
         image_capabilities: dict[str, Any],
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        trace_id: str | None = None,
     ) -> tuple[tuple[dict, ...], tuple[ResolvedConversationUpload, ...]]:
         normalized: list[dict] = []
         uploads: list[ResolvedConversationUpload] = []
@@ -133,6 +138,9 @@ class ConversationInputResolver:
                 stored=stored,
                 raw=raw,
                 image_capabilities=image_capabilities,
+                run_id=run_id,
+                agent_id=agent_id,
+                trace_id=trace_id,
             )
             uploads.append(resolved)
             normalized.append(
@@ -185,7 +193,15 @@ class ConversationInputResolver:
         return tuple(sources)
 
     async def _extract(
-        self, *, item_no: int, stored, raw: bytes, image_capabilities: dict
+        self,
+        *,
+        item_no: int,
+        stored,
+        raw: bytes,
+        image_capabilities: dict,
+        run_id: str | None,
+        agent_id: str | None,
+        trace_id: str | None,
     ) -> ResolvedConversationUpload:
         common = {
             "item_no": item_no,
@@ -239,6 +255,15 @@ class ConversationInputResolver:
                 )
         mode, capability = self._image_capability(image_capabilities)
         if mode is None or capability is None or self._image_model_client is None:
+            logger.warning(
+                "图片证据不可解析：未取得图片模型能力 | run_id={} | agent_id={} | trace_id={} | file_name={} | media_type={} | configured_capabilities={}",
+                run_id,
+                agent_id,
+                trace_id,
+                stored.file_name,
+                stored.media_type,
+                ",".join(sorted(image_capabilities)),
+            )
             return ResolvedConversationUpload(
                 **common,
                 extracted_text=(
@@ -248,13 +273,34 @@ class ConversationInputResolver:
                 extraction_error="IMAGE_MODEL_UNAVAILABLE",
             )
         model_id = UUID(str(capability["default_model_id"]))
+        logger.info(
+            "图片证据准备解析 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | file_name={} | media_type={} | byte_size={}",
+            run_id,
+            agent_id,
+            trace_id,
+            mode,
+            model_id,
+            stored.file_name,
+            stored.media_type,
+            stored.byte_size,
+        )
+        prompt = None
         try:
-            prompt = None
             if mode == "VLM":
                 if self._prompt_registry is None:
                     raise RuntimeError("VLM 图片解析 Prompt Registry 不可用")
                 prompt = await self._prompt_registry.resolve(
                     "image_evidence_extract"
+                )
+                prompt_ref = prompt.ref()
+                logger.info(
+                    "图片 VLM Prompt 已解析 | run_id={} | agent_id={} | trace_id={} | prompt_id={} | prompt_version={} | prompt_source={}",
+                    run_id,
+                    agent_id,
+                    trace_id,
+                    prompt_ref.get("prompt_id"),
+                    prompt_ref.get("prompt_version"),
+                    prompt_ref.get("prompt_source"),
                 )
             result = await self._image_model_client.process(
                 mode=mode,
@@ -262,10 +308,23 @@ class ConversationInputResolver:
                 mime_type=stored.media_type,
                 content_base64=base64.b64encode(raw).decode("ascii"),
                 prompt_content=(prompt.content if prompt is not None else None),
+                run_id=run_id,
+                agent_id=agent_id,
+                trace_id=trace_id,
             )
             text = self._bounded(str(result.get("text") or "").strip())
             if not text:
                 raise ValueError("图片模型没有返回可用文字")
+            logger.info(
+                "图片证据解析完成 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | file_name={} | extracted_char_count={}",
+                run_id,
+                agent_id,
+                trace_id,
+                mode,
+                model_id,
+                stored.file_name,
+                len(text),
+            )
             return ResolvedConversationUpload(
                 **common,
                 extracted_text=text,
@@ -275,6 +334,18 @@ class ConversationInputResolver:
                 prompt_ref=(prompt.ref() if prompt is not None else None),
             )
         except Exception as exc:
+            stage = "VLM_PROMPT_RESOLVE" if mode == "VLM" and prompt is None else "MODEL_INFERENCE"
+            logger.warning(
+                "图片证据解析失败 | run_id={} | agent_id={} | trace_id={} | stage={} | mode={} | model_id={} | file_name={} | error_type={}",
+                run_id,
+                agent_id,
+                trace_id,
+                stage,
+                mode,
+                model_id,
+                stored.file_name,
+                type(exc).__name__,
+            )
             return ResolvedConversationUpload(
                 **common,
                 extracted_text=f"图片 {stored.file_name} 解析失败，仍保留原始图片证据。",

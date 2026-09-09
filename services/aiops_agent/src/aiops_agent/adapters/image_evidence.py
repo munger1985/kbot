@@ -1,6 +1,7 @@
 """对话图片证据的 OCR/VLM 模型客户端。"""
 
 import aiohttp
+from loguru import logger
 
 from platform_clients.model import AIModelConfigClient
 from platform_core.contracts import INTERNAL_API_V1
@@ -35,9 +36,34 @@ class ImageEvidenceModelClient:
         mime_type: str,
         content_base64: str,
         prompt_content: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        trace_id: str | None = None,
     ) -> dict:
         config = self._ocr if mode == "OCR" else self._vlm
-        definition = await self._catalogs[mode].get_model(model_id)
+        try:
+            definition = await self._catalogs[mode].get_model(model_id)
+        except Exception as exc:
+            logger.warning(
+                "图片模型定义读取失败 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | error_type={}",
+                run_id,
+                agent_id,
+                trace_id,
+                mode,
+                model_id,
+                type(exc).__name__,
+            )
+            raise
+        logger.info(
+            "图片模型定义已读取 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | served_model_name={} | provider={}",
+            run_id,
+            agent_id,
+            trace_id,
+            mode,
+            model_id,
+            definition.get("served_model_name"),
+            definition.get("provider"),
+        )
         headers = {
             "Content-Type": "application/json",
             **build_internal_auth_headers(
@@ -77,17 +103,55 @@ class ImageEvidenceModelClient:
                 ],
             }
         timeout = aiohttp.ClientTimeout(total=config.timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{config.base_url.rstrip('/')}{INTERNAL_API_V1}/inference",
-                headers=headers,
-                json=payload,
-            ) as response:
-                body = await response.json(content_type=None)
-                if response.status != 200:
-                    raise RuntimeError(
-                        f"{mode} 推理失败，HTTP {response.status}: {body}"
-                    )
+        logger.info(
+            "开始图片模型推理 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | served_model_name={}",
+            run_id,
+            agent_id,
+            trace_id,
+            mode,
+            model_id,
+            definition.get("served_model_name"),
+        )
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{config.base_url.rstrip('/')}{INTERNAL_API_V1}/inference",
+                    headers=headers,
+                    json=payload,
+                ) as response:
+                    body = await response.json(content_type=None)
+                    if response.status != 200:
+                        logger.warning(
+                            "图片模型推理响应异常 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | http_status={}",
+                            run_id,
+                            agent_id,
+                            trace_id,
+                            mode,
+                            model_id,
+                            response.status,
+                        )
+                        raise RuntimeError(
+                            f"{mode} 推理失败，HTTP {response.status}"
+                        )
+        except Exception as exc:
+            logger.warning(
+                "图片模型推理请求失败 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={} | error_type={}",
+                run_id,
+                agent_id,
+                trace_id,
+                mode,
+                model_id,
+                type(exc).__name__,
+            )
+            raise
+        logger.info(
+            "图片模型推理完成 | run_id={} | agent_id={} | trace_id={} | mode={} | model_id={}",
+            run_id,
+            agent_id,
+            trace_id,
+            mode,
+            model_id,
+        )
         if mode == "VLM":
             choices = body.get("choices") or []
             text = (

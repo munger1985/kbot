@@ -155,6 +155,9 @@ class TurnPlanningService:
                 actor_id=context.actor_id,
                 content=context.content,
                 image_capabilities=context.image_capabilities,
+                run_id=str(context.ops_run_id),
+                agent_id=str(context.agent_id),
+                trace_id=context.trace_id,
             )
             context = replace(
                 context, content=content, resolved_uploads=uploads

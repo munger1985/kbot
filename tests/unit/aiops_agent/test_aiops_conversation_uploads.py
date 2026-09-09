@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID
 
 from aiops_agent.adapters.conversation_uploads import LocalConversationUploadStore
@@ -49,6 +50,12 @@ class _ImagePromptRegistry:
     async def resolve(self, prompt_id: str):
         self.calls.append(prompt_id)
         return _ImagePrompt()
+
+
+class _UnavailableImagePromptRegistry:
+    async def resolve(self, prompt_id: str):
+        del prompt_id
+        raise LookupError("Prompt 不存在")
 
 
 class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
@@ -171,6 +178,45 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
             "aiops_agent.image_evidence_extract",
             uploads[1].prompt_ref["prompt_id"],
         )
+
+    async def test_resolver_logs_vlm_prompt_resolution_failure_without_image_content(self):
+        image_upload = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="error.png",
+            media_type="image/png",
+            chunks=_chunks(b"private-image-content"),
+        )
+        resolver = ConversationInputResolver(
+            upload_store=self.store,
+            image_model_client=_ImageModel(),
+            prompt_registry=_UnavailableImagePromptRegistry(),
+            max_extracted_chars=1000,
+        )
+
+        with patch("aiops_agent.application.conversation_inputs.logger") as logger:
+            _, uploads = await resolver.resolve(
+                domain_id=7,
+                actor_id="user-1",
+                content=({"content_type": "IMAGE", "upload_id": image_upload.upload_id},),
+                image_capabilities={
+                    "vlm": {
+                        "default_model_id": "01946b49-9f24-7f14-8000-000000000001"
+                    }
+                },
+                run_id="run-123",
+                agent_id="agent-456",
+                trace_id="trace-789",
+            )
+
+        self.assertEqual("IMAGE_EXTRACTION_FAILED:LookupError", uploads[0].extraction_error)
+        logged = " ".join(str(call) for call in logger.warning.call_args_list)
+        self.assertIn("VLM_PROMPT_RESOLVE", logged)
+        self.assertIn("LookupError", logged)
+        self.assertIn("run-123", logged)
+        self.assertIn("agent-456", logged)
+        self.assertIn("trace-789", logged)
+        self.assertNotIn("private-image-content", logged)
 
     async def test_resolver_extracts_awr_html_and_common_oracle_log_encoding(self):
         awr_upload = await self.store.store(
