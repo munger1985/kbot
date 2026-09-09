@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import time
 from typing import Any
 
@@ -29,6 +30,13 @@ from .base import (
 
 class OracleDiagnosticDriver:
     db_type = "ORACLE"
+
+    _ORACLE_ERROR_LINE = re.compile(r"(?i)(?:ORA|DPY)-\d{4,5}\s*:[^\r\n]+")
+    _ORACLE_ERROR_CODE = re.compile(r"(?i)(?:ORA|DPY)-\d{4,5}")
+    _SENSITIVE_ERROR_VALUE = re.compile(
+        r"(?i)\b(username|user|password|passwd|pwd|token|secret|api[_-]?key)\s*([=:])\s*([^\s,;]+)"
+    )
+    _CONNECTION_URI = re.compile(r"(?i)\b(?:tcp|tcps)://[^\s,;]+")
 
     async def execute(
         self,
@@ -180,6 +188,9 @@ class OracleDiagnosticDriver:
             driver_error = getattr(exc, "args", [None])[0]
             code = getattr(driver_error, "code", None)
             full_code = getattr(driver_error, "full_code", None)
+            oracle_error_chain, oracle_error_detail = (
+                self._oracle_error_evidence(exc, driver_error)
+            )
             if code in {1017, 28000, 28001}:
                 mapped = "AUTH_FAILED"
             elif code == 1031:
@@ -205,10 +216,12 @@ class OracleDiagnosticDriver:
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
             logger.warning(
-                "Oracle诊断查询失败：tool_id={} phase={} oracle_code={} mapped_code={}",
+                "Oracle诊断查询失败：tool_id={} phase={} oracle_code={} oracle_error_chain={} oracle_error_detail={} mapped_code={}",
                 operation_id,
                 phase,
                 code,
+                oracle_error_chain,
+                oracle_error_detail,
                 mapped,
             )
             raise DiagnosticDriverError(
@@ -226,6 +239,48 @@ class OracleDiagnosticDriver:
                     await connection.close()
                 except Exception:
                     pass
+
+    @classmethod
+    def _oracle_error_evidence(
+        cls, exc: Exception, driver_error: object | None,
+    ) -> tuple[str, str]:
+        """提取有界且已脱敏的 Oracle 错误链，避免记录连接凭据或 SQL。"""
+        candidates = (
+            getattr(driver_error, "message", None),
+            str(driver_error) if driver_error is not None else None,
+            str(exc),
+        )
+        details: list[str] = []
+        for candidate in candidates:
+            if not candidate:
+                continue
+            for match in cls._ORACLE_ERROR_LINE.finditer(str(candidate)):
+                detail = cls._redact_oracle_error_text(match.group(0))
+                if detail not in details:
+                    details.append(detail)
+        chain: list[str] = []
+        for detail in details:
+            for code in cls._ORACLE_ERROR_CODE.findall(detail):
+                normalized = code.upper()
+                if normalized not in chain:
+                    chain.append(normalized)
+        if not chain:
+            full_code = getattr(driver_error, "full_code", None)
+            if full_code:
+                chain.append(str(full_code).upper())
+        return (
+            ">".join(chain) or "UNKNOWN",
+            " | ".join(details)[:2000] or "Oracle 驱动未返回可记录的错误正文",
+        )
+
+    @classmethod
+    def _redact_oracle_error_text(cls, value: str) -> str:
+        redacted = cls._CONNECTION_URI.sub("[已脱敏连接地址]", value)
+        redacted = cls._SENSITIVE_ERROR_VALUE.sub(
+            lambda match: f"{match.group(1)}{match.group(2)}[已脱敏]",
+            redacted,
+        )
+        return " ".join(redacted.replace("\x00", "").split())
 
     @staticmethod
     async def _materialize_supported_values(

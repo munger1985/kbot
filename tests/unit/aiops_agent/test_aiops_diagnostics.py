@@ -114,9 +114,10 @@ class _TimeoutConnection:
 
 
 class _OracleErrorCursor(_TimeoutCursor):
-    def __init__(self, code: int = 1861) -> None:
+    def __init__(self, code: int = 1861, message: str | None = None) -> None:
         super().__init__()
         self.code = code
+        self.message = message
 
     async def execute(self, _sql, _parameters=None):
         self.execute_count += 1
@@ -127,6 +128,7 @@ class _OracleErrorCursor(_TimeoutCursor):
                 {
                     "code": self.code,
                     "full_code": f"ORA-{self.code:05d}",
+                    "message": self.message,
                 },
             )()
             import oracledb
@@ -135,8 +137,8 @@ class _OracleErrorCursor(_TimeoutCursor):
 
 
 class _OracleErrorConnection(_TimeoutConnection):
-    def __init__(self, code: int = 1861) -> None:
-        self._cursor = _OracleErrorCursor(code)
+    def __init__(self, code: int = 1861, message: str | None = None) -> None:
+        self._cursor = _OracleErrorCursor(code, message)
 
 
 class _FakeOracleLob:
@@ -243,6 +245,33 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
                 await self._execute()
 
         self.assertEqual("QUERY_COLUMN_INVALID", raised.exception.code)
+
+    async def test_parallel_oracle_error_log_includes_sanitized_full_chain(self) -> None:
+        message = (
+            "ORA-12801: error signaled in parallel query server P003\n"
+            "ORA-01555: snapshot too old: rollback segment number 7\n"
+            "password=do-not-log"
+        )
+        with patch(
+            "aiops_agent.executor.drivers.oracle.oracledb.connect_async",
+            AsyncMock(return_value=_OracleErrorConnection(12801, message)),
+        ), patch("aiops_agent.executor.drivers.oracle.logger") as logger:
+            with self.assertRaises(DiagnosticDriverError):
+                await self._execute()
+
+        logged = " ".join(str(call) for call in logger.warning.call_args_list)
+        self.assertIn("ORA-12801>ORA-01555", logged)
+        self.assertIn("snapshot too old", logged)
+        self.assertNotIn("do-not-log", logged)
+
+    def test_oracle_error_evidence_falls_back_to_driver_full_code(self) -> None:
+        chain, detail = OracleDiagnosticDriver._oracle_error_evidence(
+            Exception(),
+            SimpleNamespace(full_code="ORA-00942", message=None),
+        )
+
+        self.assertEqual("ORA-00942", chain)
+        self.assertEqual("Oracle 驱动未返回可记录的错误正文", detail)
 
     async def test_missing_object_is_not_assumed_to_be_privilege_error(
         self,
