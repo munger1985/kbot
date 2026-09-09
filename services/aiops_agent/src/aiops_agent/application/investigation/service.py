@@ -124,6 +124,40 @@ class TurnPlanningService:
         except Exception as exc:
             raise TurnPlanningStageError(exc) from exc
 
+    def _log_image_input_resolution_gate(
+        self, context: TurnPlanningContext
+    ) -> bool:
+        """记录图片输入解析的入口判定，不暴露用户上传内容或标识。"""
+        content = tuple(context.content)
+        upload_items = tuple(
+            item for item in content if item.get("upload_id")
+        )
+        image_items = tuple(
+            item
+            for item in content
+            if str(item.get("content_type") or "").upper() == "IMAGE"
+        )
+        image_upload_items = tuple(
+            item for item in image_items if item.get("upload_id")
+        )
+        resolver_bound = self._conversation_input_resolver is not None
+        has_upload_reference = bool(upload_items)
+        logger.info(
+            "图片输入解析入口判定 | turn_id={} | run_id={} | agent_id={} | trace_id={} | resolver_bound={} | content_count={} | image_item_count={} | upload_reference_count={} | image_upload_reference_count={} | image_capability_keys={} | resolution_enabled={}",
+            context.turn_id,
+            context.ops_run_id,
+            context.agent_id,
+            context.trace_id,
+            resolver_bound,
+            len(content),
+            len(image_items),
+            len(upload_items),
+            len(image_upload_items),
+            ",".join(sorted(context.image_capabilities)),
+            resolver_bound and has_upload_reference,
+        )
+        return has_upload_reference
+
     async def _require_schema_ready(self) -> None:
         schema_ready_check = getattr(self, "_schema_ready_check", None)
         if schema_ready_check is None:
@@ -137,6 +171,7 @@ class TurnPlanningService:
             context = await self._prepare(payload)
         except PlanningAlreadyApplied as applied:
             return applied.result
+        has_upload_reference = self._log_image_input_resolution_gate(context)
         if self._conversation_input_resolver is not None:
             context = replace(
                 context,
@@ -147,9 +182,7 @@ class TurnPlanningService:
                 ),
             )
         context = await self._persist_raw_input(context)
-        if self._conversation_input_resolver is not None and any(
-            item.get("upload_id") for item in context.content
-        ):
+        if self._conversation_input_resolver is not None and has_upload_reference:
             content, uploads = await self._conversation_input_resolver.resolve(
                 domain_id=context.domain_id,
                 actor_id=context.actor_id,
