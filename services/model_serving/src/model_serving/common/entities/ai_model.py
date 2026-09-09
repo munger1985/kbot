@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -54,11 +54,11 @@ class AIModelEntity(BaseEntity):
     descs: Mapped[str | None] = mapped_column(String(512), comment="模型说明")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建者")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), comment="创建时间",
+        DateTime(timezone=True), server_default=text("SYSTIMESTAMP"), comment="创建时间",
     )
     updated_by: Mapped[str | None] = mapped_column(String(256), comment="更新者")
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True), server_default=text("SYSTIMESTAMP"), onupdate=text("SYSTIMESTAMP"),
         comment="更新时间",
     )
     row_version: Mapped[int] = mapped_column(

@@ -26,3 +26,12 @@ BEGIN
     END IF;
 END;
 /
+
+-- python-oracledb thin 模式不能读取命名时区；保留同一时间点，统一为 UTC 数值偏移。
+UPDATE KBOT_AI_MODEL
+   SET CREATED_AT = FROM_TZ(SYS_EXTRACT_UTC(CREATED_AT), '+00:00'),
+       UPDATED_AT = FROM_TZ(SYS_EXTRACT_UTC(UPDATED_AT), '+00:00')
+ WHERE TO_CHAR(CREATED_AT, 'TZR') <> '+00:00'
+    OR TO_CHAR(UPDATED_AT, 'TZR') <> '+00:00';
+
+COMMIT;
