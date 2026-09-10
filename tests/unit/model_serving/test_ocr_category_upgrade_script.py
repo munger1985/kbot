@@ -26,6 +26,8 @@ class OcrCategoryUpgradeScriptTests(unittest.TestCase):
             source,
         )
         self.assertIn("无需变更", source)
+        self.assertIn("CREATED_AT DEFAULT SYSTIMESTAMP", source)
+        self.assertIn("UPDATED_AT DEFAULT SYSTIMESTAMP", source)
         self.assertIn("FROM_TZ(SYS_EXTRACT_UTC(CREATED_AT), '+00:00')", source)
 
     def test_does_not_create_or_validate_category_check_constraint(self) -> None:
