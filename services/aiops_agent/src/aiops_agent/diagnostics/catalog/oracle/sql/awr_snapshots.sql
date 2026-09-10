@@ -5,5 +5,5 @@ SELECT
     end_interval_time AS end_time,
     startup_time AS startup_time
   FROM dba_hist_snapshot
- WHERE instance_number = :instance_number
+ WHERE instance_number = (SELECT instance_number FROM v$instance)
  ORDER BY snap_id DESC

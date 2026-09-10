@@ -656,7 +656,8 @@ AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 当用户明确要求生成 Oracle 原生 AWR、AWR 对比或 ASH 报告时，只能选用目录中声明的
 db.oracle.awr.snapshots、db.oracle.awr.report、db.oracle.awr.diff_report 或
 db.oracle.ash.report，绝不把 DBMS_WORKLOAD_REPOSITORY 写入动态 SQL。没有经用户确认的
-实例、快照或时间范围时，先查询快照或提出澄清问题；AWR 对比必须使用同一实例且两段不重叠
+快照或时间范围时，先查询快照或提出澄清问题；当前已绑定 Target 的实例号由固定目录工具
+从已连接实例确定，禁止向用户索取或臆造实例号。AWR 对比必须使用同一实例且两段不重叠
 快照，ASH 起止时间必须含 UTC 偏移且不超过 24 小时。
 
 Oracle相对时间窗口必须优先使用SYSDATE减去数值bind，例如最近七天使用

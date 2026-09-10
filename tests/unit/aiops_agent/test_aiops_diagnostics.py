@@ -486,19 +486,19 @@ class DiagnosticCatalogTest(unittest.TestCase):
         expected = {
             "db.oracle.awr.report": (
                 "dbms_workload_repository.awr_report_html",
-                ("instance_number", "begin_snapshot_id", "end_snapshot_id"),
+                ("begin_snapshot_id", "end_snapshot_id"),
             ),
             "db.oracle.awr.diff_report": (
                 "dbms_workload_repository.awr_diff_report_html",
                 (
-                    "instance_number", "baseline_begin_snapshot_id",
-                    "baseline_end_snapshot_id", "after_begin_snapshot_id",
+                    "baseline_begin_snapshot_id", "baseline_end_snapshot_id",
+                    "after_begin_snapshot_id",
                     "after_end_snapshot_id",
                 ),
             ),
             "db.oracle.ash.report": (
                 "dbms_workload_repository.ash_report_html",
-                ("instance_number", "begin_time", "end_time"),
+                ("begin_time", "end_time"),
             ),
         }
         for tool_id, (function, parameters) in expected.items():
@@ -512,10 +512,26 @@ class DiagnosticCatalogTest(unittest.TestCase):
                     tool.definition.allowed_packages,
                 )
                 self.assertIn(function, tool.sql.lower())
+                self.assertIn(
+                    "(select instance_number from v$instance)",
+                    tool.sql.lower(),
+                )
                 self.assertEqual(
                     parameters,
                     tuple(item.name for item in tool.definition.parameters),
                 )
+
+        snapshots = registry.resolve(
+            tool_id="db.oracle.awr.snapshots", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c", capabilities=set(),
+            entitlements=set(),
+        )
+        self.assertEqual((), snapshots.definition.parameters)
+        self.assertIn(
+            "(select instance_number from v$instance)",
+            snapshots.sql.lower(),
+        )
+        self.assertNotIn(":instance_number", snapshots.sql.lower())
 
     def test_oracle_workload_report_ranges_are_validated(self) -> None:
         registry = DiagnosticRegistry.load()
@@ -526,8 +542,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "起始快照"):
             registry.validate_parameters(awr, {
-                "instance_number": 1, "begin_snapshot_id": 20,
-                "end_snapshot_id": 20,
+                "begin_snapshot_id": 20, "end_snapshot_id": 20,
             })
         ash = registry.resolve(
             tool_id="db.oracle.ash.report", tool_version="1.0.0",
@@ -536,7 +551,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "UTC 偏移"):
             registry.validate_parameters(ash, {
-                "instance_number": 1, "begin_time": "2026-09-10T10:00:00",
+                "begin_time": "2026-09-10T10:00:00",
                 "end_time": "2026-09-10T10:05:00",
             })
 

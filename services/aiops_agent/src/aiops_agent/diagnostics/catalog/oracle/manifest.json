@@ -1318,7 +1318,7 @@
     },
     {
       "tool_id": "db.oracle.awr.snapshots",
-      "description": "列出指定 Oracle 实例可用于 AWR 或 AWR 对比报告的最近快照；必须先以此结果确认快照范围",
+      "description": "列出当前已绑定 Oracle 实例可用于 AWR 或 AWR 对比报告的最近快照；必须先以此结果确认快照范围",
       "version": "1.0.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_awr_snapshot_catalog",
@@ -1327,9 +1327,7 @@
       "required_capabilities": [],
       "required_entitlements": [],
       "required_privileges": ["DBA_HIST_SNAPSHOT"],
-      "parameters": [
-        {"name": "instance_number", "type": "integer", "minimum": 1, "maximum": 1024}
-      ],
+      "parameters": [],
       "output_columns": [
         {"name": "snapshot_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "instance_number", "logical_type": "INTEGER", "nullable": false},
@@ -1338,7 +1336,7 @@
         {"name": "startup_time", "logical_type": "DATETIME", "nullable": false}
       ],
       "template_ref": "sql/awr_snapshots.sql",
-      "template_sha256": "94dc0acad7e2ec5a1a8256e71487d375a7cbae7962d149bf0dac291332fd226f",
+      "template_sha256": "b9a70a0d5178aafba82ae799fa817586720df7203cc5390ae37e535bbb96d85a",
       "timeout_seconds": 30,
       "max_rows": 1000,
       "max_bytes": 1048576,
@@ -1346,7 +1344,7 @@
     },
     {
       "tool_id": "db.oracle.awr.report",
-      "description": "使用已确认的一对快照生成指定 Oracle 实例的原生 AWR HTML 报告；正文作为不可变诊断证据返回",
+      "description": "使用已确认的一对快照生成当前已绑定 Oracle 实例的原生 AWR HTML 报告；正文作为不可变诊断证据返回",
       "version": "1.0.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_awr_report_html",
@@ -1357,7 +1355,6 @@
       "required_privileges": ["DBA_HIST_SNAPSHOT", "V_$DATABASE"],
       "allowed_packages": ["DBMS_WORKLOAD_REPOSITORY"],
       "parameters": [
-        {"name": "instance_number", "type": "integer", "minimum": 1, "maximum": 1024},
         {"name": "begin_snapshot_id", "type": "integer", "minimum": 1, "maximum": 999999999999},
         {"name": "end_snapshot_id", "type": "integer", "minimum": 1, "maximum": 999999999999}
       ],
@@ -1365,7 +1362,7 @@
         {"name": "output", "logical_type": "STRING", "nullable": false}
       ],
       "template_ref": "sql/awr_report_html.sql",
-      "template_sha256": "34650b65b1dde163b60574fc4bcb607029b63134815e0fbe4669ab8057859332",
+      "template_sha256": "224038d5e66e1fbb070e0e8f0e92bfadcc65c926521115e8307db621afc45cf4",
       "timeout_seconds": 180,
       "max_rows": 10000,
       "max_bytes": 20971520,
@@ -1373,7 +1370,7 @@
     },
     {
       "tool_id": "db.oracle.awr.diff_report",
-      "description": "使用同一 Oracle 实例的两对已确认快照生成原生 AWR 对比 HTML 报告；两段快照范围不得重叠或倒置",
+      "description": "使用当前已绑定 Oracle 实例的两对已确认快照生成原生 AWR 对比 HTML 报告；两段快照范围不得重叠或倒置",
       "version": "1.0.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_awr_diff_report_html",
@@ -1384,7 +1381,6 @@
       "required_privileges": ["DBA_HIST_SNAPSHOT", "V_$DATABASE"],
       "allowed_packages": ["DBMS_WORKLOAD_REPOSITORY"],
       "parameters": [
-        {"name": "instance_number", "type": "integer", "minimum": 1, "maximum": 1024},
         {"name": "baseline_begin_snapshot_id", "type": "integer", "minimum": 1, "maximum": 999999999999},
         {"name": "baseline_end_snapshot_id", "type": "integer", "minimum": 1, "maximum": 999999999999},
         {"name": "after_begin_snapshot_id", "type": "integer", "minimum": 1, "maximum": 999999999999},
@@ -1394,7 +1390,7 @@
         {"name": "output", "logical_type": "STRING", "nullable": false}
       ],
       "template_ref": "sql/awr_diff_report_html.sql",
-      "template_sha256": "76340d7667807079c0b3abdc50963651eaba8a6a3636799066c89b2df75e8ab8",
+      "template_sha256": "5b967f7196200f3ddf49b6e1392f6e8d5802ef740ef1da89a54de985cfdaff38",
       "timeout_seconds": 180,
       "max_rows": 10000,
       "max_bytes": 20971520,
@@ -1402,7 +1398,7 @@
     },
     {
       "tool_id": "db.oracle.ash.report",
-      "description": "按指定 Oracle 实例与带时区起止时间生成原生 ASH HTML 报告；仅接受 ISO 8601 偏移时间",
+      "description": "按当前已绑定 Oracle 实例与带时区起止时间生成原生 ASH HTML 报告；仅接受 ISO 8601 偏移时间",
       "version": "1.0.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_ash_report_html",
@@ -1413,7 +1409,6 @@
       "required_privileges": ["V_$DATABASE"],
       "allowed_packages": ["DBMS_WORKLOAD_REPOSITORY"],
       "parameters": [
-        {"name": "instance_number", "type": "integer", "minimum": 1, "maximum": 1024},
         {"name": "begin_time", "type": "string", "max_length": 35},
         {"name": "end_time", "type": "string", "max_length": 35}
       ],
@@ -1421,7 +1416,7 @@
         {"name": "output", "logical_type": "STRING", "nullable": false}
       ],
       "template_ref": "sql/ash_report_html.sql",
-      "template_sha256": "48d2fff36f77643132c97e7356e69cbf36027fe6dcd85b0761190776835c4e2a",
+      "template_sha256": "373984ecb2d772a254311937a9f4cc86039f72dd9f1d54f72b89894d39e0c75e",
       "timeout_seconds": 180,
       "max_rows": 10000,
       "max_bytes": 20971520,
