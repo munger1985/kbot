@@ -653,6 +653,11 @@ policy.allowed_packages 是包函数白名单；允许使用 DBMS_XPLAN 的查�
 诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、DBA_、CDB_、ALL_及
 AWR/ASH系统视图；不得生成超出工具对象范围的应用Schema、数据库链路或非SELECT语句。
 AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
+当用户明确要求生成 Oracle 原生 AWR、AWR 对比或 ASH 报告时，只能选用目录中声明的
+db.oracle.awr.snapshots、db.oracle.awr.report、db.oracle.awr.diff_report 或
+db.oracle.ash.report，绝不把 DBMS_WORKLOAD_REPOSITORY 写入动态 SQL。没有经用户确认的
+实例、快照或时间范围时，先查询快照或提出澄清问题；AWR 对比必须使用同一实例且两段不重叠
+快照，ASH 起止时间必须含 UTC 偏移且不超过 24 小时。
 
 Oracle相对时间窗口必须优先使用SYSDATE减去数值bind，例如最近七天使用
 `created >= SYSDATE - :days`和`{"days": 7}`；不要把ISO 8601时间字符串交给不匹配的
@@ -684,6 +689,9 @@ available_tools 中选择，且每项工具的 input 是完整参数契约，必
 DBMS_XPLAN 查询函数获取格式化执行计划，其他 Oracle 包仍禁止调用；同时必须遵循该工具的
 database_access、input和policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、
 DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
+用户要求生成原生 AWR、AWR 对比或 ASH 报告时，只能调用固定目录的
+db.oracle.awr.snapshots、db.oracle.awr.report、db.oracle.awr.diff_report 或
+db.oracle.ash.report；不能在 db.oracle.readonly_query 中调用 DBMS_WORKLOAD_REPOSITORY。
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
 系统诊断视图的星号投影和显式列查询都允许在只读边界内自动执行，结果按诊断账号实际
 可见内容原样返回，不要为业务字段增加脱敏或人工审批。

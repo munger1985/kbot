@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -141,4 +142,42 @@ class DiagnosticRegistry:
     def validate_parameters(
         self, tool: ResolvedDiagnosticTool, values: dict[str, Any]
     ) -> dict[str, Any]:
-        return validate_parameters(tool.definition, values)
+        normalized = validate_parameters(tool.definition, values)
+        self._validate_oracle_workload_report_parameters(
+            tool.definition.tool_id, normalized
+        )
+        return normalized
+
+    @staticmethod
+    def _validate_oracle_workload_report_parameters(
+        tool_id: str, parameters: dict[str, Any]
+    ) -> None:
+        """校验原生工作负载报告的跨字段边界，避免包调用接收歧义范围。"""
+        if tool_id == "db.oracle.awr.report":
+            if parameters["begin_snapshot_id"] >= parameters["end_snapshot_id"]:
+                raise ValueError("AWR 报告起始快照必须早于结束快照")
+        elif tool_id == "db.oracle.awr.diff_report":
+            ordered = (
+                parameters["baseline_begin_snapshot_id"],
+                parameters["baseline_end_snapshot_id"],
+                parameters["after_begin_snapshot_id"],
+                parameters["after_end_snapshot_id"],
+            )
+            if any(left >= right for left, right in zip(ordered, ordered[1:])):
+                raise ValueError("AWR 对比报告的两段快照必须按时间先后且不重叠")
+        elif tool_id == "db.oracle.ash.report":
+            try:
+                begin = datetime.fromisoformat(
+                    parameters["begin_time"].replace("Z", "+00:00")
+                )
+                end = datetime.fromisoformat(
+                    parameters["end_time"].replace("Z", "+00:00")
+                )
+            except ValueError as exc:
+                raise ValueError("ASH 报告时间必须为 ISO 8601 格式") from exc
+            if begin.tzinfo is None or end.tzinfo is None:
+                raise ValueError("ASH 报告时间必须包含 UTC 偏移")
+            if begin >= end:
+                raise ValueError("ASH 报告起始时间必须早于结束时间")
+            if (end - begin).total_seconds() > 86_400:
+                raise ValueError("ASH 报告时间范围不能超过 24 小时")

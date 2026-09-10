@@ -770,6 +770,43 @@ async def download_conversation_input_image(
     )
 
 
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}"
+)
+async def download_workload_report(
+    conversation_id: UUID,
+    turn_id: UUID,
+    tool_id: str,
+    request: Request,
+):
+    """代理原生 Oracle 工作负载报告，避免向浏览器暴露 Agent 内部存储。"""
+    if tool_id not in {
+        "db.oracle.awr.report",
+        "db.oracle.awr.diff_report",
+        "db.oracle.ash.report",
+    }:
+        raise HTTPException(404, {"code": "AIOPS_WORKLOAD_REPORT_NOT_FOUND"})
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_workload_report(
+        conversation_id,
+        turn_id,
+        tool_id,
+        auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type=upstream.media_type,
+        headers={
+            "Content-Disposition": upstream.headers.get(
+                "Content-Disposition",
+                'attachment; filename="oracle-workload-report.html"',
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post(
     "/conversations/{conversation_id}/turns/{turn_id}/cancel",
     response_model=TurnSummary,

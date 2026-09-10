@@ -211,6 +211,11 @@ AIOps动态只读诊断统一使用。字典查询范围包括实例/PDB身份�
 执行计划、等待与I/O、SGA/PGA、存储、恢复、Data Guard、维护任务以及AWR/ASH信息。
 AIOps不根据Oracle许可证对AWR/ASH查询进行能力门控；许可证管理不属于AIOps运行时职责。
 数据库查询仍由AIOps只读SQL策略、执行超时和结果上限约束。
+
+原生 AWR、AWR 对比和 ASH HTML 报告通过固定目录调用
+`DBMS_WORKLOAD_REPOSITORY`。部署后应先在非生产 Target 验证诊断账号对该包、
+`DBA_HIST_SNAPSHOT` 和 `V$DATABASE` 的实际可用性；不要为了绕过失败而将该包加入
+动态 SQL 白名单，也不要在未核实 Oracle 使用授权的情况下扩大数据库账号权限。
 建用户脚本只用于首次创建。用户已存在时不要重复执行`CREATE USER`，应执行以下完整
 授权脚本补齐并验证授权：
 

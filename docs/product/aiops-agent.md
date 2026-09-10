@@ -30,6 +30,18 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 人工对话的权威设计见
 [AIOps Agent 专业 DBA 对话诊断设计](aiops-agent-chat-diagnosis.md)。
 
+### Oracle 原生工作负载报告
+
+对已连接的 Oracle 19c+ Target，Agent 可以按实例生成原生 HTML 格式的 AWR、AWR
+对比和 ASH 报告。AWR 必须使用已经确认的一对快照；AWR 对比必须在同一实例上使用两段
+按时间先后且不重叠的快照；ASH 使用带 UTC 偏移的时间范围，最长 24 小时。Agent 未取得
+这些范围时先列出可见快照或要求用户补充，不能猜测快照号。
+
+报告调用属于固定、带版本和哈希的 Oracle 诊断目录，不会允许模型把
+`DBMS_WORKLOAD_REPOSITORY` 写进通用动态 SQL。报告原文作为本轮不可变数据库证据保存；
+权限、AWR/ASH 数据或 Oracle 版本不满足条件时，Agent 明确返回数据缺口，不伪造报告。
+首版按 RAC 实例分别生成报告，不生成跨实例全局报告。
+
 ### Portal 三入口工作区
 
 Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业务用户必须理解的

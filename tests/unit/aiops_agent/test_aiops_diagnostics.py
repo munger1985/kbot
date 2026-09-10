@@ -382,7 +382,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(59, len(registry.tools))
+        self.assertEqual(63, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -412,6 +412,13 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
         )
+        for tool_id in (
+            "db.oracle.awr.snapshots",
+            "db.oracle.awr.report",
+            "db.oracle.awr.diff_report",
+            "db.oracle.ash.report",
+        ):
+            self.assertIn(("ORACLE", tool_id), pairs)
         for tool_id in (
             "db.instance.parameters",
             "db.storage.temp_usage",
@@ -473,6 +480,65 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertIn("'ALLSTATS LAST'", tool.sql)
         self.assertIn(":sql_id", tool.sql)
         self.assertIn("格式化实际执行计划", tool.definition.description)
+
+    def test_oracle_workload_reports_are_fixed_catalog_tools(self) -> None:
+        registry = DiagnosticRegistry.load()
+        expected = {
+            "db.oracle.awr.report": (
+                "dbms_workload_repository.awr_report_html",
+                ("instance_number", "begin_snapshot_id", "end_snapshot_id"),
+            ),
+            "db.oracle.awr.diff_report": (
+                "dbms_workload_repository.awr_diff_report_html",
+                (
+                    "instance_number", "baseline_begin_snapshot_id",
+                    "baseline_end_snapshot_id", "after_begin_snapshot_id",
+                    "after_end_snapshot_id",
+                ),
+            ),
+            "db.oracle.ash.report": (
+                "dbms_workload_repository.ash_report_html",
+                ("instance_number", "begin_time", "end_time"),
+            ),
+        }
+        for tool_id, (function, parameters) in expected.items():
+            with self.subTest(tool_id=tool_id):
+                tool = registry.resolve(
+                    tool_id=tool_id, tool_version="1.0.0", db_type="ORACLE",
+                    db_version="19c", capabilities=set(), entitlements=set(),
+                )
+                self.assertEqual(
+                    ("DBMS_WORKLOAD_REPOSITORY",),
+                    tool.definition.allowed_packages,
+                )
+                self.assertIn(function, tool.sql.lower())
+                self.assertEqual(
+                    parameters,
+                    tuple(item.name for item in tool.definition.parameters),
+                )
+
+    def test_oracle_workload_report_ranges_are_validated(self) -> None:
+        registry = DiagnosticRegistry.load()
+        awr = registry.resolve(
+            tool_id="db.oracle.awr.report", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c", capabilities=set(),
+            entitlements=set(),
+        )
+        with self.assertRaisesRegex(ValueError, "起始快照"):
+            registry.validate_parameters(awr, {
+                "instance_number": 1, "begin_snapshot_id": 20,
+                "end_snapshot_id": 20,
+            })
+        ash = registry.resolve(
+            tool_id="db.oracle.ash.report", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c", capabilities=set(),
+            entitlements=set(),
+        )
+        with self.assertRaisesRegex(ValueError, "UTC 偏移"):
+            registry.validate_parameters(ash, {
+                "instance_number": 1, "begin_time": "2026-09-10T10:00:00",
+                "end_time": "2026-09-10T10:05:00",
+            })
 
     def test_oracle_single_sql_baseline_contracts_are_loadable(self) -> None:
         registry = DiagnosticRegistry.load()

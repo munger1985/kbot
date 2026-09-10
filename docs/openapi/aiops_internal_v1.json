@@ -12113,6 +12113,68 @@
         ]
       }
     },
+    "/internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}": {
+      "get": {
+        "description": "下载本轮生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。",
+        "operationId": "download_workload_report_internal_v1_aiops_conversations__conversation_id__turns__turn_id__workload_reports__tool_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool_id",
+            "required": true,
+            "schema": {
+              "pattern": "^db\\.oracle\\.(awr\\.report|awr\\.diff_report|ash\\.report)$",
+              "title": "Tool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Workload Report",
+        "tags": [
+          "AIOps Conversations"
+        ]
+      }
+    },
     "/internal/v1/aiops/credentials:issue": {
       "post": {
         "description": "仅向已验证的 Executor 发放且消费一次连接材料。",

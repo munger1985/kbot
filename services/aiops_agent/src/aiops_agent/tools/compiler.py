@@ -224,7 +224,9 @@ class InvestigationTaskCompiler:
                     output_schema_version="DBA_TOOL_RESULT.v1",
                     depends_on=dependencies,
                     input_artifact_keys=dependencies,
-                    timeout_seconds=45,
+                    # 固定目录中包含原生 AWR/ASH 报告等长查询；具体数据库
+                    # 语句仍由 Executor 按冻结 Tool 限制收紧。
+                    timeout_seconds=300,
                     max_attempts=2,
                     priority=47,
                 )

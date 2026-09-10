@@ -12135,6 +12135,67 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}": {
+      "get": {
+        "description": "代理原生 Oracle 工作负载报告，避免向浏览器暴露 Agent 内部存储。",
+        "operationId": "download_workload_report_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__workload_reports__tool_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool_id",
+            "required": true,
+            "schema": {
+              "title": "Tool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Workload Report",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/diagnostic-sources": {
       "get": {
         "operationId": "list_diagnostic_sources_api_v1_apps_aiops_diagnostic_sources_get",

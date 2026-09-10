@@ -1486,6 +1486,25 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="image/*",
         )
 
+    async def download_workload_report(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        tool_id: str,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        """下载会话内已固化的原生 Oracle 工作负载报告。"""
+        return await self._bytes(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/workload-reports/{quote(tool_id, safe='')}"
+            ),
+            auth_context=auth_context,
+            accept="text/html",
+        )
+
     async def list_conversation_turn_events(
         self,
         conversation_id: UUID,

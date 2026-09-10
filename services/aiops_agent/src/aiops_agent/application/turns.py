@@ -16,6 +16,7 @@ from aiops_agent.application.errors import (
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
 )
+from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.entities import (
     OpsConversationEntity,
     OpsConversationMessageEntity,
@@ -767,6 +768,66 @@ class ConversationTurnService:
             )
         except (OSError, ValueError) as exc:
             raise resource_not_found("Conversation Image Input") from exc
+
+    async def get_workload_report_content(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+        tool_id: str,
+    ) -> bytes:
+        """按所属会话导出固定目录生成的原生 Oracle HTML 报告。"""
+        if tool_id not in {
+            "db.oracle.awr.report",
+            "db.oracle.awr.diff_report",
+            "db.oracle.ash.report",
+        }:
+            raise resource_not_found("Oracle Workload Report")
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                domain_id=domain_id, conversation_id=conversation_id,
+            )
+            turn = await uow.turns.get_turn(
+                domain_id=domain_id, turn_id=turn_id,
+            )
+            if (
+                conversation is None
+                or conversation.created_by != actor_id
+                or turn is None
+                or turn.conversation_id != conversation_id
+            ):
+                raise resource_not_found("Conversation Turn")
+            link = await uow.turns.get_run_link(
+                turn_id=turn_id, purpose="PRIMARY",
+            )
+            if link is None:
+                raise resource_not_found("Oracle Workload Report")
+            for artifact in await uow.runs.list_artifacts(
+                ops_run_id=link.ops_run_id
+            ):
+                if artifact.schema_version != "DBA_TOOL_RESULT.v1":
+                    continue
+                result = DbaToolResult.model_validate(artifact.payload_json)
+                for outcome in result.tool_outcomes:
+                    observation = outcome.observation
+                    if outcome.tool_id != tool_id or observation is None:
+                        continue
+                    if (
+                        observation.truncated
+                        or len(observation.columns) != 1
+                        or observation.columns[0].name != "output"
+                    ):
+                        raise state_conflict("原生工作负载报告正文不完整")
+                    content = "".join(
+                        str(row[0]) for row in observation.rows
+                        if row and row[0] is not None
+                    ).encode("utf-8")
+                    if content:
+                        return content
+                    raise state_conflict("原生工作负载报告正文为空")
+        raise resource_not_found("Oracle Workload Report")
 
     async def list_events(
         self,

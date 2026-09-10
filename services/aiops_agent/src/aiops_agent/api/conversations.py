@@ -3,7 +3,15 @@
 from uuid import UUID
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    Response,
+)
 
 from aiops_agent.api.dependencies import (
     get_aiops_auth_context,
@@ -256,6 +264,41 @@ async def get_uploaded_input_content(
         content=content,
         media_type=media_type,
         headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}")
+async def download_workload_report(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    tool_id: str = Path(
+        pattern=r"^db\.oracle\.(awr\.report|awr\.diff_report|ash\.report)$"
+    ),
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    """下载本轮生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。"""
+    domain_id, actor_id = _scope(request, context)
+    content = await request.app.state.conversation_turn_service.get_workload_report_content(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        actor_id=actor_id,
+        tool_id=tool_id,
+    )
+    filename = {
+        "db.oracle.awr.report": "oracle-awr-report.html",
+        "db.oracle.awr.diff_report": "oracle-awr-diff-report.html",
+        "db.oracle.ash.report": "oracle-ash-report.html",
+    }[tool_id]
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
         },
