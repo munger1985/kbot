@@ -29,7 +29,6 @@ from platform_core.contracts.aiops import (
     ApprovalCommand,
     ApprovalReceipt,
     CancelRunCommand,
-    ConnectivityCheckReceipt,
     DiagnosticQueryApprovalDecision,
     HitlResponse,
     HitlResult,
@@ -1131,22 +1130,22 @@ async def delete_diagnostic_source(
 
 @router.post(
     "/diagnostic-sources/{source_id}/connectivity-checks",
-    response_model=ConnectivityCheckReceipt,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DiagnosticSourceDetail,
 )
-async def request_diagnostic_source_connectivity_check(
+async def check_diagnostic_source_connectivity(
     source_id: UUID,
     request: Request,
+    response: Response,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
-) -> ConnectivityCheckReceipt:
-    payload = await _client(request).request_diagnostic_source_connectivity_check(
+) -> DiagnosticSourceDetail:
+    payload = await _client(request).check_diagnostic_source_connectivity(
         source_id,
         if_match=if_match,
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return ConnectivityCheckReceipt.model_validate(payload)
+    return _validated(DiagnosticSourceDetail, payload, response)
 
 
 @router.post(

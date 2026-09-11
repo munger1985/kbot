@@ -111,7 +111,7 @@
       : `/diagnostic-sources/${sourceId}/${action}`;
     button.disabled = true;
     try {
-      await KBotAIOpsAuth.request(appApi + path, {
+      const result = await KBotAIOpsAuth.request(appApi + path, {
         method: "POST",
         headers: {
           "If-Match": `"rv-${item.row_version}"`,
@@ -119,12 +119,11 @@
         },
         body: JSON.stringify({}),
       });
-      shell.toast(action === "connectivity" ? "连通性检查已提交" : action === "enable" ? "诊断源已启用" : "诊断源已停用");
+      const connectivityResult = action === "connectivity"
+        ? `连通性检查结果：${result.connectivity_status || "UNKNOWN"}${result.last_error_code ? `（${result.last_error_code}）` : ""}`
+        : "";
+      shell.toast(action === "connectivity" ? connectivityResult : action === "enable" ? "诊断源已启用" : "诊断源已停用");
       await renderList("diagnostic-sources");
-      if (action === "connectivity") {
-        sourceReloadAttempts = 0;
-        scheduleSourceReload();
-      }
     } catch (error) {
       shell.toast(error.message);
       button.disabled = false;

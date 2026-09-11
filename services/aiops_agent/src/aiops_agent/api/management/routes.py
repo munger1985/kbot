@@ -27,7 +27,6 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
-    ConnectivityCheckReceipt,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -520,22 +519,24 @@ async def delete_diagnostic_source(
 
 @router.post(
     "/diagnostic-sources/{source_id}/connectivity-checks",
-    response_model=ConnectivityCheckReceipt,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DiagnosticSourceDetail,
 )
-async def request_diagnostic_source_connectivity_check(
+async def check_diagnostic_source_connectivity(
     source_id: UUID,
+    response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
     if_match: IfMatch = None,
-) -> ConnectivityCheckReceipt:
-    return await service.request_diagnostic_source_connectivity_check(
+) -> DiagnosticSourceDetail:
+    result = await service.check_diagnostic_source_connectivity(
         scope=scope,
         source_id=source_id,
         expected_version=parse_etag(if_match),
         idempotency_key=idempotency_key,
     )
+    _etag(response, result.row_version)
+    return result
 
 
 @router.post(

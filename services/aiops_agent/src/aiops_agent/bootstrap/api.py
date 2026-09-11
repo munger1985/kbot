@@ -156,19 +156,6 @@ def create_aiops_api(
             ttl_seconds=resolved.management.cursor_ttl_seconds,
         )
         diagnostic_source_catalog = DiagnosticSourceAdapterCatalog()
-        app.state.configuration_service = AIOpsConfigurationService(
-            uow_factory=runtime.uow_factory,
-            cursor_codec=cursor_codec,
-            secret_store=secret_store,
-            agent_catalog=agent_catalog,
-            template_registry=InspectionTemplateRegistry(
-                resolved.management.inspection_templates
-            ),
-            management=resolved.management,
-            credential_cipher=credential_cipher,
-            managed_credential_service=managed_credential_service,
-            diagnostic_source_catalog=diagnostic_source_catalog,
-        )
         metric_catalog = load_metric_catalog(
             Path(resolved.monitoring.catalog_path)
             if resolved.monitoring.catalog_path
@@ -215,6 +202,20 @@ def create_aiops_api(
             webhook_replay_seconds=(
                 resolved.monitoring.webhook_replay_seconds
             ),
+        )
+        app.state.configuration_service = AIOpsConfigurationService(
+            uow_factory=runtime.uow_factory,
+            cursor_codec=cursor_codec,
+            secret_store=secret_store,
+            agent_catalog=agent_catalog,
+            template_registry=InspectionTemplateRegistry(
+                resolved.management.inspection_templates
+            ),
+            management=resolved.management,
+            credential_cipher=credential_cipher,
+            managed_credential_service=managed_credential_service,
+            diagnostic_source_catalog=diagnostic_source_catalog,
+            diagnostic_source_registry=diagnostic_source_registry,
         )
         diagnosis_model_client = AIOpsStructuredModelClient(
             base_url=resolved.clients.model_serving.base_url,

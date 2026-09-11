@@ -117,7 +117,7 @@ class TargetRepository(AIOpsRepository):
         *,
         domain_id: int,
         statuses: Collection[str] | None,
-        before_updated_at: datetime | None,
+        before_created_at: datetime | None,
         before_id: UUID | None,
         limit: int,
     ) -> list[TargetEntity]:
@@ -127,18 +127,18 @@ class TargetRepository(AIOpsRepository):
         )
         if statuses:
             statement = statement.where(TargetEntity.status.in_(statuses))
-        if before_updated_at is not None and before_id is not None:
+        if before_created_at is not None and before_id is not None:
             statement = statement.where(
                 or_(
-                    TargetEntity.updated_at < before_updated_at,
+                    TargetEntity.created_at < before_created_at,
                     and_(
-                        TargetEntity.updated_at == before_updated_at,
+                        TargetEntity.created_at == before_created_at,
                         TargetEntity.target_id < before_id,
                     ),
                 )
             )
         statement = statement.order_by(
-            TargetEntity.updated_at.desc(),
+            TargetEntity.created_at.desc(),
             TargetEntity.target_id.desc(),
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())

@@ -57,7 +57,7 @@ class DiagnosticSourceRepository(AIOpsRepository):
         *,
         domain_id: int,
         statuses: Collection[str] | None,
-        before_updated_at: datetime | None,
+        before_created_at: datetime | None,
         before_id: UUID | None,
         limit: int,
     ) -> list[DiagnosticSourceEntity]:
@@ -69,18 +69,18 @@ class DiagnosticSourceRepository(AIOpsRepository):
             statement = statement.where(
                 DiagnosticSourceEntity.status.in_(statuses)
             )
-        if before_updated_at is not None and before_id is not None:
+        if before_created_at is not None and before_id is not None:
             statement = statement.where(
                 or_(
-                    DiagnosticSourceEntity.updated_at < before_updated_at,
+                    DiagnosticSourceEntity.created_at < before_created_at,
                     and_(
-                        DiagnosticSourceEntity.updated_at == before_updated_at,
+                        DiagnosticSourceEntity.created_at == before_created_at,
                         DiagnosticSourceEntity.diagnostic_source_id < before_id,
                     ),
                 )
             )
         statement = statement.order_by(
-            DiagnosticSourceEntity.updated_at.desc(),
+            DiagnosticSourceEntity.created_at.desc(),
             DiagnosticSourceEntity.diagnostic_source_id.desc(),
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())

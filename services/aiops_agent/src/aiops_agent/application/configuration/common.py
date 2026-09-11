@@ -124,12 +124,12 @@ class SignedCursorCodec:
         self,
         *,
         scope: ConfigurationScope,
-        updated_at: datetime,
+        sort_at: datetime,
         resource_id: UUID,
         filters: dict[str, Any],
     ) -> str:
         payload = {
-            "v": 1,
+            "v": 2,
             "scope": sha256_json(
                 {
                                         "domain_id": scope.domain_id,
@@ -137,7 +137,7 @@ class SignedCursorCodec:
                 }
             ),
             "filters": sha256_json(filters),
-            "updated_at": updated_at.astimezone(UTC).isoformat(),
+            "sort_at": sort_at.astimezone(UTC).isoformat(),
             "resource_id": str(resource_id),
             "exp": int(
                 (datetime.now(UTC) + timedelta(seconds=self._ttl_seconds))
@@ -180,16 +180,16 @@ class SignedCursorCodec:
                 }
             )
             if (
-                payload.get("v") != 1
+                payload.get("v") != 2
                 or payload.get("scope") != expected_scope
                 or payload.get("filters") != sha256_json(filters)
                 or int(payload.get("exp", 0)) < int(datetime.now(UTC).timestamp())
             ):
                 raise ValueError("游标上下文不匹配或已过期")
-            updated_at = datetime.fromisoformat(payload["updated_at"])
-            if updated_at.tzinfo is None:
+            sort_at = datetime.fromisoformat(payload["sort_at"])
+            if sort_at.tzinfo is None:
                 raise ValueError("游标时间缺少时区")
-            return updated_at.astimezone(UTC), UUID(payload["resource_id"])
+            return sort_at.astimezone(UTC), UUID(payload["resource_id"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise AIOpsApplicationError(
                 code="OPS_CURSOR_INVALID",

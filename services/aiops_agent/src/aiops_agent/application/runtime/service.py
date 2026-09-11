@@ -6809,7 +6809,7 @@ class AIOpsRuntimeService:
         last = page_entities[-1]
         return self._cursor_codec.encode(
             scope=scope,
-            updated_at=last.created_at,
+            sort_at=last.created_at,
             resource_id=getattr(last, id_attribute),
             filters=filters,
         )

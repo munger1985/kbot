@@ -1,6 +1,7 @@
 """诊断源连接预检单元测试。"""
 
 import unittest
+from pathlib import Path
 
 from aiops_agent.application.configuration.source_connection_test import (
     test_diagnostic_source_connection as run_connection_test,
@@ -47,6 +48,19 @@ class _Registry:
 
 
 class DiagnosticSourceConnectionTest(unittest.IsolatedAsyncioTestCase):
+    def test_api_configuration_service_receives_runtime_registry(self):
+        source = (
+            Path(__file__).resolve().parents[3]
+            / "services/aiops_agent/src/aiops_agent/bootstrap/api.py"
+        ).read_text(encoding="utf-8")
+        configuration = source.split(
+            "app.state.configuration_service = AIOpsConfigurationService(", 1
+        )[1].split("diagnosis_model_client =", 1)[0]
+        self.assertIn(
+            "diagnostic_source_registry=diagnostic_source_registry",
+            configuration,
+        )
+
     async def test_connection_uses_temporary_adapter_context(self):
         registry = _Registry()
         request = DiagnosticSourceCreate.model_validate(

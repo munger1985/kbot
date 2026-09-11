@@ -19,7 +19,7 @@ class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class AgentCreatePayload(_Payload):
+class AssistantAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     knowledge_core_id: UUID | None = None
@@ -30,7 +30,7 @@ class AgentCreatePayload(_Payload):
     status: Literal["DRAFT", "ACTIVE"] = "DRAFT"
 
 
-class AgentUpdatePayload(_Payload):
+class AssistantAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
@@ -130,7 +130,7 @@ async def list_agents(request: Request):
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
-async def create_agent(payload: AgentCreatePayload, request: Request):
+async def create_agent(payload: AssistantAgentCreatePayload, request: Request):
     domain_id, _, _ = await _require(request, "assistant:agent_manage")
     if payload.status == "ACTIVE":
         await _require_active_knowledge_core(request, domain_id=domain_id, knowledge_core_id=payload.knowledge_core_id)
@@ -146,7 +146,11 @@ async def get_agent(agent_id: UUID, request: Request):
 
 
 @router.patch("/agents/{agent_id}")
-async def update_agent(agent_id: UUID, payload: AgentUpdatePayload, request: Request):
+async def update_agent(
+    agent_id: UUID,
+    payload: AssistantAgentUpdatePayload,
+    request: Request,
+):
     domain_id, _, _ = await _require(request, "assistant:agent_manage")
     current = await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
     values = payload.model_dump(mode="json", exclude_unset=True)

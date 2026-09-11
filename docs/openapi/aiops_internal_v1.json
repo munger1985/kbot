@@ -829,50 +829,6 @@
         "title": "CompleteOpsTaskCommand",
         "type": "object"
       },
-      "ConnectivityCheckReceipt": {
-        "additionalProperties": false,
-        "properties": {
-          "accepted_at": {
-            "format": "date-time",
-            "title": "Accepted At",
-            "type": "string"
-          },
-          "config_row_version": {
-            "minimum": 1.0,
-            "title": "Config Row Version",
-            "type": "integer"
-          },
-          "connectivity_version": {
-            "minimum": 1.0,
-            "title": "Connectivity Version",
-            "type": "integer"
-          },
-          "request_id": {
-            "format": "uuid",
-            "title": "Request Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_id",
-          "request_id",
-          "accepted_at",
-          "config_row_version",
-          "connectivity_version"
-        ],
-        "title": "ConnectivityCheckReceipt",
-        "type": "object"
-      },
       "ConversationCreate": {
         "additionalProperties": false,
         "properties": {
@@ -9316,7 +9272,7 @@
     },
     "/internal/v1/aiops/config/diagnostic-sources/{source_id}/connectivity-checks": {
       "post": {
-        "operationId": "request_diagnostic_source_connectivity_check_internal_v1_aiops_config_diagnostic_sources__source_id__connectivity_checks_post",
+        "operationId": "check_diagnostic_source_connectivity_internal_v1_aiops_config_diagnostic_sources__source_id__connectivity_checks_post",
         "parameters": [
           {
             "in": "path",
@@ -9355,11 +9311,11 @@
           }
         ],
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectivityCheckReceipt"
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
                 }
               }
             },
@@ -9376,7 +9332,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Request Diagnostic Source Connectivity Check",
+        "summary": "Check Diagnostic Source Connectivity",
         "tags": [
           "AIOps Config"
         ]

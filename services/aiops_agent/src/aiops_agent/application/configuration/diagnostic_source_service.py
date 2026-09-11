@@ -22,6 +22,9 @@ from aiops_agent.application.errors import (
     state_conflict,
     validation_failed,
 )
+from aiops_agent.application.configuration.source_connection_test import (
+    run_diagnostic_source_health_check,
+)
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
     TargetSourceBindingEntity,
@@ -34,7 +37,6 @@ from aiops_agent.ports.diagnostic_source import (
     LogSourceLocator,
 )
 from platform_core.contracts.aiops import (
-    ConnectivityCheckReceipt,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -55,6 +57,76 @@ from .projections import (
 
 
 class DiagnosticSourceConfigurationMixin:
+    @staticmethod
+    def _apply_diagnostic_source_health_result(
+        *, entity, result, checked_at: datetime
+    ) -> None:
+        entity.connectivity_status = (
+            "CONNECTED" if result.ok else "UNREACHABLE"
+        )
+        entity.connectivity_check_request_id = None
+        entity.connectivity_check_requested_at = None
+        entity.last_connectivity_check_at = checked_at
+        if result.ok:
+            entity.last_connectivity_success_at = checked_at
+        entity.last_error_code = result.error_code
+        entity.discovered_capabilities_json = {
+            capability: {
+                "adapter_id": entity.adapter_id,
+                "adapter_version": entity.adapter_version,
+            }
+            for capability in result.discovered_capabilities
+        }
+
+    async def _check_diagnostic_source_now(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        entity,
+        credentials: dict[str, object] | None = None,
+    ) -> None:
+        if credentials is None:
+            credential_id = (
+                entity.auth_credential_id
+                if entity.endpoint
+                else entity.webhook_credential_id
+            )
+            credential_kind = (
+                "diagnostic_source" if entity.endpoint else "source_webhook"
+            )
+            credentials = (
+                await self._managed_credentials.read(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    credential_id=credential_id,
+                    credential_kind=credential_kind,
+                    external_key=entity.diagnostic_source_id,
+                )
+                if credential_id is not None
+                else {}
+            )
+        result = await run_diagnostic_source_health_check(
+            source_id=str(entity.diagnostic_source_id),
+            source_type=entity.source_type,
+            adapter_id=entity.adapter_id,
+            adapter_version=entity.adapter_version,
+            config_version=int(entity.row_version),
+            endpoint=entity.endpoint,
+            credentials=credentials,
+            declared_capabilities=dict(
+                entity.declared_capabilities_json or {}
+            ),
+            config=dict(entity.config_json or {}),
+            trace_id=scope.trace_id,
+            diagnostic_source_registry=self._diagnostic_source_registry,
+        )
+        self._apply_diagnostic_source_health_result(
+            entity=entity,
+            result=result,
+            checked_at=datetime.now(UTC),
+        )
+
     def _normalize_source_config(
         self, *, source_type: str, config: dict[str, object]
     ) -> dict[str, object]:
@@ -149,7 +221,6 @@ class DiagnosticSourceConfigurationMixin:
             assert uow.diagnostic_sources is not None
             assert uow.managed_credentials is not None
             source_id = uuid7()
-            connectivity_check_request_id = uuid7()
             auth_credential_id = webhook_credential_id = None
             for kind, values in (
                 ("diagnostic_source", request.credentials),
@@ -184,15 +255,28 @@ class DiagnosticSourceConfigurationMixin:
                 discovered_capabilities_json=None,
                 config_json=config,
                 status="DISABLED",
-                connectivity_status="CHECKING",
-                connectivity_check_request_id=connectivity_check_request_id,
-                connectivity_check_requested_at=now,
+                connectivity_status="UNKNOWN",
+                connectivity_check_request_id=None,
+                connectivity_check_requested_at=None,
                 row_version=1,
                 connectivity_version=1,
                 created_by=scope.actor_id,
                 updated_by=scope.actor_id,
                 created_at=now,
                 updated_at=now,
+            )
+            await self._check_diagnostic_source_now(
+                uow=uow,
+                scope=scope,
+                entity=entity,
+                credentials=dict(
+                    (
+                        request.credentials
+                        if request.endpoint
+                        else request.webhook_credentials
+                    )
+                    or {}
+                ),
             )
             await uow.diagnostic_sources.add(entity)
             await add_configuration_event(
@@ -202,20 +286,6 @@ class DiagnosticSourceConfigurationMixin:
                 aggregate_id=entity.diagnostic_source_id,
                 event_type="DIAGNOSTIC_SOURCE_CREATED",
                 row_version=1,
-            )
-            await add_configuration_event(
-                uow=uow,
-                scope=scope,
-                aggregate_type="DIAGNOSTIC_SOURCE",
-                aggregate_id=entity.diagnostic_source_id,
-                event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
-                row_version=1,
-                details={
-                    "connectivity_check_request_id": str(
-                        connectivity_check_request_id
-                    ),
-                    "connectivity_version": 1,
-                },
             )
             return _diagnostic_source_detail(entity)
 
@@ -263,7 +333,7 @@ class DiagnosticSourceConfigurationMixin:
             entities = await uow.diagnostic_sources.page_scoped(
                 domain_id=scope.domain_id,
                 statuses=(status,) if status else None,
-                before_updated_at=before_at,
+                before_created_at=before_at,
                 before_id=before_id,
                 limit=limit + 1,
             )
@@ -273,7 +343,7 @@ class DiagnosticSourceConfigurationMixin:
                 last = page_entities[-1]
                 next_cursor = self._cursor_codec.encode(
                     scope=scope,
-                    updated_at=last.updated_at,
+                    sort_at=last.created_at,
                     resource_id=last.diagnostic_source_id,
                     filters=filters,
                 )
@@ -382,17 +452,18 @@ class DiagnosticSourceConfigurationMixin:
                 )
             if connectivity_changed:
                 entity.status = "DISABLED"
-                entity.connectivity_status = "CHECKING"
                 entity.connectivity_version = (
                     int(entity.connectivity_version) + 1
                 )
-                entity.connectivity_check_request_id = uuid7()
-                entity.last_connectivity_check_at = None
-                entity.last_error_code = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
             if connectivity_changed:
-                entity.connectivity_check_requested_at = entity.updated_at
+                await self._check_diagnostic_source_now(
+                    uow=uow,
+                    scope=scope,
+                    entity=entity,
+                )
+                entity.updated_at = datetime.now(UTC)
             await uow.session.flush()  # type: ignore[union-attr]
             await add_configuration_event(
                 uow=uow,
@@ -402,23 +473,6 @@ class DiagnosticSourceConfigurationMixin:
                 event_type="DIAGNOSTIC_SOURCE_UPDATED",
                 row_version=int(entity.row_version),
             )
-            if connectivity_changed:
-                await add_configuration_event(
-                    uow=uow,
-                    scope=scope,
-                    aggregate_type="DIAGNOSTIC_SOURCE",
-                    aggregate_id=source_id,
-                    event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
-                    row_version=int(entity.row_version),
-                    details={
-                        "connectivity_check_request_id": str(
-                            entity.connectivity_check_request_id
-                        ),
-                        "connectivity_version": int(
-                            entity.connectivity_version
-                        ),
-                    },
-                )
             response = _diagnostic_source_detail(entity)
             await uow.commit()
             return response
@@ -544,17 +598,17 @@ class DiagnosticSourceConfigurationMixin:
             handler=handler,
         )
 
-    async def request_diagnostic_source_connectivity_check(
+    async def check_diagnostic_source_connectivity(
         self,
         *,
         scope: ConfigurationScope,
         source_id: UUID,
         expected_version: int,
         idempotency_key: str,
-    ) -> ConnectivityCheckReceipt:
+    ) -> DiagnosticSourceDetail:
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
-        ) -> ConnectivityCheckReceipt:
+        ) -> DiagnosticSourceDetail:
             assert uow.diagnostic_sources is not None
             entity = await uow.diagnostic_sources.get_scoped(
                 diagnostic_source_id=source_id,
@@ -564,34 +618,16 @@ class DiagnosticSourceConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Diagnostic Source")
             self._check_version(entity.row_version, expected_version)
-            request_id = uuid7()
-            entity.connectivity_status = "CHECKING"
-            entity.connectivity_check_request_id = request_id
-            entity.connectivity_check_requested_at = now
-            entity.updated_by = scope.actor_id
-            entity.updated_at = now
-            await uow.session.flush()  # type: ignore[union-attr]
-            await add_configuration_event(
+            await self._check_diagnostic_source_now(
                 uow=uow,
                 scope=scope,
-                aggregate_type="DIAGNOSTIC_SOURCE",
-                aggregate_id=source_id,
-                event_type="SOURCE_CONNECTIVITY_CHECK_REQUESTED",
-                row_version=int(entity.row_version),
-                details={
-                    "connectivity_check_request_id": str(request_id),
-                    "connectivity_version": int(
-                        entity.connectivity_version
-                    ),
-                },
+                entity=entity,
             )
-            return ConnectivityCheckReceipt(
-                source_id=source_id,
-                request_id=request_id,
-                accepted_at=now,
-                config_row_version=int(entity.row_version),
-                connectivity_version=int(entity.connectivity_version),
-            )
+            entity.updated_by = scope.actor_id
+            entity.updated_at = datetime.now(UTC)
+            entity.connectivity_version = int(entity.connectivity_version) + 1
+            await uow.session.flush()  # type: ignore[union-attr]
+            return _diagnostic_source_detail(entity)
 
         return await self._idempotent(
             scope=scope,
@@ -599,7 +635,7 @@ class DiagnosticSourceConfigurationMixin:
             parent_resource=str(source_id),
             idempotency_key=idempotency_key,
             payload={"row_version": expected_version},
-            response_type=ConnectivityCheckReceipt,
+            response_type=DiagnosticSourceDetail,
             handler=handler,
         )
 

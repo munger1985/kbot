@@ -197,6 +197,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('page !== "agents"', pages)
         self.assertIn("!paths[page] || !panel", pages)
 
+    def test_source_connectivity_toast_displays_final_result(self):
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("连通性检查结果：", pages)
+        self.assertIn("result.connectivity_status", pages)
+        self.assertIn("result.last_error_code", pages)
+        self.assertNotIn("连通性检查已完成", pages)
+
     def test_target_create_form_uses_public_contract_fields(self):
         page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(

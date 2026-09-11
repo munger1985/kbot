@@ -5,9 +5,10 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from pydantic import ValidationError
+from sqlalchemy.dialects import oracle
 
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
@@ -37,13 +38,65 @@ from aiops_agent.application.configuration.service import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
 from aiops_agent.entities import DiagnosticSourceEntity
+from aiops_agent.repositories.monitoring import DiagnosticSourceRepository
+from aiops_agent.repositories.target import TargetRepository
 from platform_core.contracts.aiops import (
     DiagnosticSourceCreate,
+    DiagnosticSourceConnectionTestResult,
     DiagnosticSourcePatch,
     InspectionPlanCreate,
     TargetCreate,
 )
 from platform_core.identity import uuid7
+
+
+class _CapturedRows:
+    def scalars(self):
+        return ()
+
+
+class _CapturingSession:
+    statement = None
+
+    async def execute(self, statement):
+        self.statement = statement
+        return _CapturedRows()
+
+
+class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_target_page_uses_immutable_stable_order(self) -> None:
+        session = _CapturingSession()
+        await TargetRepository(session).page_scoped(
+            domain_id=100,
+            statuses=None,
+            before_created_at=None,
+            before_id=None,
+            limit=51,
+        )
+        sql = str(session.statement.compile(dialect=oracle.dialect()))
+        normalized = sql.replace('"', "").lower()
+        self.assertIn(
+            "order by kbot_ops_target.created_at desc, "
+            "kbot_ops_target.target_id desc",
+            normalized,
+        )
+
+    async def test_diagnostic_source_page_uses_immutable_stable_order(self) -> None:
+        session = _CapturingSession()
+        await DiagnosticSourceRepository(session).page_scoped(
+            domain_id=100,
+            statuses=None,
+            before_created_at=None,
+            before_id=None,
+            limit=51,
+        )
+        sql = str(session.statement.compile(dialect=oracle.dialect()))
+        normalized = sql.replace('"', "").lower()
+        self.assertIn(
+            "order by kbot_ops_diagnostic_source.created_at desc, "
+            "kbot_ops_diagnostic_source.diagnostic_source_id desc",
+            normalized,
+        )
 
 
 class ETagAndCursorTest(unittest.TestCase):
@@ -75,10 +128,10 @@ class ETagAndCursorTest(unittest.TestCase):
 
     def test_cursor_is_bound_to_domain_principal_and_filters(self) -> None:
         resource_id = uuid7()
-        updated_at = datetime.now(UTC)
+        sort_at = datetime.now(UTC)
         token = self.codec.encode(
             scope=self.scope,
-            updated_at=updated_at,
+            sort_at=sort_at,
             resource_id=resource_id,
             filters={"status": "ACTIVE"},
         )
@@ -88,7 +141,7 @@ class ETagAndCursorTest(unittest.TestCase):
             filters={"status": "ACTIVE"},
         )
         self.assertEqual(resource_id, decoded_id)
-        self.assertEqual(updated_at, decoded_at)
+        self.assertEqual(sort_at, decoded_at)
         with self.assertRaises(AIOpsApplicationError):
             self.codec.decode(
                 token=token,
@@ -337,7 +390,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
-    async def test_create_requests_persisted_connectivity_check(self) -> None:
+    async def test_create_completes_connectivity_check_in_request(self) -> None:
         scope = ConfigurationScope(
             domain_id=100,
             principal_id="PORTAL:km_portal",
@@ -356,36 +409,130 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
         service._diagnostic_source_catalog = (
             DiagnosticSourceAdapterCatalog()
         )
+        service._diagnostic_source_registry = AsyncMock()
 
         async def execute_handler(**kwargs):
             return await kwargs["handler"](uow, datetime.now(UTC))
 
         service._idempotent = AsyncMock(side_effect=execute_handler)
-        result = await service.create_diagnostic_source(
-            scope=scope,
-            request=DiagnosticSourceCreate(
-                display_name="Dev Prometheus",
-                source_type="PROMETHEUS",
-                endpoint="http://127.0.0.1:9090",
+        with patch(
+            "aiops_agent.application.configuration."
+            "diagnostic_source_service.run_diagnostic_source_health_check",
+            new=AsyncMock(
+                return_value=DiagnosticSourceConnectionTestResult(
+                    ok=True,
+                    discovered_capabilities=("health.check",),
+                )
             ),
-            idempotency_key="create-source-1",
-        )
+        ) as health_check:
+            result = await service.create_diagnostic_source(
+                scope=scope,
+                request=DiagnosticSourceCreate(
+                    display_name="Dev Prometheus",
+                    source_type="PROMETHEUS",
+                    endpoint="http://127.0.0.1:9090",
+                ),
+                idempotency_key="create-source-1",
+            )
 
-        self.assertTrue(result.connectivity_check_pending)
-        self.assertEqual("CHECKING", result.connectivity_status)
+        self.assertFalse(result.connectivity_check_pending)
+        self.assertEqual("CONNECTED", result.connectivity_status)
         self.assertEqual("DISABLED", result.status)
+        self.assertIsNotNone(result.last_connectivity_check_at)
+        self.assertIsNotNone(result.last_connectivity_success_at)
+        health_check.assert_awaited_once()
         repository.add.assert_awaited_once()
-        self.assertEqual(2, outbox.add.await_count)
+        self.assertEqual(1, outbox.add.await_count)
         event_types = [
             call.args[0].event_type for call in outbox.add.await_args_list
         ]
         self.assertEqual(
-            [
-                "DIAGNOSTIC_SOURCE_CREATED",
-                "SOURCE_CONNECTIVITY_CHECK_REQUESTED",
-            ],
+            ["DIAGNOSTIC_SOURCE_CREATED"],
             event_types,
         )
+
+    async def test_saved_source_connectivity_check_returns_final_state(self) -> None:
+        now = datetime.now(UTC)
+        source_id = uuid7()
+        credential_id = uuid7()
+        entity = DiagnosticSourceEntity(
+            diagnostic_source_id=source_id,
+            domain_id=100,
+            display_name="Dev Prometheus",
+            source_type="PROMETHEUS",
+            adapter_id="prometheus",
+            adapter_version="1.0.0",
+            endpoint="http://127.0.0.1:9090",
+            auth_credential_id=credential_id,
+            webhook_credential_id=None,
+            tls_profile_ref=None,
+            webhook_key_hash=None,
+            previous_webhook_key_hash=None,
+            previous_webhook_key_expires_at=None,
+            declared_capabilities_json={"metric.query_range": {}},
+            discovered_capabilities_json=None,
+            config_json={},
+            status="DISABLED",
+            connectivity_status="UNKNOWN",
+            connectivity_check_request_id=None,
+            connectivity_check_requested_at=None,
+            last_connectivity_check_at=None,
+            last_connectivity_success_at=None,
+            last_error_code=None,
+            row_version=1,
+            connectivity_version=1,
+            created_by="portal-user-1",
+            updated_by="portal-user-1",
+            created_at=now,
+            updated_at=now,
+        )
+        repository = AsyncMock()
+        repository.get_scoped.return_value = entity
+        uow = SimpleNamespace(
+            diagnostic_sources=repository,
+            managed_credentials=object(),
+            session=AsyncMock(),
+        )
+        service = object.__new__(AIOpsConfigurationService)
+        service._diagnostic_source_catalog = DiagnosticSourceAdapterCatalog()
+        service._diagnostic_source_registry = AsyncMock()
+        service._managed_credentials = AsyncMock()
+        service._managed_credentials.read.return_value = {"token": "secret"}
+
+        async def execute_handler(**kwargs):
+            return await kwargs["handler"](uow, now)
+
+        service._idempotent = AsyncMock(side_effect=execute_handler)
+        scope = ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:km_portal",
+            actor_id="portal-user-1",
+            request_id="request-2",
+            trace_id="trace-2",
+        )
+        with patch(
+            "aiops_agent.application.configuration."
+            "diagnostic_source_service.run_diagnostic_source_health_check",
+            new=AsyncMock(
+                return_value=DiagnosticSourceConnectionTestResult(
+                    ok=False,
+                    error_code="SOURCE_UNREACHABLE",
+                )
+            ),
+        ) as health_check:
+            result = await service.check_diagnostic_source_connectivity(
+                scope=scope,
+                source_id=source_id,
+                expected_version=1,
+                idempotency_key="check-source-1",
+            )
+
+        self.assertEqual("UNREACHABLE", result.connectivity_status)
+        self.assertEqual("SOURCE_UNREACHABLE", result.last_error_code)
+        self.assertFalse(result.connectivity_check_pending)
+        self.assertEqual(2, result.connectivity_version)
+        health_check.assert_awaited_once()
+        service._managed_credentials.read.assert_awaited_once()
 
 
 class TargetCreationTest(unittest.IsolatedAsyncioTestCase):

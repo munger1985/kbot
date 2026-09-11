@@ -626,7 +626,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def request_diagnostic_source_connectivity_check(
+    async def check_diagnostic_source_connectivity(
         self,
         source_id: UUID,
         *,

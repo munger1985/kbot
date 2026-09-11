@@ -58,6 +58,17 @@ class DiagnosticSourceAdapterCatalogPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class DiagnosticSourceAdapterRegistryPort(Protocol):
+    """诊断源运行调用通过可创建具体 Adapter 的注册表。"""
+
+    def create(
+        self,
+        context: "DiagnosticSourceContext",
+        *,
+        capability: str | None = None,
+    ) -> Any: ...
+
+
 class DiagnosticSourceContext(BaseModel):
     """冻结一次 Adapter 调用所需的配置和凭据。"""
 

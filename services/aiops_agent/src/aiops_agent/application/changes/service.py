@@ -130,7 +130,7 @@ class AIOpsChangeService:
                     raise RuntimeError("AIOps 查询 Cursor Codec 尚未配置")
                 last = page[-1]
                 next_cursor = self._cursor_codec.encode(
-                    scope=scope, updated_at=last.created_at,
+                    scope=scope, sort_at=last.created_at,
                     resource_id=last.proposal_id, filters=filters,
                 )
             return ProposalPage(items=tuple(items), next_cursor=next_cursor,

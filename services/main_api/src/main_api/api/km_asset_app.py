@@ -211,7 +211,7 @@ class AssetReferencePreview(_Payload):
     attachments: tuple[AssetAttachmentPreview, ...] = ()
 
 
-class AgentCreatePayload(_Payload):
+class KmAssetAgentCreatePayload(_Payload):
     source_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
@@ -224,7 +224,7 @@ class AgentActivatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
 
 
-class AgentUpdatePayload(_Payload):
+class KmAssetAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     source_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
@@ -797,7 +797,7 @@ async def list_agents(request: Request):
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
-async def create_agent(payload: AgentCreatePayload, request: Request):
+async def create_agent(payload: KmAssetAgentCreatePayload, request: Request):
     domain_id = await _require(request, "km_asset:agent_manage")
     return await _client(request).create_agent(payload={"domain_id": domain_id, **payload.model_dump(mode="json")}, auth_context=request.state.auth_context)
 
@@ -818,7 +818,7 @@ async def get_agent(agent_id: UUID, request: Request):
 
 @router.patch("/agents/{agent_id}")
 async def update_agent(
-    agent_id: UUID, payload: AgentUpdatePayload, request: Request
+    agent_id: UUID, payload: KmAssetAgentUpdatePayload, request: Request
 ):
     domain_id = await _require(request, "km_asset:agent_manage")
     return await _client(request).update_agent(

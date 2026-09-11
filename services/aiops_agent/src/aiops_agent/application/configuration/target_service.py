@@ -266,7 +266,7 @@ class TargetConfigurationMixin:
             entities = await uow.targets.page_scoped(
                 domain_id=scope.domain_id,
                 statuses=(status,) if status else None,
-                before_updated_at=before_at,
+                before_created_at=before_at,
                 before_id=before_id,
                 limit=limit + 1,
             )
@@ -276,7 +276,7 @@ class TargetConfigurationMixin:
                 last = page_entities[-1]
                 next_cursor = self._cursor_codec.encode(
                     scope=scope,
-                    updated_at=last.updated_at,
+                    sort_at=last.created_at,
                     resource_id=last.target_id,
                     filters=filters,
                 )

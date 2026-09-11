@@ -552,15 +552,6 @@ class InspectionPlanPage(CursorPage):
     items: tuple[InspectionPlanSummary, ...] = ()
 
 
-class ConnectivityCheckReceipt(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    source_id: UUIDv7
-    request_id: UUIDv7
-    accepted_at: UtcDatetime
-    config_row_version: int = Field(ge=1)
-    connectivity_version: int = Field(ge=1)
-
-
 class WebhookKeyRotation(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7

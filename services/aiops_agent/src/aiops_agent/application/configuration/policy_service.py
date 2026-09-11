@@ -245,7 +245,7 @@ class PolicyConfigurationMixin:
                 last = page_entities[-1]
                 next_cursor = self._cursor_codec.encode(
                     scope=scope,
-                    updated_at=last.updated_at,
+                    sort_at=last.updated_at,
                     resource_id=last.policy_id,
                     filters=filters,
                 )

@@ -161,8 +161,9 @@ SQL：LLM 只能选择版本化诊断工具和参数，DB Executor 根据数据�
 Target 和 Diagnostic Source 的人工管理状态统一为 `ENABLED`、`DISABLED`，不使用
 “维护中”表示未启用或连接失败。连通性独立使用 `UNKNOWN`、`CHECKING`、
 `CONNECTED`、`DEGRADED`、`UNREACHABLE`；Target 从监控证据归并出的业务观测状态
-另行使用 `UNKNOWN`、`UP`、`DOWN`、`DEGRADED`。新建资源默认停用并立即写入持久化
-连通性检查请求，连接配置发生变化时也会自动停用并重新检查。只有最近两小时内
+另行使用 `UNKNOWN`、`UP`、`DOWN`、`DEGRADED`。新建资源默认停用；Target 立即写入
+持久化连通性检查请求，Diagnostic Source 的新建、连接配置变更及人工连接测试则在当前
+HTTP 请求内完成 Adapter 健康检查并直接返回最终连通性，不投递异步任务。只有最近两小时内
 成功连接的资源允许人工启用。
 
 Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入最多十分钟抖动；

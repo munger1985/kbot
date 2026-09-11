@@ -50,6 +50,7 @@ from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.agent_catalog import AgentCatalogPort
 from aiops_agent.ports.diagnostic_source import (
     DiagnosticSourceAdapterCatalogPort,
+    DiagnosticSourceAdapterRegistryPort,
 )
 from aiops_agent.ports.secret_store import SecretStorePort
 from platform_core.contracts import AuthContext
@@ -107,6 +108,7 @@ class ConfigurationServiceBase:
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
         diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
+        diagnostic_source_registry: DiagnosticSourceAdapterRegistryPort | None = None,
     ):
         self._uow_factory = uow_factory
         self._cursor_codec = cursor_codec
@@ -118,6 +120,7 @@ class ConfigurationServiceBase:
         self._credential_cipher = credential_cipher
         self._managed_credentials = managed_credential_service
         self._diagnostic_source_catalog = diagnostic_source_catalog
+        self._diagnostic_source_registry = diagnostic_source_registry
 
     async def _validate_secret_refs(self, *references: str | None) -> None:
         for reference in references:
