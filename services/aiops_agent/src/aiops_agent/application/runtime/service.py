@@ -5458,31 +5458,37 @@ class AIOpsRuntimeService:
                         item.status == DomainOpsTaskStatus.RUNNING.value
                         for item in tasks
                     ):
-                        ensure_run_transition(
-                            DomainOpsRunStatus(run.status),
-                            DomainOpsRunStatus.CANCELLED,
-                        )
-                        run.status = DomainOpsRunStatus.CANCELLED.value
-                        run.completed_at = now
-                        if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
-                            await self._project_turn_terminal(
-                                uow=uow,
-                                run=run,
-                                status="CANCELLED",
-                                error_code=None,
-                                public_summary="诊断已取消",
-                                now=now,
+                        # Turn 取消可能已将 Run 标记为 CANCELLED，而租约
+                        # 到期的执行中 Task 仍需在此处收敛。终态 Run 不可
+                        # 再迁移；否则事务会回滚并永久重复处理同一 Task。
+                        if run.status != DomainOpsRunStatus.CANCELLED.value:
+                            ensure_run_transition(
+                                DomainOpsRunStatus(run.status),
+                                DomainOpsRunStatus.CANCELLED,
                             )
-                        await uow.runs.append_event(
-                            ops_run_id=run.ops_run_id,
-                            event_type="run.cancelled",
-                            event_key=f"run:{run.ops_run_id}:terminal",
-                            visibility="USER",
-                            payload_json={
-                                "status": "CANCELLED",
-                                "trace_id": trace_id,
-                            },
-                        )
+                            run.status = DomainOpsRunStatus.CANCELLED.value
+                            run.completed_at = now
+                            if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                                await self._project_turn_terminal(
+                                    uow=uow,
+                                    run=run,
+                                    status="CANCELLED",
+                                    error_code=None,
+                                    public_summary="诊断已取消",
+                                    now=now,
+                                )
+                            await uow.runs.append_event(
+                                ops_run_id=run.ops_run_id,
+                                event_type="run.cancelled",
+                                event_key=(
+                                    f"run:{run.ops_run_id}:terminal"
+                                ),
+                                visibility="USER",
+                                payload_json={
+                                    "status": "CANCELLED",
+                                    "trace_id": trace_id,
+                                },
+                            )
                 else:
                     retry = int(task.attempt_count) < int(
                         task.max_attempts

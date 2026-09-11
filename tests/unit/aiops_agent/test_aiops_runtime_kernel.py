@@ -263,6 +263,98 @@ class RuntimeLeaseValidationTest(unittest.TestCase):
 
 
 class RuntimeTerminalFailureTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reconciler_cleans_expired_task_for_cancelled_run(self) -> None:
+        """已取消 Run 的遗留租约必须可收敛，不能阻塞后续队列。"""
+        now = datetime.now(UTC)
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            status="CANCELLED",
+            workflow_kind="INSPECTION",
+            cancel_requested_at=now - timedelta(minutes=1),
+            completed_at=now - timedelta(minutes=1),
+        )
+        task = SimpleNamespace(
+            ops_task_id=uuid7(),
+            ops_run_id=run.ops_run_id,
+            status="RUNNING",
+            task_type="TOOL_INVOKE",
+            task_key="observe",
+            attempt_count=1,
+            error_code=None,
+            lease_owner="worker-1",
+            lease_token=uuid7(),
+            lease_until=now - timedelta(seconds=1),
+            heartbeat_at=now - timedelta(minutes=1),
+            completed_at=None,
+        )
+        events = []
+
+        class _Runs:
+            async def database_now(self):
+                return now
+
+            async def lock_due_run(self, *, now):
+                del now
+                return None
+
+            async def get_run(self, *, ops_run_id):
+                self_outer.assertEqual(run.ops_run_id, ops_run_id)
+                return run
+
+            async def lock_expired_task(self, *, now):
+                del now
+                return task
+
+            async def list_tasks(self, *, ops_run_id, lock=False):
+                self_outer.assertEqual(run.ops_run_id, ops_run_id)
+                self_outer.assertTrue(lock)
+                return [task]
+
+            async def append_event(self, **kwargs):
+                events.append(kwargs)
+                return SimpleNamespace(sequence_no=len(events))
+
+        class _Changes:
+            async def find_expired_proposal(self, *, now):
+                del now
+                return None
+
+            async def find_expired_hitl(self):
+                return None
+
+            async def find_due_execution(self, *, now):
+                del now
+                return None
+
+        class _Uow:
+            runs = _Runs()
+            changes = _Changes()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                del args
+
+            async def commit(self):
+                self_outer.committed = True
+
+        self_outer = self
+        self.committed = False
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._uow_factory = lambda: _Uow()
+
+        worked = await runtime.reconcile_once(trace_id="trace-cancelled")
+
+        self.assertTrue(worked)
+        self.assertEqual("CANCELLED", run.status)
+        self.assertEqual("CANCELLED", task.status)
+        self.assertIsNone(task.lease_owner)
+        self.assertIsNone(task.lease_token)
+        self.assertIsNone(task.lease_until)
+        self.assertTrue(self.committed)
+        self.assertEqual("task.status", events[0]["event_type"])
+
     async def test_parallel_task_failure_does_not_retransition_terminal_run(self) -> None:
         now = datetime.now(UTC)
         run_id = uuid7()
