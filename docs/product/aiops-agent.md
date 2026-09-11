@@ -42,6 +42,12 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 权限、AWR/ASH 数据或 Oracle 版本不满足条件时，Agent 明确返回数据缺口，不伪造报告。
 首版按 RAC 实例分别生成报告，不生成跨实例全局报告。
 
+诊断账号在目标 PDB 中除读取字典视图外，必须具有执行报告包的最小对象权限：
+
+```sql
+GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO kbot_monitor;
+```
+
 ### Portal 三入口工作区
 
 Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业务用户必须理解的

@@ -159,8 +159,15 @@ AIOps不根据Oracle许可证对AWR/ASH查询进行能力门控；许可证管�
 初始化脚本，改为执行完整授权脚本：
 
 原生 AWR、AWR 对比和 ASH HTML 报告通过固定目录调用
-`DBMS_WORKLOAD_REPOSITORY`。上线前应在目标服务和实例范围内验证诊断账号实际能够读取
-快照并调用报告函数；不能通过放宽通用动态 SQL 策略解决权限或数据库配置问题。
+`DBMS_WORKLOAD_REPOSITORY`。`SELECT ANY DICTIONARY`不包含该包的执行权限；在目标
+PDB 中必须额外授予诊断账号以下最小对象权限：
+
+```sql
+GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO kbot_monitor;
+```
+
+上线前应在目标服务和实例范围内验证诊断账号实际能够读取快照并调用报告函数；不能通过
+放宽通用动态 SQL 策略解决权限或数据库配置问题。
 
 ```sql
 ALTER SESSION SET CONTAINER = PDB01;
