@@ -37,6 +37,8 @@ class TargetConnectivityCheckService:
             snapshot = {
                 "domain_id": int(target.domain_id),
                 "db_type": target.db_type,
+                "oracle_container_scope": target.oracle_container_scope,
+                "oracle_pdb_name": target.oracle_pdb_name,
                 "endpoint": dict(target.endpoint_json or {}),
                 "credential_id": target.diagnostic_credential_id,
                 "config_version": int(target.row_version),
@@ -59,6 +61,10 @@ class TargetConnectivityCheckService:
                     TargetConnectionTest.model_validate(
                         {
                             "db_type": snapshot["db_type"],
+                            "oracle_container_scope": snapshot[
+                                "oracle_container_scope"
+                            ],
+                            "oracle_pdb_name": snapshot["oracle_pdb_name"],
                             "endpoint": snapshot["endpoint"],
                             "diagnostic_credential": credential,
                         }
@@ -71,6 +77,20 @@ class TargetConnectivityCheckService:
             error_code = "TARGET_UNREACHABLE"
 
         connected = result is not None and result.ok
+        connectivity_status = "CONNECTED" if connected else "UNREACHABLE"
+        if result is not None and result.error_code in {
+            "ORACLE_CONTAINER_MISMATCH",
+            "ORACLE_CONTAINER_UNSUPPORTED",
+        }:
+            connectivity_status = "MISCONFIGURED"
+        oracle_observation = None
+        if result is not None and result.oracle_container_scope is not None:
+            oracle_observation = {
+                "observed_oracle_container_scope": result.oracle_container_scope,
+                "observed_oracle_container_name": result.oracle_container_name,
+                "observed_oracle_container_number": result.oracle_container_number,
+                "observed_oracle_database_name": result.oracle_database_name,
+            }
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             changed = await uow.targets.update_connectivity(
@@ -80,11 +100,10 @@ class TargetConnectivityCheckService:
                 expected_connectivity_version=snapshot[
                     "connectivity_version"
                 ],
-                connectivity_status=(
-                    "CONNECTED" if connected else "UNREACHABLE"
-                ),
+                connectivity_status=connectivity_status,
                 checked_at=now,
                 last_error_code=error_code,
+                oracle_observation=oracle_observation,
             )
             if changed:
                 await uow.commit()

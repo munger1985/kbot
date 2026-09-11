@@ -13,6 +13,10 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
   `operations-manuals` KC Collection，并通过 Main API 上传和批准仓库内置数据库运维手册；
   `--check-only` 可只读复查，`--skip-manual-upload` 仅初始化数据库资源。
+- `scripts/db/initialize_assistant.py`：幂等创建 `assistant_portal` 空白引导 Domain、
+  Assistant App 权限和 `assistantadmin` 初始管理员；不创建 KC、问数模型、Agent 或 OCI
+  配置。`--check-only` 可只读复查；初始密码只会在首次建凭据且显式指定
+  `--show-initial-password` 时输出。
 - `database/oracle/operations/model_serving/export_ai_model_inserts.sql`：在 SQL Developer
   中从当前 Schema 的模型目录生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到
   仓库或非受控位置。

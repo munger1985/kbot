@@ -157,13 +157,15 @@ class DiagnosticRegistry:
             if parameters["begin_snapshot_id"] >= parameters["end_snapshot_id"]:
                 raise ValueError("AWR 报告起始快照必须早于结束快照")
         elif tool_id == "db.oracle.awr.diff_report":
-            ordered = (
-                parameters["baseline_begin_snapshot_id"],
-                parameters["baseline_end_snapshot_id"],
-                parameters["after_begin_snapshot_id"],
-                parameters["after_end_snapshot_id"],
-            )
-            if any(left >= right for left, right in zip(ordered, ordered[1:])):
+            baseline_begin = parameters["baseline_begin_snapshot_id"]
+            baseline_end = parameters["baseline_end_snapshot_id"]
+            after_begin = parameters["after_begin_snapshot_id"]
+            after_end = parameters["after_end_snapshot_id"]
+            if (
+                baseline_begin >= baseline_end
+                or baseline_end > after_begin
+                or after_begin >= after_end
+            ):
                 raise ValueError("AWR 对比报告的两段快照必须按时间先后且不重叠")
         elif tool_id == "db.oracle.ash.report":
             try:

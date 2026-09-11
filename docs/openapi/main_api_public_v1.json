@@ -3698,6 +3698,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -3992,6 +3993,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -5905,6 +5907,18 @@
       },
       "ModelCatalogItem": {
         "properties": {
+          "capability_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Verified At"
+          },
           "category": {
             "title": "Category",
             "type": "integer"
@@ -5934,6 +5948,21 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "supports_image_generation": {
+            "default": false,
+            "title": "Supports Image Generation",
+            "type": "boolean"
+          },
+          "supports_responses_streaming": {
+            "default": false,
+            "title": "Supports Responses Streaming",
+            "type": "boolean"
+          },
+          "supports_x_search": {
+            "default": false,
+            "title": "Supports X Search",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9477,6 +9506,35 @@
           },
           "endpoint": {
             "$ref": "#/components/schemas/TargetEndpoint"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           }
         },
         "required": [
@@ -9516,6 +9574,56 @@
           "ok": {
             "title": "Ok",
             "type": "boolean"
+          },
+          "oracle_container_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Name"
+          },
+          "oracle_container_number": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Number"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Database Name"
           }
         },
         "required": [
@@ -9595,6 +9703,35 @@
               }
             ]
           },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
+          },
           "readonly_connection_enabled": {
             "default": false,
             "title": "Readonly Connection Enabled",
@@ -9651,6 +9788,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -9760,6 +9898,56 @@
             ],
             "title": "Last Observed At"
           },
+          "observed_oracle_container_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Name"
+          },
+          "observed_oracle_container_number": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Number"
+          },
+          "observed_oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Scope"
+          },
+          "observed_oracle_database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Database Name"
+          },
           "observed_status": {
             "enum": [
               "UNKNOWN",
@@ -9769,6 +9957,33 @@
             ],
             "title": "Observed Status",
             "type": "string"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           },
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
@@ -10023,6 +10238,35 @@
             ],
             "title": "Environment"
           },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
+          },
           "readonly_connection_enabled": {
             "anyOf": [
               {
@@ -10081,6 +10325,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -11129,6 +11374,207 @@
         ],
         "title": "WorkflowKind",
         "type": "string"
+      },
+      "main_api__api__assistant_app__AgentCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "data_model_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Data Model Ids",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "knowledge_core_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Core Id"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          },
+          "status": {
+            "default": "DRAFT",
+            "enum": [
+              "DRAFT",
+              "ACTIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "AgentCreatePayload",
+        "type": "object"
+      },
+      "main_api__api__assistant_app__AgentUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "data_model_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Data Model Ids",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "knowledge_core_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Core Id"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "DRAFT",
+                  "ACTIVE",
+                  "DISABLED",
+                  "ARCHIVED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "AgentUpdatePayload",
+        "type": "object"
       }
     }
   },
@@ -16974,6 +17420,190 @@
         "summary": "Command Source Binding",
         "tags": [
           "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/access": {
+      "get": {
+        "operationId": "get_access_api_v1_apps_assistant_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Access",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/agents": {
+      "get": {
+        "operationId": "list_agents_api_v1_apps_assistant_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agents",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_agent_api_v1_apps_assistant_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/main_api__api__assistant_app__AgentCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/agents/{agent_id}": {
+      "get": {
+        "operationId": "get_agent_api_v1_apps_assistant_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "patch": {
+        "operationId": "update_agent_api_v1_apps_assistant_agents__agent_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/main_api__api__assistant_app__AgentUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Agent",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores": {
+      "get": {
+        "operationId": "list_knowledge_cores_api_v1_apps_assistant_knowledge_cores_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Knowledge Cores",
+        "tags": [
+          "Assistant App"
         ]
       }
     },

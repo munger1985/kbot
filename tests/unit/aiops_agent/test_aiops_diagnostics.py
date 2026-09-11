@@ -517,6 +517,19 @@ class DiagnosticCatalogTest(unittest.TestCase):
                     "(select instance_number from v$instance)",
                     tool.sql.lower(),
                 )
+                if tool_id == "db.oracle.awr.diff_report":
+                    self.assertEqual(
+                        2,
+                        tool.sql.lower().count(
+                            "(select dbid from v$database)"
+                        ),
+                    )
+                    self.assertEqual(
+                        2,
+                        tool.sql.lower().count(
+                            "(select instance_number from v$instance)"
+                        ),
+                    )
                 self.assertEqual(
                     parameters,
                     tuple(item.name for item in tool.definition.parameters),
@@ -533,6 +546,11 @@ class DiagnosticCatalogTest(unittest.TestCase):
                     executor.max_result_bytes,
                     tool.definition.max_bytes,
                 )
+                self.assertEqual(1, len(tool.definition.output_columns))
+                self.assertEqual(
+                    "output", tool.definition.output_columns[0].name
+                )
+                self.assertTrue(tool.definition.output_columns[0].nullable)
 
         snapshots = registry.resolve(
             tool_id="db.oracle.awr.snapshots", tool_version="1.0.0",
@@ -542,6 +560,10 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertEqual((), snapshots.definition.parameters)
         self.assertIn(
             "(select instance_number from v$instance)",
+            snapshots.sql.lower(),
+        )
+        self.assertIn(
+            "dbid = (select dbid from v$database)",
             snapshots.sql.lower(),
         )
         self.assertNotIn(":instance_number", snapshots.sql.lower())
@@ -556,6 +578,32 @@ class DiagnosticCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "起始快照"):
             registry.validate_parameters(awr, {
                 "begin_snapshot_id": 20, "end_snapshot_id": 20,
+            })
+        diff = registry.resolve(
+            tool_id="db.oracle.awr.diff_report", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c", capabilities=set(),
+            entitlements=set(),
+        )
+        self.assertEqual(
+            {
+                "baseline_begin_snapshot_id": 10,
+                "baseline_end_snapshot_id": 20,
+                "after_begin_snapshot_id": 20,
+                "after_end_snapshot_id": 30,
+            },
+            registry.validate_parameters(diff, {
+                "baseline_begin_snapshot_id": 10,
+                "baseline_end_snapshot_id": 20,
+                "after_begin_snapshot_id": 20,
+                "after_end_snapshot_id": 30,
+            }),
+        )
+        with self.assertRaisesRegex(ValueError, "两段快照"):
+            registry.validate_parameters(diff, {
+                "baseline_begin_snapshot_id": 10,
+                "baseline_end_snapshot_id": 21,
+                "after_begin_snapshot_id": 20,
+                "after_end_snapshot_id": 30,
             })
         ash = registry.resolve(
             tool_id="db.oracle.ash.report", tool_version="1.0.0",
@@ -842,6 +890,51 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message, observation.rows[0][4])
         self.assertTrue(
             all(column.sensitivity == "PUBLIC" for column in observation.columns)
+        )
+
+    def test_awr_report_accepts_null_rows_emitted_for_blank_lines(self) -> None:
+        tool = DiagnosticRegistry.load().resolve(
+            tool_id="db.oracle.awr.report",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities=set(),
+            entitlements=set(),
+        )
+        captured_at = datetime(2026, 9, 11, tzinfo=UTC)
+        observation = DiagnosticExecutorService._normalize(
+            request=SimpleNamespace(executor_request_id=uuid7()),
+            grant=SimpleNamespace(
+                target_id=uuid7(),
+                tool_id=tool.definition.tool_id,
+                tool_version=tool.definition.version,
+                variant=tool.definition.variant,
+                template_sha256=tool.definition.template_sha256,
+                db_type="ORACLE",
+                capability_snapshot_hash="b" * 64,
+                parameters_sha256=canonical_sha256(
+                    {"begin_snapshot_id": 1, "end_snapshot_id": 2}
+                ),
+            ),
+            tool=tool,
+            raw=DriverQueryResult(
+                columns=("output",),
+                rows=(("<html>",), (None,), ("</html>",)),
+                truncated=False,
+                db_version="19.24.0.0.0",
+            ),
+            captured_at=captured_at,
+            duration_ms=2359,
+            limits=DiagnosticLimits(
+                statement_timeout_seconds=180,
+                max_result_rows=10000,
+                max_result_bytes=20971520,
+            ),
+        )
+
+        self.assertEqual(
+            (("<html>",), (None,), ("</html>",)),
+            observation.rows,
         )
 
     async def test_database_failure_becomes_structured_gap(self) -> None:

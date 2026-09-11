@@ -141,6 +141,16 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         **_target_summary(entity).model_dump(),
         version_code=entity.version_code,
         db_role=entity.db_role,
+        oracle_container_scope=entity.oracle_container_scope,
+        oracle_pdb_name=entity.oracle_pdb_name,
+        observed_oracle_container_scope=entity.observed_oracle_container_scope,
+        observed_oracle_container_name=entity.observed_oracle_container_name,
+        observed_oracle_container_number=(
+            int(entity.observed_oracle_container_number)
+            if entity.observed_oracle_container_number is not None
+            else None
+        ),
+        observed_oracle_database_name=entity.observed_oracle_database_name,
         endpoint=entity.endpoint_json,
         diagnostic_credential=_credential_status(entity.diagnostic_credential_id, entity),
         execution_credential=_credential_status(entity.execution_credential_id, entity),

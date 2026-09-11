@@ -210,6 +210,12 @@ class _PlanningUow:
             version_code="19c",
             environment="PROD",
             db_role="PRIMARY",
+            oracle_container_scope="PDB",
+            oracle_pdb_name="PDB1",
+            observed_oracle_container_scope="PDB",
+            observed_oracle_container_name="PDB1",
+            observed_oracle_container_number=3,
+            observed_oracle_database_name="ORCLCDB",
             status="ENABLED",
             connectivity_status="CONNECTED",
             readonly_connection_enabled=True,
@@ -1927,6 +1933,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("内部错误", internal)
         self.assertNotIn("安全校验", internal)
         self.assertIn("安全校验", invalid)
+
+    def test_terminal_failure_summary_identifies_model_outage(self) -> None:
+        summary = TurnPlanningService._terminal_failure_summary(
+            "AIOPS_MODEL_SERVICE_UNAVAILABLE"
+        )
+
+        self.assertIn("模型服务暂时不可用", summary)
+        self.assertNotIn("内部错误", summary)
 
     def test_schema_failure_summary_does_not_claim_policy_rejection(
         self,

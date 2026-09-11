@@ -41,6 +41,8 @@ class ReleaseVerifierTest(unittest.TestCase):
             manifest,
         )
         self.assertIn("docs/openapi/km_asset_app_internal_v1.json", manifest)
+        self.assertIn("docs/openapi/assistant_app_internal_v1.json", manifest)
+        self.assertIn("database/oracle/assistant_app/schema_manifest.json", manifest)
         self.assertIn("database/oracle/km_asset_app/schema_manifest.json", manifest)
         self.assertIn("resources/topology.toml", manifest)
         self.assertNotIn("var/release/sbom/python-direct.cdx.json", manifest)
@@ -51,6 +53,7 @@ class ReleaseVerifierTest(unittest.TestCase):
     def test_all_active_service_packages_are_compiled(self):
         for package in (
             "services/knowledge_core/src/knowledge_core",
+            "services/assistant_app/src/assistant_app",
             "services/km_asset_app/src/km_asset_app",
             "services/agent_runtime/src/agent_runtime",
             "services/aiops_agent/src/aiops_agent",

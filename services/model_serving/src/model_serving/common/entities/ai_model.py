@@ -51,6 +51,21 @@ class AIModelEntity(BaseEntity):
         OracleNativeJSON(),
         comment="模型推理参数，Embedding 模型的 embedding_dimension 存放于此",
     )
+    supports_x_search: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=0,
+        comment="是否已通过当前上游配置的 X Search 验收",
+    )
+    supports_image_generation: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=0,
+        comment="是否已通过当前上游配置的文生图验收",
+    )
+    supports_responses_streaming: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=0,
+        comment="是否已通过当前上游配置的响应流验收",
+    )
+    capability_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), comment="最近一次能力验收完成时间",
+    )
     descs: Mapped[str | None] = mapped_column(String(512), comment="模型说明")
     created_by: Mapped[str | None] = mapped_column(String(256), comment="创建者")
     created_at: Mapped[datetime] = mapped_column(

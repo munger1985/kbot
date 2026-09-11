@@ -12,3 +12,12 @@ Schema 20。执行前必须停止 AIOps API、Worker 和 DB Executor，并完成
 `apply_aiops_schema_22.sql` 用于将 AIOps Schema 21 原地升级到 Schema 22，扩展附件受控
 检索所需的工具调用分类约束。执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，
 并完成 Schema 备份；脚本不删除表、不删除业务行，也不修改既有诊断或审计数据。
+
+`apply_aiops_schema_23.sql` 用于将 AIOps Schema 22 原地升级到 Schema 23，增加 Oracle
+CDB/PDB 预期范围与连接实测字段。脚本保留全部业务行、Endpoint 和凭据引用；由于 Service
+Name 不能可靠判断容器类型，既有 Oracle 直连 Target 会被安全停用为仅监控模式，升级后须在
+Target 页面明确选择 `CDB Root`、`PDB` 或 `Non-CDB`，重新测试连接后再启用。
+
+`enable_model_serving_capabilities.sql` 用于为已有模型目录新增 X Search、文生图和响应流的
+能力验收列。脚本不会把任何模型标记为可用；所有新增列默认关闭，必须由受控 Canary 写入
+验收结果后，业务入口才可使用对应能力。

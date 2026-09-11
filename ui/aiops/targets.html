@@ -89,6 +89,22 @@
           <div id="target-service-field" class="ops-field span-6 target-connection-field">
             <label for="target-service">Oracle Service Name</label>
             <input id="target-service" name="service" maxlength="256" required placeholder="ORCLPDB1">
+            <small>Service Name 只负责路由连接，不能据此推断 CDB 或 PDB。</small>
+          </div>
+          <div id="target-oracle-scope-field" class="ops-field span-6 target-connection-field">
+            <label for="target-oracle-scope">运维容器范围</label>
+            <select id="target-oracle-scope" name="oracle_container_scope" required>
+              <option value="">请选择</option>
+              <option value="CDB_ROOT">CDB Root</option>
+              <option value="PDB">PDB</option>
+              <option value="NON_CDB">Non-CDB</option>
+            </select>
+            <small>连接检查会核验实际容器，范围不一致时禁止启用。</small>
+          </div>
+          <div id="target-oracle-pdb-field" class="ops-field span-6 target-connection-field" hidden>
+            <label for="target-oracle-pdb-name">PDB Name</label>
+            <input id="target-oracle-pdb-name" name="oracle_pdb_name" maxlength="128">
+            <small>填写预期 PDB Name；系统会与实际 CON_NAME 比对。</small>
           </div>
           <div id="target-database-field" class="ops-field span-6 target-connection-field" hidden>
             <label for="target-database">Database</label>

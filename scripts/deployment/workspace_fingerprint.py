@@ -40,6 +40,7 @@ WORKSPACE_PACKAGES = (
         "kbot-knowledge-retrieval-app",
         "knowledge_retrieval_app",
     ),
+    WorkspacePackage("services/assistant_app", "kbot-assistant-app", "assistant_app"),
     WorkspacePackage("services/km_asset_app", "kbot-km-asset-app", "km_asset_app"),
     WorkspacePackage("services/agent_runtime", "kbot-agent-runtime", "agent_runtime"),
     WorkspacePackage(

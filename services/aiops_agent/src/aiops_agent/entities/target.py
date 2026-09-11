@@ -30,6 +30,12 @@ class TargetEntity(BaseEntity):
     db_role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="UNKNOWN"
     )
+    oracle_container_scope: Mapped[str | None] = mapped_column(String(16))
+    oracle_pdb_name: Mapped[str | None] = mapped_column(String(128))
+    observed_oracle_container_scope: Mapped[str | None] = mapped_column(String(16))
+    observed_oracle_container_name: Mapped[str | None] = mapped_column(String(128))
+    observed_oracle_container_number: Mapped[int | None] = mapped_column(Numeric(10, 0))
+    observed_oracle_database_name: Mapped[str | None] = mapped_column(String(128))
     endpoint_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     readonly_connection_enabled: Mapped[bool] = mapped_column(
         Numeric(1, 0), nullable=False, default=False

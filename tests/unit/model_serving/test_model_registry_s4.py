@@ -1,6 +1,7 @@
 """Model Serving S4 生命周期与一致性测试。"""
 
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from model_serving.common.model_registry import (
@@ -99,6 +100,10 @@ def _model(*, status=1, category=1, model_params=None):
         created_by="tester",
         updated_by="tester",
         row_version=1,
+        supports_x_search=0,
+        supports_image_generation=0,
+        supports_responses_streaming=0,
+        capability_verified_at=None,
     )
 
 
@@ -244,6 +249,55 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
                 expected_row_version=1,
                 actor_id="operator",
             )
+
+    async def test_provider_configuration_change_revokes_capability_verification(self):
+        row = _model()
+        row.supports_x_search = 1
+        row.supports_image_generation = 1
+        row.supports_responses_streaming = 1
+        row.capability_verified_at = datetime.now(timezone.utc)
+        repository = _Repository({row.model_id: row})
+        service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
+
+        result = await service.update(
+            row.model_id,
+            {"api_endpoint": "https://new.example.invalid/v1"},
+            expected_row_version=1,
+            actor_id="operator",
+        )
+
+        self.assertFalse(result["supports_x_search"])
+        self.assertFalse(result["supports_image_generation"])
+        self.assertFalse(result["supports_responses_streaming"])
+        self.assertIsNone(result["capability_verified_at"])
+
+    async def test_capability_gate_requires_active_verified_model(self):
+        row = _model()
+        repository = _Repository({row.model_id: row})
+        service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
+
+        with self.assertRaisesRegex(ModelRegistryConflict, "尚未通过"):
+            await service.require_verified_capability(
+                row.model_id, capability="x_search",
+            )
+
+        verified = await service.record_capability_verification(
+            row.model_id,
+            supports_x_search=True,
+            supports_image_generation=False,
+            supports_responses_streaming=True,
+            verified_at=datetime.now(timezone.utc),
+            actor_id="canary",
+        )
+        self.assertTrue(verified["supports_x_search"])
+        self.assertTrue(verified["supports_responses_streaming"])
+        self.assertIsNotNone(verified["capability_verified_at"])
+        self.assertEqual(
+            str(row.model_id),
+            (await service.require_verified_capability(
+                row.model_id, capability="x_search",
+            ))["model_id"],
+        )
 
 
 async def _empty():

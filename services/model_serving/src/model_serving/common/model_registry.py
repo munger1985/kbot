@@ -1,6 +1,7 @@
 """模型目录、生命周期、引用检查与缓存失效。"""
 
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -75,6 +76,16 @@ class ModelRegistryService:
             "api_endpoint": entity.api_endpoint,
             "status": _STATUS_FROM_DB[int(entity.status)],
             "model_params": public_model_params(entity.model_params),
+            "supports_x_search": bool(int(getattr(entity, "supports_x_search", 0))),
+            "supports_image_generation": bool(
+                int(getattr(entity, "supports_image_generation", 0))
+            ),
+            "supports_responses_streaming": bool(
+                int(getattr(entity, "supports_responses_streaming", 0))
+            ),
+            "capability_verified_at": getattr(
+                entity, "capability_verified_at", None,
+            ),
             "description": entity.descs,
             "row_version": int(entity.row_version),
         }
@@ -163,6 +174,12 @@ class ModelRegistryService:
             for source, target in mutable.items():
                 if source in values:
                     setattr(row, target, values[source])
+            if {"api_endpoint", "api_key", "model_params"} & set(values):
+                # 上游连接或推理配置变化后，旧验收结论不再可信。
+                row.supports_x_search = 0
+                row.supports_image_generation = 0
+                row.supports_responses_streaming = 0
+                row.capability_verified_at = None
             row.updated_by = actor_id
             try:
                 await uow.flush()
@@ -292,6 +309,61 @@ class ModelRegistryService:
             references=tuple(references),
             unavailable_services=tuple(unavailable),
         )
+
+    async def record_capability_verification(
+        self,
+        model_id: UUID,
+        *,
+        supports_x_search: bool,
+        supports_image_generation: bool,
+        supports_responses_streaming: bool,
+        verified_at: datetime,
+        actor_id: str,
+        auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
+        """记录由受控 Canary 得出的能力结果，不能由通用编辑接口写入。"""
+        async with self._uow_factory() as uow:
+            assert uow.models
+            row = await self._locked(uow.models, model_id)
+            row.supports_x_search = int(supports_x_search)
+            row.supports_image_generation = int(supports_image_generation)
+            row.supports_responses_streaming = int(supports_responses_streaming)
+            row.capability_verified_at = verified_at
+            row.updated_by = actor_id
+            await uow.flush()
+            await uow.commit()
+            result = self._safe(row)
+        await self._notify_changed(result, auth_context=auth_context)
+        return result
+
+    async def require_verified_capability(
+        self, model_id: UUID, *, capability: str,
+    ) -> dict[str, Any]:
+        """仅向已启用且已验收能力的模型开放扩展入口。"""
+        capability_fields = {
+            "x_search": "supports_x_search",
+            "image_generation": "supports_image_generation",
+            "responses_streaming": "supports_responses_streaming",
+        }
+        field = capability_fields.get(capability)
+        if field is None:
+            raise ValueError(f"未知模型能力：{capability}")
+        async with self._uow_factory() as uow:
+            assert uow.models
+            try:
+                row = await uow.models.get_by_id(model_id)
+            except DataNotFoundException as exc:
+                raise ModelDefinitionNotFound(model_id) from exc
+            if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
+                raise ModelRegistryConflict(
+                    "MODEL_NOT_ACTIVE", "模型未启用，不能使用扩展能力",
+                )
+            if not bool(int(getattr(row, field, 0))):
+                raise ModelRegistryConflict(
+                    "MODEL_CAPABILITY_UNVERIFIED",
+                    f"模型尚未通过 {capability} 能力验收",
+                )
+            return self._safe(row)
 
     @staticmethod
     async def _locked(repository, model_id: UUID) -> AIModelEntity:

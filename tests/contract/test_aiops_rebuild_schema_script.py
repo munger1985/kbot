@@ -52,6 +52,13 @@ APPLY_SCHEMA_22 = (
     / "operations"
     / "apply_aiops_schema_22.sql"
 )
+APPLY_SCHEMA_23 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_23.sql"
+)
 
 
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
@@ -217,6 +224,37 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("'USER_EVIDENCE'", normalized)
         self.assertIn("22 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V12' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_23_apply_preserves_data_and_requires_container_recheck(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_23.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        for column_name in (
+            "ORACLE_CONTAINER_SCOPE",
+            "ORACLE_PDB_NAME",
+            "OBSERVED_ORACLE_CONTAINER_SCOPE",
+            "OBSERVED_ORACLE_CONTAINER_NAME",
+            "OBSERVED_ORACLE_CONTAINER_NUMBER",
+            "OBSERVED_ORACLE_DATABASE_NAME",
+        ):
+            self.assertIn(column_name, normalized)
+        self.assertIn("DROP CONSTRAINT CK_OPS_TARGET_CONNECTIVITY", normalized)
+        self.assertIn("'MISCONFIGURED'", normalized)
+        self.assertIn("ORACLE_CONTAINER_SCOPE IS NOT NULL", normalized)
+        self.assertIn("OBSERVED_ORACLE_CONTAINER_SCOPE IS NOT NULL", normalized)
+        self.assertIn("READONLY_CONNECTION_ENABLED = 0", normalized)
+        self.assertIn(
+            "LAST_ERROR_CODE = 'ORACLE_CONTAINER_CONFIGURATION_REQUIRED'",
+            normalized,
+        )
+        self.assertIn("CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET", normalized)
+        self.assertIn("23 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V13' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:

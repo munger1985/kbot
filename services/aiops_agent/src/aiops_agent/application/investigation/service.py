@@ -2115,6 +2115,11 @@ class TurnPlanningService:
                 "调查能力目录在规划期间发生变化，本轮没有执行诊断工具。"
                 "请刷新后重试。"
             )
+        if error_code == "AIOPS_MODEL_SERVICE_UNAVAILABLE":
+            return (
+                "诊断模型服务暂时不可用，本轮没有执行诊断工具。"
+                "请稍后重新发送问题。"
+            )
         if error_code == "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR":
             return (
                 "调查计划处理发生内部错误，本轮没有执行诊断工具。"
@@ -2410,6 +2415,22 @@ class TurnPlanningService:
                     "configured_version": target.version_code,
                     "environment": str(target.environment),
                     "db_role": str(target.db_role),
+                    "oracle_container_scope": target.oracle_container_scope,
+                    "oracle_pdb_name": target.oracle_pdb_name,
+                    "observed_oracle_container_scope": (
+                        target.observed_oracle_container_scope
+                    ),
+                    "observed_oracle_container_name": (
+                        target.observed_oracle_container_name
+                    ),
+                    "observed_oracle_container_number": (
+                        int(target.observed_oracle_container_number)
+                        if target.observed_oracle_container_number is not None
+                        else None
+                    ),
+                    "observed_oracle_database_name": (
+                        target.observed_oracle_database_name
+                    ),
                     "status": str(target.status),
                     "connectivity_status": str(target.connectivity_status),
                     "selection_status": "BOUND",

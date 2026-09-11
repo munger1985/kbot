@@ -530,9 +530,23 @@ class TargetRepository(AIOpsRepository):
         connectivity_status: str,
         checked_at: datetime,
         last_error_code: str | None,
+        oracle_observation: dict[str, object] | None = None,
     ) -> bool:
         """仅在配置和检查版本未变化时归并数据库连通性。"""
         self._check_active()
+        values: dict[str, object] = {
+            "connectivity_status": connectivity_status,
+            "last_connectivity_check_at": checked_at,
+            "last_connectivity_success_at": (
+                checked_at
+                if connectivity_status in {"CONNECTED", "DEGRADED"}
+                else TargetEntity.last_connectivity_success_at
+            ),
+            "last_error_code": last_error_code,
+            "connectivity_version": TargetEntity.connectivity_version + 1,
+        }
+        if oracle_observation is not None:
+            values.update(oracle_observation)
         statement = (
             update(TargetEntity)
             .where(
@@ -543,17 +557,7 @@ class TargetRepository(AIOpsRepository):
                 TargetEntity.connectivity_version
                 == expected_connectivity_version,
             )
-            .values(
-                connectivity_status=connectivity_status,
-                last_connectivity_check_at=checked_at,
-                last_connectivity_success_at=(
-                    checked_at
-                    if connectivity_status in {"CONNECTED", "DEGRADED"}
-                    else TargetEntity.last_connectivity_success_at
-                ),
-                last_error_code=last_error_code,
-                connectivity_version=TargetEntity.connectivity_version + 1,
-            )
+            .values(**values)
             .execution_options(synchronize_session=False)
         )
         result = await self._session.execute(statement)

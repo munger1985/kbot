@@ -35,6 +35,7 @@ from .configuration import (
     SecretRefStatus,
     DatabaseCredentialInput,
     DatabaseCredentialStatus,
+    OracleContainerScope,
     TargetCreate,
     TargetConnectionTest,
     TargetConnectionTestResult,

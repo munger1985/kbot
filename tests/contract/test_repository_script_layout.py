@@ -19,6 +19,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertEqual(
             {
                 "db/apply_oracle_schema.py",
+                "db/initialize_assistant.py",
                 "db/initialize_aiops.py",
                 "db/initialize_km.py",
                 "db/sync_prompt_catalog.py",

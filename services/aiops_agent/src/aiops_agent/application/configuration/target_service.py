@@ -96,6 +96,25 @@ from .projections import (
 )
 
 
+def _validate_oracle_container_expectation(
+    *,
+    db_type: str,
+    readonly_enabled: bool,
+    scope: str | None,
+    pdb_name: str | None,
+) -> None:
+    if db_type != "ORACLE" or not readonly_enabled:
+        if scope is not None or pdb_name is not None:
+            raise validation_failed("仅 Oracle 直连 Target 可以声明容器范围")
+        return
+    if scope not in {"CDB_ROOT", "PDB", "NON_CDB"}:
+        raise validation_failed("Oracle 直连 Target 必须声明容器范围")
+    if scope == "PDB" and not pdb_name:
+        raise validation_failed("Oracle PDB Target 必须填写 PDB Name")
+    if scope != "PDB" and pdb_name is not None:
+        raise validation_failed("仅 Oracle PDB Target 可以填写 PDB Name")
+
+
 class TargetConfigurationMixin:
     async def test_target_connection(
         self,
@@ -142,6 +161,12 @@ class TargetConfigurationMixin:
                 version_code=request.version_code,
                 environment=request.environment,
                 db_role=request.db_role,
+                oracle_container_scope=request.oracle_container_scope,
+                oracle_pdb_name=request.oracle_pdb_name,
+                observed_oracle_container_scope=None,
+                observed_oracle_container_name=None,
+                observed_oracle_container_number=None,
+                observed_oracle_database_name=None,
                 endpoint_json=(
                     request.endpoint.model_dump(mode="json")
                     if request.endpoint is not None
@@ -276,7 +301,13 @@ class TargetConfigurationMixin:
         if not fields:
             raise validation_failed("PATCH 至少需要一个可修改字段")
         connectivity_changed = bool(
-            {"endpoint", "readonly_connection_enabled"} & fields.keys()
+            {
+                "endpoint",
+                "readonly_connection_enabled",
+                "oracle_container_scope",
+                "oracle_pdb_name",
+            }
+            & fields.keys()
         )
         async with self._uow_factory() as uow:
             assert uow.targets is not None
@@ -295,6 +326,19 @@ class TargetConfigurationMixin:
                 "controlled_change_enabled", entity.controlled_change_enabled
             )
             effective_endpoint = request.endpoint if "endpoint" in fields else entity.endpoint_json
+            effective_scope = fields.get(
+                "oracle_container_scope", entity.oracle_container_scope
+            )
+            effective_pdb_name = fields.get(
+                "oracle_pdb_name", entity.oracle_pdb_name
+            )
+            if (
+                "oracle_container_scope" in fields
+                and effective_scope != "PDB"
+                and "oracle_pdb_name" not in fields
+            ):
+                effective_pdb_name = None
+                fields["oracle_pdb_name"] = None
             if effective_readonly and not effective_endpoint:
                 raise validation_failed("启用只读数据库连接时必须配置 Endpoint")
             if effective_readonly and entity.diagnostic_credential_id is None:
@@ -305,6 +349,17 @@ class TargetConfigurationMixin:
                 raise validation_failed("允许受控变更时必须启用只读连接并配置执行凭据")
             if not effective_readonly and effective_change:
                 raise validation_failed("仅监控 Target 不能允许受控变更")
+            if not effective_readonly:
+                effective_scope = None
+                effective_pdb_name = None
+                fields["oracle_container_scope"] = None
+                fields["oracle_pdb_name"] = None
+            _validate_oracle_container_expectation(
+                db_type=entity.db_type,
+                readonly_enabled=bool(effective_readonly),
+                scope=effective_scope,
+                pdb_name=effective_pdb_name,
+            )
             if "endpoint" in fields:
                 endpoint = request.endpoint
                 if endpoint is None:
@@ -330,11 +385,19 @@ class TargetConfigurationMixin:
                 entity.connectivity_check_requested_at = datetime.now(UTC)
                 entity.last_connectivity_check_at = None
                 entity.last_error_code = None
+                entity.observed_oracle_container_scope = None
+                entity.observed_oracle_container_name = None
+                entity.observed_oracle_container_number = None
+                entity.observed_oracle_database_name = None
             elif connectivity_changed:
                 entity.connectivity_status = "UNKNOWN"
                 entity.connectivity_check_request_id = None
                 entity.connectivity_check_requested_at = None
                 entity.last_error_code = None
+                entity.observed_oracle_container_scope = None
+                entity.observed_oracle_container_name = None
+                entity.observed_oracle_container_number = None
+                entity.observed_oracle_database_name = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
             await uow.session.flush()  # type: ignore[union-attr]

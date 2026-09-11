@@ -43,6 +43,18 @@
             ],
             "title": "Api Endpoint"
           },
+          "capability_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Verified At"
+          },
           "category": {
             "maximum": 6.0,
             "minimum": 1.0,
@@ -99,6 +111,21 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "supports_image_generation": {
+            "default": false,
+            "title": "Supports Image Generation",
+            "type": "boolean"
+          },
+          "supports_responses_streaming": {
+            "default": false,
+            "title": "Supports Responses Streaming",
+            "type": "boolean"
+          },
+          "supports_x_search": {
+            "default": false,
+            "title": "Supports X Search",
+            "type": "boolean"
           }
         },
         "required": [

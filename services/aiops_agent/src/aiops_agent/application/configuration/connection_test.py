@@ -23,7 +23,27 @@ async def test_target_connection(
     """仅验证连接、认证和最小查询，不保存连接信息或凭据。"""
     try:
         if request.db_type == "ORACLE":
-            version = await _test_oracle(request)
+            (
+                version,
+                container_scope,
+                container_name,
+                container_number,
+                database_name,
+            ) = await _test_oracle(request)
+            error_code = _oracle_container_error(
+                request=request,
+                observed_scope=container_scope,
+                observed_name=container_name,
+            )
+            return TargetConnectionTestResult(
+                ok=error_code is None,
+                database_version=version,
+                oracle_container_scope=container_scope,
+                oracle_container_name=container_name,
+                oracle_container_number=container_number,
+                oracle_database_name=database_name,
+                error_code=error_code,
+            )
         elif request.db_type == "MYSQL":
             version = await _test_mysql(request)
         else:
@@ -38,7 +58,9 @@ async def test_target_connection(
         )
 
 
-async def _test_oracle(request: TargetConnectionTest) -> str:
+async def _test_oracle(
+    request: TargetConnectionTest,
+) -> tuple[str, str, str, int, str]:
     endpoint = request.endpoint
     credential = request.diagnostic_credential
     dsn = (
@@ -63,14 +85,53 @@ async def _test_oracle(request: TargetConnectionTest) -> str:
             connection.call_timeout = 10_000
             cursor = connection.cursor()
             try:
-                await cursor.execute("SELECT 1 FROM DUAL")
-                await cursor.fetchone()
+                await cursor.execute(
+                    "SELECT SYS_CONTEXT('USERENV', 'CON_NAME'), "
+                    "TO_NUMBER(SYS_CONTEXT('USERENV', 'CON_ID')), "
+                    "CDB, NAME FROM V$DATABASE"
+                )
+                container_name, container_number, cdb_enabled, database_name = (
+                    await cursor.fetchone()
+                )
             finally:
                 cursor.close()
-            return str(connection.version)
+            normalized_name = str(container_name)
+            normalized_number = int(container_number)
+            if str(cdb_enabled).upper() != "YES":
+                container_scope = "NON_CDB"
+            elif normalized_number == 1:
+                container_scope = "CDB_ROOT"
+            else:
+                container_scope = "PDB"
+            return (
+                str(connection.version),
+                container_scope,
+                normalized_name,
+                normalized_number,
+                str(database_name),
+            )
     finally:
         if connection is not None:
             await connection.close()
+
+
+def _oracle_container_error(
+    *,
+    request: TargetConnectionTest,
+    observed_scope: str,
+    observed_name: str,
+) -> str | None:
+    if observed_name.upper() == "PDB$SEED":
+        return "ORACLE_CONTAINER_UNSUPPORTED"
+    if observed_scope != request.oracle_container_scope:
+        return "ORACLE_CONTAINER_MISMATCH"
+    if (
+        observed_scope == "PDB"
+        and request.oracle_pdb_name is not None
+        and observed_name.casefold() != request.oracle_pdb_name.casefold()
+    ):
+        return "ORACLE_CONTAINER_MISMATCH"
+    return None
 
 
 async def _test_mysql(request: TargetConnectionTest) -> str:

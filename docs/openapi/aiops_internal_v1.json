@@ -1913,6 +1913,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -2207,6 +2208,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -6754,6 +6756,35 @@
           },
           "endpoint": {
             "$ref": "#/components/schemas/TargetEndpoint"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           }
         },
         "required": [
@@ -6793,6 +6824,56 @@
           "ok": {
             "title": "Ok",
             "type": "boolean"
+          },
+          "oracle_container_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Name"
+          },
+          "oracle_container_number": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Number"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Database Name"
           }
         },
         "required": [
@@ -6872,6 +6953,35 @@
               }
             ]
           },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
+          },
           "readonly_connection_enabled": {
             "default": false,
             "title": "Readonly Connection Enabled",
@@ -6928,6 +7038,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",
@@ -7037,6 +7148,56 @@
             ],
             "title": "Last Observed At"
           },
+          "observed_oracle_container_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Name"
+          },
+          "observed_oracle_container_number": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Number"
+          },
+          "observed_oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Container Scope"
+          },
+          "observed_oracle_database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Oracle Database Name"
+          },
           "observed_status": {
             "enum": [
               "UNKNOWN",
@@ -7046,6 +7207,33 @@
             ],
             "title": "Observed Status",
             "type": "string"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           },
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
@@ -7300,6 +7488,35 @@
             ],
             "title": "Environment"
           },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CDB_ROOT",
+                  "PDB",
+                  "NON_CDB"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
+          },
           "readonly_connection_enabled": {
             "anyOf": [
               {
@@ -7358,6 +7575,7 @@
               "CHECKING",
               "CONNECTED",
               "DEGRADED",
+              "MISCONFIGURED",
               "UNREACHABLE"
             ],
             "title": "Connectivity Status",

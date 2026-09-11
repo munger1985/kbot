@@ -51,6 +51,7 @@ mutation_enabled = false
 # [endpoints]
 # knowledge_core = "http://knowledge-core.internal:18090"
 # knowledge_retrieval_app = "http://knowledge-retrieval-app.internal:18150"
+# assistant_app = "http://assistant-app.internal:18170"
 # km_asset_app = "http://km-asset-app.internal:18160"
 # agent_runtime = "http://agent-runtime.internal:18100"
 # aiops = "http://aiops.internal:18110"

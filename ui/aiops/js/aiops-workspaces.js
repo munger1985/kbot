@@ -15,6 +15,20 @@
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
+  const workloadReportDefinitions = {
+    "db.oracle.awr.report": {
+      label: "下载原生 AWR 报告",
+      filename: "oracle-awr-report.html",
+    },
+    "db.oracle.awr.diff_report": {
+      label: "下载原生 AWR 对比报告",
+      filename: "oracle-awr-diff-report.html",
+    },
+    "db.oracle.ash.report": {
+      label: "下载原生 ASH 报告",
+      filename: "oracle-ash-report.html",
+    },
+  };
   let activeSituationId = null;
   let situationRefreshTimer = null;
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
@@ -458,6 +472,51 @@
     return `<div class="ops-filter-actions"><button type="button" class="primary" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
   }
 
+  function workloadReportActions(turn) {
+    const reports = new Map();
+    values(turn.investigation_plan?.actions).forEach((action) => {
+      const definition = workloadReportDefinitions[action.tool_id];
+      if (action.status === "SUCCEEDED" && definition) {
+        reports.set(action.tool_id, definition);
+      }
+    });
+    if (!reports.size) return "";
+    const buttons = Array.from(reports, ([toolId, definition]) => (
+      `<button type="button" data-download-workload-report="${esc(toolId)}" `
+      + `data-conversation-id="${esc(turn.conversation_id)}" `
+      + `data-turn-id="${esc(turn.turn_id)}" `
+      + `data-workload-report-filename="${esc(definition.filename)}">`
+      + `${esc(definition.label)}</button>`
+    )).join("");
+    return `<div class="ops-workload-report-actions">${buttons}</div>`;
+  }
+
+  function bindWorkloadReportActions(root = document) {
+    root.querySelectorAll("[data-download-workload-report]").forEach((button) => {
+      button.onclick = async () => {
+        button.disabled = true;
+        const label = button.textContent;
+        button.textContent = "正在下载…";
+        try {
+          const conversationId = encodeURIComponent(button.dataset.conversationId);
+          const turnId = encodeURIComponent(button.dataset.turnId);
+          const toolId = encodeURIComponent(button.dataset.downloadWorkloadReport);
+          await KBotAIOpsAuth.download(
+            `${api}/conversations/${conversationId}/turns/${turnId}/workload-reports/${toolId}`,
+            button.dataset.workloadReportFilename,
+            "text/html",
+          );
+          shell.toast("原生 Oracle 报告已开始下载");
+        } catch (error) {
+          shell.toast(error.message || "无法下载原生 Oracle 报告");
+        } finally {
+          button.disabled = false;
+          button.textContent = label;
+        }
+      };
+    });
+  }
+
   async function openReportGenerator(button) {
     button.disabled = true;
     try {
@@ -527,7 +586,8 @@
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}`;
+    const workloadReports = workloadReportActions(turn);
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}${workloadReports}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -571,6 +631,7 @@
     }));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
+    bindWorkloadReportActions(panel);
     bindReportActions(panel);
     resumeActiveTurns(conversation.conversation_id, turns);
   }

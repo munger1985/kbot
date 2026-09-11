@@ -1,5 +1,6 @@
 """模型目录与推理服务共享契约。"""
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -11,6 +12,15 @@ class _ModelContract(BaseModel):
 
 
 ModelLifecycleStatus = Literal["DRAFT", "ACTIVE", "ARCHIVED"]
+
+
+class ModelCapabilityState(_ModelContract):
+    """模型在当前租户和当前上游配置中的实际验收状态。"""
+
+    supports_x_search: bool = False
+    supports_image_generation: bool = False
+    supports_responses_streaming: bool = False
+    capability_verified_at: datetime | None = None
 
 
 class ModelProviderOption(_ModelContract):
@@ -61,7 +71,7 @@ class ModelDeleteRequest(_ModelContract):
     expected_row_version: int = Field(ge=1)
 
 
-class ModelCatalogItem(_ModelContract):
+class ModelCatalogItem(ModelCapabilityState):
     model_id: UUID
     served_model_name: str
     display_name: str

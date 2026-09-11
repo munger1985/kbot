@@ -609,7 +609,7 @@ public_reasoning_summary 是给用户展示的一句简洁决策摘要，只说�
 [[prompts]]
 prompt_key = "aiops_agent.investigation_planner"
 owner_service = "aiops_agent"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "理解用户材料并形成 AIOps 调查计划"
 input_variables = []
@@ -642,6 +642,11 @@ target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，
 列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
 不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
 区分已配置的逻辑 Target 与查询后才能确认的实际实例、PDB、版本和启动上下文。
+Oracle Target 的 target_context 会明确给出预期和最近一次连接实测的容器范围、容器名称与
+容器编号。必须按 observed_oracle_container_scope 理解当前会话：CDB_ROOT、PDB 和 NON_CDB
+不可混用；不得根据 Service Name 猜测 PDB Name。固定目录工具负责选择容器适配的 SQL；生成
+动态 SQL 时必须使用当前容器实际可见的视图与列，不能把 CDB Root 的 V$ 结果可见性假设套用
+到 PDB，也不能臆造 INTERVAL_SEC 等未在 Oracle 视图中定义的列。
 调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
 必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
@@ -657,8 +662,10 @@ AIOps不根据Oracle许可证删减AWR/ASH调查步骤。
 db.oracle.awr.snapshots、db.oracle.awr.report、db.oracle.awr.diff_report 或
 db.oracle.ash.report，绝不把 DBMS_WORKLOAD_REPOSITORY 写入动态 SQL。没有经用户确认的
 快照或时间范围时，先查询快照或提出澄清问题；当前已绑定 Target 的实例号由固定目录工具
-从已连接实例确定，禁止向用户索取或臆造实例号。AWR 对比必须使用同一实例且两段不重叠
-快照，ASH 起止时间必须含 UTC 偏移且不超过 24 小时。
+从已连接实例确定，禁止向用户索取或臆造实例号。AWR 对比必须使用同一实例；两段相邻窗口
+可以共享边界快照，参数必须满足 baseline_begin_snapshot_id < baseline_end_snapshot_id <=
+after_begin_snapshot_id < after_end_snapshot_id。用户明确要求原生 AWR 对比报告时，不得用
+两份单窗口 AWR 报告代替。ASH 起止时间必须含 UTC 偏移且不超过 24 小时。
 
 Oracle相对时间窗口必须优先使用SYSDATE减去数值bind，例如最近七天使用
 `created >= SYSDATE - :days`和`{"days": 7}`；不要把ISO 8601时间字符串交给不匹配的
@@ -673,7 +680,7 @@ TO_DATE格式，也不要使用MySQL日期函数。查询受max_rows边界保护
 [[prompts]]
 prompt_key = "aiops_agent.investigation_policy_repair"
 owner_service = "aiops_agent"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "依据确定性策略反馈修正 AIOps 调查计划"
 input_variables = []
@@ -693,7 +700,13 @@ DBA_/CDB_/ALL_及AWR/ASH系统视图；AIOps不根据Oracle许可证删减AWR/AS
 用户要求生成原生 AWR、AWR 对比或 ASH 报告时，只能调用固定目录的
 db.oracle.awr.snapshots、db.oracle.awr.report、db.oracle.awr.diff_report 或
 db.oracle.ash.report；不能在 db.oracle.readonly_query 中调用 DBMS_WORKLOAD_REPOSITORY。
+原生 AWR 对比报告的参数必须满足 baseline_begin_snapshot_id <
+baseline_end_snapshot_id <= after_begin_snapshot_id < after_end_snapshot_id；相邻窗口可以共享
+边界快照。用户明确要求原生对比报告时，不得改用两份单窗口 AWR 报告。
 target_context 是已选定的逻辑 Target，不得把 Target 身份改写为未知项。
+修正 Oracle 查询时必须保留 target_context 中已经实测的容器范围；不得把 PDB 查询改写为
+CDB Root 查询，也不得根据 Service Name 推断容器。列名必须来自可用工具契约或 Oracle
+诊断视图的真实定义，不能用其他数据库或臆造的同义列替换。
 系统诊断视图的星号投影和显式列查询都允许在只读边界内自动执行，结果按诊断账号实际
 可见内容原样返回，不要为业务字段增加脱敏或人工审批。
 Oracle相对时间窗口优先使用SYSDATE减去数值bind；不要用MySQL日期函数，也不要把ISO 8601
@@ -707,7 +720,7 @@ truncated=true时使用COUNT和稳定排序分页，不得通过取消max_rows�
 [[prompts]]
 prompt_key = "aiops_agent.investigation_replanner"
 owner_service = "aiops_agent"
-version = "1.0.0"
+version = "1.0.1"
 active = true
 purpose = "依据证据评估重建下一轮 AIOps 调查计划"
 input_variables = []
@@ -722,6 +735,9 @@ content = """
 不是能力白名单。不得虚构工具、证据或执行结果。
 target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
 查询所需的实例身份前置证据。
+重规划 Oracle 调查时必须沿用 target_context 中最近一次连接实测的 CDB_ROOT、PDB 或
+NON_CDB 范围及容器名称。不得因固定工具返回空行就切换到错误容器口径；若生成动态 SQL，
+必须选择当前容器实际可见的视图和真实列名。
 必须沿用原 task_frame.action_intent；ADVISORY 不得升级为执行请求，也不得因执行权限、凭据
 或审批条件不足而放弃生成登记模板语句。
 """

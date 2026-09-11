@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>智能工作台</title><link rel="stylesheet" href="./css/assistant.css"></head>
+<body data-page="dashboard"><main class="assistant-main">
+  <header class="assistant-page-head"><div><h1>工作台</h1><p>从企业知识、X 实时线索或创作生成开始。三个入口独立执行，并保留各自的证据和资产边界。</p></div></header>
+  <section class="assistant-grid" aria-label="能力入口">
+    <article class="assistant-entry span-4"><span class="eyebrow">ENTERPRISE KNOWLEDGE</span><h2>知识问答</h2><p>选择已获授权的 Agent，在其绑定的 Knowledge Core 与问数模型范围内问文、问数或闲聊。</p><footer><span class="assistant-badge warn">等待 Agent 接入</span><a class="assistant-button primary" href="./knowledge.html">进入问答</a></footer></article>
+    <article class="assistant-entry x-search span-4"><span class="eyebrow">EXTERNAL REALTIME SIGNAL</span><h2>X 实时搜索</h2><p>从模型实际返回的来源构建外部实时线索。搜索结果不作为企业知识自动沉淀。</p><footer><span class="assistant-badge warn">等待模型验收</span><a class="assistant-button primary" href="./x-search.html">开始搜索</a></footer></article>
+    <article class="assistant-entry image span-4"><span class="eyebrow">GENERATIVE MEDIA</span><h2>文生图</h2><p>以可编辑提示词创建独立生成任务，产物作为受 Domain 访问控制的图片资产保存。</p><footer><span class="assistant-badge warn">等待模型验收</span><a class="assistant-button primary" href="./image-generation.html">开始创作</a></footer></article>
+  </section>
+  <section class="assistant-grid" style="margin-top:16px"><article class="assistant-panel span-7"><div class="assistant-panel-head"><div><h2>开始前需要完成</h2><p>这里只呈现当前真实的未配置状态，不以占位数据模拟运行指标。</p></div></div><div class="assistant-panel-body"><div class="assistant-notice warn">知识问答：需要当前 Domain 中存在已启用、且绑定 Knowledge Core 的 Agent。</div><div class="assistant-notice warn">X 实时搜索与文生图：需要管理员绑定已通过 OCI 能力验收的模型。</div></div></article><article class="assistant-panel span-5"><div class="assistant-panel-head"><div><h2>最近运行</h2><p>运行记录接入后在此按当前 Domain 显示。</p></div></div><div class="assistant-empty"><div><strong>尚无可显示的运行</strong><p>静态测试页尚未连接 Assistant App API；不会伪造会话、搜索或图片生成历史。</p></div></div></article></section>
+</main><script src="./js/assistant-shell.js"></script></body></html>

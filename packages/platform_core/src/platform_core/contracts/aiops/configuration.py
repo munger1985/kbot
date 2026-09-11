@@ -19,8 +19,9 @@ from .types import (
 
 TargetStatus = Literal["ENABLED", "DISABLED"]
 ConnectivityStatus = Literal[
-    "UNKNOWN", "CHECKING", "CONNECTED", "DEGRADED", "UNREACHABLE"
+    "UNKNOWN", "CHECKING", "CONNECTED", "DEGRADED", "MISCONFIGURED", "UNREACHABLE"
 ]
+OracleContainerScope = Literal["CDB_ROOT", "PDB", "NON_CDB"]
 ObservedStatus = Literal["UNKNOWN", "UP", "DOWN", "DEGRADED"]
 HealthStatus = Literal["UNKNOWN", "HEALTHY", "DEGRADED", "UNREACHABLE"]
 BindingStatus = Literal["ACTIVE", "REVOKED"]
@@ -75,6 +76,8 @@ class TargetCreate(AIOpsContract):
     version_code: str | None = Field(default=None, max_length=64)
     environment: Literal["PROD", "STG", "DEV"]
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
+    oracle_container_scope: OracleContainerScope | None = None
+    oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
     endpoint: TargetEndpoint | None = None
     readonly_connection_enabled: bool = False
     controlled_change_enabled: bool = False
@@ -103,14 +106,22 @@ class TargetCreate(AIOpsContract):
         ):
             raise ValueError("仅监控 Target 不能携带数据库连接或执行凭据")
         if self.endpoint is None:
+            if self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
+                raise ValueError("仅 Oracle 直连 Target 可以声明容器范围")
             return self
         if self.db_type == DatabaseType.ORACLE:
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
+            _validate_oracle_container_expectation(
+                self.oracle_container_scope,
+                self.oracle_pdb_name,
+            )
         elif self.db_type in {DatabaseType.MYSQL, DatabaseType.POSTGRESQL} and (
             not self.endpoint.database or self.endpoint.service
         ):
             raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+        elif self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
+            raise ValueError("非 Oracle Target 不能声明 Oracle 容器范围")
         return self
 
 
@@ -118,20 +129,32 @@ class TargetConnectionTest(AIOpsContract):
     db_type: DatabaseType
     endpoint: TargetEndpoint
     diagnostic_credential: DatabaseCredentialInput
+    oracle_container_scope: OracleContainerScope | None = None
+    oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetConnectionTest":
         if self.db_type == DatabaseType.ORACLE:
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
+            _validate_oracle_container_expectation(
+                self.oracle_container_scope,
+                self.oracle_pdb_name,
+            )
         elif not self.endpoint.database or self.endpoint.service:
             raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+        elif self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
+            raise ValueError("非 Oracle Target 不能声明 Oracle 容器范围")
         return self
 
 
 class TargetConnectionTestResult(AIOpsContract):
     ok: bool
     database_version: str | None = None
+    oracle_container_scope: OracleContainerScope | None = None
+    oracle_container_name: str | None = None
+    oracle_container_number: int | None = Field(default=None, ge=0)
+    oracle_database_name: str | None = None
     error_code: str | None = Field(default=None, max_length=128)
 
 
@@ -141,6 +164,8 @@ class TargetPatch(AIOpsContract):
     version_code: str | None = Field(default=None, max_length=64)
     environment: Literal["PROD", "STG", "DEV"] | None = None
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
+    oracle_container_scope: OracleContainerScope | None = None
+    oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
     endpoint: TargetEndpoint | None = None
     readonly_connection_enabled: bool | None = None
     controlled_change_enabled: bool | None = None
@@ -169,6 +194,12 @@ class TargetSummary(AIOpsContract):
 class TargetDetail(TargetSummary):
     version_code: str | None = None
     db_role: str
+    oracle_container_scope: OracleContainerScope | None = None
+    oracle_pdb_name: str | None = None
+    observed_oracle_container_scope: OracleContainerScope | None = None
+    observed_oracle_container_name: str | None = None
+    observed_oracle_container_number: int | None = Field(default=None, ge=0)
+    observed_oracle_database_name: str | None = None
     endpoint: TargetEndpoint | None = None
     diagnostic_credential: DatabaseCredentialStatus
     execution_credential: DatabaseCredentialStatus
@@ -187,6 +218,18 @@ class TargetDetail(TargetSummary):
 class TargetPage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     items: tuple[TargetSummary, ...] = ()
+
+
+def _validate_oracle_container_expectation(
+    scope: OracleContainerScope | None,
+    pdb_name: str | None,
+) -> None:
+    if scope is None:
+        raise ValueError("Oracle 直连 Target 必须声明容器范围")
+    if scope == "PDB" and pdb_name is None:
+        raise ValueError("Oracle PDB Target 必须填写 PDB Name")
+    if scope != "PDB" and pdb_name is not None:
+        raise ValueError("仅 Oracle PDB Target 可以填写 PDB Name")
 
 
 class NotificationSubscriptionUpsert(AIOpsContract):

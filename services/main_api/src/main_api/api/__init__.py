@@ -1,6 +1,7 @@
 """Main API 的公开 HTTP 路由。"""
 
 from .aiops_app import router as aiops_app_router
+from .assistant_app import router as assistant_app_router
 from .access_management import router as access_management_router
 from .auth import router as auth_router
 from .app_api_clients import router as app_api_clients_router
@@ -25,6 +26,7 @@ __all__ = [
     "conversation_router",
     "access_management_router",
     "aiops_app_router",
+    "assistant_app_router",
     "auth_router",
     "app_api_clients_router",
     "data_query_router",

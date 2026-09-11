@@ -29,6 +29,7 @@
 .ops-message-body > :last-child { margin-bottom: 0; }
 .ops-message-content > :first-child { margin-top: 0; }
 .ops-message-content > :last-child { margin-bottom: 0; }
+.ops-workload-report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: -10px 0 22px 45px; }
 .ops-message.agent.is-typing .ops-message-content::after { display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: currentColor; content: ""; animation: ops-typewriter-caret .8s steps(1, end) infinite; }
 @keyframes ops-typewriter-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ops-message.agent.is-typing .ops-message-content::after { animation: none; } }

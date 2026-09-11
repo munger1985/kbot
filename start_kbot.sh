@@ -81,6 +81,7 @@ import aiops_agent
 import data_query
 import knowledge_core
 import knowledge_retrieval_app
+import assistant_app
 import km_asset_app
 import main_api
 import model_serving
@@ -204,6 +205,7 @@ SERVICES=(
     "Knowledge Core:Index Worker:knowledge_core:knowledge_core.entrypoints.projection"
     "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
     "Knowledge Retrieval App:API:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.api"
+    "Assistant App:API:assistant_app:assistant_app.entrypoints.api"
     "KM Asset App:API:km_asset_app:km_asset_app.entrypoints.api"
     "KM Asset App:Worker:km_asset_app:km_asset_app.entrypoints.worker"
     "KM Asset App:Slack Worker:km_asset_app:km_asset_app.entrypoints.slack_worker"
@@ -230,6 +232,7 @@ service_port() {
         knowledge_core.entrypoints.parser) echo "18095" ;;
         knowledge_core.entrypoints.api) echo "18090" ;;
         knowledge_retrieval_app.entrypoints.api) echo "18150" ;;
+        assistant_app.entrypoints.api) echo "18170" ;;
         km_asset_app.entrypoints.api) echo "18160" ;;
         agent_runtime.entrypoints.api) echo "18100" ;;
         data_query.entrypoints.api) echo "18140" ;;

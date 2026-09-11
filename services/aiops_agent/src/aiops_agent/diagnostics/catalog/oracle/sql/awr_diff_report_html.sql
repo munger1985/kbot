@@ -5,6 +5,8 @@ SELECT output
             (SELECT instance_number FROM v$instance),
             :baseline_begin_snapshot_id,
             :baseline_end_snapshot_id,
+            (SELECT dbid FROM v$database),
+            (SELECT instance_number FROM v$instance),
             :after_begin_snapshot_id,
             :after_end_snapshot_id
         )

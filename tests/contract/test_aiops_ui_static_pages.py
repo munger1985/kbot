@@ -102,6 +102,25 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/inputs/${item.item_no}/content", workspace)
         self.assertNotIn("file://", workspace)
 
+    def test_chat_downloads_generated_native_oracle_reports(self):
+        auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
+            encoding="utf-8"
+        )
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('action.status === "SUCCEEDED"', workspace)
+        self.assertIn("下载原生 AWR 报告", workspace)
+        self.assertIn("下载原生 AWR 对比报告", workspace)
+        self.assertIn("下载原生 ASH 报告", workspace)
+        self.assertIn("oracle-awr-report.html", workspace)
+        self.assertIn("oracle-awr-diff-report.html", workspace)
+        self.assertIn("oracle-ash-report.html", workspace)
+        self.assertIn("/workload-reports/${toolId}", workspace)
+        self.assertIn('"text/html"', workspace)
+        self.assertIn('accept = "application/pdf"', auth)
+        self.assertIn("Accept: accept", auth)
+
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")
@@ -190,6 +209,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("Idempotency-Key", script)
         self.assertIn("/targets/test-connection", script)
         self.assertIn('oracle ? "service" : "database"', script)
+        self.assertIn('name="oracle_container_scope"', page)
+        self.assertIn('value="CDB_ROOT"', page)
+        self.assertIn('value="PDB"', page)
+        self.assertIn('value="NON_CDB"', page)
+        self.assertIn('name="oracle_pdb_name"', page)
+        self.assertIn("oracle_container_scope: oracleScope.value", script)
+        self.assertIn('oracleScope.value === "PDB"', script)
+        self.assertIn("? oraclePdbName.value.trim()", script)
+        self.assertIn("实际 CON_NAME 比对", page)
         self.assertIn('method: "PATCH"', script)
         self.assertIn("diagnostic-credential:rotate", script)
         self.assertIn("execution-credential:rotate", script)

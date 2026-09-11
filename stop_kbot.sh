@@ -15,6 +15,7 @@ SERVICES=(
     "knowledge_core.entrypoints.parser"
     "knowledge_core.entrypoints.projection"
     "knowledge_retrieval_app.entrypoints.api"
+    "assistant_app.entrypoints.api"
     "km_asset_app.entrypoints.api"
     "km_asset_app.entrypoints.worker"
     "km_asset_app.entrypoints.slack_worker"

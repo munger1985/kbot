@@ -10,6 +10,10 @@
   const serviceField = document.getElementById("target-service-field");
   const databaseField = document.getElementById("target-database-field");
   const service = document.getElementById("target-service");
+  const oracleScopeField = document.getElementById("target-oracle-scope-field");
+  const oraclePdbField = document.getElementById("target-oracle-pdb-field");
+  const oracleScope = document.getElementById("target-oracle-scope");
+  const oraclePdbName = document.getElementById("target-oracle-pdb-name");
   const database = document.getElementById("target-database");
   const username = document.getElementById("target-diagnostic-username");
   const password = document.getElementById("target-diagnostic-password");
@@ -28,12 +32,21 @@
 
   function configureEndpoint(resetPort = true) {
     const oracle = dbType.value === "ORACLE";
+    const readonly = readonlyEnabled.checked;
     serviceField.hidden = !oracle;
     databaseField.hidden = oracle;
     service.required = readonlyEnabled.checked && oracle;
     database.required = readonlyEnabled.checked && !oracle;
+    oracleScopeField.hidden = !readonly || !oracle;
+    oracleScope.required = readonly && oracle;
+    oraclePdbField.hidden = !readonly || !oracle || oracleScope.value !== "PDB";
+    oraclePdbName.required = readonly && oracle && oracleScope.value === "PDB";
     if (oracle) database.value = "";
-    else service.value = "";
+    else {
+      service.value = "";
+      oracleScope.value = "";
+      oraclePdbName.value = "";
+    }
     if (resetPort) port.value = { ORACLE: 1521, MYSQL: 3306, POSTGRESQL: 5432 }[dbType.value];
     clearResult();
   }
@@ -79,6 +92,7 @@
     form.reset();
     dbType.disabled = false;
     dbType.value = "ORACLE";
+    oracleScope.value = "";
     configureEndpoint();
     readonlyEnabled.checked = false;
     changeEnabled.checked = false;
@@ -110,6 +124,8 @@
       form.elements.tls_enabled.checked = Boolean(target.endpoint?.tls_enabled);
       if (target.db_type === "ORACLE") service.value = target.endpoint?.service || "";
       else database.value = target.endpoint?.database || "";
+      oracleScope.value = target.oracle_container_scope || "";
+      oraclePdbName.value = target.oracle_pdb_name || "";
       dbType.disabled = true;
       setCredentialMode(false);
       toggleAccessFields();
@@ -146,6 +162,16 @@
     };
   }
 
+  function oracleContainerPayload() {
+    if (!readonlyEnabled.checked || dbType.value !== "ORACLE") return {};
+    return {
+      oracle_container_scope: oracleScope.value,
+      oracle_pdb_name: oracleScope.value === "PDB"
+        ? oraclePdbName.value.trim()
+        : null,
+    };
+  }
+
   function connectionFieldsAreValid() {
     if (!readonlyEnabled.checked) return false;
     if (editingTarget && (!username.value.trim() || !password.value)) {
@@ -153,7 +179,17 @@
       result.textContent = "测试连接需要重新输入只读诊断用户名和密码。";
       return false;
     }
-    return [dbType, form.elements.host, port, dbType.value === "ORACLE" ? service : database, username, password]
+    return [
+      dbType,
+      form.elements.host,
+      port,
+      dbType.value === "ORACLE" ? service : database,
+      ...(dbType.value === "ORACLE"
+        ? [oracleScope, ...(oracleScope.value === "PDB" ? [oraclePdbName] : [])]
+        : []),
+      username,
+      password,
+    ]
       .every((field) => field.reportValidity());
   }
 
@@ -167,7 +203,12 @@
     try {
       const response = await KBotAIOpsAuth.request(`${api}/targets/test-connection`, {
         method: "POST",
-        body: JSON.stringify({ db_type: dbType.value, endpoint: endpointPayload(), diagnostic_credential: credentialPayload() }),
+        body: JSON.stringify({
+          db_type: dbType.value,
+          endpoint: endpointPayload(),
+          diagnostic_credential: credentialPayload(),
+          ...oracleContainerPayload(),
+        }),
       });
       if (!response.ok) {
         const messages = {
@@ -175,11 +216,16 @@
           TARGET_UNREACHABLE: "无法连接数据库，请检查主机、端口、Service Name/Database、网络和 TLS。",
           TIMEOUT: "数据库连接超时，请检查防火墙和访问控制。",
           CONNECTION_FAILED: "数据库连接失败，请检查连接参数。",
+          ORACLE_CONTAINER_MISMATCH: "实际连接的 Oracle 容器与配置的 CDB/PDB 范围或 PDB Name 不一致。",
+          ORACLE_CONTAINER_UNSUPPORTED: "PDB$SEED 不能作为运维目标。",
         };
         throw new Error(messages[response.error_code] || "数据库连接测试失败。");
       }
       result.dataset.tone = "good";
-      result.textContent = `连接成功${response.database_version ? `，数据库版本 ${response.database_version}` : ""}`;
+      const container = response.oracle_container_scope
+        ? `，实际容器 ${response.oracle_container_scope}${response.oracle_container_name ? ` / ${response.oracle_container_name}` : ""}`
+        : "";
+      result.textContent = `连接成功${response.database_version ? `，数据库版本 ${response.database_version}` : ""}${container}`;
     } catch (error) {
       result.dataset.tone = "bad";
       result.textContent = error.message;
@@ -198,6 +244,7 @@
       readonly_connection_enabled: readonlyEnabled.checked,
       controlled_change_enabled: changeEnabled.checked,
       security_level: Number(form.elements.security_level.value),
+      ...oracleContainerPayload(),
     };
     if (readonlyEnabled.checked) fields.endpoint = endpointPayload();
     return fields;
@@ -291,6 +338,7 @@
     document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
     dbType.addEventListener("change", () => configureEndpoint());
+    oracleScope.addEventListener("change", () => configureEndpoint(false));
     readonlyEnabled.addEventListener("change", toggleAccessFields);
     changeEnabled.addEventListener("change", toggleAccessFields);
     form.addEventListener("input", clearResult);

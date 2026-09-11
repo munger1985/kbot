@@ -172,7 +172,7 @@
     }
   }
 
-  async function download(path, fileName) {
+  async function download(path, fileName, accept = "application/pdf") {
     const session = load();
     if (!session?.access_token) {
       location.replace("./login.html");
@@ -181,7 +181,7 @@
     const response = await fetch(`${baseUrl()}${path}`, {
       cache: "no-store",
       headers: {
-        Accept: "application/pdf",
+        Accept: accept,
         Authorization: `Bearer ${session.access_token}`,
         "X-Request-ID": uuid(),
       },

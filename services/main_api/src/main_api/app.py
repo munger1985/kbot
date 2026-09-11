@@ -21,6 +21,7 @@ from sqlalchemy import text
 from main_api.api import (
     access_management_router,
     aiops_app_router,
+    assistant_app_router,
     app_api_clients_router,
     auth_router,
     conversation_router,
@@ -45,6 +46,7 @@ from main_api.application import AppApiKeyError, UserAuthenticationError
 from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
+    AssistantAppClientError,
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
     KnowledgeRetrievalAppClientError,
@@ -296,6 +298,7 @@ def create_main_api_app(
     app.include_router(knowledge_retrieval_app_router)
     app.include_router(km_asset_app_router)
     app.include_router(aiops_app_router)
+    app.include_router(assistant_app_router)
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
     app.include_router(domain_router)
@@ -404,6 +407,24 @@ def create_main_api_app(
         return _problem_response(
             request=request, status_code=exc.status_code, code=exc.code,
             title="知识检索应用请求失败", detail=str(exc),
+        )
+
+    @app.exception_handler(AssistantAppClientError)
+    async def assistant_app_error_handler(
+        request: Request, exc: AssistantAppClientError,
+    ):
+        _log_downstream_failure(
+            request=request, service_name="assistant-app", exc=exc
+        )
+        if exc.status_code >= 500:
+            return _problem_response(
+                request=request, status_code=503,
+                code="ASSISTANT_APP_UNAVAILABLE", title="智能工作台暂时不可用",
+                detail="智能工作台暂时无法完成请求",
+            )
+        return _problem_response(
+            request=request, status_code=exc.status_code, code=exc.code,
+            title="智能工作台请求失败", detail=str(exc),
         )
 
     @app.exception_handler(KmAssetClientError)

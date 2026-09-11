@@ -24,12 +24,16 @@ class AiModelsHandlerTest(unittest.TestCase):
             display_name="Embedding", provider_model_name="bge",
             category=2, provider="local", api_endpoint=None, api_key="secret",
             status=1, model_params={"embedding_dimension": 1536, "device": "cpu"},
+            supports_x_search=0, supports_image_generation=0,
+            supports_responses_streaming=0, capability_verified_at=None,
             descs="test", created_by="a", updated_by="b", row_version=1,
         ))
         self.assertNotIn("api_key", result)
         self.assertEqual(1536, result["model_params"]["embedding_dimension"])
         self.assertEqual("embed-prod", result["served_model_name"])
         self.assertEqual("ACTIVE", result["status"])
+        self.assertFalse(result["supports_x_search"])
+        self.assertFalse(result["supports_image_generation"])
 
     def test_each_process_gets_category_scoped_management_routes(self):
         router = create_model_management_router(category=2)
@@ -98,6 +102,16 @@ class AiModelsHandlerTest(unittest.TestCase):
         self.assertNotIn("provider_model_name", fields)
         self.assertNotIn("embedding_dimension", fields)
         self.assertIn("model_params", fields)
+        self.assertNotIn("supports_x_search", fields)
+        self.assertNotIn("supports_image_generation", fields)
+        self.assertNotIn("supports_responses_streaming", fields)
+
+    def test_model_entity_keeps_capability_verification_separate_from_parameters(self):
+        columns = AIModelEntity.__table__.c
+        self.assertIn("supports_x_search", columns)
+        self.assertIn("supports_image_generation", columns)
+        self.assertIn("supports_responses_streaming", columns)
+        self.assertIn("capability_verified_at", columns)
 
 
 if __name__ == "__main__":

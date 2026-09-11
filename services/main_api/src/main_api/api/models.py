@@ -1,6 +1,7 @@
 """Main API 对外提供的安全模型目录。"""
 
 import asyncio
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -26,6 +27,10 @@ class ModelCatalogItem(BaseModel):
     provider: str
     status: str
     model_params: dict[str, Any] = Field(default_factory=dict)
+    supports_x_search: bool = False
+    supports_image_generation: bool = False
+    supports_responses_streaming: bool = False
+    capability_verified_at: datetime | None = None
 
 
 def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:

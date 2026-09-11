@@ -47,6 +47,8 @@ class TurnPlanningStageError(RuntimeError):
         self.retryable = not is_schema_or_integrity_error(cause)
         if not self.retryable:
             self.code = "AIOPS_SCHEMA_INTEGRITY_ERROR"
+        elif getattr(cause, "code", None) == "MODEL_SERVICE_UNAVAILABLE":
+            self.code = "AIOPS_MODEL_SERVICE_UNAVAILABLE"
         self.stage = stage
         self.cause_type = type(cause).__name__
         self.safe_detail = detail
@@ -56,6 +58,8 @@ class TurnPlanningStageError(RuntimeError):
     def _safe_detail(cause: Exception) -> str:
         if is_schema_or_integrity_error(cause):
             return "database-contract-violation"
+        if getattr(cause, "code", None) == "MODEL_SERVICE_UNAVAILABLE":
+            return "model-service-unavailable"
         if not isinstance(cause, KeyError) or not cause.args:
             return "not-recorded"
         key = str(cause.args[0])

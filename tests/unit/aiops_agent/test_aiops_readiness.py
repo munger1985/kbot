@@ -100,7 +100,7 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_22_contract_integrity(self) -> None:
+    async def test_ready_requires_schema_23_contract_integrity(self) -> None:
         session = _SchemaSession((1, 8, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
@@ -116,11 +116,11 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 22", session.statements[0])
-        self.assertIn("aiops-oracle-v12", session.statements[0])
+        self.assertIn("schema_version = 23", session.statements[0])
+        self.assertIn("aiops-oracle-v13", session.statements[0])
         self.assertIn("USER_EVIDENCE", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_22_contract(self) -> None:
+    async def test_ready_rejects_partial_schema_23_contract(self) -> None:
         session = _SchemaSession((1, 7, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
@@ -221,6 +221,16 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(wrapped.retryable)
         self.assertEqual("AIOPS_SCHEMA_INTEGRITY_ERROR", wrapped.code)
         self.assertEqual("database-contract-violation", wrapped.safe_detail)
+
+    def test_planning_model_outage_keeps_transient_error_semantics(self) -> None:
+        error = RuntimeError("provider detail must not be exposed")
+        error.code = "MODEL_SERVICE_UNAVAILABLE"
+
+        wrapped = TurnPlanningStageError(error)
+
+        self.assertTrue(wrapped.retryable)
+        self.assertEqual("AIOPS_MODEL_SERVICE_UNAVAILABLE", wrapped.code)
+        self.assertEqual("model-service-unavailable", wrapped.safe_detail)
 
 
 if __name__ == "__main__":

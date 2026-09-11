@@ -421,6 +421,8 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
                 db_type="ORACLE",
                 environment="DEV",
                 readonly_connection_enabled=True,
+                oracle_container_scope="PDB",
+                oracle_pdb_name="PDB01",
                 endpoint={
                     "host": "10.0.0.190",
                     "port": 1521,
@@ -437,6 +439,8 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("CHECKING", result.connectivity_status)
         self.assertEqual("UNKNOWN", result.observed_status)
+        self.assertEqual("PDB", result.oracle_container_scope)
+        self.assertEqual("PDB01", result.oracle_pdb_name)
         self.assertTrue(result.connectivity_check_pending)
         self.assertEqual(
             ["TARGET_CREATED", "TARGET_CONNECTIVITY_CHECK_REQUESTED"],
@@ -576,6 +580,8 @@ class ConfigurationContractTest(unittest.TestCase):
             "display_name": "ERP 生产库",
             "db_type": "ORACLE",
             "environment": "PROD",
+            "oracle_container_scope": "PDB",
+            "oracle_pdb_name": "ERP",
             "readonly_connection_enabled": True,
             "endpoint": {
                 "host": "erp-db.internal",

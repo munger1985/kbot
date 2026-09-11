@@ -24,6 +24,15 @@ from .conversation import (
     UpdateConversationRequest,
 )
 from .identity import AuthContext, IdentityEntryKind, PrincipalKind, ServiceIdentity
+from .generative import (
+    GeneratedImageArtifact,
+    ImageGenerationRequest,
+    ImageGenerationResult,
+    ModelUsage,
+    ResearchCitation,
+    ResearchRequest,
+    ResearchResult,
+)
 from .knowledge import (
     KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
     KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
@@ -44,6 +53,7 @@ from .asset_search import (
 from .model import (
     EmbeddingDataItem,
     ModelArchiveRequest,
+    ModelCapabilityState,
     ModelCatalogItem,
     ModelCreateRequest,
     ModelDeleteRequest,
@@ -58,6 +68,10 @@ from . import data_query
 __all__ = [
     "AgentExecutionSpec",
     "AuthContext",
+    "GeneratedImageArtifact",
+    "ImageGenerationRequest",
+    "ImageGenerationResult",
+    "ModelUsage",
     "AgentArtifactRef",
     "AgentArtifact",
     "AgentRunEvent",
@@ -77,6 +91,7 @@ __all__ = [
     "UpdateConversationRequest",
     "EmbeddingDataItem",
     "ModelArchiveRequest",
+    "ModelCapabilityState",
     "ModelCatalogItem",
     "ModelCreateRequest",
     "ModelDeleteRequest",
@@ -86,6 +101,9 @@ __all__ = [
     "ModelStatusRequest",
     "ModelUpdateRequest",
     "PrincipalKind",
+    "ResearchCitation",
+    "ResearchRequest",
+    "ResearchResult",
     "IdentityEntryKind",
     "ServiceIdentity",
     "SlackWebhookEnvelope",

@@ -138,6 +138,10 @@ SERVICE_TABLES = {
         "KBOT_KR_AGENT",
         "KBOT_KR_AGENT_VERSION",
     },
+    "assistant_app": {
+        "KBOT_ASST_AGENT",
+        "KBOT_ASST_AGENT_VERSION",
+    },
     "km_asset_app": {
         "KBOT_KM_SOURCE",
         "KBOT_KM_ASSET",
@@ -176,6 +180,7 @@ SERVICE_VIEWS = {
         "KBOT_V_OPS_SCHEMA_VERSION",
     },
     "knowledge_retrieval_app": set(),
+    "assistant_app": set(),
     "km_asset_app": {
         "KBOT_V_KM_ASSET_CURRENT",
         "KBOT_V_KM_ASSET_SEARCHABLE",
@@ -544,6 +549,7 @@ def main() -> int:
 
     for manifest_service, display_name in (
         ("platform_core", "Platform Core"),
+        ("assistant_app", "Assistant App"),
         ("data_query", "Data Query"),
         ("aiops_agent", "AIOps"),
         ("km_asset_app", "KM Asset App"),

@@ -10,6 +10,7 @@ import tomli
 
 from agent_runtime.config import AgentRuntimeSettings
 from aiops_agent.config import AIOpsSettings
+from assistant_app.config import AssistantAppSettings
 from data_query.config import DataQuerySettings
 from knowledge_core.config import KnowledgeCoreSettings
 from knowledge_retrieval_app.config import KnowledgeRetrievalAppSettings
@@ -29,6 +30,7 @@ SERVICE_MODELS = {
     "data_query": DataQuerySettings,
     "knowledge_core": KnowledgeCoreSettings,
     "knowledge_retrieval_app": KnowledgeRetrievalAppSettings,
+    "assistant_app": AssistantAppSettings,
     "km_asset_app": KmAssetAppSettings,
     "main_api": MainApiSettings,
     "model_serving": ModelServingSettings,

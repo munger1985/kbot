@@ -38,7 +38,7 @@ class WorkloadReportDownloadTest(unittest.TestCase):
             capability_snapshot_hash="b" * 64, captured_at=datetime.now(UTC),
             duration_ms=10,
             columns=(DatabaseColumn(name="output", logical_type="STRING", sensitivity="PUBLIC"),),
-            rows=(("<html>",), ("报告</html>",)), row_count=2,
+            rows=(("<html>",), (None,), ("报告</html>",)), row_count=3,
             truncated=False, result_sha256="c" * 64, parameters_sha256="d" * 64,
         )
         payload = DbaToolResult(
