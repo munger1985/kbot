@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from scripts.db.apply_oracle_schema import (
     FOUNDATION_VALIDATION_EXIT_CODE,
+    PLATFORM_FOUNDATION_PERMISSIONS,
     FoundationValidationError,
     _apply_platform_foundation,
     load_schema_statements,
@@ -192,6 +193,16 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
             },
             connection.role_permission_mappings,
         )
+        foundation_sql = "\n".join(connection.statements)
+        self.assertIn("MERGE INTO KBOT_PLATFORM_APP", foundation_sql)
+        self.assertIn("MERGE INTO KBOT_PERMISSION", foundation_sql)
+        self.assertIn("MERGE INTO KBOT_APP_ROLE", foundation_sql)
+        for permission_code in sorted(
+            code
+            for code in PLATFORM_FOUNDATION_PERMISSIONS
+            if code.startswith("assistant:")
+        ):
+            self.assertIn(permission_code, foundation_sql)
         self.assertTrue(connection.committed)
 
     async def test_noncanonical_security_column_is_rejected(self):

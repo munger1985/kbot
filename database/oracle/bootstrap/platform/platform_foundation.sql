@@ -1,5 +1,65 @@
--- 由 scripts/db/apply_oracle_schema.py 调用，幂等初始化平台 ADMIN。
+-- 由 scripts/db/apply_oracle_schema.py 调用，幂等同步平台目录并初始化 ADMIN。
 -- 本资产只写基础数据，不创建或修改 Schema 对象，也不向业务 App 自动授权。
+
+-- 新增业务 App 后，既有开发库需要先补齐目录，才能继续校验角色权限映射。
+MERGE INTO KBOT_PLATFORM_APP target
+USING (SELECT 'assistant' APP_ID, '智能工作台' DISPLAY_NAME FROM DUAL) source
+ON (target.APP_ID = source.APP_ID)
+WHEN MATCHED THEN UPDATE SET
+    target.DISPLAY_NAME = source.DISPLAY_NAME,
+    target.STATUS = 'ACTIVE', target.MEMBER_ASSIGNABLE = 'Y',
+    target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (
+    APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE, ROW_VERSION,
+    CREATED_AT, UPDATED_AT
+) VALUES (
+    source.APP_ID, source.DISPLAY_NAME, 'ACTIVE', 'Y', 1,
+    SYSTIMESTAMP, SYSTIMESTAMP
+);
+
+MERGE INTO KBOT_PERMISSION target
+USING (
+    SELECT 'assistant:access' PERMISSION_CODE, 'assistant' APP_ID,
+           '进入智能工作台' DISPLAY_NAME FROM DUAL UNION ALL
+    SELECT 'assistant:knowledge_chat', 'assistant', '使用知识问答' FROM DUAL UNION ALL
+    SELECT 'assistant:x_search', 'assistant', '使用 X 实时搜索' FROM DUAL UNION ALL
+    SELECT 'assistant:image_generate', 'assistant', '使用文生图' FROM DUAL UNION ALL
+    SELECT 'assistant:media_read', 'assistant', '查看图片资产' FROM DUAL UNION ALL
+    SELECT 'assistant:domain_manage', 'assistant', '管理智能工作台 Domain' FROM DUAL UNION ALL
+    SELECT 'assistant:knowledge_core_manage', 'assistant', '管理 Knowledge Core 关联' FROM DUAL UNION ALL
+    SELECT 'assistant:data_model_manage', 'assistant', '管理问数模型关联' FROM DUAL UNION ALL
+    SELECT 'assistant:agent_manage', 'assistant', '管理智能工作台 Agent' FROM DUAL UNION ALL
+    SELECT 'assistant:model_binding_manage', 'assistant', '管理模型绑定' FROM DUAL UNION ALL
+    SELECT 'assistant:run_read', 'assistant', '查看运行和用量' FROM DUAL
+) source
+ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN MATCHED THEN UPDATE SET
+    target.APP_ID = source.APP_ID,
+    target.DISPLAY_NAME = source.DISPLAY_NAME
+WHEN NOT MATCHED THEN INSERT (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
+VALUES (source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME);
+
+MERGE INTO KBOT_APP_ROLE target
+USING (
+    SELECT 'assistant' APP_ID, 'user' ROLE_CODE, '用户' DISPLAY_NAME,
+           'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL
+    UNION ALL
+    SELECT 'assistant', 'app_admin', '智能工作台初始管理员',
+           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
+WHEN MATCHED THEN UPDATE SET
+    target.DISPLAY_NAME = source.DISPLAY_NAME,
+    target.IS_SYSTEM = source.IS_SYSTEM,
+    target.SCOPE_POLICY = source.SCOPE_POLICY,
+    target.STATUS = source.STATUS
+WHEN NOT MATCHED THEN INSERT (
+    APP_ID, ROLE_CODE, DISPLAY_NAME, IS_SYSTEM,
+    SCOPE_POLICY, STATUS, ROW_VERSION
+) VALUES (
+    source.APP_ID, source.ROLE_CODE, source.DISPLAY_NAME, source.IS_SYSTEM,
+    source.SCOPE_POLICY, source.STATUS, 1
+);
 
 MERGE INTO KBOT_PLATFORM_DOMAIN target
 USING (SELECT 'default' NAME, 'KBot 默认业务域' DESCRIPTION FROM DUAL) source
