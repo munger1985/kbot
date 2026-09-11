@@ -59,8 +59,6 @@ APPLY_SCHEMA_23 = (
     / "operations"
     / "apply_aiops_schema_23.sql"
 )
-
-
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
     def setUp(self) -> None:
         self.sql = REBUILD_SCRIPT.read_text(encoding="utf-8")
@@ -255,6 +253,24 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET", normalized)
         self.assertIn("23 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V13' AS CONTRACT_VERSION", normalized)
+        self.assertIn("ALTER SESSION SET TIME_ZONE = '+00:00'", normalized)
+        self.assertIn("UPDATED_AT = SYSTIMESTAMP", normalized)
+        self.assertNotIn("UPDATED_AT = CURRENT_TIMESTAMP", normalized)
+
+        roots_sql = (SCHEMA_DIR / "001_ops_roots.sql").read_text(
+            encoding="utf-8"
+        )
+        target_table = roots_sql.split(
+            "CREATE TABLE KBOT_OPS_POLICY", maxsplit=1
+        )[0]
+        self.assertIn(
+            "CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP",
+            target_table,
+        )
+        self.assertIn(
+            "UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP",
+            target_table,
+        )
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:
