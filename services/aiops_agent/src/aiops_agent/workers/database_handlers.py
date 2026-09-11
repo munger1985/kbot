@@ -22,7 +22,10 @@ from aiops_agent.diagnostics.grants import (
     canonical_sha256,
 )
 from aiops_agent.diagnostics.registry import database_major_version
-from aiops_agent.ports.db_executor import DatabaseExecutorClientPort
+from aiops_agent.ports.db_executor import (
+    DatabaseExecutorClientError,
+    DatabaseExecutorClientPort,
+)
 from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
     DiagnosticExecutionGrant,
@@ -69,6 +72,10 @@ def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
         "RESULT_LIMIT_EXCEEDED": "查询已执行，但返回结果超过诊断结果限制",
         "VERSION_UNSUPPORTED": "Target 数据库版本不在该诊断工具支持范围内",
         "EXECUTOR_INTERNAL_ERROR": "受控数据库执行器未能完成本次只读查询",
+        "GRANT_LIMIT_INVALID": "报告执行额度超过当前执行器的受控上限",
+        "CREDENTIAL_GRANT_INVALID": "报告执行授权无效或已过期",
+        "PARAMETERS_HASH_MISMATCH": "报告参数与已签发的执行授权不一致",
+        "SERVICE_SCOPE_DENIED": "执行器拒绝了当前服务的内部调用权限",
     }
     fallback = (
         "动态只读查询本次未取得可验证结果"
@@ -236,6 +243,26 @@ class DatabaseDiagnosticHandler:
             result = await self._client.execute_diagnostic(
                 request, trace_id=context.trace_id
             )
+        except DatabaseExecutorClientError as exc:
+            if exc.status_code is None:
+                return self._finish(
+                    context,
+                    self._gap(
+                        context,
+                        tool_id,
+                        "TARGET_UNREACHABLE",
+                        retryable=True,
+                    ),
+                )
+            return self._finish(
+                context,
+                self._gap(
+                    context,
+                    tool_id,
+                    exc.error_code or "EXECUTOR_REQUEST_REJECTED",
+                    retryable=exc.status_code >= 500,
+                ),
+            )
         except Exception:
             return self._finish(
                 context,
@@ -401,6 +428,26 @@ class DynamicQueryInvocationHandler:
         try:
             result = await self._client.execute_dynamic_diagnostic(
                 request, trace_id=context.trace_id
+            )
+        except DatabaseExecutorClientError as exc:
+            if exc.status_code is None:
+                gap = EvidenceGap(
+                    code="TARGET_UNREACHABLE",
+                    tool_id=tool_id,
+                    detail="动态只读查询执行器当前不可用",
+                    retryable=True,
+                )
+            else:
+                code = exc.error_code or "EXECUTOR_REQUEST_REJECTED"
+                gap = EvidenceGap(
+                    code=code,
+                    tool_id=tool_id,
+                    detail=_database_gap_detail(code, dynamic=True),
+                    retryable=exc.status_code >= 500,
+                )
+            return self._finish(
+                context,
+                self._result(invocation, gap=gap),
             )
         except Exception:
             return self._finish(

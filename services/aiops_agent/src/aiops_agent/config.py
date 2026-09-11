@@ -73,10 +73,11 @@ class AIOpsExecutorConfig(ServiceConfig):
     mutation_enabled: bool = False
     readonly_concurrency: int = Field(default=8, ge=1, le=64)
     mutation_concurrency: int = Field(default=1, ge=1, le=1)
-    statement_timeout_seconds: int = Field(default=60, ge=1, le=3600)
-    max_result_rows: int = Field(default=5000, ge=1, le=100000)
+    # 原生 AWR/ASH HTML 报告是受目录和 Grant 双重约束的长查询，硬上限必须覆盖其目录额度。
+    statement_timeout_seconds: int = Field(default=180, ge=1, le=3600)
+    max_result_rows: int = Field(default=10000, ge=1, le=100000)
     max_result_bytes: int = Field(
-        default=10 * 1024 * 1024,
+        default=20 * 1024 * 1024,
         ge=1024,
         le=100 * 1024 * 1024,
     )

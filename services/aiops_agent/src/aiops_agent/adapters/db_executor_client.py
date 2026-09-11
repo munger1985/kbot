@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import aiohttp
 
+from aiops_agent.ports.db_executor import DatabaseExecutorClientError
 from platform_core.contracts.aiops.executor import (
     DynamicReadDiagnosticRequest,
     ExecutionResultRef,
@@ -17,8 +18,15 @@ from platform_core.security import (
 )
 
 
-class DatabaseExecutorClientError(RuntimeError):
-    pass
+def _error_code(payload: object) -> str | None:
+    """从内部 Problem 响应提取稳定错误码，忽略不受信任的正文。"""
+    if not isinstance(payload, dict):
+        return None
+    detail = payload.get("detail", payload)
+    if not isinstance(detail, dict):
+        return None
+    code = detail.get("code")
+    return str(code) if isinstance(code, str) and code else None
 
 
 class DatabaseExecutorClient:
@@ -63,10 +71,12 @@ class DatabaseExecutorClient:
                 json=request.model_dump(mode="json"),
                 timeout=self._timeout,
             ) as response:
-                payload = await response.json()
+                payload = await response.json(content_type=None)
                 if response.status >= 400:
                     raise DatabaseExecutorClientError(
-                        f"DB Executor 返回 HTTP {response.status}"
+                        f"DB Executor 返回 HTTP {response.status}",
+                        status_code=response.status,
+                        error_code=_error_code(payload),
                     )
                 return ReadDiagnosticResult.model_validate(payload)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
@@ -94,10 +104,12 @@ class DatabaseExecutorClient:
                 json=request.model_dump(mode="json"),
                 timeout=self._timeout,
             ) as response:
-                payload = await response.json()
+                payload = await response.json(content_type=None)
                 if response.status >= 400:
                     raise DatabaseExecutorClientError(
-                        f"DB Executor 返回 HTTP {response.status}"
+                        f"DB Executor 返回 HTTP {response.status}",
+                        status_code=response.status,
+                        error_code=_error_code(payload),
                     )
                 return ExecutionResultRef.model_validate(payload)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
@@ -125,10 +137,12 @@ class DatabaseExecutorClient:
                 json=request.model_dump(mode="json"),
                 timeout=self._timeout,
             ) as response:
-                payload = await response.json()
+                payload = await response.json(content_type=None)
                 if response.status >= 400:
                     raise DatabaseExecutorClientError(
-                        f"DB Executor 返回 HTTP {response.status}"
+                        f"DB Executor 返回 HTTP {response.status}",
+                        status_code=response.status,
+                        error_code=_error_code(payload),
                     )
                 return ReadDiagnosticResult.model_validate(payload)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:

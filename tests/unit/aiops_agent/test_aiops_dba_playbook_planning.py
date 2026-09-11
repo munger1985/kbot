@@ -23,6 +23,7 @@ from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
 )
 from aiops_agent.application.investigation.discovery import build_playbook_plan
+from aiops_agent.ports.db_executor import DatabaseExecutorClientError
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.playbooks import PlaybookCatalogError, PlaybookRegistry
 from aiops_agent.tools import (
@@ -934,6 +935,16 @@ class _RetryableGapExecutorClient(_GapExecutorClient):
             status="GAP",
             error_code="TARGET_CONNECTION_TIMEOUT",
             retryable=True,
+        )
+
+
+class _RejectedExecutorClient:
+    async def execute_diagnostic(self, request, *, trace_id):
+        del request, trace_id
+        raise DatabaseExecutorClientError(
+            "DB Executor 返回 HTTP 403",
+            status_code=403,
+            error_code="GRANT_LIMIT_INVALID",
         )
 
 
@@ -2824,6 +2835,67 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         self.assertEqual("GAP", final.status)
         self.assertEqual("TARGET_CONNECTION_TIMEOUT", final.gap.code)
         self.assertEqual(2, len(client.calls))
+
+    def test_database_handler_does_not_retry_executor_4xx(self) -> None:
+        context = TaskExecutionContext(
+            run_id=str(uuid7()),
+            task_id=str(uuid7()),
+            task_key="diagnostic:db.instance.identity",
+            target_id=str(uuid7()),
+            agent_id=str(uuid7()),
+            trigger_type="CHAT",
+            trace_id="trace-executor-rejected",
+            attempt=1,
+            max_attempts=2,
+            deadline_at=None,
+            plan_snapshot={
+                "database_diagnostics": {
+                    "domain_id": 7,
+                    "target_row_version": 1,
+                    "db_type": "ORACLE",
+                    "connection_profile": {
+                        "host": "db.internal",
+                        "port": 1521,
+                        "service": "PDB1",
+                        "tls_enabled": False,
+                    },
+                    "diagnostic_credential_id": str(uuid7()),
+                    "capability_snapshot_hash": "a" * 64,
+                    "tools": [{
+                        "tool_id": "db.instance.identity",
+                        "tool_version": "1.0.0",
+                        "variant": "oracle.default",
+                        "template_sha256": "b" * 64,
+                        "parameters": {},
+                        "limits": {
+                            "statement_timeout_seconds": 10,
+                            "max_result_rows": 10,
+                            "max_result_bytes": 1024,
+                            "max_columns": 16,
+                            "max_cell_chars": 1024,
+                        },
+                    }],
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+            lease_token="lease-token",
+            lease_until=(datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+        )
+
+        result = self.run_async(
+            DatabaseDiagnosticHandler(
+                executor_client=_RejectedExecutorClient(),
+                grant_codec=_CapturingGrantCodec(),
+                grant_issuer="aiops-worker",
+                grant_audience="aiops-db-executor",
+                grant_ttl_seconds=30,
+            ).execute(context)
+        )
+
+        self.assertEqual("GAP", result.status)
+        self.assertEqual("GRANT_LIMIT_INVALID", result.gap.code)
+        self.assertFalse(result.gap.retryable)
 
     def test_database_handler_uses_configured_version_when_identity_is_gap(
         self,

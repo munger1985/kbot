@@ -20,7 +20,7 @@ from aiops_agent.diagnostics.grants import (
 from aiops_agent.diagnostics.validation import validate_readonly_template
 from aiops_agent.executor import DiagnosticExecutorService
 from aiops_agent.bootstrap.executor import create_aiops_executor
-from aiops_agent.config import AIOpsSettings
+from aiops_agent.config import AIOpsExecutorConfig, AIOpsSettings
 from aiops_agent.executor.drivers import (
     DiagnosticDriverError,
     DriverQueryResult,
@@ -483,6 +483,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
 
     def test_oracle_workload_reports_are_fixed_catalog_tools(self) -> None:
         registry = DiagnosticRegistry.load()
+        executor = AIOpsExecutorConfig()
         expected = {
             "db.oracle.awr.report": (
                 "dbms_workload_repository.awr_report_html",
@@ -519,6 +520,18 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 self.assertEqual(
                     parameters,
                     tuple(item.name for item in tool.definition.parameters),
+                )
+                self.assertGreaterEqual(
+                    executor.statement_timeout_seconds,
+                    tool.definition.timeout_seconds,
+                )
+                self.assertGreaterEqual(
+                    executor.max_result_rows,
+                    tool.definition.max_rows,
+                )
+                self.assertGreaterEqual(
+                    executor.max_result_bytes,
+                    tool.definition.max_bytes,
                 )
 
         snapshots = registry.resolve(
