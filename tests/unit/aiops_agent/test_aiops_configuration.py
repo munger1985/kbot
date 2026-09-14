@@ -37,7 +37,7 @@ from aiops_agent.application.configuration.service import (
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
-from aiops_agent.entities import DiagnosticSourceEntity
+from aiops_agent.entities import DiagnosticSourceEntity, TargetEntity
 from aiops_agent.repositories.monitoring import DiagnosticSourceRepository
 from aiops_agent.repositories.target import TargetRepository
 from platform_core.contracts.aiops import (
@@ -45,7 +45,9 @@ from platform_core.contracts.aiops import (
     DiagnosticSourceConnectionTestResult,
     DiagnosticSourcePatch,
     InspectionPlanCreate,
+    TargetConnectionTestResult,
     TargetCreate,
+    TargetPatch,
 )
 from platform_core.identity import uuid7
 
@@ -536,63 +538,269 @@ class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
 
 
 class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
-    async def test_create_disables_target_and_requests_connectivity(self) -> None:
-        scope = ConfigurationScope(
+    def setUp(self) -> None:
+        self.scope = ConfigurationScope(
             domain_id=100,
             principal_id="PORTAL:km_portal",
             actor_id="portal-user-1",
             request_id="request-1",
             trace_id="trace-1",
         )
-        targets = AsyncMock()
-        outbox = AsyncMock()
-        uow = SimpleNamespace(
-            targets=targets,
+        self.now = datetime.now(UTC)
+        self.targets = AsyncMock()
+        self.outbox = AsyncMock()
+        self.uow = SimpleNamespace(
+            targets=self.targets,
             managed_credentials=object(),
-            outbox=outbox,
+            outbox=self.outbox,
+            session=AsyncMock(),
+            commit=AsyncMock(),
         )
-        service = object.__new__(AIOpsConfigurationService)
-        service._managed_credentials = AsyncMock()
-        service._managed_credentials.put.return_value = SimpleNamespace(
+        self.service = object.__new__(AIOpsConfigurationService)
+        self.service._managed_credentials = AsyncMock()
+        self.service._managed_credentials.put.return_value = SimpleNamespace(
             credential_id=uuid7()
         )
+        self.service._managed_credentials.read.return_value = {
+            "username": "kbot_monitor",
+            "password": "secret",
+        }
 
         async def execute_handler(**kwargs):
-            return await kwargs["handler"](uow, datetime.now(UTC))
+            return await kwargs["handler"](self.uow, self.now)
 
-        service._idempotent = AsyncMock(side_effect=execute_handler)
-        result = await service.create_target(
-            scope=scope,
-            request=TargetCreate(
-                display_name="Oracle Dev",
-                db_type="ORACLE",
-                environment="DEV",
-                readonly_connection_enabled=True,
-                oracle_container_scope="PDB",
-                oracle_pdb_name="PDB01",
-                endpoint={
-                    "host": "10.0.0.190",
-                    "port": 1521,
-                    "service": "PDB01",
-                    "tls_enabled": False,
-                },
-                diagnostic_credential={
-                    "username": "kbot_monitor", "password": "secret"
-                },
-            ),
-            idempotency_key="create-target-1",
+        self.service._idempotent = AsyncMock(side_effect=execute_handler)
+
+        class UowContext:
+            async def __aenter__(inner_self):
+                return self.uow
+
+            async def __aexit__(inner_self, exc_type, exc, traceback):
+                return False
+
+        self.service._uow_factory = UowContext
+        self.create_request = TargetCreate(
+            display_name="Oracle Dev",
+            db_type="ORACLE",
+            environment="DEV",
+            readonly_connection_enabled=True,
+            oracle_container_scope="PDB",
+            oracle_pdb_name="PDB01",
+            endpoint={
+                "host": "10.0.0.190",
+                "port": 1521,
+                "service": "PDB01",
+                "tls_enabled": False,
+            },
+            diagnostic_credential={
+                "username": "kbot_monitor",
+                "password": "secret",
+            },
         )
 
+    def _connected_result(self) -> TargetConnectionTestResult:
+        return TargetConnectionTestResult(
+            ok=True,
+            database_version="19.0.0.0.0",
+            oracle_container_scope="PDB",
+            oracle_container_name="PDB01",
+            oracle_container_number=3,
+            oracle_database_name="ORCL",
+        )
+
+    async def test_create_disables_target_and_checks_connectivity(self) -> None:
+        with patch(
+            "aiops_agent.application.configuration."
+            "target_service.run_target_connection_test",
+            new=AsyncMock(return_value=self._connected_result()),
+        ) as connection_test:
+            result = await self.service.create_target(
+                scope=self.scope,
+                request=self.create_request,
+                idempotency_key="create-target-1",
+            )
+
         self.assertEqual("DISABLED", result.status)
-        self.assertEqual("CHECKING", result.connectivity_status)
+        self.assertEqual("CONNECTED", result.connectivity_status)
         self.assertEqual("UNKNOWN", result.observed_status)
         self.assertEqual("PDB", result.oracle_container_scope)
         self.assertEqual("PDB01", result.oracle_pdb_name)
-        self.assertTrue(result.connectivity_check_pending)
+        self.assertEqual("PDB", result.observed_oracle_container_scope)
+        self.assertEqual("PDB01", result.observed_oracle_container_name)
+        self.assertFalse(result.connectivity_check_pending)
+        self.assertIsNotNone(result.last_connectivity_check_at)
+        self.assertIsNotNone(result.last_connectivity_success_at)
+        connection_test.assert_awaited_once()
         self.assertEqual(
-            ["TARGET_CREATED", "TARGET_CONNECTIVITY_CHECK_REQUESTED"],
-            [call.args[0].event_type for call in outbox.add.await_args_list],
+            ["TARGET_CREATED"],
+            [call.args[0].event_type for call in self.outbox.add.await_args_list],
         )
+
+    async def test_create_records_unreachable_connectivity(self) -> None:
+        with patch(
+            "aiops_agent.application.configuration."
+            "target_service.run_target_connection_test",
+            new=AsyncMock(
+                return_value=TargetConnectionTestResult(
+                    ok=False,
+                    error_code="ORACLE_AUTH_FAILED",
+                )
+            ),
+        ):
+            result = await self.service.create_target(
+                scope=self.scope,
+                request=self.create_request,
+                idempotency_key="create-target-2",
+            )
+
+        self.assertEqual("DISABLED", result.status)
+        self.assertEqual("UNREACHABLE", result.connectivity_status)
+        self.assertEqual("ORACLE_AUTH_FAILED", result.last_error_code)
+        self.assertFalse(result.connectivity_check_pending)
+        self.assertIsNone(result.last_connectivity_success_at)
+        self.assertEqual(
+            ["TARGET_CREATED"],
+            [call.args[0].event_type for call in self.outbox.add.await_args_list],
+        )
+
+    async def test_patch_checks_connectivity_without_outbox_request(self) -> None:
+        target_id = uuid7()
+        entity = TargetEntity(
+            target_id=target_id,
+            domain_id=self.scope.domain_id,
+            display_name="Oracle Dev",
+            db_type="ORACLE",
+            version_code=None,
+            environment="DEV",
+            db_role="UNKNOWN",
+            oracle_container_scope="PDB",
+            oracle_pdb_name="PDB01",
+            observed_oracle_container_scope=None,
+            observed_oracle_container_name=None,
+            observed_oracle_container_number=None,
+            observed_oracle_database_name=None,
+            endpoint_json={
+                "host": "10.0.0.190",
+                "port": 1521,
+                "service": "PDB01",
+                "tls_enabled": False,
+            },
+            readonly_connection_enabled=True,
+            controlled_change_enabled=False,
+            diagnostic_credential_id=uuid7(),
+            execution_credential_id=None,
+            security_level=1,
+            capabilities_json={},
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            observed_status="UNKNOWN",
+            connectivity_check_request_id=None,
+            connectivity_check_requested_at=None,
+            last_connectivity_check_at=self.now,
+            last_connectivity_success_at=self.now,
+            last_error_code=None,
+            row_version=3,
+            connectivity_version=1,
+            created_by=self.scope.actor_id,
+            updated_by=self.scope.actor_id,
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.targets.get_scoped.return_value = entity
+        with patch(
+            "aiops_agent.application.configuration."
+            "target_service.run_target_connection_test",
+            new=AsyncMock(return_value=self._connected_result()),
+        ) as connection_test:
+            result = await self.service.patch_target(
+                scope=self.scope,
+                target_id=target_id,
+                request=TargetPatch(oracle_pdb_name="PDB02"),
+                expected_version=3,
+            )
+
+        self.assertEqual("DISABLED", result.status)
+        self.assertEqual("CONNECTED", result.connectivity_status)
+        self.assertEqual("PDB02", result.oracle_pdb_name)
+        self.assertFalse(result.connectivity_check_pending)
+        connection_test.assert_awaited_once()
+        self.assertEqual(
+            ["TARGET_UPDATED"],
+            [call.args[0].event_type for call in self.outbox.add.await_args_list],
+        )
+
+    async def test_saved_target_connectivity_check_returns_final_state(self) -> None:
+        target_id = uuid7()
+        entity = TargetEntity(
+            target_id=target_id,
+            domain_id=self.scope.domain_id,
+            display_name="Oracle Dev",
+            db_type="ORACLE",
+            version_code=None,
+            environment="DEV",
+            db_role="UNKNOWN",
+            oracle_container_scope="PDB",
+            oracle_pdb_name="PDB01",
+            observed_oracle_container_scope=None,
+            observed_oracle_container_name=None,
+            observed_oracle_container_number=None,
+            observed_oracle_database_name=None,
+            endpoint_json={
+                "host": "10.0.0.190",
+                "port": 1521,
+                "service": "PDB01",
+                "tls_enabled": False,
+            },
+            readonly_connection_enabled=True,
+            controlled_change_enabled=False,
+            diagnostic_credential_id=uuid7(),
+            execution_credential_id=None,
+            security_level=1,
+            capabilities_json={},
+            status="DISABLED",
+            connectivity_status="UNKNOWN",
+            observed_status="UNKNOWN",
+            connectivity_check_request_id=None,
+            connectivity_check_requested_at=None,
+            last_connectivity_check_at=None,
+            last_connectivity_success_at=None,
+            last_error_code=None,
+            row_version=1,
+            connectivity_version=1,
+            created_by=self.scope.actor_id,
+            updated_by=self.scope.actor_id,
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.targets.get_scoped.return_value = entity
+        with patch(
+            "aiops_agent.application.configuration."
+            "target_service.run_target_connection_test",
+            new=AsyncMock(
+                return_value=TargetConnectionTestResult(
+                    ok=False,
+                    error_code="ORACLE_CONTAINER_MISMATCH",
+                    oracle_container_scope="CDB_ROOT",
+                    oracle_container_name="CDB$ROOT",
+                    oracle_container_number=1,
+                    oracle_database_name="ORCL",
+                )
+            ),
+        ) as connection_test:
+            result = await self.service.request_target_connectivity_check(
+                scope=self.scope,
+                target_id=target_id,
+                expected_version=1,
+                idempotency_key="check-target-1",
+            )
+
+        self.assertEqual("MISCONFIGURED", result.connectivity_status)
+        self.assertEqual("ORACLE_CONTAINER_MISMATCH", result.last_error_code)
+        self.assertEqual("CDB_ROOT", result.observed_oracle_container_scope)
+        self.assertFalse(result.connectivity_check_pending)
+        self.assertEqual(2, result.connectivity_version)
+        connection_test.assert_awaited_once()
+        self.service._managed_credentials.read.assert_awaited_once()
 
 
 class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):

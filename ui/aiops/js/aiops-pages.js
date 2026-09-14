@@ -141,23 +141,24 @@
       : `/targets/${targetId}/${action}`;
     button.disabled = true;
     try {
-      await KBotAIOpsAuth.request(
-        appApi + path,
-        {
-          method: "POST",
-          headers: {
-            "If-Match": `"rv-${item.row_version}"`,
-            "Idempotency-Key": KBotAIOpsAuth.uuid(),
-          },
-          body: JSON.stringify({}),
+      const result = await KBotAIOpsAuth.request(appApi + path, {
+        method: "POST",
+        headers: {
+          "If-Match": `"rv-${item.row_version}"`,
+          "Idempotency-Key": KBotAIOpsAuth.uuid(),
         },
+        body: JSON.stringify({}),
+      });
+      const connectivityResult = action === "connectivity"
+        ? `连通性检查结果：${result.connectivity_status || "UNKNOWN"}${result.last_error_code ? `（${result.last_error_code}）` : ""}`
+        : "";
+      shell.toast(
+        action === "connectivity"
+          ? connectivityResult
+          : action === "enable"
+            ? "运维目标已启用"
+            : "运维目标已停用"
       );
-      const messages = {
-        connectivity: "Target 连通性检查已提交",
-        enable: "运维目标已启用",
-        disable: "运维目标已停用",
-      };
-      shell.toast(messages[action]);
       await renderList("targets");
     } catch (error) {
       shell.toast(error.message);

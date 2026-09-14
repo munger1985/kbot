@@ -296,7 +296,6 @@ async def disable_target(
 @router.post(
     "/targets/{target_id}/connectivity-checks",
     response_model=TargetDetail,
-    status_code=status.HTTP_202_ACCEPTED,
 )
 async def request_target_connectivity_check(
     target_id: UUID,

@@ -126,6 +126,81 @@ class TargetConfigurationMixin:
         del scope
         return await run_target_connection_test(request)
 
+    @staticmethod
+    def _diagnostic_credential_payload(credentials) -> dict[str, object]:
+        payload = (
+            credentials.model_dump(mode="json")
+            if hasattr(credentials, "model_dump")
+            else dict(credentials)
+        )
+        return {
+            "username": payload["username"],
+            "password": payload["password"],
+        }
+
+    @staticmethod
+    def _apply_target_connectivity_result(
+        *, entity, result, checked_at: datetime
+    ) -> None:
+        """把同步测连结果写回 Target，并清除 pending 检查请求。"""
+        connected = bool(result.ok)
+        connectivity_status = "CONNECTED" if connected else "UNREACHABLE"
+        if result.error_code in {
+            "ORACLE_CONTAINER_MISMATCH",
+            "ORACLE_CONTAINER_UNSUPPORTED",
+        }:
+            connectivity_status = "MISCONFIGURED"
+        entity.connectivity_status = connectivity_status
+        entity.connectivity_check_request_id = None
+        entity.connectivity_check_requested_at = None
+        entity.last_connectivity_check_at = checked_at
+        if connected:
+            entity.last_connectivity_success_at = checked_at
+        entity.last_error_code = result.error_code
+        if result.oracle_container_scope is not None:
+            entity.observed_oracle_container_scope = result.oracle_container_scope
+            entity.observed_oracle_container_name = result.oracle_container_name
+            entity.observed_oracle_container_number = result.oracle_container_number
+            entity.observed_oracle_database_name = result.oracle_database_name
+
+    async def _check_target_connection_now(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        entity,
+        credentials: Any = None,
+    ) -> None:
+        """在当前配置事务内同步执行数据库连通性检查。"""
+        if credentials is None:
+            if entity.diagnostic_credential_id is None:
+                raise validation_failed("启用只读数据库连接时必须配置诊断凭据")
+            credentials = await self._managed_credentials.read(
+                uow=uow,
+                domain_id=scope.domain_id,
+                credential_id=entity.diagnostic_credential_id,
+                credential_kind="target_diagnostic",
+                external_key=entity.target_id,
+            )
+        result = await run_target_connection_test(
+            TargetConnectionTest.model_validate(
+                {
+                    "db_type": entity.db_type,
+                    "oracle_container_scope": entity.oracle_container_scope,
+                    "oracle_pdb_name": entity.oracle_pdb_name,
+                    "endpoint": dict(entity.endpoint_json or {}),
+                    "diagnostic_credential": self._diagnostic_credential_payload(
+                        credentials
+                    ),
+                }
+            )
+        )
+        self._apply_target_connectivity_result(
+            entity=entity,
+            result=result,
+            checked_at=datetime.now(UTC),
+        )
+
     async def create_target(
         self,
         *,
@@ -179,16 +254,10 @@ class TargetConfigurationMixin:
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
                 status="DISABLED",
-                connectivity_status=(
-                    "CHECKING" if request.readonly_connection_enabled else "UNKNOWN"
-                ),
+                connectivity_status="UNKNOWN",
                 observed_status="UNKNOWN",
-                connectivity_check_request_id=(
-                    request_id := uuid7()
-                ) if request.readonly_connection_enabled else None,
-                connectivity_check_requested_at=(
-                    now if request.readonly_connection_enabled else None
-                ),
+                connectivity_check_request_id=None,
+                connectivity_check_requested_at=None,
                 row_version=1,
                 connectivity_version=1,
                 created_by=scope.actor_id,
@@ -196,6 +265,13 @@ class TargetConfigurationMixin:
                 created_at=now,
                 updated_at=now,
             )
+            if request.readonly_connection_enabled:
+                await self._check_target_connection_now(
+                    uow=uow,
+                    scope=scope,
+                    entity=entity,
+                    credentials=request.diagnostic_credential,
+                )
             await uow.targets.add_target(entity)
             await add_configuration_event(
                 uow=uow,
@@ -205,19 +281,6 @@ class TargetConfigurationMixin:
                 event_type="TARGET_CREATED",
                 row_version=1,
             )
-            if request.readonly_connection_enabled:
-                await add_configuration_event(
-                    uow=uow,
-                    scope=scope,
-                    aggregate_type="TARGET",
-                    aggregate_id=entity.target_id,
-                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
-                    row_version=1,
-                    details={
-                        "connectivity_check_request_id": str(request_id),
-                        "connectivity_version": 1,
-                    },
-                )
             return _target_detail(entity)
 
         return await self._idempotent(
@@ -379,11 +442,7 @@ class TargetConfigurationMixin:
                 setattr(entity, name, value)
             if connectivity_changed and effective_readonly:
                 entity.status = "DISABLED"
-                entity.connectivity_status = "CHECKING"
                 entity.connectivity_version = int(entity.connectivity_version) + 1
-                entity.connectivity_check_request_id = uuid7()
-                entity.connectivity_check_requested_at = datetime.now(UTC)
-                entity.last_connectivity_check_at = None
                 entity.last_error_code = None
                 entity.observed_oracle_container_scope = None
                 entity.observed_oracle_container_name = None
@@ -400,6 +459,13 @@ class TargetConfigurationMixin:
                 entity.observed_oracle_database_name = None
             entity.updated_by = scope.actor_id
             entity.updated_at = datetime.now(UTC)
+            if connectivity_changed and effective_readonly:
+                await self._check_target_connection_now(
+                    uow=uow,
+                    scope=scope,
+                    entity=entity,
+                )
+                entity.updated_at = datetime.now(UTC)
             await uow.session.flush()  # type: ignore[union-attr]
             await add_configuration_event(
                 uow=uow,
@@ -409,21 +475,6 @@ class TargetConfigurationMixin:
                 event_type="TARGET_UPDATED",
                 row_version=int(entity.row_version),
             )
-            if connectivity_changed and effective_readonly:
-                await add_configuration_event(
-                    uow=uow,
-                    scope=scope,
-                    aggregate_type="TARGET",
-                    aggregate_id=target_id,
-                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
-                    row_version=int(entity.row_version),
-                    details={
-                        "connectivity_check_request_id": str(
-                            entity.connectivity_check_request_id
-                        ),
-                        "connectivity_version": int(entity.connectivity_version),
-                    },
-                )
             response = _target_detail(entity)
             await uow.commit()
             return response
@@ -449,24 +500,16 @@ class TargetConfigurationMixin:
             setattr(target, field, credential_id)
             if credential_kind == "DIAGNOSTIC":
                 target.status = "DISABLED"
-                target.connectivity_status = "CHECKING"
                 target.connectivity_version = int(target.connectivity_version) + 1
-                target.connectivity_check_request_id = uuid7()
-                target.connectivity_check_requested_at = now
-                target.last_connectivity_check_at, target.last_error_code = None, None
+                target.last_error_code = None
+                await self._check_target_connection_now(
+                    uow=uow,
+                    scope=scope,
+                    entity=target,
+                    credentials={"username": username, "password": password},
+                )
             target.updated_by, target.updated_at = scope.actor_id, now
             await uow.session.flush()  # type: ignore[union-attr]
-            if credential_kind == "DIAGNOSTIC":
-                await add_configuration_event(
-                    uow=uow, scope=scope, aggregate_type="TARGET",
-                    aggregate_id=target_id,
-                    event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
-                    row_version=int(target.row_version),
-                    details={
-                        "connectivity_check_request_id": str(target.connectivity_check_request_id),
-                        "connectivity_version": int(target.connectivity_version),
-                    },
-                )
             return _target_detail(target)
         return await self._idempotent(scope=scope, operation=f"TARGET_{credential_kind}_CREDENTIAL_ROTATE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version, "credential_kind": credential_kind, "username": username, "password": password}, response_type=TargetDetail, handler=handler)
 
@@ -620,7 +663,7 @@ class TargetConfigurationMixin:
         expected_version: int,
         idempotency_key: str,
     ) -> TargetDetail:
-        """显式请求 Target 连通性检查。"""
+        """显式同步检查 Target 数据库连通性，并返回最终状态。"""
 
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
             assert uow.targets is not None
@@ -634,25 +677,15 @@ class TargetConfigurationMixin:
             if not entity.readonly_connection_enabled:
                 raise validation_failed("仅监控 Target 不执行数据库连通性检查")
             self._check_version(entity.row_version, expected_version)
-            request_id = uuid7()
-            entity.connectivity_status = "CHECKING"
-            entity.connectivity_check_request_id = request_id
-            entity.connectivity_check_requested_at = now
-            entity.updated_by = scope.actor_id
-            entity.updated_at = now
-            await uow.session.flush()  # type: ignore[union-attr]
-            await add_configuration_event(
+            await self._check_target_connection_now(
                 uow=uow,
                 scope=scope,
-                aggregate_type="TARGET",
-                aggregate_id=target_id,
-                event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED",
-                row_version=int(entity.row_version),
-                details={
-                    "connectivity_check_request_id": str(request_id),
-                    "connectivity_version": int(entity.connectivity_version),
-                },
+                entity=entity,
             )
+            entity.updated_by = scope.actor_id
+            entity.updated_at = datetime.now(UTC)
+            entity.connectivity_version = int(entity.connectivity_version) + 1
+            await uow.session.flush()  # type: ignore[union-attr]
             return _target_detail(entity)
 
         return await self._idempotent(
