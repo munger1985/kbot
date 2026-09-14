@@ -135,7 +135,7 @@ class AssetSearchDataQueryCompiler:
                         projected_dimensions.append(field)
             for required in (
                 "asset_id", "title", "bundle_id", "bundle_revision_id",
-                "product", "solution", "asset_date",
+                "product", "solution", "industry", "category", "asset_date",
             ):
                 if required in dimensions and required not in projected_dimensions:
                     projected_dimensions.append(required)

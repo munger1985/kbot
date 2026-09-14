@@ -41,6 +41,7 @@ from .slack import SlackWebhookEnvelope, SlackWebhookReceipt
 from .asset_search import (
     AssetBooleanExpression,
     AssetEvidencePolicy,
+    AssetMetadataFilterEvidence,
     AssetResultPolicy,
     AssetSearchAmbiguity,
     AssetSearchCriterion,
@@ -110,6 +111,7 @@ __all__ = [
     "SlackWebhookReceipt",
     "AssetBooleanExpression",
     "AssetEvidencePolicy",
+    "AssetMetadataFilterEvidence",
     "AssetResultPolicy",
     "AssetSearchAmbiguity",
     "AssetSearchCriterion",

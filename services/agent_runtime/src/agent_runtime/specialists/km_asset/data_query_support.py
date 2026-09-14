@@ -799,8 +799,8 @@ class KmAssetDataQuerySupportMixin:
             normalized["dimensions"] = [
                 name
                 for name in (
-                    *required, "product", "solution", "ingestion_status",
-                    "asset_date",
+                    *required, "product", "solution", "industry", "category",
+                    "ingestion_status", "asset_date",
                 )
                 if name in catalog_dimensions
             ]

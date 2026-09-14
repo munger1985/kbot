@@ -43,6 +43,14 @@ class ResolvedAssetConcept(_Contract):
     vocabulary_version: str = Field(min_length=1, max_length=128)
 
 
+class AssetMetadataFilterEvidence(_Contract):
+    """记录用户明确要求精确元数据筛选时的原文证据。"""
+
+    field_reference: str = Field(min_length=1, max_length=256)
+    operator_reference: str = Field(min_length=1, max_length=256)
+    value_reference: str = Field(min_length=1, max_length=512)
+
+
 class AssetSearchCriterion(_Contract):
     criterion_id: str = Field(pattern=r"^c[1-9][0-9]{0,2}$")
     kind: CriterionKind
@@ -54,6 +62,7 @@ class AssetSearchCriterion(_Contract):
     occurrence: CriterionOccurrence = "MUST"
     evidence_requirement: CriterionEvidenceRequirement
     resolved_concept: ResolvedAssetConcept | None = None
+    explicit_metadata_filter: AssetMetadataFilterEvidence | None = None
 
     @model_validator(mode="after")
     def validate_kind_semantics(self) -> "AssetSearchCriterion":
@@ -80,6 +89,8 @@ class AssetSearchCriterion(_Contract):
             raise ValueError("CONTENT_TYPE 使用了不受支持的操作符")
         if self.kind != "METADATA" and self.evidence_requirement == "QUERY_RESULT":
             raise ValueError("非元数据条件不能只要求 QUERY_RESULT 证据")
+        if self.kind != "METADATA" and self.explicit_metadata_filter is not None:
+            raise ValueError("只有 METADATA 条件可以携带精确筛选原文证据")
         return self
 
 
@@ -247,6 +258,30 @@ class AssetSearchPlanV1(_Contract):
             raise ValueError("COUNT/GROUP 的 target 必须是 ASSET")
         if self.unsupported_requests and self.include_total_count:
             raise ValueError("不支持请求不得同时要求完整总数")
+        searchable_metadata_fields = {
+            "title", "product", "solution", "industry", "category",
+        }
+        for criterion in (
+            *self.criteria,
+            *(item.criterion for item in self.preferences),
+        ):
+            scopes = {item.casefold() for item in criterion.field_scope}
+            if (
+                criterion.kind != "METADATA"
+                or not scopes.intersection(searchable_metadata_fields)
+            ):
+                continue
+            evidence = criterion.explicit_metadata_filter
+            if evidence is None:
+                raise ValueError("文本元数据精确筛选必须携带用户原文证据")
+            query_text = self.query_text.casefold()
+            references = (
+                evidence.field_reference,
+                evidence.operator_reference,
+                evidence.value_reference,
+            )
+            if any(item.casefold() not in query_text for item in references):
+                raise ValueError("精确元数据筛选证据必须来自用户原文")
         return self
 
     @property

@@ -723,11 +723,17 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
 
     def test_semantic_branch_is_not_miscompiled_as_metadata_filter(self):
         plan = _base_plan(
+            query_text="产品字段等于 OAC 或正文关于金融欺诈",
             criteria=[
                 {
                     "criterion_id": "c1", "kind": "METADATA",
                     "field_scope": ["product"], "operator": "EQ",
                     "values": ["OAC"], "evidence_requirement": "QUERY_RESULT",
+                    "explicit_metadata_filter": {
+                        "field_reference": "产品字段",
+                        "operator_reference": "等于",
+                        "value_reference": "OAC",
+                    },
                 },
                 {
                     "criterion_id": "c2", "kind": "SEMANTIC_CONCEPT",
@@ -815,7 +821,10 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("SEMANTIC_CONCEPT", criterion.kind)
         self.assertEqual("RELATED_TO", criterion.operator)
         self.assertEqual(
-            ("TITLE", "PRODUCT", "SOLUTION", "CONTENT"),
+            (
+                "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY", "CATEGORY",
+                "CONTENT",
+            ),
             criterion.field_scope,
         )
         query_plan = AssetSearchDataQueryCompiler.compile(
@@ -839,6 +848,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                     "operator": "EQ",
                     "values": ["Financial"],
                     "evidence_requirement": "QUERY_RESULT",
+                    "explicit_metadata_filter": {
+                        "field_reference": "category",
+                        "operator_reference": "equals",
+                        "value_reference": "Financial",
+                    },
                 }],
                 "eligibility_expression": {
                     "node_type": "REF", "criterion_id": "c1",
@@ -854,35 +868,118 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("category", query_plan.filters[0].field)
 
-    def test_relevance_selection_rejects_metadata_only_plan(self):
-        with self.assertRaisesRegex(
-            ValueError, "RECENT_RELEVANT 选择策略必须包含语义条件"
-        ):
-            AssetSearchPlanner.normalize_response(
-                question="Top 5 most relevant Financial assets",
-                language="en-US",
-                response={
-                    "operation": "LIST",
-                    "target": "ASSET",
-                    "criteria": [{
-                        "criterion_id": "c1",
-                        "kind": "METADATA",
-                        "field_scope": ["category"],
-                        "operator": "EQ",
-                        "values": ["Financial"],
-                        "evidence_requirement": "QUERY_RESULT",
-                    }],
-                    "eligibility_expression": {
-                        "node_type": "REF", "criterion_id": "c1",
-                    },
-                    "display_limit": 5,
-                    "result_assets": {
-                        "mode": "PRIMARY",
-                        "target_count": 5,
-                        "selection": "RECENT_RELEVANT",
-                    },
+    def test_financial_industry_asset_query_cannot_become_raw_metadata_filter(
+        self,
+    ):
+        """回归生产中裸露行业概念被直接编译为 INDUSTRY_ID 等值条件。"""
+        normalized = AssetSearchPlanner.normalize_response(
+            question="金融行业 Asset",
+            language="zh-CN",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["industry"],
+                    "operator": "EQ",
+                    "values": ["金融行业"],
+                    "evidence_requirement": "QUERY_RESULT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1",
                 },
-            )
+                "display_limit": 10,
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        criterion = plan.criteria[0]
+        self.assertEqual("SEMANTIC_CONCEPT", criterion.kind)
+        self.assertEqual("RELATED_TO", criterion.operator)
+        self.assertEqual(("金融行业",), criterion.values)
+        self.assertIn("INDUSTRY", criterion.field_scope)
+        route_type, answer_basis, _ = KmAssetRoutePlanner._route_for_plan(plan)
+        self.assertEqual(RouteType.HYBRID_DATA_FIRST, route_type)
+        self.assertEqual(
+            KmAssetAnswerBasis.SEMANTIC_RELEVANCE_ENUMERATION,
+            answer_basis,
+        )
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan, models=_catalog()
+        )
+        self.assertEqual((), query_plan.filters)
+        self.assertIsNone(query_plan.filter_expression)
+
+    def test_explicit_industry_field_filter_remains_exact(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="列出行业字段等于 Financial Services 的 Asset",
+            language="zh-CN",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["industry"],
+                    "operator": "EQ",
+                    "values": ["Financial Services"],
+                    "evidence_requirement": "QUERY_RESULT",
+                    "explicit_metadata_filter": {
+                        "field_reference": "行业字段",
+                        "operator_reference": "等于",
+                        "value_reference": "Financial Services",
+                    },
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1",
+                },
+                "display_limit": 10,
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("METADATA", plan.criteria[0].kind)
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan, models=_catalog()
+        )
+        self.assertEqual("industry", query_plan.filters[0].field)
+        self.assertEqual(("Financial Services",), query_plan.filters[0].values)
+
+    def test_query_result_without_explicit_filter_evidence_becomes_semantic(self):
+        normalized = AssetSearchPlanner.normalize_response(
+            question="Top 5 most relevant Financial assets",
+            language="en-US",
+            response={
+                "operation": "LIST",
+                "target": "ASSET",
+                "criteria": [{
+                    "criterion_id": "c1",
+                    "kind": "METADATA",
+                    "field_scope": ["category"],
+                    "operator": "EQ",
+                    "values": ["Financial"],
+                    "evidence_requirement": "QUERY_RESULT",
+                }],
+                "eligibility_expression": {
+                    "node_type": "REF", "criterion_id": "c1",
+                },
+                "display_limit": 5,
+                "result_assets": {
+                    "mode": "PRIMARY",
+                    "target_count": 5,
+                    "selection": "RECENT_RELEVANT",
+                },
+            },
+        )
+
+        plan = AssetSearchPlanV1.model_validate(normalized)
+        self.assertEqual("SEMANTIC_CONCEPT", plan.criteria[0].kind)
+        self.assertIsNone(plan.criteria[0].explicit_metadata_filter)
+        query_plan = AssetSearchDataQueryCompiler.compile(
+            search_plan=plan, models=_catalog()
+        )
+        self.assertEqual((), query_plan.filters)
 
     def test_current_available_count_uses_model_plan_without_rules(self):
         for question in (
@@ -942,7 +1039,10 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CONTENT", plan.target)
         criterion = plan.criteria[0]
         self.assertEqual(
-            ("CONTENT", "TITLE", "PRODUCT", "SOLUTION"),
+            (
+                "CONTENT", "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY",
+                "CATEGORY",
+            ),
             criterion.field_scope,
         )
         self.assertEqual(
@@ -976,6 +1076,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                         "SelectAI and AI Vector Search (ChatBI)"
                     ],
                     "evidence_requirement": "QUERY_RESULT",
+                    "explicit_metadata_filter": {
+                        "field_reference": "asset",
+                        "operator_reference": "details of",
+                        "value_reference": "second asset",
+                    },
                 }],
                 "eligibility_expression": {
                     "node_type": "REF",
@@ -1062,7 +1167,7 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (
                 "asset_id", "title", "bundle_id", "bundle_revision_id",
-                "product", "solution", "asset_date",
+                "product", "solution", "industry", "category", "asset_date",
             ),
             plan.projection,
         )
@@ -1070,7 +1175,9 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
     def test_metadata_field_aliases_map_to_managed_dimensions(self):
         list_plan = AssetSearchPlanV1.model_validate(
             AssetSearchPlanner.normalize_response(
-                question="show assets sorted by domains",
+                question=(
+                    "show assets whose products equal OAC sorted by domains"
+                ),
                 language="en-US",
                 response={
                     "operation": "LIST",
@@ -1082,6 +1189,11 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                         "operator": "EQ",
                         "values": ["OAC"],
                         "evidence_requirement": "QUERY_RESULT",
+                        "explicit_metadata_filter": {
+                            "field_reference": "products",
+                            "operator_reference": "equal",
+                            "value_reference": "OAC",
+                        },
                     }],
                     "eligibility_expression": {
                         "node_type": "REF",
@@ -1250,7 +1362,10 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(("OAC",), plan.criteria[0].values)
         self.assertEqual("c1", plan.criteria[0].criterion_id)
         self.assertEqual(
-            ("CONTENT", "TITLE", "PRODUCT", "SOLUTION"),
+            (
+                "CONTENT", "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY",
+                "CATEGORY",
+            ),
             plan.criteria[0].field_scope,
         )
         self.assertEqual("c1", plan.eligibility_expression.criterion_id)
@@ -1265,11 +1380,17 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
     def test_condition_matrix_enforces_all_any_and_not(self):
         expression = AssetSearchPlanV1.model_validate({
             **_base_plan().model_dump(mode="json"),
+            "query_text": "产品字段等于 OAC，或关于 fraud，但不要 demo",
             "criteria": [
                 {
                     "criterion_id": "c1", "kind": "METADATA",
                     "field_scope": ["product"], "operator": "EQ",
                     "values": ["OAC"], "evidence_requirement": "QUERY_RESULT",
+                    "explicit_metadata_filter": {
+                        "field_reference": "产品字段",
+                        "operator_reference": "等于",
+                        "value_reference": "OAC",
+                    },
                 },
                 {
                     "criterion_id": "c2", "kind": "SEMANTIC_CONCEPT",
@@ -1651,6 +1772,29 @@ class AssetSearchV1Test(unittest.IsolatedAsyncioTestCase):
                 "title": "AWS networking deployment guide",
                 "product": "Load Balancing",
                 "solution": "Infrastructure",
+            },
+        ))
+
+    def test_semantic_metadata_can_use_industry_and_category(self):
+        criterion = _base_plan(
+            criteria=[{
+                "criterion_id": "c1",
+                "kind": "SEMANTIC_CONCEPT",
+                "field_scope": ["INDUSTRY", "CATEGORY", "CONTENT"],
+                "operator": "RELATED_TO",
+                "values": ["Financial Services"],
+                "evidence_requirement": "METADATA_OR_CONTENT",
+            }],
+            eligibility_expression={
+                "node_type": "REF", "criterion_id": "c1"
+            },
+        ).criteria[0]
+
+        self.assertTrue(KnowledgeRetrievalSkill._semantic_metadata_matches(
+            criterion,
+            asset={
+                "industry": "Financial Services",
+                "category": "Architecture",
             },
         ))
 

@@ -22,6 +22,8 @@ _DEFAULT_ASSET_PROJECTION = (
     "bundle_revision_id",
     "product",
     "solution",
+    "industry",
+    "category",
     "asset_date",
 )
 
@@ -187,6 +189,7 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
         "occurrence": str(raw.get("occurrence") or "MUST").upper(),
         "evidence_requirement": evidence_requirement,
         "resolved_concept": None,
+        "explicit_metadata_filter": None,
     }
     concept = raw.get("resolved_concept")
     if isinstance(concept, dict):
@@ -198,17 +201,42 @@ def _normalize_criterion(raw: Any, *, sequence: int) -> dict[str, Any] | None:
             )
             if key in concept
         }
+    explicit_filter = raw.get("explicit_metadata_filter")
+    if isinstance(explicit_filter, dict):
+        result["explicit_metadata_filter"] = {
+            key: str(explicit_filter.get(key) or "").strip()
+            for key in (
+                "field_reference", "operator_reference", "value_reference",
+            )
+        }
     return result
 
 
-def _promote_content_backed_metadata_criterion(
-    criterion: dict[str, Any],
+def _has_explicit_metadata_filter_evidence(
+    criterion: dict[str, Any], *, question: str,
+) -> bool:
+    """确认精确文本元数据筛选的三个证据片段都来自用户原文。"""
+    evidence = criterion.get("explicit_metadata_filter")
+    if not isinstance(evidence, dict):
+        return False
+    question_text = question.casefold()
+    references = [
+        str(evidence.get(key) or "").strip()
+        for key in (
+            "field_reference", "operator_reference", "value_reference",
+        )
+    ]
+    return all(
+        reference and reference.casefold() in question_text
+        for reference in references
+    )
+
+
+def _normalize_searchable_metadata_criterion(
+    criterion: dict[str, Any], *, question: str,
 ) -> None:
-    """把需要正文证明的文本元数据条件纠正为语义条件。"""
-    if (
-        criterion.get("kind") != "METADATA"
-        or criterion.get("evidence_requirement") != "METADATA_OR_CONTENT"
-    ):
+    """只保留具有用户原文证据的精确文本元数据筛选。"""
+    if criterion.get("kind") != "METADATA":
         return
     scopes = {
         str(field).strip().casefold()
@@ -216,11 +244,22 @@ def _promote_content_backed_metadata_criterion(
     }
     if not scopes or not scopes.issubset(_CONTENT_SEARCHABLE_METADATA_FIELDS):
         return
+    if (
+        criterion.get("evidence_requirement") == "QUERY_RESULT"
+        and _has_explicit_metadata_filter_evidence(
+            criterion, question=question
+        )
+    ):
+        return
     criterion.update({
         "kind": "SEMANTIC_CONCEPT",
-        "field_scope": ["TITLE", "PRODUCT", "SOLUTION", "CONTENT"],
+        "field_scope": [
+            "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY", "CATEGORY",
+            "CONTENT",
+        ],
         "operator": "RELATED_TO",
         "evidence_requirement": "METADATA_OR_CONTENT",
+        "explicit_metadata_filter": None,
     })
 
 
@@ -300,7 +339,9 @@ def _apply_asset_semantic_scope(criterion: dict[str, Any]) -> None:
     if criterion.get("kind") != "SEMANTIC_CONCEPT":
         return
     scopes = list(criterion.get("field_scope") or [])
-    for field in ("TITLE", "PRODUCT", "SOLUTION", "CONTENT"):
+    for field in (
+        "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY", "CATEGORY", "CONTENT",
+    ):
         if field not in scopes:
             scopes.append(field)
     criterion["field_scope"] = scopes
@@ -358,7 +399,8 @@ class AssetSearchPlanner:
                         ),
                         "planning_rules": {
                             "broad_semantic_asset_scope": [
-                                "TITLE", "PRODUCT", "SOLUTION", "CONTENT"
+                                "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY",
+                                "CATEGORY", "CONTENT",
                             ],
                             "content_only_scope_requires_explicit_request": True,
                             "metadata_or_content_for_searchable_metadata": True,
@@ -505,7 +547,9 @@ class AssetSearchPlanner:
                 or _is_ready_scope_criterion(criterion)
             ):
                 continue
-            _promote_content_backed_metadata_criterion(criterion)
+            _normalize_searchable_metadata_criterion(
+                criterion, question=question
+            )
             preference_signatures.add(_criterion_signature(criterion))
             preferences.append({
                 "preference_id": f"p{position}",
@@ -524,7 +568,9 @@ class AssetSearchPlanner:
                 or _is_ready_scope_criterion(criterion)
             ):
                 continue
-            _promote_content_backed_metadata_criterion(criterion)
+            _normalize_searchable_metadata_criterion(
+                criterion, question=question
+            )
             if _criterion_signature(criterion) in preference_signatures:
                 continue
             criteria.append(criterion)

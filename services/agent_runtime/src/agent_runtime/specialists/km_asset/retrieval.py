@@ -871,7 +871,9 @@ class KmAssetRetrievalMixin:
         searchable_fields = [
             field.casefold()
             for field in criterion.field_scope
-            if field.upper() in {"TITLE", "PRODUCT", "SOLUTION"}
+            if field.upper() in {
+                "TITLE", "PRODUCT", "SOLUTION", "INDUSTRY", "CATEGORY",
+            }
         ]
         if not searchable_fields:
             return False
