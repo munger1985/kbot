@@ -39,9 +39,11 @@ from aiops_agent.workers import (
     TaskExecutionContext,
 )
 from aiops_agent.workers.evidence_handlers import (
+    EvidenceObserveHandler,
     EvidenceReportHandler,
     _metric_definitions,
 )
+from aiops_agent.workers.handlers import investigation_task_identity
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from platform_core.security import create_public_auth_middleware
@@ -512,6 +514,103 @@ class IntegrationAuthBoundaryTest(unittest.TestCase):
         )
         self.assertEqual(200, response.status_code)
         validator.assert_not_awaited()
+
+
+
+class InvestigationTaskIdentityTest(unittest.TestCase):
+    def test_strips_revision_suffix_from_observe_and_log_keys(self) -> None:
+        self.assertEqual(
+            "binding-1",
+            investigation_task_identity("observe:binding-1", "observe:"),
+        )
+        self.assertEqual(
+            "binding-1",
+            investigation_task_identity("observe:binding-1:r2", "observe:"),
+        )
+        self.assertEqual(
+            "binding-1",
+            investigation_task_identity("log:binding-1:r3", "log:"),
+        )
+        self.assertEqual(
+            "db.instance.identity",
+            investigation_task_identity(
+                "diagnostic:db.instance.identity:r2",
+                "diagnostic:",
+            ),
+        )
+
+
+class EvidenceObserveHandlerTest(unittest.IsolatedAsyncioTestCase):
+    def _context(self, task_key: str, bindings: list[dict]) -> TaskExecutionContext:
+        now = datetime.now(UTC).replace(microsecond=0)
+        return TaskExecutionContext(
+            run_id="run-1",
+            task_id="task-1",
+            task_key=task_key,
+            target_id="target-1",
+            agent_id="agent-1",
+            trigger_type="ALERT",
+            trace_id="trace-1",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "monitoring": {
+                    "window": {
+                        "start": (now - timedelta(minutes=5)).isoformat(),
+                        "end": now.isoformat(),
+                    },
+                    "bindings": bindings,
+                    "max_response_bytes": 1024,
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+        )
+
+    def _binding(self) -> dict:
+        return {
+            "binding_id": "binding-1",
+            "unsupported_metrics": (),
+            "effective_capabilities": (),
+            "source_locator_key": "oracle-dev-01",
+            "source_locator": {},
+            "source": {
+                "source_id": "source-1",
+                "source_type": "PROMETHEUS",
+                "adapter_id": "prometheus",
+                "adapter_version": "1.0.0",
+                "config_version": 1,
+                "endpoint": "http://prometheus.example.com",
+                "declared_capabilities": {},
+                "config": {},
+            },
+        }
+
+    async def test_revision_suffix_still_resolves_frozen_binding(self) -> None:
+        handler = EvidenceObserveHandler(
+            diagnostic_source_registry=object(),
+            secret_store=object(),
+        )
+        result = await handler.execute(
+            self._context("observe:binding-1:r2", [self._binding()])
+        )
+        self.assertEqual("binding-1", result.binding_id)
+        self.assertEqual("source-1", result.source_id)
+        self.assertEqual((), result.gaps)
+
+    async def test_missing_binding_returns_evidence_gap(self) -> None:
+        handler = EvidenceObserveHandler(
+            diagnostic_source_registry=object(),
+            secret_store=object(),
+        )
+        result = await handler.execute(
+            self._context("observe:missing-binding:r2", [])
+        )
+        self.assertEqual("missing-binding", result.binding_id)
+        self.assertEqual("", result.source_id)
+        self.assertEqual("SOURCE_CONFIGURATION_INVALID", result.gaps[0].code)
+        self.assertEqual("missing-binding", result.gaps[0].binding_id)
+
 
 
 if __name__ == "__main__":

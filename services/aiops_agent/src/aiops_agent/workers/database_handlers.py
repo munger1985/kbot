@@ -38,7 +38,7 @@ from platform_core.contracts.aiops.executor import (
 from platform_core.identity import uuid7
 
 from .errors import RetryableTaskError
-from .handlers import TaskExecutionContext
+from .handlers import TaskExecutionContext, investigation_task_identity
 
 
 def _utc(value: str) -> datetime:
@@ -122,7 +122,7 @@ class DatabaseDiagnosticHandler:
     async def execute(
         self, context: TaskExecutionContext
     ) -> DatabaseDiagnosticResult:
-        tool_id = context.task_key.removeprefix("diagnostic:")
+        tool_id = investigation_task_identity(context.task_key, "diagnostic:")
         snapshot = context.plan_snapshot["database_diagnostics"]
         if not snapshot.get("automatic_access_enabled", True):
             blocking_codes = {

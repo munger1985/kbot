@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -12,6 +13,13 @@ from aiops_agent.contracts.artifacts import (
     ObservationSet,
     ScopeResult,
 )
+
+_INVESTIGATION_REVISION_SUFFIX = re.compile(r":r\d+$")
+
+
+def investigation_task_identity(task_key: str, prefix: str) -> str:
+    """去掉调查任务前缀和重规划后缀，得到冻结身份。"""
+    return _INVESTIGATION_REVISION_SUFFIX.sub("", task_key.removeprefix(prefix))
 
 
 @dataclass(frozen=True)

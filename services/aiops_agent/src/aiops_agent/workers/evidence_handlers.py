@@ -33,7 +33,7 @@ from aiops_agent.monitoring import (
     PromQueryPolicySnapshot,
 )
 
-from .handlers import TaskExecutionContext
+from .handlers import TaskExecutionContext, investigation_task_identity
 
 
 def _parse_time(value: str) -> datetime:
@@ -179,12 +179,30 @@ class EvidenceObserveHandler:
         self, context: TaskExecutionContext
     ) -> ObservationSet:
         monitoring = context.plan_snapshot["monitoring"]
-        binding_id = context.task_key.removeprefix("observe:")
+        binding_id = investigation_task_identity(context.task_key, "observe:")
         snapshot = next(
-            item
-            for item in monitoring["bindings"]
-            if item["binding_id"] == binding_id
+            (
+                item
+                for item in monitoring["bindings"]
+                if item["binding_id"] == binding_id
+            ),
+            None,
         )
+        if snapshot is None:
+            return ObservationSet(
+                target_id=context.target_id,
+                binding_id=binding_id,
+                source_id="",
+                gaps=(
+                    ObservationGap(
+                        source_id="",
+                        binding_id=binding_id,
+                        code="SOURCE_CONFIGURATION_INVALID",
+                        detail="监控任务引用的冻结绑定不存在",
+                    ),
+                ),
+                collected_at=datetime.now(UTC),
+            )
         source = snapshot["source"]
         gaps = [
             ObservationGap(
@@ -458,7 +476,7 @@ class LogEvidenceHandler:
         self, context: TaskExecutionContext
     ) -> LogEvidenceSet:
         monitoring = context.plan_snapshot["monitoring"]
-        binding_id = context.task_key.removeprefix("log:")
+        binding_id = investigation_task_identity(context.task_key, "log:")
         window = monitoring["window"]
         query_fingerprint = hashlib.sha256(
             (

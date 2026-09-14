@@ -218,6 +218,41 @@ class LogEvidenceHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("missing-binding", result.gaps[0].binding_id)
         self.assertTrue(result.provenance["missing_binding_snapshot"])
 
+    async def test_revision_suffix_does_not_change_missing_binding_identity(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        handler = LogEvidenceHandler(
+            diagnostic_source_registry=object(),
+            secret_store=object(),
+        )
+        result = await handler.execute(
+            TaskExecutionContext(
+                run_id="run-1",
+                task_id="task-1",
+                task_key="log:missing-binding:r2",
+                target_id="target-1",
+                agent_id="agent-1",
+                trigger_type="ALERT",
+                trace_id="trace-1",
+                attempt=1,
+                deadline_at=None,
+                plan_snapshot={
+                    "monitoring": {
+                        "window": {
+                            "start": (now - timedelta(minutes=5)).isoformat(),
+                            "end": now.isoformat(),
+                        },
+                        "bindings": [],
+                    }
+                },
+                policy_snapshot={},
+                input_artifacts=(),
+            )
+        )
+
+        self.assertEqual("missing-binding", result.binding_id)
+        self.assertEqual("SOURCE_CONFIGURATION_INVALID", result.gaps[0].code)
+        self.assertEqual("missing-binding", result.gaps[0].binding_id)
+
 
 if __name__ == "__main__":
     unittest.main()
