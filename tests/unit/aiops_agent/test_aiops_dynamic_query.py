@@ -1168,6 +1168,40 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual({}, rewritten.plan.actions[0].input)
 
+    def test_non_integer_snapshot_ids_rewrite_to_discovery_tool(self) -> None:
+        rejected = self._awr_investigation(
+            tool_id="db.oracle.awr.report",
+            input={
+                "begin_snapshot_id": "2026-09-13T09:00:00+08:00",
+                "end_snapshot_id": "2026-09-13T10:00:00+08:00",
+            },
+            expected_evidence_kind="AWR_REPORT",
+        )
+        available = (
+            {
+                "tool_id": "db.oracle.awr.report",
+                "discovery_tool_id": "db.oracle.awr.snapshots",
+                "input": {
+                    "begin_snapshot_id": {"type": "integer", "required": True},
+                    "end_snapshot_id": {"type": "integer", "required": True},
+                },
+            },
+            {
+                "tool_id": "db.oracle.awr.snapshots",
+                "input": {},
+            },
+        )
+        rewritten = rewrite_incomplete_discovery_actions(
+            investigation=rejected,
+            available_tools=available,
+        )
+        self.assertIsNotNone(rewritten)
+        self.assertEqual(
+            ["db.oracle.awr.snapshots"],
+            [action.tool_id for action in rewritten.plan.actions],
+        )
+        self.assertEqual({}, rewritten.plan.actions[0].input)
+
     def test_existing_discovery_tool_drops_incomplete_report(self) -> None:
         factory = DynamicQueryPlanningTest()
         template = factory._investigation(
@@ -1229,6 +1263,44 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         rejected = self._awr_investigation(
             tool_id="db.oracle.awr.report",
             input={},
+            expected_evidence_kind="AWR_REPORT",
+        )
+        service, reasoner = self._planning_service()
+        context = self._oracle_context()
+        planned, investigation, frozen, source_queries = (
+            await service._prepare_queries_with_repair(
+                context=context,
+                planned=StructuredModelResult(
+                    output=rejected,
+                    receipt=SimpleNamespace(name="rejected"),
+                ),
+                available_tools=available_tools(
+                    service._tool_snapshot_builder,
+                    context.capabilities,
+                ),
+                available_playbooks=(),
+                model_snapshot={"technical_name": "test"},
+                revision_no=1,
+            )
+        )
+        self.assertEqual("rejected", planned.receipt.name)
+        self.assertEqual(
+            ["db.instance.identity", "db.oracle.awr.snapshots"],
+            [action.tool_id for action in investigation.plan.actions],
+        )
+        self.assertEqual({}, investigation.plan.actions[1].input)
+        self.assertEqual((), frozen)
+        reasoner.repair_policy_invalid_plan.assert_not_awaited()
+
+    async def test_non_integer_awr_snapshot_ids_rewrite_without_model_repair(
+        self,
+    ) -> None:
+        rejected = self._awr_investigation(
+            tool_id="db.oracle.awr.report",
+            input={
+                "begin_snapshot_id": "2026-09-13T09:00:00+08:00",
+                "end_snapshot_id": "2026-09-13T10:00:00+08:00",
+            },
             expected_evidence_kind="AWR_REPORT",
         )
         service, reasoner = self._planning_service()

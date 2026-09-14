@@ -1293,7 +1293,7 @@ class TurnPlanningService:
             )
             if rewritten is not None:
                 logger.info(
-                    "固定诊断工具缺少必填参数，已按目录改写为发现工具："
+                    "固定诊断工具缺少必填参数或参数类型不合法，已按目录改写为发现工具："
                     "turn_id={} revision_no={} tools={}",
                     context.turn_id,
                     revision_no,

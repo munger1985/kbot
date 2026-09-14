@@ -255,7 +255,7 @@ def rewrite_incomplete_discovery_actions(
     investigation: InvestigationPlanningOutput,
     available_tools: tuple[dict, ...],
 ) -> InvestigationPlanningOutput | None:
-    """缺必填参数且目录声明了发现工具时，改写为发现工具而不猜测参数。"""
+    """缺必填参数或必填参数类型不合法且目录声明了发现工具时，改写为发现工具而不猜测参数。"""
     tool_index = {
         str(item.get("tool_id") or ""): item
         for item in available_tools
@@ -276,7 +276,7 @@ def rewrite_incomplete_discovery_actions(
             or discovery_tool_id is None
             or discovery_tool_id not in tool_index
             or _required_parameter_names(tool_index[discovery_tool_id])
-            or not _missing_required_parameters(action.input, tool)
+            or not _unusable_required_parameters(action.input, tool)
         ):
             rewritten.append(action)
             continue
@@ -334,10 +334,28 @@ def _required_parameter_names(tool: dict) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _missing_required_parameters(values: dict, tool: dict) -> tuple[str, ...]:
-    provided = set(values or {})
-    return tuple(
-        name
-        for name in _required_parameter_names(tool)
-        if name not in provided
-    )
+def _unusable_required_parameters(values: dict, tool: dict) -> tuple[str, ...]:
+    provided = values or {}
+    schema = tool.get("input") or {}
+    unusable = []
+    for name in _required_parameter_names(tool):
+        if name not in provided:
+            unusable.append(name)
+            continue
+        spec = schema.get(name) if isinstance(schema, dict) else None
+        if isinstance(spec, dict) and not _matches_declared_input_type(
+            provided[name], spec
+        ):
+            unusable.append(name)
+    return tuple(unusable)
+
+
+def _matches_declared_input_type(value: object, spec: dict) -> bool:
+    expected = str(spec.get("type") or "").strip().lower()
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "string":
+        return isinstance(value, str)
+    return True
