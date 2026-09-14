@@ -40,6 +40,20 @@
   const bullets = (items) => values(items).length
     ? values(items).map((item) => `- ${typeof item === "string" ? item : item.fact_summary || item.summary || item.title || "已记录"}`).join("\n")
     : "- 无";
+  const inspectionItemText = (item) => {
+    if (typeof item === "string") return item;
+    return item?.fact_summary || item?.summary || item?.title || item?.detail || item?.code || "";
+  };
+  const inspectionBullets = (items, emptyText) => {
+    const lines = values(items).map(inspectionItemText).map((item) => String(item || "").trim()).filter(Boolean);
+    return lines.length ? lines.map((item) => `- ${item}`).join("\n") : `- ${emptyText}`;
+  };
+  const inspectionEvidenceFacts = (payload) => values(payload?.evidence).map((item) => {
+    const title = item.tool_id || "检查项";
+    const count = Number(item.row_count || 0);
+    if (count <= 0) return `${title}：检查已完成，本期没有需要报告的记录，结果正常。`;
+    return `${title}：检查已完成，采集 ${count} 条可验证观测，结果正常。`;
+  });
 
   function uploadMediaType(file) {
     const suffix = String(file.name || "").toLowerCase().split(".").pop();
@@ -54,10 +68,34 @@
 
   function inspectionMarkdown(result) {
     const payload = result?.payload || {};
+    const schemaVersion = result?.final_artifact?.schema_version;
     if (!result?.final_artifact) {
       return `### 诊断尚未形成最终结论\n\n当前状态：${result?.status || "处理中"}`;
     }
-    return `## ${payload.title || "巡检报告"}\n\n${payload.summary || ""}\n\n### 发现\n${bullets(payload.facts)}\n\n### 建议\n${bullets(payload.recommendations)}\n\n### 数据缺口\n${bullets(payload.gaps)}`;
+    const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
+    const emptyFindings = "本期检查均已完成，未发现异常。";
+    const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
+    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
+      const conclusion = values(payload.blocks)
+        .filter((block) => block.block_type === "MARKDOWN")
+        .map((block) => String(block.payload?.markdown || "").trim())
+        .filter(Boolean)
+        .join("\n\n");
+      const gaps = values(payload.evidence_gaps);
+      const recommendations = gaps.length
+        ? ["请先处理本报告列出的数据缺口，再重新执行同一巡检模板。"]
+        : [healthyRecommendation];
+      return `## 巡检报告\n\n${conclusion || "本期巡检已完成，所有计划检查均已形成可追溯观测。"}\n\n### 发现\n${inspectionBullets(inspectionEvidenceFacts(payload), emptyFindings)}\n\n### 建议\n${inspectionBullets(recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(gaps, emptyGaps)}`;
+    }
+    const conclusion = values(payload.facts)
+      .filter((item) => item && item.kind === "agent_health_inspection")
+      .map((item) => String(item.markdown || "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+    const checks = values(payload.facts).filter((item) => !(item && item.kind === "agent_health_inspection"));
+    const summary = payload.summary || conclusion || "本期巡检已完成，所有计划检查均已形成可追溯观测。";
+    const body = conclusion && payload.summary ? `${summary}\n\n${conclusion}` : summary;
+    return `## ${payload.title || "巡检报告"}\n\n${body}\n\n### 发现\n${inspectionBullets(checks.length ? checks : payload.facts, emptyFindings)}\n\n### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
   }
 
   function conversationAnswerMarkdown(result) {

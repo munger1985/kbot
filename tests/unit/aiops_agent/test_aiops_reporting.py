@@ -314,9 +314,14 @@ class InspectionReportPublishingTest(unittest.TestCase):
             [item["title"] for item in payload["facts"][:2]],
         )
         self.assertTrue(all(
-            "检查已完成" in item["summary"]
+            "检查已完成" in item["summary"] and "结果正常" in item["summary"]
             for item in payload["facts"][:2]
         ))
+        self.assertIn("采集 1 条可验证观测", payload["facts"][0]["summary"])
+        self.assertIn(
+            "本期没有需要报告的记录",
+            payload["facts"][1]["summary"],
+        )
         self.assertIn("2/2", payload["summary"])
         self.assertTrue(payload["recommendations"])
         report = uow.inspections.publish_report.await_args.args[0]
@@ -325,6 +330,83 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(
             "system:inspection.daily",
             payload["provenance"]["template"]["template_ref"],
+        )
+
+    def test_scheduled_inspection_report_is_not_limited_to_daily(self) -> None:
+        artifact = SimpleNamespace(schema_version="AIOPS_TURN_RESULT.v1")
+        for schedule_type in ("DAILY", "WEEKLY", "CRON"):
+            run = SimpleNamespace(
+                trigger_type="SCHEDULE",
+                workflow_kind="INSPECTION",
+                plan_snapshot_json={
+                    "client_metadata": {
+                        "inspection": {"schedule_type": schedule_type},
+                    }
+                },
+            )
+            self.assertTrue(
+                AIOpsRuntimeService._should_publish_turn_inspection_report(
+                    run=run,
+                    artifact=artifact,
+                ),
+                schedule_type,
+            )
+        chat_run = SimpleNamespace(
+            trigger_type="CHAT",
+            workflow_kind="INSPECTION",
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_publish_turn_inspection_report(
+                run=chat_run,
+                artifact=artifact,
+            )
+        )
+
+    def test_healthy_zero_row_inspection_writes_explicit_conclusions(self) -> None:
+        source = SimpleNamespace(
+            evidence=[
+                SimpleNamespace(
+                    tool_id="db.alert.recent",
+                    row_count=0,
+                    truncated=False,
+                    evidence_ref="artifact:test#alerts",
+                ),
+                SimpleNamespace(
+                    tool_id="db.instance.performance",
+                    row_count=9,
+                    truncated=False,
+                    evidence_ref="artifact:test#performance",
+                ),
+            ],
+            evidence_gaps=(),
+        )
+        facts, gaps, summary = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "evidence_steps": [
+                    {
+                        "title": "近期告警日志",
+                        "tool_id": "db.alert.recent",
+                        "expected_evidence_kind": "ALERT_LOG",
+                    },
+                    {
+                        "title": "实例性能指标",
+                        "tool_id": "db.instance.performance",
+                        "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                    },
+                ]
+            },
+            source=source,
+            action_tool_ids={},
+        )
+        self.assertEqual([], list(gaps))
+        self.assertIn("所有计划检查均已形成可追溯观测", summary)
+        self.assertEqual(
+            "近期告警日志：检查已完成，本期没有需要报告的记录，结果正常。",
+            facts[0]["summary"],
+        )
+        self.assertEqual(
+            "实例性能指标：检查已完成，采集 9 条可验证观测，结果正常。",
+            facts[1]["summary"],
         )
 
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(

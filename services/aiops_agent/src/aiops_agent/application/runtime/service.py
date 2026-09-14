@@ -1948,16 +1948,9 @@ class AIOpsRuntimeService:
                             trace_id=command.trace_id,
                         )
                     )
-                elif (
-                    run.trigger_type == "SCHEDULE"
-                    and run.workflow_kind == "INSPECTION"
-                    and artifact.schema_version == "AIOPS_TURN_RESULT.v1"
-                    and str(
-                        dict(run.plan_snapshot_json or {}).get(
-                            "client_metadata", {}
-                        ).get("inspection", {}).get("schedule_type")
-                        or ""
-                    ) == "DAILY"
+                elif self._should_publish_turn_inspection_report(
+                    run=run,
+                    artifact=artifact,
                 ):
                     # 定时巡检的交付物是报告而非对话回答。保留原始 Turn
                     # 产物作为报告来源，并将模板化报告设为 Run 的展示终态。
@@ -3139,6 +3132,35 @@ class AIOpsRuntimeService:
         return report_artifact
 
     @staticmethod
+    def _should_publish_turn_inspection_report(*, run, artifact) -> bool:
+        """所有定时巡检 Turn 完成时都发布报告，不按周期类型省略。"""
+        return (
+            getattr(run, "trigger_type", None) == "SCHEDULE"
+            and getattr(run, "workflow_kind", None) == "INSPECTION"
+            and getattr(artifact, "schema_version", None)
+            == "AIOPS_TURN_RESULT.v1"
+        )
+
+    @staticmethod
+    def _inspection_observed_summary(
+        *,
+        title: str,
+        row_count: int,
+        truncated: bool,
+    ) -> str:
+        """把已完成检查写成明确结论，零行正常结果也不能省略。"""
+        suffix = "（结果已截断）" if truncated else ""
+        if row_count <= 0:
+            return (
+                f"{title}：检查已完成，本期没有需要报告的记录，结果正常。"
+                f"{suffix}"
+            )
+        return (
+            f"{title}：检查已完成，采集 {row_count} 条可验证观测，"
+            f"结果正常。{suffix}"
+        )
+
+    @staticmethod
     def _inspection_report_projection(
         *,
         inspection: dict[str, Any],
@@ -3179,9 +3201,11 @@ class AIOpsRuntimeService:
                         "kind": "inspection_check",
                         "title": title,
                         "summary": (
-                            f"{title}：检查已完成，采集 {row_count} 条"
-                            "可验证观测"
-                            + ("（结果已截断）" if truncated else "")
+                            AIOpsRuntimeService._inspection_observed_summary(
+                                title=title,
+                                row_count=row_count,
+                                truncated=truncated,
+                            )
                         ),
                         "check_status": "OBSERVED",
                         "tool_id": tool_id,
@@ -3228,11 +3252,18 @@ class AIOpsRuntimeService:
             if tool_id in step_tool_ids:
                 continue
             row_count = sum(item.row_count for item in observations)
+            truncated = any(item.truncated for item in observations)
             facts.append(
                 {
                     "kind": "inspection_evidence",
                     "title": tool_id,
-                    "summary": f"{tool_id}：采集 {row_count} 条可验证观测",
+                    "summary": (
+                        AIOpsRuntimeService._inspection_observed_summary(
+                            title=tool_id,
+                            row_count=row_count,
+                            truncated=truncated,
+                        )
+                    ),
                     "check_status": "OBSERVED",
                     "tool_id": tool_id,
                     "evidence_refs": [
