@@ -24,6 +24,7 @@ from aiops_agent.application.investigation.discovery import (
     available_tools,
     build_playbook_plan,
     compact_tool_cards,
+    rewrite_incomplete_discovery_actions,
     select_planning_candidates,
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
@@ -1286,6 +1287,44 @@ class TurnPlanningService:
                 ),
             )
         except InvestigationPlanValidationError as exc:
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=planned.output,
+                available_tools=available_tools,
+            )
+            if rewritten is not None:
+                logger.info(
+                    "固定诊断工具缺少必填参数，已按目录改写为发现工具："
+                    "turn_id={} revision_no={} tools={}",
+                    context.turn_id,
+                    revision_no,
+                    [action.tool_id for action in rewritten.plan.actions],
+                )
+                try:
+                    investigation, dynamic_queries, source_queries, attachment_searches = (
+                        self._prepare_query_inputs(
+                            investigation=rewritten,
+                            context=context,
+                        )
+                    )
+                except InvestigationPlanValidationError:
+                    rewritten = None
+                else:
+                    return (
+                        StructuredModelResult(
+                            output=rewritten,
+                            receipt=planned.receipt,
+                        ),
+                        investigation,
+                        dynamic_queries,
+                        (
+                            {
+                                **source_queries,
+                                "attachment_search": attachment_searches,
+                            }
+                            if attachment_searches
+                            else source_queries
+                        ),
+                    )
             logger.warning(
                 "AIOps Tool 输入未通过策略，正在请求模型修正："
                 "turn_id={} revision_no={} reason={}",

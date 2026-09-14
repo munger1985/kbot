@@ -43,6 +43,7 @@ class DiagnosticRegistry:
         ]
         if len(identities) != len(set(identities)):
             raise ValueError("诊断目录存在重复工具 Variant")
+        self._validate_discovery_links(tools)
         self._tools = tools
         self.catalog_hash = hashlib.sha256(
             json.dumps(
@@ -62,6 +63,50 @@ class DiagnosticRegistry:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
+
+    @staticmethod
+    def _validate_discovery_links(tools: tuple[ResolvedDiagnosticTool, ...]) -> None:
+        """校验发现工具引用完整、同库且不再嵌套。"""
+        by_identity: dict[tuple[str, str], list[DiagnosticToolDefinition]] = {}
+        for item in tools:
+            definition = item.definition
+            by_identity.setdefault(
+                (definition.db_type, definition.tool_id),
+                [],
+            ).append(definition)
+        for item in tools:
+            definition = item.definition
+            discovery_tool_id = definition.discovery_tool_id
+            if not discovery_tool_id:
+                continue
+            if discovery_tool_id == definition.tool_id:
+                raise ValueError(
+                    f"诊断工具 {definition.tool_id} 不能将自身作为发现工具"
+                )
+            candidates = by_identity.get(
+                (definition.db_type, discovery_tool_id),
+                [],
+            )
+            if not candidates:
+                raise ValueError(
+                    "诊断工具 "
+                    f"{definition.tool_id} 的发现工具不存在："
+                    f"{discovery_tool_id}"
+                )
+            for discovery in candidates:
+                required = tuple(
+                    parameter.name
+                    for parameter in discovery.parameters
+                    if parameter.required
+                )
+                if required:
+                    raise ValueError(
+                        f"发现工具 {discovery_tool_id} 不能包含必填参数"
+                    )
+                if discovery.discovery_tool_id:
+                    raise ValueError(
+                        f"发现工具 {discovery_tool_id} 不能再指向其他发现工具"
+                    )
 
     @classmethod
     def load(cls, root: Path | None = None) -> "DiagnosticRegistry":

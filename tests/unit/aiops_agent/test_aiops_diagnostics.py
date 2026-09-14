@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
-from aiops_agent.diagnostics import DiagnosticRegistry
+from aiops_agent.diagnostics import DiagnosticRegistry, ResolvedDiagnosticTool
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
     DiagnosticGrantError,
@@ -615,6 +615,46 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 "begin_time": "2026-09-10T10:00:00",
                 "end_time": "2026-09-10T10:05:00",
             })
+
+    def test_oracle_awr_reports_declare_snapshot_discovery(self) -> None:
+        registry = DiagnosticRegistry.load()
+        for tool_id in ("db.oracle.awr.report", "db.oracle.awr.diff_report"):
+            tool = registry.resolve(
+                tool_id=tool_id,
+                tool_version="1.0.0",
+                db_type="ORACLE",
+                db_version="19c",
+                capabilities=set(),
+                entitlements=set(),
+            )
+            self.assertEqual(
+                "db.oracle.awr.snapshots",
+                tool.definition.discovery_tool_id,
+            )
+        snapshots = registry.resolve(
+            tool_id="db.oracle.awr.snapshots",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities=set(),
+            entitlements=set(),
+        )
+        self.assertIsNone(snapshots.definition.discovery_tool_id)
+        self.assertEqual((), snapshots.definition.parameters)
+
+    def test_registry_rejects_unknown_discovery_tool(self) -> None:
+        registry = DiagnosticRegistry.load()
+        tools = []
+        for item in registry.tools:
+            definition = item.definition
+            if definition.tool_id == "db.oracle.awr.report":
+                definition = definition.model_copy(
+                    update={"discovery_tool_id": "db.oracle.missing"}
+                )
+                item = ResolvedDiagnosticTool(definition, item.sql)
+            tools.append(item)
+        with self.assertRaisesRegex(ValueError, "发现工具不存在"):
+            DiagnosticRegistry(tuple(tools))
 
     def test_oracle_single_sql_baseline_contracts_are_loadable(self) -> None:
         registry = DiagnosticRegistry.load()

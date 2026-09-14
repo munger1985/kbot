@@ -113,26 +113,27 @@ class ToolExecutionSnapshotBuilder:
             purpose = definition.description or (
                 f"受控只读数据库观测：{definition.tool_id}"
             )
-            discovered.append(
-                {
-                    "tool_id": definition.tool_id,
-                    "version": definition.version,
-                    "tool_class": "ORACLE_SQL",
-                    "description": (
-                        f"{purpose}；"
-                        f"返回字段：{', '.join(output_names)}"
-                    ),
-                    "input": {
-                        parameter.name: parameter.model_dump(
-                            mode="json",
-                            exclude={"name"},
-                            exclude_none=True,
-                        )
-                        for parameter in definition.parameters
-                    },
-                    "returns": list(output_names),
-                }
-            )
+            card = {
+                "tool_id": definition.tool_id,
+                "version": definition.version,
+                "tool_class": "ORACLE_SQL",
+                "description": (
+                    f"{purpose}；"
+                    f"返回字段：{', '.join(output_names)}"
+                ),
+                "input": {
+                    parameter.name: parameter.model_dump(
+                        mode="json",
+                        exclude={"name"},
+                        exclude_none=True,
+                    )
+                    for parameter in definition.parameters
+                },
+                "returns": list(output_names),
+            }
+            if definition.discovery_tool_id:
+                card["discovery_tool_id"] = definition.discovery_tool_id
+            discovered.append(card)
         return tuple(
             sorted(
                 discovered,

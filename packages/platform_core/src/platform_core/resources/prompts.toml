@@ -612,7 +612,7 @@ public_reasoning_summary 是给用户展示的一句简洁决策摘要，只说�
 [[prompts]]
 prompt_key = "aiops_agent.investigation_planner"
 owner_service = "aiops_agent"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "理解用户材料并形成 AIOps 调查计划"
 input_variables = []
@@ -651,7 +651,9 @@ Oracle Target 的 target_context 会明确给出预期和最近一次连接实�
 动态 SQL 时必须使用当前容器实际可见的视图与列，不能把 CDB Root 的 V$ 结果可见性假设套用
 到 PDB，也不能臆造 INTERVAL_SEC 等未在 Oracle 视图中定义的列。
 调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
-必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。对于
+必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。若工具声明了
+discovery_tool_id，且其必填参数尚未被已确认证据填齐，必须先调用对应发现工具，
+不得猜测或省略必填参数。对于
 db.oracle.readonly_query，policy.allowed_functions 是完整函数白名单，SQL 不得使用
 清单外的同义函数、系统函数或自定义函数；应优先显式列出最小必要列，若确有诊断必要，
 系统诊断视图的星号投影和显式列查询都按只读边界自动执行，结果按诊断账号实际可见内容
@@ -683,7 +685,7 @@ TO_DATE格式，也不要使用MySQL日期函数。查询受max_rows边界保护
 [[prompts]]
 prompt_key = "aiops_agent.investigation_policy_repair"
 owner_service = "aiops_agent"
-version = "1.0.1"
+version = "1.0.2"
 active = true
 purpose = "依据确定性策略反馈修正 AIOps 调查计划"
 input_variables = []
@@ -695,7 +697,8 @@ InvestigationPlanningOutput。
 
 必须保持原问题、任务框架和 revision_no 不变，只修正不合规的调查动作。工具只能从
 available_tools 中选择，且每项工具的 input 是完整参数契约，必须遵循类型、必填、默认值、
-数值范围、长度和枚举约束。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
+数值范围、长度和枚举约束。若工具声明了 discovery_tool_id，且其必填参数尚未被已确认证据
+填齐，必须先调用对应发现工具，不得猜测或省略必填参数。对于 db.oracle.readonly_query，policy.allowed_functions 是完整
 函数白名单，SQL 不得使用清单外函数；policy.allowed_packages 是包函数白名单，允许使用
 DBMS_XPLAN 查询函数获取格式化执行计划，其他 Oracle 包仍禁止调用；同时必须遵循该工具的
 database_access、input和policy约束。诊断账号具有CREATE SESSION和SELECT ANY DICTIONARY，可查询V系列、GV系列、

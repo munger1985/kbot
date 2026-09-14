@@ -11,6 +11,9 @@ from aiops_agent.ports.diagnostic_source import (
 )
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.tools import ToolExecutionSnapshotBuilder
+from platform_core.contracts.aiops.investigation import (
+    InvestigationPlanningOutput,
+)
 from platform_core.contracts.aiops.playbooks import (
     DbaCapabilitySnapshot,
     DbaPlaybookPlan,
@@ -166,6 +169,8 @@ def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
             card["policy"] = dict(tool["policy"])
         if tool.get("database_access") is not None:
             card["database_access"] = dict(tool["database_access"])
+        if tool.get("discovery_tool_id"):
+            card["discovery_tool_id"] = str(tool["discovery_tool_id"])
         cards.append(card)
     return tuple(cards)
 
@@ -243,3 +248,96 @@ def manifest_applicable(manifest, capabilities: DbaCapabilitySnapshot) -> bool:
 def build_playbook_plan(registry: PlaybookRegistry) -> DbaPlaybookPlan:
     """保存Playbook目录快照；原子Tool执行不再要求隶属Playbook。"""
     return DbaPlaybookPlan(catalog_hash=registry.catalog_hash, items=())
+
+
+def rewrite_incomplete_discovery_actions(
+    *,
+    investigation: InvestigationPlanningOutput,
+    available_tools: tuple[dict, ...],
+) -> InvestigationPlanningOutput | None:
+    """缺必填参数且目录声明了发现工具时，改写为发现工具而不猜测参数。"""
+    tool_index = {
+        str(item.get("tool_id") or ""): item
+        for item in available_tools
+        if item.get("tool_id")
+    }
+    existing_tool_actions: dict[str, str] = {}
+    for action in investigation.plan.actions:
+        existing_tool_actions.setdefault(action.tool_id, action.action_id)
+
+    rewritten = []
+    dropped_to: dict[str, str] = {}
+    replacements: dict[str, str] = {}
+    for action in investigation.plan.actions:
+        tool = tool_index.get(action.tool_id)
+        discovery_tool_id = _discovery_tool_id(tool)
+        if (
+            tool is None
+            or discovery_tool_id is None
+            or discovery_tool_id not in tool_index
+            or _required_parameter_names(tool_index[discovery_tool_id])
+            or not _missing_required_parameters(action.input, tool)
+        ):
+            rewritten.append(action)
+            continue
+        replacements[action.action_id] = discovery_tool_id
+        existing_id = existing_tool_actions.get(discovery_tool_id)
+        if existing_id is not None:
+            dropped_to[action.action_id] = existing_id
+            continue
+        replacement = action.model_copy(
+            update={"tool_id": discovery_tool_id, "input": {}}
+        )
+        rewritten.append(replacement)
+        existing_tool_actions[discovery_tool_id] = replacement.action_id
+
+    if not replacements:
+        return None
+
+    kept_ids = {action.action_id for action in rewritten}
+    normalized = []
+    for action in rewritten:
+        dependencies = tuple(
+            dict.fromkeys(
+                dropped_to.get(dependency, dependency)
+                for dependency in action.depends_on
+                if dropped_to.get(dependency, dependency) in kept_ids
+                and dropped_to.get(dependency, dependency) != action.action_id
+            )
+        )
+        normalized.append(
+            action.model_copy(update={"depends_on": dependencies})
+            if dependencies != action.depends_on
+            else action
+        )
+    plan = investigation.plan.model_copy(update={"actions": tuple(normalized)})
+    return investigation.model_copy(update={"plan": plan})
+
+
+def _discovery_tool_id(tool: dict | None) -> str | None:
+    if not tool:
+        return None
+    value = str(tool.get("discovery_tool_id") or "").strip()
+    return value or None
+
+
+def _required_parameter_names(tool: dict) -> tuple[str, ...]:
+    schema = tool.get("input") or {}
+    if not isinstance(schema, dict):
+        return ()
+    names = []
+    for name, spec in schema.items():
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("required", True):
+            names.append(str(name))
+    return tuple(names)
+
+
+def _missing_required_parameters(values: dict, tool: dict) -> tuple[str, ...]:
+    provided = set(values or {})
+    return tuple(
+        name
+        for name in _required_parameter_names(tool)
+        if name not in provided
+    )

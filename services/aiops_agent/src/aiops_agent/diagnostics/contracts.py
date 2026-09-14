@@ -62,6 +62,10 @@ class DiagnosticToolDefinition(BaseModel):
     required_privileges: tuple[str, ...] = ()
     allowed_packages: tuple[str, ...] = ()
     parameters: tuple[DiagnosticParameter, ...] = ()
+    discovery_tool_id: str | None = Field(
+        default=None,
+        pattern=r"^db\.[a-z0-9_.-]{1,124}$",
+    )
     output_columns: tuple[DiagnosticOutputColumn, ...]
     template_ref: str = Field(pattern=r"^[a-zA-Z0-9_./-]+\.sql$")
     template_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
