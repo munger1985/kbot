@@ -13,6 +13,7 @@ import aiohttp
 
 from platform_core.contracts import AuthContext, INTERNAL_API_V1
 from platform_core.contracts.aiops import (
+    CONVERSATION_UPLOAD_MAX_BYTES,
     CreateOpsRunCommand,
     SignalEventEnvelope,
     OpsCommand,
@@ -70,6 +71,40 @@ class AIOpsBinaryResponse:
     body: bytes
     media_type: str
     headers: dict[str, str]
+
+
+
+async def _materialize_upload_body(body, *, max_bytes: int) -> bytes:
+    """把上传流读入有界内存，避免边读边转发出错导致上游收不到正文。"""
+    if isinstance(body, (bytes, bytearray, memoryview)):
+        payload = bytes(body)
+        if len(payload) > max_bytes:
+            raise AIOpsClientError(
+                status_code=422,
+                code="AIOPS_UPLOAD_INVALID",
+                message="上传文件超过允许的大小",
+            )
+        return payload
+    if not hasattr(body, "__aiter__"):
+        raise AIOpsClientError(
+            status_code=422,
+            code="AIOPS_UPLOAD_INVALID",
+            message="上传内容无效",
+        )
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in body:
+        if not chunk:
+            continue
+        size += len(chunk)
+        if size > max_bytes:
+            raise AIOpsClientError(
+                status_code=422,
+                code="AIOPS_UPLOAD_INVALID",
+                message="上传文件超过允许的大小",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 class _BaseAIOpsClient:
@@ -207,6 +242,7 @@ class _BaseAIOpsClient:
         file_name: str,
         media_type: str,
         body,
+        max_bytes: int = CONVERSATION_UPLOAD_MAX_BYTES,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -214,18 +250,21 @@ class _BaseAIOpsClient:
             "X-File-Name": quote(file_name, safe=""),
             **self._auth.headers(auth_context),
         }
+        # 先把有界正文读完再转发。把 ASGI 请求流直接交给 aiohttp
+        # 会在大文件（例如 AWR HTML）上形成分块传输死锁，120 秒后超时。
+        payload = await _materialize_upload_body(body, max_bytes=max_bytes)
         session = await self._get_session()
         try:
             async with session.post(
                 f"{self._base_url}{path}",
                 headers=headers,
-                data=body,
+                data=payload,
                 timeout=self._timeout,
             ) as response:
-                payload = await self._response_payload(response)
+                response_payload = await self._response_payload(response)
                 if response.status >= 400:
-                    self._raise_error(response.status, payload)
-                return payload
+                    self._raise_error(response.status, response_payload)
+                return response_payload
         except AIOpsClientError:
             raise
         except (aiohttp.ClientError, TimeoutError) as exc:

@@ -56,6 +56,9 @@ class InputContent(AIOpsContract):
         return self
 
 
+CONVERSATION_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
+
+
 class ConversationUploadReceipt(AIOpsContract):
     upload_id: str = Field(min_length=1, max_length=64)
     file_name: str = Field(min_length=1, max_length=256)

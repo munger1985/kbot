@@ -933,6 +933,8 @@
         : `${api}/conversations`;
       const content = text ? [{ content_type: "TEXT", text }] : [];
       for (const selectedFile of selectedFiles) {
+        document.getElementById("upload-preview").textContent =
+          `正在上传诊断材料：${selectedFile.name}`;
         const uploaded = await KBotAIOpsAuth.request(`${api}/conversation-uploads`, {
           method: "POST",
           headers: {

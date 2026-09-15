@@ -6,6 +6,7 @@ import time
 
 from fastapi import Request
 from loguru import logger
+from starlette.requests import ClientDisconnect
 
 from platform_core.config.settings import get_log_config
 
@@ -83,6 +84,25 @@ async def log_requests(request: Request, call_next):
 
     try:
         response = await call_next(request)
+    except ClientDisconnect:
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        if not ignored:
+            logger.warning(
+                "客户端中断请求 | method={} | path={} | duration_ms={:.2f}",
+                method,
+                url,
+                duration_ms,
+            )
+            _write_access(
+                level="WARNING",
+                method=method,
+                url=url,
+                status_code=499,
+                duration_ms=duration_ms,
+                client_host=client_host,
+                request_id=request_id,
+            )
+        raise
     except Exception as exc:
         duration_ms = (time.perf_counter() - started_at) * 1000
         if not ignored:
