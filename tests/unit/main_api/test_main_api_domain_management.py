@@ -95,15 +95,26 @@ class _Uow:
         self.domains = repository
         self.access = access if access is not None else _AccessRepository()
         self.committed = False
+        self.closed = False
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
+        self.closed = True
         return None
 
     async def commit(self):
         self.committed = True
+
+
+class _DetachingUow(_Uow):
+    """模拟 Session 关闭后 ORM 实体不可再刷新属性。"""
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        for row in self.domains.rows:
+            vars(row).clear()
+        await super().__aexit__(exc_type, exc, traceback)
 
 
 def _app_access(*, user_id="assistantadmin", scope_mode="ALL_APP_DOMAINS", scopes=()):
@@ -238,7 +249,7 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         access.app_domains[("assistant", 3)] = SimpleNamespace(
             app_id="assistant", domain_id=3, status="DISABLED",
         )
-        service = DomainManagementService(uow_factory=lambda: _Uow(repository, access))
+        service = DomainManagementService(uow_factory=lambda: _DetachingUow(repository, access))
 
         result = await service.list_for_app(app_id="assistant", user_id="assistantadmin")
 

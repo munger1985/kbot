@@ -105,7 +105,7 @@ class DomainManagementService:
                 uow=uow, app_id=app_id, user_id=user_id
             )
             domains = await uow.domains.list_by_ids(domain_ids=domain_ids)
-        return {"items": [self._view(row) for row in domains]}
+            return {"items": [self._view(row) for row in domains]}
 
     async def get_for_app(
         self,
