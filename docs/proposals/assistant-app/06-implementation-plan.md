@@ -166,3 +166,9 @@ Phase A–F 已落地。本切片不再重做契约、Schema、Entity/UoW、本�
 2. BFF：`GET /access` 在 `list_bindings` 失败时仍返回 snapshot 权限；`bindings=[]`，capabilities 全 `ready:false`。导航不得被下游绑定查询绑死，也不得用 `assistant:model_binding_manage` 卡住 access。
 3. 浏览器只调 Main API，禁止 `/internal/v1`；不写死 `grok-4.6`。
 4. 本补丁不做 Phase G 真实验收；重启需用户明确要求。
+
+## `/runs` 403（2026-09-15）
+
+线上 `GET /api/v1/apps/assistant/runs` 返回 403，不是缺 `assistant:run_read`。Main API 已通过权限快照，转发内部 `list_runs` 时 assistant_app 拒绝：`内部身份验证器尚未初始化`。
+
+原因：Assistant App 使用 `create_scoped_internal_auth_middleware`，但 lifespan 未安装 `auth_context_codec` / `service_identity_codec`。对齐 KM Asset：在启动时写入这两个 codec。
