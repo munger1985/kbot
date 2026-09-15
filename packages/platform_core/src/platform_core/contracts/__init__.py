@@ -25,11 +25,16 @@ from .conversation import (
 )
 from .identity import AuthContext, IdentityEntryKind, PrincipalKind, ServiceIdentity
 from .generative import (
+    GENERATIVE_ERROR_CODES,
     GeneratedImageArtifact,
+    ImageGenerationEvent,
     ImageGenerationRequest,
     ImageGenerationResult,
+    ImagePublicStage,
     ModelUsage,
     ResearchCitation,
+    ResearchEvent,
+    ResearchPublicStage,
     ResearchRequest,
     ResearchResult,
 )
@@ -70,6 +75,11 @@ __all__ = [
     "AgentExecutionSpec",
     "AuthContext",
     "GeneratedImageArtifact",
+    "ResearchPublicStage",
+    "ResearchEvent",
+    "ImagePublicStage",
+    "ImageGenerationEvent",
+    "GENERATIVE_ERROR_CODES",
     "ImageGenerationRequest",
     "ImageGenerationResult",
     "ModelUsage",

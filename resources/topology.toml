@@ -99,6 +99,14 @@ kind = "http"
 port = 18170
 
 [[processes]]
+process_key = "assistant_app_worker"
+module = "assistant_app.entrypoints.worker"
+service_config = "assistant_app"
+config_section = "worker"
+service_name = "kbot-assistant-app-worker"
+kind = "worker"
+
+[[processes]]
 process_key = "km_asset_app_api"
 module = "km_asset_app.entrypoints.api"
 service_config = "km_asset_app"
@@ -229,6 +237,10 @@ timeout_seconds = 120
 [dependencies.main_api.assistant_app]
 endpoint = "assistant_app"
 timeout_seconds = 120
+
+[dependencies.assistant_app.llm]
+endpoint = "model_llm"
+timeout_seconds = 300
 
 [dependencies.main_api.km_asset_app]
 endpoint = "km_asset_app"

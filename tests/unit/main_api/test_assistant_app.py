@@ -44,6 +44,7 @@ class _DataQueryClient:
 class _AssistantClient:
     def __init__(self):
         self.payload = None
+        self.idempotency_key = None
         self.agent = {
             "agent_id": str(AGENT_ID), "agent_version_id": str(VERSION_ID),
             "status": "DRAFT", "knowledge_core_id": str(CORE_ID),
@@ -63,6 +64,19 @@ class _AssistantClient:
     async def update_agent(self, *, payload, **kwargs):
         self.payload = payload
         return {**self.agent, **payload}
+
+    async def list_bindings(self, **kwargs):
+        return []
+
+    async def create_research_run(self, *, payload, auth_context, idempotency_key=None):
+        self.payload = payload
+        self.idempotency_key = idempotency_key
+        return {
+            "run_id": "019f8eae-2c25-7d48-b044-350ec3f5a010",
+            "status": "ACCEPTED",
+            "kind": "X_SEARCH",
+            "request": {"input": payload.get("input")},
+        }
 
 
 class AssistantAppRouteTest(unittest.TestCase):
@@ -115,6 +129,41 @@ class AssistantAppRouteTest(unittest.TestCase):
 
         self.assertEqual(422, response.status_code)
         self.assertEqual("APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", response.json()["code"])
+
+    def test_access_includes_bindings_and_capabilities(self):
+        response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())
+
+        self.assertEqual(200, response.status_code, response.text)
+        body = response.json()
+        self.assertEqual([], body["bindings"])
+        self.assertEqual(
+            {"bound": False, "verified": False, "ready": False},
+            body["capabilities"]["x_search"],
+        )
+        self.assertEqual(
+            {"bound": False, "verified": False, "ready": False},
+            body["capabilities"]["image_generation"],
+        )
+
+    def test_research_create_uses_trusted_domain_and_rejects_user_model_id(self):
+        rejected = self.client.post(
+            "/api/v1/apps/assistant/x-search/runs",
+            headers=self._headers(),
+            json={"input": "oracle cloud", "model_id": str(AGENT_ID), "domain_id": 99},
+        )
+        self.assertEqual(422, rejected.status_code)
+
+        response = self.client.post(
+            "/api/v1/apps/assistant/x-search/runs",
+            headers={**self._headers(), "Idempotency-Key": "ui-key-1"},
+            json={"input": "oracle cloud"},
+        )
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(41, self.assistant.payload["domain_id"])
+        self.assertNotIn("model_id", self.assistant.payload)
+        self.assertEqual("ui-key-1", self.assistant.idempotency_key)
+        self.assertNotIn("model_id", response.request.content.decode("utf-8"))
+        self.assertNotIn("domain_id", response.request.content.decode("utf-8"))
 
 
 if __name__ == "__main__":

@@ -37,6 +37,9 @@ from model_serving.common.management_router import create_model_management_route
 from model_serving.common.openai_router import create_openai_models_router
 from model_serving.common.openai_contracts import openai_error_response
 from model_serving.common.bootstrap import create_model_registry
+from model_serving.llm.responses.oci_adapter import OciGrokResponsesAdapter
+from model_serving.llm.responses.router import create_responses_router
+from model_serving.llm.responses.service import ResponsesService
 
 # Service basic information
 settings = get_model_serving_settings()
@@ -74,6 +77,10 @@ async def lifespan(app: FastAPI):
         runtime_service=llm_service,
         service_name=SERVICE_NAME,
         settings=settings,
+    )
+    app.state.responses_service = ResponsesService(
+        registry=app.state.model_registry,
+        adapter=OciGrokResponsesAdapter(timeout_seconds=300),
     )
 
     # Initialize logging system
@@ -145,6 +152,7 @@ app.middleware("http")(
 app.middleware("http")(create_api_client_auth_middleware())
 app.include_router(create_model_management_router(category=ModelCategory.LLM.value))
 app.include_router(create_openai_models_router(category=ModelCategory.LLM.value))
+app.include_router(create_responses_router())
 
 
 def get_llm_service() -> LLMService:

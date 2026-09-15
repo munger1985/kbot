@@ -99,8 +99,53 @@ class ImageGenerationResult(_GenerativeContract):
     """模型服务返回给业务 App 的文生图终态。"""
 
     schema_version: Literal["ImageGenerationResult.v1"] = "ImageGenerationResult.v1"
-    status: Literal["COMPLETED", "FAILED"]
+    status: Literal["COMPLETED", "REJECTED", "FAILED"]
     artifacts: tuple[GeneratedImageArtifact, ...] = ()
     usage: ModelUsage | None = None
     provider_request_id: str | None = Field(default=None, max_length=256)
     error_code: str | None = Field(default=None, max_length=128)
+
+
+GENERATIVE_ERROR_CODES = (
+    "MODEL_CAPABILITY_UNVERIFIED",
+    "MODEL_BINDING_MISSING",
+    "PROVIDER_UNSUPPORTED_TOOL",
+    "PROVIDER_QUOTA_EXHAUSTED",
+    "CONTENT_REJECTED",
+    "PROVIDER_TIMEOUT",
+    "PROVIDER_UNAVAILABLE",
+)
+
+ResearchPublicStage = Literal[
+    "ACCEPTED",
+    "SEARCHING",
+    "ORGANIZING_SOURCES",
+    "COMPOSING",
+    "COMPLETED",
+    "FAILED",
+]
+ImagePublicStage = Literal[
+    "ACCEPTED",
+    "GENERATING",
+    "COMPLETED",
+    "REJECTED",
+    "FAILED",
+]
+
+
+class ResearchEvent(_GenerativeContract):
+    """X Search 对业务 App 可见的公开阶段，不含隐藏推理。"""
+
+    schema_version: Literal["ResearchEvent.v1"] = "ResearchEvent.v1"
+    stage: ResearchPublicStage
+    message: str | None = Field(default=None, max_length=1000)
+    citation_count: int | None = Field(default=None, ge=0)
+
+
+class ImageGenerationEvent(_GenerativeContract):
+    """文生图对业务 App 可见的公开阶段，不含隐藏推理。"""
+
+    schema_version: Literal["ImageGenerationEvent.v1"] = "ImageGenerationEvent.v1"
+    stage: ImagePublicStage
+    message: str | None = Field(default=None, max_length=1000)
+    artifact_count: int | None = Field(default=None, ge=0)

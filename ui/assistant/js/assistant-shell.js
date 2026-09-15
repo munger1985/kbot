@@ -1,6 +1,20 @@
-/* 智能工作台测试页公共 Shell；真实鉴权与访问契约接入后替换测试上下文。 */
+/* 智能工作台公共 Shell：按权限删除导航，并在就绪后暴露 access。 */
 (function () {
   "use strict";
+
+  const PAGE_PERMISSIONS = {
+    dashboard: "assistant:access",
+    knowledge: "assistant:knowledge_chat",
+    "x-search": "assistant:x_search",
+    "image-generation": "assistant:image_generate",
+    domains: "assistant:domain_manage",
+    "knowledge-cores": "assistant:knowledge_core_manage",
+    "data-models": "assistant:data_model_manage",
+    agents: "assistant:agent_manage",
+    "model-bindings": "assistant:model_binding_manage",
+    "media-assets": "assistant:media_read",
+    "usage-runs": "assistant:run_read",
+  };
 
   const sections = [
     ["业务工作区", [
@@ -10,11 +24,15 @@
       ["image-generation", "文生图", "./image-generation.html"],
     ]],
     ["资源配置", [
-      ["domains", "Domains", "./domains.html"], ["knowledge-cores", "Knowledge Cores", "./knowledge-cores.html"],
-      ["data-models", "问数模型", "./data-models.html"], ["agents", "Agents", "./agents.html"],
+      ["domains", "Domains", "./domains.html"],
+      ["knowledge-cores", "Knowledge Cores", "./knowledge-cores.html"],
+      ["data-models", "问数模型", "./data-models.html"],
+      ["agents", "Agents", "./agents.html"],
     ]],
     ["管理", [
-      ["model-bindings", "模型绑定", "./model-bindings.html"], ["media-assets", "图片资产", "./media-assets.html"], ["usage-runs", "用量与运行记录", "./usage-runs.html"],
+      ["model-bindings", "模型绑定", "./model-bindings.html"],
+      ["media-assets", "图片资产", "./media-assets.html"],
+      ["usage-runs", "用量与运行记录", "./usage-runs.html"],
     ]],
   ];
 
@@ -36,14 +54,28 @@
     return `<span class="assistant-badge ${escapeHtml(tone)}">${escapeHtml(value)}</span>`;
   }
 
-  function shellMarkup() {
-    const current = document.body.dataset.page || "";
+  function capability(access, key) {
+    return access?.capabilities?.[key] || { bound: false, verified: false, ready: false };
+  }
+
+  function capabilityLabel(item) {
+    if (item.ready) return ["已就绪", "good"];
+    if (!item.bound) return ["未绑定", "warn"];
+    return ["未验收", "warn"];
+  }
+
+  function shellMarkup(access, session, current) {
+    const permissions = new Set(access.permissions || []);
     const navigation = sections.map(([title, pages]) => {
-      const links = pages.map(([id, label, href]) => href
-        ? `<a href="${href}" ${id === current ? 'aria-current="page"' : ""}>${escapeHtml(label)}</a>`
-        : `<button type="button" data-coming-soon="${escapeHtml(label)}" title="资源配置页将在下一阶段接入">${escapeHtml(label)}</button>`).join("");
+      const links = pages
+        .filter(([id]) => permissions.has(PAGE_PERMISSIONS[id]))
+        .map(([id, label, href]) => `<a href="${href}" ${id === current ? 'aria-current="page"' : ""}>${escapeHtml(label)}</a>`)
+        .join("");
+      if (!links) return "";
       return `<div class="assistant-nav-label">${escapeHtml(title)}</div><nav class="assistant-nav" aria-label="${escapeHtml(title)}">${links}</nav>`;
     }).join("");
+    const domain = session.domain_name || "assistant_portal";
+    const user = session.display_name || session.user_id || "已登录";
     return `
       <aside class="assistant-sidebar">
         <a class="assistant-brand" href="./dashboard.html" aria-label="智能工作台首页">
@@ -54,19 +86,72 @@
       </aside>
       <header class="assistant-topbar">
         <div class="assistant-context"><small>当前工作域</small><strong>智能工作台</strong></div>
-        <div class="assistant-session"><span id="assistant-domain">Domain 待接入</span><span class="assistant-session-user" id="assistant-user">测试页面</span></div>
+        <div class="assistant-session">
+          <span id="assistant-domain">${escapeHtml(domain)}</span>
+          <span class="assistant-session-user" id="assistant-user">${escapeHtml(user)}</span>
+          <button class="small" type="button" id="assistant-logout">退出</button>
+        </div>
       </header>
       <div id="assistant-toast-region" class="assistant-toast-region" aria-live="polite"></div>`;
   }
 
-  function initialize() {
-    document.body.insertAdjacentHTML("afterbegin", shellMarkup());
-    document.querySelectorAll("[data-coming-soon]").forEach((button) => {
-      button.addEventListener("click", () => toast(`${button.dataset.comingSoon} 页面将在资源配置阶段接入。`));
+  async function initialize() {
+    const page = document.body.dataset.page || "";
+    if (page === "login" || document.body.classList.contains("assistant-login")) return null;
+    const session = globalThis.KBotAssistantAuth?.load?.();
+    if (!session?.access_token) {
+      location.replace("./login.html");
+      return null;
+    }
+    if (session.must_change_password) {
+      location.replace("./login.html");
+      return null;
+    }
+    let access;
+    try {
+      access = await KBotAssistantApi.json("/access", "GET");
+    } catch (error) {
+      if (error.status === 401) return null;
+      toast(error.message || "无法读取访问权限", "error");
+      throw error;
+    }
+    const permissions = new Set(access.permissions || []);
+    if (!permissions.has("assistant:access")) {
+      toast("没有智能工作台访问权限", "error");
+      KBotAssistantAuth.clear();
+      location.replace("./login.html");
+      return null;
+    }
+    const required = PAGE_PERMISSIONS[page];
+    if (page && page !== "dashboard" && required && !permissions.has(required)) {
+      location.replace("./dashboard.html");
+      return access;
+    }
+    document.body.insertAdjacentHTML("afterbegin", shellMarkup(access, session, page));
+    document.getElementById("assistant-logout")?.addEventListener("click", () => {
+      KBotAssistantAuth.clear();
+      location.replace("./login.html");
     });
+    return access;
   }
 
-  globalThis.KBotAssistantShell = { badge, escapeHtml, ready: new Promise((resolve) => {
-    addEventListener("DOMContentLoaded", () => { initialize(); resolve(); }, { once: true });
-  }), toast };
+  function startReady(resolve, reject) {
+    initialize().then(resolve, reject);
+  }
+
+  globalThis.KBotAssistantShell = {
+    PAGE_PERMISSIONS,
+    badge,
+    capability,
+    capabilityLabel,
+    escapeHtml,
+    ready: new Promise((resolve, reject) => {
+      if (document.readyState === "loading") {
+        addEventListener("DOMContentLoaded", () => startReady(resolve, reject), { once: true });
+      } else {
+        startReady(resolve, reject);
+      }
+    }),
+    toast,
+  };
 })();

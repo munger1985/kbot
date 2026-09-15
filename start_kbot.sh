@@ -206,6 +206,7 @@ SERVICES=(
     "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
     "Knowledge Retrieval App:API:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.api"
     "Assistant App:API:assistant_app:assistant_app.entrypoints.api"
+    "Assistant App:Worker:assistant_app:assistant_app.entrypoints.worker"
     "KM Asset App:API:km_asset_app:km_asset_app.entrypoints.api"
     "KM Asset App:Worker:km_asset_app:km_asset_app.entrypoints.worker"
     "KM Asset App:Slack Worker:km_asset_app:km_asset_app.entrypoints.slack_worker"
@@ -251,6 +252,7 @@ is_process_only_service() {
         || [ "$1" = "km_asset_app.entrypoints.worker" ] \
         || [ "$1" = "km_asset_app.entrypoints.slack_worker" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
+        || [ "$1" = "assistant_app.entrypoints.worker" ] \
         || [ "$1" = "main_api.entrypoints.notification_worker" ]
 }
 

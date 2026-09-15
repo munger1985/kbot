@@ -3,13 +3,20 @@
   "use strict";
   function openDialog(id) { document.getElementById(id)?.showModal(); }
   function closeDialog(id) { document.getElementById(id)?.close(); }
-  addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll("[data-open-dialog]").forEach((button) => button.addEventListener("click", () => openDialog(button.dataset.openDialog)));
-    document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.closeDialog)));
-    document.querySelectorAll("form[data-resource-form]").forEach((form) => form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      KBotAssistantShell.toast(`${form.dataset.resourceForm} API 尚未接入，未创建资源。`, "error");
-    }));
-  }, { once: true });
+  KBotAssistantShell.ready.then((access) => {
+    if (!access) return;
+    document.querySelectorAll("[data-open-dialog]").forEach((button) => {
+      button.addEventListener("click", () => openDialog(button.dataset.openDialog));
+    });
+    document.querySelectorAll("[data-close-dialog]").forEach((button) => {
+      button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
+    });
+    document.querySelectorAll("form[data-resource-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        KBotAssistantShell.toast(`${form.dataset.resourceForm} API 尚未接入，未创建资源。`, "error");
+      });
+    });
+  });
   globalThis.KBotAssistantResources = { closeDialog, openDialog };
 })();

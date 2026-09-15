@@ -336,6 +336,23 @@ class ModelRegistryService:
         await self._notify_changed(result, auth_context=auth_context)
         return result
 
+    async def get_connection_material(self, model_id: UUID) -> dict[str, Any]:
+        """返回调用上游所需的完整连接材料，不得经 HTTP 安全投影对外暴露。"""
+        async with self._uow_factory() as uow:
+            assert uow.models
+            try:
+                row = await uow.models.get_by_id(model_id)
+            except DataNotFoundException as exc:
+                raise ModelDefinitionNotFound(model_id) from exc
+            return {
+                "provider": row.provider,
+                "api_endpoint": row.api_endpoint,
+                "api_key": row.api_key,
+                "provider_model_name": row.provider_model_name,
+                "served_model_name": row.served_model_name,
+                "model_params": dict(row.model_params or {}),
+            }
+
     async def require_verified_capability(
         self, model_id: UUID, *, capability: str,
     ) -> dict[str, Any]:

@@ -1,6 +1,30 @@
 {
   "components": {
     "schemas": {
+      "CapabilityVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "supports_image_generation": {
+            "title": "Supports Image Generation",
+            "type": "boolean"
+          },
+          "supports_responses_streaming": {
+            "title": "Supports Responses Streaming",
+            "type": "boolean"
+          },
+          "supports_x_search": {
+            "title": "Supports X Search",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supports_x_search",
+          "supports_image_generation",
+          "supports_responses_streaming"
+        ],
+        "title": "CapabilityVerifyRequest",
+        "type": "object"
+      },
       "ChatRequest": {
         "description": "Chat completion request model.\n\nComprehensive request model for LLM chat completions supporting both basic\ntext generation and advanced features like tool calling, streaming, and\nfine-grained generation parameter control.",
         "properties": {
@@ -165,6 +189,68 @@
         "title": "ChatRequest",
         "type": "object"
       },
+      "GeneratedImageArtifact": {
+        "additionalProperties": false,
+        "description": "仅在服务间传输图片字节；业务 App 必须立即转存至对象存储。",
+        "properties": {
+          "content": {
+            "format": "binary",
+            "maxLength": 33554432,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "mime_type": {
+            "pattern": "^image/(png|jpeg|webp)$",
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "provider_artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Artifact Id"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "mime_type",
+          "content"
+        ],
+        "title": "GeneratedImageArtifact",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -176,6 +262,123 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageGenerationRequest": {
+        "additionalProperties": false,
+        "description": "由业务 App 发给模型服务的一次受控文生图请求。",
+        "properties": {
+          "aspect_ratio": {
+            "default": "1:1",
+            "pattern": "^[1-9][0-9]?:[1-9][0-9]?$",
+            "title": "Aspect Ratio",
+            "type": "string"
+          },
+          "count": {
+            "default": 1,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "ImageGenerationRequest.v1",
+            "default": "ImageGenerationRequest.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "prompt",
+          "trace_id"
+        ],
+        "title": "ImageGenerationRequest",
+        "type": "object"
+      },
+      "ImageGenerationResult": {
+        "additionalProperties": false,
+        "description": "模型服务返回给业务 App 的文生图终态。",
+        "properties": {
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GeneratedImageArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Request Id"
+          },
+          "schema_version": {
+            "const": "ImageGenerationResult.v1",
+            "default": "ImageGenerationResult.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "COMPLETED",
+              "REJECTED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ImageGenerationResult",
         "type": "object"
       },
       "ModelArchiveRequest": {
@@ -640,6 +843,67 @@
         "title": "ModelUpdateRequest",
         "type": "object"
       },
+      "ModelUsage": {
+        "additionalProperties": false,
+        "description": "供应商返回的可审计用量投影，缺失字段保持为空而非推测。",
+        "properties": {
+          "input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "provider_usage": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Provider Usage",
+            "type": "object"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          }
+        },
+        "title": "ModelUsage",
+        "type": "object"
+      },
       "OpenAIChatRequest": {
         "description": "OpenAI 兼容的对话补全请求。",
         "properties": {
@@ -776,6 +1040,255 @@
           "messages"
         ],
         "title": "OpenAIChatRequest",
+        "type": "object"
+      },
+      "ResearchCitation": {
+        "additionalProperties": false,
+        "description": "外部来源的最小可审计投影，不保存不可信的完整原文。",
+        "properties": {
+          "author_handle": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Handle"
+          },
+          "canonical_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Canonical Url",
+            "type": "string"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "provider_citation_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Citation Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "provider_citation_id",
+          "canonical_url"
+        ],
+        "title": "ResearchCitation",
+        "type": "object"
+      },
+      "ResearchRequest": {
+        "additionalProperties": false,
+        "description": "由业务 App 发给模型服务的一次受控外部研究请求。",
+        "properties": {
+          "allowed_x_handles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Allowed X Handles",
+            "type": "array"
+          },
+          "enable_image_understanding": {
+            "default": false,
+            "title": "Enable Image Understanding",
+            "type": "boolean"
+          },
+          "enable_video_understanding": {
+            "default": false,
+            "title": "Enable Video Understanding",
+            "type": "boolean"
+          },
+          "excluded_x_handles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Excluded X Handles",
+            "type": "array"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "ResearchRequest.v1",
+            "default": "ResearchRequest.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "search_context_size": {
+            "default": "MEDIUM",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "title": "Search Context Size",
+            "type": "string"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "trace_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "input",
+          "trace_id"
+        ],
+        "title": "ResearchRequest",
+        "type": "object"
+      },
+      "ResearchResult": {
+        "additionalProperties": false,
+        "description": "模型服务返回给业务 App 的外部研究终态。",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "maxLength": 128000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "citations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResearchCitation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Request Id"
+          },
+          "schema_version": {
+            "const": "ResearchResult.v1",
+            "default": "ResearchResult.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ResearchResult",
         "type": "object"
       },
       "ValidationError": {
@@ -1225,6 +1738,57 @@
         ]
       }
     },
+    "/internal/v1/models/{model_id}/capabilities:verify": {
+      "post": {
+        "operationId": "verify_capabilities_internal_v1_models__model_id__capabilities_verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilityVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Capabilities",
+        "tags": [
+          "LLM Responses"
+        ]
+      }
+    },
     "/internal/v1/models/{model_id}/references": {
       "get": {
         "operationId": "get_model_references_internal_v1_models__model_id__references_get",
@@ -1318,6 +1882,88 @@
         "summary": "Change Model Status",
         "tags": [
           "Model Configuration"
+        ]
+      }
+    },
+    "/internal/v1/responses/image-generations": {
+      "post": {
+        "operationId": "generate_image_internal_v1_responses_image_generations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageGenerationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Image",
+        "tags": [
+          "LLM Responses"
+        ]
+      }
+    },
+    "/internal/v1/responses/research": {
+      "post": {
+        "operationId": "research_internal_v1_responses_research_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Research",
+        "tags": [
+          "LLM Responses"
         ]
       }
     }

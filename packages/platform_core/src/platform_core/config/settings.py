@@ -432,6 +432,13 @@ def load_settings(
             merged, _resolve_dependencies(bindings, endpoints)
         )
         service_paths: dict[str, Any] = {
+            "assistant_app": {
+                "storage": {
+                    "local_object_storage_path": str(
+                        data_dir / "assistant_app"
+                    )
+                },
+            },
             "knowledge_core": {
                 "storage": {
                     "local_object_storage_path": str(

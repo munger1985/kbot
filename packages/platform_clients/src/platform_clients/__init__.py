@@ -9,6 +9,7 @@ from .aiops import (
     AIOpsManagementClient,
 )
 from .model import AIModelClient, AIModelConfigClient
+from .generative import GenerativeResponsesClient, GenerativeResponsesClientError
 from .knowledge_core import (
     KnowledgeCoreClient,
     KnowledgeCoreClientError,
@@ -35,6 +36,8 @@ __all__ = [
     "AIOpsManagementClient",
     "AIModelClient",
     "AIModelConfigClient",
+    "GenerativeResponsesClient",
+    "GenerativeResponsesClientError",
     "KnowledgeCoreClient",
     "KnowledgeCoreClientError",
     "KnowledgeCoreResponse",

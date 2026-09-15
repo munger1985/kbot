@@ -20,6 +20,8 @@
 
 `product-facts.md` 是设计依据记录，不是第六项产品功能设计。
 
+实现切片见 [06-implementation-plan.md](06-implementation-plan.md)：Phase A–F（契约、Schema、Model Serving Responses、Assistant 编排、Main API、测试 UI 与单测）已落地；Ashburn 真实 Canary（Phase G）不在该切片执行。
+
 ## 范围与非目标
 
 首版范围是新 App 的页面、资源编排、权限、运行记录和模型服务适配契约。它不创建第二套 Knowledge Core、数据查询引擎、会话运行时或图片对象存储。

@@ -13,9 +13,17 @@
     document.getElementById("knowledge-intro-title").textContent = `当前模式：${modes[mode][0]}`;
     document.getElementById("knowledge-intro-copy").textContent = modes[mode][1];
   }
-  addEventListener("DOMContentLoaded", () => {
+  KBotAssistantShell.ready.then((access) => {
+    if (!access) return;
     document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => selectMode(button.dataset.mode)));
-    document.getElementById("knowledge-form").addEventListener("submit", (event) => { event.preventDefault(); KBotAssistantShell.toast("尚未连接 Agent Runtime，消息没有发送。", "error"); });
-    ["knowledge-new-conversation", "knowledge-refresh"].forEach((id) => document.getElementById(id).addEventListener("click", () => KBotAssistantShell.toast("等待知识问答 API 与 Agent 列表接入。")));
-  }, { once: true });
+    document.getElementById("knowledge-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      KBotAssistantShell.toast("尚未连接 Agent Runtime，消息没有发送。", "error");
+    });
+    ["knowledge-new-conversation", "knowledge-refresh"].forEach((id) => {
+      document.getElementById(id)?.addEventListener("click", () => {
+        KBotAssistantShell.toast("等待知识问答 API 与 Agent 列表接入。");
+      });
+    });
+  });
 })();

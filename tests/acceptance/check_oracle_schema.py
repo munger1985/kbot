@@ -141,6 +141,12 @@ SERVICE_TABLES = {
     "assistant_app": {
         "KBOT_ASST_AGENT",
         "KBOT_ASST_AGENT_VERSION",
+        "KBOT_ASST_MODEL_BINDING",
+        "KBOT_ASST_RUN",
+        "KBOT_ASST_RUN_EVENT",
+        "KBOT_ASST_X_SOURCE",
+        "KBOT_ASST_PROMPT_REVISION",
+        "KBOT_ASST_MEDIA_ASSET",
     },
     "km_asset_app": {
         "KBOT_KM_SOURCE",

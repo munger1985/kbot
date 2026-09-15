@@ -113,3 +113,62 @@ dialog.assistant-dialog { width: min(670px, calc(100vw - 36px)); padding: 0; bor
 
 @media (max-width: 1120px) { .assistant-split { grid-template-columns: minmax(210px, .75fr) minmax(400px, 1.45fr); }.assistant-split > :last-child { grid-column: 1 / -1; }.assistant-search-form { grid-template-columns: 1fr 1fr; }.assistant-search-form > :first-child { grid-column: 1 / -1; } }
 @media (max-width: 820px) { .assistant-sidebar { position: static; width: auto; min-height: auto; }.assistant-sidebar-note { display: none; }.assistant-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.assistant-topbar { position: static; inset: auto; height: auto; min-height: 58px; padding: 12px 18px; }.assistant-main { margin-left: 0; padding: 30px 18px; }.assistant-page-head { align-items: flex-start; flex-direction: column; }.assistant-grid, .assistant-split { grid-template-columns: 1fr; }.assistant-grid > [class*="span-"], .assistant-split > :last-child { grid-column: auto; }.assistant-search-form, .assistant-image-settings { grid-template-columns: 1fr; }.assistant-search-form > :first-child { grid-column: auto; } }
+
+
+body.assistant-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #edf1ee;
+}
+body.assistant-login .assistant-main { margin: 0; padding: 0; max-width: none; }
+.assistant-login-card {
+  width: min(440px, calc(100vw - 32px));
+  padding: 34px;
+  border: 1px solid var(--assistant-line);
+  border-radius: var(--assistant-radius);
+  background: #fcfdfb;
+  box-shadow: var(--assistant-shadow);
+}
+.assistant-login-card .assistant-brand {
+  position: static;
+  margin-bottom: 28px;
+  padding: 0 0 18px;
+  color: var(--assistant-ink);
+  border-bottom: 1px solid var(--assistant-line);
+}
+.assistant-login-card h1 { margin: 0 0 8px; font: 600 28px/1.15 Georgia, "Songti SC", serif; }
+.assistant-login-card > section > p { margin: 0 0 22px; color: var(--assistant-muted); }
+.assistant-login-card .assistant-field { margin-top: 14px; }
+.assistant-login-card button.primary { width: 100%; margin-top: 20px; }
+.assistant-form-error {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e4bdb8;
+  border-radius: 3px;
+  color: var(--assistant-bad);
+  background: #fff1ef;
+}
+
+body.assistant-login [hidden] { display: none !important; }
+.assistant-asset-preview img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; background: #fff; }
+.assistant-source-card { padding: 12px 0; border-bottom: 1px solid var(--assistant-line); }
+.assistant-source-card:last-child { border-bottom: 0; }
+.assistant-source-card small, .assistant-source-card p { color: var(--assistant-muted); }
+.assistant-source-card a { color: var(--assistant-accent); }
+.assistant-history-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--assistant-line);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-history-item:hover { background: #f7faf8; }
+.assistant-history-item small { color: var(--assistant-muted); }
+.assistant-history-item[aria-current="true"] { background: #f4f8f5; }

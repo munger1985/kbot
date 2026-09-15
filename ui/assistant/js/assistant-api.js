@@ -1,14 +1,23 @@
-/* 智能工作台公共 API Client：统一附加请求标识，不保存下游服务凭据。 */
+/* 智能工作台公共 API Client：附加 Authorization，不保存下游服务凭据。 */
 (function () {
   "use strict";
   const basePath = "/api/v1/apps/assistant";
 
   function requestId() {
-    return globalThis.crypto?.randomUUID?.() || `assistant-ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return globalThis.KBotAssistantAuth?.uuid?.()
+      || globalThis.crypto?.randomUUID?.()
+      || `assistant-ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   function baseUrl() {
     return String(globalThis.KBOT_UI_CONFIG?.mainApiBaseUrl || "").trim().replace(/\/+$/, "");
+  }
+
+  function resolveUrl(path) {
+    const normalized = String(path || "");
+    if (normalized.startsWith("/api/")) return `${baseUrl()}${normalized}`;
+    const suffix = normalized.startsWith("/") ? normalized : `/${normalized}`;
+    return `${baseUrl()}${basePath}${suffix}`;
   }
 
   function errorMessage(payload, status) {
@@ -16,6 +25,16 @@
     if (Array.isArray(detail)) return detail.map((item) => item?.msg || "请求内容无效").join("；");
     if (detail && typeof detail === "object") return detail.message || detail.detail || detail.code || `请求失败（HTTP ${status}）`;
     return detail || payload?.message || payload?.code || `请求失败（HTTP ${status}）`;
+  }
+
+  function authHeaders() {
+    const session = globalThis.KBotAssistantAuth?.load?.();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  }
+
+  function redirectIfUnauthorized() {
+    globalThis.KBotAssistantAuth?.clear?.();
+    if (document.body?.dataset?.page !== "login") location.replace("./login.html");
   }
 
   async function decode(response) {
@@ -26,11 +45,24 @@
   }
 
   async function request(path, options = {}) {
-    const headers = { Accept: "application/json", "X-Request-ID": requestId(), ...(options.headers || {}) };
-    if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-    const response = await fetch(`${baseUrl()}${basePath}${path}`, { credentials: "same-origin", cache: "no-store", ...options, headers });
+    const headers = {
+      Accept: "application/json",
+      "X-Request-ID": requestId(),
+      ...authHeaders(),
+      ...(options.headers || {}),
+    };
+    if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+    const response = await fetch(resolveUrl(path), {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...options,
+      headers,
+    });
     const payload = await decode(response);
     if (!response.ok) {
+      if (response.status === 401) redirectIfUnauthorized();
       const error = new Error(errorMessage(payload, response.status));
       error.status = response.status;
       error.code = payload?.code || payload?.detail?.code || "ASSISTANT_REQUEST_FAILED";
@@ -42,31 +74,44 @@
   }
 
   async function json(path, method, payload, options = {}) {
-    return request(path, { ...options, method, body: payload === undefined ? undefined : JSON.stringify(payload) });
+    return request(path, {
+      ...options,
+      method,
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+    });
   }
 
-  async function stream(path, handlers = {}, signal) {
-    const response = await fetch(`${baseUrl()}${basePath}${path}`, { credentials: "same-origin", cache: "no-store", signal, headers: { Accept: "text/event-stream", "Last-Event-ID": String(handlers.lastEventId || 0), "X-Request-ID": requestId() } });
-    if (!response.ok || !response.body) throw new Error(`事件流连接失败（HTTP ${response.status}）`);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const result = await reader.read();
-      buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
-      const blocks = buffer.split(/\r?\n\r?\n/);
-      buffer = blocks.pop() || "";
-      for (const block of blocks) {
-        if (!block || block.startsWith(":")) continue;
-        const event = { id: "", type: "message", data: "" };
-        block.split(/\r?\n/).forEach((line) => { const index = line.indexOf(":"); const field = index < 0 ? line : line.slice(0, index); const value = index < 0 ? "" : line.slice(index + 1).replace(/^ /, ""); if (field === "id") event.id = value; if (field === "event") event.type = value; if (field === "data") event.data += `${event.data ? "\n" : ""}${value}`; });
-        try { event.json = event.data ? JSON.parse(event.data) : null; } catch (_) { event.json = event.data; }
-        handlers.onEvent?.(event);
-        if (event.type === "done") return;
-      }
-      if (result.done) return;
+  async function requestBlob(path, options = {}) {
+    const headers = {
+      Accept: "image/*",
+      "X-Request-ID": requestId(),
+      ...authHeaders(),
+      ...(options.headers || {}),
+    };
+    const response = await fetch(resolveUrl(path), {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...options,
+      headers,
+    });
+    if (!response.ok) {
+      const payload = await decode(response);
+      if (response.status === 401) redirectIfUnauthorized();
+      throw new Error(errorMessage(payload, response.status));
     }
+    return response.blob();
   }
 
-  globalThis.KBotAssistantApi = { basePath, json, request, requestId, stream };
+  function withQuery(path, params) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+    });
+    const query = search.toString();
+    return query ? `${path}?${query}` : path;
+  }
+
+  globalThis.KBotAssistantApi = {
+    basePath, json, request, requestBlob, requestId, withQuery,
+  };
 })();
