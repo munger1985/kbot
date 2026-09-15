@@ -32,7 +32,7 @@ _IMAGE_MAGIC = (
 
 
 class OciGrokResponsesAdapter:
-    """生产路径：对 OCI 端点签发 POST /v1/responses。"""
+    """生产路径：对 OCI OpenAI 兼容端点签发 POST /openai/v1/responses。"""
 
     def __init__(self, *, timeout_seconds: int = 300):
         self._timeout_seconds = timeout_seconds
@@ -74,6 +74,7 @@ class OciGrokResponsesAdapter:
                 "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
                 status_code=503,
             )
+        project = oci_generative_ai_project(material.get("model_params"))
         try:
             signer = self._signer(material)
         except ValueError as exc:
@@ -81,14 +82,18 @@ class OciGrokResponsesAdapter:
                 "PROVIDER_UNAVAILABLE", "当前模型的 OCI 认证材料不完整",
                 status_code=503,
             ) from exc
-        url = f"{endpoint}/v1/responses"
+        url = build_oci_responses_url(endpoint)
 
         def _post() -> requests.Response:
             return requests.post(
                 url,
                 json=body,
                 auth=signer,
-                headers={"Content-Type": "application/json", "Accept": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "OpenAI-Project": project,
+                },
                 timeout=self._timeout_seconds,
             )
 
@@ -150,7 +155,68 @@ class OciGrokResponsesAdapter:
                     status_code=502,
                 )
             return payload
+        code, message = provider_error_fields(payload)
+        logger.warning(
+            "OCI Responses 调用失败：status={} code={} message={}",
+            status, code or "-", message or "-",
+        )
         raise classify_provider_http_error(status, payload)
+
+
+def build_oci_responses_url(endpoint: str) -> str:
+    """把 Chat SDK 的 inference host 规范成 OpenAI 兼容 Responses URL。"""
+    base = str(endpoint or "").strip().rstrip("/")
+    if not base:
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
+            status_code=503,
+        )
+    lowered = base.lower()
+    if lowered.endswith("/openai/v1/responses"):
+        return base
+    if lowered.endswith("/openai/v1"):
+        return f"{base}/responses"
+    if lowered.endswith("/openai"):
+        return f"{base}/v1/responses"
+    if lowered.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/openai/v1/responses"
+
+
+def oci_generative_ai_project(model_params: Any) -> str:
+    """读取 Responses 调用所需的 Generative AI project OCID。"""
+    if not isinstance(model_params, dict):
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型缺少 Generative AI project",
+            status_code=503,
+        )
+    project = str(model_params.get("project") or "").strip()
+    if not project:
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型缺少 Generative AI project",
+            status_code=503,
+        )
+    return project
+
+
+def provider_error_fields(payload: Any) -> tuple[str | None, str | None]:
+    """只取出上游错误码和短消息，避免把完整正文或凭据写入日志。"""
+    if isinstance(payload, str):
+        text = payload.strip()
+        return None, text[:200] if text else None
+    if not isinstance(payload, dict):
+        return None, None
+    error = payload.get("error") if isinstance(payload.get("error"), dict) else payload
+    if not isinstance(error, dict):
+        return None, None
+    code = error.get("code") or error.get("error_code") or payload.get("code")
+    message = error.get("message") or payload.get("message")
+    code_text = str(code).strip() if code is not None else ""
+    message_text = str(message).strip() if message is not None else ""
+    return (
+        code_text[:64] or None,
+        message_text[:200] or None,
+    )
 
 
 def classify_provider_http_error(status: int, payload: Any) -> GenerativeAdapterError:

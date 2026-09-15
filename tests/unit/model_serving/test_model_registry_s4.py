@@ -318,6 +318,8 @@ class ProviderCatalogS4Test(unittest.TestCase):
         self.assertTrue(options)
         oci_option = next(item for item in options if item.provider == "oci")
         self.assertIn("model_params.config_file", oci_option.secret_fields)
+        self.assertIn("project", oci_option.allowed_model_params)
+        self.assertNotIn("model_params.project", oci_option.required_fields)
         self.assertNotIn("top-secret", repr(options).lower())
 
     def test_unknown_model_parameter_is_rejected(self):

@@ -51,7 +51,8 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     },
     (ModelCategory.LLM.value, "oci"): _ProviderSchema(
         ("api_endpoint", "model_params.compartment_id", "model_params.config_file"),
-        _LLM_PARAMS, supports_tool_calling=True, max_context_tokens=131072,
+        (*_LLM_PARAMS, "project"),
+        supports_tool_calling=True, max_context_tokens=131072,
         secret_fields=("model_params.config_file",),
     ),
     (ModelCategory.TXT_EMBEDDING.value, "local_bge"): _ProviderSchema(
