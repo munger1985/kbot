@@ -145,6 +145,24 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def update_collection_profile(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/profile"
+            ),
+            payload=payload,
+            auth_context=auth_context,
+        )
+
     async def update_collection_models(
         self,
         *,

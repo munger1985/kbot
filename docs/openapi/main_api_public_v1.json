@@ -2186,6 +2186,89 @@
         "title": "AssistantBindingUpsertPayload",
         "type": "object"
       },
+      "AssistantDomainCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AssistantDomainCreatePayload",
+        "type": "object"
+      },
+      "AssistantDomainUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ACTIVE",
+                  "DISABLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "AssistantDomainUpdatePayload",
+        "type": "object"
+      },
       "AssistantImageCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -2213,6 +2296,151 @@
           "prompt"
         ],
         "title": "AssistantImageCreatePayload",
+        "type": "object"
+      },
+      "AssistantKnowledgeCoreCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "default_security_level": {
+            "default": 1,
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Default Security Level",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "embedding": {
+            "format": "uuid",
+            "title": "Embedding",
+            "type": "string"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "required": [
+          "display_name",
+          "embedding"
+        ],
+        "title": "AssistantKnowledgeCoreCreatePayload",
+        "type": "object"
+      },
+      "AssistantKnowledgeCoreUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "default_security_level": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Security Level"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ACTIVE",
+                  "DISABLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "visual_embedding": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Embedding"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "AssistantKnowledgeCoreUpdatePayload",
         "type": "object"
       },
       "AssistantLoginPayload": {
@@ -17870,6 +18098,198 @@
         ]
       }
     },
+    "/api/v1/apps/assistant/domains": {
+      "get": {
+        "operationId": "list_domains_api_v1_apps_assistant_domains_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Domains",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_domain_api_v1_apps_assistant_domains_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDomainCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Domain",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/domains/{target_domain_id}": {
+      "delete": {
+        "operationId": "delete_domain_api_v1_apps_assistant_domains__target_domain_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_domain_id",
+            "required": true,
+            "schema": {
+              "title": "Target Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_row_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Row Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Domain",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "get": {
+        "operationId": "get_domain_api_v1_apps_assistant_domains__target_domain_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_domain_id",
+            "required": true,
+            "schema": {
+              "title": "Target Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Domain",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "patch": {
+        "operationId": "update_domain_api_v1_apps_assistant_domains__target_domain_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_domain_id",
+            "required": true,
+            "schema": {
+              "title": "Target Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDomainUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Domain",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
     "/api/v1/apps/assistant/image-generations/runs": {
       "get": {
         "operationId": "list_image_runs_api_v1_apps_assistant_image_generations_runs_get",
@@ -18080,6 +18500,172 @@
           }
         },
         "summary": "List Knowledge Cores",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_knowledge_core_api_v1_apps_assistant_knowledge_cores_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantKnowledgeCoreCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Knowledge Core",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}": {
+      "delete": {
+        "operationId": "delete_knowledge_core_api_v1_apps_assistant_knowledge_cores__collection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Knowledge Core",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "get": {
+        "operationId": "get_knowledge_core_api_v1_apps_assistant_knowledge_cores__collection_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Core",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "patch": {
+        "operationId": "update_knowledge_core_api_v1_apps_assistant_knowledge_cores__collection_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantKnowledgeCoreUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Knowledge Core",
         "tags": [
           "Assistant App"
         ]

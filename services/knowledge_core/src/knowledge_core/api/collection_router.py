@@ -11,6 +11,7 @@ from knowledge_core.application.collections import (
     CollectionDeletionStateError, CollectionInUseError, CollectionNotFoundError, CollectionVersionConflictError, CreateCollectionCommand,
     UpdateCollectionModelsCommand,
     UpdateCollectionParsingSettingsCommand,
+    UpdateCollectionProfileCommand,
 )
 
 router = APIRouter(
@@ -34,6 +35,13 @@ class BindingRequest(BaseModel):
 
 class CollectionStatusRequest(BaseModel):
     status: str = Field(pattern=r"^(ACTIVE|DISABLED)$")
+
+
+class CollectionProfileRequest(BaseModel):
+    expected_row_version: int = Field(ge=1)
+    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    default_security_level: int | None = Field(default=None, ge=0, le=999)
 
 
 class CollectionModelsRequest(BaseModel):
@@ -143,6 +151,39 @@ async def change_collection_status(domain_id: int, collection_id: UUID, payload:
         raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
     except CollectionDeletionStateError as exc:
         raise HTTPException(status_code=409, detail={"code": "COLLECTION_DELETING", "message": str(exc)}) from exc
+    return _collection(entity)
+
+
+@router.patch("/collections/{collection_id}/profile")
+async def update_collection_profile(
+    domain_id: int,
+    collection_id: UUID,
+    payload: CollectionProfileRequest,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    changes = payload.model_dump(exclude_unset=True)
+    try:
+        entity = await request.app.state.kc_collection_service.update_profile(
+            UpdateCollectionProfileCommand(
+                domain_id=domain_id,
+                collection_id=collection_id,
+                expected_row_version=payload.expected_row_version,
+                actor_id=get_actor_id(request),
+                display_name=payload.display_name,
+                description=payload.description,
+                description_set="description" in changes,
+                default_security_level=payload.default_security_level,
+            )
+        )
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
+    except CollectionDeletionStateError as exc:
+        raise HTTPException(status_code=409, detail={"code": "COLLECTION_DELETING", "message": str(exc)}) from exc
+    except CollectionVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail={"code": "COLLECTION_VERSION_CONFLICT", "message": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_COLLECTION", "message": str(exc)}) from exc
     return _collection(entity)
 
 

@@ -14,6 +14,9 @@ from main_api.application import (
     AccessControlService,
     AccessDeniedError,
     AppApiKeyError,
+    DomainConflictError,
+    DomainLifecycleError,
+    DomainManagementService,
     UserAuthService,
     require_app_api_permission,
 )
@@ -108,6 +111,36 @@ class AssistantImageCreatePayload(_Payload):
     count: int = Field(default=1, ge=1, le=4)
 
 
+class AssistantDomainCreatePayload(_Payload):
+    name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class AssistantDomainUpdatePayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    status: Literal["ACTIVE", "DISABLED"] | None = None
+
+
+class AssistantKnowledgeCoreCreatePayload(_Payload):
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    default_security_level: int = Field(default=1, ge=0, le=999)
+    embedding: UUID
+    visual_embedding: UUID | None = None
+
+
+class AssistantKnowledgeCoreUpdatePayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    default_security_level: int | None = Field(default=None, ge=0, le=999)
+    status: Literal["ACTIVE", "DISABLED"] | None = None
+    embedding: UUID | None = None
+    visual_embedding: UUID | None = None
+
+
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     if context.app_id and context.app_id != "assistant":
@@ -135,6 +168,13 @@ def _knowledge(request: Request) -> KnowledgeCoreClient:
 
 def _data_query(request: Request) -> DataQueryClient:
     return cast(DataQueryClient, request.app.state.data_query_client)
+
+
+def _domains(request: Request) -> DomainManagementService:
+    service = getattr(request.app.state, "domain_management_service", None)
+    if service is None:
+        raise RuntimeError("Domain Management Service 尚未初始化")
+    return cast(DomainManagementService, service)
 
 
 def _capabilities_from_bindings(bindings: list[dict[str, Any]]) -> dict[str, Any]:
@@ -188,6 +228,114 @@ async def _require(request: Request, permission: str):
     except AccessDeniedError as exc:
         raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permission}) from exc
     return domain_id, actor_id, snapshot
+
+
+async def _require_any(request: Request, *permissions: str):
+    _require_any_app_permission(request, *permissions)
+    domain_id, actor_id, snapshot = await _snapshot(request)
+    matched = [item for item in permissions if item in set(snapshot.permissions)]
+    if not matched:
+        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permissions[0]})
+    return domain_id, actor_id, snapshot
+
+
+def _auth_for_domain(request: Request, domain_id: int):
+    context = request.state.auth_context
+    if str(context.domain_id) == str(domain_id):
+        return context
+    return context.model_copy(update={"domain_id": str(domain_id)})
+
+
+def _raise_domain_error(exc: DomainConflictError | DomainLifecycleError) -> None:
+    if isinstance(exc, DomainConflictError):
+        raise HTTPException(409, {"code": "DOMAIN_NAME_CONFLICT", "message": str(exc)}) from exc
+    raise HTTPException(exc.status_code, {"code": exc.code, "message": str(exc)}) from exc
+
+
+async def _assistant_collection_models(
+    request: Request,
+    *,
+    embedding: UUID,
+    visual_embedding: UUID | None,
+) -> dict[str, str]:
+    catalog = await load_model_catalog(request)
+    by_id = {str(item.get("model_id")): item for item in catalog}
+    requested = {"embedding": (embedding, 2)}
+    if visual_embedding is not None:
+        requested["visual_embedding"] = (visual_embedding, 3)
+    models: dict[str, str] = {}
+    for role, (model_id, expected_category) in requested.items():
+        row = by_id.get(str(model_id))
+        if row is None or str(row.get("status") or "").upper() != "ACTIVE":
+            raise HTTPException(
+                422,
+                {
+                    "code": "KNOWLEDGE_CORE_MODEL_UNAVAILABLE",
+                    "message": f"模型角色 {role} 绑定的模型未启用或不存在",
+                },
+            )
+        if int(row.get("category") or 0) != expected_category:
+            raise HTTPException(
+                422,
+                {
+                    "code": "KNOWLEDGE_CORE_MODEL_CATEGORY_INVALID",
+                    "message": f"模型角色 {role} 的模型类别不正确",
+                },
+            )
+        models[role] = str(model_id)
+    return models
+
+
+def _collection_items(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("collections", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+async def _domain_resource_conflicts(request: Request, *, domain_id: int) -> list[str]:
+    auth_context = _auth_for_domain(request, domain_id)
+    conflicts: list[str] = []
+    collections = _collection_items(
+        await _knowledge(request).list_collections(
+            domain_id=domain_id, auth_context=auth_context
+        )
+    )
+    live_collections = [
+        item for item in collections if str(item.get("status") or "") not in {"DELETING"}
+    ]
+    if live_collections:
+        conflicts.append(f"{len(live_collections)} 个 Knowledge Core")
+    agents = await _client(request).list_agents(
+        domain_id=domain_id, auth_context=auth_context
+    )
+    live_agents = [
+        item
+        for item in agents
+        if isinstance(item, dict) and str(item.get("status") or "") not in {"ARCHIVED"}
+    ]
+    if live_agents:
+        conflicts.append(f"{len(live_agents)} 个 Agent")
+    runs = await _client(request).list_runs(
+        domain_id=domain_id, auth_context=auth_context, limit=50
+    )
+    live_runs = [
+        item
+        for item in runs
+        if isinstance(item, dict) and str(item.get("status") or "") not in TERMINAL_STATUSES
+    ]
+    if live_runs:
+        conflicts.append(f"{len(live_runs)} 个进行中的 Run")
+    assets = await _client(request).list_media_assets(
+        domain_id=domain_id, auth_context=auth_context, limit=50
+    )
+    if assets:
+        conflicts.append(f"{len(assets)} 个媒体资产")
+    return conflicts
 
 
 async def _snapshot(request: Request):
@@ -288,7 +436,11 @@ async def get_access(request: Request):
 
 @router.get("/model-catalog", response_model=list[ModelCatalogItem])
 async def list_assistant_model_catalog(request: Request):
-    await _require(request, "assistant:model_binding_manage")
+    await _require_any(
+        request,
+        "assistant:model_binding_manage",
+        "assistant:knowledge_core_manage",
+    )
     return await load_model_catalog(request)
 
 
@@ -461,10 +613,211 @@ async def list_runs(
     )
 
 
+@router.get("/domains")
+async def list_domains(request: Request):
+    _, actor_id, _ = await _require(request, "assistant:domain_manage")
+    return await _domains(request).list_for_app(app_id="assistant", user_id=actor_id)
+
+
+@router.post("/domains", status_code=status.HTTP_201_CREATED)
+async def create_domain(payload: AssistantDomainCreatePayload, request: Request):
+    _, actor_id, _ = await _require(request, "assistant:domain_manage")
+    try:
+        return await _domains(request).create_for_app(
+            app_id="assistant",
+            name=payload.name,
+            description=payload.description,
+            actor_id=actor_id,
+        )
+    except (DomainConflictError, DomainLifecycleError) as exc:
+        _raise_domain_error(exc)
+
+
+@router.get("/domains/{target_domain_id}")
+async def get_domain(target_domain_id: int, request: Request):
+    _, actor_id, _ = await _require(request, "assistant:domain_manage")
+    try:
+        return await _domains(request).get_for_app(
+            app_id="assistant", domain_id=target_domain_id, user_id=actor_id
+        )
+    except DomainLifecycleError as exc:
+        _raise_domain_error(exc)
+
+
+@router.patch("/domains/{target_domain_id}")
+async def update_domain(
+    target_domain_id: int,
+    payload: AssistantDomainUpdatePayload,
+    request: Request,
+):
+    _, actor_id, _ = await _require(request, "assistant:domain_manage")
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("status") == "DISABLED":
+        conflicts = await _domain_resource_conflicts(request, domain_id=target_domain_id)
+        if conflicts:
+            raise HTTPException(
+                409,
+                {
+                    "code": "DOMAIN_IN_USE",
+                    "message": "停用前需要先处理：" + "、".join(conflicts),
+                },
+            )
+    try:
+        return await _domains(request).update_for_app(
+            app_id="assistant",
+            domain_id=target_domain_id,
+            user_id=actor_id,
+            actor_id=actor_id,
+            expected_row_version=payload.expected_row_version,
+            name=payload.name,
+            description=payload.description,
+            description_set="description" in changes,
+            status=payload.status,
+        )
+    except (DomainConflictError, DomainLifecycleError) as exc:
+        _raise_domain_error(exc)
+
+
+@router.delete("/domains/{target_domain_id}")
+async def delete_domain(
+    target_domain_id: int,
+    request: Request,
+    expected_row_version: int = Query(ge=1),
+):
+    _, actor_id, _ = await _require(request, "assistant:domain_manage")
+    conflicts = await _domain_resource_conflicts(request, domain_id=target_domain_id)
+    if conflicts:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOMAIN_IN_USE",
+                "message": "删除前需要先处理：" + "、".join(conflicts),
+            },
+        )
+    try:
+        return await _domains(request).disable_for_app(
+            app_id="assistant",
+            domain_id=target_domain_id,
+            user_id=actor_id,
+            actor_id=actor_id,
+            expected_row_version=expected_row_version,
+        )
+    except (DomainConflictError, DomainLifecycleError) as exc:
+        _raise_domain_error(exc)
+
+
 @router.get("/knowledge-cores")
 async def list_knowledge_cores(request: Request):
     domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
-    return await _knowledge(request).list_collections(domain_id=domain_id, auth_context=request.state.auth_context)
+    return await _knowledge(request).list_collections(
+        domain_id=domain_id, auth_context=request.state.auth_context
+    )
+
+
+@router.post("/knowledge-cores", status_code=status.HTTP_201_CREATED)
+async def create_knowledge_core(
+    payload: AssistantKnowledgeCoreCreatePayload,
+    request: Request,
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    models = await _assistant_collection_models(
+        request,
+        embedding=payload.embedding,
+        visual_embedding=payload.visual_embedding,
+    )
+    return await _knowledge(request).create_collection(
+        domain_id=domain_id,
+        payload={
+            "display_name": payload.display_name,
+            "description": payload.description,
+            "default_security_level": payload.default_security_level,
+            "models": models,
+            "metadata": {"owner_app_id": "assistant"},
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/knowledge-cores/{collection_id}")
+async def get_knowledge_core(collection_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).get_collection(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.patch("/knowledge-cores/{collection_id}")
+async def update_knowledge_core(
+    collection_id: UUID,
+    payload: AssistantKnowledgeCoreUpdatePayload,
+    request: Request,
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    changes = payload.model_dump(exclude_unset=True)
+    knowledge = _knowledge(request)
+    auth_context = request.state.auth_context
+    current = await knowledge.get_collection(
+        domain_id=domain_id, collection_id=collection_id, auth_context=auth_context
+    )
+    if int(current.get("row_version") or 0) != payload.expected_row_version:
+        raise HTTPException(
+            409,
+            {"code": "COLLECTION_VERSION_CONFLICT", "message": "Knowledge Core 已被其他请求修改"},
+        )
+    row_version = payload.expected_row_version
+    profile_fields = {"display_name", "description", "default_security_level"}
+    if profile_fields.intersection(changes):
+        profile = {"expected_row_version": row_version}
+        for key in profile_fields:
+            if key in changes:
+                profile[key] = changes[key]
+        current = await knowledge.update_collection_profile(
+            domain_id=domain_id,
+            collection_id=collection_id,
+            payload=profile,
+            auth_context=auth_context,
+        )
+        row_version = int(current.get("row_version") or row_version)
+    if "embedding" in changes or "visual_embedding" in changes:
+        current_models = dict(current.get("models") or current.get("models_json") or {})
+        embedding = payload.embedding or UUID(str(current_models["embedding"]))
+        visual_embedding = (
+            payload.visual_embedding
+            if "visual_embedding" in changes
+            else (UUID(str(current_models["visual_embedding"])) if current_models.get("visual_embedding") else None)
+        )
+        models = await _assistant_collection_models(
+            request, embedding=embedding, visual_embedding=visual_embedding
+        )
+        for role, model_id in current_models.items():
+            models.setdefault(role, str(model_id))
+        current = await knowledge.update_collection_models(
+            domain_id=domain_id,
+            collection_id=collection_id,
+            payload={"models": models, "expected_row_version": row_version},
+            auth_context=auth_context,
+        )
+        row_version = int(current.get("row_version") or row_version)
+    if payload.status is not None:
+        current = await knowledge.change_collection_status(
+            domain_id=domain_id,
+            collection_id=collection_id,
+            status=payload.status,
+            auth_context=auth_context,
+        )
+    return current
+
+
+@router.delete("/knowledge-cores/{collection_id}", status_code=status.HTTP_202_ACCEPTED)
+async def delete_knowledge_core(collection_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).delete_collection(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.get("/agents")

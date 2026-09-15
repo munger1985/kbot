@@ -23,9 +23,9 @@
       </div>
       <div class="assistant-table-wrap">
         <table class="assistant-table">
-          <thead><tr><th>名称</th><th>状态</th><th>Collection</th><th>文本 Embedding</th><th>最近解析</th><th>绑定 Agent</th></tr></thead>
-          <tbody>
-            <tr><td colspan="6"><div class="assistant-empty"><div><strong>当前 Domain 尚无 Knowledge Core</strong><p>需先创建或切换到有权限的 Domain。没有 ACTIVE Knowledge Core 的 Agent 只能保存草稿，不能启用。</p></div></div></td></tr>
+          <thead><tr><th>名称</th><th>状态</th><th>Collection</th><th>文本 Embedding</th><th>默认安全级别</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="kc-rows">
+            <tr><td colspan="7"><div class="assistant-empty"><div><strong>当前 Domain 尚无 Knowledge Core</strong><p>需先创建或切换到有权限的 Domain。没有 ACTIVE Knowledge Core 的 Agent 只能保存草稿，不能启用。</p></div></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -44,24 +44,28 @@
   </section>
 </main>
 <dialog class="assistant-dialog" id="kc-dialog">
-  <form data-resource-form="Knowledge Core">
-    <div class="assistant-dialog-head"><h2>创建 Knowledge Core</h2><button class="assistant-close" type="button" data-close-dialog="kc-dialog" aria-label="关闭">×</button></div>
+  <form id="kc-form">
+    <div class="assistant-dialog-head"><h2 id="kc-dialog-title">创建 Knowledge Core</h2><button class="assistant-close" type="button" data-close-dialog="kc-dialog" aria-label="关闭">×</button></div>
     <div class="assistant-dialog-body">
+      <input id="kc-id" type="hidden">
+      <input id="kc-row-version" type="hidden">
       <div class="assistant-form-grid">
-        <div class="assistant-field"><label for="kc-domain">所属 Domain</label><select id="kc-domain" disabled><option>等待 Domain API 接入</option></select></div>
+        <div class="assistant-field"><label for="kc-domain">所属 Domain</label><input id="kc-domain" readonly></div>
         <div class="assistant-field"><label for="kc-name">名称</label><input id="kc-name" required maxlength="120" placeholder="例如：销售知识库"></div>
-        <div class="assistant-field"><label for="kc-security">默认安全级别</label><select id="kc-security"><option>1</option><option>2</option><option>3</option></select></div>
-        <div class="assistant-field"><label for="kc-embedding">文本 Embedding</label><select id="kc-embedding" disabled><option>等待模型目录接入</option></select></div>
+        <div class="assistant-field full"><label for="kc-description">说明</label><textarea id="kc-description" maxlength="1000" placeholder="说明此 Knowledge Core 覆盖的资料范围。"></textarea></div>
+        <div class="assistant-field"><label for="kc-security">默认安全级别</label><select id="kc-security"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+        <div class="assistant-field"><label for="kc-embedding">文本 Embedding</label><select id="kc-embedding" required><option value="">等待模型目录接入</option></select></div>
+        <div class="assistant-field full"><label for="kc-visual-embedding">视觉 Embedding（可选）</label><select id="kc-visual-embedding"><option value="">不绑定</option></select></div>
       </div>
-      <div class="assistant-notice">创建成功后进入既有 KC 的资料接入与解析流程；文本 Embedding 与已索引内容遵循既有替换限制。</div>
+      <div class="assistant-notice">Knowledge Core 归属当前 Token 中的 Domain，不在浏览器填写隔离标识。文本 Embedding 必须选择已启用模型。</div>
     </div>
-    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="kc-dialog">取消</button><button class="primary" type="submit">创建</button></div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="kc-dialog">取消</button><button class="primary" id="kc-submit" type="submit">创建</button></div>
   </form>
 </dialog>
 <script src="../runtime-config.js"></script>
 <script src="./js/assistant-auth.js"></script>
 <script src="./js/assistant-api.js"></script>
 <script src="./js/assistant-shell.js"></script>
-<script src="./js/assistant-resources.js"></script>
+<script src="./js/assistant-knowledge-cores.js"></script>
 </body>
 </html>

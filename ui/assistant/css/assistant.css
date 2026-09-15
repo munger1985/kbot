@@ -172,3 +172,10 @@ body.assistant-login [hidden] { display: none !important; }
 .assistant-history-item:hover { background: #f7faf8; }
 .assistant-history-item small { color: var(--assistant-muted); }
 .assistant-history-item[aria-current="true"] { background: #f4f8f5; }
+
+.assistant-row-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+button.danger { color: var(--assistant-bad); border-color: #e4bdb8; background: #fff7f6; }
+button.danger:hover { border-color: #c98982; background: #ffece9; }
+.assistant-field input[readonly], .assistant-field input:disabled, .assistant-field select:disabled {
+  color: var(--assistant-muted); background: #f5f8f6;
+}

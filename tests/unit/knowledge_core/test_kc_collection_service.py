@@ -10,10 +10,12 @@ from knowledge_core.application.collections import (
     BindAgentCollectionCommand,
     CollectionNotFoundError,
     CollectionSnapshot,
+    CollectionVersionConflictError,
     CreateCollectionCommand,
     KnowledgeCoreBindingService,
     KnowledgeCoreCollectionService,
     UpdateCollectionModelsCommand,
+    UpdateCollectionProfileCommand,
 )
 
 COLLECTION_ID = uuid7()
@@ -354,6 +356,11 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
         uow.commit.assert_not_awaited()
 
 class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    def _service(self, repository):
+        uow = FakeUnitOfWork(repository)
+        service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
+        return service, uow
+
     async def test_status_change_is_explicit_and_scoped(self):
         collection = collection_fixture()
         repo = FakeCollectionRepository(existing=collection)
@@ -431,6 +438,49 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, existing.attempt_count)
         self.assertEqual("DELETING", collection.status)
         uow.commit.assert_awaited_once()
+
+    async def test_updates_profile_and_increments_row_version(self):
+        collection = collection_fixture(row_version=1)
+        service, uow = self._service(FakeCollectionRepository(existing=collection))
+
+        updated = await service.update_profile(
+            UpdateCollectionProfileCommand(
+                domain_id=8,
+                collection_id=COLLECTION_ID,
+                expected_row_version=1,
+                display_name="新名称",
+                description="说明",
+                description_set=True,
+                default_security_level=2,
+                actor_id="user:7",
+            )
+        )
+
+        self.assertIsInstance(updated, CollectionSnapshot)
+        self.assertEqual("新名称", updated.display_name)
+        self.assertEqual("说明", updated.description)
+        self.assertEqual(2, updated.default_security_level)
+        self.assertEqual(2, updated.row_version)
+        self.assertEqual("user:7", collection.updated_by)
+        uow.commit.assert_awaited_once()
+
+    async def test_profile_version_conflict_does_not_commit(self):
+        collection = collection_fixture(row_version=3)
+        service, uow = self._service(FakeCollectionRepository(existing=collection))
+
+        with self.assertRaises(CollectionVersionConflictError):
+            await service.update_profile(
+                UpdateCollectionProfileCommand(
+                    domain_id=8,
+                    collection_id=COLLECTION_ID,
+                    expected_row_version=1,
+                    display_name="新名称",
+                )
+            )
+
+        self.assertEqual("Asset Knowledge", collection.display_name)
+        self.assertEqual(3, collection.row_version)
+        uow.commit.assert_not_awaited()
 
 
 if __name__ == "__main__":

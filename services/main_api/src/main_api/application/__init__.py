@@ -2,6 +2,7 @@
 
 from .domain_management import (
     DomainConflictError,
+    DomainLifecycleError,
     DomainManagementService,
 )
 from .domain_validation import DomainValidationService
@@ -54,6 +55,7 @@ __all__ = [
     "GLOBAL_ADMIN_USER_ID",
     "is_reserved_global_admin",
     "DomainConflictError",
+    "DomainLifecycleError",
     "DomainManagementService",
     "DomainValidationService",
     "KM_PORTAL_DOMAIN_NAME",

@@ -132,6 +132,18 @@ class ChangeCollectionStatusCommand:
 
 
 @dataclass(frozen=True)
+class UpdateCollectionProfileCommand:
+    domain_id: int
+    collection_id: UUID
+    expected_row_version: int
+    actor_id: str = "svc:knowledge-core"
+    display_name: str | None = None
+    description: str | None = None
+    description_set: bool = False
+    default_security_level: int | None = None
+
+
+@dataclass(frozen=True)
 class UpdateCollectionModelsCommand:
     domain_id: int
     collection_id: UUID
@@ -270,6 +282,56 @@ class KnowledgeCoreCollectionService:
             collection.status = command.status
             collection.updated_by = command.actor_id
             await uow.session.flush()
+            snapshot = _collection_snapshot(collection)
+            await uow.commit()
+            return snapshot
+
+    async def update_profile(
+        self, command: UpdateCollectionProfileCommand
+    ) -> CollectionSnapshot:
+        """更新 Collection 名称、说明和默认安全级别。"""
+        display_name = (
+            command.display_name.strip() if command.display_name is not None else None
+        )
+        if command.display_name is not None and not display_name:
+            raise ValueError("display_name is required")
+        if command.default_security_level is not None and command.default_security_level < 0:
+            raise ValueError("default_security_level must be non-negative")
+        async with self._uow_factory() as uow:
+            if uow.collections is None or uow.session is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            collection = await uow.collections.get_by_id_scope(
+                domain_id=command.domain_id,
+                collection_id=command.collection_id,
+                lock=True,
+            )
+            if collection is None:
+                raise CollectionNotFoundError("Collection not found")
+            if collection.status in {"DELETING", "DELETION_FAILED"}:
+                raise CollectionDeletionStateError("Collection is in deletion lifecycle")
+            if int(collection.row_version) != command.expected_row_version:
+                raise CollectionVersionConflictError("Collection 已被其他请求修改")
+            changed = False
+            if display_name is not None and display_name != collection.display_name:
+                collection.display_name = display_name
+                changed = True
+            if command.description_set:
+                description = command.description.strip() if command.description else None
+                if description == "":
+                    description = None
+                if description != collection.description:
+                    collection.description = description
+                    changed = True
+            if (
+                command.default_security_level is not None
+                and int(command.default_security_level) != int(collection.default_security_level)
+            ):
+                collection.default_security_level = int(command.default_security_level)
+                changed = True
+            if changed:
+                collection.updated_by = command.actor_id
+                collection.row_version = int(collection.row_version) + 1
+                await uow.session.flush()
             snapshot = _collection_snapshot(collection)
             await uow.commit()
             return snapshot

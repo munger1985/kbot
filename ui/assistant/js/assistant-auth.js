@@ -171,6 +171,6 @@
   }
 
   globalThis.KBotAssistantAuth = {
-    changePassword, clear, load, login, passwordRuleError, raw, uuid,
+    changePassword, clear, load, login, passwordRuleError, raw, save, uuid,
   };
 })();
