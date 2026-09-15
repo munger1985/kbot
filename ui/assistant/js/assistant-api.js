@@ -111,7 +111,38 @@
     return query ? `${path}?${query}` : path;
   }
 
+  const ModelCategory = Object.freeze({
+    LLM: 1,
+    TXT_EMBEDDING: 2,
+    IMG_EMBEDDING: 3,
+    VLM: 5,
+    OCR: 6,
+  });
+
+  function items(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.models)) return payload.models;
+    return [];
+  }
+
+  function modelCategory(row) {
+    const raw = String(row?.category ?? row?.model_type ?? row?.model_category ?? "").trim().toUpperCase();
+    if (!raw) return NaN;
+    if (raw === "EMBEDDING" || raw === "TEXT_EMBEDDING") return ModelCategory.TXT_EMBEDDING;
+    if (raw === "IMAGE_EMBEDDING" || raw === "VISUAL_EMBEDDING") return ModelCategory.IMG_EMBEDDING;
+    if (ModelCategory[raw] !== undefined) return ModelCategory[raw];
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : NaN;
+  }
+
+  function isActiveModel(row) {
+    const status = String(row?.status ?? "").trim().toUpperCase();
+    return status === "ACTIVE" || status === "ENABLED" || status === "1";
+  }
+
   globalThis.KBotAssistantApi = {
     basePath, json, request, requestBlob, requestId, withQuery,
+    ModelCategory, items, modelCategory, isActiveModel,
   };
 })();

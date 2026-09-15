@@ -74,8 +74,8 @@
       KBotAssistantApi.json("/bindings", "GET"),
       KBotAssistantApi.json("/model-catalog", "GET"),
     ]);
-    bindings = Array.isArray(bindingRows) ? bindingRows : [];
-    catalog = (Array.isArray(catalogRows) ? catalogRows : []).filter((row) => String(row.status || "").toUpperCase() === "ACTIVE");
+    bindings = Array.isArray(bindingRows) ? bindingRows : KBotAssistantApi.items(bindingRows);
+    catalog = KBotAssistantApi.items(catalogRows).filter((row) => KBotAssistantApi.isActiveModel(row));
     renderBindings();
     const knowledge = catalog;
     const search = catalog.filter((row) => row.supports_x_search);

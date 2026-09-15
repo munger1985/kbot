@@ -1,5 +1,6 @@
 """Main API 模型目录聚合接口测试。"""
 
+from decimal import Decimal
 import unittest
 
 from fastapi import FastAPI
@@ -128,6 +129,57 @@ class MainApiModelCatalogTest(unittest.TestCase):
             [row["model_id"] for row in payload],
         )
         self.assertEqual([1, 2, 6], [row["category"] for row in payload])
+
+    def test_catalog_normalizes_enabled_status_and_category_aliases(self):
+        text_id = uuid7()
+        visual_id = uuid7()
+        app = FastAPI()
+        app.state.model_config_clients = (
+            _ModelClient(
+                [
+                    {
+                        "model_id": str(text_id),
+                        "served_model_name": "embed-prod",
+                        "display_name": "文本向量",
+                        "category": Decimal("2"),
+                        "provider": "local_qwen",
+                        "status": 1,
+                    },
+                    {
+                        "model_id": str(uuid7()),
+                        "served_model_name": "embed-draft",
+                        "display_name": "草稿向量",
+                        "category": "TXT_EMBEDDING",
+                        "provider": "local_qwen",
+                        "status": "DRAFT",
+                    },
+                ]
+            ),
+            _ModelClient(
+                [
+                    {
+                        "model_id": str(visual_id),
+                        "served_model_name": "visual-prod",
+                        "display_name": "视觉向量",
+                        "category": "VISUAL_EMBEDDING",
+                        "provider": "local_qwen",
+                        "status": "ENABLED",
+                    }
+                ]
+            ),
+        )
+        app.include_router(router)
+
+        response = TestClient(app).get("/api/v1/model-catalog")
+
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual(
+            [str(text_id), str(visual_id)],
+            [row["model_id"] for row in payload],
+        )
+        self.assertEqual([2, 3], [row["category"] for row in payload])
+        self.assertEqual(["ACTIVE", "ACTIVE"], [row["status"] for row in payload])
 
 
 if __name__ == "__main__":

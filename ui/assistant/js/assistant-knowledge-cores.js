@@ -32,6 +32,10 @@
     return row?.models || row?.models_json || {};
   }
 
+  function modelsByCategory(category) {
+    return catalog.filter((row) => KBotAssistantApi.modelCategory(row) === category);
+  }
+
   function modelLabel(modelId) {
     if (!modelId) return "—";
     const row = catalog.find((item) => String(item.model_id) === String(modelId));
@@ -63,15 +67,16 @@
     document.getElementById("kc-id").value = "";
     document.getElementById("kc-row-version").value = "";
     document.getElementById("kc-domain").value = currentDomainLabel();
+    const textEmbeddings = modelsByCategory(KBotAssistantApi.ModelCategory.TXT_EMBEDDING);
     fillSelect(
       document.getElementById("kc-embedding"),
-      catalog.filter((row) => Number(row.category) === 2),
+      textEmbeddings,
       "",
-      catalog.some((row) => Number(row.category) === 2) ? "选择文本 Embedding" : "当前没有可用的文本 Embedding",
+      textEmbeddings.length ? "选择文本 Embedding" : "当前没有可用的文本 Embedding",
     );
     fillSelect(
       document.getElementById("kc-visual-embedding"),
-      catalog.filter((row) => Number(row.category) === 3),
+      modelsByCategory(KBotAssistantApi.ModelCategory.IMG_EMBEDDING),
       "",
       "不绑定",
     );
@@ -90,13 +95,13 @@
     document.getElementById("kc-security").value = String(row.default_security_level ?? 1);
     fillSelect(
       document.getElementById("kc-embedding"),
-      catalog.filter((item) => Number(item.category) === 2),
+      modelsByCategory(KBotAssistantApi.ModelCategory.TXT_EMBEDDING),
       models.embedding,
       "选择文本 Embedding",
     );
     fillSelect(
       document.getElementById("kc-visual-embedding"),
-      catalog.filter((item) => Number(item.category) === 3),
+      modelsByCategory(KBotAssistantApi.ModelCategory.IMG_EMBEDDING),
       models.visual_embedding,
       "不绑定",
     );
@@ -157,9 +162,7 @@
       KBotAssistantApi.json("/model-catalog", "GET"),
     ]);
     rows = collectionItems(listed);
-    catalog = (Array.isArray(catalogRows) ? catalogRows : []).filter(
-      (row) => String(row.status || "").toUpperCase() === "ACTIVE",
-    );
+    catalog = KBotAssistantApi.items(catalogRows).filter((row) => KBotAssistantApi.isActiveModel(row));
     renderRows();
   }
 

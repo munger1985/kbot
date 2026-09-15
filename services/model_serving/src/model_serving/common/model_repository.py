@@ -3,8 +3,9 @@
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
+from platform_core.dictionary import coerce_model_category
 from platform_core.exceptions import DatabaseException, DataNotFoundException
 
 from .entities.ai_model import AIModelEntity
@@ -57,15 +58,19 @@ class AIModelRepository(ModelRepositoryBase[AIModelEntity]):
         self, *, category: int | None = None,
     ) -> Sequence[AIModelEntity]:
         try:
-            conditions = []
-            if category is not None:
-                conditions.append(AIModelEntity.category == category)
             result = await self.session.execute(
-                select(AIModelEntity)
-                .where(and_(*conditions))
-                .order_by(AIModelEntity.served_model_name)
+                select(AIModelEntity).order_by(AIModelEntity.served_model_name)
             )
-            return result.scalars().all()
+            rows = result.scalars().all()
+            if category is None:
+                return rows
+            expected = coerce_model_category(category)
+            if expected is None:
+                return []
+            return [
+                row for row in rows
+                if coerce_model_category(row.category) == expected
+            ]
         except Exception as exc:
             raise DatabaseException("读取模型目录失败", original_error=exc)
 

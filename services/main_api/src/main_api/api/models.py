@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from platform_clients import AIModelConfigClient
 from platform_core.contracts import PUBLIC_API_V1
+from platform_core.dictionary import coerce_model_category, is_enabled_model_status
 
 
 router = APIRouter(
@@ -46,6 +47,23 @@ def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:
     return tuple(clients)
 
 
+def _normalize_catalog_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    """只保留已启用模型，并把类别/状态规范成公开目录契约。"""
+    category = coerce_model_category(row.get("category"))
+    if category is None or not is_enabled_model_status(row.get("status")):
+        return None
+    return {
+        **row,
+        "category": int(category),
+        "status": "ACTIVE",
+        "model_params": {
+            key: value
+            for key, value in (row.get("model_params") or {}).items()
+            if key != "config_file"
+        },
+    }
+
+
 async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
     """聚合各模型进程中的已启用模型，供各公开 App 安全复用。"""
     results = await asyncio.gather(
@@ -67,17 +85,10 @@ async def load_model_catalog(request: Request) -> list[dict[str, Any]]:
             detail="所有模型目录服务当前均不可用",
         )
     rows = [
-        {
-            **row,
-            "model_params": {
-                key: value
-                for key, value in (row.get("model_params") or {}).items()
-                if key != "config_file"
-            },
-        }
+        normalized
         for batch in batches
         for row in batch
-        if row.get("status") == "ACTIVE"
+        if (normalized := _normalize_catalog_row(row)) is not None
     ]
     rows.sort(
         key=lambda row: (

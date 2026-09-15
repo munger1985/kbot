@@ -22,6 +22,11 @@ from main_api.application import (
 )
 from platform_clients import AssistantAppClient, AssistantAppClientError, DataQueryClient, KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
+from platform_core.dictionary import (
+    ModelCategory,
+    coerce_model_category,
+    is_enabled_model_status,
+)
 from platform_core.security import get_auth_context
 
 
@@ -260,13 +265,13 @@ async def _assistant_collection_models(
 ) -> dict[str, str]:
     catalog = await load_model_catalog(request)
     by_id = {str(item.get("model_id")): item for item in catalog}
-    requested = {"embedding": (embedding, 2)}
+    requested = {"embedding": (embedding, ModelCategory.TXT_EMBEDDING)}
     if visual_embedding is not None:
-        requested["visual_embedding"] = (visual_embedding, 3)
+        requested["visual_embedding"] = (visual_embedding, ModelCategory.IMG_EMBEDDING)
     models: dict[str, str] = {}
     for role, (model_id, expected_category) in requested.items():
         row = by_id.get(str(model_id))
-        if row is None or str(row.get("status") or "").upper() != "ACTIVE":
+        if row is None or not is_enabled_model_status(row.get("status")):
             raise HTTPException(
                 422,
                 {
@@ -274,7 +279,7 @@ async def _assistant_collection_models(
                     "message": f"模型角色 {role} 绑定的模型未启用或不存在",
                 },
             )
-        if int(row.get("category") or 0) != expected_category:
+        if coerce_model_category(row.get("category")) != expected_category:
             raise HTTPException(
                 422,
                 {

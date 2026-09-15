@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Request
 
 from platform_core.contracts import PUBLIC_API_V1
+from platform_core.dictionary import is_enabled_model_status
 
 
 def create_openai_models_router(*, category: int) -> APIRouter:
@@ -20,7 +21,7 @@ def create_openai_models_router(*, category: int) -> APIRouter:
                 "owned_by": "kbot-model-serving",
             }
             for row in rows
-            if int(row.get("status") or 0) == 1
+            if is_enabled_model_status(row.get("status"))
         ]
         return {"object": "list", "data": data}
 

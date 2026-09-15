@@ -49,6 +49,11 @@ class ModelOpenAIContractTest(unittest.TestCase):
                         "status": 1,
                     },
                     {
+                        "model_id": "019c0000-0000-7000-8000-000000000003",
+                        "served_model_name": "chat-active",
+                        "status": "ACTIVE",
+                    },
+                    {
                         "model_id": "019c0000-0000-7000-8000-000000000002",
                         "served_model_name": "chat-disabled",
                         "status": 0,
@@ -59,7 +64,7 @@ class ModelOpenAIContractTest(unittest.TestCase):
         app.state.model_registry = Registry()
         app.include_router(create_openai_models_router(category=1))
         payload = TestClient(app).get("/api/v1/models").json()
-        self.assertEqual(["chat-prod"], [item["id"] for item in payload["data"]])
+        self.assertEqual(["chat-prod", "chat-active"], [item["id"] for item in payload["data"]])
         self.assertNotIn("model_id", payload["data"][0])
 
 

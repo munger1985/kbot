@@ -171,6 +171,58 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             self.assertIn("KBotAssistantShell.ready", source, name)
             self.assertNotIn("DOMContentLoaded", source, name)
 
+    def test_knowledge_core_catalog_uses_contract_helpers(self):
+        api = (UI_ROOT / "js" / "assistant-api.js").read_text(encoding="utf-8")
+        kc = (UI_ROOT / "js" / "assistant-knowledge-cores.js").read_text(encoding="utf-8")
+        management = (UI_ROOT / "js" / "assistant-management.js").read_text(encoding="utf-8")
+        self.assertIn("function items(", api)
+        self.assertIn("function modelCategory(", api)
+        self.assertIn("function isActiveModel(", api)
+        self.assertIn("TXT_EMBEDDING", api)
+        self.assertIn("IMG_EMBEDDING", api)
+        self.assertIn("KBotAssistantApi.items(", kc)
+        self.assertIn("KBotAssistantApi.isActiveModel(", kc)
+        self.assertIn("KBotAssistantApi.modelCategory(", kc)
+        self.assertIn("ModelCategory.TXT_EMBEDDING", kc)
+        self.assertIn("ModelCategory.IMG_EMBEDDING", kc)
+        self.assertNotIn("Number(row.category) === 2", kc)
+        self.assertNotIn("Number(item.category) === 2", kc)
+        self.assertIn("KBotAssistantApi.items(", management)
+        self.assertIn("KBotAssistantApi.isActiveModel(", management)
+
+    def test_catalog_helpers_unwrap_and_fill_embedding_categories(self):
+        script = UI_ROOT / "js" / "assistant-api.js"
+        result = subprocess.run(
+            [
+                "node",
+                "-e",
+                """
+const fs = require("fs");
+const vm = require("vm");
+const sandbox = { console };
+sandbox.globalThis = sandbox;
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
+const api = sandbox.KBotAssistantApi;
+const payload = { items: [
+  { model_id: "text-1", category: "TXT_EMBEDDING", status: 1 },
+  { model_id: "text-2", category: 2, status: "ENABLED" },
+  { model_id: "visual-1", category: "VISUAL_EMBEDDING", status: "ACTIVE" },
+  { model_id: "draft", category: 2, status: 0 },
+]};
+const rows = api.items(payload).filter(api.isActiveModel);
+if (rows.length !== 3) process.exit(2);
+if (rows.filter((row) => api.modelCategory(row) === api.ModelCategory.TXT_EMBEDDING).length !== 2) process.exit(3);
+if (rows.filter((row) => api.modelCategory(row) === api.ModelCategory.IMG_EMBEDDING).length !== 1) process.exit(4);
+""",
+                str(script),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr or result.stdout)
+
     def test_shell_renders_chrome_before_access_then_removes_by_permission(self):
         source = (UI_ROOT / "js" / "assistant-shell.js").read_text(encoding="utf-8")
         self.assertIn('insertAdjacentHTML("afterbegin"', source)

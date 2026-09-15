@@ -1,5 +1,6 @@
 """Model Serving S4 生命周期与一致性测试。"""
 
+from decimal import Decimal
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -108,6 +109,13 @@ def _model(*, status=1, category=1, model_params=None):
 
 
 class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
+    def test_safe_projects_decimal_status_and_category(self):
+        row = _model(status=Decimal("1"), category=Decimal("2"))
+        payload = ModelRegistryService._safe(row)
+        self.assertEqual(2, payload["category"])
+        self.assertEqual("ACTIVE", payload["status"])
+        self.assertNotIn("api_key", payload)
+
     async def test_runtime_reload_failure_is_published_for_request_actor(self):
         row = _model()
         published = []

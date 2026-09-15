@@ -1,4 +1,6 @@
+from decimal import Decimal, InvalidOperation
 from enum import IntEnum, Enum
+from typing import Any
 
 class Status(IntEnum):
     """状态枚举"""
@@ -225,3 +227,58 @@ class UserTokenStatus(str, Enum):
     REVOKED = "revoked"
     EXPIRED = "expired"
     LOGGED_OUT = "logged_out"
+
+
+_MODEL_CATEGORY_ALIASES = {
+    "EMBEDDING": ModelCategory.TXT_EMBEDDING,
+    "TEXT_EMBEDDING": ModelCategory.TXT_EMBEDDING,
+    "IMAGE_EMBEDDING": ModelCategory.IMG_EMBEDDING,
+    "VISUAL_EMBEDDING": ModelCategory.IMG_EMBEDDING,
+}
+
+
+def coerce_model_category(value: Any) -> ModelCategory | None:
+    """把目录类别规范成 ModelCategory；无法识别时返回 None。"""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, ModelCategory):
+        return value
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return ModelCategory(int(value))
+        except ValueError:
+            return None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    try:
+        return ModelCategory[text]
+    except KeyError:
+        pass
+    aliased = _MODEL_CATEGORY_ALIASES.get(text)
+    if aliased is not None:
+        return aliased
+    try:
+        return ModelCategory(int(Decimal(text)))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def is_enabled_model_status(value: Any) -> bool:
+    """判断模型是否处于已启用生命周期（ACTIVE / ENABLED / Status.ENABLED）。"""
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, Status):
+        return value is Status.ENABLED
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return int(value) == int(Status.ENABLED)
+        except (TypeError, ValueError):
+            return False
+    text = str(value).strip().upper()
+    if text in {"ACTIVE", "ENABLED"}:
+        return True
+    try:
+        return int(Decimal(text)) == int(Status.ENABLED)
+    except (InvalidOperation, ValueError, TypeError):
+        return False
