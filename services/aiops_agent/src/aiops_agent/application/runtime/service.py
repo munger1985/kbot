@@ -85,7 +85,8 @@ from aiops_agent.application.reporting import (
     render_pdf,
     report_presentation,
     resolve_historical_report_template,
-    resolve_system_template,
+    resolve_report_type_template,
+    template_snapshot,
     validate_template_definition,
 )
 from aiops_agent.orchestration import (
@@ -2937,9 +2938,9 @@ class AIOpsRuntimeService:
             "DAILY": "数据库日常巡检报告",
             "WEEKLY": "数据库周度巡检报告",
         }.get(schedule_type, "数据库定期巡检报告")
-        report_template = resolve_system_template(
-            "system:inspection.daily"
-        ) if schedule_type == "DAILY" else None
+        report_template = resolve_report_type_template(report_type)
+        if report_template is None:
+            raise state_conflict("巡检报告缺少可重现的系统模板")
         period_start = datetime.fromisoformat(
             str(inspection["period_start"])
         )
@@ -3026,16 +3027,7 @@ class AIOpsRuntimeService:
                 "producer": "aiops.agent-turn",
                 "llm_used": True,
                 "source_turn_result_hash": source_artifact.content_hash,
-                "template": (
-                    {
-                        "template_ref": report_template.template_ref,
-                        "version": report_template.version,
-                        "content_hash": report_template.content_hash,
-                        "definition": report_template.definition,
-                    }
-                    if report_template is not None
-                    else {}
-                ),
+                "template": template_snapshot(report_template),
             },
             recommendations=recommendations,
         )
@@ -3073,16 +3065,8 @@ class AIOpsRuntimeService:
                 status=status,
                 period_start=period_start,
                 period_end=period_end,
-                template_id=(
-                    report_template.template_ref
-                    if report_template is not None
-                    else inspection["template_id"]
-                ),
-                template_version=(
-                    report_template.version
-                    if report_template is not None
-                    else inspection["template_version"]
-                ),
+                template_id=report_template.template_ref,
+                template_version=report_template.version,
                 generated_by_task_id=task.ops_task_id,
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
@@ -3340,6 +3324,9 @@ class AIOpsRuntimeService:
             f"已完成 {int(source.get('observation_count', 0))} 项观测，"
             f"发现 {int(source.get('gap_count', 0))} 个数据缺口"
         )
+        report_template = resolve_report_type_template(report_type)
+        if report_template is None:
+            raise state_conflict("巡检报告缺少可重现的系统模板")
         content = ReportContent(
             report_key=report_key,
             report_type=report_type,
@@ -3381,6 +3368,7 @@ class AIOpsRuntimeService:
                 "source_provenance": dict(
                     source.get("provenance", {})
                 ),
+                "template": template_snapshot(report_template),
             },
         )
         payload = content.model_dump(mode="json")
@@ -3424,8 +3412,8 @@ class AIOpsRuntimeService:
                 status=status,
                 period_start=period_start,
                 period_end=period_end,
-                template_id=inspection["template_id"],
-                template_version=inspection["template_version"],
+                template_id=report_template.template_ref,
+                template_version=report_template.version,
                 generated_by_task_id=task.ops_task_id,
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=content_hash,
@@ -3649,12 +3637,7 @@ class AIOpsRuntimeService:
                 "model_receipt_hashes": list(
                     source.get("model_receipt_hashes") or ()
                 ),
-                "template": {
-                    "template_ref": template.template_ref,
-                    "version": template.version,
-                    "content_hash": template.content_hash,
-                    "definition": template.definition,
-                },
+                "template": template_snapshot(template),
             },
         )
         payload = content.model_dump(mode="json")
@@ -3899,6 +3882,9 @@ class AIOpsRuntimeService:
         report_status = (
             "PARTIAL" if result == "INCONCLUSIVE" else "READY"
         )
+        report_template = resolve_report_type_template("COMPARISON")
+        if report_template is None:
+            raise state_conflict("对比报告缺少可重现的系统模板")
         summary = {
             "RESOLVED": "处理后的验证证据表明目标问题已经解决",
             "IMPROVED": "处理后的直接效果指标已改善",
@@ -3965,6 +3951,7 @@ class AIOpsRuntimeService:
                 "deterministic": True,
                 "llm_used": False,
                 "comparison_result_hash": comparison_hash,
+                "template": template_snapshot(report_template),
             },
         )
         report_payload = report_content.model_dump(mode="json")
@@ -4008,8 +3995,8 @@ class AIOpsRuntimeService:
                 after_start=comparison.after_start,
                 after_end=comparison.after_end,
                 result=result,
-                template_id=proposal.action_template_id,
-                template_version=proposal.action_template_version,
+                template_id=report_template.template_ref,
+                template_version=report_template.version,
                 generated_by_task_id=task.ops_task_id,
                 content_artifact_id=report_artifact.artifact_id,
                 content_hash=report_hash,

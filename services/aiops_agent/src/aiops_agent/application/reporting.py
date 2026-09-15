@@ -35,6 +35,7 @@ class ReportTemplate:
     allowed_period_kinds: tuple[str, ...]
     sections: tuple[str, ...]
     definition: dict[str, Any]
+    report_types: tuple[str, ...] = ()
 
     @property
     def content_hash(self) -> str:
@@ -97,12 +98,34 @@ def _markdown_report_items(value: str) -> list[str]:
     ]
 
 
+def _comparison_report_items(fact: dict[str, Any]) -> list[str]:
+    """把处置验证事实投影为 FINDINGS 可读段落。"""
+    items = [f"对比结论：{fact.get('result') or 'INCONCLUSIVE'}"]
+    signals = fact.get("primary_signals")
+    if isinstance(signals, dict):
+        items.extend(
+            f"{key}：{value}"
+            for key, value in signals.items()
+            if value is not None
+        )
+    rationale = [
+        str(item) for item in list(fact.get("rationale_codes") or ()) if item
+    ]
+    if rationale:
+        items.append("判定依据：" + "、".join(rationale))
+    return items
+
+
 def _report_fact_items(facts: list[dict[str, Any]]) -> list[str]:
     """按事实语义生成可直接进入 FINDINGS 的可读段落。"""
     result: list[str] = []
     for fact in facts:
-        if str(fact.get("kind") or "") == "agent_health_inspection":
+        kind = str(fact.get("kind") or "")
+        if kind == "agent_health_inspection":
             result.extend(_markdown_report_items(str(fact.get("markdown") or "")))
+            continue
+        if kind == "comparison_result":
+            result.extend(_comparison_report_items(fact))
             continue
         result.append(str(fact.get("summary") or fact.get("fact_summary") or fact))
     return result
@@ -131,9 +154,22 @@ def closed_period_window(
     return start.astimezone(UTC), end.astimezone(UTC)
 
 
+_INSPECTION_SECTIONS = (
+    "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+    "RISK_OVERVIEW", "FINDINGS", "RECOMMENDATIONS",
+    "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+)
+_PERIOD_INSPECTION_SECTIONS = (
+    "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+    "RISK_OVERVIEW", "TREND", "FINDINGS", "ACTIONS",
+    "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+)
+
+
 def _system_template(
     *, key: str, name: str, source_kinds: tuple[str, ...],
     periods: tuple[str, ...], sections: tuple[str, ...],
+    report_types: tuple[str, ...],
 ) -> ReportTemplate:
     definition = {
         "schema_version": "REPORT_TEMPLATE.v1",
@@ -145,7 +181,7 @@ def _system_template(
     return ReportTemplate(
         template_ref=f"system:{key}", version="1", display_name=name,
         applicable_source_kinds=source_kinds, allowed_period_kinds=periods,
-        sections=sections, definition=definition,
+        sections=sections, definition=definition, report_types=report_types,
     )
 
 
@@ -155,6 +191,7 @@ SYSTEM_REPORT_TEMPLATES = {
         _system_template(
             key="diagnosis.standard", name="标准诊断报告",
             source_kinds=("CHAT", "ALERT"), periods=("AD_HOC",),
+            report_types=("INCIDENT", "PERFORMANCE"),
             sections=(
                 "EXECUTIVE_SUMMARY", "SCOPE", "ALERT_TIMELINE",
                 "ROOT_CAUSE", "FINDINGS", "RECOMMENDATIONS", "ACTIONS",
@@ -164,40 +201,55 @@ SYSTEM_REPORT_TEMPLATES = {
         _system_template(
             key="inspection.daily", name="日常巡检报告",
             source_kinds=("INSPECTION",), periods=("DAILY",),
-            sections=(
-                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
-                "RISK_OVERVIEW", "FINDINGS", "RECOMMENDATIONS",
-                "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
-            ),
+            report_types=("INSPECTION_DAILY",),
+            sections=_INSPECTION_SECTIONS,
+        ),
+        _system_template(
+            key="inspection.weekly", name="周度巡检报告",
+            source_kinds=("INSPECTION",), periods=("WEEKLY",),
+            report_types=("INSPECTION_WEEKLY",),
+            sections=_INSPECTION_SECTIONS,
+        ),
+        _system_template(
+            key="inspection.custom", name="定期巡检报告",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("INSPECTION_CUSTOM",),
+            sections=_INSPECTION_SECTIONS,
         ),
         _system_template(
             key="inspection.monthly", name="月度巡检报告",
             source_kinds=("INSPECTION",), periods=("MONTHLY",),
-            sections=(
-                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
-                "RISK_OVERVIEW", "TREND", "FINDINGS", "ACTIONS",
-                "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
-            ),
+            report_types=("INSPECTION_MONTHLY",),
+            sections=_PERIOD_INSPECTION_SECTIONS,
         ),
         _system_template(
             key="inspection.quarterly", name="季度巡检报告",
             source_kinds=("INSPECTION",), periods=("QUARTERLY",),
-            sections=(
-                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
-                "RISK_OVERVIEW", "TREND", "FINDINGS", "ACTIONS",
-                "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
-            ),
+            report_types=("INSPECTION_QUARTERLY",),
+            sections=_PERIOD_INSPECTION_SECTIONS,
         ),
         _system_template(
             key="inspection.annual", name="年度巡检报告",
             source_kinds=("INSPECTION",), periods=("ANNUAL",),
+            report_types=("INSPECTION_ANNUAL",),
+            sections=_PERIOD_INSPECTION_SECTIONS,
+        ),
+        _system_template(
+            key="comparison.standard", name="处置验证报告",
+            source_kinds=("CHAT", "ALERT"), periods=("CUSTOM",),
+            report_types=("COMPARISON",),
             sections=(
-                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
-                "RISK_OVERVIEW", "TREND", "FINDINGS", "ACTIONS",
-                "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+                "EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS",
+                "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
             ),
         ),
     )
+}
+
+REPORT_TYPE_SYSTEM_TEMPLATES = {
+    report_type: template
+    for template in SYSTEM_REPORT_TEMPLATES.values()
+    for report_type in template.report_types
 }
 
 
@@ -230,6 +282,11 @@ def resolve_report_template_reference(template_ref: str) -> ReportTemplate | Non
     return resolve_system_template(f"system:{template_ref}")
 
 
+def resolve_report_type_template(report_type: str) -> ReportTemplate | None:
+    """按正式报告类型解析对应的系统模板。"""
+    return REPORT_TYPE_SYSTEM_TEMPLATES.get(report_type)
+
+
 def resolve_historical_report_template(
     *, template_ref: str, report_type: str,
 ) -> ReportTemplate | None:
@@ -237,16 +294,17 @@ def resolve_historical_report_template(
     resolved = resolve_report_template_reference(template_ref)
     if resolved is not None:
         return resolved
-    report_type_templates = {
-        "INSPECTION_DAILY": "system:inspection.daily",
-        "INSPECTION_MONTHLY": "system:inspection.monthly",
-        "INSPECTION_QUARTERLY": "system:inspection.quarterly",
-        "INSPECTION_ANNUAL": "system:inspection.annual",
-        "INCIDENT": "system:diagnosis.standard",
-        "PERFORMANCE": "system:diagnosis.standard",
+    return resolve_report_type_template(report_type)
+
+
+def template_snapshot(template: ReportTemplate) -> dict[str, Any]:
+    """冻结报告使用的模板引用、版本和完整定义。"""
+    return {
+        "template_ref": template.template_ref,
+        "version": template.version,
+        "content_hash": template.content_hash,
+        "definition": template.definition,
     }
-    template = report_type_templates.get(report_type)
-    return resolve_system_template(template) if template else None
 
 
 def validate_template_definition(definition: dict[str, Any]) -> ReportTemplate:
@@ -270,7 +328,7 @@ def validate_template_definition(definition: dict[str, Any]) -> ReportTemplate:
         raise validation_failed("报告模板必须保留摘要和证据边界章节")
     if not source_kinds or any(item not in {"CHAT", "ALERT", "INSPECTION"} for item in source_kinds):
         raise validation_failed("报告模板适用入口无效")
-    if not periods or any(item not in {"AD_HOC", "DAILY", "MONTHLY", "QUARTERLY", "ANNUAL", "CUSTOM"} for item in periods):
+    if not periods or any(item not in {"AD_HOC", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL", "CUSTOM"} for item in periods):
         raise validation_failed("报告模板适用周期无效")
     name = str(definition.get("display_name") or "自定义报告模板").strip()
     return ReportTemplate(

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.reporting import (
+    REPORT_TYPE_SYSTEM_TEMPLATES,
     SYSTEM_REPORT_TEMPLATES,
     closed_period_window,
     render_pdf,
@@ -19,7 +20,10 @@ from aiops_agent.application.reporting import (
     resolve_report_template_reference,
     validate_template_definition,
 )
-from aiops_agent.application.runtime.service import AIOpsRuntimeService
+from aiops_agent.application.runtime.service import (
+    AIOpsRuntimeService,
+    sha256_json,
+)
 from platform_core.identity import uuid7
 
 
@@ -29,11 +33,28 @@ class FormalReportingTest(unittest.TestCase):
             {
                 "system:diagnosis.standard",
                 "system:inspection.daily",
+                "system:inspection.weekly",
+                "system:inspection.custom",
                 "system:inspection.monthly",
                 "system:inspection.quarterly",
                 "system:inspection.annual",
+                "system:comparison.standard",
             },
             set(SYSTEM_REPORT_TEMPLATES),
+        )
+        self.assertEqual(
+            {
+                "INCIDENT",
+                "PERFORMANCE",
+                "INSPECTION_DAILY",
+                "INSPECTION_WEEKLY",
+                "INSPECTION_CUSTOM",
+                "INSPECTION_MONTHLY",
+                "INSPECTION_QUARTERLY",
+                "INSPECTION_ANNUAL",
+                "COMPARISON",
+            },
+            set(REPORT_TYPE_SYSTEM_TEMPLATES),
         )
 
     def test_historical_system_template_reference_is_resolvable(self) -> None:
@@ -50,6 +71,21 @@ class FormalReportingTest(unittest.TestCase):
                 report_type="INSPECTION_DAILY",
             ),
         )
+
+    def test_historical_weekly_custom_and_comparison_templates_are_resolvable(self) -> None:
+        cases = {
+            "INSPECTION_WEEKLY": "system:inspection.weekly",
+            "INSPECTION_CUSTOM": "system:inspection.custom",
+            "COMPARISON": "system:comparison.standard",
+        }
+        for report_type, template_ref in cases.items():
+            self.assertEqual(
+                SYSTEM_REPORT_TEMPLATES[template_ref],
+                resolve_historical_report_template(
+                    template_ref="01a00000-0000-7000-8000-000000000000",
+                    report_type=report_type,
+                ),
+            )
 
     def test_custom_template_cannot_hide_evidence_boundary(self) -> None:
         with self.assertRaises(AIOpsApplicationError):
@@ -82,6 +118,35 @@ class FormalReportingTest(unittest.TestCase):
         self.assertIn(b"/FontFile2", pdf)
         self.assertNotIn(b"FEFF", pdf)
         self.assertIn(b"/ToUnicode", pdf)
+
+    def test_comparison_facts_are_projected_as_findings(self) -> None:
+        template = SYSTEM_REPORT_TEMPLATES["system:comparison.standard"]
+        presentation = report_presentation(
+            template=template,
+            payload={
+                "summary": "处理后的验证证据表明目标问题已经解决",
+                "facts": [{
+                    "kind": "comparison_result",
+                    "result": "RESOLVED",
+                    "primary_signals": {
+                        "target_absent": True,
+                        "blocking_absent": True,
+                    },
+                    "rationale_codes": ["TARGET_ABSENT", "BLOCKING_ABSENT"],
+                }],
+                "gaps": (),
+            },
+        )
+        findings = next(item for item in presentation["sections"] if item["kind"] == "FINDINGS")
+        self.assertEqual(
+            [
+                "对比结论：RESOLVED",
+                "target_absent：True",
+                "blocking_absent：True",
+                "判定依据：TARGET_ABSENT、BLOCKING_ABSENT",
+            ],
+            findings["items"],
+        )
 
     def test_inspection_markdown_facts_are_not_serialized_as_dicts(self) -> None:
         template = SYSTEM_REPORT_TEMPLATES["system:inspection.daily"]
@@ -308,6 +373,78 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(2, len(source_override["evidence_refs"]))
         self.assertEqual("PARTIAL", source_override["status"])
         uow.commit.assert_awaited_once()
+
+    def test_get_report_presentation_uses_report_type_when_snapshot_is_missing(self) -> None:
+        cases = (
+            ("INSPECTION_WEEKLY", "database_weekly", "system:inspection.weekly"),
+            ("INSPECTION_CUSTOM", "database_custom", "system:inspection.custom"),
+            ("COMPARISON", "oracle.kill-session", "system:comparison.standard"),
+        )
+        for report_type, stored_template_id, expected_ref in cases:
+            with self.subTest(report_type=report_type):
+                report_id, artifact_id = uuid7(), uuid7()
+                payload = {
+                    "title": "历史报告",
+                    "status": "READY",
+                    "summary": "已完成核验",
+                    "period_start": "2026-09-01T00:00:00+00:00",
+                    "period_end": "2026-09-08T00:00:00+00:00",
+                    "facts": [{
+                        "kind": "comparison_result" if report_type == "COMPARISON" else "agent_health_inspection",
+                        "result": "RESOLVED",
+                        "markdown": "## 主要发现\n\n健康。",
+                        "primary_signals": {"target_absent": True},
+                        "rationale_codes": ["TARGET_ABSENT"],
+                    }],
+                    "gaps": [],
+                    "evidence_refs": [],
+                    "provenance": {},
+                }
+                content_hash = sha256_json(payload)
+                report = SimpleNamespace(
+                    report_id=report_id,
+                    content_artifact_id=artifact_id,
+                    template_id=stored_template_id,
+                    template_version="1.0.0",
+                    report_type=report_type,
+                )
+                artifact = SimpleNamespace(
+                    artifact_id=artifact_id,
+                    content_hash=content_hash,
+                    payload_json=payload,
+                )
+                uow = SimpleNamespace(
+                    inspections=SimpleNamespace(
+                        get_report_scoped=AsyncMock(return_value=report)
+                    ),
+                    runs=SimpleNamespace(
+                        get_artifact=AsyncMock(return_value=artifact)
+                    ),
+                )
+
+                class UnitOfWorkContext:
+                    async def __aenter__(self):
+                        return uow
+
+                    async def __aexit__(self, exc_type, exc, traceback):
+                        return None
+
+                service = AIOpsRuntimeService(
+                    uow_factory=lambda: UnitOfWorkContext(),
+                    blueprint_registry=AsyncMock(),
+                    handler_registry=AsyncMock(),
+                )
+                presentation = asyncio.run(
+                    service.get_report_presentation(
+                        report_id=report_id, domain_id=8,
+                    )
+                )
+                self.assertEqual("REPORT_PRESENTATION.v1", presentation["schema_version"])
+                self.assertEqual(expected_ref, presentation["template"]["template_ref"])
+                self.assertTrue(any(
+                    item["kind"] == "EVIDENCE_BOUNDARY"
+                    for item in presentation["sections"]
+                ))
 
 
 if __name__ == "__main__":

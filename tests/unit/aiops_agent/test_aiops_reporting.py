@@ -106,6 +106,17 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(
             result.payload_json["report_type"], "INSPECTION_CUSTOM"
         )
+        self.assertEqual(
+            "system:inspection.custom",
+            result.payload_json["provenance"]["template"]["template_ref"],
+        )
+        self.assertIn(
+            "definition",
+            result.payload_json["provenance"]["template"],
+        )
+        report = uow.inspections.publish_report.await_args.args[0]
+        self.assertEqual("system:inspection.custom", report.template_id)
+        self.assertEqual("1", report.template_version)
         self.assertIn(
             "数据库整体健康。",
             [item.get("markdown") for item in result.payload_json["facts"]],
@@ -658,6 +669,16 @@ class InspectionReportPublishingTest(unittest.TestCase):
         )
         self.assertEqual(report.report_type, "INSPECTION_DAILY")
         self.assertEqual(report.is_current, 1)
+        self.assertEqual("system:inspection.daily", report.template_id)
+        self.assertEqual("1", report.template_version)
+        self.assertEqual(
+            "system:inspection.daily",
+            result.payload_json["provenance"]["template"]["template_ref"],
+        )
+        self.assertIn(
+            "definition",
+            result.payload_json["provenance"]["template"],
+        )
         self.assertEqual(
             report.content_artifact_id, report_artifact_id
         )
@@ -922,10 +943,23 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         self.assertEqual(report.ops_run_id, source_run_id)
         self.assertEqual(report.report_type, "COMPARISON")
         self.assertEqual(report.result, "RESOLVED")
+        self.assertEqual("system:comparison.standard", report.template_id)
+        self.assertEqual("1", report.template_version)
         self.assertEqual(report.baseline_start, baseline_start)
         self.assertEqual(report.after_end, after_end)
         comparison_artifact = (
             uow.runs.add_artifact.await_args_list[0].args[0]
+        )
+        report_artifact = (
+            uow.runs.add_artifact.await_args_list[1].args[0]
+        )
+        self.assertEqual(
+            "system:comparison.standard",
+            report_artifact.payload_json["provenance"]["template"]["template_ref"],
+        )
+        self.assertIn(
+            "definition",
+            report_artifact.payload_json["provenance"]["template"],
         )
         self.assertEqual(
             comparison_artifact.schema_version, "COMPARISON_RESULT.v1"
