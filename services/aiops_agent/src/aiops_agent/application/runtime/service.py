@@ -18,6 +18,9 @@ from aiops_agent.application.errors import (
     state_conflict,
     validation_failed,
 )
+from aiops_agent.application.investigation.discovery_binding import (
+    prior_plan_has_deferred,
+)
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
@@ -2207,11 +2210,16 @@ class AIOpsRuntimeService:
                 str(assessment.status) in {"NEEDS_EVIDENCE", "PARTIAL"}
                 and any(gap.retryable for gap in assessment.gaps)
             )
+            investigation_plan = dict(
+                dict(run.plan_snapshot_json or {}).get("answer_context")
+                or {}
+            ).get("investigation_plan")
             should_replan = self._should_replan_investigation(
                 assessment=assessment,
                 deterministic_replan=deterministic_replan,
                 no_progress_count=int(turn.no_progress_count or 0),
                 current_plan_revision=int(turn.current_plan_revision or 1),
+                has_deferred=prior_plan_has_deferred(investigation_plan),
             )
             if should_replan and run.workflow_kind != "INSPECTION":
                 await self._schedule_turn_replan(
@@ -2247,24 +2255,29 @@ class AIOpsRuntimeService:
         deterministic_replan: bool,
         no_progress_count: int,
         current_plan_revision: int,
+        has_deferred: bool = False,
     ) -> bool:
         """只要持续取得进展，就在 Run 截止时间内继续自动补证。"""
+        next_action = (
+            assessment.investigation.next_action
+            if assessment.investigation is not None
+            else None
+        )
+        if (
+            next_action == "STOP_UNSAFE"
+            or no_progress_count >= 2
+            or current_plan_revision >= 2
+        ):
+            return False
+        if has_deferred:
+            return True
         requested = (
-            assessment.investigation.next_action == "REPLAN"
+            next_action == "REPLAN"
             if assessment.investigation is not None
             else deterministic_replan
         )
-        blocked_by_model = (
-            assessment.investigation is not None
-            and assessment.investigation.next_action
-            in {"ASK_USER", "STOP_UNSAFE"}
-        )
-        return (
-            (requested or deterministic_replan)
-            and not blocked_by_model
-            and no_progress_count < 2
-            and current_plan_revision < 2
-        )
+        blocked_by_model = next_action == "ASK_USER"
+        return (requested or deterministic_replan) and not blocked_by_model
 
     async def _schedule_turn_replan(
         self,

@@ -23,9 +23,17 @@ from aiops_agent.application.investigation.discovery import (
     available_playbooks,
     available_tools,
     build_playbook_plan,
+    catalog_direct_actions,
     compact_tool_cards,
+    executable_plan_actions,
+    reset_model_deferred_flags,
     rewrite_incomplete_discovery_actions,
     select_planning_candidates,
+)
+from aiops_agent.application.investigation.discovery_binding import (
+    decide_discovery_continuation,
+    merge_prior_deferred_catalog_actions,
+    prior_plan_has_deferred,
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.query_freezing import (
@@ -83,6 +91,8 @@ class _ReplanInputSnapshot:
     task_frame: dict
     assessment: dict
     prior_artifacts: tuple[tuple[str, str], ...]
+    tool_results: tuple[dict, ...] = ()
+    input_envelope: dict | None = None
 
 
 class TurnPlanningService:
@@ -323,7 +333,9 @@ class TurnPlanningService:
             include_change=(
                 investigation.task_frame.action_intent != ActionIntent.NONE
             ),
-            investigation_actions=investigation.plan.actions,
+            investigation_actions=executable_plan_actions(
+                investigation.plan.actions
+            ),
         )
         execution_snapshot = self._tool_snapshot_builder.build(
             plan=playbook_plan,
@@ -331,17 +343,7 @@ class TurnPlanningService:
             capabilities=context.capabilities,
             database_execution=context.database_execution,
             dynamic_queries=dynamic_queries,
-            direct_actions=tuple(
-                action
-                for action in investigation.plan.actions
-                if action.tool_id
-                not in {
-                    "monitor.query_range",
-                    "loki.query_range",
-                    "db.oracle.readonly_query",
-                    "artifact.search",
-                }
-            ),
+            direct_actions=catalog_direct_actions(investigation.plan.actions),
         )
         return await self._persist(
             context=context,
@@ -1079,6 +1081,85 @@ class TurnPlanningService:
         discovered_playbooks = available_playbooks(
             self._playbook_registry, context.capabilities
         )
+        decision = decide_discovery_continuation(
+            plan=inputs.prior_plan,
+            tool_results=inputs.tool_results,
+            available_tools=discovered_tools,
+            question=context.question,
+        )
+        if decision.action == "ASK_USER":
+            logger.info(
+                "发现结果无法唯一绑定目录工具，回退依据现有证据回答："
+                "turn_id={} unbound={}",
+                context.turn_id,
+                decision.binding.unbound_action_ids if decision.binding else (),
+            )
+            return await self.fall_back_from_replan(
+                payload,
+                error_code="AIOPS_DISCOVERY_BINDING_AMBIGUOUS",
+            )
+        if decision.action == "CONTINUE":
+            investigation = self._investigation_from_continuation(
+                context=context,
+                inputs=inputs,
+                actions=decision.continuation_actions,
+                revision_no=revision_no,
+            )
+            try:
+                investigation, dynamic_queries, source_queries, attachment_searches = (
+                    self._prepare_query_inputs(
+                        investigation=investigation,
+                        context=context,
+                    )
+                )
+            except InvestigationPlanValidationError as exc:
+                logger.warning(
+                    "发现结果绑定后仍未通过目录约束，回退依据现有证据回答："
+                    "turn_id={} reason={}",
+                    context.turn_id,
+                    str(exc),
+                )
+                return await self.fall_back_from_replan(
+                    payload,
+                    error_code="AIOPS_DISCOVERY_BINDING_AMBIGUOUS",
+                )
+            else:
+                logger.info(
+                    "发现结果已绑定原诊断工具，跳过模型重规划继续取证："
+                    "turn_id={} tools={}",
+                    context.turn_id,
+                    [action.tool_id for action in investigation.plan.actions],
+                )
+                return await self._compile_and_persist_replan(
+                    context=context,
+                    revision_no=revision_no,
+                    inputs=inputs,
+                    investigation=investigation,
+                    planning_receipt=None,
+                    dynamic_queries=dynamic_queries,
+                    source_queries=(
+                        {
+                            **source_queries,
+                            "attachment_search": attachment_searches,
+                        }
+                        if attachment_searches
+                        else source_queries
+                    ),
+                    diagnosis_model_snapshot=diagnosis_model_snapshot,
+                    planner_model_snapshot=planner_model_snapshot,
+                    public_summary="发现结果已绑定到原诊断工具，正在继续取证",
+                )
+        if prior_plan_has_deferred(inputs.prior_plan):
+            logger.info(
+                "发现结果未能绑定延期目录工具，跳过模型重规划并回退回答："
+                "turn_id={} status={}",
+                context.turn_id,
+                decision.binding.status if decision.binding else "NONE",
+            )
+            return await self.fall_back_from_replan(
+                payload,
+                error_code="AIOPS_DISCOVERY_BINDING_AMBIGUOUS",
+            )
         planned = await self._investigation_reasoner.replan(
             content=context.content,
             conversation_context=context.recent_context,
@@ -1097,6 +1178,15 @@ class TurnPlanningService:
             ),
             revision_no=revision_no,
         )
+        merged_plan = merge_prior_deferred_catalog_actions(
+            plan=reset_model_deferred_flags(planned.output).plan,
+            prior_plan=inputs.prior_plan,
+            available_tools=discovered_tools,
+        )
+        planned = StructuredModelResult(
+            output=planned.output.model_copy(update={"plan": merged_plan}),
+            receipt=planned.receipt,
+        )
         planned, investigation, dynamic_queries, source_queries = (
             await self._prepare_queries_with_repair(
                 context=context,
@@ -1107,6 +1197,63 @@ class TurnPlanningService:
                 revision_no=revision_no,
             )
         )
+        return await self._compile_and_persist_replan(
+            context=context,
+            revision_no=revision_no,
+            inputs=inputs,
+            investigation=investigation,
+            planning_receipt=planned.receipt,
+            dynamic_queries=dynamic_queries,
+            source_queries=source_queries,
+            diagnosis_model_snapshot=diagnosis_model_snapshot,
+            planner_model_snapshot=planner_model_snapshot,
+        )
+
+    def _investigation_from_continuation(
+        self,
+        *,
+        context: TurnPlanningContext,
+        inputs: _ReplanInputSnapshot,
+        actions: tuple[InvestigationAction, ...],
+        revision_no: int,
+    ) -> InvestigationPlanningOutput:
+        """用已绑定的延期目录工具构造下一轮调查计划，不再问模型。"""
+        envelope = (
+            TurnInputEnvelope.model_validate(inputs.input_envelope)
+            if inputs.input_envelope
+            else TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=context.question[:2000],
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=context.question,
+            )
+        )
+        return InvestigationPlanningOutput(
+            input_envelope=envelope,
+            task_frame=TaskFrame.model_validate(inputs.task_frame),
+            plan=InvestigationPlan(revision_no=revision_no, actions=actions),
+        )
+
+    async def _compile_and_persist_replan(
+        self,
+        *,
+        context: TurnPlanningContext,
+        revision_no: int,
+        inputs: _ReplanInputSnapshot,
+        investigation,
+        planning_receipt,
+        dynamic_queries,
+        source_queries,
+        diagnosis_model_snapshot: dict,
+        planner_model_snapshot: dict,
+        public_summary: str | None = None,
+    ) -> dict:
         attachment_searches = tuple(
             source_queries.get("attachment_search", ())
         )
@@ -1164,7 +1311,9 @@ class TurnPlanningService:
             user_evidence_artifact_keys=evidence_keys,
             revision_no=revision_no,
             include_answer=False,
-            investigation_actions=investigation.plan.actions,
+            investigation_actions=executable_plan_actions(
+                investigation.plan.actions
+            ),
         )
         execution_snapshot = self._tool_snapshot_builder.build(
             plan=playbook_plan,
@@ -1172,23 +1321,13 @@ class TurnPlanningService:
             capabilities=context.capabilities,
             database_execution=context.database_execution,
             dynamic_queries=dynamic_queries,
-            direct_actions=tuple(
-                action
-                for action in investigation.plan.actions
-                if action.tool_id
-                not in {
-                    "monitor.query_range",
-                    "loki.query_range",
-                    "db.oracle.readonly_query",
-                    "artifact.search",
-                }
-            ),
+            direct_actions=catalog_direct_actions(investigation.plan.actions),
         )
         return await self._persist_replan(
             context=context,
             revision_no=revision_no,
             investigation=investigation,
-            planning_receipt=planned.receipt,
+            planning_receipt=planning_receipt,
             playbook_plan=playbook_plan,
             compiled=compiled,
             execution_snapshot=execution_snapshot,
@@ -1196,6 +1335,7 @@ class TurnPlanningService:
             planner_model_snapshot=planner_model_snapshot,
             monitoring_execution=monitoring_execution,
             attachment_searches=attachment_searches,
+            public_summary=public_summary,
         )
 
     async def _load_replan_inputs(
@@ -1232,6 +1372,7 @@ class TurnPlanningService:
             prior_artifacts = await uow.runs.list_artifacts(
                 ops_run_id=context.ops_run_id
             )
+            run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
             if (
                 assessment_artifact is None
                 or assessment_artifact.schema_version
@@ -1240,6 +1381,13 @@ class TurnPlanningService:
                 or task_frame_artifact is None
             ):
                 raise state_conflict("重规划缺少上一轮评估或调查计划")
+            answer_context = dict(
+                dict(getattr(run, "plan_snapshot_json", None) or {}).get(
+                    "answer_context"
+                )
+                or {}
+            ) if run is not None else {}
+            envelope = answer_context.get("input_envelope")
             return _ReplanInputSnapshot(
                 prior_plan=dict(plan_artifact.payload_json or {}),
                 task_frame=dict(task_frame_artifact.payload_json or {}),
@@ -1247,6 +1395,15 @@ class TurnPlanningService:
                 prior_artifacts=tuple(
                     (str(item.artifact_key), str(item.schema_version))
                     for item in prior_artifacts
+                ),
+                tool_results=tuple(
+                    dict(item.payload_json or {})
+                    for item in prior_artifacts
+                    if str(item.schema_version) == "DBA_TOOL_RESULT.v1"
+                    and isinstance(item.payload_json, dict)
+                ),
+                input_envelope=(
+                    dict(envelope) if isinstance(envelope, dict) else None
                 ),
             )
 
@@ -1263,7 +1420,7 @@ class TurnPlanningService:
         """Tool 输入首稿越界时，带策略反馈执行一次受控修正。"""
         planned = StructuredModelResult(
             output=self._bind_target_to_plan(
-                investigation=planned.output,
+                investigation=reset_model_deferred_flags(planned.output),
                 target_context=context.target_context,
                 available_tools=available_tools,
             ),
@@ -1293,7 +1450,7 @@ class TurnPlanningService:
             )
             if rewritten is not None:
                 logger.info(
-                    "固定诊断工具缺少必填参数或参数类型不合法，已按目录改写为发现工具："
+                    "固定诊断工具缺少必填参数或参数类型不合法，已补发现工具并保留原动作待绑定："
                     "turn_id={} revision_no={} tools={}",
                     context.turn_id,
                     revision_no,
@@ -1596,17 +1753,7 @@ class TurnPlanningService:
             investigation,
             getattr(context, "resolved_uploads", ()),
         )
-        direct_actions = tuple(
-            action
-            for action in investigation.plan.actions
-            if action.tool_id
-            not in {
-                "monitor.query_range",
-                "loki.query_range",
-                "db.oracle.readonly_query",
-                "artifact.search",
-            }
-        )
+        direct_actions = catalog_direct_actions(investigation.plan.actions)
         if not direct_actions:
             return investigation, dynamic_queries, source_queries, attachment_searches
         try:
@@ -1646,6 +1793,7 @@ class TurnPlanningService:
         planner_model_snapshot: dict,
         monitoring_execution: dict,
         attachment_searches: tuple[dict, ...],
+        public_summary: str | None = None,
     ) -> dict:
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(
@@ -1782,7 +1930,9 @@ class TurnPlanningService:
                 for action, task_key in zip(
                     (
                         item
-                        for item in investigation.plan.actions
+                        for item in executable_plan_actions(
+                            investigation.plan.actions
+                        )
                         if item.tool_id == "db.oracle.readonly_query"
                     ),
                     compiled.dynamic_task_keys,
@@ -1794,7 +1944,9 @@ class TurnPlanningService:
                 for action, task_key in zip(
                     (
                         item
-                        for item in investigation.plan.actions
+                        for item in executable_plan_actions(
+                            investigation.plan.actions
+                        )
                         if item.tool_id == "artifact.search"
                     ),
                     compiled.attachment_search_task_keys,
@@ -1804,17 +1956,7 @@ class TurnPlanningService:
             diagnostic_task_by_action = {
                 action.action_id: task_ids[task_key]
                 for action, task_key in zip(
-                    (
-                        item
-                        for item in investigation.plan.actions
-                        if item.tool_id
-                        not in {
-                            "monitor.query_range",
-                            "loki.query_range",
-                            "db.oracle.readonly_query",
-                            "artifact.search",
-                        }
-                    ),
+                    catalog_direct_actions(investigation.plan.actions),
                     compiled.diagnostic_task_keys,
                     strict=True,
                 )
@@ -1823,6 +1965,8 @@ class TurnPlanningService:
                 investigation.plan.actions,
                 start=1,
             ):
+                if action.deferred:
+                    continue
                 task_id, invocation_id = invocation_by_action.get(
                     action.action_id,
                     (None, None),
@@ -1938,8 +2082,14 @@ class TurnPlanningService:
                     "planner_model": dict(planner_model_snapshot),
                     "prompts": dict(context.prompt_snapshot),
                 },
-                "investigation_model_receipt": (
-                    planning_receipt.model_dump(mode="json")
+                **(
+                    {
+                        "investigation_model_receipt": (
+                            planning_receipt.model_dump(mode="json")
+                        )
+                    }
+                    if planning_receipt is not None
+                    else {}
                 ),
             }
             turn.task_frame_artifact_id = task_frame_artifact.artifact_id
@@ -1947,7 +2097,7 @@ class TurnPlanningService:
             turn.current_plan_revision = revision_no
             turn.investigation_round = revision_no
             turn.tool_call_count = int(turn.tool_call_count or 0) + len(
-                investigation.plan.actions
+                executable_plan_actions(investigation.plan.actions)
             )
             turn.status = "COLLECTING"
             await self._append_event(
@@ -1961,7 +2111,10 @@ class TurnPlanningService:
                         investigation.plan.model_dump(mode="json"),
                         execution_snapshot=execution_snapshot,
                     ),
-                    "public_summary": "已根据证据缺口调整调查计划，正在补充取证",
+                    "public_summary": (
+                        public_summary
+                        or "已根据证据缺口调整调查计划，正在补充取证"
+                    ),
                 },
             )
             await self._append_event(
@@ -3088,7 +3241,9 @@ class TurnPlanningService:
                 for action, task_key in zip(
                     (
                         item
-                        for item in investigation.plan.actions
+                        for item in executable_plan_actions(
+                            investigation.plan.actions
+                        )
                         if item.tool_id == "db.oracle.readonly_query"
                     ),
                     compiled.dynamic_task_keys,
@@ -3100,7 +3255,9 @@ class TurnPlanningService:
                 for action, task_key in zip(
                     (
                         item
-                        for item in investigation.plan.actions
+                        for item in executable_plan_actions(
+                            investigation.plan.actions
+                        )
                         if item.tool_id == "artifact.search"
                     ),
                     compiled.attachment_search_task_keys,
@@ -3110,6 +3267,8 @@ class TurnPlanningService:
             for ordinal, action in enumerate(
                 investigation.plan.actions, start=1
             ):
+                if action.deferred:
+                    continue
                 playbook_context = playbook_context_by_action.get(
                     action.action_id
                 )
@@ -3129,17 +3288,7 @@ class TurnPlanningService:
                     task_id = next(
                         task_ids[task_key]
                         for candidate, task_key in zip(
-                            (
-                                item
-                                for item in investigation.plan.actions
-                                if item.tool_id
-                                not in {
-                                    "monitor.query_range",
-                                    "loki.query_range",
-                                    "db.oracle.readonly_query",
-                                    "artifact.search",
-                                }
-                            ),
+                            catalog_direct_actions(investigation.plan.actions),
                             compiled.diagnostic_task_keys,
                             strict=True,
                         )
@@ -3177,7 +3326,9 @@ class TurnPlanningService:
             turn.current_plan_artifact_id = plan_artifact.artifact_id
             turn.current_plan_revision = 1
             turn.investigation_round = 1
-            turn.tool_call_count = len(investigation.plan.actions)
+            turn.tool_call_count = len(
+                executable_plan_actions(investigation.plan.actions)
+            )
             turn.status = "COLLECTING"
             run.plan_snapshot_json = {
                 **dict(run.plan_snapshot_json or {}),

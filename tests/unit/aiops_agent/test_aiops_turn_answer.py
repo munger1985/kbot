@@ -1497,6 +1497,102 @@ class DbaTurnAnswerTest(unittest.TestCase):
             )
         )
 
+    def test_deferred_catalog_tools_continue_after_answer_or_ask_user(
+        self,
+    ) -> None:
+        answer = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            investigation=InvestigationAssessment(
+                round_no=1,
+                sufficiency_status="ANSWERABLE",
+                evidence_gaps=(),
+                next_action="ANSWER",
+                progress_made=True,
+                reason="快照清单已取得，模型建议直接回答",
+                clarification_question=None,
+            ),
+        )
+        ask_user = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.NEEDS_CLARIFICATION,
+            clarification_question="请确认要对比的时间窗口",
+            investigation=InvestigationAssessment(
+                round_no=1,
+                sufficiency_status="NEEDS_CLARIFICATION",
+                evidence_gaps=(),
+                next_action="ASK_USER",
+                progress_made=True,
+                reason="发现结果需要用户确认",
+                clarification_question="请确认要对比的时间窗口",
+            ),
+        )
+        stop_unsafe = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.UNSAFE,
+            investigation=InvestigationAssessment(
+                round_no=1,
+                sufficiency_status="UNSAFE",
+                evidence_gaps=(),
+                next_action="STOP_UNSAFE",
+                progress_made=True,
+                reason="继续取证不安全",
+                clarification_question=None,
+            ),
+        )
+
+        self.assertTrue(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=answer,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=1,
+                has_deferred=True,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=answer,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=1,
+                has_deferred=False,
+            )
+        )
+        self.assertTrue(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=ask_user,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=1,
+                has_deferred=True,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=ask_user,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=1,
+                has_deferred=False,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=stop_unsafe,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=1,
+                has_deferred=True,
+            )
+        )
+        self.assertFalse(
+            AIOpsRuntimeService._should_replan_investigation(
+                assessment=answer,
+                deterministic_replan=False,
+                no_progress_count=0,
+                current_plan_revision=2,
+                has_deferred=True,
+            )
+        )
+
     def test_recent_request_with_cumulative_evidence_is_partial(self) -> None:
         context = _context(
             artifacts=(

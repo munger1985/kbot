@@ -12,6 +12,7 @@ from aiops_agent.ports.diagnostic_source import (
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.tools import ToolExecutionSnapshotBuilder
 from platform_core.contracts.aiops.investigation import (
+    InvestigationAction,
     InvestigationPlanningOutput,
 )
 from platform_core.contracts.aiops.playbooks import (
@@ -250,12 +251,51 @@ def build_playbook_plan(registry: PlaybookRegistry) -> DbaPlaybookPlan:
     return DbaPlaybookPlan(catalog_hash=registry.catalog_hash, items=())
 
 
+
+SPECIAL_PLAN_TOOL_IDS = {
+    "monitor.query_range",
+    "loki.query_range",
+    "db.oracle.readonly_query",
+    "artifact.search",
+}
+
+
+def executable_plan_actions(actions: tuple[object, ...]) -> tuple:
+    """返回当前可以编译和执行的调查动作，跳过仍待绑定的延期动作。"""
+    return tuple(
+        action
+        for action in actions
+        if not getattr(action, "deferred", False)
+    )
+
+
+def catalog_direct_actions(actions: tuple[object, ...]) -> tuple:
+    """返回可执行的固定目录动作，排除监控、动态 SQL 和附件检索。"""
+    return tuple(
+        action
+        for action in executable_plan_actions(actions)
+        if getattr(action, "tool_id", None) not in SPECIAL_PLAN_TOOL_IDS
+    )
+
+
+def reset_model_deferred_flags(investigation: InvestigationPlanningOutput) -> InvestigationPlanningOutput:
+    """模型输出不得自行声明 deferred；只有改写器和绑定器可以置位。"""
+    if not any(action.deferred for action in investigation.plan.actions):
+        return investigation
+    actions = tuple(
+        action.model_copy(update={"deferred": False}) if action.deferred else action
+        for action in investigation.plan.actions
+    )
+    plan = investigation.plan.model_copy(update={"actions": actions})
+    return investigation.model_copy(update={"plan": plan})
+
+
 def rewrite_incomplete_discovery_actions(
     *,
     investigation: InvestigationPlanningOutput,
     available_tools: tuple[dict, ...],
 ) -> InvestigationPlanningOutput | None:
-    """缺必填参数或必填参数类型不合法且目录声明了发现工具时，改写为发现工具而不猜测参数。"""
+    """缺必填参数或类型不合法时补发现工具，并保留原动作待绑定，不猜测参数。"""
     tool_index = {
         str(item.get("tool_id") or ""): item
         for item in available_tools
@@ -265,9 +305,18 @@ def rewrite_incomplete_discovery_actions(
     for action in investigation.plan.actions:
         existing_tool_actions.setdefault(action.tool_id, action.action_id)
 
-    rewritten = []
-    dropped_to: dict[str, str] = {}
-    replacements: dict[str, str] = {}
+    used_ids = {action.action_id for action in investigation.plan.actions}
+
+    def next_action_id() -> str:
+        index = 1
+        while f"a{index}" in used_ids:
+            index += 1
+        action_id = f"a{index}"
+        used_ids.add(action_id)
+        return action_id
+
+    rewritten: list[InvestigationAction] = []
+    changed = False
     for action in investigation.plan.actions:
         tool = tool_index.get(action.tool_id)
         discovery_tool_id = _discovery_tool_id(tool)
@@ -280,29 +329,71 @@ def rewrite_incomplete_discovery_actions(
         ):
             rewritten.append(action)
             continue
-        replacements[action.action_id] = discovery_tool_id
-        existing_id = existing_tool_actions.get(discovery_tool_id)
-        if existing_id is not None:
-            dropped_to[action.action_id] = existing_id
-            continue
-        replacement = action.model_copy(
-            update={"tool_id": discovery_tool_id, "input": {}}
+        changed = True
+        discovery_action_id = existing_tool_actions.get(discovery_tool_id)
+        present_ids = {item.action_id for item in rewritten}
+        if discovery_action_id is None:
+            discovery_action_id = next_action_id()
+            discovery_action = InvestigationAction(
+                action_id=discovery_action_id,
+                question="发现执行该诊断工具所需的目录标识",
+                tool_id=discovery_tool_id,
+                input={},
+                expected_evidence_kind="DISCOVERY_CATALOG",
+                measurement_semantics=action.measurement_semantics,
+                depends_on=(),
+                optional=False,
+                deferred=False,
+            )
+            rewritten.append(discovery_action)
+            existing_tool_actions[discovery_tool_id] = discovery_action_id
+        elif discovery_action_id not in present_ids:
+            existing = next(
+                (
+                    item
+                    for item in investigation.plan.actions
+                    if item.action_id == discovery_action_id
+                ),
+                None,
+            )
+            if existing is not None and existing.action_id not in present_ids:
+                rewritten.append(existing)
+        dependencies = tuple(
+            dict.fromkeys(
+                (
+                    *action.depends_on,
+                    discovery_action_id,
+                )
+            )
         )
-        rewritten.append(replacement)
-        existing_tool_actions[discovery_tool_id] = replacement.action_id
+        rewritten.append(
+            action.model_copy(
+                update={
+                    "deferred": True,
+                    "depends_on": tuple(
+                        item
+                        for item in dependencies
+                        if item != action.action_id
+                    ),
+                }
+            )
+        )
 
-    if not replacements:
+    if not changed:
         return None
 
     kept_ids = {action.action_id for action in rewritten}
     normalized = []
+    seen_ids: set[str] = set()
     for action in rewritten:
+        if action.action_id in seen_ids:
+            continue
+        seen_ids.add(action.action_id)
         dependencies = tuple(
             dict.fromkeys(
-                dropped_to.get(dependency, dependency)
+                dependency
                 for dependency in action.depends_on
-                if dropped_to.get(dependency, dependency) in kept_ids
-                and dropped_to.get(dependency, dependency) != action.action_id
+                if dependency in kept_ids and dependency != action.action_id
             )
         )
         normalized.append(

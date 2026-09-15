@@ -1163,10 +1163,16 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(rewritten)
         self.assertEqual(
-            ["db.oracle.awr.snapshots"],
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
             [action.tool_id for action in rewritten.plan.actions],
         )
         self.assertEqual({}, rewritten.plan.actions[0].input)
+        self.assertFalse(rewritten.plan.actions[0].deferred)
+        self.assertTrue(rewritten.plan.actions[1].deferred)
+        self.assertIn(
+            rewritten.plan.actions[0].action_id,
+            rewritten.plan.actions[1].depends_on,
+        )
 
     def test_non_integer_snapshot_ids_rewrite_to_discovery_tool(self) -> None:
         rejected = self._awr_investigation(
@@ -1197,12 +1203,21 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(rewritten)
         self.assertEqual(
-            ["db.oracle.awr.snapshots"],
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
             [action.tool_id for action in rewritten.plan.actions],
         )
         self.assertEqual({}, rewritten.plan.actions[0].input)
+        self.assertFalse(rewritten.plan.actions[0].deferred)
+        self.assertTrue(rewritten.plan.actions[1].deferred)
+        self.assertEqual(
+            {
+                "begin_snapshot_id": "2026-09-13T09:00:00+08:00",
+                "end_snapshot_id": "2026-09-13T10:00:00+08:00",
+            },
+            rewritten.plan.actions[1].input,
+        )
 
-    def test_existing_discovery_tool_drops_incomplete_report(self) -> None:
+    def test_existing_discovery_tool_keeps_deferred_report(self) -> None:
         factory = DynamicQueryPlanningTest()
         template = factory._investigation(
             sql="SELECT sid FROM v$session WHERE status = :status"
@@ -1253,9 +1268,12 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(rewritten)
         self.assertEqual(
-            ["db.oracle.awr.snapshots"],
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
             [action.tool_id for action in rewritten.plan.actions],
         )
+        self.assertFalse(rewritten.plan.actions[0].deferred)
+        self.assertTrue(rewritten.plan.actions[1].deferred)
+        self.assertEqual(("a1",), rewritten.plan.actions[1].depends_on)
 
     async def test_missing_awr_snapshot_ids_rewrite_without_model_repair(
         self,
@@ -1285,10 +1303,16 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("rejected", planned.receipt.name)
         self.assertEqual(
-            ["db.instance.identity", "db.oracle.awr.snapshots"],
+            [
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+            ],
             [action.tool_id for action in investigation.plan.actions],
         )
         self.assertEqual({}, investigation.plan.actions[1].input)
+        self.assertFalse(investigation.plan.actions[1].deferred)
+        self.assertTrue(investigation.plan.actions[2].deferred)
         self.assertEqual((), frozen)
         reasoner.repair_policy_invalid_plan.assert_not_awaited()
 
@@ -1323,10 +1347,23 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("rejected", planned.receipt.name)
         self.assertEqual(
-            ["db.instance.identity", "db.oracle.awr.snapshots"],
+            [
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+            ],
             [action.tool_id for action in investigation.plan.actions],
         )
         self.assertEqual({}, investigation.plan.actions[1].input)
+        self.assertFalse(investigation.plan.actions[1].deferred)
+        self.assertTrue(investigation.plan.actions[2].deferred)
+        self.assertEqual(
+            {
+                "begin_snapshot_id": "2026-09-13T09:00:00+08:00",
+                "end_snapshot_id": "2026-09-13T10:00:00+08:00",
+            },
+            investigation.plan.actions[2].input,
+        )
         self.assertEqual((), frozen)
         reasoner.repair_policy_invalid_plan.assert_not_awaited()
 

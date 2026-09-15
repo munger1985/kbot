@@ -189,6 +189,7 @@ class InvestigationAction(AIOpsContract):
     measurement_semantics: MeasurementSemantics
     depends_on: tuple[str, ...] = ()
     optional: bool = False
+    deferred: bool = False
 
 
 class InvestigationPlan(AIOpsContract):

@@ -59,6 +59,11 @@ class InvestigationTaskCompiler:
             raise InvestigationCatalogChangedError(
                 "Playbook Plan 的目录 Hash 已失效"
             )
+        investigation_actions = tuple(
+            action
+            for action in investigation_actions
+            if not getattr(action, "deferred", False)
+        )
         task_keys: dict[int, str] = {}
         tasks: list[TaskSpec] = []
         suffix = "" if revision_no == 1 else f":r{revision_no}"

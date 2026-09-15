@@ -293,6 +293,11 @@ class ToolExecutionSnapshotBuilder:
                 strict=True,
             )
         }
+        direct_actions = tuple(
+            action
+            for action in direct_actions
+            if not getattr(action, "deferred", False)
+        )
         direct_invocations = {}
         for action, task_key in zip(
             direct_actions, compiled.diagnostic_task_keys, strict=True
