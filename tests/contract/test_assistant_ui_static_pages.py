@@ -169,6 +169,18 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             self.assertIn("KBotAssistantShell.ready", source, name)
             self.assertNotIn("DOMContentLoaded", source, name)
 
+    def test_shell_renders_chrome_before_access_then_removes_by_permission(self):
+        source = (UI_ROOT / "js" / "assistant-shell.js").read_text(encoding="utf-8")
+        self.assertIn('insertAdjacentHTML("afterbegin"', source)
+        self.assertIn("data-permission", source)
+        self.assertIn("function pruneNavigation", source)
+        self.assertIn("pruneNavigation(permissions);", source)
+        self.assertIn('json("/access"', source)
+        self.assertLess(source.index('insertAdjacentHTML("afterbegin"'), source.index('json("/access"'))
+        self.assertGreater(source.index("pruneNavigation(permissions);"), source.index('json("/access"'))
+        self.assertNotIn("permissions.has(PAGE_PERMISSIONS[id])", source)
+        self.assertNotIn("cursor: not-allowed", source)
+
 
 if __name__ == "__main__":
     unittest.main()

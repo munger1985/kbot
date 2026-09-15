@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
@@ -16,7 +17,7 @@ from main_api.application import (
     UserAuthService,
     require_app_api_permission,
 )
-from platform_clients import AssistantAppClient, DataQueryClient, KnowledgeCoreClient
+from platform_clients import AssistantAppClient, AssistantAppClientError, DataQueryClient, KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.security import get_auth_context
 
@@ -261,9 +262,19 @@ async def change_password(payload: AssistantPasswordChangePayload, request: Requ
 @router.get("/access")
 async def get_access(request: Request):
     domain_id, actor_id, snapshot = await _snapshot(request)
-    bindings = await _client(request).list_bindings(
-        domain_id=domain_id, auth_context=request.state.auth_context,
-    )
+    bindings: list[dict[str, Any]] = []
+    try:
+        listed = await _client(request).list_bindings(
+            domain_id=domain_id, auth_context=request.state.auth_context,
+        )
+        if isinstance(listed, list):
+            bindings = listed
+    except AssistantAppClientError as exc:
+        logger.warning(
+            "智能工作台 access 读取绑定失败，继续返回权限快照 code={} status={}",
+            exc.code,
+            exc.status_code,
+        )
     return {
         "app_id": snapshot.app_id,
         "domain_id": snapshot.domain_id,
@@ -271,7 +282,7 @@ async def get_access(request: Request):
         "roles": snapshot.roles,
         "permissions": sorted(snapshot.permissions),
         "bindings": bindings,
-        "capabilities": _capabilities_from_bindings(bindings if isinstance(bindings, list) else []),
+        "capabilities": _capabilities_from_bindings(bindings),
     }
 
 

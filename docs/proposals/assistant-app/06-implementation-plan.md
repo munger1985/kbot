@@ -155,3 +155,14 @@ Phase A–F 已落地。本切片不再重做契约、Schema、Entity/UoW、本�
 11. 本切片不重启、不 pull、不 commit/push、不对 Ashburn 做真实 Canary。
 
 真实 OCI Ashburn Canary（Phase G）仍不在本切片执行。
+
+## 导航韧性（2026-09-15 补丁）
+
+登录后工作台正文可见、侧栏缺失，是因为 Shell 原先等 `GET /access` 成功后才注入 chrome，而 `/access` 又同步调用内部 `list_bindings`。Assistant App 未上线时，Main API 把 `AssistantAppClientError` 映射成 5xx，前端 toast 容器也还没挂上，用户只看到三张入口卡。
+
+补丁约束：
+
+1. UI 对齐 KM：先注入完整侧栏/顶栏，再用 `access.permissions` **删除**无权限项，不能只置灰。`/access` 失败时仍保留 chrome，并在已挂载的 toast 区报错。
+2. BFF：`GET /access` 在 `list_bindings` 失败时仍返回 snapshot 权限；`bindings=[]`，capabilities 全 `ready:false`。导航不得被下游绑定查询绑死，也不得用 `assistant:model_binding_manage` 卡住 access。
+3. 浏览器只调 Main API，禁止 `/internal/v1`；不写死 `grok-4.6`。
+4. 本补丁不做 Phase G 真实验收；重启需用户明确要求。

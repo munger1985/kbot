@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from main_api.app import create_main_api_app
+from platform_clients import AssistantAppClientError
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.security import DOMAIN_ID_HEADER, USER_ID_HEADER
 
@@ -136,6 +137,34 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         body = response.json()
         self.assertEqual([], body["bindings"])
+        self.assertEqual(
+            {"bound": False, "verified": False, "ready": False},
+            body["capabilities"]["x_search"],
+        )
+        self.assertEqual(
+            {"bound": False, "verified": False, "ready": False},
+            body["capabilities"]["image_generation"],
+        )
+
+    def test_access_survives_binding_lookup_failure(self):
+        async def fail_bindings(**kwargs):
+            raise AssistantAppClientError(
+                status_code=503,
+                code="ASSISTANT_APP_UNAVAILABLE",
+                message="智能工作台服务暂时不可用",
+            )
+
+        self.assistant.list_bindings = fail_bindings
+        response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())
+
+        self.assertEqual(200, response.status_code, response.text)
+        body = response.json()
+        self.assertEqual(["assistant:access"], body["permissions"])
+        self.assertEqual([], body["bindings"])
+        self.assertEqual(
+            {"bound": False, "verified": False, "ready": False},
+            body["capabilities"]["knowledge"],
+        )
         self.assertEqual(
             {"bound": False, "verified": False, "ready": False},
             body["capabilities"]["x_search"],

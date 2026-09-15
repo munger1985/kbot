@@ -1,4 +1,4 @@
-/* 智能工作台公共 Shell：按权限删除导航，并在就绪后暴露 access。 */
+/* 智能工作台公共 Shell：先注入完整导航，再按权限删除，并在就绪后暴露 access。 */
 (function () {
   "use strict";
 
@@ -64,14 +64,14 @@
     return ["未验收", "warn"];
   }
 
-  function shellMarkup(access, session, current) {
-    const permissions = new Set(access.permissions || []);
+  function shellMarkup(session, current) {
     const navigation = sections.map(([title, pages]) => {
-      const links = pages
-        .filter(([id]) => permissions.has(PAGE_PERMISSIONS[id]))
-        .map(([id, label, href]) => `<a href="${href}" ${id === current ? 'aria-current="page"' : ""}>${escapeHtml(label)}</a>`)
-        .join("");
-      if (!links) return "";
+      const links = pages.map(([id, label, href]) => {
+        const permission = PAGE_PERMISSIONS[id];
+        const currentAttr = id === current ? ' aria-current="page"' : "";
+        const permissionAttr = permission ? ` data-permission="${escapeHtml(permission)}"` : "";
+        return `<a href="${href}"${permissionAttr}${currentAttr}>${escapeHtml(label)}</a>`;
+      }).join("");
       return `<div class="assistant-nav-label">${escapeHtml(title)}</div><nav class="assistant-nav" aria-label="${escapeHtml(title)}">${links}</nav>`;
     }).join("");
     const domain = session.domain_name || "assistant_portal";
@@ -95,6 +95,27 @@
       <div id="assistant-toast-region" class="assistant-toast-region" aria-live="polite"></div>`;
   }
 
+  function pruneNavigation(permissions) {
+    document.querySelectorAll("[data-permission]").forEach((element) => {
+      if (!permissions.has(element.dataset.permission)) element.remove();
+    });
+    document.querySelectorAll(".assistant-nav").forEach((nav) => {
+      if (nav.querySelector("a")) return;
+      const label = nav.previousElementSibling;
+      if (label?.classList.contains("assistant-nav-label")) label.remove();
+      nav.remove();
+    });
+  }
+
+  function mountShell(session, current) {
+    if (document.querySelector(".assistant-sidebar")) return;
+    document.body.insertAdjacentHTML("afterbegin", shellMarkup(session, current));
+    document.getElementById("assistant-logout")?.addEventListener("click", () => {
+      KBotAssistantAuth.clear();
+      location.replace("./login.html");
+    });
+  }
+
   async function initialize() {
     const page = document.body.dataset.page || "";
     if (page === "login" || document.body.classList.contains("assistant-login")) return null;
@@ -107,16 +128,20 @@
       location.replace("./login.html");
       return null;
     }
+    mountShell(session, page);
     let access;
     try {
       access = await KBotAssistantApi.json("/access", "GET");
     } catch (error) {
+      document.body.dataset.access = "denied";
       if (error.status === 401) return null;
       toast(error.message || "无法读取访问权限", "error");
-      throw error;
+      return null;
     }
     const permissions = new Set(access.permissions || []);
+    pruneNavigation(permissions);
     if (!permissions.has("assistant:access")) {
+      document.body.dataset.access = "denied";
       toast("没有智能工作台访问权限", "error");
       KBotAssistantAuth.clear();
       location.replace("./login.html");
@@ -127,11 +152,7 @@
       location.replace("./dashboard.html");
       return access;
     }
-    document.body.insertAdjacentHTML("afterbegin", shellMarkup(access, session, page));
-    document.getElementById("assistant-logout")?.addEventListener("click", () => {
-      KBotAssistantAuth.clear();
-      location.replace("./login.html");
-    });
+    document.body.dataset.access = "ready";
     return access;
   }
 
