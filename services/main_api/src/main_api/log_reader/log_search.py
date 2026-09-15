@@ -23,6 +23,7 @@ _INCLUDED_SERVICES = frozenset(
         "data_query",
         "aiops_agent",
         "km_asset_app",
+        "assistant_app",
     }
 )
 _LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
