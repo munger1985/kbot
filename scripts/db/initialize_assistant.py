@@ -357,6 +357,13 @@ def main() -> int:
         result = asyncio.run(initialize_assistant(check_only=args.check_only))
     except Exception as exc:
         print(f"智能工作台初始化失败：{exc}")
+        message = str(exc)
+        if "ORA-20001" in message or "基础表不完整" in message:
+            print(
+                "请用与 kbot.toml 相同的 Oracle 用户检查缺表，并先执行 "
+                "database/oracle/assistant_app/001_agents.sql，"
+                "再确认 002_generative_runtime.sql 已在同一用户下执行。"
+            )
         return 1
 
     action = "校验通过" if args.check_only else "初始化完成"
