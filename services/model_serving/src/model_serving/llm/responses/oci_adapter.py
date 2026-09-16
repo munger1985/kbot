@@ -109,7 +109,7 @@ class OciGrokResponsesAdapter:
             raise GenerativeAdapterError(
                 "PROVIDER_UNAVAILABLE", "上游 Responses 暂时不可用", status_code=503,
             ) from exc
-        return self._parse_http(response)
+        return self._parse_http(response, url=url)
 
     @staticmethod
     def _signer(material: dict[str, Any]):
@@ -143,7 +143,7 @@ class OciGrokResponsesAdapter:
         return tool
 
     @staticmethod
-    def _parse_http(response: requests.Response) -> dict[str, Any]:
+    def _parse_http(response: requests.Response, *, url: str = "") -> dict[str, Any]:
         status = int(response.status_code)
         try:
             payload = response.json()
@@ -158,8 +158,8 @@ class OciGrokResponsesAdapter:
             return payload
         code, message = provider_error_fields(payload)
         logger.warning(
-            "OCI Responses 调用失败：status={} code={} message={}",
-            status, code or "-", message or "-",
+            "OCI Responses 调用失败：url={} status={} code={} message={}",
+            url or "-", status, code or "-", message or "-",
         )
         raise classify_provider_http_error(status, payload)
 
@@ -173,7 +173,7 @@ def build_oci_responses_url(endpoint: str) -> str:
             status_code=503,
         )
     lowered = base.lower()
-    if lowered.endswith("/openai/v1/responses"):
+    if lowered.endswith("/responses"):
         return base
     if lowered.endswith("/openai/v1"):
         return f"{base}/responses"
@@ -185,7 +185,9 @@ def build_oci_responses_url(endpoint: str) -> str:
     if path == "/v1":
         # 旧 Chat host 误带了 /v1，才改写到 OpenAI 兼容路径。
         return f"{base[:-3]}/openai/v1/responses"
-    # /20231130/actions/v1 本身就是 Responses 地址，不得再拼 /openai/v1/responses。
+    if path.endswith("/20231130/actions/v1"):
+        # Codex 把该路径当 Responses base_url，实际 POST 还要加 /responses。
+        return f"{base}/responses"
     return base
 
 

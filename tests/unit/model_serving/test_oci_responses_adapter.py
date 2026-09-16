@@ -64,10 +64,12 @@ class OciResponsesUrlTest(unittest.TestCase):
             build_oci_responses_url(f"{HOST}/v1"),
         )
 
-    def test_dated_actions_v1_endpoint_is_kept(self):
+    def test_dated_actions_v1_endpoint_appends_responses(self):
         endpoint = f"{HOST}/20231130/actions/v1"
-        self.assertEqual(endpoint, build_oci_responses_url(endpoint))
-        self.assertEqual(endpoint, build_oci_responses_url(endpoint + "/"))
+        expected = f"{endpoint}/responses"
+        self.assertEqual(expected, build_oci_responses_url(endpoint))
+        self.assertEqual(expected, build_oci_responses_url(endpoint + "/"))
+        self.assertEqual(expected, build_oci_responses_url(expected))
 
 
 class OciResponsesProjectTest(unittest.TestCase):
@@ -124,7 +126,7 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual("ok", result.answer)
 
-    async def test_posts_dated_actions_v1_endpoint_without_openai_rewrite(self):
+    async def test_posts_dated_actions_v1_responses_without_openai_rewrite(self):
         adapter = OciGrokResponsesAdapter()
         captured: dict = {}
         response = SimpleNamespace(
@@ -154,7 +156,7 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
                 _material(project=PROJECT) | {"api_endpoint": endpoint},
             )
 
-        self.assertEqual(endpoint, captured["url"])
+        self.assertEqual(f"{endpoint}/responses", captured["url"])
 
 
 class OciResponsesErrorLogTest(unittest.TestCase):
@@ -190,10 +192,14 @@ class OciResponsesErrorLogTest(unittest.TestCase):
         )
         with patch("model_serving.llm.responses.oci_adapter.logger") as logger:
             with self.assertRaises(GenerativeAdapterError):
-                OciGrokResponsesAdapter._parse_http(response)
+                OciGrokResponsesAdapter._parse_http(
+                    response,
+                    url=f"{HOST}/20231130/actions/v1/responses",
+                )
         rendered = " ".join(str(item) for item in logger.warning.call_args)
         self.assertIn("400", rendered)
         self.assertIn("invalid_request", rendered)
+        self.assertIn("/20231130/actions/v1/responses", rendered)
         self.assertNotIn("sk-secret", rendered)
 
 
