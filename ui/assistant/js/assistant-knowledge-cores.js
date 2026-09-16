@@ -9,6 +9,10 @@
   let selectedCollectionId = null;
   let processingTimer = null;
 
+  function approvalStatusLabel(status) {
+    return ({ PENDING: "待审核", APPROVED: "已批准", REJECTED: "已拒绝" })[status] || status || "未知";
+  }
+
   function openDialog(id) { document.getElementById(id)?.showModal(); }
   function closeDialog(id) { document.getElementById(id)?.close(); }
   function session() { return globalThis.KBotAssistantAuth?.load?.() || {}; }
@@ -72,6 +76,62 @@
     }).join("");
   }
 
+  function renderApprovals(items) {
+    const node = document.getElementById("kc-approval-rows");
+    if (!node) return;
+    if (!selectedCollectionId) {
+      node.innerHTML = emptyRow(5, "尚未选择 Knowledge Core", "选择一个 Knowledge Core 后，可查看待审批资料。");
+      return;
+    }
+    if (!items.length) {
+      node.innerHTML = emptyRow(5, "当前没有待审批资料", "上传文件后，资料会先进入待审核状态。");
+      return;
+    }
+    node.innerHTML = items.map((item) => {
+      const names = Array.isArray(item.document_names) ? item.document_names.join("、") : "—";
+      return `<tr>
+        <td><strong>${escapeHtml(item.title || "未命名资料包")}</strong><br><small>${escapeHtml(item.bundle_id || "")}</small></td>
+        <td>${escapeHtml(names)}</td>
+        <td>${escapeHtml(item.created_at || item.submitted_at || "—")}</td>
+        <td>${badge(approvalStatusLabel(item.approval_status), "warn")}</td>
+        <td><div class="assistant-row-actions">
+          <button class="small primary" type="button" data-approval-action="APPROVE" data-bundle-revision-id="${escapeHtml(item.bundle_revision_id || "")}">批准并解析</button>
+          <button class="small danger" type="button" data-approval-action="REJECT" data-bundle-revision-id="${escapeHtml(item.bundle_revision_id || "")}">拒绝</button>
+        </div></td>
+      </tr>`;
+    }).join("");
+    node.querySelectorAll("[data-approval-action]").forEach((button) => {
+      button.addEventListener("click", () => reviewApproval(
+        button.dataset.bundleRevisionId,
+        button.dataset.approvalAction,
+      ).catch((error) => toast(error.message || "资料审核失败", "error")));
+    });
+  }
+
+  async function loadApprovals() {
+    const refresh = document.getElementById("kc-refresh-approvals");
+    if (refresh) refresh.disabled = !selectedCollectionId;
+    if (!selectedCollectionId) {
+      renderApprovals([]);
+      return;
+    }
+    const payload = await KBotAssistantApi.json(`/knowledge-cores/${selectedCollectionId}/approvals`, "GET");
+    renderApprovals(Array.isArray(payload?.items) ? payload.items : []);
+  }
+
+  async function reviewApproval(bundleRevisionId, decision) {
+    if (!bundleRevisionId) return;
+    const message = decision === "APPROVE" ? "批准后将开始解析和索引，确认继续？" : "确认拒绝这份资料？";
+    if (!globalThis.confirm(message)) return;
+    await KBotAssistantApi.json(
+      `/knowledge-cores/${selectedCollectionId}/bundle-revisions/${bundleRevisionId}/approval`,
+      "POST",
+      { decision },
+    );
+    await Promise.all([loadApprovals(), loadProcessing()]);
+    toast(decision === "APPROVE" ? "资料已批准，开始解析。" : "资料已拒绝。");
+  }
+
   async function loadProcessing() {
     const title = document.getElementById("kc-assets-title");
     const upload = document.getElementById("kc-upload-open");
@@ -84,7 +144,10 @@
       renderProcessing([]);
       return;
     }
-    const payload = await KBotAssistantApi.json(`/knowledge-cores/${row.collection_id}/processing`, "GET");
+    const [payload] = await Promise.all([
+      KBotAssistantApi.json(`/knowledge-cores/${row.collection_id}/processing`, "GET"),
+      loadApprovals(),
+    ]);
     renderProcessing(Array.isArray(payload?.items) ? payload.items : []);
     const active = (payload?.items || []).some((item) => !["READY", "PARTIAL", "FAILED", "CANCELLED"].includes(String(item.status || "")));
     if (active && !processingTimer) {
@@ -442,8 +505,8 @@
       });
       closeDialog("kc-upload-dialog");
       input.value = "";
-      await loadProcessing();
-      toast(`已受理 ${files.length} 个文件，正在处理。`);
+      await Promise.all([loadApprovals(), loadProcessing()]);
+      toast(`已受理 ${files.length} 个文件，等待审批。`);
     } finally {
       if (button) button.disabled = false;
     }
@@ -465,6 +528,9 @@
     document.getElementById("kc-upload-open")?.addEventListener("click", () => openDialog("kc-upload-dialog"));
     document.getElementById("kc-refresh-processing")?.addEventListener("click", () => {
       loadProcessing().catch((error) => toast(error.message || "无法刷新解析进度", "error"));
+    });
+    document.getElementById("kc-refresh-approvals")?.addEventListener("click", () => {
+      loadApprovals().catch((error) => toast(error.message || "无法刷新待审批资料", "error"));
     });
     try {
       await loadPage();

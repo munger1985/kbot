@@ -44,6 +44,20 @@
   </section>
   <section class="assistant-panel">
     <div class="assistant-panel-head">
+      <div><h2>待审批资料</h2><p>用户上传的资料需批准后才会进入解析和索引流水线。</p></div>
+      <button class="small" id="kc-refresh-approvals" type="button" disabled>刷新</button>
+    </div>
+    <div class="assistant-table-wrap">
+      <table class="assistant-table">
+        <thead><tr><th>资料包</th><th>文件</th><th>上传时间</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="kc-approval-rows">
+          <tr><td colspan="5"><div class="assistant-empty"><div><strong>尚未选择 Knowledge Core</strong><p>选择一个 Knowledge Core 后，可查看待审批资料。</p></div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="assistant-panel">
+    <div class="assistant-panel-head">
       <div><h2>资料与解析进度</h2><p id="kc-assets-title">先在上方选择一个 Knowledge Core。</p></div>
       <div class="assistant-row-actions">
         <button class="small" id="kc-refresh-processing" type="button" disabled>刷新</button>

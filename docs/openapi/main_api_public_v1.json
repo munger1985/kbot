@@ -2298,6 +2298,36 @@
         "title": "AssistantImageCreatePayload",
         "type": "object"
       },
+      "AssistantIntakeReviewPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "AssistantIntakeReviewPayload",
+        "type": "object"
+      },
       "AssistantKnowledgeCoreCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -18700,6 +18730,110 @@
           }
         },
         "summary": "Update Knowledge Core",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}/approvals": {
+      "get": {
+        "description": "列出当前 Knowledge Core 中等待审核的用户资料。",
+        "operationId": "list_knowledge_core_approvals_api_v1_apps_assistant_knowledge_cores__collection_id__approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Core Approvals",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}/bundle-revisions/{bundle_revision_id}/approval": {
+      "post": {
+        "description": "审核用户资料，批准后由 KC 启动解析和索引流水线。",
+        "operationId": "review_knowledge_core_intake_api_v1_apps_assistant_knowledge_cores__collection_id__bundle_revisions__bundle_revision_id__approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantIntakeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Knowledge Core Intake",
         "tags": [
           "Assistant App"
         ]

@@ -146,6 +146,11 @@ class AssistantKnowledgeCoreUpdatePayload(_Payload):
     visual_embedding: UUID | None = None
 
 
+class AssistantIntakeReviewPayload(_Payload):
+    decision: Literal["APPROVE", "REJECT"]
+    comment: str | None = Field(default=None, max_length=1000)
+
+
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     if context.app_id and context.app_id != "assistant":
@@ -779,6 +784,36 @@ async def list_knowledge_core_processing(collection_id: UUID, request: Request):
         collection_id=collection_id,
         page=1,
         page_size=100,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/knowledge-cores/{collection_id}/approvals")
+async def list_knowledge_core_approvals(collection_id: UUID, request: Request):
+    """列出当前 Knowledge Core 中等待审核的用户资料。"""
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).list_pending_approvals(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/knowledge-cores/{collection_id}/bundle-revisions/{bundle_revision_id}/approval")
+async def review_knowledge_core_intake(
+    collection_id: UUID,
+    bundle_revision_id: UUID,
+    payload: AssistantIntakeReviewPayload,
+    request: Request,
+):
+    """审核用户资料，批准后由 KC 启动解析和索引流水线。"""
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).review_user_intake(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        bundle_revision_id=bundle_revision_id,
+        decision=payload.decision,
+        comment=payload.comment,
         auth_context=request.state.auth_context,
     )
 

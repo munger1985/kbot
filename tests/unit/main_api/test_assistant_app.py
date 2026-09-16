@@ -39,6 +39,8 @@ class _KnowledgeClient:
         self.deleted = []
         self.collections = []
         self.processing = {"items": [], "page": 1, "page_size": 100, "total": 0}
+        self.approvals = {"items": []}
+        self.review = None
         self.upload = None
         self.collection = {
             "collection_id": str(CORE_ID),
@@ -64,6 +66,14 @@ class _KnowledgeClient:
     async def list_processing(self, **kwargs):
         self.processing["collection_id"] = str(kwargs["collection_id"])
         return self.processing
+
+    async def list_pending_approvals(self, **kwargs):
+        self.approvals["collection_id"] = str(kwargs["collection_id"])
+        return self.approvals
+
+    async def review_user_intake(self, **kwargs):
+        self.review = kwargs
+        return {"approval_status": kwargs["decision"]}
 
     async def ingest_multipart(self, **kwargs):
         self.upload = kwargs
@@ -498,6 +508,27 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("PARSING", response.json()["items"][0]["status"])
         self.assertEqual(str(CORE_ID), self.knowledge.processing["collection_id"])
+
+    def test_knowledge_core_approvals_is_scoped_to_current_domain(self):
+        self.knowledge.approvals = {"items": [{"title": "会议纪要.pdf", "approval_status": "PENDING"}]}
+        response = self.client.get(
+            f"/api/v1/apps/assistant/knowledge-cores/{CORE_ID}/approvals",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("会议纪要.pdf", response.json()["items"][0]["title"])
+        self.assertEqual(str(CORE_ID), self.knowledge.approvals["collection_id"])
+
+    def test_knowledge_core_approval_forwards_decision_and_trusted_domain(self):
+        response = self.client.post(
+            f"/api/v1/apps/assistant/knowledge-cores/{CORE_ID}/bundle-revisions/{VERSION_ID}/approval",
+            headers=self._headers(),
+            json={"decision": "APPROVE", "comment": "demo"},
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("APPROVE", self.knowledge.review["decision"])
+        self.assertEqual("demo", self.knowledge.review["comment"])
+        self.assertEqual(41, self.knowledge.review["domain_id"])
 
     def test_knowledge_core_upload_forwards_multipart_without_persisting_in_main_api(self):
         response = self.client.post(
