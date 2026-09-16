@@ -75,7 +75,9 @@ class OciGrokResponsesAdapter:
                 "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
                 status_code=503,
             )
-        project = oci_generative_ai_project(material.get("model_params"))
+        model_params = material.get("model_params")
+        project = oci_generative_ai_project(model_params)
+        compartment_id = oci_compartment_id(model_params)
         try:
             signer = self._signer(material)
         except ValueError as exc:
@@ -94,6 +96,7 @@ class OciGrokResponsesAdapter:
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                     "OpenAI-Project": project,
+                    "CompartmentId": compartment_id,
                 },
                 timeout=self._timeout_seconds,
             )
@@ -205,6 +208,22 @@ def oci_generative_ai_project(model_params: Any) -> str:
             status_code=503,
         )
     return project
+
+
+def oci_compartment_id(model_params: Any) -> str:
+    """读取 Responses 调用所需的 compartment，与 Chat 使用同一 MODEL_PARAMS 字段。"""
+    if not isinstance(model_params, dict):
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型缺少 compartment",
+            status_code=503,
+        )
+    compartment_id = str(model_params.get("compartment_id") or "").strip()
+    if not compartment_id:
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型缺少 compartment",
+            status_code=503,
+        )
+    return compartment_id
 
 
 def provider_error_fields(payload: Any) -> tuple[str | None, str | None]:

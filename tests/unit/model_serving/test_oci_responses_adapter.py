@@ -1,4 +1,4 @@
-"""OCI Responses 适配器的 URL、project 与错误日志回归测试。"""
+"""OCI Responses 适配器的 URL、project、compartment 与错误日志回归测试。"""
 
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,6 +12,7 @@ from model_serving.llm.responses.oci_adapter import (
     OciGrokResponsesAdapter,
     build_oci_responses_url,
     classify_provider_http_error,
+    oci_compartment_id,
     oci_generative_ai_project,
     provider_error_fields,
 )
@@ -19,6 +20,7 @@ from model_serving.llm.responses.oci_adapter import (
 
 HOST = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
 PROJECT = "ocid1.generativeaiproject.oc1..test"
+COMPARTMENT = "ocid1.compartment.oc1..test"
 
 
 def _request() -> ResearchRequest:
@@ -30,7 +32,7 @@ def _request() -> ResearchRequest:
 
 
 def _material(**params):
-    model_params = {"compartment_id": "ocid1.compartment.oc1..test"}
+    model_params = {"compartment_id": COMPARTMENT}
     model_params.update(params)
     return {
         "provider": "OCI",
@@ -75,7 +77,7 @@ class OciResponsesUrlTest(unittest.TestCase):
 class OciResponsesProjectTest(unittest.TestCase):
     def test_missing_project_is_a_configuration_error(self):
         with self.assertRaises(GenerativeAdapterError) as raised:
-            oci_generative_ai_project({"compartment_id": "ocid1.compartment.oc1..test"})
+            oci_generative_ai_project({"compartment_id": COMPARTMENT})
         self.assertEqual(503, raised.exception.status_code)
         self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
         self.assertIn("project", raised.exception.message.lower())
@@ -85,6 +87,19 @@ class OciResponsesProjectTest(unittest.TestCase):
             oci_generative_ai_project({"project": "  "})
 
 
+class OciResponsesCompartmentTest(unittest.TestCase):
+    def test_missing_compartment_is_a_configuration_error(self):
+        with self.assertRaises(GenerativeAdapterError) as raised:
+            oci_compartment_id({"project": PROJECT})
+        self.assertEqual(503, raised.exception.status_code)
+        self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
+        self.assertIn("compartment", raised.exception.message.lower())
+
+    def test_blank_compartment_is_rejected(self):
+        with self.assertRaises(GenerativeAdapterError):
+            oci_compartment_id({"project": PROJECT, "compartment_id": "  "})
+
+
 class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_project_does_not_call_upstream(self):
         adapter = OciGrokResponsesAdapter()
@@ -92,6 +107,18 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GenerativeAdapterError) as raised:
                 await adapter.research(_request(), _material())
         self.assertEqual(503, raised.exception.status_code)
+        post.assert_not_called()
+
+    async def test_missing_compartment_does_not_call_upstream(self):
+        adapter = OciGrokResponsesAdapter()
+        with patch("model_serving.llm.responses.oci_adapter.requests.post") as post:
+            with self.assertRaises(GenerativeAdapterError) as raised:
+                await adapter.research(
+                    _request(),
+                    _material(project=PROJECT, compartment_id=None),
+                )
+        self.assertEqual(503, raised.exception.status_code)
+        self.assertIn("compartment", raised.exception.message.lower())
         post.assert_not_called()
 
     async def test_posts_openai_responses_with_project_header(self):
@@ -122,6 +149,7 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(f"{HOST}/openai/v1/responses", captured["url"])
         self.assertEqual(PROJECT, captured["headers"]["OpenAI-Project"])
+        self.assertEqual(COMPARTMENT, captured["headers"]["CompartmentId"])
         self.assertEqual("x_search", captured["json"]["tools"][0]["type"])
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual("ok", result.answer)
@@ -157,6 +185,8 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(f"{endpoint}/responses", captured["url"])
+        self.assertEqual(PROJECT, captured["headers"]["OpenAI-Project"])
+        self.assertEqual(COMPARTMENT, captured["headers"]["CompartmentId"])
 
 
 class OciResponsesErrorLogTest(unittest.TestCase):
