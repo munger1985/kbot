@@ -323,9 +323,68 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(f"{endpoint}/responses", captured["url"])
         self.assertEqual("image_generation", captured["json"]["tools"][0]["type"])
+        self.assertNotIn("aspect_ratio", captured["json"]["tools"][0])
+        self.assertIn("1:1", captured["json"]["instructions"])
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual(JPEG, result.artifacts[0].content)
         self.assertEqual("image/jpeg", result.artifacts[0].mime_type)
+
+
+class OciResponsesImageParseVariantsTest(unittest.TestCase):
+    def test_http_200_error_body_is_not_treated_as_success(self):
+        import json
+        body = json.dumps({
+            "error": {
+                "code": "invalid_request",
+                "message": "Please pass in correct format of request.",
+            }
+        }).encode("utf-8")
+        with patch("model_serving.llm.responses.oci_adapter.logger") as logger:
+            with self.assertRaises(GenerativeAdapterError) as raised:
+                OciGrokResponsesAdapter._parse_http(_HttpResponse(200, body))
+        self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
+        rendered = " ".join(str(item) for item in logger.warning.call_args)
+        self.assertIn("invalid_request", rendered)
+        self.assertIn("Please pass in correct format of request.", rendered)
+
+    def test_whitespace_prefixed_jpeg_still_parses(self):
+        payload = OciGrokResponsesAdapter._parse_http(_HttpResponse(200, b"\n" + JPEG))
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+
+    def test_nested_b64_result_object_parses(self):
+        import base64
+        import json
+        body = json.dumps({
+            "status": "completed",
+            "data": {
+                "output": {
+                    "type": "image_generation_call",
+                    "id": "ig_nested",
+                    "result": {"b64_json": base64.b64encode(JPEG).decode("ascii")},
+                }
+            },
+        }).encode("utf-8")
+        payload = OciGrokResponsesAdapter._parse_http(_HttpResponse(200, body))
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+        self.assertEqual("ig_nested", result.artifacts[0].provider_artifact_id)
+
+    def test_missing_image_logs_structure_without_payload_body(self):
+        payload = {
+            "id": "resp-no-image",
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
+        }
+        with patch("model_serving.llm.responses.oci_adapter.logger") as logger:
+            result = parse_image_response(payload)
+        self.assertEqual("FAILED", result.status)
+        self.assertEqual("PROVIDER_UNAVAILABLE", result.error_code)
+        summary = logger.warning.call_args.args[1]
+        self.assertEqual(["message"], summary["item_types"])
+        self.assertNotIn("ok", str(logger.warning.call_args))
 
 
 if __name__ == "__main__":
