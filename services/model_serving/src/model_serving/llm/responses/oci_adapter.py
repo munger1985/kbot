@@ -148,10 +148,7 @@ class OciGrokResponsesAdapter:
     @staticmethod
     def _parse_http(response: requests.Response, *, url: str = "") -> dict[str, Any]:
         status = int(response.status_code)
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = {"message": (response.text or "")[:500]}
+        payload = decode_oci_http_payload(response)
         if status < 400:
             if not isinstance(payload, dict):
                 raise GenerativeAdapterError(
@@ -165,6 +162,57 @@ class OciGrokResponsesAdapter:
             url or "-", status, code or "-", message or "-",
         )
         raise classify_provider_http_error(status, payload)
+
+
+def decode_oci_http_payload(response: requests.Response) -> dict[str, Any]:
+    """把上游正文解析成 JSON；Grok 文生图成功时也可能直接返回图片字节。"""
+    content = getattr(response, "content", None)
+    if isinstance(content, (bytes, bytearray)) and content:
+        raw = bytes(content)
+        if _looks_like_image(raw):
+            mime_type, _ = _detect_image(raw)
+            logger.info(
+                "OCI Responses 返回了图片二进制正文：mime={} bytes={}",
+                mime_type, len(raw),
+            )
+            return _payload_from_image_bytes(raw)
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, ValueError, TypeError):
+            try:
+                message = raw.decode("utf-8")[:500]
+            except UnicodeDecodeError:
+                message = "上游返回了非 JSON 正文"
+            return {"message": message}
+        return payload if isinstance(payload, dict) else {"message": str(payload)[:500]}
+    try:
+        payload = response.json()
+    except (ValueError, UnicodeDecodeError, TypeError):
+        try:
+            text = response.text or ""
+        except UnicodeDecodeError as exc:
+            raise GenerativeAdapterError(
+                "PROVIDER_UNAVAILABLE", "上游 Responses 返回了无法解析的正文",
+                status_code=502,
+            ) from exc
+        payload = {"message": text[:500]}
+    return payload if isinstance(payload, dict) else {"message": str(payload)[:500]}
+
+
+def _looks_like_image(content: bytes) -> bool:
+    if content.startswith(b"RIFF") and b"WEBP" in content[:16]:
+        return True
+    return content.startswith(b"\x89PNG\r\n\x1a\n") or content.startswith(b"\xff\xd8\xff")
+
+
+def _payload_from_image_bytes(content: bytes) -> dict[str, Any]:
+    return {
+        "status": "completed",
+        "output": [{
+            "type": "image_generation_call",
+            "result": base64.b64encode(content).decode("ascii"),
+        }],
+    }
 
 
 def build_oci_responses_url(endpoint: str) -> str:

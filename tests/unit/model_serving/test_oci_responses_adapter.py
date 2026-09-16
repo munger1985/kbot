@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import unittest
 
-from platform_core.contracts import ResearchRequest
+from platform_core.contracts import ImageGenerationRequest, ResearchRequest
 from platform_core.identity import uuid7
 
 from model_serving.llm.responses.errors import GenerativeAdapterError
@@ -14,6 +14,7 @@ from model_serving.llm.responses.oci_adapter import (
     classify_provider_http_error,
     oci_compartment_id,
     oci_generative_ai_project,
+    parse_image_response,
     provider_error_fields,
 )
 
@@ -231,6 +232,92 @@ class OciResponsesErrorLogTest(unittest.TestCase):
         self.assertIn("invalid_request", rendered)
         self.assertIn("/20231130/actions/v1/responses", rendered)
         self.assertNotIn("sk-secret", rendered)
+
+
+JPEG = b"\xff\xd8\xff\xdb" + b"\x00" * 32
+
+
+class _HttpResponse:
+    def __init__(self, status_code, content, headers=None):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+
+    def json(self):
+        import json
+        return json.loads(self.content.decode("utf-8"))
+
+    @property
+    def text(self):
+        return self.content.decode("utf-8")
+
+
+def _image_request() -> ImageGenerationRequest:
+    return ImageGenerationRequest(
+        model_id=uuid7(),
+        prompt="a red cube",
+        trace_id="trace-image",
+    )
+
+
+class OciResponsesImageBodyTest(unittest.TestCase):
+    def test_jpeg_http_body_is_wrapped_as_image_payload(self):
+        payload = OciGrokResponsesAdapter._parse_http(_HttpResponse(200, JPEG))
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(1, len(result.artifacts))
+        self.assertEqual("image/jpeg", result.artifacts[0].mime_type)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+
+    def test_json_image_generation_call_still_parses(self):
+        import base64
+        import json
+        body = json.dumps({
+            "id": "resp-img-1",
+            "status": "completed",
+            "output": [{
+                "type": "image_generation_call",
+                "id": "ig_1",
+                "result": base64.b64encode(JPEG).decode("ascii"),
+            }],
+        }).encode("utf-8")
+        payload = OciGrokResponsesAdapter._parse_http(_HttpResponse(200, body))
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+        self.assertEqual("resp-img-1", result.provider_request_id)
+
+    def test_non_utf8_error_body_does_not_raise_unicode_error(self):
+        with self.assertRaises(GenerativeAdapterError) as raised:
+            OciGrokResponsesAdapter._parse_http(_HttpResponse(400, b"\x80\x81not-json"))
+        self.assertEqual(502, raised.exception.status_code)
+        self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
+
+
+class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_image_accepts_raw_jpeg_body(self):
+        adapter = OciGrokResponsesAdapter()
+        captured: dict = {}
+
+        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
+            captured.update(url=url, json=json, headers=headers)
+            return _HttpResponse(200, JPEG)
+
+        endpoint = f"{HOST}/20231130/actions/v1"
+        with (
+            patch.object(adapter, "_signer", return_value=object()),
+            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+        ):
+            result = await adapter.generate_image(
+                _image_request(),
+                _material(project=PROJECT) | {"api_endpoint": endpoint},
+            )
+
+        self.assertEqual(f"{endpoint}/responses", captured["url"])
+        self.assertEqual("image_generation", captured["json"]["tools"][0]["type"])
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+        self.assertEqual("image/jpeg", result.artifacts[0].mime_type)
 
 
 if __name__ == "__main__":
