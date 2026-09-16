@@ -208,6 +208,8 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         self.assertIn("ModelCategory.IMG_EMBEDDING", kc)
         self.assertIn("/processing", kc)
         self.assertIn("/ingestions/user-files", kc)
+        self.assertIn("/reprocess", kc)
+        self.assertIn("data-reprocess-file", kc)
         self.assertIn("Idempotency-Key", kc)
         self.assertNotIn("Number(row.category) === 2", kc)
         self.assertNotIn("Number(item.category) === 2", kc)

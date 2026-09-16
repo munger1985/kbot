@@ -2381,6 +2381,21 @@
         "title": "AssistantKnowledgeCoreCreatePayload",
         "type": "object"
       },
+      "AssistantKnowledgeCoreReprocessPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_version_id"
+        ],
+        "title": "AssistantKnowledgeCoreReprocessPayload",
+        "type": "object"
+      },
       "AssistantKnowledgeCoreUpdatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -18834,6 +18849,78 @@
           }
         },
         "summary": "Review Knowledge Core Intake",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}/reprocess": {
+      "post": {
+        "description": "重新调度一个失败文件的 KC 解析与后续索引流水线。",
+        "operationId": "reprocess_knowledge_core_file_api_v1_apps_assistant_knowledge_cores__collection_id__bundles__bundle_id__revisions__bundle_revision_id__reprocess_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantKnowledgeCoreReprocessPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reprocess Knowledge Core File",
         "tags": [
           "Assistant App"
         ]

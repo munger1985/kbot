@@ -16,6 +16,9 @@ CORE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
 DATA_MODEL_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a002")
 AGENT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a003")
 VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a004")
+BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a005")
+REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a006")
+DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a007")
 EMBEDDING_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a011")
 VISUAL_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a012")
 
@@ -41,6 +44,7 @@ class _KnowledgeClient:
         self.processing = {"items": [], "page": 1, "page_size": 100, "total": 0}
         self.approvals = {"items": []}
         self.review = None
+        self.reprocess = None
         self.upload = None
         self.collection = {
             "collection_id": str(CORE_ID),
@@ -74,6 +78,14 @@ class _KnowledgeClient:
     async def review_user_intake(self, **kwargs):
         self.review = kwargs
         return {"approval_status": kwargs["decision"]}
+
+    async def reprocess_revision(self, **kwargs):
+        self.reprocess = kwargs
+        return {
+            "bundle_revision_id": str(kwargs["bundle_revision_id"]),
+            "generation": str(VERSION_ID),
+            "scheduled_file_count": 1,
+        }
 
     async def ingest_multipart(self, **kwargs):
         self.upload = kwargs
@@ -529,6 +541,22 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual("APPROVE", self.knowledge.review["decision"])
         self.assertEqual("demo", self.knowledge.review["comment"])
         self.assertEqual(41, self.knowledge.review["domain_id"])
+
+    def test_knowledge_core_reprocess_forwards_failed_file_and_trusted_domain(self):
+        response = self.client.post(
+            f"/api/v1/apps/assistant/knowledge-cores/{CORE_ID}/bundles/{BUNDLE_ID}/revisions/{REVISION_ID}/reprocess",
+            headers=self._headers(),
+            json={"document_version_id": str(DOCUMENT_VERSION_ID)},
+        )
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual(41, self.knowledge.reprocess["domain_id"])
+        self.assertEqual(CORE_ID, self.knowledge.reprocess["collection_id"])
+        self.assertEqual(BUNDLE_ID, self.knowledge.reprocess["bundle_id"])
+        self.assertEqual(REVISION_ID, self.knowledge.reprocess["bundle_revision_id"])
+        self.assertEqual(
+            DOCUMENT_VERSION_ID,
+            self.knowledge.reprocess["document_version_id"],
+        )
 
     def test_knowledge_core_upload_forwards_multipart_without_persisting_in_main_api(self):
         response = self.client.post(

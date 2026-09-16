@@ -54,17 +54,30 @@
     const node = document.getElementById("kc-processing-rows");
     if (!node) return;
     if (!selectedCollectionId) {
-      node.innerHTML = emptyRow(6, "尚未选择 Knowledge Core", "选择一个 Knowledge Core 后，可上传资料并查看解析、索引和 Discovery 进度。");
+      node.innerHTML = emptyRow(7, "尚未选择 Knowledge Core", "选择一个 Knowledge Core 后，可上传资料并查看解析、索引和 Discovery 进度。");
       return;
     }
     if (!items.length) {
-      node.innerHTML = emptyRow(6, "当前没有资料处理记录", "点击“上传文件”提交 PDF、Word 或文本资料。");
+      node.innerHTML = emptyRow(7, "当前没有资料处理记录", "点击“上传文件”提交 PDF、Word 或文本资料。");
       return;
     }
     node.innerHTML = items.map((item) => {
       const status = String(item.status || "");
       const progress = Number.isFinite(Number(item.progress_percent)) ? `${item.progress_percent}%` : "—";
       const fileSummary = `${item.ready_count || 0}/${item.file_count || 0} 个文件完成`;
+      const failedFiles = (Array.isArray(item.files) ? item.files : []).filter((file) =>
+        file.document_version_id && String(file.status || "") === "FAILED"
+      );
+      const actions = failedFiles.length ? failedFiles.map((file) => {
+        const failure = [file.failure_code, file.failure_message].filter(Boolean).join(" · ");
+        return `<div>
+          <small title="${escapeHtml(failure)}">${escapeHtml(file.name || "失败文件")}</small><br>
+          <button class="small primary" type="button" data-reprocess-file
+            data-bundle-id="${escapeHtml(item.bundle_id || "")}"
+            data-bundle-revision-id="${escapeHtml(item.bundle_revision_id || "")}"
+            data-document-version-id="${escapeHtml(file.document_version_id)}">重新解析</button>
+        </div>`;
+      }).join("") : "—";
       return `<tr>
         <td><strong>${escapeHtml(item.title || "未命名资料包")}</strong><br><small>${escapeHtml(item.bundle_id || "")}</small></td>
         <td>${badge(processingStatusLabel(status), statusTone(status))}</td>
@@ -72,8 +85,31 @@
         <td>${escapeHtml(progress)}</td>
         <td>${escapeHtml(fileSummary)}${item.failed_count ? ` · ${escapeHtml(item.failed_count)} 个失败` : ""}</td>
         <td>${escapeHtml(item.completed_at || item.reviewed_at || "处理中")}</td>
+        <td><div class="assistant-row-actions">${actions}</div></td>
       </tr>`;
     }).join("");
+    node.querySelectorAll("[data-reprocess-file]").forEach((button) => {
+      button.addEventListener("click", () => reprocessFile(button).catch((error) => {
+        toast(error.message || "无法重新解析文件", "error");
+      }));
+    });
+  }
+
+  async function reprocessFile(button) {
+    const fileName = button.closest("div")?.querySelector("small")?.textContent || "该文件";
+    if (!globalThis.confirm(`确认重新解析「${fileName}」？`)) return;
+    button.disabled = true;
+    try {
+      await KBotAssistantApi.json(
+        `/knowledge-cores/${selectedCollectionId}/bundles/${button.dataset.bundleId}/revisions/${button.dataset.bundleRevisionId}/reprocess`,
+        "POST",
+        { document_version_id: button.dataset.documentVersionId },
+      );
+      await loadProcessing();
+      toast(`已重新提交「${fileName}」的解析任务。`);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function renderApprovals(items) {

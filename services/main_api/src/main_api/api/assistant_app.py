@@ -151,6 +151,10 @@ class AssistantIntakeReviewPayload(_Payload):
     comment: str | None = Field(default=None, max_length=1000)
 
 
+class AssistantKnowledgeCoreReprocessPayload(_Payload):
+    document_version_id: UUID
+
+
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     if context.app_id and context.app_id != "assistant":
@@ -795,6 +799,30 @@ async def list_knowledge_core_approvals(collection_id: UUID, request: Request):
     return await _knowledge(request).list_pending_approvals(
         domain_id=domain_id,
         collection_id=collection_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/knowledge-cores/{collection_id}/bundles/{bundle_id}/revisions/"
+    "{bundle_revision_id}/reprocess",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def reprocess_knowledge_core_file(
+    collection_id: UUID,
+    bundle_id: UUID,
+    bundle_revision_id: UUID,
+    payload: AssistantKnowledgeCoreReprocessPayload,
+    request: Request,
+):
+    """重新调度一个失败文件的 KC 解析与后续索引流水线。"""
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).reprocess_revision(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        bundle_id=bundle_id,
+        bundle_revision_id=bundle_revision_id,
+        document_version_id=payload.document_version_id,
         auth_context=request.state.auth_context,
     )
 
