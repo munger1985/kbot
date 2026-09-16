@@ -14,6 +14,11 @@ SCRIPT_CHAIN = (
     "./js/assistant-api.js",
     "./js/assistant-shell.js",
 )
+MARKDOWN_CHAIN = (
+    "../vendor/marked.umd.js?v=18.0.9",
+    "../vendor/purify.min.js?v=3.4.13",
+    "../shared/kbot-markdown.js?v=20260827_1",
+)
 
 
 class _PageParser(HTMLParser):
@@ -105,8 +110,9 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
     def test_business_pages_use_auth_api_shell_script_chain(self):
         for page_name, page_script in self.page_scripts.items():
             parser = _parse(UI_ROOT / page_name)
-            expected = [*SCRIPT_CHAIN, page_script]
-            self.assertEqual(expected, parser.scripts[:5], page_name)
+            extra = MARKDOWN_CHAIN if page_name == "x-search.html" else ()
+            expected = [*SCRIPT_CHAIN, *extra, page_script]
+            self.assertEqual(expected, parser.scripts[: len(expected)], page_name)
             self.assertNotIn("./js/assistant-resources.js", parser.scripts) if page_name == "model-bindings.html" else None
             if page_name == "model-bindings.html":
                 self.assertNotIn("./js/assistant-resources.js", parser.scripts)
@@ -165,6 +171,9 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         self.assertIn("asset-preview-dialog", management)
         self.assertIn("showModal", management)
         self.assertNotIn('closest("td")', management)
+        self.assertIn("KBotMarkdown.render", x_search)
+        self.assertIn("KBotMarkdown.copyCode", x_search)
+        self.assertNotIn("parseAnswerBlocks", x_search)
         self.assertNotIn("img.src = ", image)
         self.assertNotIn("content_path", image)
 

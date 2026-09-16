@@ -81,129 +81,62 @@
     return `<button type="button" class="x-cite" data-citation="${citation}">${text}</button>`;
   }
 
-  function inlineFormat(text, urlMap) {
-    const pattern = /\[\[(\d+)\]\]\((https?:[^)\s]+)\)|\[(X\d+)\](?:\((https?:[^)\s]+)\))?|\[([^\]]{1,80})\]\((https?:[^)\s]+)\)/g;
-    let last = 0;
-    let out = "";
-    let match;
-    const source = String(text || "");
-    while ((match = pattern.exec(source))) {
-      out += escapeHtml(source.slice(last, match.index));
-      if (match[1]) {
-        const url = match[2];
-        const row = urlMap.get(normalizeUrl(url));
-        const label = (row && row.citation_label) || `[X${match[1]}]`;
-        out += citationChip(label, url, !row);
-      } else if (match[3]) {
-        const label = `[${match[3]}]`;
-        const url = match[4] || "";
-        const row = url ? urlMap.get(normalizeUrl(url)) : null;
-        out += citationChip(label, url, Boolean(url) && !row);
-      } else {
-        const url = match[6];
-        const row = urlMap.get(normalizeUrl(url));
-        if (row) out += citationChip(row.citation_label, url, false);
-        else {
-          out += `<a class="x-inline-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(match[5])}</a>`;
-        }
-      }
-      last = pattern.lastIndex;
-    }
-    out += escapeHtml(source.slice(last));
-    return out;
+  function citationNode(label, url, asLink) {
+    const template = document.createElement("template");
+    template.innerHTML = citationChip(label, url, asLink);
+    return template.content.firstElementChild;
   }
 
-  function parseAnswerBlocks(text) {
-    const lines = String(text || "").replaceAll("\r\n", "\n").trim().split("\n");
-    const blocks = [];
-    let para = [];
-    let list = [];
-    const flushPara = () => {
-      const value = para.join("\n").trim();
-      if (value) blocks.push({ type: "p", text: value });
-      para = [];
-    };
-    const flushList = () => {
-      if (list.length) blocks.push({ type: "list", items: list.slice() });
-      list = [];
-    };
-    lines.forEach((line) => {
-      const item = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/);
-      if (item) {
-        flushPara();
-        list.push(item[1]);
+  function normalizeCitationMarkdown(text) {
+    return String(text || "").replace(
+      /\[\[(\d+)\]\]\((https?:[^)\s]+)\)/g,
+      (_match, index, url) => `[X${index}](${url})`,
+    );
+  }
+
+  function enhanceCitationLinks(root, urlMap) {
+    root.querySelectorAll("a[href]").forEach((anchor) => {
+      const url = normalizeUrl(anchor.getAttribute("href"));
+      const row = urlMap.get(url);
+      if (!row) {
+        anchor.classList.add("x-inline-link");
         return;
       }
-      if (!line.trim()) {
-        flushPara();
-        flushList();
-        return;
-      }
-      flushList();
-      para.push(line);
+      anchor.replaceWith(citationNode(row.citation_label || "[X]", "", false));
     });
-    flushPara();
-    flushList();
-    return blocks;
   }
 
-  function renderPost(item, urlMap) {
-    const match = String(item || "").match(/^(.{2,36}?)[：:]([\s\S]+)$/);
-    const kicker = match ? match[1].trim() : "";
-    const body = match ? match[2].trim() : String(item || "");
-    return `<article class="x-post">
-      ${kicker ? `<p class="x-post-kicker">${escapeHtml(kicker)}</p>` : ""}
-      <div class="x-post-body">${inlineFormat(body, urlMap)}</div>
-    </article>`;
-  }
-
-  function maybePromoteInlineList(blocks) {
-    if (blocks.length !== 1 || blocks[0].type !== "p") return blocks;
-    const parts = blocks[0].text.split(/\s+-\s+/);
-    if (parts.length < 3) return blocks;
-    const intro = parts[0].trim();
-    const items = parts.slice(1).map((item) => item.trim()).filter(Boolean);
-    const last = items[items.length - 1] || "";
-    const peeled = last.match(/^(.*?\]\(https?:[^)]+\))\s+(.+)$/);
-    const result = [];
-    if (intro) result.push({ type: "p", text: intro });
-    if (peeled) {
-      result.push({ type: "list", items: items.slice(0, -1).concat(peeled[1].trim()) });
-      if (peeled[2].trim()) result.push({ type: "p", text: peeled[2].trim() });
-    } else {
-      result.push({ type: "list", items });
-    }
-    return result;
+  function enhanceCitationText(root) {
+    const pattern = /\[\[(\d+)\]\]|\[(X\d+)\]/g;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((node) => {
+      if (node.parentElement?.closest("code, pre, a, button")) return;
+      const text = node.textContent || "";
+      pattern.lastIndex = 0;
+      if (!pattern.test(text)) return;
+      pattern.lastIndex = 0;
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      for (const match of text.matchAll(pattern)) {
+        fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+        const label = match[1] ? `[X${match[1]}]` : `[${match[2]}]`;
+        fragment.append(citationNode(label, "", false));
+        cursor = match.index + match[0].length;
+      }
+      fragment.append(document.createTextNode(text.slice(cursor)));
+      node.replaceWith(fragment);
+    });
   }
 
   function renderAnswer(text, sources) {
     const urlMap = sourceByUrl(sources);
-    const blocks = maybePromoteInlineList(parseAnswerBlocks(text));
-    if (!blocks.length) return "";
-    const firstList = blocks.findIndex((block) => block.type === "list");
-    let briefing = blocks;
-    let lists = [];
-    let closing = [];
-    if (firstList >= 0) {
-      briefing = blocks.slice(0, firstList);
-      let index = firstList;
-      while (index < blocks.length && blocks[index].type === "list") {
-        lists.push(blocks[index]);
-        index += 1;
-      }
-      closing = blocks.slice(index);
-    }
-    const parts = [];
-    if (briefing.length) {
-      parts.push(`<section class="x-brief"><h4>检索说明</h4>${briefing.map((block) => `<p>${inlineFormat(block.text, urlMap)}</p>`).join("")}</section>`);
-    }
-    lists.forEach((block) => {
-      parts.push(`<section class="x-posts"><h4>按时间整理</h4><div class="x-post-list">${block.items.map((item) => renderPost(item, urlMap)).join("")}</div></section>`);
-    });
-    if (closing.length) {
-      parts.push(`<section class="x-brief"><h4>主题归纳</h4>${closing.map((block) => `<p>${inlineFormat(block.text, urlMap)}</p>`).join("")}</section>`);
-    }
-    return parts.join("");
+    const template = document.createElement("template");
+    template.innerHTML = KBotMarkdown.render(normalizeCitationMarkdown(text));
+    enhanceCitationLinks(template.content, urlMap);
+    enhanceCitationText(template.content);
+    return `<section class="x-answer">${template.innerHTML}</section>`;
   }
 
   function bindCitations(root) {
@@ -271,6 +204,9 @@
       </header>
       ${query ? `<p class="x-query-recap">${escapeHtml(query)}</p>` : ""}
       ${body}`;
+    node.querySelectorAll("[data-copy-code]").forEach((button) => {
+      button.addEventListener("click", () => KBotMarkdown.copyCode(button));
+    });
     bindCitations(node);
   }
 
