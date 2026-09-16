@@ -70,7 +70,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         "data-models.html": {"data-model-dialog"},
         "agents.html": {"agent-dialog"},
         "model-bindings.html": {"binding-rows", "model-binding-dialog"},
-        "media-assets.html": {"asset-rows"},
+        "media-assets.html": {"asset-rows", "asset-preview-dialog", "asset-preview-body"},
         "usage-runs.html": {"run-rows"},
     }
     page_scripts = {
@@ -162,6 +162,9 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         self.assertIn("createObjectURL", image)
         self.assertIn("requestBlob", management)
         self.assertIn("createObjectURL", management)
+        self.assertIn("asset-preview-dialog", management)
+        self.assertIn("showModal", management)
+        self.assertNotIn('closest("td")', management)
         self.assertNotIn("img.src = ", image)
         self.assertNotIn("content_path", image)
 

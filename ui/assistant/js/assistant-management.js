@@ -123,12 +123,31 @@
     return parts.join(" / ") || "—";
   }
 
-  async function previewAsset(assetId, target) {
+  function previewMeta(row) {
+    const size = row.width && row.height ? `${row.width}×${row.height}` : "";
+    return [row.asset_id, row.mime_type, size, row.created_at].filter(Boolean).join(" · ") || "受控预览";
+  }
+
+  async function previewAsset(row) {
+    const dialog = document.getElementById("asset-preview-dialog");
+    const body = document.getElementById("asset-preview-body");
+    const title = document.getElementById("asset-preview-title");
+    const meta = document.getElementById("asset-preview-meta");
+    if (!dialog || !body) return;
     revokePreviews();
-    const blob = await KBotAssistantApi.requestBlob(`/media-assets/${assetId}/content`);
-    const objectUrl = URL.createObjectURL(blob);
-    previewUrls.push(objectUrl);
-    target.innerHTML = `<img alt="图片资产 ${escapeHtml(assetId)}" src="${objectUrl}">`;
+    if (title) title.textContent = "图片预览";
+    if (meta) meta.textContent = previewMeta(row);
+    body.innerHTML = `<p class="image-preview-meta">正在打开受控预览…</p>`;
+    dialog.showModal();
+    try {
+      const blob = await KBotAssistantApi.requestBlob(`/media-assets/${row.asset_id}/content`);
+      const objectUrl = URL.createObjectURL(blob);
+      previewUrls.push(objectUrl);
+      body.innerHTML = `<img alt="图片资产 ${escapeHtml(row.asset_id)}" src="${objectUrl}">`;
+    } catch (error) {
+      body.innerHTML = `<p class="image-preview-meta">${escapeHtml(error.message || "无法预览图片资产")}</p>`;
+      throw error;
+    }
   }
 
   async function loadAssets() {
@@ -164,9 +183,10 @@
     </tr>`).join("");
     node.querySelectorAll("[data-preview-asset]").forEach((button) => {
       button.addEventListener("click", async () => {
+        const assetId = button.dataset.previewAsset;
+        const row = filtered.find((item) => String(item.asset_id) === String(assetId)) || { asset_id: assetId };
         try {
-          const host = button.closest("td");
-          await previewAsset(button.dataset.previewAsset, host);
+          await previewAsset(row);
         } catch (error) {
           toast(error.message || "无法预览图片资产", "error");
         }
@@ -213,6 +233,7 @@
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
     });
+    document.getElementById("asset-preview-dialog")?.addEventListener("close", revokePreviews);
     document.querySelector("#model-binding-dialog form")?.addEventListener("submit", saveBindings);
     document.getElementById("asset-filter")?.addEventListener("click", () => {
       loadAssets().catch((error) => toast(error.message || "无法加载图片资产", "error"));

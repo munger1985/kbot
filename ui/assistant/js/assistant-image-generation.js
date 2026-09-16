@@ -4,6 +4,13 @@
 
   const { badge, capability, capabilityLabel, escapeHtml, toast } = KBotAssistantShell;
   const TERMINAL = new Set(["COMPLETED", "FAILED", "REJECTED"]);
+  const STAGE_LABEL = {
+    ACCEPTED: "已接受请求",
+    GENERATING: "正在生成",
+    COMPLETED: "已完成",
+    FAILED: "失败",
+    REJECTED: "内容限制拒绝",
+  };
   let currentRunId = "";
   let pollTimer = 0;
   let accessState = null;
@@ -28,6 +35,18 @@
     return `<div class="assistant-empty"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div></div>`;
   }
 
+  function stageLabel(value) {
+    const key = String(value || "").trim();
+    return STAGE_LABEL[key] || key || "进行中";
+  }
+
+  function displayTime(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return iso ? iso[1] : raw;
+  }
+
   function revokePreviews() {
     while (previewUrls.length) {
       URL.revokeObjectURL(previewUrls.pop());
@@ -38,6 +57,16 @@
     const node = document.getElementById("image-meta");
     if (!node) return;
     node.innerHTML = rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
+  }
+
+  function fillComposer(run) {
+    const prompt = document.getElementById("image-prompt");
+    const ratio = document.getElementById("image-ratio");
+    const count = document.getElementById("image-count");
+    const request = run && run.request ? run.request : {};
+    if (prompt) prompt.value = request.prompt || "";
+    if (ratio && request.aspect_ratio) ratio.value = request.aspect_ratio;
+    if (count && request.count) count.value = String(request.count);
   }
 
   function renderHistory(rows) {
@@ -51,7 +80,7 @@
       <article class="assistant-history-item" data-run-id="${escapeHtml(row.run_id)}" ${row.run_id === currentRunId ? 'aria-current="true"' : ""}>
         <button class="assistant-history-open" type="button" data-run-id="${escapeHtml(row.run_id)}">
           <strong>${escapeHtml((row.request && row.request.prompt) || "文生图")}</strong>
-          <small>${escapeHtml(row.status)} · ${escapeHtml(row.created_at || "")}</small>
+          <small>${escapeHtml(stageLabel(row.status))} · ${escapeHtml(displayTime(row.created_at) || "")}</small>
         </button>
         <button class="small danger assistant-history-delete" type="button" data-run-id="${escapeHtml(row.run_id)}">删除</button>
       </article>`).join("");
@@ -65,18 +94,35 @@
 
   function renderEvents(run, events) {
     const node = document.getElementById("image-result");
-    const stages = (events || []).map((item) => `<li><strong>${escapeHtml(item.stage)}</strong><span>${escapeHtml(item.message || "")}</span></li>`).join("");
+    const terminal = TERMINAL.has(run.status);
+    const tone = terminal ? (run.status === "COMPLETED" ? "good" : "bad") : "warn";
+    const stages = (events || []).map((item) => `
+      <li>
+        <strong>${escapeHtml(stageLabel(item.stage))}</strong>
+        <span>${escapeHtml(item.message || "")}</span>
+      </li>`).join("");
+    node.className = "image-stage-status";
     node.innerHTML = `
-      <h3>${escapeHtml(run.status)}</h3>
-      <p>${escapeHtml(run.error_message || run.model_display_name || "正在生成图片")}</p>
-      <ol class="assistant-flow">${stages || "<li><strong>ACCEPTED</strong><span>已接受请求</span></li>"}</ol>
-      ${badge(run.status, TERMINAL.has(run.status) ? (run.status === "COMPLETED" ? "good" : "bad") : "warn")}`;
+      <div class="image-status-row">
+        <div>
+          <h3>${escapeHtml(stageLabel(run.status))}</h3>
+          <p>${escapeHtml(run.error_message || run.model_display_name || "真实图片产物将显示在上方画幅中。")}</p>
+        </div>
+        ${badge(run.status, tone)}
+      </div>
+      <ol class="image-status-rail">${stages || "<li><strong>已接受请求</strong><span>已接受文生图请求</span></li>"}</ol>`;
     setMeta([
-      ["状态", run.status],
+      ["状态", stageLabel(run.status)],
       ["模型", run.model_display_name || "已绑定模型"],
       ["提示词版本", run.prompt_revision_id || "—"],
       ["资产访问", run.status === "COMPLETED" ? "当前 Domain 授权" : "待生成"],
     ]);
+  }
+
+  function emptyPreview(title, copy) {
+    const node = document.getElementById("image-preview");
+    node.className = "image-stage-frame is-empty";
+    node.innerHTML = `<div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div>`;
   }
 
   async function renderPreview(run) {
@@ -84,7 +130,10 @@
     revokePreviews();
     const assetIds = (run.result && run.result.asset_ids) || [];
     if (run.status !== "COMPLETED" || !assetIds.length) {
-      node.innerHTML = `<div><strong>等待真实图片产物</strong><p>${escapeHtml(run.error_message || "图片生成成功后显示受控预览；二进制存对象存储，不保存为数据库 BLOB。")}</p></div>`;
+      emptyPreview(
+        stageLabel(run.status),
+        run.error_message || "图片生成成功后显示受控预览；二进制存对象存储，不保存为数据库 BLOB。",
+      );
       return;
     }
     const images = [];
@@ -92,8 +141,9 @@
       const blob = await KBotAssistantApi.requestBlob(`/media-assets/${assetId}/content`);
       const objectUrl = URL.createObjectURL(blob);
       previewUrls.push(objectUrl);
-      images.push(`<img alt="生成图片 ${escapeHtml(assetId)}" src="${objectUrl}">`);
+      images.push(`<figure class="image-print"><img alt="生成图片 ${escapeHtml(assetId)}" src="${objectUrl}"></figure>`);
     }
+    node.className = assetIds.length > 1 ? "image-stage-frame is-grid" : "image-stage-frame";
     node.innerHTML = images.join("");
   }
 
@@ -114,6 +164,7 @@
       KBotAssistantApi.json(`/image-generations/runs/${runId}`, "GET"),
       KBotAssistantApi.json(`/image-generations/runs/${runId}/events`, "GET"),
     ]);
+    fillComposer(run);
     renderEvents(run, Array.isArray(events) ? events : []);
     await renderPreview(run);
     return run;
@@ -161,8 +212,16 @@
     currentRunId = "";
     revokePreviews();
     document.getElementById("image-form")?.reset();
-    document.getElementById("image-result").innerHTML = `<h3>尚未创建生成任务</h3><p>真实运行时，这里将显示任务已接受、生成中、内容限制拒绝、失败或图片资产已就绪；不以示例图片代替真实结果。</p>`;
-    document.getElementById("image-preview").innerHTML = `<div><strong>等待真实图片产物</strong><p>图片生成成功后显示受控预览；二进制存对象存储，不保存为数据库 BLOB。</p></div>`;
+    const result = document.getElementById("image-result");
+    result.className = "image-stage-status";
+    result.innerHTML = `
+      <div class="image-status-row">
+        <div>
+          <h3>尚未创建生成任务</h3>
+          <p>真实运行时，这里显示已接受、生成中、内容限制拒绝、失败或图片已就绪；不以示例图代替真实结果。</p>
+        </div>
+      </div>`;
+    emptyPreview("等待真实图片产物", "图片生成成功后显示受控预览；二进制存对象存储，不保存为数据库 BLOB。");
     setMeta([["状态", "未创建 Run"], ["模型", "等待管理员绑定"], ["提示词版本", "—"], ["资产访问", "待授权"]]);
     refreshHistory().catch((error) => toast(error.message || "无法刷新图片历史", "error"));
   }
