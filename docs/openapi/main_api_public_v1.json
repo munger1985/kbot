@@ -18705,6 +18705,89 @@
         ]
       }
     },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}/ingestions/user-files": {
+      "post": {
+        "description": "将 Assistant App 的用户文件流式转发至 KC，不在 Main API 落盘。",
+        "operationId": "upload_knowledge_core_files_api_v1_apps_assistant_knowledge_cores__collection_id__ingestions_user_files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Knowledge Core Files",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/knowledge-cores/{collection_id}/processing": {
+      "get": {
+        "operationId": "list_knowledge_core_processing_api_v1_apps_assistant_knowledge_cores__collection_id__processing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Core Processing",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
     "/api/v1/apps/assistant/media-assets": {
       "get": {
         "operationId": "list_media_assets_api_v1_apps_assistant_media_assets_get",

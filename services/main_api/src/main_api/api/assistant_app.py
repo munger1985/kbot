@@ -771,6 +771,44 @@ async def get_knowledge_core(collection_id: UUID, request: Request):
     )
 
 
+@router.get("/knowledge-cores/{collection_id}/processing")
+async def list_knowledge_core_processing(collection_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    return await _knowledge(request).list_processing(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        page=1,
+        page_size=100,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/knowledge-cores/{collection_id}/ingestions/user-files", status_code=status.HTTP_202_ACCEPTED)
+async def upload_knowledge_core_files(collection_id: UUID, request: Request):
+    """将 Assistant App 的用户文件流式转发至 KC，不在 Main API 落盘。"""
+    domain_id, _, _ = await _require(request, "assistant:knowledge_core_manage")
+    content_type = request.headers.get("Content-Type", "")
+    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+    if not content_type.lower().startswith("multipart/form-data") or not idempotency_key:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            {
+                "code": "ASSISTANT_KC_UPLOAD_HEADERS_REQUIRED",
+                "message": "缺少 multipart Content-Type 或 Idempotency-Key",
+            },
+        )
+    upstream = await _knowledge(request).ingest_multipart(
+        domain_id=domain_id,
+        collection_id=collection_id,
+        intake_kind="user-files",
+        content_type=content_type,
+        body=request.stream(),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return JSONResponse(status_code=upstream.status_code, content=upstream.payload)
+
+
 @router.patch("/knowledge-cores/{collection_id}")
 async def update_knowledge_core(
     collection_id: UUID,

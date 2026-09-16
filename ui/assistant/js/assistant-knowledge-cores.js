@@ -6,6 +6,8 @@
   let rows = [];
   let catalog = [];
   let editingId = null;
+  let selectedCollectionId = null;
+  let processingTimer = null;
 
   function openDialog(id) { document.getElementById(id)?.showModal(); }
   function closeDialog(id) { document.getElementById(id)?.close(); }
@@ -19,6 +21,78 @@
     if (status === "ACTIVE") return "good";
     if (status === "DISABLED" || status === "DELETING") return "warn";
     return "warn";
+  }
+
+  function processingStatusLabel(status) {
+    return ({
+      APPROVAL_PENDING: "待审核",
+      PENDING: "等待处理",
+      PARSE_PENDING: "等待解析",
+      PARSING: "解析中",
+      INDEXING: "索引中",
+      PROFILE_PENDING: "等待画像",
+      PROFILING: "生成画像",
+      DISCOVERY_INDEXING: "建立 Discovery",
+      READY: "已完成",
+      PARTIAL: "部分完成",
+      AVAILABLE: "可用",
+      QUEUED: "排队中",
+      FAILED: "失败",
+      CANCELLED: "已取消",
+    })[status] || status || "未知";
+  }
+
+  function selectedRow() {
+    return rows.find((row) => String(row.collection_id) === String(selectedCollectionId));
+  }
+
+  function renderProcessing(items) {
+    const node = document.getElementById("kc-processing-rows");
+    if (!node) return;
+    if (!selectedCollectionId) {
+      node.innerHTML = emptyRow(6, "尚未选择 Knowledge Core", "选择一个 Knowledge Core 后，可上传资料并查看解析、索引和 Discovery 进度。");
+      return;
+    }
+    if (!items.length) {
+      node.innerHTML = emptyRow(6, "当前没有资料处理记录", "点击“上传文件”提交 PDF、Word 或文本资料。");
+      return;
+    }
+    node.innerHTML = items.map((item) => {
+      const status = String(item.status || "");
+      const progress = Number.isFinite(Number(item.progress_percent)) ? `${item.progress_percent}%` : "—";
+      const fileSummary = `${item.ready_count || 0}/${item.file_count || 0} 个文件完成`;
+      return `<tr>
+        <td><strong>${escapeHtml(item.title || "未命名资料包")}</strong><br><small>${escapeHtml(item.bundle_id || "")}</small></td>
+        <td>${badge(processingStatusLabel(status), statusTone(status))}</td>
+        <td>${escapeHtml(item.current_stage || "—")}</td>
+        <td>${escapeHtml(progress)}</td>
+        <td>${escapeHtml(fileSummary)}${item.failed_count ? ` · ${escapeHtml(item.failed_count)} 个失败` : ""}</td>
+        <td>${escapeHtml(item.completed_at || item.reviewed_at || "处理中")}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  async function loadProcessing() {
+    const title = document.getElementById("kc-assets-title");
+    const upload = document.getElementById("kc-upload-open");
+    const refresh = document.getElementById("kc-refresh-processing");
+    const row = selectedRow();
+    if (title) title.textContent = row ? `${row.display_name || "Knowledge Core"} · 资料处理记录` : "先在上方选择一个 Knowledge Core。";
+    if (upload) upload.disabled = !row || row.status === "DISABLED" || row.status === "DELETING";
+    if (refresh) refresh.disabled = !row;
+    if (!row) {
+      renderProcessing([]);
+      return;
+    }
+    const payload = await KBotAssistantApi.json(`/knowledge-cores/${row.collection_id}/processing`, "GET");
+    renderProcessing(Array.isArray(payload?.items) ? payload.items : []);
+    const active = (payload?.items || []).some((item) => !["READY", "PARTIAL", "FAILED", "CANCELLED"].includes(String(item.status || "")));
+    if (active && !processingTimer) {
+      processingTimer = globalThis.setTimeout(() => {
+        processingTimer = null;
+        loadProcessing().catch((error) => toast(error.message || "无法刷新解析进度", "error"));
+      }, 3000);
+    }
   }
 
   function collectionItems(payload) {
@@ -113,6 +187,7 @@
       return '<span class="assistant-badge warn">清理中</span>';
     }
     const buttons = [
+      `<button class="small" type="button" data-action="documents" data-collection-id="${id}">资料</button>`,
       `<button class="small" type="button" data-action="edit" data-collection-id="${id}">编辑</button>`,
     ];
     if (row.status === "ACTIVE") {
@@ -163,7 +238,11 @@
     ]);
     rows = collectionItems(listed);
     catalog = KBotAssistantApi.items(catalogRows).filter((row) => KBotAssistantApi.isActiveModel(row));
+    if (!selectedCollectionId || !findRow(selectedCollectionId)) {
+      selectedCollectionId = rows[0]?.collection_id || null;
+    }
     renderRows();
+    await loadProcessing();
   }
 
   async function changeStatus(row, status) {
@@ -181,6 +260,12 @@
     if (action === "edit") {
       fillForm(row);
       openDialog("kc-dialog");
+      return;
+    }
+    if (action === "documents") {
+      selectedCollectionId = collectionId;
+      await loadProcessing();
+      document.getElementById("kc-upload-open")?.focus();
       return;
     }
     if (action === "enable") {
@@ -255,6 +340,59 @@
     }
   }
 
+  async function sha256(file) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function uploadFiles(event) {
+    event.preventDefault();
+    if (!selectedCollectionId) {
+      toast("请先选择一个 Knowledge Core。", "error");
+      return;
+    }
+    const input = document.getElementById("kc-file-input");
+    const files = Array.from(input?.files || []);
+    if (!files.length) {
+      toast("请选择至少一个文件。", "error");
+      return;
+    }
+    const form = new FormData();
+    const declarations = [];
+    for (const [index, file] of files.entries()) {
+      const partName = `file_${index}`;
+      form.append(partName, file, file.name);
+      declarations.push({
+        part_name: partName,
+        client_file_id: `${Date.now()}-${index}-${file.name}`,
+        display_name: file.name,
+        declared_mime_type: file.type || "application/octet-stream",
+        byte_size: file.size,
+        content_sha256: await sha256(file),
+        ordinal: index,
+        role: "CONTENT",
+        required_flag: true,
+      });
+    }
+    form.append("grouping_mode", "EACH_FILE");
+    form.append("files", JSON.stringify(declarations));
+    const button = document.getElementById("kc-upload-submit");
+    if (button) button.disabled = true;
+    try {
+      await KBotAssistantApi.request(`/knowledge-cores/${selectedCollectionId}/ingestions/user-files`, {
+        method: "POST",
+        body: form,
+        headers: { "Idempotency-Key": KBotAssistantApi.requestId() },
+      });
+      closeDialog("kc-upload-dialog");
+      input.value = "";
+      await loadProcessing();
+      toast(`已受理 ${files.length} 个文件，正在处理。`);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   KBotAssistantShell.ready.then(async (access) => {
     if (!access) return;
     document.querySelectorAll("[data-open-dialog]").forEach((button) => {
@@ -267,6 +405,11 @@
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
     });
     document.getElementById("kc-form")?.addEventListener("submit", submitForm);
+    document.getElementById("kc-upload-form")?.addEventListener("submit", uploadFiles);
+    document.getElementById("kc-upload-open")?.addEventListener("click", () => openDialog("kc-upload-dialog"));
+    document.getElementById("kc-refresh-processing")?.addEventListener("click", () => {
+      loadProcessing().catch((error) => toast(error.message || "无法刷新解析进度", "error"));
+    });
     try {
       await loadPage();
     } catch (error) {

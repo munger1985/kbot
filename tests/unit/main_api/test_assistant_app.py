@@ -38,6 +38,8 @@ class _KnowledgeClient:
         self.status_payload = None
         self.deleted = []
         self.collections = []
+        self.processing = {"items": [], "page": 1, "page_size": 100, "total": 0}
+        self.upload = None
         self.collection = {
             "collection_id": str(CORE_ID),
             "domain_id": 41,
@@ -58,6 +60,17 @@ class _KnowledgeClient:
 
     async def list_collections(self, **kwargs):
         return {"collections": list(self.collections)}
+
+    async def list_processing(self, **kwargs):
+        self.processing["collection_id"] = str(kwargs["collection_id"])
+        return self.processing
+
+    async def ingest_multipart(self, **kwargs):
+        self.upload = kwargs
+        return SimpleNamespace(
+            status_code=202,
+            payload={"items": [{"status": "ACCEPTED", "bundle_id": str(CORE_ID)}]},
+        )
 
     async def create_collection(self, *, domain_id, payload, auth_context):
         self.domain_id = domain_id
@@ -470,6 +483,35 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(202, deleted.status_code, deleted.text)
         self.assertEqual([CORE_ID], self.knowledge.deleted)
         self.assertEqual("DELETING", deleted.json()["status"])
+
+    def test_knowledge_core_processing_is_scoped_to_current_domain(self):
+        self.knowledge.processing = {
+            "items": [{"title": "会议纪要.pdf", "status": "PARSING"}],
+            "page": 1,
+            "page_size": 100,
+            "total": 1,
+        }
+        response = self.client.get(
+            f"/api/v1/apps/assistant/knowledge-cores/{CORE_ID}/processing",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("PARSING", response.json()["items"][0]["status"])
+        self.assertEqual(str(CORE_ID), self.knowledge.processing["collection_id"])
+
+    def test_knowledge_core_upload_forwards_multipart_without_persisting_in_main_api(self):
+        response = self.client.post(
+            f"/api/v1/apps/assistant/knowledge-cores/{CORE_ID}/ingestions/user-files",
+            headers={**self._headers(), "Idempotency-Key": "assistant-upload-1"},
+            files={"file_0": ("会议纪要.pdf", b"%PDF-demo", "application/pdf")},
+            data={
+                "grouping_mode": "EACH_FILE",
+                "files": '[{"part_name":"file_0","client_file_id":"doc-1","display_name":"会议纪要.pdf","declared_mime_type":"application/pdf","byte_size":9,"content_sha256":"' + "a" * 64 + '","ordinal":0,"role":"CONTENT","required_flag":true}]',
+            },
+        )
+        self.assertEqual(202, response.status_code, response.text)
+        self.assertEqual("user-files", self.knowledge.upload["intake_kind"])
+        self.assertEqual("assistant-upload-1", self.knowledge.upload["idempotency_key"])
 
     def test_delete_knowledge_core_in_use_is_passed_through(self):
         async def fail_delete(**kwargs):

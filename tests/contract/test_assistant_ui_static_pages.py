@@ -63,7 +63,10 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "image-form",
         },
         "domains.html": {"domain-dialog", "domain-rows", "domain-form"},
-        "knowledge-cores.html": {"kc-dialog", "kc-rows", "kc-form"},
+        "knowledge-cores.html": {
+            "kc-dialog", "kc-rows", "kc-form", "kc-upload-dialog",
+            "kc-upload-form", "kc-file-input", "kc-processing-rows",
+        },
         "data-models.html": {"data-model-dialog"},
         "agents.html": {"agent-dialog"},
         "model-bindings.html": {"binding-rows", "model-binding-dialog"},
@@ -191,6 +194,9 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         self.assertIn("KBotAssistantApi.modelCategory(", kc)
         self.assertIn("ModelCategory.TXT_EMBEDDING", kc)
         self.assertIn("ModelCategory.IMG_EMBEDDING", kc)
+        self.assertIn("/processing", kc)
+        self.assertIn("/ingestions/user-files", kc)
+        self.assertIn("Idempotency-Key", kc)
         self.assertNotIn("Number(row.category) === 2", kc)
         self.assertNotIn("Number(item.category) === 2", kc)
         self.assertIn("KBotAssistantApi.items(", management)

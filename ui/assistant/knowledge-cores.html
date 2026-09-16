@@ -42,6 +42,23 @@
       </div>
     </aside>
   </section>
+  <section class="assistant-panel">
+    <div class="assistant-panel-head">
+      <div><h2>资料与解析进度</h2><p id="kc-assets-title">先在上方选择一个 Knowledge Core。</p></div>
+      <div class="assistant-row-actions">
+        <button class="small" id="kc-refresh-processing" type="button" disabled>刷新</button>
+        <button class="small primary" id="kc-upload-open" type="button" disabled>上传文件</button>
+      </div>
+    </div>
+    <div class="assistant-table-wrap">
+      <table class="assistant-table">
+        <thead><tr><th>资料包</th><th>状态</th><th>阶段</th><th>进度</th><th>文件</th><th>完成时间</th></tr></thead>
+        <tbody id="kc-processing-rows">
+          <tr><td colspan="6"><div class="assistant-empty"><div><strong>尚未选择 Knowledge Core</strong><p>选择一个 Knowledge Core 后，可上传资料并查看解析、索引进度。</p></div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </main>
 <dialog class="assistant-dialog" id="kc-dialog">
   <form id="kc-form">
@@ -60,6 +77,16 @@
       <div class="assistant-notice">Knowledge Core 归属当前 Token 中的 Domain，不在浏览器填写隔离标识。文本 Embedding 必须选择已启用模型。</div>
     </div>
     <div class="assistant-dialog-foot"><button type="button" data-close-dialog="kc-dialog">取消</button><button class="primary" id="kc-submit" type="submit">创建</button></div>
+  </form>
+</dialog>
+<dialog class="assistant-dialog" id="kc-upload-dialog">
+  <form id="kc-upload-form">
+    <div class="assistant-dialog-head"><h2>上传资料</h2><button class="assistant-close" type="button" data-close-dialog="kc-upload-dialog" aria-label="关闭">×</button></div>
+    <div class="assistant-dialog-body">
+      <div class="assistant-field"><label for="kc-file-input">选择文件</label><input id="kc-file-input" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,.html,application/pdf,text/plain"></div>
+      <div class="assistant-notice">每个文件独立建立资料包。上传成功只表示 KC 已受理，解析、索引和 Discovery 建立仍需等待后台任务完成。</div>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="kc-upload-dialog">取消</button><button class="primary" id="kc-upload-submit" type="submit">开始上传</button></div>
   </form>
 </dialog>
 <script src="../runtime-config.js"></script>
