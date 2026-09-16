@@ -64,6 +64,11 @@ class OciResponsesUrlTest(unittest.TestCase):
             build_oci_responses_url(f"{HOST}/v1"),
         )
 
+    def test_dated_actions_v1_endpoint_is_kept(self):
+        endpoint = f"{HOST}/20231130/actions/v1"
+        self.assertEqual(endpoint, build_oci_responses_url(endpoint))
+        self.assertEqual(endpoint, build_oci_responses_url(endpoint + "/"))
+
 
 class OciResponsesProjectTest(unittest.TestCase):
     def test_missing_project_is_a_configuration_error(self):
@@ -118,6 +123,38 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("x_search", captured["json"]["tools"][0]["type"])
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual("ok", result.answer)
+
+    async def test_posts_dated_actions_v1_endpoint_without_openai_rewrite(self):
+        adapter = OciGrokResponsesAdapter()
+        captured: dict = {}
+        response = SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {
+                "id": "resp-1",
+                "status": "completed",
+                "output": [{
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }],
+            },
+        )
+
+        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
+            captured.update(url=url, json=json, headers=headers, auth=auth)
+            return response
+
+        endpoint = f"{HOST}/20231130/actions/v1"
+        with (
+            patch.object(adapter, "_signer", return_value=object()),
+            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+        ):
+            await adapter.research(
+                _request(),
+                _material(project=PROJECT) | {"api_endpoint": endpoint},
+            )
+
+        self.assertEqual(endpoint, captured["url"])
 
 
 class OciResponsesErrorLogTest(unittest.TestCase):

@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import requests
@@ -32,7 +33,7 @@ _IMAGE_MAGIC = (
 
 
 class OciGrokResponsesAdapter:
-    """生产路径：对 OCI OpenAI 兼容端点签发 POST /openai/v1/responses。"""
+    """生产路径：对配置的 OCI Responses 端点签发 POST，认证走 IAM。"""
 
     def __init__(self, *, timeout_seconds: int = 300):
         self._timeout_seconds = timeout_seconds
@@ -164,7 +165,7 @@ class OciGrokResponsesAdapter:
 
 
 def build_oci_responses_url(endpoint: str) -> str:
-    """把 Chat SDK 的 inference host 规范成 OpenAI 兼容 Responses URL。"""
+    """把配置的 inference 地址规范成实际 POST 的 Responses URL。"""
     base = str(endpoint or "").strip().rstrip("/")
     if not base:
         raise GenerativeAdapterError(
@@ -178,9 +179,14 @@ def build_oci_responses_url(endpoint: str) -> str:
         return f"{base}/responses"
     if lowered.endswith("/openai"):
         return f"{base}/v1/responses"
-    if lowered.endswith("/v1"):
-        base = base[:-3]
-    return f"{base}/openai/v1/responses"
+    path = (urlparse(base).path or "").rstrip("/")
+    if path in {"", "/"}:
+        return f"{base}/openai/v1/responses"
+    if path == "/v1":
+        # 旧 Chat host 误带了 /v1，才改写到 OpenAI 兼容路径。
+        return f"{base[:-3]}/openai/v1/responses"
+    # /20231130/actions/v1 本身就是 Responses 地址，不得再拼 /openai/v1/responses。
+    return base
 
 
 def oci_generative_ai_project(model_params: Any) -> str:
