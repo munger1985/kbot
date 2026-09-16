@@ -27,8 +27,8 @@ Assistant App 是资源编排、权限投影、运行记录和媒体资产的所
 | 问数模型 | `GET/POST /data-models`，`GET/PATCH /data-models/{id}`，`POST /data-models/{id}:publish` | 复用 Data Query 的语义模型/策略流程 |
 | Agent | `GET/POST /agents`，`GET/PATCH /agents/{id}`，`POST /agents/{id}:enable` | 强制 KC Binding，启用前检查问数 Binding |
 | 知识会话 | `POST /conversations`，`POST /conversations/{id}/turns`，`GET /runs/{id}`，`GET /runs/{id}/events` | 代理既有 Agent Runtime 的可恢复 Run |
-| X Search | `POST /x-search/runs`，`GET /x-search/runs/{id}`，`GET /x-search/runs/{id}/events` | 创建独立研究 Run，不接受原始 OCI Tool JSON |
-| 文生图 | `POST /image-generations/runs`，`GET /image-generations/runs/{id}` | 创建独立生成 Run |
+| X Search | `POST /x-search/runs`，`GET /x-search/runs/{id}`，`GET /x-search/runs/{id}/events`，`DELETE /x-search/runs/{id}` | 创建独立研究 Run，不接受原始 OCI Tool JSON；历史记录可删除 |
+| 文生图 | `POST /image-generations/runs`，`GET /image-generations/runs/{id}`，`DELETE /image-generations/runs/{id}` | 创建独立生成 Run；删除时同时清理图片对象 |
 | 图片资产 | `GET /media-assets`，`GET /media-assets/{id}`，`POST /media-assets/{id}:download-url` | 授权后短时访问对象存储 |
 | 运行审计 | `GET /runs`，`GET /usage` | 按权限投影后的记录和用量，非供应商原始账单 |
 

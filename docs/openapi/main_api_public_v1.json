@@ -18405,6 +18405,40 @@
       }
     },
     "/api/v1/apps/assistant/image-generations/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_image_run_api_v1_apps_assistant_image_generations_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Image Run",
+        "tags": [
+          "Assistant App"
+        ]
+      },
       "get": {
         "operationId": "get_image_run_api_v1_apps_assistant_image_generations_runs__run_id__get",
         "parameters": [
@@ -19085,6 +19119,40 @@
       }
     },
     "/api/v1/apps/assistant/x-search/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_research_run_api_v1_apps_assistant_x_search_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Research Run",
+        "tags": [
+          "Assistant App"
+        ]
+      },
       "get": {
         "operationId": "get_research_run_api_v1_apps_assistant_x_search_runs__run_id__get",
         "parameters": [

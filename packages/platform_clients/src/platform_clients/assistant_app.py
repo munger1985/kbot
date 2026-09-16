@@ -102,6 +102,13 @@ class AssistantAppClient:
             auth_context=auth_context,
         )
 
+    async def delete_research_run(self, *, run_id: UUID, domain_id: int, auth_context: AuthContext) -> None:
+        await self._json(
+            "DELETE",
+            f"{self._ROOT}/x-search/runs/{run_id}?{urlencode({'domain_id': domain_id})}",
+            auth_context=auth_context,
+        )
+
     async def list_image_runs(
         self,
         *,
@@ -142,6 +149,13 @@ class AssistantAppClient:
         return await self._json(
             "GET",
             f"{self._ROOT}/image-generations/runs/{run_id}/events?{urlencode({'domain_id': domain_id})}",
+            auth_context=auth_context,
+        )
+
+    async def delete_image_run(self, *, run_id: UUID, domain_id: int, auth_context: AuthContext) -> None:
+        await self._json(
+            "DELETE",
+            f"{self._ROOT}/image-generations/runs/{run_id}?{urlencode({'domain_id': domain_id})}",
             auth_context=auth_context,
         )
 

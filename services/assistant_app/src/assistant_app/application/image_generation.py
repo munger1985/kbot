@@ -32,9 +32,10 @@ class CreateImageGenerationCommand(_Model):
 
 
 class ImageGenerationService:
-    def __init__(self, *, uow_factory, catalog_client):
+    def __init__(self, *, uow_factory, catalog_client, object_store):
         self._uow_factory = uow_factory
         self._catalog = catalog_client
+        self._store = object_store
 
     async def create(self, command: CreateImageGenerationCommand) -> tuple[dict[str, Any], bool]:
         existing = await self._existing(
@@ -124,6 +125,28 @@ class ImageGenerationService:
         async with self._uow_factory() as uow:
             assert uow.run_events is not None
             return [event_view(row) for row in await uow.run_events.list(domain_id=domain_id, run_id=run_id)]
+
+    async def delete(self, *, domain_id: int, run_id: UUID, actor_id: str | None = None) -> None:
+        object_keys: list[str] = []
+        async with self._uow_factory() as uow:
+            assert uow.runs is not None
+            assert uow.run_events is not None
+            assert uow.prompt_revisions is not None
+            assert uow.media_assets is not None
+            row = await uow.runs.get(domain_id=domain_id, run_id=run_id, lock=True)
+            if row is None or row.kind != IMAGE_KIND:
+                not_found()
+            if actor_id is not None and row.actor_id != actor_id:
+                not_found()
+            assets = await uow.media_assets.list(domain_id=domain_id, run_id=run_id, limit=200)
+            object_keys = [str(asset.object_key) for asset in assets if asset.object_key]
+            await uow.run_events.delete_by_run(domain_id=domain_id, run_id=run_id)
+            await uow.prompt_revisions.delete_by_run(domain_id=domain_id, run_id=run_id)
+            await uow.media_assets.delete_by_run(domain_id=domain_id, run_id=run_id)
+            await uow.runs.delete(row)
+            await uow.commit()
+        for object_key in object_keys:
+            await self._store.delete(object_key)
 
     async def _existing(self, *, domain_id: int, actor_id: str, idempotency_key: str) -> dict[str, Any] | None:
         async with self._uow_factory() as uow:

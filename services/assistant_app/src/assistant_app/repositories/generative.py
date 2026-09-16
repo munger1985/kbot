@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.identity import uuid7
@@ -161,6 +161,10 @@ class AssistantRunRepository:
             return row
         return None
 
+    async def delete(self, row: AssistantRunEntity) -> None:
+        await self._session.delete(row)
+        await self._session.flush()
+
 
 class AssistantRunEventRepository:
     def __init__(self, session: AsyncSession):
@@ -189,6 +193,14 @@ class AssistantRunEventRepository:
         )
         return int(value or 0) + 1
 
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        await self._session.execute(
+            delete(AssistantRunEventEntity).where(
+                AssistantRunEventEntity.domain_id == domain_id,
+                AssistantRunEventEntity.run_id == run_id,
+            )
+        )
+
 
 class AssistantXSourceRepository:
     def __init__(self, session: AsyncSession):
@@ -208,6 +220,14 @@ class AssistantXSourceRepository:
             .order_by(AssistantXSourceEntity.display_order)
         )
         return list(rows)
+
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        await self._session.execute(
+            delete(AssistantXSourceEntity).where(
+                AssistantXSourceEntity.domain_id == domain_id,
+                AssistantXSourceEntity.run_id == run_id,
+            )
+        )
 
 
 class AssistantPromptRevisionRepository:
@@ -241,6 +261,14 @@ class AssistantPromptRevisionRepository:
                 )
             )
         ).scalar_one_or_none()
+
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        await self._session.execute(
+            delete(AssistantPromptRevisionEntity).where(
+                AssistantPromptRevisionEntity.domain_id == domain_id,
+                AssistantPromptRevisionEntity.run_id == run_id,
+            )
+        )
 
 
 class AssistantMediaAssetRepository:
@@ -286,3 +314,11 @@ class AssistantMediaAssetRepository:
             .limit(limit)
         )
         return list(rows)
+
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        await self._session.execute(
+            delete(AssistantMediaAssetEntity).where(
+                AssistantMediaAssetEntity.domain_id == domain_id,
+                AssistantMediaAssetEntity.run_id == run_id,
+            )
+        )

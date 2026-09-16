@@ -161,9 +161,20 @@ body.assistant-login [hidden] { display: none !important; }
   display: grid;
   gap: 4px;
   width: 100%;
-  padding: 12px 14px;
-  border: 0;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--assistant-line);
+}
+.assistant-history-item:has(.assistant-history-delete) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.assistant-history-open {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
   border-radius: 0;
   background: transparent;
   text-align: left;
@@ -172,6 +183,7 @@ body.assistant-login [hidden] { display: none !important; }
 .assistant-history-item:hover { background: #f7faf8; }
 .assistant-history-item small { color: var(--assistant-muted); }
 .assistant-history-item[aria-current="true"] { background: #f4f8f5; }
+.assistant-history-delete { white-space: nowrap; }
 
 .assistant-row-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 button.danger { color: var(--assistant-bad); border-color: #e4bdb8; background: #fff7f6; }

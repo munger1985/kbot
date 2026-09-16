@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Request
+from fastapi import APIRouter, Header, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from assistant_app.api.context import (
@@ -72,6 +72,15 @@ async def get_image_run(run_id: UUID, domain_id: int, request: Request):
     actor_id = require_actor(request, domain_id)
     try:
         return await _service(request).get(domain_id=domain_id, run_id=run_id, actor_id=actor_id)
+    except AssistantApplicationError as exc:
+        raise_application_error(exc)
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_image_run(run_id: UUID, domain_id: int, request: Request):
+    actor_id = require_actor(request, domain_id)
+    try:
+        await _service(request).delete(domain_id=domain_id, run_id=run_id, actor_id=actor_id)
     except AssistantApplicationError as exc:
         raise_application_error(exc)
 

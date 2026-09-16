@@ -145,6 +145,12 @@ class _AssistantClient:
             "request": {"input": payload.get("input")},
         }
 
+    async def delete_research_run(self, *, run_id, domain_id, auth_context):
+        self.deleted_research = {"run_id": run_id, "domain_id": domain_id}
+
+    async def delete_image_run(self, *, run_id, domain_id, auth_context):
+        self.deleted_image = {"run_id": run_id, "domain_id": domain_id}
+
     async def list_runs(self, **kwargs):
         return []
 
@@ -348,7 +354,23 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertNotIn("model_id", response.request.content.decode("utf-8"))
         self.assertNotIn("domain_id", response.request.content.decode("utf-8"))
 
+    def test_delete_research_and_image_runs_use_trusted_domain(self):
+        run_id = AGENT_ID
+        deleted_search = self.client.delete(
+            f"/api/v1/apps/assistant/x-search/runs/{run_id}",
+            headers=self._headers(),
+        )
+        self.assertEqual(204, deleted_search.status_code, deleted_search.text)
+        self.assertEqual(run_id, self.assistant.deleted_research["run_id"])
+        self.assertEqual(41, self.assistant.deleted_research["domain_id"])
 
+        deleted_image = self.client.delete(
+            f"/api/v1/apps/assistant/image-generations/runs/{run_id}",
+            headers=self._headers(),
+        )
+        self.assertEqual(204, deleted_image.status_code, deleted_image.text)
+        self.assertEqual(run_id, self.assistant.deleted_image["run_id"])
+        self.assertEqual(41, self.assistant.deleted_image["domain_id"])
 
     def test_create_domain_rejects_client_supplied_id(self):
         response = self.client.post(

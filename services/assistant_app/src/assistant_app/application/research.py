@@ -131,6 +131,21 @@ class ResearchRunService:
             assert uow.x_sources is not None
             return [source_view(row) for row in await uow.x_sources.list(domain_id=domain_id, run_id=run_id)]
 
+    async def delete(self, *, domain_id: int, run_id: UUID, actor_id: str | None = None) -> None:
+        async with self._uow_factory() as uow:
+            assert uow.runs is not None
+            assert uow.run_events is not None
+            assert uow.x_sources is not None
+            row = await uow.runs.get(domain_id=domain_id, run_id=run_id, lock=True)
+            if row is None or row.kind != RESEARCH_KIND:
+                not_found()
+            if actor_id is not None and row.actor_id != actor_id:
+                not_found()
+            await uow.run_events.delete_by_run(domain_id=domain_id, run_id=run_id)
+            await uow.x_sources.delete_by_run(domain_id=domain_id, run_id=run_id)
+            await uow.runs.delete(row)
+            await uow.commit()
+
     async def _existing(self, *, domain_id: int, actor_id: str, idempotency_key: str) -> dict[str, Any] | None:
         async with self._uow_factory() as uow:
             assert uow.runs is not None

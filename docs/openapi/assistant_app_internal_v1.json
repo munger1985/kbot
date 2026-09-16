@@ -823,6 +823,49 @@
       }
     },
     "/internal/v1/assistant/image-generations/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_image_run_internal_v1_assistant_image_generations_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Image Run",
+        "tags": [
+          "Assistant Image Generation"
+        ]
+      },
       "get": {
         "operationId": "get_image_run_internal_v1_assistant_image_generations_runs__run_id__get",
         "parameters": [
@@ -1365,6 +1408,49 @@
       }
     },
     "/internal/v1/assistant/x-search/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_research_run_internal_v1_assistant_x_search_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Research Run",
+        "tags": [
+          "Assistant X Search"
+        ]
+      },
       "get": {
         "operationId": "get_research_run_internal_v1_assistant_x_search_runs__run_id__get",
         "parameters": [

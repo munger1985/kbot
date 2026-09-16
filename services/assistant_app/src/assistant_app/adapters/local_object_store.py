@@ -21,6 +21,10 @@ class AssistantLocalObjectStore:
         path = self._scoped_file(object_key)
         return await asyncio.to_thread(path.read_bytes)
 
+    async def delete(self, object_key: str) -> None:
+        path = self._scoped_target(object_key)
+        await asyncio.to_thread(self._delete_sync, path)
+
     def _scoped_target(self, object_key: str) -> Path:
         relative = self._relative_key(object_key)
         path = (self._root / relative).resolve()
@@ -44,3 +48,8 @@ class AssistantLocalObjectStore:
     def _write_sync(self, path: Path, content: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+
+    @staticmethod
+    def _delete_sync(path: Path) -> None:
+        if path.is_file():
+            path.unlink()

@@ -129,6 +129,9 @@ class _RunRepo(_MemoryRepo):
             rows = [row for row in rows if row.actor_id == actor_id]
         return rows[:limit]
 
+    async def delete(self, row: AssistantRunEntity) -> None:
+        self.rows = [item for item in self.rows if item.run_id != row.run_id]
+
     async def claim(self, *, worker_id: str, lease_until: datetime):
         now = _now()
         for row in self.rows:
@@ -152,14 +155,30 @@ class _EventRepo(_MemoryRepo):
     async def list(self, *, domain_id: int, run_id: UUID):
         return [row for row in self.rows if int(row.domain_id) == domain_id and row.run_id == run_id]
 
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        self.rows = [
+            row for row in self.rows
+            if not (int(row.domain_id) == domain_id and row.run_id == run_id)
+        ]
+
 
 class _SourceRepo(_MemoryRepo):
     async def list(self, *, domain_id: int, run_id: UUID):
         return [row for row in self.rows if int(row.domain_id) == domain_id and row.run_id == run_id]
 
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        self.rows = [
+            row for row in self.rows
+            if not (int(row.domain_id) == domain_id and row.run_id == run_id)
+        ]
+
 
 class _RevisionRepo(_MemoryRepo):
-    pass
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        self.rows = [
+            row for row in self.rows
+            if not (int(row.domain_id) == domain_id and row.run_id == run_id)
+        ]
 
 
 class _MediaRepo(_MemoryRepo):
@@ -176,6 +195,12 @@ class _MediaRepo(_MemoryRepo):
         if status:
             rows = [row for row in rows if row.status == status]
         return rows[:limit]
+
+    async def delete_by_run(self, *, domain_id: int, run_id: UUID) -> None:
+        self.rows = [
+            row for row in self.rows
+            if not (int(row.domain_id) == domain_id and row.run_id == run_id)
+        ]
 
 
 class _State:
@@ -219,6 +244,9 @@ class _ObjectStore:
         if key not in self.objects:
             raise FileNotFoundError(key)
         return self.objects[key]
+
+    async def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
 
 
 class _Generative:
@@ -300,7 +328,9 @@ class AssistantGenerativeRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.generative = _Generative()
         self.uow_factory = lambda: _UnitOfWork(self.state)
         self.research = ResearchRunService(uow_factory=self.uow_factory, catalog_client=self.catalog)
-        self.images = ImageGenerationService(uow_factory=self.uow_factory, catalog_client=self.catalog)
+        self.images = ImageGenerationService(
+            uow_factory=self.uow_factory, catalog_client=self.catalog, object_store=self.store,
+        )
         self.worker = AssistantRunWorker(
             uow_factory=self.uow_factory,
             generative_client=self.generative,
@@ -408,6 +438,34 @@ class AssistantGenerativeRuntimeTest(unittest.IsolatedAsyncioTestCase):
         public = public_result(run.result_json)
         self.assertNotIn("upstream_attempted", public)
         self.assertEqual(view["kind"], "IMAGE_GENERATION")
+
+    async def test_research_delete_removes_owned_run_and_hides_from_others(self) -> None:
+        await self._bind(role="X_SEARCH")
+        view, _ = await self.research.create(_research_command())
+        run_id = UUID(view["run_id"])
+        await self.research.delete(domain_id=DOMAIN_ID, run_id=run_id, actor_id=ACTOR_ID)
+        self.assertEqual([], self.state.runs.rows)
+        self.assertEqual([], self.state.run_events.rows)
+        with self.assertRaises(AssistantApplicationError) as raised:
+            await self.research.get(domain_id=DOMAIN_ID, run_id=run_id, actor_id=ACTOR_ID)
+        self.assertEqual("RUN_NOT_FOUND", raised.exception.code)
+
+    async def test_image_delete_removes_run_and_object_bytes(self) -> None:
+        await self._bind(role="IMAGE_GENERATION")
+        view, _ = await self.images.create(_image_command())
+        handled = await self.worker.process_once()
+        self.assertTrue(handled)
+        run_id = UUID(view["run_id"])
+        object_key = self.state.media_assets.rows[0].object_key
+        self.assertIn(object_key, self.store.objects)
+        await self.images.delete(domain_id=DOMAIN_ID, run_id=run_id, actor_id=ACTOR_ID)
+        self.assertEqual([], self.state.runs.rows)
+        self.assertEqual([], self.state.media_assets.rows)
+        self.assertEqual([], self.state.prompt_revisions.rows)
+        self.assertNotIn(object_key, self.store.objects)
+        with self.assertRaises(AssistantApplicationError) as raised:
+            await self.images.delete(domain_id=DOMAIN_ID, run_id=run_id, actor_id="other-user")
+        self.assertEqual("RUN_NOT_FOUND", raised.exception.code)
 
 
 if __name__ == "__main__":

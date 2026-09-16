@@ -517,6 +517,15 @@ async def list_research_sources(run_id: UUID, request: Request):
     )
 
 
+@router.delete("/x-search/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_research_run(run_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:x_search")
+    await _client(request).delete_research_run(
+        run_id=run_id, domain_id=domain_id, auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/image-generations/runs")
 async def list_image_runs(
     request: Request,
@@ -558,6 +567,15 @@ async def list_image_events(run_id: UUID, request: Request):
     return await _client(request).list_image_events(
         run_id=run_id, domain_id=domain_id, auth_context=request.state.auth_context,
     )
+
+
+@router.delete("/image-generations/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_image_run(run_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:image_generate")
+    await _client(request).delete_image_run(
+        run_id=run_id, domain_id=domain_id, auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/media-assets")

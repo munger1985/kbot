@@ -48,12 +48,18 @@
       return;
     }
     node.innerHTML = rows.map((row) => `
-      <button class="assistant-history-item" type="button" data-run-id="${escapeHtml(row.run_id)}" ${row.run_id === currentRunId ? 'aria-current="true"' : ""}>
-        <strong>${escapeHtml((row.request && row.request.prompt) || "文生图")}</strong>
-        <small>${escapeHtml(row.status)} · ${escapeHtml(row.created_at || "")}</small>
-      </button>`).join("");
-    node.querySelectorAll("[data-run-id]").forEach((button) => {
+      <article class="assistant-history-item" data-run-id="${escapeHtml(row.run_id)}" ${row.run_id === currentRunId ? 'aria-current="true"' : ""}>
+        <button class="assistant-history-open" type="button" data-run-id="${escapeHtml(row.run_id)}">
+          <strong>${escapeHtml((row.request && row.request.prompt) || "文生图")}</strong>
+          <small>${escapeHtml(row.status)} · ${escapeHtml(row.created_at || "")}</small>
+        </button>
+        <button class="small danger assistant-history-delete" type="button" data-run-id="${escapeHtml(row.run_id)}">删除</button>
+      </article>`).join("");
+    node.querySelectorAll(".assistant-history-open").forEach((button) => {
       button.addEventListener("click", () => openRun(button.dataset.runId));
+    });
+    node.querySelectorAll(".assistant-history-delete").forEach((button) => {
+      button.addEventListener("click", () => deleteRun(button.dataset.runId));
     });
   }
 
@@ -134,6 +140,19 @@
       if (!TERMINAL.has(run.status)) schedulePoll(runId);
     } catch (error) {
       toast(error.message || "无法打开图片生成 Run", "error");
+    }
+  }
+
+  async function deleteRun(runId) {
+    const confirmed = globalThis.confirm("删除后无法恢复。确认删除这条文生图记录？");
+    if (!confirmed) return;
+    try {
+      await KBotAssistantApi.json(`/image-generations/runs/${runId}`, "DELETE");
+      if (currentRunId === runId) resetComposer();
+      else await refreshHistory();
+      toast("已删除文生图记录");
+    } catch (error) {
+      toast(error.message || "无法删除文生图记录", "error");
     }
   }
 

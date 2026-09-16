@@ -68,7 +68,7 @@ async def lifespan(app: FastAPIOffline):
         uow_factory=uow_factory, catalog_client=catalog_client,
     )
     app.state.image_generation_service = ImageGenerationService(
-        uow_factory=uow_factory, catalog_client=catalog_client,
+        uow_factory=uow_factory, catalog_client=catalog_client, object_store=object_store,
     )
     app.state.media_service = MediaAssetService(
         uow_factory=uow_factory, object_store=object_store,
