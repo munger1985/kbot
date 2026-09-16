@@ -44,8 +44,9 @@ class UiStaticPagesTest(unittest.TestCase):
         parser.feed(page.read_text(encoding="utf-8"))
         for reference in [*parser.scripts, *parser.links]:
             if reference.startswith("./"):
+                asset_path = reference[2:].split("?", 1)[0]
                 self.assertTrue(
-                    (UI_ROOT / reference[2:]).is_file(),
+                    (UI_ROOT / asset_path).is_file(),
                     f"日志页面缺少资源 {reference}",
                 )
 
@@ -122,6 +123,9 @@ class UiStaticPagesTest(unittest.TestCase):
             "/api/v1/development/logs/events/${encodeURIComponent(eventId)}",
             script,
         )
+        self.assertIn("service_name: event.service_name", script)
+        self.assertIn("stream: event.stream", script)
+        self.assertIn("service.runtime?.source_file", script)
         self.assertIn("正在读取完整日志", script)
         self.assertIn("/api/v1/development/logs/services", script)
         self.assertIn("KBotUI.developmentLogApi", script)

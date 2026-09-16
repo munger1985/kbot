@@ -119,6 +119,10 @@ service_name = "kbot-aiops-api"
         self.assertEqual("RUNTIME", by_name["main_api"]["runtime"]["stream"])
         self.assertEqual("ACCESS", by_name["main_api"]["access"]["stream"])
         self.assertEqual(
+            "main_api/runtime.log",
+            by_name["main_api"]["runtime"]["source_file"],
+        )
+        self.assertEqual(
             "RUNTIME", by_name["aiops_agent"]["runtime"]["stream"]
         )
 
@@ -187,11 +191,51 @@ service_name = "kbot-assistant-app"
             row for row in payload["events"] if row["level"] == "ERROR"
         )
         detail = client.get(
-            f"/api/v1/development/logs/events/{error['event_id']}"
+            f"/api/v1/development/logs/events/{error['event_id']}",
+            params={"service_name": "main_api", "stream": "RUNTIME"},
         )
         self.assertEqual(200, detail.status_code)
         self.assertIn("raw", detail.json())
         self.assertNotIn("_search_text", detail.json())
+
+    def test_detail_scope_reaches_knowledge_core_runtime_with_small_budget(self):
+        aiops_log = self.log_root / "aiops_agent" / "runtime.log"
+        aiops_log.write_text(
+            "padding without a log header\n" * 100,
+            encoding="utf-8",
+        )
+        knowledge_dir = self.log_root / "knowledge_core"
+        knowledge_dir.mkdir()
+        knowledge_log = knowledge_dir / "runtime.log"
+        knowledge_log.write_text(
+            "\n".join(
+                [
+                    f"{self.stamp} | ERROR    | [parser] knowledge_core.worker:run:20 - KC 解析任务执行失败",
+                    "Traceback (most recent call last):",
+                    "  RuntimeError: parser boom",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        service = self._service(
+            max_bytes_per_file=512,
+            max_total_scan_bytes=512,
+        )
+        events, _, _ = service.search(
+            service_name="knowledge_core",
+            streams={"RUNTIME"},
+        )
+        error = next(row for row in events if row["level"] == "ERROR")
+
+        self.assertIsNone(service.event_detail(event_id=error["event_id"]))
+        detail = service.event_detail(
+            event_id=error["event_id"],
+            service_name="knowledge_core",
+            stream="RUNTIME",
+        )
+
+        self.assertEqual("knowledge_core/runtime.log", detail["source_file"])
+        self.assertIn("RuntimeError: parser boom", detail["raw"])
 
     def test_filters_and_empty_level_selection(self):
         events, _, _ = self._search(

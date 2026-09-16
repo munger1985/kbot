@@ -84,7 +84,7 @@
     metaElement.textContent = [
       formatTime(event.timestamp, event.timestamp_estimated),
       event.service_name,
-      event.log_type,
+      event.stream,
       event.process,
       event.level,
       event.source_file,
@@ -96,8 +96,12 @@
       .join(" · ");
     detailElement.textContent = "正在读取完整日志…";
     try {
+      const params = new URLSearchParams({
+        service_name: event.service_name,
+        stream: event.stream,
+      });
       const detail = await KBotUI.developmentLogApi(
-        `/api/v1/development/logs/events/${encodeURIComponent(eventId)}`
+        `/api/v1/development/logs/events/${encodeURIComponent(eventId)}?${params.toString()}`
       );
       detailElement.textContent = detail.raw || detail.message || event.message;
     } catch (error) {
@@ -130,9 +134,9 @@
     }
     serviceFilter.innerHTML = services
       .map((service) => {
-        const runtime = service.runtime ? "运行" : "-";
-        const access = service.access ? "访问" : "-";
-        return `<option value="${KBotUI.escapeHtml(service.service_name)}">${KBotUI.escapeHtml(service.service_name)} · ${runtime}/${access}</option>`;
+        const runtime = service.runtime?.source_file || "-";
+        const access = service.access?.source_file || "-";
+        return `<option value="${KBotUI.escapeHtml(service.service_name)}">${KBotUI.escapeHtml(service.service_name)} · 运行: ${KBotUI.escapeHtml(runtime)} · 访问: ${KBotUI.escapeHtml(access)}</option>`;
       })
       .join("");
     if (services.some((item) => item.service_name === previous)) {

@@ -80,9 +80,18 @@ async def list_log_events(
 
 
 @router.get("/events/{event_id}")
-async def get_log_event(event_id: str, request: Request):
+async def get_log_event(
+    event_id: str,
+    request: Request,
+    service_name: str | None = Query(default=None, min_length=1, max_length=128),
+    stream: Literal["RUNTIME", "ACCESS"] | None = Query(default=None),
+):
     try:
-        event = _service(request).event_detail(event_id=event_id)
+        event = _service(request).event_detail(
+            event_id=event_id,
+            service_name=service_name,
+            stream=stream,
+        )
     except LogQueryError as exc:
         raise _query_error(exc) from exc
     if event is None:

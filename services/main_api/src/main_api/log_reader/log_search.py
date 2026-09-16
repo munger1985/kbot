@@ -212,7 +212,7 @@ class LocalLogSearchService:
             key = ref.stream.lower()
             summary = item[key] or {
                 "stream": ref.stream, "files": 0, "size": 0,
-                "modified_at": None,
+                "modified_at": None, "source_file": None,
             }
             summary["files"] += 1
             summary["size"] += ref.size
@@ -221,6 +221,7 @@ class LocalLogSearchService:
             ).astimezone().isoformat()
             if summary["modified_at"] is None or modified > summary["modified_at"]:
                 summary["modified_at"] = modified
+                summary["source_file"] = ref.relative_path
             item[key] = summary
         return [grouped[key] for key in sorted(grouped)]
 
@@ -294,11 +295,22 @@ class LocalLogSearchService:
         )
         return events
 
-    def event_detail(self, *, event_id: str) -> dict[str, Any] | None:
+    def event_detail(
+        self, *, event_id: str, service_name: str | None = None,
+        stream: str | None = None,
+    ) -> dict[str, Any] | None:
+        """在调用方已知的服务和日志流中精确重定位完整日志事件。"""
         if not re.fullmatch(r"[0-9a-f]{64}", event_id):
             raise LogQueryError("event_id 格式无效")
+        if service_name and service_name not in self._catalog.allowed_services:
+            raise LogQueryError("service_name 不属于受控服务目录")
+        selected_stream = str(stream or "").upper()
+        if selected_stream and selected_stream not in {"RUNTIME", "ACCESS"}:
+            raise LogQueryError("stream 只能是 RUNTIME 或 ACCESS")
         for event in self._scan(
-            service_name=None, streams={"RUNTIME", "ACCESS"}, levels=_LEVELS,
+            service_name=service_name,
+            streams={selected_stream} if selected_stream else {"RUNTIME", "ACCESS"},
+            levels=_LEVELS,
             keyword=None, identifiers={}, http_status=None,
             started_at=datetime.min.replace(tzinfo=timezone.utc),
             ended_at=datetime.max.replace(tzinfo=timezone.utc),

@@ -27170,6 +27170,44 @@
               "title": "Event Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "service_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "RUNTIME",
+                    "ACCESS"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stream"
+            }
           }
         ],
         "responses": {
