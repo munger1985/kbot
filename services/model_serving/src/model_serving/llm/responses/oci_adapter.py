@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -52,21 +53,24 @@ class OciGrokResponsesAdapter:
     async def generate_image(
         self, request: ImageGenerationRequest, material: dict[str, Any],
     ) -> ImageGenerationResult:
+        # xAI 文档：工具本身没有尺寸字段，比例必须写在用户请求里。
+        prompt = request.prompt.strip()
+        if request.aspect_ratio:
+            prompt = f"{prompt}\n\nGenerate the image in a {request.aspect_ratio} aspect ratio."
+        if request.count > 1:
+            prompt = f"{prompt}\nGenerate exactly {request.count} images."
         body: dict[str, Any] = {
             "model": material["provider_model_name"],
-            "input": request.prompt,
+            "input": prompt,
             "tools": [{"type": "image_generation"}],
         }
-        instructions: list[str] = []
-        if request.aspect_ratio:
-            # xAI 的 image_generation 工具不接受尺寸字段，宽高比只能写进 Responses instructions。
-            instructions.append(f"Generate images with aspect ratio {request.aspect_ratio}.")
-        if request.count > 1:
-            instructions.append(f"Generate exactly {request.count} images.")
-        if instructions:
-            body["instructions"] = " ".join(instructions)
         payload = await self._invoke(material, body)
-        return parse_image_response(payload)
+        artifacts = _extract_images(payload)
+        if not artifacts:
+            artifacts = await asyncio.to_thread(
+                _download_image_artifacts, _image_urls_from_payload(payload),
+            )
+        return build_image_result(payload, tuple(artifacts))
 
     async def _invoke(
         self, material: dict[str, Any], body: dict[str, Any],
@@ -377,7 +381,13 @@ def payload_has_provider_error(payload: dict[str, Any]) -> bool:
 
 
 def parse_image_response(payload: dict[str, Any]) -> ImageGenerationResult:
-    artifacts = tuple(_extract_images(payload))
+    return build_image_result(payload, tuple(_extract_images(payload)))
+
+
+def build_image_result(
+    payload: dict[str, Any], artifacts: tuple[GeneratedImageArtifact, ...],
+) -> ImageGenerationResult:
+    """把已提取的图片字节收成终态；没有字节时只记录结构。"""
     refusal = _is_content_rejected(payload)
     if refusal:
         return ImageGenerationResult(
@@ -503,46 +513,97 @@ def _extract_citations(payload: dict[str, Any]) -> list[ResearchCitation]:
 def summarize_image_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """只记录结构，不把图片字节或 URL 写入日志。"""
     output = payload.get("output")
-    if isinstance(output, list):
-        items = output
-    elif isinstance(output, dict):
-        items = [output]
-    else:
-        items = []
-    item_types: list[str] = []
-    result_kinds: list[str] = []
+    items = _iter_output_items(payload)
+    summarized: list[dict[str, Any]] = []
     for item in items[:12]:
-        if not isinstance(item, dict):
-            item_types.append(type(item).__name__)
-            continue
-        item_types.append(str(item.get("type") or "")[:64] or type(item).__name__)
-        result_kinds.append(_result_kind(item.get("result")))
+        content = item.get("content")
+        content_types: list[str] = []
+        if isinstance(content, list):
+            for part in content[:8]:
+                if isinstance(part, dict):
+                    content_types.append(str(part.get("type") or "")[:64] or type(part).__name__)
+                else:
+                    content_types.append(type(part).__name__)
+        summarized.append({
+            "type": str(item.get("type") or "")[:64],
+            "status": str(item.get("status") or "")[:64],
+            "keys": [str(key) for key in item.keys()][:20],
+            "fields": {
+                str(key)[:64]: _value_shape(value)
+                for key, value in list(item.items())[:20]
+            },
+            "result_kind": _result_kind(item.get("result")),
+            "content_types": content_types,
+            "has_prompt": bool(str(item.get("prompt") or "").strip()),
+        })
+    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
     return {
         "keys": [str(key) for key in payload.keys()][:20],
         "status": str(payload.get("status") or "")[:64],
+        "truncation": str(payload.get("truncation") or "")[:64],
         "output_type": type(output).__name__,
-        "item_types": item_types,
-        "result_kinds": result_kinds,
+        "item_types": [row["type"] for row in summarized],
+        "result_kinds": [row["result_kind"] for row in summarized],
+        "items": summarized,
         "has_error": isinstance(payload.get("error"), dict),
         "incomplete_reason": (
             str((payload.get("incomplete_details") or {}).get("reason"))[:64]
             if isinstance(payload.get("incomplete_details"), dict)
             else ""
         ),
+        "usage_keys": [str(key) for key in usage.keys()][:12],
+        "text_kind": _value_shape(payload.get("text")),
+        "image_url_count": len(_image_urls_from_payload(payload)),
     }
 
 
 def _result_kind(raw: Any) -> str:
+    return _value_shape(raw).split(":", 1)[0]
+
+
+def _value_shape(raw: Any) -> str:
+    """只描述字段形态和长度，不写入图片或 URL 正文。"""
     if raw is None:
         return "null"
+    if isinstance(raw, bool):
+        return "bool"
+    if isinstance(raw, (int, float)):
+        return type(raw).__name__
     if isinstance(raw, str):
         text = raw.strip()
         if text.startswith(("http://", "https://")):
-            return "url"
-        if len(text) > 64:
-            return "base64"
-        return "string"
+            return f"url:{len(text)}"
+        if text.startswith("data:image/"):
+            return f"data_uri:{len(text)}"
+        return f"string:{len(text)}"
+    if isinstance(raw, (bytes, bytearray)):
+        return f"bytes:{len(raw)}"
+    if isinstance(raw, list):
+        return f"list:{len(raw)}"
+    if isinstance(raw, dict):
+        keys = ",".join(str(key) for key in list(raw.keys())[:12])
+        return f"dict:{keys}"[:96]
     return type(raw).__name__
+
+
+_MARKDOWN_IMAGE_URL = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+
+_NON_IMAGE_KEYS = {
+    "id", "type", "status", "prompt", "revised_prompt", "action", "quality",
+    "size", "role", "name", "index", "status_details", "incomplete_details",
+    "error", "background", "output_format",
+}
+
+
+def _iter_output_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    output = payload.get("output")
+    if isinstance(output, list):
+        items = output
+    elif isinstance(output, dict):
+        items = [output]
+    else:
+        items = []
+    return [item for item in items if isinstance(item, dict)]
 
 
 def _extract_images(payload: dict[str, Any]) -> list[GeneratedImageArtifact]:
@@ -565,6 +626,20 @@ def _extract_images(payload: dict[str, Any]) -> list[GeneratedImageArtifact]:
     for item in _iter_image_call_items(payload):
         for raw in _image_result_candidates(item):
             add(_decode_image_bytes(raw), item)
+    for item in _iter_output_items(payload):
+        type_name = str(item.get("type") or "").strip().lower()
+        if type_name.endswith("image_generation_call") or type_name == "image_generation":
+            for key, value in item.items():
+                if key in _NON_IMAGE_KEYS:
+                    continue
+                add(_decode_image_bytes(value), item)
+        elif type_name in {"message", "output_message"}:
+            add(_decode_image_bytes(item.get("content")), item)
+        elif "image" in type_name:
+            for key, value in item.items():
+                if key in _NON_IMAGE_KEYS:
+                    continue
+                add(_decode_image_bytes(value), item)
     if not artifacts:
         for raw in _image_result_candidates(payload):
             add(_decode_image_bytes(raw))
@@ -586,7 +661,6 @@ def _iter_image_call_items(node: Any) -> list[dict[str, Any]]:
         type_name = str(value.get("type") or "").strip().lower()
         if type_name.endswith("image_generation_call") or type_name == "image_generation":
             items.append(value)
-            return
         for key in ("output", "data", "content", "images", "body", "response"):
             if key in value:
                 walk(value[key], depth=depth + 1)
@@ -596,7 +670,11 @@ def _iter_image_call_items(node: Any) -> list[dict[str, Any]]:
 
 
 def _image_result_candidates(item: dict[str, Any]) -> list[Any]:
-    return [item[key] for key in ("result", "b64_json", "image") if key in item]
+    return [
+        item[key]
+        for key in ("result", "b64_json", "image", "output", "content", "data", "images", "image_url")
+        if key in item
+    ]
 
 
 def _decode_image_bytes(raw: Any) -> bytes:
@@ -609,8 +687,10 @@ def _decode_image_bytes(raw: Any) -> bytes:
                 return content
         return b""
     if isinstance(raw, dict):
-        for key in ("result", "b64_json", "image"):
-            content = _decode_image_bytes(raw.get(key))
+        for key, value in raw.items():
+            if key in _NON_IMAGE_KEYS:
+                continue
+            content = _decode_image_bytes(value)
             if content:
                 return content
         return b""
@@ -621,11 +701,103 @@ def _decode_image_bytes(raw: Any) -> bytes:
         return b""
     if "base64," in text:
         text = text.split("base64,", 1)[1]
+        text = re.split(r"[^A-Za-z0-9+/=]+", text, maxsplit=1)[0]
     try:
         decoded = base64.b64decode(text, validate=False)
     except (ValueError, TypeError):
         return b""
-    return decoded if decoded else b""
+    return decoded if decoded and _looks_like_image(decoded) else b""
+
+
+def _image_urls_from_payload(payload: dict[str, Any]) -> list[str]:
+    """收集文生图条目里的 https 图片地址，不记录完整 URL。"""
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        text = value.strip()
+        if not text.startswith(("http://", "https://")) or text in seen:
+            return
+        seen.add(text)
+        urls.append(text)
+
+    def walk(value: Any, *, depth: int, take: bool) -> None:
+        if depth > 6 or value is None:
+            return
+        if isinstance(value, list):
+            for child in value:
+                walk(child, depth=depth + 1, take=take)
+            return
+        if isinstance(value, dict):
+            type_name = str(value.get("type") or "").strip().lower()
+            nested_take = take or type_name.endswith("image_generation_call") or "image" in type_name
+            for key, child in value.items():
+                key_take = nested_take or key in {"image_url", "url", "result", "image"}
+                if key_take and isinstance(child, str):
+                    add(child)
+                walk(child, depth=depth + 1, take=key_take)
+            return
+        if take:
+            add(value)
+            return
+        if isinstance(value, str):
+            for match in _MARKDOWN_IMAGE_URL.finditer(value):
+                add(match.group(1))
+
+    for item in _iter_output_items(payload):
+        type_name = str(item.get("type") or "").strip().lower()
+        take = type_name.endswith("image_generation_call") or "image" in type_name
+        if take:
+            walk(item, depth=0, take=True)
+        elif type_name in {"message", "output_message"}:
+            walk(item.get("content"), depth=0, take=False)
+    return urls[:4]
+
+
+def _url_host(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "-")[:128]
+    except Exception:
+        return "-"
+
+
+def _download_image_artifacts(urls: list[str]) -> list[GeneratedImageArtifact]:
+    artifacts: list[GeneratedImageArtifact] = []
+    limit = 32 * 1024 * 1024
+    for url in urls:
+        host = _url_host(url)
+        try:
+            response = requests.get(url, timeout=30)
+        except requests.RequestException as exc:
+            logger.warning("OCI 文生图结果 URL 下载失败：host={} error={}", host, type(exc).__name__)
+            continue
+        content = getattr(response, "content", b"") or b""
+        content_type = ""
+        headers = getattr(response, "headers", None) or {}
+        try:
+            content_type = str(headers.get("Content-Type") or headers.get("content-type") or "")
+        except Exception:
+            content_type = ""
+        if getattr(response, "status_code", 0) != 200 or not content:
+            logger.warning(
+                "OCI 文生图结果 URL 下载失败：host={} status={} bytes={}",
+                host, getattr(response, "status_code", 0), len(content),
+            )
+            continue
+        if len(content) > limit:
+            logger.warning("OCI 文生图结果 URL 超过大小限制：host={} bytes={}", host, len(content))
+            continue
+        if not _looks_like_image(content):
+            logger.warning(
+                "OCI 文生图结果 URL 不是图片：host={} content_type={} bytes={} prefix={}",
+                host, content_type or "-", len(content), content[:12].hex(),
+            )
+            continue
+        mime_type, content = _detect_image(content)
+        artifacts.append(GeneratedImageArtifact(mime_type=mime_type, content=content))
+    return artifacts
 
 
 def _detect_image(content: bytes) -> tuple[str, bytes]:

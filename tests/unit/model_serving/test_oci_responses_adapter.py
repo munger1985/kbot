@@ -324,7 +324,8 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(f"{endpoint}/responses", captured["url"])
         self.assertEqual("image_generation", captured["json"]["tools"][0]["type"])
         self.assertNotIn("aspect_ratio", captured["json"]["tools"][0])
-        self.assertIn("1:1", captured["json"]["instructions"])
+        self.assertNotIn("instructions", captured["json"])
+        self.assertIn("1:1", captured["json"]["input"])
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual(JPEG, result.artifacts[0].content)
         self.assertEqual("image/jpeg", result.artifacts[0].mime_type)
@@ -384,7 +385,106 @@ class OciResponsesImageParseVariantsTest(unittest.TestCase):
         self.assertEqual("PROVIDER_UNAVAILABLE", result.error_code)
         summary = logger.warning.call_args.args[1]
         self.assertEqual(["message"], summary["item_types"])
+        self.assertEqual("list:1", summary["items"][0]["fields"]["content"])
         self.assertNotIn("ok", str(logger.warning.call_args))
+
+    def test_message_data_uri_is_used_when_image_call_result_is_empty(self):
+        import base64
+        payload = {
+            "id": "resp-oci-empty-result",
+            "status": "completed",
+            "truncation": "disabled",
+            "output": [
+                {"type": "reasoning", "summary": []},
+                {
+                    "type": "image_generation_call",
+                    "id": "ig_1",
+                    "status": "completed",
+                    "prompt": "a red cube",
+                    "result": None,
+                },
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_image",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64," + base64.b64encode(JPEG).decode("ascii"),
+                        },
+                    }],
+                },
+            ],
+        }
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+
+    def test_markdown_data_uri_in_message_text_still_parses(self):
+        import base64
+        encoded = base64.b64encode(JPEG).decode("ascii")
+        payload = {
+            "status": "completed",
+            "output": [
+                {"type": "image_generation_call", "id": "ig_md", "result": None},
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": f"done ![image](data:image/jpeg;base64,{encoded})",
+                    }],
+                },
+            ],
+        }
+        result = parse_image_response(payload)
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+
+
+class OciResponsesImageUrlDownloadTest(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_image_downloads_https_result_url(self):
+        import json
+        adapter = OciGrokResponsesAdapter()
+        body = json.dumps({
+            "id": "resp-url",
+            "status": "completed",
+            "output": [
+                {"type": "reasoning"},
+                {
+                    "type": "image_generation_call",
+                    "id": "ig_url",
+                    "status": "completed",
+                    "result": None,
+                },
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "![image](https://cdn.example.test/generated.jpg)",
+                    }],
+                },
+            ],
+        }).encode("utf-8")
+
+        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
+            return _HttpResponse(200, body)
+
+        def fake_get(url, timeout=None):
+            self.assertEqual("https://cdn.example.test/generated.jpg", url)
+            return _HttpResponse(200, JPEG, headers={"Content-Type": "image/jpeg"})
+
+        endpoint = f"{HOST}/20231130/actions/v1"
+        with (
+            patch.object(adapter, "_signer", return_value=object()),
+            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+            patch("model_serving.llm.responses.oci_adapter.requests.get", fake_get),
+        ):
+            result = await adapter.generate_image(
+                _image_request(),
+                _material(project=PROJECT) | {"api_endpoint": endpoint},
+            )
+
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
 
 
 if __name__ == "__main__":
