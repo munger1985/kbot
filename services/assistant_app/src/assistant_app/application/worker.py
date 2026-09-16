@@ -28,6 +28,14 @@ MIME_EXTENSIONS = {
     "image/webp": "webp",
 }
 
+_IMAGE_FAIL_MESSAGES = {
+    "CONTENT_REJECTED": "内容安全策略拒绝生成",
+    "PROVIDER_UNSUPPORTED_TOOL": "上游拒绝文生图工具",
+    "PROVIDER_QUOTA_EXHAUSTED": "上游配额已耗尽",
+    "PROVIDER_TIMEOUT": "上游文生图超时",
+    "PROVIDER_UNAVAILABLE": "上游图片服务不可用",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class RunSnapshot:
@@ -189,7 +197,10 @@ class AssistantRunWorker:
                 return
             if result.status != "COMPLETED":
                 row.error_code = result.error_code or "PROVIDER_UNAVAILABLE"
-                row.error_message = result.error_code or "文生图未完成"
+                row.error_message = (
+                    result.error_message
+                    or _IMAGE_FAIL_MESSAGES.get(row.error_code, "文生图未完成")
+                )
                 await append_event(
                     uow, row, stage="FAILED",
                     message=row.error_message,

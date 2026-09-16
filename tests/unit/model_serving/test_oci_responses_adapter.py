@@ -10,6 +10,7 @@ from platform_core.identity import uuid7
 from model_serving.llm.responses.errors import GenerativeAdapterError
 from model_serving.llm.responses.oci_adapter import (
     OciGrokResponsesAdapter,
+    build_oci_images_urls,
     build_oci_responses_url,
     classify_provider_http_error,
     oci_compartment_id,
@@ -73,6 +74,16 @@ class OciResponsesUrlTest(unittest.TestCase):
         self.assertEqual(expected, build_oci_responses_url(endpoint))
         self.assertEqual(expected, build_oci_responses_url(endpoint + "/"))
         self.assertEqual(expected, build_oci_responses_url(expected))
+
+    def test_dated_actions_v1_endpoint_has_images_generations_sibling(self):
+        endpoint = f"{HOST}/20231130/actions/v1"
+        self.assertEqual(
+            (
+                f"{endpoint}/images/generations",
+                f"{HOST}/openai/v1/images/generations",
+            ),
+            build_oci_images_urls(endpoint),
+        )
 
 
 class OciResponsesProjectTest(unittest.TestCase):
@@ -308,7 +319,10 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
         captured: dict = {}
 
         def fake_post(url, json=None, auth=None, headers=None, timeout=None):
+            captured.setdefault("urls", []).append(url)
             captured.update(url=url, json=json, headers=headers)
+            if str(url).endswith("/images/generations"):
+                return _HttpResponse(404, b'{"error":{"code":"not_found","message":"no images api"}}')
             return _HttpResponse(200, JPEG)
 
         endpoint = f"{HOST}/20231130/actions/v1"
@@ -321,6 +335,7 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
                 _material(project=PROJECT) | {"api_endpoint": endpoint},
             )
 
+        self.assertIn(f"{endpoint}/images/generations", captured["urls"])
         self.assertEqual(f"{endpoint}/responses", captured["url"])
         self.assertEqual("image_generation", captured["json"]["tools"][0]["type"])
         self.assertNotIn("aspect_ratio", captured["json"]["tools"][0])
@@ -383,10 +398,11 @@ class OciResponsesImageParseVariantsTest(unittest.TestCase):
             result = parse_image_response(payload)
         self.assertEqual("FAILED", result.status)
         self.assertEqual("PROVIDER_UNAVAILABLE", result.error_code)
+        self.assertEqual("ok", result.error_message)
         summary = logger.warning.call_args.args[1]
         self.assertEqual(["message"], summary["item_types"])
         self.assertEqual("list:1", summary["items"][0]["fields"]["content"])
-        self.assertNotIn("ok", str(logger.warning.call_args))
+        self.assertEqual("ok", summary["output_excerpt"])
 
     def test_message_data_uri_is_used_when_image_call_result_is_empty(self):
         import base64
@@ -485,6 +501,99 @@ class OciResponsesImageUrlDownloadTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual(JPEG, result.artifacts[0].content)
+
+
+class OciImagesApiAdapterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_image_prefers_images_api_with_aspect_ratio(self):
+        import base64
+        import json
+
+        adapter = OciGrokResponsesAdapter()
+        captured: list[dict] = []
+        body = json.dumps({
+            "created": 1,
+            "data": [{"b64_json": base64.b64encode(JPEG).decode("ascii")}],
+        }).encode("utf-8")
+
+        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
+            captured.append({"url": url, "json": json})
+            if str(url).endswith("/images/generations"):
+                return _HttpResponse(200, body)
+            raise AssertionError("Images API 成功后不应再调用 Responses")
+
+        endpoint = f"{HOST}/20231130/actions/v1"
+        with (
+            patch.object(adapter, "_signer", return_value=object()),
+            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+        ):
+            result = await adapter.generate_image(
+                _image_request(),
+                _material(project=PROJECT) | {"api_endpoint": endpoint},
+            )
+
+        self.assertEqual(1, len(captured))
+        self.assertEqual(f"{endpoint}/images/generations", captured[0]["url"])
+        self.assertEqual("1:1", captured[0]["json"]["aspect_ratio"])
+        self.assertEqual("a red cube", captured[0]["json"]["prompt"])
+        self.assertEqual("b64_json", captured[0]["json"]["response_format"])
+        self.assertNotIn("tools", captured[0]["json"])
+        self.assertEqual("COMPLETED", result.status)
+        self.assertEqual(JPEG, result.artifacts[0].content)
+
+
+class OciFailedImageToolTest(unittest.TestCase):
+    def test_failed_image_tool_logs_excerpt_without_prompt_or_url(self):
+        payload = {
+            "id": "resp-failed-tool",
+            "status": "completed",
+            "output": [
+                {
+                    "type": "image_generation_call",
+                    "id": "ig_failed",
+                    "status": "failed",
+                    "prompt": "secret-prompt-xyz",
+                },
+                {
+                    "type": "message",
+                    "status": "completed",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Imagine backend is currently unavailable. https://cdn.example.test/secret.jpg",
+                    }],
+                },
+            ],
+        }
+        with patch("model_serving.llm.responses.oci_adapter.logger") as logger:
+            result = parse_image_response(payload)
+        self.assertEqual("FAILED", result.status)
+        self.assertEqual("PROVIDER_UNAVAILABLE", result.error_code)
+        self.assertIn("Imagine backend is currently unavailable", result.error_message or "")
+        self.assertNotIn("https://", result.error_message or "")
+        self.assertNotIn("secret-prompt-xyz", result.error_message or "")
+        rendered = " ".join(str(item) for item in logger.warning.call_args)
+        self.assertIn("工具执行失败", rendered)
+        self.assertNotIn("secret-prompt-xyz", rendered)
+        self.assertNotIn("cdn.example.test", rendered)
+        summary = logger.warning.call_args.args[1]
+        self.assertEqual(["failed"], summary["image_call_statuses"])
+        self.assertIn("[url]", summary["output_excerpt"])
+
+    def test_failed_image_tool_with_policy_text_is_rejected(self):
+        payload = {
+            "status": "completed",
+            "output": [
+                {"type": "image_generation_call", "status": "failed", "prompt": "secret prompt"},
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "This request violates the content policy."}],
+                },
+            ],
+        }
+        result = parse_image_response(payload)
+        self.assertEqual("REJECTED", result.status)
+        self.assertEqual("CONTENT_REJECTED", result.error_code)
+        self.assertIn("content policy", (result.error_message or "").lower())
+        self.assertNotIn("secret prompt", result.error_message or "")
 
 
 if __name__ == "__main__":

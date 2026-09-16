@@ -53,7 +53,10 @@ class OciGrokResponsesAdapter:
     async def generate_image(
         self, request: ImageGenerationRequest, material: dict[str, Any],
     ) -> ImageGenerationResult:
-        # xAI 文档：工具本身没有尺寸字段，比例必须写在用户请求里。
+        # Studio 有明确 prompt 和比例，优先走 Images API；工具路径没有尺寸字段。
+        images_result = await self._try_images_api(request, material)
+        if images_result is not None:
+            return images_result
         prompt = request.prompt.strip()
         if request.aspect_ratio:
             prompt = f"{prompt}\n\nGenerate the image in a {request.aspect_ratio} aspect ratio."
@@ -65,6 +68,45 @@ class OciGrokResponsesAdapter:
             "tools": [{"type": "image_generation"}],
         }
         payload = await self._invoke(material, body)
+        return await self._image_result_from_payload(payload)
+
+    async def _try_images_api(
+        self, request: ImageGenerationRequest, material: dict[str, Any],
+    ) -> ImageGenerationResult | None:
+        """xAI 对精确比例的文生图应走 images/generations，而不是 Responses 工具。"""
+        endpoint = str(material.get("api_endpoint") or "").strip().rstrip("/")
+        if str(material.get("provider") or "").strip().upper() != "OCI" or not endpoint:
+            return None
+        body: dict[str, Any] = {
+            "model": material["provider_model_name"],
+            "prompt": request.prompt.strip(),
+            "n": request.count,
+            "response_format": "b64_json",
+        }
+        if request.aspect_ratio:
+            body["aspect_ratio"] = request.aspect_ratio
+        for url in build_oci_images_urls(endpoint):
+            path = urlparse(url).path or url
+            try:
+                payload = await self._invoke(material, body, url=url)
+            except GenerativeAdapterError as exc:
+                logger.warning(
+                    "OCI Images API 不可用：path={} code={} status={}",
+                    path, exc.code, exc.status_code,
+                )
+                if exc.code in {"CONTENT_REJECTED", "PROVIDER_QUOTA_EXHAUSTED"}:
+                    raise
+                continue
+            result = await self._image_result_from_payload(payload)
+            if result.status == "COMPLETED" and result.artifacts:
+                logger.info("OCI Images API 已返回图片：path={} count={}", path, len(result.artifacts))
+                return result
+            logger.warning("OCI Images API 没有返回可保存的图片：path={}", path)
+        return None
+
+    async def _image_result_from_payload(
+        self, payload: dict[str, Any],
+    ) -> ImageGenerationResult:
         artifacts = _extract_images(payload)
         if not artifacts:
             artifacts = await asyncio.to_thread(
@@ -73,7 +115,7 @@ class OciGrokResponsesAdapter:
         return build_image_result(payload, tuple(artifacts))
 
     async def _invoke(
-        self, material: dict[str, Any], body: dict[str, Any],
+        self, material: dict[str, Any], body: dict[str, Any], *, url: str | None = None,
     ) -> dict[str, Any]:
         provider = str(material.get("provider") or "").strip().upper()
         endpoint = str(material.get("api_endpoint") or "").strip().rstrip("/")
@@ -92,7 +134,7 @@ class OciGrokResponsesAdapter:
                 "PROVIDER_UNAVAILABLE", "当前模型的 OCI 认证材料不完整",
                 status_code=503,
             ) from exc
-        url = build_oci_responses_url(endpoint)
+        url = url or build_oci_responses_url(endpoint)
 
         def _post() -> requests.Response:
             return requests.post(
@@ -282,6 +324,27 @@ def build_oci_responses_url(endpoint: str) -> str:
     return base
 
 
+def build_oci_images_urls(endpoint: str) -> tuple[str, ...]:
+    """从同一 inference 地址推导 Images API 候选，不猜测模型名。"""
+    base = str(endpoint or "").strip().rstrip("/")
+    if not base:
+        return ()
+    urls: list[str] = []
+    try:
+        responses = build_oci_responses_url(base)
+    except GenerativeAdapterError:
+        responses = ""
+    if responses.lower().endswith("/responses"):
+        urls.append(f"{responses[:-len('responses')]}images/generations")
+    parsed = urlparse(base if "://" in base else f"https://{base}")
+    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    if origin:
+        openai_url = f"{origin}/openai/v1/images/generations"
+        if openai_url not in urls:
+            urls.append(openai_url)
+    return tuple(urls)
+
+
 def oci_generative_ai_project(model_params: Any) -> str:
     """读取 Responses 调用所需的 Generative AI project OCID。"""
     if not isinstance(model_params, dict):
@@ -388,6 +451,7 @@ def build_image_result(
     payload: dict[str, Any], artifacts: tuple[GeneratedImageArtifact, ...],
 ) -> ImageGenerationResult:
     """把已提取的图片字节收成终态；没有字节时只记录结构。"""
+    excerpt = _safe_output_excerpt(payload)
     refusal = _is_content_rejected(payload)
     if refusal:
         return ImageGenerationResult(
@@ -396,9 +460,12 @@ def build_image_result(
             usage=_extract_usage(payload),
             provider_request_id=_provider_request_id(payload),
             error_code="CONTENT_REJECTED",
+            error_message=excerpt or None,
         )
     if _terminal_status(payload, image=True) == "FAILED" or not artifacts:
-        if not artifacts:
+        if _image_tool_failed(payload):
+            logger.warning("OCI 文生图工具执行失败：{}", summarize_image_payload(payload))
+        elif not artifacts:
             logger.warning("OCI 文生图响应没有可解析的图片：{}", summarize_image_payload(payload))
         return ImageGenerationResult(
             status="FAILED",
@@ -406,6 +473,7 @@ def build_image_result(
             usage=_extract_usage(payload),
             provider_request_id=_provider_request_id(payload),
             error_code="PROVIDER_UNAVAILABLE",
+            error_message=excerpt or None,
         )
     return ImageGenerationResult(
         status="COMPLETED",
@@ -554,6 +622,11 @@ def summarize_image_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "usage_keys": [str(key) for key in usage.keys()][:12],
         "text_kind": _value_shape(payload.get("text")),
         "image_url_count": len(_image_urls_from_payload(payload)),
+        "image_call_statuses": [
+            row["status"] for row in summarized
+            if row["type"].endswith("image_generation_call") or row["type"] == "image_generation"
+        ],
+        "output_excerpt": _safe_output_excerpt(payload),
     }
 
 
@@ -723,6 +796,18 @@ def _image_urls_from_payload(payload: dict[str, Any]) -> list[str]:
         seen.add(text)
         urls.append(text)
 
+    data = payload.get("data")
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            add(item.get("url"))
+            image_url = item.get("image_url")
+            if isinstance(image_url, dict):
+                add(image_url.get("url"))
+            else:
+                add(image_url)
+
     def walk(value: Any, *, depth: int, take: bool) -> None:
         if depth > 6 or value is None:
             return
@@ -809,6 +894,39 @@ def _detect_image(content: bytes) -> tuple[str, bytes]:
     return "image/png", content
 
 
+_DATA_URI_RE = re.compile(r"data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+", re.I)
+_HTTP_URL_RE = re.compile(r"https?://\S+", re.I)
+_REJECT_TOKENS = (
+    "content_filter",
+    "content policy",
+    "content_policy",
+    "moderation",
+    "safety policy",
+    "not allowed",
+    "prohibited",
+    "拒绝生成",
+    "内容安全",
+)
+
+
+def _safe_output_excerpt(payload: dict[str, Any], *, limit: int = 200) -> str:
+    """截取模型说明，去掉 URL 和图片字节，避免把 prompt 或密钥写入日志。"""
+    text = _extract_output_text(payload)
+    if not text:
+        return ""
+    text = _DATA_URI_RE.sub("[image]", text)
+    text = _HTTP_URL_RE.sub("[url]", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit]
+
+
+def _image_tool_failed(payload: dict[str, Any]) -> bool:
+    for item in _iter_image_call_items(payload):
+        if str(item.get("status") or "").strip().lower() == "failed":
+            return True
+    return False
+
+
 def _is_content_rejected(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "").lower()
     if status in {"rejected", "cancelled"}:
@@ -821,8 +939,8 @@ def _is_content_rejected(payload: dict[str, Any]) -> bool:
     error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
     message = str((error or {}).get("message") or payload.get("message") or "").lower()
     code = str((error or {}).get("code") or "").lower()
-    text = f"{code} {message}"
-    return "content_filter" in text or "content policy" in text
+    text = f"{code} {message} {_extract_output_text(payload).lower()}"
+    return any(token in text for token in _REJECT_TOKENS)
 
 
 def _terminal_status(payload: dict[str, Any], *, image: bool) -> str:

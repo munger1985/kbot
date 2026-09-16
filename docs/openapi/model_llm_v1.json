@@ -337,6 +337,18 @@
             ],
             "title": "Error Code"
           },
+          "error_message": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "provider_request_id": {
             "anyOf": [
               {

@@ -439,6 +439,26 @@ class AssistantGenerativeRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("upstream_attempted", public)
         self.assertEqual(view["kind"], "IMAGE_GENERATION")
 
+    async def test_image_worker_surfaces_provider_error_message(self) -> None:
+        await self._bind(role="IMAGE_GENERATION")
+        await self.images.create(_image_command(idempotency_key="idem-image-fail", request_id="req-image-fail"))
+
+        async def failed(_request):
+            return ImageGenerationResult(
+                status="FAILED",
+                artifacts=(),
+                error_code="PROVIDER_UNAVAILABLE",
+                error_message="Imagine backend is currently unavailable.",
+            )
+
+        self.generative.generate_image = failed
+        handled = await self.worker.process_once()
+        self.assertTrue(handled)
+        run = self.state.runs.rows[0]
+        self.assertEqual("FAILED", run.status)
+        self.assertEqual("PROVIDER_UNAVAILABLE", run.error_code)
+        self.assertEqual("Imagine backend is currently unavailable.", run.error_message)
+
     async def test_research_delete_removes_owned_run_and_hides_from_others(self) -> None:
         await self._bind(role="X_SEARCH")
         view, _ = await self.research.create(_research_command())

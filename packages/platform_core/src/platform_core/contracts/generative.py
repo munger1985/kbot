@@ -110,6 +110,7 @@ class ImageGenerationResult(_GenerativeContract):
     usage: ModelUsage | None = None
     provider_request_id: str | None = Field(default=None, max_length=256)
     error_code: str | None = Field(default=None, max_length=128)
+    error_message: str | None = Field(default=None, max_length=1000)
 
 
 GENERATIVE_ERROR_CODES = (
