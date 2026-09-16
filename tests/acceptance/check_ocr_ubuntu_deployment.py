@@ -27,12 +27,17 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn("docling-tools models download rapidocr easyocr --force", source)
         self.assertIn("EasyOCR 中英文模型下载验证通过", source)
         self.assertIn('download_enabled=True', source)
-        self.assertIn('${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}', source)
+        self.assertIn('CONFIG_FILE="${KBOT_CONFIG_FILE:-', source)
+        self.assertIn('DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-}"', source)
+        self.assertIn('(deployment.get("paths") or {}).get("docling_models")', source)
+        self.assertIn('data_dir / "models" / "docling_models"', source)
         self.assertIn('"$HOME/miniconda3/bin/conda"', source)
         self.assertIn('"/opt/miniconda3/bin/conda"', source)
         self.assertIn("RapidOCR 本地模型加载验证通过", source)
         self.assertIn("EasyOCR 本地模型加载验证通过", source)
         self.assertIn("Tesseract Python 绑定导入通过", source)
+        self.assertIn("from docling.document_converter import DocumentConverter", source)
+        self.assertIn("Docling 后加载 Tesseract Python 绑定通过", source)
         self.assertNotIn("import easyocr\nimport onnxruntime\nimport tesserocr", source)
 
     def test_systemd_unit_uses_the_same_tessdata_environment(self) -> None:

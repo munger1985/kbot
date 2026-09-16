@@ -129,9 +129,13 @@ Docling Parser 共用同一 Conda 环境内的 Tesseract、`tesserocr` 和语言
 
 ```bash
 KBOT_CONDA_ENV=kbot4 \
-KBOT_DOCLING_MODELS_DIR=/home/ubuntu/models/docling_models \
 bash scripts/deployment/install_model_ocr_ubuntu24.sh --download-models --install-service
 ```
+
+安装器默认读取 `KBOT_CONFIG_FILE` 指向的部署配置；未指定时读取
+`configuration/kbot.toml`。模型目录优先使用 `[paths].docling_models`，否则使用
+`<data_dir>/models/docling_models`。只有临时验证其他模型副本时才需要显式设置
+`KBOT_DOCLING_MODELS_DIR`。
 
 安装器会依次识别 `CONDA_EXE`、当前 `PATH`，以及当前用户和 `/opt` 下的
 `anaconda3`/`miniconda3`。若 Conda 安装在其他位置，请显式指定其可执行文件，例如：
@@ -150,6 +154,13 @@ OCR 模型的缺失或不完整文件。安装器会安装 `easyocr`、`rapidocr
 RapidOCR/EasyOCR 模型文件和中文、英文 Tesseract 语言包，再创建并启动
 `kbot-model-ocr.service`。其中 ONNX Runtime 固定使用 CPU 构建，不会为开发环境引入 CUDA
 工具链。它不会写入模型目录数据，也不会输出 `.env` 中的 Secret。
+
+若依赖安装已经完成，只是在后续模型目录或运行时验证阶段失败，可避免重复安装并重新验证：
+
+```bash
+KBOT_CONDA_ENV=kbot4 \
+bash scripts/deployment/install_model_ocr_ubuntu24.sh --skip-runtime-install
+```
 
 安装验证会将 Tesseract/Docling 与 EasyOCR/RapidOCR 放在独立 Python 进程中执行。EasyOCR 的
 PyTorch 依赖会加载自己的图像库，不能与 `tesserocr` 合并为一次导入验证，否则可能产生不影响

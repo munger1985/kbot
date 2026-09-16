@@ -6,7 +6,8 @@ set -euo pipefail
 
 KBOT_SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONDA_ENV_NAME="${KBOT_CONDA_ENV:-kbot4}"
-DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-$HOME/models/docling_models}"
+CONFIG_FILE="${KBOT_CONFIG_FILE:-$KBOT_SOURCE_ROOT/configuration/kbot.toml}"
+DOCLING_MODELS_DIR="${KBOT_DOCLING_MODELS_DIR:-}"
 INSTALL_SYSTEMD_SERVICE=false
 SKIP_RUNTIME_INSTALL=false
 DOWNLOAD_MODELS=false
@@ -76,6 +77,31 @@ else
     echo "按参数跳过依赖安装，仅验证并部署已有 OCR 运行时。"
 fi
 
+if [[ -z "$DOCLING_MODELS_DIR" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+        DOCLING_MODELS_DIR="$($conda_bin run -n "$CONDA_ENV_NAME" python -c '
+from pathlib import Path
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
+config_file = Path(sys.argv[1]).expanduser().resolve()
+with config_file.open("rb") as stream:
+    deployment = tomllib.load(stream)
+data_dir = Path(deployment.get("data_dir") or Path.home() / ".kbot")
+configured = (deployment.get("paths") or {}).get("docling_models")
+print(Path(configured).expanduser() if configured else data_dir / "models" / "docling_models")
+' "$CONFIG_FILE")"
+        echo "从部署配置读取 Docling 模型目录：$DOCLING_MODELS_DIR"
+    else
+        DOCLING_MODELS_DIR="$HOME/models/docling_models"
+        echo "部署配置不存在，使用默认 Docling 模型目录：$DOCLING_MODELS_DIR"
+    fi
+fi
+
 if [[ "$DOWNLOAD_MODELS" == true ]]; then
     echo "下载 Docling OCR 模型：$DOCLING_MODELS_DIR"
     mkdir -p "$DOCLING_MODELS_DIR"
@@ -108,6 +134,12 @@ echo "验证 Docling 与本地 OCR 依赖"
 import tesserocr
 print("Tesseract:", tesserocr.tesseract_version())
 print("Tesseract Python 绑定导入通过")
+'
+"$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
+from docling.document_converter import DocumentConverter
+import tesserocr
+print("Docling:", DocumentConverter.__name__)
+print("Docling 后加载 Tesseract Python 绑定通过：", tesserocr.tesseract_version())
 '
 # EasyOCR 会加载 PyTorch 自带的图像库；与 tesserocr 分进程验证，避免库全局加载顺序造成伪失败。
 "$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
