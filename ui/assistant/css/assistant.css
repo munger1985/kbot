@@ -179,3 +179,92 @@ button.danger:hover { border-color: #c98982; background: #ffece9; }
 .assistant-field input[readonly], .assistant-field input:disabled, .assistant-field select:disabled {
   color: var(--assistant-muted); background: #f5f8f6;
 }
+
+
+.x-search-result {
+  margin-top: 16px;
+  border: 1px solid var(--assistant-line);
+  background: #fbfcfb;
+}
+.x-result-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--assistant-line);
+}
+.x-result-head h3 { margin: 0; font: 600 18px/1.2 Georgia, "Songti SC", serif; }
+.x-result-head p { margin: 4px 0 0; color: var(--assistant-muted); font-size: 12px; }
+.x-query-recap {
+  margin: 0;
+  padding: 10px 18px;
+  color: var(--assistant-muted);
+  border-bottom: 1px solid var(--assistant-line);
+  font-size: 12px;
+  text-wrap: pretty;
+}
+.x-brief, .x-posts { padding: 16px 18px 18px; }
+.x-brief + .x-posts,
+.x-posts + .x-brief,
+.x-brief + .x-brief { border-top: 1px solid var(--assistant-line); }
+.x-brief h4, .x-posts h4, .x-source-day h3 {
+  margin: 0 0 10px;
+  color: var(--assistant-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+.x-brief p { margin: 0; max-width: 62ch; text-wrap: pretty; }
+.x-brief p + p { margin-top: 10px; }
+.x-post-list { display: grid; }
+.x-post { padding: 14px 0; border-top: 1px solid var(--assistant-line); }
+.x-post:first-child { padding-top: 0; border-top: 0; }
+.x-post-kicker {
+  margin: 0 0 6px;
+  color: var(--assistant-muted);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+.x-post-body { text-wrap: pretty; }
+.x-cite {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin: 0 2px;
+  padding: 0 7px;
+  border: 1px solid var(--assistant-line);
+  border-radius: 99px;
+  color: var(--assistant-accent-dark);
+  background: var(--assistant-soft);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+button.x-cite { min-height: 22px; padding: 0 7px; }
+.x-cite.is-active,
+.assistant-source-card.is-active {
+  border-color: var(--assistant-accent);
+  background: #e7f3ed;
+}
+.x-cite.is-label { cursor: default; }
+.x-inline-link { color: var(--assistant-accent); }
+.assistant-source-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+.assistant-source-card header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.assistant-source-card footer {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.x-source-day h3 { padding: 12px 16px 0; }
