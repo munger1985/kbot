@@ -136,9 +136,9 @@ print("Tesseract:", tesserocr.tesseract_version())
 print("Tesseract Python 绑定导入通过")
 '
 "$conda_bin" run -n "$CONDA_ENV_NAME" python -c '
-from docling.document_converter import DocumentConverter
+from knowledge_core.parsing.converter import KcDoclingConverter
 import tesserocr
-print("Docling:", DocumentConverter.__name__)
+print("KC Docling:", KcDoclingConverter.__name__)
 print("Docling 后加载 Tesseract Python 绑定通过：", tesserocr.tesseract_version())
 '
 # EasyOCR 会加载 PyTorch 自带的图像库；与 tesserocr 分进程验证，避免库全局加载顺序造成伪失败。

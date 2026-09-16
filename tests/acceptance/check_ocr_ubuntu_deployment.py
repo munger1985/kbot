@@ -7,6 +7,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "scripts/deployment/install_model_ocr_ubuntu24.sh"
 UNIT_TEMPLATE = ROOT / "scripts/deployment/systemd/kbot-model-ocr.service.template"
+KC_CONVERTER = (
+    ROOT
+    / "services/knowledge_core/src/knowledge_core/parsing/converter.py"
+)
 
 
 class OcrUbuntuDeploymentTests(unittest.TestCase):
@@ -36,9 +40,20 @@ class OcrUbuntuDeploymentTests(unittest.TestCase):
         self.assertIn("RapidOCR 本地模型加载验证通过", source)
         self.assertIn("EasyOCR 本地模型加载验证通过", source)
         self.assertIn("Tesseract Python 绑定导入通过", source)
-        self.assertIn("from docling.document_converter import DocumentConverter", source)
+        self.assertIn(
+            "from knowledge_core.parsing.converter import KcDoclingConverter",
+            source,
+        )
         self.assertIn("Docling 后加载 Tesseract Python 绑定通过", source)
         self.assertNotIn("import easyocr\nimport onnxruntime\nimport tesserocr", source)
+
+    def test_kc_converter_preloads_tesseract_before_docling(self) -> None:
+        source = KC_CONVERTER.read_text(encoding="utf-8")
+
+        self.assertLess(
+            source.index("import tesserocr as _tesserocr_runtime"),
+            source.index("from docling.datamodel.base_models import InputFormat"),
+        )
 
     def test_systemd_unit_uses_the_same_tessdata_environment(self) -> None:
         source = UNIT_TEMPLATE.read_text(encoding="utf-8")

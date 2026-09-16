@@ -1,9 +1,16 @@
-"""Docling conversion adapter used only by the KC Parser Worker."""
+"""仅供 KC Parser Worker 使用的 Docling 转换适配器。"""
 
 import asyncio
 from pathlib import Path
 import subprocess
 import tempfile
+
+# 先加载 Conda 的 Tesseract 图像库，避免 Docling 后续加载的 torchvision
+# 内置 libjpeg.so.8 抢占同名动态库，导致 libtiff 缺少 jpeg12 符号。
+try:
+    import tesserocr as _tesserocr_runtime
+except ModuleNotFoundError:
+    _tesserocr_runtime = None
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
