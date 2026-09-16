@@ -10,7 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class _GenerativeContract(BaseModel):
     """禁止把供应商专有参数、凭据或未约束字段透传到下游。"""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # 文生图 content 是 PNG/JPEG 二进制；JSON 必须走 Base64，不能按 UTF-8 解码。
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        ser_json_bytes="base64",
+        val_json_bytes="base64",
+    )
 
 
 class ResearchRequest(_GenerativeContract):

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import unittest
 
-from platform_core.contracts import ImageGenerationRequest, ResearchRequest
+from platform_core.contracts import ImageGenerationRequest, ImageGenerationResult, ResearchRequest
 from platform_core.identity import uuid7
 
 from model_serving.llm.responses.errors import GenerativeAdapterError
@@ -292,6 +292,14 @@ class OciResponsesImageBodyTest(unittest.TestCase):
             OciGrokResponsesAdapter._parse_http(_HttpResponse(400, b"\x80\x81not-json"))
         self.assertEqual(502, raised.exception.status_code)
         self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
+
+    def test_parsed_jpeg_result_can_dump_as_json(self):
+        import json
+        payload = OciGrokResponsesAdapter._parse_http(_HttpResponse(200, JPEG))
+        result = parse_image_response(payload)
+        encoded = json.dumps(result.model_dump(mode="json"))
+        restored = ImageGenerationResult.model_validate(json.loads(encoded))
+        self.assertEqual(JPEG, restored.artifacts[0].content)
 
 
 class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
