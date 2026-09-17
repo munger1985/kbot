@@ -1442,7 +1442,7 @@ class TurnPlanningService:
         model_snapshot: dict,
         revision_no: int,
     ):
-        """Tool 输入首稿越界时，带策略反馈执行一次受控修正。"""
+        """先按发现目录确定性补全计划，再对仍越界的 Tool 输入做一次受控修正。"""
         planned = StructuredModelResult(
             output=self._bind_target_to_plan(
                 investigation=reset_model_deferred_flags(planned.output),
@@ -1451,6 +1451,22 @@ class TurnPlanningService:
             ),
             receipt=planned.receipt,
         )
+        rewritten = rewrite_incomplete_discovery_actions(
+            investigation=planned.output,
+            available_tools=available_tools,
+        )
+        if rewritten is not None:
+            logger.info(
+                "已按发现目录补全调查动作："
+                "turn_id={} revision_no={} tools={}",
+                context.turn_id,
+                revision_no,
+                [action.tool_id for action in rewritten.plan.actions],
+            )
+            planned = StructuredModelResult(
+                output=rewritten,
+                receipt=planned.receipt,
+            )
         try:
             self._validate_evidence_source_strategy(
                 investigation=planned.output,

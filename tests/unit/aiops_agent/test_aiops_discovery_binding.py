@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from aiops_agent.application.investigation.discovery import (
     catalog_direct_actions,
 )
 from aiops_agent.application.investigation.discovery_binding import (
+    PRODUCT_TIMEZONE,
     bind_discovery_parameters,
     bound_continuation_actions,
     decide_discovery_continuation,
+    parse_time_windows,
 )
 from aiops_agent.application.investigation.service import (
     TurnPlanningService,
@@ -452,6 +455,104 @@ class DiscoveryBindingTest(unittest.TestCase):
         self.assertEqual("BOUND", bound.status)
         self.assertEqual(
             {"begin_snapshot_id": 100, "end_snapshot_id": 101},
+            bound.plan.actions[1].input,
+        )
+
+    def test_parse_relative_chinese_windows(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        single = parse_time_windows(
+            "请生成数据库在昨天2:00-3:00的awr报告",
+            now=now,
+        )
+        self.assertEqual(
+            (
+                (
+                    datetime(2026, 9, 16, 2, 0, tzinfo=PRODUCT_TIMEZONE),
+                    datetime(2026, 9, 16, 3, 0, tzinfo=PRODUCT_TIMEZONE),
+                ),
+            ),
+            single,
+        )
+        dual = parse_time_windows(
+            "对比昨天和今天 1 点到 2 点的 AWR",
+            now=now,
+        )
+        self.assertEqual(
+            (
+                (
+                    datetime(2026, 9, 16, 1, 0, tzinfo=PRODUCT_TIMEZONE),
+                    datetime(2026, 9, 16, 2, 0, tzinfo=PRODUCT_TIMEZONE),
+                ),
+                (
+                    datetime(2026, 9, 17, 1, 0, tzinfo=PRODUCT_TIMEZONE),
+                    datetime(2026, 9, 17, 2, 0, tzinfo=PRODUCT_TIMEZONE),
+                ),
+            ),
+            dual,
+        )
+        self.assertEqual((), parse_time_windows("列出可用快照", now=now))
+
+    def test_relative_chinese_window_binds_from_question(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        result = {
+            "schema_version": "DBA_TOOL_RESULT.v1",
+            "tool_outcomes": [
+                {
+                    "tool_id": "db.oracle.awr.snapshots",
+                    "status": "SUCCEEDED",
+                    "observation": {
+                        "columns": [
+                            {"name": "snapshot_id"},
+                            {"name": "instance_number"},
+                            {"name": "begin_time"},
+                            {"name": "end_time"},
+                        ],
+                        "rows": [
+                            [
+                                209,
+                                1,
+                                "2026-09-16T01:00:00+08:00",
+                                "2026-09-16T02:00:00+08:00",
+                            ],
+                            [
+                                210,
+                                1,
+                                "2026-09-16T02:00:00+08:00",
+                                "2026-09-16T03:00:00+08:00",
+                            ],
+                        ],
+                    },
+                }
+            ],
+        }
+        plan = _plan(
+            _action(
+                action_id="a1",
+                tool_id="db.oracle.awr.snapshots",
+                question="列出可用 AWR 快照",
+                expected_evidence_kind="AWR_SNAPSHOTS",
+                input={},
+            ),
+            _action(
+                action_id="a2",
+                deferred=True,
+                depends_on=("a1",),
+                question="生成 AWR 报告",
+                input={},
+            ),
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            bound = bind_discovery_parameters(
+                plan=plan,
+                tool_results=(result,),
+                question="请生成数据库在昨天2:00-3:00的awr报告",
+            )
+        self.assertEqual("BOUND", bound.status)
+        self.assertEqual(
+            {"begin_snapshot_id": 209, "end_snapshot_id": 210},
             bound.plan.actions[1].input,
         )
 

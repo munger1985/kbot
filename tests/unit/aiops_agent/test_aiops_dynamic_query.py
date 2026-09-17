@@ -14,6 +14,9 @@ from aiops_agent.application.investigation.discovery import (
     compact_tool_cards,
     rewrite_incomplete_discovery_actions,
 )
+from aiops_agent.application.investigation.discovery_binding import (
+    PRODUCT_TIMEZONE,
+)
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
@@ -1274,6 +1277,214 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(rewritten.plan.actions[0].deferred)
         self.assertTrue(rewritten.plan.actions[1].deferred)
         self.assertEqual(("a1",), rewritten.plan.actions[1].depends_on)
+
+    def _awr_catalog_tools(self):
+        return (
+            {
+                "tool_id": "db.oracle.awr.report",
+                "discovery_tool_id": "db.oracle.awr.snapshots",
+                "input": {
+                    "begin_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                    "end_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                },
+            },
+            {
+                "tool_id": "db.oracle.awr.diff_report",
+                "discovery_tool_id": "db.oracle.awr.snapshots",
+                "input": {
+                    "baseline_begin_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                    "baseline_end_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                    "after_begin_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                    "after_end_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                },
+            },
+            {"tool_id": "db.oracle.awr.snapshots", "input": {}},
+        )
+
+    def _snapshots_only_investigation(self, *, question: str, time_scope=None):
+        investigation = self._awr_investigation(
+            tool_id="db.oracle.awr.snapshots",
+            input={},
+            expected_evidence_kind="AWR_SNAPSHOTS",
+            question="列出可用快照",
+        )
+        return investigation.model_copy(
+            update={
+                "input_envelope": investigation.input_envelope.model_copy(
+                    update={"explicit_question": question}
+                ),
+                "task_frame": investigation.task_frame.model_copy(
+                    update={"time_scope": time_scope}
+                ),
+            }
+        )
+
+    def test_snapshots_only_relative_window_attaches_report(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告",
+            time_scope="昨天2:00-3:00",
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=self._awr_catalog_tools(),
+            )
+        self.assertIsNotNone(rewritten)
+        self.assertEqual(
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
+            [action.tool_id for action in rewritten.plan.actions],
+        )
+        self.assertFalse(rewritten.plan.actions[0].deferred)
+        report = rewritten.plan.actions[1]
+        self.assertTrue(report.deferred)
+        self.assertEqual(("a1",), report.depends_on)
+        self.assertEqual(
+            {
+                "begin_snapshot_id": "2026-09-16T02:00:00+08:00",
+                "end_snapshot_id": "2026-09-16T03:00:00+08:00",
+            },
+            report.input,
+        )
+
+    def test_snapshots_only_two_windows_attach_diff_report(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="对比昨天和今天 1 点到 2 点的 AWR",
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=self._awr_catalog_tools(),
+            )
+        self.assertIsNotNone(rewritten)
+        self.assertEqual(
+            ["db.oracle.awr.snapshots", "db.oracle.awr.diff_report"],
+            [action.tool_id for action in rewritten.plan.actions],
+        )
+        diff = rewritten.plan.actions[1]
+        self.assertTrue(diff.deferred)
+        self.assertEqual(
+            {
+                "baseline_begin_snapshot_id": "2026-09-16T01:00:00+08:00",
+                "baseline_end_snapshot_id": "2026-09-16T02:00:00+08:00",
+                "after_begin_snapshot_id": "2026-09-17T01:00:00+08:00",
+                "after_end_snapshot_id": "2026-09-17T02:00:00+08:00",
+            },
+            diff.input,
+        )
+
+    def test_snapshots_only_selected_tools_still_attach_catalog_report(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告",
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=(
+                    {"tool_id": "db.oracle.awr.snapshots", "input": {}},
+                ),
+            )
+        self.assertIsNotNone(rewritten)
+        self.assertEqual(
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
+            [action.tool_id for action in rewritten.plan.actions],
+        )
+        self.assertEqual(
+            {
+                "begin_snapshot_id": "2026-09-16T02:00:00+08:00",
+                "end_snapshot_id": "2026-09-16T03:00:00+08:00",
+            },
+            rewritten.plan.actions[1].input,
+        )
+
+    def test_snapshots_only_without_window_stays_listing(self) -> None:
+        rewritten = rewrite_incomplete_discovery_actions(
+            investigation=self._snapshots_only_investigation(
+                question="列出可用快照",
+            ),
+            available_tools=self._awr_catalog_tools(),
+        )
+        self.assertIsNone(rewritten)
+
+    async def test_snapshots_only_relative_window_rewrite_without_model_repair(
+        self,
+    ) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        rejected = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告",
+            time_scope="昨天2:00-3:00",
+        )
+        service, reasoner = self._planning_service()
+        context = self._oracle_context()
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            planned, investigation, frozen, _source_queries = (
+                await service._prepare_queries_with_repair(
+                    context=context,
+                    planned=StructuredModelResult(
+                        output=rejected,
+                        receipt=SimpleNamespace(name="compact"),
+                    ),
+                    available_tools=available_tools(
+                        service._tool_snapshot_builder,
+                        context.capabilities,
+                    ),
+                    available_playbooks=(),
+                    model_snapshot={"technical_name": "test"},
+                    revision_no=1,
+                )
+            )
+        self.assertEqual("compact", planned.receipt.name)
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+            ],
+            [action.tool_id for action in investigation.plan.actions],
+        )
+        self.assertFalse(investigation.plan.actions[1].deferred)
+        self.assertTrue(investigation.plan.actions[2].deferred)
+        self.assertEqual(
+            {
+                "begin_snapshot_id": "2026-09-16T02:00:00+08:00",
+                "end_snapshot_id": "2026-09-16T03:00:00+08:00",
+            },
+            investigation.plan.actions[2].input,
+        )
+        self.assertEqual((), frozen)
+        reasoner.repair_policy_invalid_plan.assert_not_awaited()
 
     async def test_missing_awr_snapshot_ids_rewrite_without_model_repair(
         self,

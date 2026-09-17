@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import re
 
+from aiops_agent.application.investigation.discovery_binding import (
+    catalog_tool_cards,
+    discovery_consumer_window_count,
+    iso_input_from_time_windows,
+    parse_time_windows,
+)
 from aiops_agent.diagnostics import DynamicQueryPolicySnapshot
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
@@ -299,7 +305,7 @@ def rewrite_incomplete_discovery_actions(
     investigation: InvestigationPlanningOutput,
     available_tools: tuple[dict, ...],
 ) -> InvestigationPlanningOutput | None:
-    """缺必填参数或类型不合法时补发现工具，并保留原动作待绑定，不猜测参数。"""
+    """缺必填参数时补发现工具；只有发现工具且时间窗口能唯一确定消费工具时补延期诊断。"""
     tool_index = {
         str(item.get("tool_id") or ""): item
         for item in available_tools
@@ -383,6 +389,13 @@ def rewrite_incomplete_discovery_actions(
             )
         )
 
+    rewritten, inverse_changed = _attach_unique_discovery_consumers(
+        actions=rewritten,
+        investigation=investigation,
+        available_tools=available_tools,
+        next_action_id=next_action_id,
+    )
+    changed = changed or inverse_changed
     if not changed:
         return None
 
@@ -407,6 +420,164 @@ def rewrite_incomplete_discovery_actions(
         )
     plan = investigation.plan.model_copy(update={"actions": tuple(normalized)})
     return investigation.model_copy(update={"plan": plan})
+
+
+def _attach_unique_discovery_consumers(
+    *,
+    actions: list[InvestigationAction],
+    investigation: InvestigationPlanningOutput,
+    available_tools: tuple[dict, ...],
+    next_action_id,
+) -> tuple[list[InvestigationAction], bool]:
+    """发现工具已在计划中、消费工具缺失且时间窗口能唯一对应时，补延期诊断动作。"""
+    catalog = _merged_catalog_tools(available_tools)
+    discovery_ids = {
+        str(item.get("discovery_tool_id") or "").strip()
+        for item in catalog.values()
+        if str(item.get("discovery_tool_id") or "").strip()
+    }
+    windows = _planning_time_windows(investigation)
+    if not windows:
+        return actions, False
+
+    selected_ids = {
+        str(item.get("tool_id") or "")
+        for item in available_tools
+        if item.get("tool_id")
+    }
+    updated = list(actions)
+    changed = False
+    for discovery in list(updated):
+        if discovery.tool_id not in discovery_ids:
+            continue
+        if _plan_has_discovery_consumer(updated, discovery.tool_id, catalog):
+            continue
+        consumer = _unique_discovery_consumer(
+            discovery_tool_id=discovery.tool_id,
+            window_count=len(windows),
+            catalog=catalog,
+            selected_ids=selected_ids,
+        )
+        if consumer is None:
+            continue
+        filled = iso_input_from_time_windows(consumer, windows)
+        if not filled:
+            continue
+        consumer_id = next_action_id()
+        consumer_action = InvestigationAction(
+            action_id=consumer_id,
+            question=_consumer_question(investigation, discovery),
+            tool_id=str(consumer["tool_id"]),
+            input=filled,
+            expected_evidence_kind=_evidence_kind(str(consumer["tool_id"])),
+            measurement_semantics=discovery.measurement_semantics,
+            depends_on=(discovery.action_id,),
+            optional=False,
+            deferred=True,
+        )
+        insert_at = updated.index(discovery) + 1
+        updated.insert(insert_at, consumer_action)
+        changed = True
+    return updated, changed
+
+
+def _merged_catalog_tools(available_tools: tuple[dict, ...]) -> dict[str, dict]:
+    merged: dict[str, dict] = {}
+    for item in catalog_tool_cards():
+        tool_id = str(item.get("tool_id") or "").strip()
+        if tool_id:
+            merged[tool_id] = item
+    for item in available_tools or ():
+        tool_id = str(item.get("tool_id") or "").strip()
+        if tool_id:
+            merged[tool_id] = item
+    return merged
+
+
+def _planning_time_windows(
+    investigation: InvestigationPlanningOutput,
+) -> tuple[tuple[object, object], ...]:
+    for text in _planning_time_texts(investigation):
+        windows = parse_time_windows(text)
+        if windows:
+            return windows
+    return ()
+
+
+def _planning_time_texts(
+    investigation: InvestigationPlanningOutput,
+) -> tuple[str, ...]:
+    texts: list[str] = []
+    envelope = investigation.input_envelope
+    if envelope is not None:
+        if envelope.explicit_question:
+            texts.append(envelope.explicit_question)
+        if envelope.inferred_question:
+            texts.append(envelope.inferred_question)
+    frame = investigation.task_frame
+    if frame is not None and frame.time_scope:
+        texts.append(frame.time_scope)
+    for action in investigation.plan.actions:
+        if action.question:
+            texts.append(action.question)
+    return tuple(texts)
+
+
+def _plan_has_discovery_consumer(
+    actions: list[InvestigationAction],
+    discovery_tool_id: str,
+    catalog: dict[str, dict],
+) -> bool:
+    return any(
+        str((catalog.get(action.tool_id) or {}).get("discovery_tool_id") or "").strip()
+        == discovery_tool_id
+        for action in actions
+    )
+
+
+def _unique_discovery_consumer(
+    *,
+    discovery_tool_id: str,
+    window_count: int,
+    catalog: dict[str, dict],
+    selected_ids: set[str],
+) -> dict | None:
+    matching = [
+        item
+        for item in catalog.values()
+        if str(item.get("discovery_tool_id") or "").strip() == discovery_tool_id
+        and discovery_consumer_window_count(item) == window_count
+    ]
+    preferred = [
+        item
+        for item in matching
+        if str(item.get("tool_id") or "") in selected_ids
+    ]
+    if len(preferred) == 1:
+        return preferred[0]
+    if len(matching) == 1:
+        return matching[0]
+    return None
+
+
+def _consumer_question(
+    investigation: InvestigationPlanningOutput,
+    discovery: InvestigationAction,
+) -> str:
+    envelope = investigation.input_envelope
+    if envelope is not None and envelope.explicit_question:
+        return envelope.explicit_question[:2000]
+    frame = investigation.task_frame
+    if frame is not None and frame.time_scope:
+        return f"按{frame.time_scope}完成发现结果对应的诊断取证"[:2000]
+    return (discovery.question or "完成发现结果对应的诊断取证")[:2000]
+
+
+def _evidence_kind(tool_id: str) -> str:
+    parts = [item for item in str(tool_id).split(".") if item]
+    if len(parts) >= 2:
+        return "_".join(parts[-2:]).upper()[:64]
+    return "DIAGNOSTIC"
 
 
 def _discovery_tool_id(tool: dict | None) -> str | None:

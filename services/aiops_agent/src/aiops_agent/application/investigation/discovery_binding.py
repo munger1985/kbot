@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -24,6 +24,25 @@ _PARAM_NAME = re.compile(
 _ISO_DATETIME = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?"
 )
+_RELATIVE_DAYS = (
+    (re.compile(r"前天"), -2),
+    (re.compile(r"昨天|昨日"), -1),
+    (re.compile(r"今天|今日"), 0),
+    (re.compile(r"明天|明日"), 1),
+    (re.compile(r"\byesterday\b", re.IGNORECASE), -1),
+    (re.compile(r"\btoday\b", re.IGNORECASE), 0),
+    (re.compile(r"\btomorrow\b", re.IGNORECASE), 1),
+)
+_ABSOLUTE_DATE = re.compile(
+    r"(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})"
+    r"|(?P<month2>\d{1,2})月(?P<day2>\d{1,2})日?"
+)
+_CLOCK = re.compile(
+    r"(?<!\d)(?P<hour>\d{1,2})\s*(?::|：)\s*(?P<minute>\d{2})"
+    r"(?:\s*:\s*(?P<second>\d{2}))?"
+    r"|(?<!\d)(?P<hour_cn>\d{1,2})\s*点(?:\s*(?P<minute_cn>\d{1,2})\s*分?)?"
+)
+_RANGE_SEPS = {"-", "~", "～", "—", "–", "到", "至"}
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,252 @@ class DiscoveryContinuationDecision:
     action: str
     binding: DiscoveryBindingResult | None = None
     continuation_actions: tuple[InvestigationAction, ...] = ()
+
+
+def _product_now() -> datetime:
+    return datetime.now(PRODUCT_TIMEZONE)
+
+
+def format_product_datetime(value: datetime) -> str:
+    """把时间格式化为产品时区的秒级 ISO 8601。"""
+    return value.astimezone(PRODUCT_TIMEZONE).isoformat(timespec="seconds")
+
+
+def parse_time_windows(
+    text: str | None,
+    *,
+    now: datetime | None = None,
+) -> tuple[tuple[datetime, datetime], ...]:
+    """从自然语言中提取有序时间窗口，不识别业务对象或工具名。"""
+    source = str(text or "")
+    if not source.strip():
+        return ()
+    reference = now or _product_now()
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=PRODUCT_TIMEZONE)
+    else:
+        reference = reference.astimezone(PRODUCT_TIMEZONE)
+
+    iso_values = [
+        parsed
+        for match in _ISO_DATETIME.findall(source)
+        if (parsed := _parse_datetime(match)) is not None
+    ]
+    if len(iso_values) >= 2 and len(iso_values) % 2 == 0:
+        return tuple(
+            (iso_values[index], iso_values[index + 1])
+            for index in range(0, len(iso_values), 2)
+        )
+
+    occupied = [
+        match.span()
+        for match in _ISO_DATETIME.finditer(source)
+    ]
+    days = _day_tokens(source, reference.date(), occupied)
+    ranges = _clock_ranges(source, occupied)
+    if not ranges:
+        return ()
+    if len(ranges) == 1 and days:
+        begin_clock, end_clock = ranges[0][2], ranges[0][3]
+        return tuple(
+            (
+                _combine_wall_time(day, begin_clock, reference.tzinfo),
+                _combine_wall_time(day, end_clock, reference.tzinfo),
+            )
+            for _start, _end, day in days
+        )
+    windows = []
+    for start, _end, begin_clock, end_clock in ranges:
+        day = _day_before(days, start) or reference.date()
+        windows.append(
+            (
+                _combine_wall_time(day, begin_clock, reference.tzinfo),
+                _combine_wall_time(day, end_clock, reference.tzinfo),
+            )
+        )
+    return tuple(windows)
+
+
+def flattened_window_datetimes(
+    text: str | None,
+    *,
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    """把解析出的时间窗口展平为产品时区 ISO 字符串。"""
+    return tuple(
+        format_product_datetime(moment)
+        for window in parse_time_windows(text, now=now)
+        for moment in window
+    )
+
+
+def discovery_consumer_window_count(tool: dict | None) -> int | None:
+    """按 begin/end 参数形态判断消费工具需要几段时间窗口。"""
+    params = _bound_parameters(tool or {})
+    if not params:
+        return None
+    named = _window_names(params)
+    if named:
+        return len(named)
+    unnamed = [item for item in params if not item.get("window")]
+    begins = [item["column"] for item in unnamed if item["bound"] == "begin"]
+    ends = [item["column"] for item in unnamed if item["bound"] == "end"]
+    if len(begins) == 1 and len(ends) == 1 and begins[0] == ends[0]:
+        return 1
+    return None
+
+
+def iso_input_from_time_windows(
+    tool: dict | None,
+    windows: tuple[tuple[datetime, datetime], ...],
+) -> dict:
+    """按目录参数名把时间窗口写成可绑定的 ISO 输入。"""
+    params = _bound_parameters(tool or {})
+    if not params or not windows:
+        return {}
+    named = _window_names(params)
+    filled: dict[str, str] = {}
+    if named:
+        if len(named) != len(windows):
+            return {}
+        for window_name, (begin, end) in zip(named, windows):
+            for param in params:
+                if param["window"] != window_name:
+                    continue
+                filled[param["name"]] = format_product_datetime(
+                    begin if param["bound"] == "begin" else end
+                )
+        return filled if len(filled) == len(params) else {}
+    if len(windows) != 1:
+        return {}
+    begin, end = windows[0]
+    for param in params:
+        if param.get("window"):
+            continue
+        filled[param["name"]] = format_product_datetime(
+            begin if param["bound"] == "begin" else end
+        )
+    return filled if filled else {}
+
+
+def _day_tokens(
+    text: str,
+    today: date,
+    occupied: list[tuple[int, int]],
+) -> list[tuple[int, int, date]]:
+    found: list[tuple[int, int, date]] = []
+    for pattern, offset in _RELATIVE_DAYS:
+        for match in pattern.finditer(text):
+            span = match.span()
+            if _overlaps(span, occupied) or _overlaps(span, [item[:2] for item in found]):
+                continue
+            found.append((span[0], span[1], today + timedelta(days=offset)))
+    for match in _ABSOLUTE_DATE.finditer(text):
+        span = match.span()
+        if _overlaps(span, occupied) or _overlaps(span, [item[:2] for item in found]):
+            continue
+        parsed = _absolute_date(match, today)
+        if parsed is None:
+            continue
+        found.append((span[0], span[1], parsed))
+    found.sort(key=lambda item: item[0])
+    return found
+
+
+def _absolute_date(match: re.Match[str], today: date) -> date | None:
+    year_text = match.groupdict().get("year")
+    month_text = match.groupdict().get("month") or match.groupdict().get("month2")
+    day_text = match.groupdict().get("day") or match.groupdict().get("day2")
+    if not month_text or not day_text:
+        return None
+    try:
+        year = int(year_text) if year_text else today.year
+        return date(year, int(month_text), int(day_text))
+    except ValueError:
+        return None
+
+
+def _clock_ranges(
+    text: str,
+    occupied: list[tuple[int, int]],
+) -> list[tuple[int, int, time, time]]:
+    clocks = []
+    for match in _CLOCK.finditer(text):
+        span = match.span()
+        if _overlaps(span, occupied):
+            continue
+        parsed = _clock_value(match)
+        if parsed is None:
+            continue
+        clocks.append((span[0], span[1], parsed))
+    ranges: list[tuple[int, int, time, time]] = []
+    index = 0
+    while index < len(clocks) - 1:
+        start, mid, begin_clock = clocks[index]
+        next_start, end, end_clock = clocks[index + 1]
+        gap = text[mid:next_start].strip()
+        if gap in _RANGE_SEPS:
+            ranges.append((start, end, begin_clock, end_clock))
+            index += 2
+            continue
+        index += 1
+    return ranges
+
+
+def _clock_value(match: re.Match[str]) -> time | None:
+    hour_text = match.groupdict().get("hour") or match.groupdict().get("hour_cn")
+    minute_text = (
+        match.groupdict().get("minute")
+        or match.groupdict().get("minute_cn")
+        or "0"
+    )
+    second_text = match.groupdict().get("second") or "0"
+    try:
+        hour = int(hour_text)
+        minute = int(minute_text)
+        second = int(second_text)
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return time(hour, minute, second)
+
+
+def _day_before(
+    days: list[tuple[int, int, date]],
+    position: int,
+) -> date | None:
+    selected = None
+    for start, _end, day in days:
+        if start <= position:
+            selected = day
+            continue
+        break
+    return selected
+
+
+def _combine_wall_time(
+    day: date,
+    clock: time,
+    tzinfo,
+) -> datetime:
+    return datetime(
+        day.year,
+        day.month,
+        day.day,
+        clock.hour,
+        clock.minute,
+        clock.second,
+        tzinfo=tzinfo,
+    )
+
+
+def _overlaps(
+    span: tuple[int, int],
+    occupied: list[tuple[int, int]],
+) -> bool:
+    start, end = span
+    return any(start < other_end and end > other_start for other_start, other_end in occupied)
 
 
 def catalog_tool_cards(
@@ -621,15 +886,22 @@ def _fill_datetimes_from_question(
     ]
     if not missing:
         return current_input
-    hints = _iso_datetimes_in_text(action.question)
+    hints = _datetime_hints(action.question)
     if len(hints) != len(missing):
-        hints = _iso_datetimes_in_text(extra_text)
+        hints = _datetime_hints(extra_text)
     if len(hints) != len(missing):
         return current_input
     filled = dict(current_input)
     for param, hint in zip(missing, hints):
         filled[param["name"]] = hint
     return filled
+
+
+def _datetime_hints(text: str | None) -> tuple[str, ...]:
+    iso_hints = _iso_datetimes_in_text(text)
+    if iso_hints:
+        return iso_hints
+    return flattened_window_datetimes(text)
 
 
 def _iso_datetimes_in_text(text: str | None) -> tuple[str, ...]:
