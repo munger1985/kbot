@@ -133,6 +133,14 @@ class EvidenceSourceStrategy(StrEnum):
     COMBINED = "COMBINED"
 
 
+class TemporalAnalysisMode(StrEnum):
+    """区分当前快照、历史分析以及基于历史的未来预测。"""
+
+    CURRENT = "CURRENT"
+    HISTORICAL = "HISTORICAL"
+    HISTORICAL_AND_FORECAST = "HISTORICAL_AND_FORECAST"
+
+
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
     objectives: tuple[TaskObjective, ...] = Field(
@@ -148,6 +156,19 @@ class TaskFrame(AIOpsContract):
         description=(
             "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
             "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+        ),
+    )
+    temporal_analysis_mode: TemporalAnalysisMode = (
+        TemporalAnalysisMode.CURRENT
+    )
+    forecast_scope: str | None = Field(default=None, max_length=512)
+    forecast_horizon_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=31_536_000,
+        description=(
+            "未来预测窗口；HISTORICAL_AND_FORECAST且用户未明确时"
+            "默认使用未来30天2592000秒。"
         ),
     )
     known_facts: tuple[str, ...] = ()
@@ -331,6 +352,19 @@ class CompactPlanningOutput(AIOpsContract):
         description=(
             "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
             "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+        ),
+    )
+    temporal_analysis_mode: TemporalAnalysisMode = (
+        TemporalAnalysisMode.CURRENT
+    )
+    forecast_scope: str | None = Field(default=None, max_length=512)
+    forecast_horizon_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=31_536_000,
+        description=(
+            "未来预测窗口；HISTORICAL_AND_FORECAST且用户未明确时"
+            "默认使用未来30天2592000秒。"
         ),
     )
     success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)

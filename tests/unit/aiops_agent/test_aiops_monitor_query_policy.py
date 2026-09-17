@@ -248,21 +248,37 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             )
 
     def test_monitoring_first_defaults_to_prometheus_maximum_window(self) -> None:
-        investigation = self._investigation(
+        current = self._investigation(
             "monitor.query_range",
             'up{instance="${external_target}"}',
         )
-        investigation = investigation.model_copy(
+        current = current.model_copy(
             update={
-                "task_frame": investigation.task_frame.model_copy(
+                "task_frame": current.task_frame.model_copy(
                     update={
                         "evidence_source_strategy": "MONITORING_FIRST",
                     }
                 )
             }
         )
+        self.assertEqual(
+            current,
+            TurnPlanningService._apply_default_temporal_windows(current),
+        )
 
-        normalized = TurnPlanningService._apply_default_monitoring_window(
+        investigation = current.model_copy(
+            update={
+                "task_frame": current.task_frame.model_copy(
+                    update={
+                        "temporal_analysis_mode": (
+                            "HISTORICAL_AND_FORECAST"
+                        ),
+                    }
+                )
+            }
+        )
+
+        normalized = TurnPlanningService._apply_default_temporal_windows(
             investigation
         )
 
@@ -275,8 +291,31 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             normalized.task_frame.time_scope,
         )
         self.assertEqual(
+            "未来30天",
+            normalized.task_frame.forecast_scope,
+        )
+        self.assertEqual(
+            2_592_000,
+            normalized.task_frame.forecast_horizon_seconds,
+        )
+        self.assertEqual(
             2_592_000,
             normalized.plan.actions[0].input["window_seconds"],
+        )
+
+        historical = investigation.model_copy(
+            update={
+                "task_frame": investigation.task_frame.model_copy(
+                    update={"temporal_analysis_mode": "HISTORICAL"}
+                )
+            }
+        )
+        normalized_historical = (
+            TurnPlanningService._apply_default_temporal_windows(historical)
+        )
+        self.assertIsNone(normalized_historical.task_frame.forecast_scope)
+        self.assertIsNone(
+            normalized_historical.task_frame.forecast_horizon_seconds
         )
 
         explicit = investigation.model_copy(
@@ -291,7 +330,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
         )
         self.assertEqual(
             604_800,
-            TurnPlanningService._apply_default_monitoring_window(
+            TurnPlanningService._apply_default_temporal_windows(
                 explicit
             ).plan.actions[0].input["window_seconds"],
         )
@@ -307,7 +346,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             }
         )
         normalized_beyond_retention = (
-            TurnPlanningService._apply_default_monitoring_window(
+            TurnPlanningService._apply_default_temporal_windows(
                 beyond_retention
             )
         )

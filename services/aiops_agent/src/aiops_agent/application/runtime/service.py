@@ -2997,13 +2997,12 @@ class AIOpsRuntimeService:
             else "PARTIAL"
         )
         summary = coverage_summary
-        recommendations = (
-            (
+        recommendations = self._inspection_capacity_recommendations(source)
+        if source.evidence_gaps:
+            recommendations = (
+                *recommendations,
                 "请先处理本报告列出的数据缺口，再重新执行同一巡检模板。",
             )
-            if source.evidence_gaps
-            else ("继续按既定周期执行该巡检模板并关注趋势变化。",)
-        )
         security_level = await self._report_security_level(
             uow=uow,
             run=run,
@@ -3250,13 +3249,18 @@ class AIOpsRuntimeService:
                 continue
             row_count = sum(item.row_count for item in observations)
             truncated = any(item.truncated for item in observations)
+            title = (
+                "监控历史趋势与容量预测"
+                if tool_id == "metric.query_range"
+                else tool_id
+            )
             facts.append(
                 {
                     "kind": "inspection_evidence",
-                    "title": tool_id,
+                    "title": title,
                     "summary": (
                         AIOpsRuntimeService._inspection_observed_summary(
-                            title=tool_id,
+                            title=title,
                             row_count=row_count,
                             truncated=truncated,
                         )
@@ -3295,6 +3299,82 @@ class AIOpsRuntimeService:
             )
         )
         return tuple(facts), tuple(gaps), coverage_summary
+
+    @staticmethod
+    def _inspection_capacity_recommendations(
+        source: AIOpsTurnResult,
+    ) -> tuple[str, ...]:
+        """依据表空间历史趋势预测生成可执行的巡检容量建议。"""
+        recommendations: list[str] = []
+        forecast_found = False
+        for evidence in source.evidence:
+            if evidence.tool_id != "metric.query_range":
+                continue
+            indexes = {
+                str(column.get("name")): index
+                for index, column in enumerate(evidence.columns)
+            }
+            required = {
+                "metric_code",
+                "dimensions",
+                "forecast_horizon_days",
+                "forecast_utilization_percent",
+                "estimated_days_to_limit",
+            }
+            if not required <= set(indexes):
+                continue
+            for row in evidence.rows:
+                if row[indexes["metric_code"]] != "db.storage.used_bytes":
+                    continue
+                projected = row[indexes["forecast_utilization_percent"]]
+                horizon = row[indexes["forecast_horizon_days"]]
+                remaining_days = row[indexes["estimated_days_to_limit"]]
+                if not isinstance(projected, (int, float)) or not isinstance(
+                    horizon, (int, float)
+                ):
+                    continue
+                forecast_found = True
+                dimensions = dict(
+                    part.split("=", 1)
+                    for part in str(row[indexes["dimensions"]]).split(", ")
+                    if "=" in part
+                )
+                tablespace = dimensions.get("tablespace", "未标识表空间")
+                projected_percent = float(projected)
+                horizon_days = float(horizon)
+                remaining = (
+                    float(remaining_days)
+                    if isinstance(remaining_days, (int, float))
+                    else None
+                )
+                if projected_percent >= 95 or (
+                    remaining is not None and remaining <= horizon_days
+                ):
+                    recommendations.append(
+                        f"表空间 {tablespace} 按当前历史增速预测未来"
+                        f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
+                        "建议立即核对自动扩展上限，并在预计耗尽日前完成扩容。"
+                    )
+                elif projected_percent >= 85 or (
+                    remaining is not None and remaining <= horizon_days * 2
+                ):
+                    recommendations.append(
+                        f"表空间 {tablespace} 预测未来{horizon_days:g}天使用率约为"
+                        f"{projected_percent:.2f}%，建议本巡检周期内制定扩容计划并"
+                        "提高复核频率。"
+                    )
+                else:
+                    recommendations.append(
+                        f"表空间 {tablespace} 预测未来{horizon_days:g}天使用率约为"
+                        f"{projected_percent:.2f}%，当前无需立即扩容，建议继续按历史"
+                        "增速监控并在增长模式变化时重新评估。"
+                    )
+        if not forecast_found:
+            recommendations.append(
+                "本次巡检未形成可靠的表空间未来容量预测，不能只依据当前使用率"
+                "判断是否扩容；应补齐历史监控采样后重新评估。"
+            )
+        return tuple(dict.fromkeys(recommendations))
 
     async def _publish_inspection_report(
         self,

@@ -80,6 +80,7 @@ from platform_core.contracts.aiops import (
     MeasurementSemantics,
     TaskFrame,
     TaskObjective,
+    TemporalAnalysisMode,
     TurnInputEnvelope,
 )
 from platform_core.identity import uuid7
@@ -297,7 +298,7 @@ class TurnPlanningService:
             context.source_run_evidence
             and context.source_run_evidence.get("source_kind") == "SITUATION"
         )
-        monitoring_requested = alert_diagnosis or any(
+        monitoring_requested = alert_diagnosis or bool(context.inspection) or any(
             action.tool_id.startswith("monitor.")
             or action.tool_id.startswith("prometheus.")
             or action.tool_id.startswith("loki.")
@@ -434,6 +435,13 @@ class TurnPlanningService:
                 f"评估 {display_name} 的数据库健康状态"
             ),
             database_context=dict(context.target_context),
+            time_scope=DEFAULT_MONITORING_LOOKBACK_LABEL,
+            requested_window_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
+            temporal_analysis_mode=(
+                TemporalAnalysisMode.HISTORICAL_AND_FORECAST
+            ),
+            forecast_scope="未来30天",
+            forecast_horizon_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
             known_facts=(
                 f"当前逻辑 Target 为 {display_name}",
                 "本轮只执行模板声明的固定目录只读工具",
@@ -443,13 +451,15 @@ class TurnPlanningService:
                 + [f"固定工具当前不可用：{item}" for item in unavailable]
             ),
             constraints=(
-                "仅执行当前 Target 的固定目录只读巡检工具，不生成动态 SQL、PromQL 或 LogQL",
+                "数据库现状仅执行当前Target的固定目录只读工具；历史趋势使用已绑定监控源的确定性指标目录，不生成动态SQL、PromQL或LogQL",
             ),
             success_criteria=(
                 "完成全部可用的模板固定取证步骤",
+                "表空间先展示历史变化，再预测未来30天容量风险并给出处置建议",
                 "明确展示已验证发现、处置建议和数据缺口",
             ),
             action_intent=ActionIntent.NONE,
+            evidence_source_strategy=EvidenceSourceStrategy.COMBINED,
             subject_ref={
                 "inspection_template_id": template_id,
                 "inspection_template_version": template_version,
@@ -898,6 +908,9 @@ class TurnPlanningService:
                 requested_window_seconds=(
                     compact.requested_window_seconds
                 ),
+                temporal_analysis_mode=compact.temporal_analysis_mode,
+                forecast_scope=compact.forecast_scope,
+                forecast_horizon_seconds=compact.forecast_horizon_seconds,
                 known_facts=(
                     f"当前逻辑 Target 为 {display_name}",
                     f"待分析 SQL_ID 为 {sql_id}",
@@ -1046,6 +1059,9 @@ class TurnPlanningService:
                 requested_window_seconds=(
                     compact.requested_window_seconds
                 ),
+                temporal_analysis_mode=compact.temporal_analysis_mode,
+                forecast_scope=compact.forecast_scope,
+                forecast_horizon_seconds=compact.forecast_horizon_seconds,
                 known_facts=(f"当前逻辑 Target 为 {display_name}",),
                 unknowns=(),
                 constraints=(
@@ -1455,7 +1471,7 @@ class TurnPlanningService:
         """先按发现目录确定性补全计划，再对仍越界的 Tool 输入做一次受控修正。"""
         planned = StructuredModelResult(
             output=self._bind_target_to_plan(
-                investigation=self._apply_default_monitoring_window(
+                investigation=self._apply_default_temporal_windows(
                     reset_model_deferred_flags(planned.output)
                 ),
                 target_context=context.target_context,
@@ -1573,7 +1589,7 @@ class TurnPlanningService:
             )
             repaired = StructuredModelResult(
                 output=self._bind_target_to_plan(
-                    investigation=self._apply_default_monitoring_window(
+                    investigation=self._apply_default_temporal_windows(
                         repaired.output
                     ),
                     target_context=context.target_context,
@@ -1613,15 +1629,12 @@ class TurnPlanningService:
             )
 
     @staticmethod
-    def _apply_default_monitoring_window(
+    def _apply_default_temporal_windows(
         investigation: InvestigationPlanningOutput,
     ) -> InvestigationPlanningOutput:
-        """监控趋势未指定时间时使用Prometheus可查询的最大保留窗口。"""
+        """分离历史观察窗口与未来预测窗口并补齐默认值。"""
         task_frame = investigation.task_frame
-        if (
-            task_frame.evidence_source_strategy
-            != EvidenceSourceStrategy.MONITORING_FIRST
-        ):
+        if task_frame.temporal_analysis_mode == TemporalAnalysisMode.CURRENT:
             return investigation
         requested_window_seconds = (
             task_frame.requested_window_seconds
@@ -1634,6 +1647,22 @@ class TurnPlanningService:
                     or DEFAULT_MONITORING_LOOKBACK_LABEL
                 ),
                 "requested_window_seconds": requested_window_seconds,
+                "forecast_scope": (
+                    task_frame.forecast_scope
+                    or (
+                        "未来30天"
+                        if task_frame.temporal_analysis_mode
+                        == TemporalAnalysisMode.HISTORICAL_AND_FORECAST
+                        else None
+                    )
+                ),
+                "forecast_horizon_seconds": (
+                    task_frame.forecast_horizon_seconds
+                    or DEFAULT_MONITORING_LOOKBACK_SECONDS
+                    if task_frame.temporal_analysis_mode
+                    == TemporalAnalysisMode.HISTORICAL_AND_FORECAST
+                    else None
+                ),
             }
         )
         effective_monitoring_window = min(

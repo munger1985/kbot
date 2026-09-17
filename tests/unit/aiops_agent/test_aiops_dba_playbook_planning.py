@@ -1037,6 +1037,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "TEMPLATE_FIXED_INSPECTION",
             uow.run.plan_snapshot_json["planning_route"]["mode"],
         )
+        task_frame = uow.run.plan_snapshot_json["answer_context"]["task_frame"]
+        self.assertEqual(
+            "HISTORICAL_AND_FORECAST",
+            task_frame["temporal_analysis_mode"],
+        )
+        self.assertEqual(2_592_000, task_frame["requested_window_seconds"])
+        self.assertEqual(2_592_000, task_frame["forecast_horizon_seconds"])
+        self.assertEqual("COMBINED", task_frame["evidence_source_strategy"])
 
     async def test_plain_readonly_question_uses_compact_planner_end_to_end(self):
         uow = _PlanningUow()

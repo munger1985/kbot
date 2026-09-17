@@ -582,11 +582,13 @@ content = """
 计划对象统计信息、DBMS_XPLAN ALLSTATS LAST 和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
 
-必须把用户明确的时间范围写入 time_scope，并换算为 requested_window_seconds；例如最近7天为
-604800，最近30天为2592000。指标现状、历史趋势、变化速度、持续性、容量或资源使用问题没有
-明确时间范围时，必须使用Prometheus最大保留范围：time_scope写“最近30天（Prometheus最大
-保留范围）”，requested_window_seconds写2592000；严禁自行猜测为7天、90天等其他范围。
-非指标类问题没有明确时间范围时 requested_window_seconds 才为 null。
+必须先区分历史观察与未来预测。只问当前时点状态时 temporal_analysis_mode=CURRENT，历史窗口和
+预测窗口均为空。只统计过去数据且不要求趋势外推时为HISTORICAL。凡询问趋势、增长、变化速度、
+持续性、容量耗尽或未来是否需要扩容，必须为HISTORICAL_AND_FORECAST：先分析历史真实采样，再
+基于历史趋势预测未来，不能用预测值替代历史事实。
+用户明确的过去范围写入time_scope并换算为requested_window_seconds；未明确时使用最近30天和
+2592000。用户明确的未来范围写入forecast_scope和forecast_horizon_seconds；未明确时使用未来
+30天和2592000。严禁把未来预测周期当成历史查询周期，也不得自行猜测90天等其他范围。
 
 证据来源遵循“监控优先、数据库补证”：当问题询问指标现状、时间窗口、趋势、变化量、速度、
 持续性、容量或资源使用情况，且存在 monitor.query_range 时，首轮必须选择监控时序查询。
@@ -649,11 +651,13 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有确实能区分假设或补齐回答所需事实时才安排工具。工具只能从
 available_tools 中选择；Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook
 不能阻止分析。
-用户明确给出最近N分钟、小时或天数时，task_frame.time_scope 保留原范围，并将秒数写入
-task_frame.requested_window_seconds。指标现状、历史趋势、变化速度、持续性、容量或资源使用
-问题未明确时间范围时，必须使用Prometheus最大保留范围：task_frame.time_scope写“最近30天
-（Prometheus最大保留范围）”，task_frame.requested_window_seconds写2592000；严禁自行猜测
-为7天、90天等其他范围。非指标类问题未明确时间范围时才为 null。
+必须先确定task_frame.temporal_analysis_mode。只问当前状态为CURRENT；只统计过去数据且不做
+外推为HISTORICAL；凡询问趋势、增长、变化速度、持续性、容量耗尽或未来是否需要扩容，必须为
+HISTORICAL_AND_FORECAST，并且先分析历史真实采样，再预测未来并给出建议。
+用户明确的过去范围写入time_scope和requested_window_seconds；未明确时使用最近30天
+（Prometheus最大保留范围）和2592000。用户明确的未来范围写入forecast_scope和
+forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗口与预测窗口是两个独立
+概念，严禁拿“下个月”作为历史查询范围，也不得自行猜测90天等用户未要求的范围。
 指标现状、历史窗口、趋势、变化量、变化速度、持续性、容量和资源使用调查统一遵循监控优先：
 只要 available_tools 中存在 monitor.query_range，首轮先取监控时序证据，不得同时执行用于回答
 同一指标问题的数据库历史查询。监控无数据、时间覆盖不足、采样覆盖率不足、缺少必要维度或指标
@@ -798,6 +802,9 @@ ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失
 coverage_ratio、维度和指标语义。时间窗口满足、覆盖率不低于0.8且包含回答所需维度与指标时，
 应直接ANSWER，不得要求数据库重复提供同类数据；任一条件不足且数据库工具能够补齐时选择
 REPLAN，并把缺失的窗口、维度或指标写成具体 evidence_gaps。
+temporal_analysis_mode=HISTORICAL_AND_FORECAST时，还必须确认历史事实与未来预测同时存在。
+预测必须明确forecast_horizon_days、forecast_value或forecast_utilization_percent，并以历史
+trend_slope_per_day为依据；缺少可靠预测时不得只罗列当前值，应REPLAN补齐历史数据。
 有界查询返回truncated=false时不得声称缺少“无行数上限”的结果；truncated=true时才需要
 COUNT和稳定排序分页补证，不得要求执行无界查询。
 sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
@@ -859,6 +866,10 @@ content = """
 9. 监控证据已经给出 first、latest、change、change_per_day、trend_slope_per_day、
    positive_change_ratio 或 estimated_days_to_limit 时，必须直接使用这些服务端计算结果，
    不要自行从图形或平均值重算。监控证据满足窗口与覆盖率时，不得声称必须再查数据库。
+10. 趋势回答必须分成历史事实、未来预测和运维建议三层。历史部分说明真实观察窗口、首末值、
+    变化量、日均变化和持续性；预测部分明确预测窗口、forecast_value、
+    forecast_utilization_percent和estimated_days_to_limit，并声明这是基于历史斜率的外推；建议
+    必须落实到是否需要扩容、何时复核及数据不足时需要补什么，不能只罗列当前使用率。
 """
 
 [[prompts]]
@@ -892,6 +903,9 @@ content = """
 监控证据中的 first、latest、change、change_per_day、trend_slope_per_day、
 positive_change_ratio 和 estimated_days_to_limit 是服务端确定性计算结果，应直接据此回答，
 不得自行从平均值重算；监控窗口与覆盖率满足要求时，不得声称仍必须查询数据库。
+趋势回答必须依次给出历史事实、未来预测和运维建议。未来预测使用服务端提供的
+forecast_horizon_days、forecast_value、forecast_utilization_percent和estimated_days_to_limit，
+并明确其为基于历史斜率的外推；不得把预测写成已经发生的事实，也不能只列当前使用率。
 """
 
 [[prompts]]

@@ -420,6 +420,44 @@ class InspectionReportPublishingTest(unittest.TestCase):
             facts[1]["summary"],
         )
 
+    def test_inspection_capacity_recommendation_uses_forecast(self) -> None:
+        columns = tuple(
+            {"name": name}
+            for name in (
+                "metric_code",
+                "dimensions",
+                "forecast_horizon_days",
+                "forecast_utilization_percent",
+                "estimated_days_to_limit",
+            )
+        )
+        source = SimpleNamespace(
+            evidence=(
+                SimpleNamespace(
+                    tool_id="metric.query_range",
+                    columns=columns,
+                    rows=(
+                        (
+                            "db.storage.used_bytes",
+                            "instance=oracle-1, tablespace=USERS",
+                            30.0,
+                            96.5,
+                            24.0,
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        recommendations = (
+            AIOpsRuntimeService._inspection_capacity_recommendations(source)
+        )
+
+        self.assertEqual(1, len(recommendations))
+        self.assertIn("表空间 USERS", recommendations[0])
+        self.assertIn("未来30天使用率约为96.50%", recommendations[0])
+        self.assertIn("完成扩容", recommendations[0])
+
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
         self,
     ) -> None:

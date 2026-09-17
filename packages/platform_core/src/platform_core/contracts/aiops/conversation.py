@@ -248,6 +248,14 @@ class TurnTaskFrameView(AIOpsContract):
     requested_window_seconds: int | None = Field(
         default=None, ge=60, le=31_536_000
     )
+    temporal_analysis_mode: str = Field(
+        default="CURRENT",
+        pattern=r"^(CURRENT|HISTORICAL|HISTORICAL_AND_FORECAST)$",
+    )
+    forecast_scope: str | None = Field(default=None, max_length=512)
+    forecast_horizon_seconds: int | None = Field(
+        default=None, ge=60, le=31_536_000
+    )
     known_facts: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()

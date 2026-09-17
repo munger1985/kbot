@@ -8,8 +8,10 @@ from statistics import median
 
 def summarize_numeric_trend(
     samples: tuple[tuple[datetime, float], ...],
+    *,
+    forecast_horizon_days: float | None = None,
 ) -> dict[str, float | int] | None:
-    """按时间排序并生成可复核的变化速度与持续性指标。"""
+    """先汇总历史变化，再按指定未来窗口生成可复核线性预测。"""
     ordered = sorted(
         (
             (observed_at.astimezone(UTC), float(value))
@@ -54,7 +56,7 @@ def summarize_numeric_trend(
             if days > 0:
                 slopes.append((right[1] - left[1]) / days)
 
-    return {
+    result: dict[str, float | int] = {
         "first": first_value,
         "latest": latest_value,
         "minimum": min(value for _, value in ordered),
@@ -70,3 +72,13 @@ def summarize_numeric_trend(
         "representative_sample_count": len(representatives),
         "elapsed_days": elapsed_days,
     }
+    if forecast_horizon_days is not None and forecast_horizon_days > 0:
+        forecast_change = result["trend_slope_per_day"] * forecast_horizon_days
+        result.update(
+            {
+                "forecast_horizon_days": forecast_horizon_days,
+                "forecast_change": forecast_change,
+                "forecast_value": latest_value + forecast_change,
+            }
+        )
+    return result

@@ -12288,6 +12288,31 @@
             "title": "Evidence Source Strategy",
             "type": "string"
           },
+          "forecast_horizon_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Horizon Seconds"
+          },
+          "forecast_scope": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Scope"
+          },
           "known_facts": {
             "default": [],
             "items": {
@@ -12340,6 +12365,12 @@
             },
             "title": "Success Criteria",
             "type": "array"
+          },
+          "temporal_analysis_mode": {
+            "default": "CURRENT",
+            "pattern": "^(CURRENT|HISTORICAL|HISTORICAL_AND_FORECAST)$",
+            "title": "Temporal Analysis Mode",
+            "type": "string"
           },
           "time_scope": {
             "anyOf": [

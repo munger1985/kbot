@@ -1236,6 +1236,30 @@ class DbaTurnAnswerTest(unittest.TestCase):
             {gap.code for gap in result.gaps},
         )
 
+    def test_trend_forecast_requires_sufficient_history(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(_monitoring_artifact(),),
+                    task_frame_overrides={
+                        "requested_window_seconds": 900,
+                        "temporal_analysis_mode": (
+                            "HISTORICAL_AND_FORECAST"
+                        ),
+                        "forecast_scope": "未来30天",
+                        "forecast_horizon_seconds": 2_592_000,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertIn(
+            "MONITORING_FORECAST_INSUFFICIENT",
+            {gap.code for gap in result.gaps},
+        )
+
     def test_storage_time_series_exposes_deterministic_capacity_forecast(
         self,
     ) -> None:
@@ -1286,6 +1310,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         fact = DbaEvidenceAssessmentHandler._monitoring_fact(
             artifact_id=artifact["artifact_id"],
             result=ObservationSet.model_validate(artifact["payload"]),
+            forecast_horizon_days=30,
         )
 
         self.assertIsNotNone(fact)
@@ -1305,6 +1330,18 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(
             83.0,
             used_row[columns["estimated_days_to_limit"]],
+        )
+        self.assertEqual(
+            30.0,
+            used_row[columns["forecast_horizon_days"]],
+        )
+        self.assertEqual(
+            47 * 1024**3,
+            used_row[columns["forecast_value"]],
+        )
+        self.assertEqual(
+            47.0,
+            used_row[columns["forecast_utilization_percent"]],
         )
 
     def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:

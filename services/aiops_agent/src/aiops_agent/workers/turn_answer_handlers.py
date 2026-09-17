@@ -68,6 +68,17 @@ class DbaEvidenceAssessmentHandler:
         reasons: list[str] = []
         database_gap_found = False
         monitoring_gap_found = False
+        answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        task_frame = dict(answer_context.get("task_frame", {}))
+        forecast_horizon_seconds = task_frame.get(
+            "forecast_horizon_seconds"
+        )
+        forecast_horizon_days = (
+            float(forecast_horizon_seconds) / 86_400
+            if isinstance(forecast_horizon_seconds, int)
+            and forecast_horizon_seconds > 0
+            else None
+        )
         user_input_is_evidence = any(
             artifact.get("schema_version") == "aiops.input-envelope.v1"
             and any(
@@ -165,6 +176,7 @@ class DbaEvidenceAssessmentHandler:
                 fact = self._monitoring_fact(
                     artifact_id=str(artifact["artifact_id"]),
                     result=result,
+                    forecast_horizon_days=forecast_horizon_days,
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -320,13 +332,12 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
 
-        answer_context = dict(context.plan_snapshot.get("answer_context", {}))
-        task_frame = dict(answer_context.get("task_frame", {}))
         monitoring_facts = tuple(
             fact for fact in facts if fact.source_id == "monitoring.overview"
         )
         low_coverage = False
         observed_window_seconds = 0.0
+        forecast_available = False
         for fact in monitoring_facts:
             column_indexes = {
                 str(column.get("name")): index
@@ -335,7 +346,13 @@ class DbaEvidenceAssessmentHandler:
             coverage_index = column_indexes.get("coverage_ratio")
             start_index = column_indexes.get("window_start")
             end_index = column_indexes.get("window_end")
+            forecast_index = column_indexes.get("forecast_value")
             for row in fact.rows:
+                if (
+                    forecast_index is not None
+                    and isinstance(row[forecast_index], (int, float))
+                ):
+                    forecast_available = True
                 if coverage_index is not None and isinstance(
                     row[coverage_index], (int, float)
                 ):
@@ -357,6 +374,25 @@ class DbaEvidenceAssessmentHandler:
                     observed_window_seconds,
                     (end - start).total_seconds(),
                 )
+        if (
+            monitoring_facts
+            and task_frame.get("temporal_analysis_mode")
+            == "HISTORICAL_AND_FORECAST"
+            and not forecast_available
+        ):
+            monitoring_gap_found = True
+            gaps.append(
+                TurnEvidenceGap(
+                    source_id="monitoring.overview",
+                    step_id="forecast",
+                    code="MONITORING_FORECAST_INSUFFICIENT",
+                    detail=(
+                        "历史采样不足以形成可靠未来预测，需要补充更完整的时序数据"
+                    ),
+                    retryable=True,
+                )
+            )
+            reasons.append("历史监控证据不足以形成未来趋势预测")
         if low_coverage:
             monitoring_gap_found = True
             gaps.append(
@@ -658,6 +694,7 @@ class DbaEvidenceAssessmentHandler:
         *,
         artifact_id: str,
         result: ObservationSet,
+        forecast_horizon_days: float | None = None,
     ) -> TurnEvidenceFact | None:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         rows: list[tuple[Any, ...]] = []
@@ -708,7 +745,23 @@ class DbaEvidenceAssessmentHandler:
                         and not isinstance(point.value, bool)
                     )
                 )
+                if (
+                    trend is not None
+                    and forecast_horizon_days is not None
+                    and int(trend["representative_sample_count"]) >= 7
+                    and observation.coverage_ratio >= 0.8
+                ):
+                    trend = summarize_numeric_trend(
+                        tuple(
+                            (point.observed_at, float(point.value))
+                            for point in points
+                            if isinstance(point.value, (int, float))
+                            and not isinstance(point.value, bool)
+                        ),
+                        forecast_horizon_days=forecast_horizon_days,
+                    )
                 estimated_days_to_limit = None
+                forecast_utilization_percent = None
                 if (
                     observation.metric_code == "db.storage.used_bytes"
                     and trend is not None
@@ -728,6 +781,21 @@ class DbaEvidenceAssessmentHandler:
                         estimated_days_to_limit = (
                             maximum - latest_used
                         ) / float(trend["trend_slope_per_day"])
+                    forecast_value = trend.get("forecast_value")
+                    if maximum is not None and isinstance(
+                        forecast_value, (int, float)
+                    ):
+                        forecast_utilization_percent = (
+                            float(forecast_value) / maximum * 100
+                        )
+                elif (
+                    observation.metric_code == "db.storage.utilization"
+                    and trend is not None
+                    and isinstance(trend.get("forecast_value"), (int, float))
+                ):
+                    forecast_utilization_percent = float(
+                        trend["forecast_value"]
+                    )
                 dimensions = ", ".join(
                     f"{key}={value}"
                     for key, value in sorted(series.dimensions.items())
@@ -789,6 +857,29 @@ class DbaEvidenceAssessmentHandler:
                             else len(numeric_values)
                         ),
                         (
+                            round(float(trend["forecast_horizon_days"]), 2)
+                            if trend is not None
+                            and "forecast_horizon_days" in trend
+                            else None
+                        ),
+                        (
+                            round(float(trend["forecast_change"]), 4)
+                            if trend is not None
+                            and "forecast_change" in trend
+                            else None
+                        ),
+                        (
+                            round(float(trend["forecast_value"]), 4)
+                            if trend is not None
+                            and "forecast_value" in trend
+                            else None
+                        ),
+                        (
+                            round(forecast_utilization_percent, 4)
+                            if forecast_utilization_percent is not None
+                            else None
+                        ),
+                        (
                             round(estimated_days_to_limit, 2)
                             if estimated_days_to_limit is not None
                             else None
@@ -820,6 +911,16 @@ class DbaEvidenceAssessmentHandler:
                 "logical_type": "DECIMAL",
             },
             {"name": "sample_count", "logical_type": "INTEGER"},
+            {
+                "name": "forecast_horizon_days",
+                "logical_type": "DECIMAL",
+            },
+            {"name": "forecast_change", "logical_type": "DECIMAL"},
+            {"name": "forecast_value", "logical_type": "DECIMAL"},
+            {
+                "name": "forecast_utilization_percent",
+                "logical_type": "DECIMAL",
+            },
             {
                 "name": "estimated_days_to_limit",
                 "logical_type": "DECIMAL",

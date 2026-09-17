@@ -118,6 +118,19 @@ def safe_plan_projection(
                 if task_frame.get("requested_window_seconds") is not None
                 else None
             ),
+            "temporal_analysis_mode": str(
+                task_frame.get("temporal_analysis_mode") or "CURRENT"
+            ),
+            "forecast_scope": (
+                str(task_frame.get("forecast_scope"))
+                if task_frame.get("forecast_scope")
+                else None
+            ),
+            "forecast_horizon_seconds": (
+                int(task_frame["forecast_horizon_seconds"])
+                if task_frame.get("forecast_horizon_seconds") is not None
+                else None
+            ),
             "known_facts": [
                 str(value) for value in task_frame.get("known_facts") or ()
             ],
