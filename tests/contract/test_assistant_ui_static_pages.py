@@ -72,7 +72,19 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "kc-dialog", "kc-rows", "kc-form", "kc-upload-dialog",
             "kc-upload-form", "kc-file-input", "kc-processing-rows",
         },
-        "data-models.html": {"data-model-dialog"},
+        "data-models.html": {
+            "data-source-dialog",
+            "data-source-form",
+            "data-source-list",
+            "schema-object-rows",
+            "confirm-schema-selection",
+            "data-model-dialog",
+            "semantic-model-dialog",
+            "semantic-model-definition",
+            "policy-dialog",
+            "agent-query-binding-dialog",
+            "manual-ddl-dialog",
+        },
         "agents.html": {"agent-dialog"},
         "model-bindings.html": {"binding-rows", "model-binding-dialog"},
         "media-assets.html": {"asset-rows", "asset-preview-dialog", "asset-preview-body"},
@@ -85,7 +97,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         "image-generation.html": "./js/assistant-image-generation.js",
         "domains.html": "./js/assistant-domains.js",
         "knowledge-cores.html": "./js/assistant-knowledge-cores.js",
-        "data-models.html": "./js/assistant-resources.js",
+        "data-models.html": "./js/assistant-data-models.js",
         "agents.html": "./js/assistant-resources.js",
         "model-bindings.html": "./js/assistant-management.js",
         "media-assets.html": "./js/assistant-management.js",
@@ -184,6 +196,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "assistant-resources.js",
             "assistant-domains.js",
             "assistant-knowledge-cores.js",
+            "assistant-data-models.js",
             "assistant-x-search.js",
             "assistant-image-generation.js",
             "assistant-management.js",
@@ -191,6 +204,25 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             source = (UI_ROOT / "js" / name).read_text(encoding="utf-8")
             self.assertIn("KBotAssistantShell.ready", source, name)
             self.assertNotIn("DOMContentLoaded", source, name)
+
+    def test_data_models_page_uses_governed_workflow_routes(self):
+        source = (UI_ROOT / "js" / "assistant-data-models.js").read_text(
+            encoding="utf-8"
+        )
+        for fragment in (
+            "/data-sources/test-connection",
+            "/snapshots",
+            "/selection",
+            "/semantic-model-draft",
+            "/validations",
+            "/submit-review",
+            "/publish",
+            "/policy-bindings",
+            "/agent-bindings",
+        ):
+            self.assertIn(fragment, source)
+        self.assertNotIn("domain_id", source)
+        self.assertNotIn("/internal/v1", source)
 
     def test_knowledge_core_catalog_uses_contract_helpers(self):
         api = (UI_ROOT / "js" / "assistant-api.js").read_text(encoding="utf-8")

@@ -2032,6 +2032,33 @@
         "title": "AssistantAgentCreatePayload",
         "type": "object"
       },
+      "AssistantAgentQueryBindingCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "policy_binding_id": {
+            "format": "uuid",
+            "title": "Policy Binding Id",
+            "type": "string"
+          },
+          "semantic_model_id": {
+            "format": "uuid",
+            "title": "Semantic Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "semantic_model_id",
+          "policy_binding_id"
+        ],
+        "title": "AssistantAgentQueryBindingCreatePayload",
+        "type": "object"
+      },
       "AssistantAgentUpdatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -2184,6 +2211,142 @@
           "model_id"
         ],
         "title": "AssistantBindingUpsertPayload",
+        "type": "object"
+      },
+      "AssistantDataSourceConnectionPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "credentials": {
+            "$ref": "#/components/schemas/AssistantDataSourceCredentialsPayload"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/AssistantDataSourceEndpointPayload"
+          },
+          "source_type": {
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "endpoint",
+          "credentials"
+        ],
+        "title": "AssistantDataSourceConnectionPayload",
+        "type": "object"
+      },
+      "AssistantDataSourceCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_discover_schema": {
+            "default": true,
+            "title": "Auto Discover Schema",
+            "type": "boolean"
+          },
+          "credentials": {
+            "$ref": "#/components/schemas/AssistantDataSourceCredentialsPayload"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/AssistantDataSourceEndpointPayload"
+          },
+          "source_type": {
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "endpoint",
+          "credentials",
+          "display_name"
+        ],
+        "title": "AssistantDataSourceCreatePayload",
+        "type": "object"
+      },
+      "AssistantDataSourceCredentialsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "AssistantDataSourceCredentialsPayload",
+        "type": "object"
+      },
+      "AssistantDataSourceEndpointPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_schemas": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Allowed Schemas",
+            "type": "array"
+          },
+          "database": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._$#-]{0,127}$",
+            "title": "Database",
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*$",
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "tls_enabled": {
+            "default": true,
+            "title": "Tls Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "database",
+          "allowed_schemas"
+        ],
+        "title": "AssistantDataSourceEndpointPayload",
         "type": "object"
       },
       "AssistantDomainCreatePayload": {
@@ -2511,6 +2674,22 @@
         "title": "AssistantLoginPayload",
         "type": "object"
       },
+      "AssistantManualSchemaPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "ddl": {
+            "maxLength": 100000,
+            "minLength": 10,
+            "title": "Ddl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ddl"
+        ],
+        "title": "AssistantManualSchemaPayload",
+        "type": "object"
+      },
       "AssistantPasswordChangePayload": {
         "additionalProperties": false,
         "properties": {
@@ -2532,6 +2711,82 @@
           "new_password"
         ],
         "title": "AssistantPasswordChangePayload",
+        "type": "object"
+      },
+      "AssistantPolicyBindingCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Actor Ids",
+            "type": "array"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/AssistantQueryBudgetPayload"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Roles",
+            "type": "array"
+          },
+          "semantic_model_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Semantic Model Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "semantic_model_ids"
+        ],
+        "title": "AssistantPolicyBindingCreatePayload",
+        "type": "object"
+      },
+      "AssistantQueryBudgetPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "max_concurrent_runs": {
+            "default": 4,
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Concurrent Runs",
+            "type": "integer"
+          },
+          "max_result_bytes": {
+            "default": 1048576,
+            "maximum": 16777216.0,
+            "minimum": 1024.0,
+            "title": "Max Result Bytes",
+            "type": "integer"
+          },
+          "max_rows": {
+            "default": 1000,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "statement_timeout_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Statement Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "AssistantQueryBudgetPayload",
         "type": "object"
       },
       "AssistantResearchCreatePayload": {
@@ -2610,6 +2865,175 @@
           "input"
         ],
         "title": "AssistantResearchCreatePayload",
+        "type": "object"
+      },
+      "AssistantSchemaSelectionPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "object_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Object Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "object_ids"
+        ],
+        "title": "AssistantSchemaSelectionPayload",
+        "type": "object"
+      },
+      "AssistantSemanticModelCandidatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model Id"
+          },
+          "allow_ai_metadata": {
+            "default": false,
+            "title": "Allow Ai Metadata",
+            "type": "boolean"
+          },
+          "business_context": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Context"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "object_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Object Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "AssistantSemanticModelCandidatePayload",
+        "type": "object"
+      },
+      "AssistantSemanticModelDraftUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/SemanticModelDefinition"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "definition",
+          "expected_row_version"
+        ],
+        "title": "AssistantSemanticModelDraftUpdatePayload",
+        "type": "object"
+      },
+      "AssistantSemanticModelPublishPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "schema_snapshot_id": {
+            "format": "uuid",
+            "title": "Schema Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "schema_snapshot_id"
+        ],
+        "title": "AssistantSemanticModelPublishPayload",
+        "type": "object"
+      },
+      "AssistantSemanticModelReviewPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "AssistantSemanticModelReviewPayload",
+        "type": "object"
+      },
+      "AssistantSemanticModelValidationPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_model_id": {
+            "format": "uuid",
+            "title": "Ai Model Id",
+            "type": "string"
+          },
+          "allow_ai_metadata": {
+            "default": false,
+            "title": "Allow Ai Metadata",
+            "type": "boolean"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "ai_model_id"
+        ],
+        "title": "AssistantSemanticModelValidationPayload",
         "type": "object"
       },
       "BatchReindexItemPayload": {
@@ -4014,6 +4438,64 @@
         "title": "DatabaseType",
         "type": "string"
       },
+      "DatasetDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "physical_object": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+            "title": "Physical Object",
+            "type": "string"
+          },
+          "physical_schema": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+            "title": "Physical Schema",
+            "type": "string"
+          },
+          "primary_time_dimension": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Time Dimension"
+          },
+          "scope_column": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Column"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "physical_schema",
+          "physical_object"
+        ],
+        "title": "DatasetDefinition",
+        "type": "object"
+      },
       "DiagnosticQueryApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -4606,6 +5088,144 @@
           }
         },
         "title": "DifyRetrievalSetting",
+        "type": "object"
+      },
+      "DimensionDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_filter_operators": {
+            "default": [
+              "EQ",
+              "NE",
+              "IN",
+              "NOT_IN",
+              "BETWEEN",
+              "GT",
+              "GTE",
+              "LT",
+              "LTE",
+              "CONTAINS",
+              "STARTS_WITH",
+              "IS_NULL",
+              "IS_NOT_NULL"
+            ],
+            "items": {
+              "enum": [
+                "EQ",
+                "NE",
+                "IN",
+                "NOT_IN",
+                "BETWEEN",
+                "GT",
+                "GTE",
+                "LT",
+                "LTE",
+                "CONTAINS",
+                "STARTS_WITH",
+                "IS_NULL",
+                "IS_NOT_NULL"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Filter Operators",
+            "type": "array"
+          },
+          "dataset": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Dataset",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "filter_alias_columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Filter Alias Columns",
+            "type": "array"
+          },
+          "filterable": {
+            "default": true,
+            "title": "Filterable",
+            "type": "boolean"
+          },
+          "groupable": {
+            "default": true,
+            "title": "Groupable",
+            "type": "boolean"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "physical_column": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+            "title": "Physical Column",
+            "type": "string"
+          },
+          "sensitivity": {
+            "default": "INTERNAL",
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "SENSITIVE"
+            ],
+            "title": "Sensitivity",
+            "type": "string"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "value_normalization": {
+            "default": "NONE",
+            "enum": [
+              "NONE",
+              "LOWER_TRIM",
+              "CASE_INSENSITIVE_TRIM"
+            ],
+            "title": "Value Normalization",
+            "type": "string"
+          },
+          "value_type": {
+            "enum": [
+              "STRING",
+              "INTEGER",
+              "DECIMAL",
+              "DATE",
+              "DATETIME",
+              "BOOLEAN"
+            ],
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dataset",
+          "physical_column",
+          "value_type"
+        ],
+        "title": "DimensionDefinition",
         "type": "object"
       },
       "DocumentReferencePreview": {
@@ -6415,6 +7035,84 @@
           "ddl"
         ],
         "title": "ManualSchemaDefinitionRequest",
+        "type": "object"
+      },
+      "MeasureDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "enum": [
+              "COUNT",
+              "COUNT_DISTINCT",
+              "SUM",
+              "AVG",
+              "MIN",
+              "MAX"
+            ],
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "dataset": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Dataset",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "physical_column": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Column"
+          },
+          "sensitivity": {
+            "default": "INTERNAL",
+            "enum": [
+              "PUBLIC",
+              "INTERNAL",
+              "SENSITIVE"
+            ],
+            "title": "Sensitivity",
+            "type": "string"
+          },
+          "value_type": {
+            "enum": [
+              "INTEGER",
+              "DECIMAL"
+            ],
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dataset",
+          "aggregation",
+          "value_type"
+        ],
+        "title": "MeasureDefinition",
         "type": "object"
       },
       "MeasurementSemantics": {
@@ -9003,6 +9701,44 @@
           "display_name"
         ],
         "title": "SemanticModelCandidateRequest",
+        "type": "object"
+      },
+      "SemanticModelDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetDefinition"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Datasets",
+            "type": "array"
+          },
+          "dimensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DimensionDefinition"
+            },
+            "maxItems": 512,
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/MeasureDefinition"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Measures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datasets",
+          "measures"
+        ],
+        "title": "SemanticModelDefinition",
         "type": "object"
       },
       "SemanticModelDraftCreateRequest": {
@@ -18138,6 +18874,1217 @@
           }
         },
         "summary": "Upsert Binding",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models": {
+      "get": {
+        "operationId": "list_assistant_semantic_models_api_v1_apps_assistant_data_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assistant Semantic Models",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/agent-bindings": {
+      "get": {
+        "operationId": "list_assistant_agent_query_bindings_api_v1_apps_assistant_data_models_agent_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assistant Agent Query Bindings",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_assistant_agent_query_binding_api_v1_apps_assistant_data_models_agent_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantAgentQueryBindingCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Assistant Agent Query Binding",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/agents": {
+      "get": {
+        "operationId": "list_assistant_agents_for_query_binding_api_v1_apps_assistant_data_models_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assistant Agents For Query Binding",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/connector-capabilities": {
+      "get": {
+        "operationId": "list_assistant_data_connector_capabilities_api_v1_apps_assistant_data_models_connector_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assistant Data Connector Capabilities",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/data-sources": {
+      "get": {
+        "operationId": "list_assistant_data_sources_api_v1_apps_assistant_data_models_data_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assistant Data Sources",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_assistant_data_source_api_v1_apps_assistant_data_models_data_sources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDataSourceCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Assistant Data Source",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/data-sources/test-connection": {
+      "post": {
+        "operationId": "test_assistant_data_source_api_v1_apps_assistant_data_models_data_sources_test_connection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDataSourceConnectionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Assistant Data Source",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/data-sources/{data_source_id}": {
+      "get": {
+        "operationId": "get_assistant_data_source_api_v1_apps_assistant_data_models_data_sources__data_source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Data Source",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/data-sources/{data_source_id}/snapshots": {
+      "get": {
+        "operationId": "list_assistant_data_source_snapshots_api_v1_apps_assistant_data_models_data_sources__data_source_id__snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assistant Data Source Snapshots",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "request_assistant_data_source_snapshot_api_v1_apps_assistant_data_models_data_sources__data_source_id__snapshots_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Assistant Data Source Snapshot",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/generation-jobs/{generation_job_id}": {
+      "get": {
+        "operationId": "get_assistant_semantic_model_generation_api_v1_apps_assistant_data_models_generation_jobs__generation_job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Generation Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Semantic Model Generation",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/policy-bindings": {
+      "get": {
+        "operationId": "list_assistant_policy_bindings_api_v1_apps_assistant_data_models_policy_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assistant Policy Bindings",
+        "tags": [
+          "Assistant App"
+        ]
+      },
+      "post": {
+        "operationId": "create_assistant_policy_binding_api_v1_apps_assistant_data_models_policy_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantPolicyBindingCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Assistant Policy Binding",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/policy-subjects": {
+      "get": {
+        "operationId": "list_assistant_policy_subjects_api_v1_apps_assistant_data_models_policy_subjects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assistant Policy Subjects",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/snapshots/{snapshot_id}": {
+      "get": {
+        "operationId": "get_assistant_schema_snapshot_api_v1_apps_assistant_data_models_snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Schema Snapshot",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/snapshots/{snapshot_id}/objects/{object_id}/manual-ddl": {
+      "post": {
+        "operationId": "supply_assistant_schema_object_api_v1_apps_assistant_data_models_snapshots__snapshot_id__objects__object_id__manual_ddl_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantManualSchemaPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Supply Assistant Schema Object",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/snapshots/{snapshot_id}/objects/{object_id}/retry": {
+      "post": {
+        "operationId": "retry_assistant_schema_object_api_v1_apps_assistant_data_models_snapshots__snapshot_id__objects__object_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Assistant Schema Object",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/snapshots/{snapshot_id}/selection": {
+      "post": {
+        "operationId": "select_assistant_schema_objects_api_v1_apps_assistant_data_models_snapshots__snapshot_id__selection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSchemaSelectionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Assistant Schema Objects",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/snapshots/{snapshot_id}/semantic-model-draft": {
+      "post": {
+        "operationId": "generate_assistant_semantic_model_draft_api_v1_apps_assistant_data_models_snapshots__snapshot_id__semantic_model_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSemanticModelCandidatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Assistant Semantic Model Draft",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}": {
+      "get": {
+        "operationId": "get_assistant_semantic_model_api_v1_apps_assistant_data_models__semantic_model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Semantic Model",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}/versions/{semantic_model_version_id}": {
+      "patch": {
+        "operationId": "update_assistant_semantic_model_draft_api_v1_apps_assistant_data_models__semantic_model_id__versions__semantic_model_version_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSemanticModelDraftUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Assistant Semantic Model Draft",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}/versions/{semantic_model_version_id}/publish": {
+      "post": {
+        "operationId": "publish_assistant_semantic_model_api_v1_apps_assistant_data_models__semantic_model_id__versions__semantic_model_version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSemanticModelPublishPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Assistant Semantic Model",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}/versions/{semantic_model_version_id}/submit-review": {
+      "post": {
+        "operationId": "submit_assistant_semantic_model_review_api_v1_apps_assistant_data_models__semantic_model_id__versions__semantic_model_version_id__submit_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSemanticModelReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Assistant Semantic Model Review",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}/versions/{semantic_model_version_id}/validations": {
+      "post": {
+        "operationId": "validate_assistant_semantic_model_api_v1_apps_assistant_data_models__semantic_model_id__versions__semantic_model_version_id__validations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSemanticModelValidationPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Assistant Semantic Model",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
+    "/api/v1/apps/assistant/data-models/{semantic_model_id}/versions/{semantic_model_version_id}/validations/{run_id}": {
+      "get": {
+        "operationId": "get_assistant_semantic_model_validation_api_v1_apps_assistant_data_models__semantic_model_id__versions__semantic_model_version_id__validations__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "semantic_model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "semantic_model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Semantic Model Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Semantic Model Validation",
         "tags": [
           "Assistant App"
         ]

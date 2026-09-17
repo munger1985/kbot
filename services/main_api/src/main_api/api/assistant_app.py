@@ -1,5 +1,6 @@
 """智能工作台 App 的公开 BFF 路由。"""
 
+import re
 from datetime import date
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -22,6 +23,7 @@ from main_api.application import (
 )
 from platform_clients import AssistantAppClient, AssistantAppClientError, DataQueryClient, KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
+from platform_core.contracts.data_query import SemanticModelDefinition
 from platform_core.dictionary import (
     ModelCategory,
     coerce_model_category,
@@ -153,6 +155,111 @@ class AssistantIntakeReviewPayload(_Payload):
 
 class AssistantKnowledgeCoreReprocessPayload(_Payload):
     document_version_id: UUID
+
+
+class AssistantDataSourceEndpointPayload(_Payload):
+    host: str = Field(
+        min_length=1,
+        max_length=253,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]*$",
+    )
+    port: int = Field(ge=1, le=65535)
+    database: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._$#-]{0,127}$",
+    )
+    allowed_schemas: tuple[str, ...] = Field(min_length=1, max_length=32)
+    tls_enabled: bool = True
+
+    @field_validator("allowed_schemas")
+    @classmethod
+    def validate_allowed_schemas(
+        cls, value: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        pattern = r"^[A-Za-z_][A-Za-z0-9_$#-]{0,127}$"
+        normalized = tuple(item.strip() for item in value)
+        if any(not re.fullmatch(pattern, item) for item in normalized):
+            raise ValueError("allowed_schemas 包含非法数据库标识符")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("allowed_schemas 不能重复")
+        return normalized
+
+
+class AssistantDataSourceCredentialsPayload(_Payload):
+    username: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class AssistantDataSourceConnectionPayload(_Payload):
+    source_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
+    endpoint: AssistantDataSourceEndpointPayload
+    credentials: AssistantDataSourceCredentialsPayload
+
+
+class AssistantDataSourceCreatePayload(AssistantDataSourceConnectionPayload):
+    display_name: str = Field(min_length=1, max_length=256)
+    auto_discover_schema: bool = True
+
+
+class AssistantSchemaSelectionPayload(_Payload):
+    object_ids: tuple[UUID, ...] = Field(min_length=1, max_length=5000)
+
+
+class AssistantManualSchemaPayload(_Payload):
+    ddl: str = Field(min_length=10, max_length=100_000)
+
+
+class AssistantSemanticModelCandidatePayload(_Payload):
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    business_context: str | None = Field(default=None, max_length=4000)
+    object_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    ai_model_id: UUID | None = None
+    allow_ai_metadata: bool = False
+
+
+class AssistantSemanticModelDraftUpdatePayload(_Payload):
+    definition: SemanticModelDefinition
+    expected_row_version: int = Field(ge=1)
+
+
+class AssistantSemanticModelValidationPayload(_Payload):
+    question: str = Field(min_length=2, max_length=2000)
+    ai_model_id: UUID
+    allow_ai_metadata: bool = False
+
+
+class AssistantSemanticModelReviewPayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+
+
+class AssistantSemanticModelPublishPayload(AssistantSemanticModelReviewPayload):
+    schema_snapshot_id: UUID
+
+
+class AssistantQueryBudgetPayload(_Payload):
+    max_rows: int = Field(default=1000, ge=1, le=10000)
+    max_result_bytes: int = Field(
+        default=1_048_576, ge=1024, le=16_777_216
+    )
+    statement_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    max_concurrent_runs: int = Field(default=4, ge=1, le=64)
+
+
+class AssistantPolicyBindingCreatePayload(_Payload):
+    actor_ids: tuple[str, ...] = Field(default=(), max_length=1000)
+    roles: tuple[str, ...] = Field(default=(), max_length=100)
+    semantic_model_ids: tuple[UUID, ...] = Field(min_length=1, max_length=64)
+    budget: AssistantQueryBudgetPayload = Field(
+        default_factory=AssistantQueryBudgetPayload
+    )
+
+
+class AssistantAgentQueryBindingCreatePayload(_Payload):
+    agent_id: UUID
+    semantic_model_id: UUID
+    policy_binding_id: UUID
 
 
 def _domain_actor(request: Request) -> tuple[int, str]:
@@ -454,6 +561,7 @@ async def list_assistant_model_catalog(request: Request):
         request,
         "assistant:model_binding_manage",
         "assistant:knowledge_core_manage",
+        "assistant:data_model_manage",
     )
     return await load_model_catalog(request)
 
@@ -942,6 +1050,467 @@ async def delete_knowledge_core(collection_id: UUID, request: Request):
         collection_id=collection_id,
         auth_context=request.state.auth_context,
     )
+
+
+@router.get("/data-models/connector-capabilities")
+async def list_assistant_data_connector_capabilities(request: Request):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_capabilities(
+        auth_context=request.state.auth_context
+    )
+
+
+@router.post("/data-models/data-sources/test-connection")
+async def test_assistant_data_source(
+    payload: AssistantDataSourceConnectionPayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_test_connection(
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/data-sources")
+async def list_assistant_data_sources(
+    request: Request,
+    cursor: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_list(
+        resource="data-sources",
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/data-sources", status_code=status.HTTP_201_CREATED
+)
+async def create_assistant_data_source(
+    payload: AssistantDataSourceCreatePayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_create(
+        resource="data-sources",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/data-sources/{data_source_id}")
+async def get_assistant_data_source(
+    data_source_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_get(
+        resource="data-sources",
+        resource_id=data_source_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/data-sources/{data_source_id}/snapshots")
+async def list_assistant_data_source_snapshots(
+    data_source_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="GET",
+        path=f"data-sources/{data_source_id}/snapshots",
+        payload=None,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/data-sources/{data_source_id}/snapshots",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_assistant_data_source_snapshot(
+    data_source_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_request_snapshot(
+        data_source_id=data_source_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/snapshots/{snapshot_id}")
+async def get_assistant_schema_snapshot(
+    snapshot_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="GET",
+        path=f"snapshots/{snapshot_id}",
+        payload=None,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/data-models/snapshots/{snapshot_id}/selection")
+async def select_assistant_schema_objects(
+    snapshot_id: UUID,
+    payload: AssistantSchemaSelectionPayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="POST",
+        path=f"snapshots/{snapshot_id}/selection",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/snapshots/{snapshot_id}/objects/{object_id}/retry"
+)
+async def retry_assistant_schema_object(
+    snapshot_id: UUID,
+    object_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="POST",
+        path=f"snapshots/{snapshot_id}/objects/{object_id}/retry",
+        payload={},
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/snapshots/{snapshot_id}/objects/{object_id}/manual-ddl"
+)
+async def supply_assistant_schema_object(
+    snapshot_id: UUID,
+    object_id: UUID,
+    payload: AssistantManualSchemaPayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="POST",
+        path=f"snapshots/{snapshot_id}/objects/{object_id}/manual-ddl",
+        payload=payload.model_dump(),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/snapshots/{snapshot_id}/semantic-model-draft",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_assistant_semantic_model_draft(
+    snapshot_id: UUID,
+    payload: AssistantSemanticModelCandidatePayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="POST",
+        path=f"snapshots/{snapshot_id}/semantic-model-draft",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/generation-jobs/{generation_job_id}")
+async def get_assistant_semantic_model_generation(
+    generation_job_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_get(
+        resource="semantic-model-generation-jobs",
+        resource_id=generation_job_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/policy-subjects")
+async def list_assistant_policy_subjects(request: Request):
+    domain_id, _, _ = await _require(
+        request, "assistant:data_model_manage"
+    )
+    return await _access(request).list_policy_subjects(
+        app_id="assistant", domain_id=domain_id
+    )
+
+
+@router.get("/data-models/policy-bindings")
+async def list_assistant_policy_bindings(
+    request: Request,
+    cursor: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_list(
+        resource="policy-bindings",
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/policy-bindings", status_code=status.HTTP_201_CREATED
+)
+async def create_assistant_policy_binding(
+    payload: AssistantPolicyBindingCreatePayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    if not payload.actor_ids and not payload.roles:
+        raise HTTPException(
+            422,
+            {
+                "code": "POLICY_SUBJECT_REQUIRED",
+                "message": "至少选择一个用户或角色",
+            },
+        )
+    return await _data_query(request).management_create(
+        resource="policy-bindings",
+        payload={
+            "semantic_model_ids": [
+                str(item) for item in payload.semantic_model_ids
+            ],
+            "subject_selector": {
+                "actor_ids": list(payload.actor_ids),
+                "roles": list(payload.roles),
+            },
+            "budget": payload.budget.model_dump(),
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/agent-bindings")
+async def list_assistant_agent_query_bindings(
+    request: Request,
+    cursor: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_list(
+        resource="agent-bindings",
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/agents")
+async def list_assistant_agents_for_query_binding(request: Request):
+    domain_id, _, _ = await _require(
+        request, "assistant:data_model_manage"
+    )
+    return await _client(request).list_agents(
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/agent-bindings", status_code=status.HTTP_201_CREATED
+)
+async def create_assistant_agent_query_binding(
+    payload: AssistantAgentQueryBindingCreatePayload,
+    request: Request,
+):
+    domain_id, _, _ = await _require(
+        request, "assistant:data_model_manage"
+    )
+    agent = await _client(request).get_agent(
+        agent_id=payload.agent_id,
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    agent_version_id = agent.get("agent_version_id")
+    if not agent_version_id:
+        raise HTTPException(
+            409,
+            {
+                "code": "AGENT_VERSION_MISSING",
+                "message": "Assistant Agent 缺少当前版本，无法创建问数绑定",
+            },
+        )
+    if agent.get("status") != "DRAFT":
+        raise HTTPException(
+            409,
+            {
+                "code": "AGENT_DRAFT_REQUIRED",
+                "message": "请先将 Assistant Agent 保存为草稿，再创建问数绑定",
+            },
+        )
+    return await _data_query(request).management_create(
+        resource="agent-bindings",
+        payload={
+            "consumer_app_id": "assistant",
+            "agent_id": str(payload.agent_id),
+            "agent_version_id": str(agent_version_id),
+            "semantic_model_id": str(payload.semantic_model_id),
+            "policy_binding_id": str(payload.policy_binding_id),
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models")
+async def list_assistant_semantic_models(
+    request: Request,
+    cursor: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_list(
+        resource="semantic-models",
+        cursor=cursor,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/data-models/{semantic_model_id}")
+async def get_assistant_semantic_model(
+    semantic_model_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_get(
+        resource="semantic-models",
+        resource_id=semantic_model_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.patch(
+    "/data-models/{semantic_model_id}/versions/{semantic_model_version_id}"
+)
+async def update_assistant_semantic_model_draft(
+    semantic_model_id: UUID,
+    semantic_model_version_id: UUID,
+    payload: AssistantSemanticModelDraftUpdatePayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="PATCH",
+        path=(
+            f"semantic-models/{semantic_model_id}/versions/"
+            f"{semantic_model_version_id}"
+        ),
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/{semantic_model_id}/versions/"
+    "{semantic_model_version_id}/validations",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def validate_assistant_semantic_model(
+    semantic_model_id: UUID,
+    semantic_model_version_id: UUID,
+    payload: AssistantSemanticModelValidationPayload,
+    request: Request,
+    idempotency_key: str = Header(
+        alias="Idempotency-Key", min_length=8, max_length=128
+    ),
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="POST",
+        path=(
+            f"semantic-models/{semantic_model_id}/versions/"
+            f"{semantic_model_version_id}/validations"
+        ),
+        payload={
+            **payload.model_dump(mode="json"),
+            "idempotency_key": idempotency_key,
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get(
+    "/data-models/{semantic_model_id}/versions/"
+    "{semantic_model_version_id}/validations/{run_id}"
+)
+async def get_assistant_semantic_model_validation(
+    semantic_model_id: UUID,
+    semantic_model_version_id: UUID,
+    run_id: UUID,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    return await _data_query(request).management_action(
+        method="GET",
+        path=(
+            f"semantic-models/{semantic_model_id}/versions/"
+            f"{semantic_model_version_id}/validations/{run_id}"
+        ),
+        payload=None,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post(
+    "/data-models/{semantic_model_id}/versions/"
+    "{semantic_model_version_id}/submit-review",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def submit_assistant_semantic_model_review(
+    semantic_model_id: UUID,
+    semantic_model_version_id: UUID,
+    payload: AssistantSemanticModelReviewPayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    await _data_query(request).management_submit_model_review(
+        semantic_model_id=semantic_model_id,
+        semantic_model_version_id=semantic_model_version_id,
+        payload=payload.model_dump(),
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/data-models/{semantic_model_id}/versions/"
+    "{semantic_model_version_id}/publish",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def publish_assistant_semantic_model(
+    semantic_model_id: UUID,
+    semantic_model_version_id: UUID,
+    payload: AssistantSemanticModelPublishPayload,
+    request: Request,
+):
+    await _require(request, "assistant:data_model_manage")
+    await _data_query(request).management_publish_model(
+        semantic_model_id=semantic_model_id,
+        semantic_model_version_id=semantic_model_version_id,
+        payload={
+            "semantic_model_id": str(semantic_model_id),
+            "semantic_model_version_id": str(semantic_model_version_id),
+            **payload.model_dump(mode="json"),
+        },
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/agents")

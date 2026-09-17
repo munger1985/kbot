@@ -11,56 +11,190 @@
   <header class="assistant-page-head">
     <div>
       <h1>问数模型</h1>
-      <p>问数模型是已发布的语义数据模型，而不是 LLM 或数据库连接。它复用现有 Data Query 的安全执行与审计能力。</p>
+      <p>先建立只读数据库连接，选择允许采集的表或视图，再生成、验证并发布语义数据模型。</p>
     </div>
-    <div class="assistant-actions"><button type="button" data-open-dialog="data-model-dialog" class="primary">创建问数模型</button></div>
+    <div class="assistant-actions">
+      <button type="button" id="data-model-refresh">刷新</button>
+      <button type="button" data-open-dialog="data-source-dialog" class="primary">配置数据库连接</button>
+    </div>
   </header>
-  <section class="assistant-grid">
+
+  <section class="assistant-panel data-model-workflow" aria-label="问数模型配置流程">
+    <ol class="data-model-steps">
+      <li data-workflow-step="source"><strong>1. 数据库连接</strong><span>测试并保存只读连接</span></li>
+      <li data-workflow-step="discover"><strong>2. 发现对象</strong><span>读取允许 Schema 的表和视图</span></li>
+      <li data-workflow-step="capture"><strong>3. 采集结构</strong><span>选择对象并读取字段与约束</span></li>
+      <li data-workflow-step="model"><strong>4. 数据建模</strong><span>生成并复核指标、维度和映射</span></li>
+      <li data-workflow-step="publish"><strong>5. 验证发布</strong><span>真实问题验证、策略和 Agent 绑定</span></li>
+    </ol>
+  </section>
+
+  <section class="assistant-grid data-model-grid">
+    <article class="assistant-panel span-4">
+      <div class="assistant-panel-head">
+        <div><h2>数据库连接</h2><p>凭据加密保存，页面不会回显用户名、密码或完整 DSN。</p></div>
+        <button class="small" type="button" data-open-dialog="data-source-dialog">新增</button>
+      </div>
+      <div id="data-source-list" class="data-source-list">
+        <div class="assistant-empty"><div><strong>正在读取数据源</strong><p>请稍候。</p></div></div>
+      </div>
+    </article>
+
     <article class="assistant-panel span-8">
       <div class="assistant-panel-head">
-        <div><h2>语义模型</h2><p>只有 PUBLISHED 版本才允许由 Agent 绑定和执行。</p></div>
-        <button class="small" type="button" data-open-dialog="data-model-dialog">创建</button>
+        <div>
+          <h2 id="schema-panel-title">Schema 与表对象</h2>
+          <p id="schema-panel-copy">选择左侧数据库连接后，查看自动发现与结构采集进度。</p>
+        </div>
+        <div class="assistant-actions">
+          <button class="small" type="button" id="request-snapshot" disabled>重新发现</button>
+          <button class="small primary" type="button" id="open-model-draft" disabled>建立数据模型</button>
+        </div>
+      </div>
+      <div id="schema-summary" class="data-schema-summary"></div>
+      <div class="assistant-filter-bar data-object-toolbar">
+        <label class="assistant-field"><span>筛选表或视图</span><input id="schema-object-filter" placeholder="输入 Schema、表名或视图名"></label>
+        <label class="data-check-all"><input type="checkbox" id="schema-select-all"> 选择当前结果</label>
+        <button type="button" id="confirm-schema-selection" class="primary" disabled>确认选择并采集结构</button>
       </div>
       <div class="assistant-table-wrap">
-        <table class="assistant-table">
-          <thead><tr><th>名称</th><th>Domain</th><th>数据源</th><th>版本</th><th>状态</th><th>绑定 Agent</th></tr></thead>
-          <tbody>
-            <tr><td colspan="6"><div class="assistant-empty"><div><strong>尚无问数模型</strong><p>接入后在此管理真实的语义模型草稿、验证、审核、发布和策略绑定，不展示数据库凭据。</p></div></div></td></tr>
-          </tbody>
+        <table class="assistant-table data-object-table">
+          <thead><tr><th>选择</th><th>Schema</th><th>对象</th><th>类型</th><th>字段</th><th>状态</th><th>处理</th></tr></thead>
+          <tbody id="schema-object-rows"><tr><td colspan="7"><div class="assistant-empty"><div><strong>尚未选择数据库连接</strong><p>先在左侧选择数据源。</p></div></div></td></tr></tbody>
         </table>
       </div>
     </article>
-    <aside class="assistant-panel span-4">
-      <div class="assistant-panel-head"><div><h2>发布前流程</h2><p>LLM 不能生成或执行自由 SQL。</p></div></div>
-      <div class="assistant-panel-body">
-        <ol class="assistant-flow">
-          <li><strong>连接与 Schema 发现</strong><span>读取允许 Schema，采集受选对象结构。</span></li>
-          <li><strong>语义模型草稿</strong><span>定义 Dataset、指标、维度、关系和口径。</span></li>
-          <li><strong>测试与发布</strong><span>以问题验证后审核、发布版本。</span></li>
-          <li><strong>策略与 Agent Binding</strong><span>再允许对应 Agent 使用问数能力。</span></li>
-        </ol>
+
+    <article class="assistant-panel span-12">
+      <div class="assistant-panel-head">
+        <div><h2>语义数据模型</h2><p>只有完成审核并处于“已发布”的版本才能绑定 Agent。</p></div>
+        <span id="data-model-count" class="assistant-badge">0 个模型</span>
       </div>
-    </aside>
+      <div class="assistant-table-wrap">
+        <table class="assistant-table">
+          <thead><tr><th>名称</th><th>数据源</th><th>版本</th><th>状态</th><th>数据集</th><th>策略</th><th>操作</th></tr></thead>
+          <tbody id="data-model-rows"><tr><td colspan="7"><div class="assistant-empty"><div><strong>正在读取语义模型</strong><p>请稍候。</p></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </article>
   </section>
 </main>
-<dialog class="assistant-dialog" id="data-model-dialog">
-  <form data-resource-form="问数模型">
-    <div class="assistant-dialog-head"><h2>创建问数模型草稿</h2><button class="assistant-close" type="button" data-close-dialog="data-model-dialog" aria-label="关闭">×</button></div>
+
+<dialog class="assistant-dialog" id="data-source-dialog">
+  <form id="data-source-form">
+    <div class="assistant-dialog-head"><h2>配置只读数据库连接</h2><button class="assistant-close" type="button" data-close-dialog="data-source-dialog" aria-label="关闭">×</button></div>
     <div class="assistant-dialog-body">
       <div class="assistant-form-grid">
-        <div class="assistant-field"><label for="data-model-domain">所属 Domain</label><select id="data-model-domain" disabled><option>等待 Domain API 接入</option></select></div>
-        <div class="assistant-field"><label for="data-model-name">名称</label><input id="data-model-name" required maxlength="120" placeholder="例如：销售经营分析"></div>
-        <div class="assistant-field full"><label for="data-model-source">数据源</label><select id="data-model-source" disabled><option>等待 Data Query 数据源接入</option></select></div>
+        <div class="assistant-field"><label for="data-source-name">连接名称</label><input id="data-source-name" required maxlength="256" placeholder="例如：CRM 演示库"></div>
+        <div class="assistant-field"><label for="data-source-type">数据库类型</label><select id="data-source-type" required></select></div>
+        <div class="assistant-field"><label for="data-source-host">主机</label><input id="data-source-host" required maxlength="253" placeholder="crm.internal"></div>
+        <div class="assistant-field"><label for="data-source-port">端口</label><input id="data-source-port" required type="number" min="1" max="65535" value="1521"></div>
+        <div class="assistant-field full"><label for="data-source-database">数据库或服务名</label><input id="data-source-database" required maxlength="128" placeholder="Oracle 示例：pdb01"></div>
+        <div class="assistant-field full"><label for="data-source-schemas">允许 Schema</label><input id="data-source-schemas" required placeholder="多个 Schema 用逗号分隔，例如 CRM_DEMO"></div>
+        <div class="assistant-field"><label for="data-source-username">只读用户名</label><input id="data-source-username" required autocomplete="off"></div>
+        <div class="assistant-field"><label for="data-source-password">密码</label><input id="data-source-password" required type="password" autocomplete="new-password"></div>
       </div>
-      <div class="assistant-notice warn">创建的是语义模型草稿。它完成验证、发布和 Policy Binding 前，不能被任何 Agent 执行。</div>
+      <div class="assistant-checks">
+        <label><input type="checkbox" id="data-source-tls" checked> 启用 TLS</label>
+        <label><input type="checkbox" id="data-source-auto-discover" checked> 创建后自动发现 Schema</label>
+      </div>
+      <div id="connection-test-status" class="assistant-notice warn">保存前必须先完成一次连接测试。</div>
     </div>
-    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="data-model-dialog">取消</button><button class="primary" type="submit">创建草稿</button></div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="data-source-dialog">取消</button><button type="button" id="test-data-source">测试连接</button><button class="primary" type="submit">保存并发现</button></div>
   </form>
 </dialog>
+
+<dialog class="assistant-dialog" id="data-model-dialog">
+  <form id="data-model-form">
+    <div class="assistant-dialog-head"><h2>建立语义数据模型</h2><button class="assistant-close" type="button" data-close-dialog="data-model-dialog" aria-label="关闭">×</button></div>
+    <div class="assistant-dialog-body">
+      <div class="assistant-form-grid">
+        <div class="assistant-field full"><label for="data-model-name">模型名称</label><input id="data-model-name" required maxlength="256" placeholder="例如：客户经营分析"></div>
+        <div class="assistant-field full"><label for="data-model-description">说明</label><input id="data-model-description" maxlength="1000" placeholder="模型覆盖的业务范围"></div>
+        <div class="assistant-field full"><label for="data-model-context">业务上下文</label><textarea id="data-model-context" maxlength="4000" placeholder="例如：客户、联系人、商机与沟通记录；金额口径使用人民币。"></textarea></div>
+        <div class="assistant-field full"><label for="data-model-ai">AI 元数据增强</label><select id="data-model-ai"><option value="">不使用 AI，仅按字段结构生成</option></select></div>
+      </div>
+      <div class="assistant-checks"><label><input type="checkbox" id="data-model-ai-consent"> 同意将字段名称、类型和业务上下文发送给所选模型</label></div>
+      <div id="data-model-selection-copy" class="assistant-notice"></div>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="data-model-dialog">取消</button><button class="primary" type="submit">生成模型草稿</button></div>
+  </form>
+</dialog>
+
+<dialog class="assistant-dialog wide" id="semantic-model-dialog">
+  <div class="assistant-dialog-head"><div><h2 id="semantic-model-title">语义模型详情</h2><p id="semantic-model-meta" class="dialog-subtitle"></p></div><button class="assistant-close" type="button" data-close-dialog="semantic-model-dialog" aria-label="关闭">×</button></div>
+  <div class="assistant-dialog-body semantic-model-body">
+    <section>
+      <div class="data-section-head"><h3>模型定义</h3><button type="button" id="save-model-definition">保存草稿</button></div>
+      <textarea id="semantic-model-definition" class="semantic-json" spellcheck="false"></textarea>
+      <p class="assistant-help">定义只允许引用当前结构快照中的 Dataset、字段、指标和维度；不接受自由 SQL。</p>
+    </section>
+    <section class="semantic-validation">
+      <div class="data-section-head"><h3>真实问题验证</h3><span id="validation-status" class="assistant-badge">尚未验证</span></div>
+      <div class="assistant-form-grid">
+        <div class="assistant-field full"><label for="validation-question">测试问题</label><input id="validation-question" placeholder="例如：各客户当前商机金额是多少？"></div>
+        <div class="assistant-field full"><label for="validation-model">规划模型</label><select id="validation-model"></select></div>
+      </div>
+      <div class="assistant-checks"><label><input type="checkbox" id="validation-ai-consent"> 同意将语义目录与测试问题发送给所选模型</label></div>
+      <button type="button" id="run-model-validation">运行受控验证</button>
+      <div id="validation-result" class="validation-result"></div>
+    </section>
+  </div>
+  <div class="assistant-dialog-foot">
+    <button type="button" id="configure-model-policy">配置策略</button>
+    <button type="button" id="bind-model-agent">绑定 Agent</button>
+    <button type="button" id="submit-model-review">提交审核</button>
+    <button class="primary" type="button" id="publish-model">发布版本</button>
+  </div>
+</dialog>
+
+<dialog class="assistant-dialog" id="policy-dialog">
+  <form id="policy-form">
+    <div class="assistant-dialog-head"><h2>配置问数策略</h2><button class="assistant-close" type="button" data-close-dialog="policy-dialog" aria-label="关闭">×</button></div>
+    <div class="assistant-dialog-body">
+      <div class="assistant-notice">策略决定哪些用户或角色可以使用当前已发布模型，以及单次查询的资源上限。</div>
+      <div class="policy-subject-grid"><section><h3>用户</h3><div id="policy-members" class="policy-check-list"></div></section><section><h3>角色</h3><div id="policy-roles" class="policy-check-list"></div></section></div>
+      <div class="assistant-form-grid policy-budget">
+        <div class="assistant-field"><label for="policy-max-rows">最大返回行数</label><input id="policy-max-rows" type="number" min="1" max="10000" value="1000"></div>
+        <div class="assistant-field"><label for="policy-timeout">超时秒数</label><input id="policy-timeout" type="number" min="1" max="300" value="30"></div>
+        <div class="assistant-field"><label for="policy-max-bytes">最大结果字节</label><input id="policy-max-bytes" type="number" min="1024" max="16777216" value="1048576"></div>
+        <div class="assistant-field"><label for="policy-concurrency">最大并发</label><input id="policy-concurrency" type="number" min="1" max="64" value="4"></div>
+      </div>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="policy-dialog">取消</button><button class="primary" type="submit">保存策略</button></div>
+  </form>
+</dialog>
+
+<dialog class="assistant-dialog" id="agent-query-binding-dialog">
+  <form id="agent-query-binding-form">
+    <div class="assistant-dialog-head"><h2>绑定 Assistant Agent</h2><button class="assistant-close" type="button" data-close-dialog="agent-query-binding-dialog" aria-label="关闭">×</button></div>
+    <div class="assistant-dialog-body">
+      <div class="assistant-form-grid">
+        <div class="assistant-field full"><label for="query-binding-agent">Agent 草稿版本</label><select id="query-binding-agent" required></select></div>
+        <div class="assistant-field full"><label for="query-binding-policy">有效策略</label><select id="query-binding-policy" required></select></div>
+      </div>
+      <div class="assistant-notice warn">绑定后仍需在 Agent 页面保存当前问数模型范围并显式启用 Agent。</div>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="agent-query-binding-dialog">取消</button><button class="primary" type="submit">创建绑定</button></div>
+  </form>
+</dialog>
+
+<dialog class="assistant-dialog" id="manual-ddl-dialog">
+  <form id="manual-ddl-form">
+    <div class="assistant-dialog-head"><h2>补录失败对象结构</h2><button class="assistant-close" type="button" data-close-dialog="manual-ddl-dialog" aria-label="关闭">×</button></div>
+    <div class="assistant-dialog-body">
+      <p id="manual-ddl-object" class="assistant-notice warn"></p>
+      <div class="assistant-field"><label for="manual-ddl">受限 CREATE TABLE DDL</label><textarea id="manual-ddl" required minlength="10" maxlength="100000" placeholder="CREATE TABLE CRM_DEMO.CUSTOMER (...)"></textarea></div>
+      <p class="assistant-help">DDL 只用于解析字段结构，不会在外部数据库执行；仅接受当前失败对象的一条 CREATE TABLE。</p>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="manual-ddl-dialog">取消</button><button class="primary" type="submit">保存结构</button></div>
+  </form>
+</dialog>
+
 <script src="../runtime-config.js"></script>
 <script src="./js/assistant-auth.js"></script>
 <script src="./js/assistant-api.js"></script>
 <script src="./js/assistant-shell.js"></script>
-<script src="./js/assistant-resources.js"></script>
+<script src="./js/assistant-data-models.js"></script>
 </body>
 </html>

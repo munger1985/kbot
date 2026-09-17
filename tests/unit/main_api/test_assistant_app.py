@@ -21,6 +21,10 @@ REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a006")
 DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a007")
 EMBEDDING_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a011")
 VISUAL_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a012")
+DATA_SOURCE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a013")
+SNAPSHOT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a014")
+OBJECT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a015")
+POLICY_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a016")
 
 
 class _AccessService:
@@ -29,6 +33,12 @@ class _AccessService:
 
     async def snapshot(self, **kwargs):
         return SimpleNamespace(app_id="assistant", domain_id=kwargs["domain_id"], user_id=kwargs["user_id"], roles=(), permissions={"assistant:access"})
+
+    async def list_policy_subjects(self, **kwargs):
+        return {
+            "members": [{"id": "user-41", "display_name": "演示管理员"}],
+            "roles": [{"code": "assistant_admin", "display_name": "管理员"}],
+        }
 
 
 class _KnowledgeClient:
@@ -139,8 +149,81 @@ class _KnowledgeClient:
 
 
 class _DataQueryClient:
+    def __init__(self):
+        self.calls = []
+
     async def management_has_active_agent_binding(self, **kwargs):
         return True
+
+    async def management_capabilities(self, **kwargs):
+        self.calls.append(("capabilities", kwargs))
+        return {"items": [{"source_type": "ORACLE", "display_name": "Oracle"}]}
+
+    async def management_test_connection(self, **kwargs):
+        self.calls.append(("test_connection", kwargs))
+        return {"ok": True, "database_version": "Oracle Database 23ai"}
+
+    async def management_create(self, **kwargs):
+        self.calls.append(("create", kwargs))
+        resource = kwargs["resource"]
+        if resource == "data-sources":
+            return {
+                "data_source_id": str(DATA_SOURCE_ID),
+                "display_name": kwargs["payload"]["display_name"],
+                "source_type": kwargs["payload"]["source_type"],
+                "status": "ACTIVE",
+                "current_version": 1,
+                "row_version": 1,
+            }
+        if resource == "policy-bindings":
+            return {
+                "policy_binding_id": str(POLICY_ID),
+                "status": "ACTIVE",
+                "row_version": 1,
+            }
+        return {
+            "agent_binding_id": str(POLICY_ID),
+            "status": "ACTIVE",
+            "row_version": 1,
+        }
+
+    async def management_list(self, **kwargs):
+        self.calls.append(("list", kwargs))
+        return {"items": [], "next_cursor": None}
+
+    async def management_get(self, **kwargs):
+        self.calls.append(("get", kwargs))
+        if kwargs["resource"] == "semantic-models":
+            return {
+                "semantic_model_id": str(DATA_MODEL_ID),
+                "display_name": "客户经营分析",
+                "active_version": None,
+                "row_version": 1,
+                "updated_at": "2026-09-17T00:00:00Z",
+                "versions": [],
+            }
+        return {"generation_job_id": str(VERSION_ID), "status": "SUCCEEDED"}
+
+    async def management_request_snapshot(self, **kwargs):
+        self.calls.append(("request_snapshot", kwargs))
+        return {
+            "schema_snapshot_id": str(SNAPSHOT_ID),
+            "data_source_id": str(kwargs["data_source_id"]),
+            "status": "REQUESTED",
+            "source_version": 1,
+        }
+
+    async def management_action(self, **kwargs):
+        self.calls.append(("action", kwargs))
+        return {"ok": True, "path": kwargs["path"]}
+
+    async def management_submit_model_review(self, **kwargs):
+        self.calls.append(("submit_review", kwargs))
+        return {}
+
+    async def management_publish_model(self, **kwargs):
+        self.calls.append(("publish", kwargs))
+        return {}
 
 
 class _AssistantClient:
@@ -296,7 +379,8 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.app.state.access_control_service = _AccessService()
         self.app.state.assistant_app_client = self.assistant
         self.app.state.knowledge_core_client = self.knowledge
-        self.app.state.data_query_client = _DataQueryClient()
+        self.data_query = _DataQueryClient()
+        self.app.state.data_query_client = self.data_query
         self.domains = _DomainService()
         self.app.state.domain_management_service = self.domains
         self.app.state.model_config_clients = (_ModelConfigClient(),)
@@ -587,6 +671,158 @@ class AssistantAppRouteTest(unittest.TestCase):
         )
         self.assertEqual(409, response.status_code)
         self.assertEqual("COLLECTION_IN_USE", response.json()["code"])
+
+    def test_data_source_connection_and_creation_use_assistant_permission(self):
+        connection = {
+            "source_type": "ORACLE",
+            "endpoint": {
+                "host": "crm.internal",
+                "port": 1521,
+                "database": "pdb01",
+                "allowed_schemas": ["CRM_DEMO"],
+                "tls_enabled": True,
+            },
+            "credentials": {
+                "username": "crm_reader",
+                "password": "not-returned",
+            },
+        }
+        tested = self.client.post(
+            "/api/v1/apps/assistant/data-models/data-sources/test-connection",
+            headers=self._headers(),
+            json=connection,
+        )
+        self.assertEqual(200, tested.status_code, tested.text)
+        self.assertTrue(tested.json()["ok"])
+
+        created = self.client.post(
+            "/api/v1/apps/assistant/data-models/data-sources",
+            headers=self._headers(),
+            json={
+                **connection,
+                "display_name": "CRM 演示库",
+                "auto_discover_schema": True,
+            },
+        )
+        self.assertEqual(201, created.status_code, created.text)
+        self.assertEqual(str(DATA_SOURCE_ID), created.json()["data_source_id"])
+        call = self.data_query.calls[-1]
+        self.assertEqual("create", call[0])
+        self.assertEqual("data-sources", call[1]["resource"])
+        self.assertNotIn("domain_id", call[1]["payload"])
+
+    def test_schema_selection_and_model_generation_use_fixed_actions(self):
+        selected = self.client.post(
+            f"/api/v1/apps/assistant/data-models/snapshots/{SNAPSHOT_ID}/selection",
+            headers=self._headers(),
+            json={"object_ids": [str(OBJECT_ID)]},
+        )
+        self.assertEqual(200, selected.status_code, selected.text)
+        self.assertEqual(
+            f"snapshots/{SNAPSHOT_ID}/selection",
+            self.data_query.calls[-1][1]["path"],
+        )
+
+        generated = self.client.post(
+            f"/api/v1/apps/assistant/data-models/snapshots/{SNAPSHOT_ID}/semantic-model-draft",
+            headers=self._headers(),
+            json={
+                "display_name": "客户经营分析",
+                "description": "CRM 演示问数模型",
+                "business_context": "客户、商机与沟通记录",
+                "object_ids": [str(OBJECT_ID)],
+                "allow_ai_metadata": False,
+            },
+        )
+        self.assertEqual(202, generated.status_code, generated.text)
+        self.assertEqual(
+            f"snapshots/{SNAPSHOT_ID}/semantic-model-draft",
+            self.data_query.calls[-1][1]["path"],
+        )
+
+    def test_model_definition_rejects_free_sql(self):
+        response = self.client.patch(
+            f"/api/v1/apps/assistant/data-models/{DATA_MODEL_ID}/versions/{VERSION_ID}",
+            headers=self._headers(),
+            json={
+                "definition": {"sql": "select * from crm_customer"},
+                "expected_row_version": 1,
+            },
+        )
+
+        self.assertEqual(422, response.status_code, response.text)
+        self.assertEqual("REQUEST_VALIDATION_FAILED", response.json()["code"])
+
+    def test_model_review_publish_policy_and_agent_binding(self):
+        agents = self.client.get(
+            "/api/v1/apps/assistant/data-models/agents",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, agents.status_code, agents.text)
+        self.assertEqual(str(AGENT_ID), agents.json()[0]["agent_id"])
+
+        review = self.client.post(
+            f"/api/v1/apps/assistant/data-models/{DATA_MODEL_ID}/versions/{VERSION_ID}/submit-review",
+            headers=self._headers(),
+            json={"expected_row_version": 1},
+        )
+        self.assertEqual(204, review.status_code, review.text)
+        self.assertEqual("submit_review", self.data_query.calls[-1][0])
+
+        published = self.client.post(
+            f"/api/v1/apps/assistant/data-models/{DATA_MODEL_ID}/versions/{VERSION_ID}/publish",
+            headers=self._headers(),
+            json={
+                "schema_snapshot_id": str(SNAPSHOT_ID),
+                "expected_row_version": 2,
+            },
+        )
+        self.assertEqual(204, published.status_code, published.text)
+        self.assertEqual("publish", self.data_query.calls[-1][0])
+
+        policy = self.client.post(
+            "/api/v1/apps/assistant/data-models/policy-bindings",
+            headers=self._headers(),
+            json={
+                "semantic_model_ids": [str(DATA_MODEL_ID)],
+                "actor_ids": ["user-41"],
+                "roles": [],
+                "budget": {"max_rows": 500},
+            },
+        )
+        self.assertEqual(201, policy.status_code, policy.text)
+        policy_payload = self.data_query.calls[-1][1]["payload"]
+        self.assertEqual([str(DATA_MODEL_ID)], policy_payload["semantic_model_ids"])
+        self.assertEqual(["user-41"], policy_payload["subject_selector"]["actor_ids"])
+
+        binding = self.client.post(
+            "/api/v1/apps/assistant/data-models/agent-bindings",
+            headers=self._headers(),
+            json={
+                "agent_id": str(AGENT_ID),
+                "semantic_model_id": str(DATA_MODEL_ID),
+                "policy_binding_id": str(POLICY_ID),
+            },
+        )
+        self.assertEqual(201, binding.status_code, binding.text)
+        binding_payload = self.data_query.calls[-1][1]["payload"]
+        self.assertEqual("assistant", binding_payload["consumer_app_id"])
+        self.assertEqual(str(VERSION_ID), binding_payload["agent_version_id"])
+
+    def test_agent_query_binding_requires_draft_agent(self):
+        self.assistant.agent["status"] = "ACTIVE"
+        response = self.client.post(
+            "/api/v1/apps/assistant/data-models/agent-bindings",
+            headers=self._headers(),
+            json={
+                "agent_id": str(AGENT_ID),
+                "semantic_model_id": str(DATA_MODEL_ID),
+                "policy_binding_id": str(POLICY_ID),
+            },
+        )
+
+        self.assertEqual(409, response.status_code, response.text)
+        self.assertEqual("AGENT_DRAFT_REQUIRED", response.json()["code"])
 
 
 if __name__ == "__main__":
