@@ -15,6 +15,7 @@ from aiops_agent.adapters.model_serving import (
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
+from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.turn_answer import (
     DbaAnswerDraft,
     DbaSufficiencyAssessment,
@@ -1151,6 +1152,160 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("HISTORICAL_SAMPLES", fact.measurement_semantics)
         self.assertEqual("host.cpu.utilization", fact.rows[0][0])
         self.assertEqual(15.5, fact.rows[0][3])
+        columns = {
+            column["name"]: index
+            for index, column in enumerate(fact.columns)
+        }
+        self.assertEqual(6.0, fact.rows[0][columns["change"]])
+        self.assertEqual(2, fact.rows[0][columns["sample_count"]])
+        self.assertIsNotNone(
+            fact.rows[0][columns["trend_slope_per_day"]]
+        )
+
+    def test_monitoring_low_coverage_requests_database_fallback(self) -> None:
+        artifact = _monitoring_artifact()
+        artifact["payload"]["observations"][0]["coverage_ratio"] = 0.5
+
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(artifact,),
+                    task_frame_overrides={
+                        "requested_window_seconds": 900,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertIn(
+            "MONITORING_COVERAGE_INSUFFICIENT",
+            {gap.code for gap in result.gaps},
+        )
+        self.assertTrue(any(gap.retryable for gap in result.gaps))
+
+    def test_monitoring_no_data_requests_database_fallback(self) -> None:
+        artifact = _monitoring_artifact()
+        artifact["payload"]["observations"] = []
+        artifact["payload"]["gaps"] = [
+            {
+                "metric_code": "db.storage.used_bytes",
+                "source_id": artifact["payload"]["source_id"],
+                "binding_id": artifact["payload"]["binding_id"],
+                "code": "SOURCE_NO_DATA",
+                "detail": "Prometheus 未返回采样",
+                "retryable": False,
+            }
+        ]
+
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(artifact,),
+                    task_frame_overrides={
+                        "requested_window_seconds": 2_592_000,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.NEEDS_EVIDENCE, result.status)
+        self.assertIn(
+            "MONITORING_EVIDENCE_INSUFFICIENT",
+            {gap.code for gap in result.gaps if gap.retryable},
+        )
+
+    def test_monitoring_short_window_requests_database_fallback(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(_monitoring_artifact(),),
+                    task_frame_overrides={
+                        "requested_window_seconds": 3600,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
+        self.assertIn(
+            "MONITORING_WINDOW_INSUFFICIENT",
+            {gap.code for gap in result.gaps},
+        )
+
+    def test_storage_time_series_exposes_deterministic_capacity_forecast(
+        self,
+    ) -> None:
+        artifact = _monitoring_artifact()
+        observation = artifact["payload"]["observations"][0]
+        start = datetime.now(UTC) - timedelta(days=7)
+        dimensions = {
+            "instance": "oracle-dev-190",
+            "tablespace": "USERS",
+        }
+        points = [
+            {
+                "observed_at": (start + timedelta(days=index)).isoformat(),
+                "value": (10 + index) * 1024**3,
+            }
+            for index in range(8)
+        ]
+        observation.update(
+            {
+                "metric_code": "db.storage.used_bytes",
+                "unit": "bytes",
+                "window_start": start.isoformat(),
+                "series": [
+                    {"dimensions": dimensions, "points": points}
+                ],
+                "expected_points": 8,
+                "actual_points": 8,
+            }
+        )
+        maximum = {
+            **observation,
+            "metric_code": "db.storage.max_bytes",
+            "series": [
+                {
+                    "dimensions": dimensions,
+                    "points": [
+                        {
+                            "observed_at": point["observed_at"],
+                            "value": 100 * 1024**3,
+                        }
+                        for point in points
+                    ],
+                }
+            ],
+        }
+        artifact["payload"]["observations"].append(maximum)
+
+        fact = DbaEvidenceAssessmentHandler._monitoring_fact(
+            artifact_id=artifact["artifact_id"],
+            result=ObservationSet.model_validate(artifact["payload"]),
+        )
+
+        self.assertIsNotNone(fact)
+        columns = {
+            column["name"]: index
+            for index, column in enumerate(fact.columns)
+        }
+        used_row = next(
+            row
+            for row in fact.rows
+            if row[0] == "db.storage.used_bytes"
+        )
+        self.assertEqual(
+            1024**3,
+            used_row[columns["trend_slope_per_day"]],
+        )
+        self.assertEqual(
+            83.0,
+            used_row[columns["estimated_days_to_limit"]],
+        )
 
     def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:
         assessment = DbaSufficiencyAssessment(

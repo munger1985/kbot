@@ -53,7 +53,8 @@ required_metrics=(
   oracledb_activity_user_commits
   oracledb_activity_user_rollbacks
   oracledb_tablespace_used_percent
-  oracledb_tablespace_free_bytes
+  oracledb_tablespace_bytes
+  oracledb_tablespace_free
   oracledb_tablespace_max_bytes
   oracledb_exporter_last_scrape_error
   oracledb_exporter_last_scrape_duration_seconds
@@ -91,8 +92,11 @@ groups:
       - record: kbot_db_storage_utilization_percent
         expr: oracledb_tablespace_used_percent{job="${ORACLE_JOB}"}
 
+      - record: kbot_db_storage_used_bytes
+        expr: oracledb_tablespace_bytes{job="${ORACLE_JOB}"}
+
       - record: kbot_db_storage_free_bytes
-        expr: oracledb_tablespace_free_bytes{job="${ORACLE_JOB}"}
+        expr: oracledb_tablespace_free{job="${ORACLE_JOB}"}
 
       - record: kbot_db_storage_max_bytes
         expr: oracledb_tablespace_max_bytes{job="${ORACLE_JOB}"}
@@ -200,6 +204,7 @@ cat >"${override_candidate}" <<EOF
     "db.transaction.throughput": "rate(kbot_db_transactions_total{instance=\"\${external_target}\"}[5m])",
     "db.response.latency": "kbot_db_response_latency_milliseconds{instance=\"\${external_target}\"}",
     "db.storage.utilization": "kbot_db_storage_utilization_percent{instance=\"\${external_target}\"}",
+    "db.storage.used_bytes": "kbot_db_storage_used_bytes{instance=\"\${external_target}\"}",
     "db.storage.free_bytes": "kbot_db_storage_free_bytes{instance=\"\${external_target}\"}",
     "db.storage.max_bytes": "kbot_db_storage_max_bytes{instance=\"\${external_target}\"}",
     "db.error.rate": "rate(kbot_db_errors_total{instance=\"\${external_target}\"}[5m])",

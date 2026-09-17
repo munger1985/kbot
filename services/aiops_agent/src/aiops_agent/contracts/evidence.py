@@ -70,7 +70,7 @@ class MetricDefinition(BaseModel):
     expected_dimensions: tuple[str, ...] = ()
     supported_db_types: tuple[str, ...] = ("ORACLE", "MYSQL")
     allowed_aggregations: tuple[str, ...] = ("AVG", "MAX", "LAST")
-    default_window_seconds: int = Field(ge=60, le=604800)
+    default_window_seconds: int = Field(ge=60, le=2_592_000)
     min_step_seconds: int = Field(ge=1, le=3600)
     max_points: int = Field(ge=2, le=100000)
     max_series: int = Field(ge=1, le=10000)

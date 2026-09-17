@@ -125,6 +125,14 @@ class DiagnosticProfile(StrEnum):
     SINGLE_SQL_PERFORMANCE = "SINGLE_SQL_PERFORMANCE"
 
 
+class EvidenceSourceStrategy(StrEnum):
+    """同类事实在监控与数据库之间的确定性取证顺序。"""
+
+    MONITORING_FIRST = "MONITORING_FIRST"
+    DATABASE_FIRST = "DATABASE_FIRST"
+    COMBINED = "COMBINED"
+
+
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
     objectives: tuple[TaskObjective, ...] = Field(
@@ -133,6 +141,12 @@ class TaskFrame(AIOpsContract):
     problem_statement: str = Field(min_length=1, max_length=4000)
     database_context: JsonObject = Field(default_factory=dict)
     time_scope: str | None = Field(default=None, max_length=512)
+    requested_window_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=31_536_000,
+        description="用户要求分析的明确时间窗口；未明确时为空。",
+    )
     known_facts: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
@@ -145,6 +159,9 @@ class TaskFrame(AIOpsContract):
         ),
     )
     diagnostic_profile: DiagnosticProfile = DiagnosticProfile.GENERAL
+    evidence_source_strategy: EvidenceSourceStrategy = (
+        EvidenceSourceStrategy.DATABASE_FIRST
+    )
     subject_ref: JsonObject = Field(default_factory=dict)
     requires_change: bool = False
 
@@ -294,12 +311,19 @@ class CompactPlanningOutput(AIOpsContract):
             "其他问题使用GENERAL。"
         )
     )
+    evidence_source_strategy: EvidenceSourceStrategy = (
+        EvidenceSourceStrategy.DATABASE_FIRST
+    )
     subject_ref: JsonObject = Field(
         description=(
             "结构化调查对象；单SQL性能分析必须提供sql_id，其他问题为空对象。"
         )
     )
     problem_statement: str = Field(min_length=1, max_length=2000)
+    time_scope: str | None = Field(default=None, max_length=512)
+    requested_window_seconds: int | None = Field(
+        default=None, ge=60, le=31_536_000
+    )
     success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)
     selected_tool_ids: tuple[str, ...] = Field(default=(), max_length=5)
     selected_playbook_ids: tuple[str, ...] = Field(default=(), max_length=3)

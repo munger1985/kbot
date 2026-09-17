@@ -534,8 +534,11 @@ def _prometheus_rules() -> str:
       - record: kbot_db_storage_utilization_percent
         expr: oracledb_tablespace_used_percent{job="oracle"}
 
+      - record: kbot_db_storage_used_bytes
+        expr: oracledb_tablespace_bytes{job="oracle"}
+
       - record: kbot_db_storage_free_bytes
-        expr: oracledb_tablespace_free_bytes{job="oracle"}
+        expr: oracledb_tablespace_free{job="oracle"}
 
       - record: kbot_db_storage_max_bytes
         expr: oracledb_tablespace_max_bytes{job="oracle"}
@@ -643,6 +646,7 @@ def _prometheus_query_overrides() -> str:
                 "db.transaction.throughput": 'rate(kbot_db_transactions_total{instance="${external_target}"}[5m])',
                 "db.response.latency": 'kbot_db_response_latency_milliseconds{instance="${external_target}"}',
                 "db.storage.utilization": 'kbot_db_storage_utilization_percent{instance="${external_target}"}',
+                "db.storage.used_bytes": 'kbot_db_storage_used_bytes{instance="${external_target}"}',
                 "db.storage.free_bytes": 'kbot_db_storage_free_bytes{instance="${external_target}"}',
                 "db.storage.max_bytes": 'kbot_db_storage_max_bytes{instance="${external_target}"}',
                 "db.error.rate": 'rate(kbot_db_errors_total{instance="${external_target}"}[5m])',

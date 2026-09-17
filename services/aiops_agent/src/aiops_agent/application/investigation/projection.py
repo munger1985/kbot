@@ -113,6 +113,11 @@ def safe_plan_projection(
                 if task_frame.get("time_scope")
                 else None
             ),
+            "requested_window_seconds": (
+                int(task_frame["requested_window_seconds"])
+                if task_frame.get("requested_window_seconds") is not None
+                else None
+            ),
             "known_facts": [
                 str(value) for value in task_frame.get("known_facts") or ()
             ],
@@ -131,6 +136,10 @@ def safe_plan_projection(
             ),
             "diagnostic_profile": str(
                 task_frame.get("diagnostic_profile") or "GENERAL"
+            ),
+            "evidence_source_strategy": str(
+                task_frame.get("evidence_source_strategy")
+                or "DATABASE_FIRST"
             ),
             "subject_ref": dict(task_frame.get("subject_ref") or {}),
             "requires_change": bool(

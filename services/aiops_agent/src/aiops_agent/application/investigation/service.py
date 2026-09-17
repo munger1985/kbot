@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from loguru import logger
@@ -70,6 +70,7 @@ from platform_core.contracts.aiops import (
     ActionIntent,
     CompactPlanningMode,
     DiagnosticProfile,
+    EvidenceSourceStrategy,
     InputMaterial,
     InvestigationAction,
     InvestigationPlan,
@@ -293,7 +294,12 @@ class TurnPlanningService:
             for action in investigation.plan.actions
         )
         monitoring_execution = (
-            await self._prepare_monitoring(context)
+            await self._prepare_monitoring(
+                context,
+                requested_window_seconds=(
+                    investigation.task_frame.requested_window_seconds
+                ),
+            )
             if monitoring_requested
             else {}
         )
@@ -878,6 +884,10 @@ class TurnPlanningService:
                 objectives=(TaskObjective.DIAGNOSE, TaskObjective.ASSESS),
                 problem_statement=compact.problem_statement,
                 database_context=dict(target_context),
+                time_scope=compact.time_scope,
+                requested_window_seconds=(
+                    compact.requested_window_seconds
+                ),
                 known_facts=(
                     f"当前逻辑 Target 为 {display_name}",
                     f"待分析 SQL_ID 为 {sql_id}",
@@ -903,6 +913,9 @@ class TurnPlanningService:
                 action_intent=ActionIntent.NONE,
                 diagnostic_profile=(
                     DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+                ),
+                evidence_source_strategy=(
+                    EvidenceSourceStrategy.DATABASE_FIRST
                 ),
                 subject_ref={"sql_id": sql_id},
             ),
@@ -1019,6 +1032,10 @@ class TurnPlanningService:
                 ),
                 problem_statement=compact.problem_statement,
                 database_context=dict(target_context),
+                time_scope=compact.time_scope,
+                requested_window_seconds=(
+                    compact.requested_window_seconds
+                ),
                 known_facts=(f"当前逻辑 Target 为 {display_name}",),
                 unknowns=(),
                 constraints=(
@@ -1036,6 +1053,9 @@ class TurnPlanningService:
                 success_criteria=compact.success_criteria,
                 action_intent=action_intent,
                 diagnostic_profile=compact.diagnostic_profile,
+                evidence_source_strategy=(
+                    compact.evidence_source_strategy
+                ),
                 subject_ref=dict(compact.subject_ref),
                 requires_change=(action_intent == ActionIntent.EXECUTE),
             ),
@@ -1272,7 +1292,12 @@ class TurnPlanningService:
             for action in investigation.plan.actions
         )
         monitoring_execution = (
-            await self._prepare_monitoring(context)
+            await self._prepare_monitoring(
+                context,
+                requested_window_seconds=(
+                    investigation.task_frame.requested_window_seconds
+                ),
+            )
             if monitoring_requested
             else {}
         )
@@ -1427,6 +1452,11 @@ class TurnPlanningService:
             receipt=planned.receipt,
         )
         try:
+            self._validate_evidence_source_strategy(
+                investigation=planned.output,
+                available_tools=available_tools,
+                revision_no=revision_no,
+            )
             investigation, dynamic_queries, source_queries, attachment_searches = (
                 self._prepare_query_inputs(
                     investigation=planned.output,
@@ -1457,6 +1487,11 @@ class TurnPlanningService:
                     [action.tool_id for action in rewritten.plan.actions],
                 )
                 try:
+                    self._validate_evidence_source_strategy(
+                        investigation=rewritten,
+                        available_tools=available_tools,
+                        revision_no=revision_no,
+                    )
                     investigation, dynamic_queries, source_queries, attachment_searches = (
                         self._prepare_query_inputs(
                             investigation=rewritten,
@@ -1517,6 +1552,11 @@ class TurnPlanningService:
                 receipt=repaired.receipt,
             )
             try:
+                self._validate_evidence_source_strategy(
+                    investigation=repaired.output,
+                    available_tools=available_tools,
+                    revision_no=revision_no,
+                )
                 investigation, dynamic_queries, source_queries, attachment_searches = (
                     self._prepare_query_inputs(
                         investigation=repaired.output,
@@ -1542,6 +1582,52 @@ class TurnPlanningService:
                 ),
             )
 
+    @staticmethod
+    def _validate_evidence_source_strategy(
+        *,
+        investigation: InvestigationPlanningOutput,
+        available_tools: tuple[dict, ...],
+        revision_no: int,
+    ) -> None:
+        """首轮强制执行结构化证据来源策略，补证轮允许切换来源。"""
+        if (
+            revision_no != 1
+            or investigation.task_frame.evidence_source_strategy
+            != EvidenceSourceStrategy.MONITORING_FIRST
+        ):
+            return
+        available_tool_ids = {
+            str(item.get("tool_id") or "") for item in available_tools
+        }
+        if "monitor.query_range" not in available_tool_ids:
+            return
+        executable = tuple(
+            action
+            for action in investigation.plan.actions
+            if not action.deferred
+        )
+        monitoring_actions = tuple(
+            action
+            for action in executable
+            if action.tool_id == "monitor.query_range"
+        )
+        if not monitoring_actions:
+            raise InvestigationPlanValidationError(
+                "证据来源策略为MONITORING_FIRST，首轮必须先执行"
+                "monitor.query_range；数据库查询只能在监控证据不足后的"
+                "重规划轮执行"
+            )
+        database_actions = tuple(
+            action
+            for action in executable
+            if action.tool_id.startswith("db.")
+        )
+        if database_actions:
+            raise InvestigationPlanValidationError(
+                "证据来源策略为MONITORING_FIRST，首轮不能同时执行同类"
+                "数据库取证；如两类证据回答不同必要子问题，应把策略改为COMBINED"
+            )
+
     def _prepare_valid_query_subset(
         self,
         *,
@@ -1553,6 +1639,20 @@ class TurnPlanningService:
         normalized_actions: dict[str, InvestigationAction] = {}
         rejected_reasons: dict[str, str] = {}
         source_actions = tuple(investigation.plan.actions)
+        if (
+            revision_no == 1
+            and investigation.task_frame.evidence_source_strategy
+            == EvidenceSourceStrategy.MONITORING_FIRST
+            and any(
+                action.tool_id == "monitor.query_range"
+                for action in source_actions
+            )
+        ):
+            source_actions = tuple(
+                action
+                for action in source_actions
+                if action.tool_id == "monitor.query_range"
+            )
 
         for action in source_actions:
             isolated_action = action.model_copy(update={"depends_on": ()})
@@ -2711,6 +2811,8 @@ class TurnPlanningService:
     async def _prepare_monitoring(
         self,
         context: TurnPlanningContext,
+        *,
+        requested_window_seconds: int | None = None,
     ) -> dict:
         if self._monitoring_snapshot_builder is None:
             return {}
@@ -2721,12 +2823,26 @@ class TurnPlanningService:
             )
             if target is None:
                 raise resource_not_found("Turn Target")
+            now = await uow.runs.database_now()
+            monitor_window_seconds = (
+                min(int(requested_window_seconds), 2_592_000)
+                if requested_window_seconds is not None
+                else None
+            )
             snapshot = await self._monitoring_snapshot_builder.build(
                 uow=uow,
                 domain_id=context.domain_id,
                 target=target,
-                now=await uow.runs.database_now(),
+                now=now,
                 allowed_source_ids=context.source_ids,
+                window_start=(
+                    now - timedelta(seconds=monitor_window_seconds)
+                    if monitor_window_seconds is not None
+                    else None
+                ),
+                window_end=(
+                    now if monitor_window_seconds is not None else None
+                ),
             )
             if not any(
                 CAPABILITY_METRIC_QUERY_RANGE

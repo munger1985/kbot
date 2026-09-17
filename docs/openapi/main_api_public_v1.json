@@ -12282,6 +12282,12 @@
             "title": "Diagnostic Profile",
             "type": "string"
           },
+          "evidence_source_strategy": {
+            "default": "DATABASE_FIRST",
+            "pattern": "^(MONITORING_FIRST|DATABASE_FIRST|COMBINED)$",
+            "title": "Evidence Source Strategy",
+            "type": "string"
+          },
           "known_facts": {
             "default": [],
             "items": {
@@ -12303,6 +12309,19 @@
             "maxLength": 4000,
             "title": "Problem Statement",
             "type": "string"
+          },
+          "requested_window_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Window Seconds"
           },
           "requires_change": {
             "default": false,

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 
 from aiops_agent.contracts.diagnosis import EvidenceFact, EvidenceIndex
+from aiops_agent.domain.evidence import summarize_numeric_trend
 
 
 def _canonical(value: Any) -> bytes:
@@ -232,6 +234,66 @@ def normalize_evidence_artifacts(
                             summary=(
                                 f"指标 {metric['metric_code']} 的 {name}="
                                 f"{value} {metric.get('unit', '')}".strip()
+                            ),
+                        )
+                    )
+                for series_index, series in enumerate(
+                    metric.get("series", [])
+                ):
+                    samples = []
+                    for point in series.get("points", []):
+                        value = point.get("value")
+                        if (
+                            point.get("quality") != "GOOD"
+                            or not isinstance(value, (int, float))
+                            or isinstance(value, bool)
+                        ):
+                            continue
+                        try:
+                            observed_at = datetime.fromisoformat(
+                                str(point.get("observed_at", "")).replace(
+                                    "Z", "+00:00"
+                                )
+                            )
+                        except ValueError:
+                            continue
+                        samples.append((observed_at, float(value)))
+                    trend = summarize_numeric_trend(tuple(samples))
+                    if trend is None:
+                        continue
+                    dimensions = {
+                        **{
+                            str(key): str(value)
+                            for key, value in series.get(
+                                "dimensions", {}
+                            ).items()
+                        },
+                        "source_id": str(metric["source_id"]),
+                        "binding_id": str(metric["binding_id"]),
+                    }
+                    facts.append(
+                        _fact(
+                            artifact_id=artifact_id,
+                            pointer=(
+                                f"/observations/{metric_index}/series/"
+                                f"{series_index}/points"
+                            ),
+                            source_type="METRIC_OBSERVATION",
+                            source_group_id=source_group,
+                            target_id=target_id,
+                            fact_type=(
+                                f"{metric['metric_code']}.series.trend"
+                            ),
+                            value=trend,
+                            unit=metric.get("unit"),
+                            dimensions=dimensions,
+                            window_start=metric.get("window_start"),
+                            window_end=metric.get("window_end"),
+                            quality_flags=tuple(sorted(set(flags))),
+                            summary=(
+                                f"指标 {metric['metric_code']} 的时间序列"
+                                f"变化量为 {trend['change']}，"
+                                f"日变化速度为 {trend['change_per_day']}"
                             ),
                         )
                     )

@@ -245,6 +245,9 @@ class TurnTaskFrameView(AIOpsContract):
     objectives: tuple[str, ...] = ()
     problem_statement: str = Field(default="", max_length=4000)
     time_scope: str | None = Field(default=None, max_length=512)
+    requested_window_seconds: int | None = Field(
+        default=None, ge=60, le=31_536_000
+    )
     known_facts: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
@@ -255,6 +258,10 @@ class TurnTaskFrameView(AIOpsContract):
     diagnostic_profile: str = Field(
         default="GENERAL",
         pattern=r"^(GENERAL|SINGLE_SQL_PERFORMANCE)$",
+    )
+    evidence_source_strategy: str = Field(
+        default="DATABASE_FIRST",
+        pattern=r"^(MONITORING_FIRST|DATABASE_FIRST|COMBINED)$",
     )
     subject_ref: dict = Field(default_factory=dict)
     requires_change: bool = False

@@ -32,6 +32,7 @@ from aiops_agent.contracts.turn_answer import (
     TurnEvidenceFact,
     TurnEvidenceGap,
 )
+from aiops_agent.domain.evidence import summarize_numeric_trend
 from platform_core.contracts.aiops import (
     AnswerBlockType,
     InvestigationAssessment,
@@ -321,6 +322,93 @@ class DbaEvidenceAssessmentHandler:
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         task_frame = dict(answer_context.get("task_frame", {}))
+        monitoring_facts = tuple(
+            fact for fact in facts if fact.source_id == "monitoring.overview"
+        )
+        low_coverage = False
+        observed_window_seconds = 0.0
+        for fact in monitoring_facts:
+            column_indexes = {
+                str(column.get("name")): index
+                for index, column in enumerate(fact.columns)
+            }
+            coverage_index = column_indexes.get("coverage_ratio")
+            start_index = column_indexes.get("window_start")
+            end_index = column_indexes.get("window_end")
+            for row in fact.rows:
+                if coverage_index is not None and isinstance(
+                    row[coverage_index], (int, float)
+                ):
+                    low_coverage = low_coverage or float(
+                        row[coverage_index]
+                    ) < 0.8
+                if start_index is None or end_index is None:
+                    continue
+                try:
+                    start = datetime.fromisoformat(
+                        str(row[start_index]).replace("Z", "+00:00")
+                    )
+                    end = datetime.fromisoformat(
+                        str(row[end_index]).replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    continue
+                observed_window_seconds = max(
+                    observed_window_seconds,
+                    (end - start).total_seconds(),
+                )
+        if low_coverage:
+            monitoring_gap_found = True
+            gaps.append(
+                TurnEvidenceGap(
+                    source_id="monitoring.overview",
+                    step_id="coverage",
+                    code="MONITORING_COVERAGE_INSUFFICIENT",
+                    detail="监控时间序列有效采样覆盖率低于0.8",
+                    retryable=True,
+                )
+            )
+            reasons.append("监控时间序列采样覆盖不足")
+        requested_window_seconds = task_frame.get(
+            "requested_window_seconds"
+        )
+        if (
+            monitoring_facts
+            and isinstance(requested_window_seconds, int)
+            and observed_window_seconds
+            < float(requested_window_seconds) * 0.95
+        ):
+            monitoring_gap_found = True
+            gaps.append(
+                TurnEvidenceGap(
+                    source_id="monitoring.overview",
+                    step_id="window",
+                    code="MONITORING_WINDOW_INSUFFICIENT",
+                    detail=(
+                        "监控时间序列未覆盖用户要求的完整时间窗口"
+                    ),
+                    retryable=True,
+                )
+            )
+            reasons.append("监控时间序列窗口短于用户要求")
+        if (
+            task_frame.get("evidence_source_strategy")
+            == "MONITORING_FIRST"
+            and monitoring_gap_found
+            and not any(
+                gap.source_id == "monitoring.overview" and gap.retryable
+                for gap in gaps
+            )
+        ):
+            gaps.append(
+                TurnEvidenceGap(
+                    source_id="monitoring.overview",
+                    step_id="database-fallback",
+                    code="MONITORING_EVIDENCE_INSUFFICIENT",
+                    detail="监控证据不足，允许下一轮改用数据库只读工具补证",
+                    retryable=True,
+                )
+            )
         inspection = dict(
             dict(context.plan_snapshot.get("client_metadata", {})).get(
                 "inspection", {}
@@ -484,6 +572,23 @@ class DbaEvidenceAssessmentHandler:
             assessed_status = SufficiencyStatus.PARTIAL
         if profile_core_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
             assessed_status = SufficiencyStatus.PARTIAL
+        monitoring_fallback_required = (
+            task_frame.get("evidence_source_strategy")
+            == "MONITORING_FIRST"
+            and any(
+                gap.source_id == "monitoring.overview" and gap.retryable
+                for gap in gaps
+            )
+        )
+        if (
+            monitoring_fallback_required
+            and assessed_status == SufficiencyStatus.ANSWERABLE
+        ):
+            assessed_status = (
+                SufficiencyStatus.PARTIAL
+                if facts
+                else SufficiencyStatus.NEEDS_EVIDENCE
+            )
         can_auto_collect_more = (
             assessed_status
             in {SufficiencyStatus.PARTIAL, SufficiencyStatus.NEEDS_EVIDENCE}
@@ -557,6 +662,28 @@ class DbaEvidenceAssessmentHandler:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         rows: list[tuple[Any, ...]] = []
         warnings: list[str] = []
+        latest_by_metric_and_dimensions: dict[
+            tuple[str, tuple[tuple[str, str], ...]], float
+        ] = {}
+        for observation in result.observations:
+            for series in observation.series:
+                latest = next(
+                    (
+                        point.value
+                        for point in reversed(series.points)
+                        if point.quality == "GOOD"
+                        and isinstance(point.value, (int, float))
+                        and not isinstance(point.value, bool)
+                    ),
+                    None,
+                )
+                if latest is not None:
+                    latest_by_metric_and_dimensions[
+                        (
+                            observation.metric_code,
+                            tuple(sorted(series.dimensions.items())),
+                        )
+                    ] = float(latest)
         for observation in result.observations:
             warnings.extend(observation.warnings)
             for series in observation.series:
@@ -573,6 +700,34 @@ class DbaEvidenceAssessmentHandler:
                     if isinstance(point.value, (int, float))
                     and not isinstance(point.value, bool)
                 ]
+                trend = summarize_numeric_trend(
+                    tuple(
+                        (point.observed_at, float(point.value))
+                        for point in points
+                        if isinstance(point.value, (int, float))
+                        and not isinstance(point.value, bool)
+                    )
+                )
+                estimated_days_to_limit = None
+                if (
+                    observation.metric_code == "db.storage.used_bytes"
+                    and trend is not None
+                    and int(trend["representative_sample_count"]) >= 7
+                    and observation.coverage_ratio >= 0.8
+                    and float(trend["trend_slope_per_day"]) > 0
+                    and float(trend["positive_change_ratio"]) >= 0.6
+                ):
+                    maximum = latest_by_metric_and_dimensions.get(
+                        (
+                            "db.storage.max_bytes",
+                            tuple(sorted(series.dimensions.items())),
+                        )
+                    )
+                    latest_used = float(trend["latest"])
+                    if maximum is not None and maximum > latest_used:
+                        estimated_days_to_limit = (
+                            maximum - latest_used
+                        ) / float(trend["trend_slope_per_day"])
                 dimensions = ", ".join(
                     f"{key}={value}"
                     for key, value in sorted(series.dimensions.items())
@@ -594,6 +749,50 @@ class DbaEvidenceAssessmentHandler:
                         observation.window_start.isoformat(),
                         observation.window_end.isoformat(),
                         round(observation.coverage_ratio, 4),
+                        (
+                            round(float(trend["first"]), 4)
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            round(float(trend["minimum"]), 4)
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            round(float(trend["change"]), 4)
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            round(float(trend["change_per_day"]), 4)
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            round(
+                                float(trend["trend_slope_per_day"]), 4
+                            )
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            round(
+                                float(trend["positive_change_ratio"]), 4
+                            )
+                            if trend is not None
+                            else None
+                        ),
+                        (
+                            int(trend["sample_count"])
+                            if trend is not None
+                            else len(numeric_values)
+                        ),
+                        (
+                            round(estimated_days_to_limit, 2)
+                            if estimated_days_to_limit is not None
+                            else None
+                        ),
                     )
                 )
         if not rows:
@@ -608,6 +807,23 @@ class DbaEvidenceAssessmentHandler:
             {"name": "window_start", "logical_type": "DATETIME"},
             {"name": "window_end", "logical_type": "DATETIME"},
             {"name": "coverage_ratio", "logical_type": "DECIMAL"},
+            {"name": "first", "logical_type": "DECIMAL"},
+            {"name": "minimum", "logical_type": "DECIMAL"},
+            {"name": "change", "logical_type": "DECIMAL"},
+            {"name": "change_per_day", "logical_type": "DECIMAL"},
+            {
+                "name": "trend_slope_per_day",
+                "logical_type": "DECIMAL",
+            },
+            {
+                "name": "positive_change_ratio",
+                "logical_type": "DECIMAL",
+            },
+            {"name": "sample_count", "logical_type": "INTEGER"},
+            {
+                "name": "estimated_days_to_limit",
+                "logical_type": "DECIMAL",
+            },
         )
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",

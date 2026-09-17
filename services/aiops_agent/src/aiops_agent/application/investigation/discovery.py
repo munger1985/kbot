@@ -40,11 +40,13 @@ def available_tools(
             "description": (
                 "执行受控 PromQL 时间序列查询；每个向量选择器必须用"
                 " instance=\"${external_target}\" 或"
-                " target_key=\"${host_target}\" 精确绑定当前 Target"
+                " target_key=\"${host_target}\" 精确绑定当前 Target；"
+                "指标现状、时间窗口、趋势、变化速度和持续性调查应优先使用"
+                "本工具，只有监控采样不足时才改查数据库"
             ),
             "input": {
                 "query": "带 Target 占位符的 PromQL",
-                "window_seconds": "60 到 3600 秒",
+                "window_seconds": "60 到 2592000 秒",
             },
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
@@ -100,7 +102,9 @@ def available_tools(
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
                 "诊断账号已授予 CREATE SESSION 和 SELECT ANY DICTIONARY，"
                 "可以查询 V$/GV$、DBA_/CDB_/ALL_ 以及 AWR/ASH 系统视图；"
-                "仅在固定目录工具不能回答问题时使用，优先显式投影并使用 bind 参数；"
+                "仅在固定目录工具不能回答问题时使用；对于监控指标、历史趋势"
+                "和时间窗口统计，仅在监控证据缺失或不足时使用；"
+                "优先显式投影并使用 bind 参数；"
                 "查询结果按诊断账号实际可见内容原样返回，不做业务字段脱敏；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数；"
                 "包函数只能使用 policy.allowed_packages 中列出的 DBMS_XPLAN"

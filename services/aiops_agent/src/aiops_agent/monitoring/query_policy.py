@@ -35,7 +35,10 @@ class PromQueryPolicySnapshot(BaseModel):
     max_query_chars: int = Field(default=2000, ge=1, le=20_000)
     max_vector_selectors: int = Field(default=12, ge=1, le=64)
     max_range_seconds: int = Field(default=3600, ge=60, le=86_400)
-    max_window_seconds: int = Field(default=3600, ge=60, le=86_400)
+    default_window_seconds: int = Field(default=3600, ge=60, le=2_592_000)
+    max_window_seconds: int = Field(
+        default=2_592_000, ge=60, le=2_592_000
+    )
     min_step_seconds: int = Field(default=30, ge=1, le=3600)
     max_points: int = Field(default=240, ge=2, le=5000)
     max_series: int = Field(default=100, ge=1, le=1000)
@@ -131,7 +134,7 @@ class PromQueryPolicy:
             raise MonitoringQueryRejected(
                 "PROMQL_RANGE_EXCEEDED", "PromQL Range Selector 超过策略"
             )
-        window = window_seconds or self.snapshot.max_window_seconds
+        window = window_seconds or self.snapshot.default_window_seconds
         if not 60 <= window <= self.snapshot.max_window_seconds:
             raise MonitoringQueryRejected(
                 "PROMQL_WINDOW_INVALID", "PromQL 查询时间窗超过策略"

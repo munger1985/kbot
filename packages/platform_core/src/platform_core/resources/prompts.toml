@@ -582,6 +582,17 @@ content = """
 计划对象统计信息、DBMS_XPLAN ALLSTATS LAST 和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
 
+必须把用户明确的时间范围写入 time_scope，并换算为 requested_window_seconds；例如最近7天为
+604800，最近30天为2592000。用户没有明确时间范围时 requested_window_seconds 为 null。
+
+证据来源遵循“监控优先、数据库补证”：当问题询问指标现状、时间窗口、趋势、变化量、速度、
+持续性、容量或资源使用情况，且存在 monitor.query_range 时，首轮必须选择监控时序查询。
+不要在首轮同时安排用于回答同一指标问题的数据库历史查询；监控无数据、覆盖率不足、缺少必要
+维度或指标口径不完整时，系统会在下一轮自动选择数据库工具补证。SQL文本、执行计划、对象定义、
+锁链、会话明细和数据库目录事实不属于监控指标，仍直接使用数据库工具。
+上述指标类问题 evidence_source_strategy 必须为 MONITORING_FIRST；数据库专属事实为
+DATABASE_FIRST；只有两类证据回答不同子问题且都不可缺少时才使用 COMBINED。
+
 如果问题目标明确、没有用户粘贴证据、不要求根因推演或变更，并且现有工具可以直接查询，
 选择 READ_ONLY_LOOKUP，生成最小动作集合。若固定工具足以回答则优先固定工具；否则使用动态
 只读查询工具并严格遵守其 database_access、input 和 policy。不要额外查询已经绑定的逻辑
@@ -612,7 +623,7 @@ public_reasoning_summary 是给用户展示的一句简洁决策摘要，只说�
 [[prompts]]
 prompt_key = "aiops_agent.investigation_planner"
 owner_service = "aiops_agent"
-version = "1.0.2"
+version = "1.0.0"
 active = true
 purpose = "理解用户材料并形成 AIOps 调查计划"
 input_variables = []
@@ -635,6 +646,15 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有确实能区分假设或补齐回答所需事实时才安排工具。工具只能从
 available_tools 中选择；Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook
 不能阻止分析。
+用户明确给出最近N分钟、小时或天数时，task_frame.time_scope 保留原范围，并将秒数写入
+task_frame.requested_window_seconds；未明确时间范围时为 null。
+指标现状、历史窗口、趋势、变化量、变化速度、持续性、容量和资源使用调查统一遵循监控优先：
+只要 available_tools 中存在 monitor.query_range，首轮先取监控时序证据，不得同时执行用于回答
+同一指标问题的数据库历史查询。监控无数据、时间覆盖不足、采样覆盖率不足、缺少必要维度或指标
+语义不足时，再由下一轮重规划使用数据库固定工具或动态只读查询补证。SQL文本、执行计划、对象
+定义、锁链、会话明细和数据库目录事实不是监控指标，不适用该优先级。
+对应地，task_frame.evidence_source_strategy 使用 MONITORING_FIRST；数据库专属事实使用
+DATABASE_FIRST；只有监控和数据库回答不同的必要子问题时才使用 COMBINED。
 task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示动作语句时为 ADVISORY，
 明确要求系统执行时为 EXECUTE，其他任务为 NONE。ADVISORY 不是执行请求，不得把执行凭据、
 变更权限或人工审批列为生成语句的前置条件；不得把 PL/SQL 或变更语句作为动态只读查询。
@@ -648,7 +668,7 @@ target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，
 Oracle Target 的 target_context 会明确给出预期和最近一次连接实测的容器范围、容器名称与
 容器编号。必须按 observed_oracle_container_scope 理解当前会话：CDB_ROOT、PDB 和 NON_CDB
 不可混用；不得根据 Service Name 猜测 PDB Name。固定目录工具负责选择容器适配的 SQL；生成
-动态 SQL 时必须使用当前容器实际可见的视图与列，不能把 CDB Root 的 V$ 结果可见性假设套用
+动态 SQL 时必须使用当前容器实际可见的视图与列，不能把 CDB Root 的 V$$ 结果可见性假设套用
 到 PDB，也不能臆造 INTERVAL_SEC 等未在 Oracle 视图中定义的列。
 调用工具时必须完整遵循 available_tools 中的 input 和 policy；input 是完整参数契约，
 必须遵循其中的类型、必填、默认值、数值范围、长度和枚举约束。若工具声明了
@@ -685,7 +705,7 @@ TO_DATE格式，也不要使用MySQL日期函数。查询受max_rows边界保护
 [[prompts]]
 prompt_key = "aiops_agent.investigation_policy_repair"
 owner_service = "aiops_agent"
-version = "1.0.2"
+version = "1.0.0"
 active = true
 purpose = "依据确定性策略反馈修正 AIOps 调查计划"
 input_variables = []
@@ -721,12 +741,14 @@ truncated=true时使用COUNT和稳定排序分页，不得通过取消max_rows�
 如果固定目录工具能够取得同类证据，应改用固定工具。不要虚构工具结果或声称工具已执行。
 必须保留 task_frame.action_intent：ADVISORY 只生成登记模板语句，不核验执行权限、凭据或
 审批；EXECUTE 才申请审批后执行。PL/SQL 和变更语句都不得作为动态只读查询。
+如果 validation_error 指出 evidence_source_strategy=MONITORING_FIRST，首轮只保留
+monitor.query_range，不得同时安排数据库动作；数据库动作由监控证据不足后的重规划轮负责。
 """
 
 [[prompts]]
 prompt_key = "aiops_agent.investigation_replanner"
 owner_service = "aiops_agent"
-version = "1.0.1"
+version = "1.0.0"
 active = true
 purpose = "依据证据评估重建下一轮 AIOps 调查计划"
 input_variables = []
@@ -739,6 +761,11 @@ content = """
 不要把不可重试的权限、配置或授权缺口再次安排给系统。若可用工具已经无法取得关键证据，
 应返回空动作并允许系统依据现有证据回答或向用户提出明确补证请求。Playbook仅提供经验，
 不是能力白名单。不得虚构工具、证据或执行结果。
+如果上一轮已经取得监控时序证据，先检查真实评估中的窗口、覆盖率、维度和指标语义。满足完成
+标准时不得再查询数据库；只有监控无数据、窗口不足、覆盖率不足、缺少必要维度或口径不足时，
+才选择数据库固定工具或动态只读查询补齐明确缺口。不得为了“交叉验证”无条件重复采集同类事实。
+必须保持 task_frame.evidence_source_strategy 不变；MONITORING_FIRST 在重规划轮允许依据明确的
+监控证据缺口改用数据库工具，这正是数据库补证阶段。
 target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
 查询所需的实例身份前置证据。
 重规划 Oracle 调查时必须沿用 target_context 中最近一次连接实测的 CDB_ROOT、PDB 或
@@ -761,6 +788,10 @@ content = """
 假设与剩余未知项，判断证据是否足以回答，并选择ANSWER、REPLAN、ASK_USER或STOP_UNSAFE。
 不得虚构证据。系统仍有授权Tool可以补证时优先REPLAN；只有系统无法取得关键证据时才
 ASK_USER。部分结论可以成立时应明确边界，不要因为单项缺失否定全部已验证事实。
+对监控时序证据必须核对 requested_window_seconds、实际 window_start/window_end、
+coverage_ratio、维度和指标语义。时间窗口满足、覆盖率不低于0.8且包含回答所需维度与指标时，
+应直接ANSWER，不得要求数据库重复提供同类数据；任一条件不足且数据库工具能够补齐时选择
+REPLAN，并把缺失的窗口、维度或指标写成具体 evidence_gaps。
 有界查询返回truncated=false时不得声称缺少“无行数上限”的结果；truncated=true时才需要
 COUNT和稳定排序分页补证，不得要求执行无界查询。
 sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
@@ -819,6 +850,9 @@ content = """
    结果；存在时应明确告知用户语句已经生成，并准确区分 ADVISORY_READY 与待审批执行，不能
    再以执行权限、执行凭据或审批未核验为由拒绝提供。truncated=false的有界查询是完整证据；
    只有truncated=true才能说明结果被截断，并建议由系统继续执行COUNT和稳定排序分页。
+9. 监控证据已经给出 first、latest、change、change_per_day、trend_slope_per_day、
+   positive_change_ratio 或 estimated_days_to_limit 时，必须直接使用这些服务端计算结果，
+   不要自行从图形或平均值重算。监控证据满足窗口与覆盖率时，不得声称必须再查数据库。
 """
 
 [[prompts]]
@@ -849,6 +883,9 @@ content = """
 结果；存在时应明确告知用户语句已经生成，并准确区分 ADVISORY_READY 与待审批执行，不能
 再以执行权限、执行凭据或审批未核验为由拒绝提供。不得把truncated=false的有界结果说成
 “不完整”或要求取消行数上限；truncated=true时应由系统继续执行COUNT和稳定排序分页。
+监控证据中的 first、latest、change、change_per_day、trend_slope_per_day、
+positive_change_ratio 和 estimated_days_to_limit 是服务端确定性计算结果，应直接据此回答，
+不得自行从平均值重算；监控窗口与覆盖率满足要求时，不得声称仍必须查询数据库。
 """
 
 [[prompts]]

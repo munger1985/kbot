@@ -240,6 +240,29 @@
       }
     },
     {
+      "metric_code": "db.storage.used_bytes",
+      "semantic_version": "1.0.0",
+      "name": "存储已使用容量",
+      "description": "数据库表空间当前已使用字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["instance", "job", "database", "tablespace", "type"],
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 300,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.db.storage.used",
+          "template_version": "1",
+          "query_template": "kbot_db_storage_used_bytes{instance=\"${external_target}\"}",
+          "required_labels": ["instance"]
+        }
+      }
+    },
+    {
       "metric_code": "db.storage.free_bytes",
       "semantic_version": "1.0.0",
       "name": "存储可用容量",

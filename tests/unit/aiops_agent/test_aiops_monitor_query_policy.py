@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from aiops_agent.application.investigation import prepare_source_queries
+from aiops_agent.application.investigation import (
+    TurnPlanningService,
+    prepare_source_queries,
+)
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
 )
@@ -34,6 +37,19 @@ class PromQueryPolicyTest(unittest.TestCase):
         self.assertIn("${host_target}", result.normalized_query)
         self.assertEqual(1800, result.window_seconds)
         self.assertEqual(64, len(result.query_sha256))
+
+    def test_query_window_supports_thirty_days_without_changing_default(self) -> None:
+        default_result = self.policy.validate(
+            'up{instance="${external_target}"}'
+        )
+        long_result = self.policy.validate(
+            'kbot_db_storage_used_bytes{instance="${external_target}"}',
+            window_seconds=2_592_000,
+        )
+
+        self.assertEqual(3600, default_result.window_seconds)
+        self.assertEqual(2_592_000, long_result.window_seconds)
+        self.assertGreaterEqual(long_result.step_seconds, 10_800)
 
     def test_every_vector_selector_requires_exact_target_scope(self) -> None:
         for query in (
@@ -155,6 +171,80 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
         with self.assertRaises(InvestigationPlanValidationError):
             prepare_source_queries(
                 self._investigation("monitor.query_range", "up")
+            )
+
+    def test_monitoring_first_strategy_rejects_database_in_initial_round(
+        self,
+    ) -> None:
+        database_only = self._investigation(
+            "db.oracle.readonly_query",
+            "SELECT 1 AS value FROM dual",
+        )
+        database_only = database_only.model_copy(
+            update={
+                "task_frame": database_only.task_frame.model_copy(
+                    update={
+                        "evidence_source_strategy": "MONITORING_FIRST"
+                    }
+                )
+            }
+        )
+        available_tools = (
+            {"tool_id": "monitor.query_range"},
+            {"tool_id": "db.oracle.readonly_query"},
+        )
+
+        with self.assertRaises(InvestigationPlanValidationError):
+            TurnPlanningService._validate_evidence_source_strategy(
+                investigation=database_only,
+                available_tools=available_tools,
+                revision_no=1,
+            )
+
+        TurnPlanningService._validate_evidence_source_strategy(
+            investigation=database_only,
+            available_tools=available_tools,
+            revision_no=2,
+        )
+
+        monitoring_only = self._investigation(
+            "monitor.query_range",
+            'up{instance="${external_target}"}',
+        )
+        monitoring_only = monitoring_only.model_copy(
+            update={
+                "task_frame": monitoring_only.task_frame.model_copy(
+                    update={
+                        "evidence_source_strategy": "MONITORING_FIRST"
+                    }
+                )
+            }
+        )
+        TurnPlanningService._validate_evidence_source_strategy(
+            investigation=monitoring_only,
+            available_tools=available_tools,
+            revision_no=1,
+        )
+
+        mixed = monitoring_only.model_copy(
+            update={
+                "plan": monitoring_only.plan.model_copy(
+                    update={
+                        "actions": (
+                            *monitoring_only.plan.actions,
+                            database_only.plan.actions[0].model_copy(
+                                update={"action_id": "a2"}
+                            ),
+                        )
+                    }
+                )
+            }
+        )
+        with self.assertRaises(InvestigationPlanValidationError):
+            TurnPlanningService._validate_evidence_source_strategy(
+                investigation=mixed,
+                available_tools=available_tools,
+                revision_no=1,
             )
 
 
