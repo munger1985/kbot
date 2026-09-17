@@ -259,6 +259,8 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "composer_llm",
             "memory_llm",
             "memory_embedding",
+            "agent_bindings",
+            "configure-query",
         ):
             self.assertIn(fragment, source)
         self.assertIn("globalThis.confirm", source)

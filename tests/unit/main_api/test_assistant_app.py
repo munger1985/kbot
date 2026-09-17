@@ -212,6 +212,18 @@ class _DataQueryClient:
                 }],
                 "next_cursor": None,
             }
+        if kwargs["resource"] == "agent-bindings":
+            return {
+                "items": [{
+                    "agent_binding_id": str(POLICY_ID),
+                    "consumer_app_id": "assistant",
+                    "agent_id": str(AGENT_ID),
+                    "agent_version_id": str(VERSION_ID),
+                    "semantic_model_id": str(DATA_MODEL_ID),
+                    "status": "ACTIVE",
+                }],
+                "next_cursor": None,
+            }
         return {"items": [], "next_cursor": None}
 
     async def management_get(self, **kwargs):
@@ -456,6 +468,15 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(str(DATA_MODEL_ID), body["data_models"][0]["semantic_model_id"])
         self.assertTrue(body["data_models"][0]["policy_ready"])
         self.assertTrue(body["data_models"][0]["selectable"])
+        self.assertEqual(
+            {
+                "agent_id": str(AGENT_ID),
+                "agent_version_id": str(VERSION_ID),
+                "semantic_model_id": str(DATA_MODEL_ID),
+                "status": "ACTIVE",
+            },
+            body["agent_bindings"][0],
+        )
         self.assertEqual(
             {str(EMBEDDING_ID), str(VISUAL_ID), str(LLM_ID)},
             {row["model_id"] for row in body["models"]},

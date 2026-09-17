@@ -1548,6 +1548,14 @@ async def list_agent_management_options(request: Request):
             auth_context=auth_context,
         )
     )
+    agent_bindings = _collection_items(
+        await _data_query(request).management_list(
+            resource="agent-bindings",
+            cursor=None,
+            limit=200,
+            auth_context=auth_context,
+        )
+    )
     policy_model_ids = {
         str(model_id)
         for policy in policies
@@ -1580,6 +1588,16 @@ async def list_agent_management_options(request: Request):
                 ),
             }
             for item in semantic_models
+        ],
+        "agent_bindings": [
+            {
+                "agent_id": item.get("agent_id"),
+                "agent_version_id": item.get("agent_version_id"),
+                "semantic_model_id": item.get("semantic_model_id"),
+                "status": item.get("status"),
+            }
+            for item in agent_bindings
+            if item.get("consumer_app_id") == "assistant"
         ],
         "models": await load_model_catalog(request),
     }
