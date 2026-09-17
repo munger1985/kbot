@@ -58,6 +58,7 @@ from aiops_agent.entities import (
     OpsTurnEventEntity,
     OpsTurnEvidenceEntity,
 )
+from aiops_agent.monitoring import PromQueryPolicySnapshot
 from aiops_agent.ports.model import StructuredModelResult
 from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 from aiops_agent.playbooks import PlaybookRegistry, canonical_hash
@@ -82,6 +83,15 @@ from platform_core.contracts.aiops import (
     TurnInputEnvelope,
 )
 from platform_core.identity import uuid7
+
+
+DEFAULT_MONITORING_LOOKBACK_SECONDS = (
+    PromQueryPolicySnapshot().max_window_seconds
+)
+DEFAULT_MONITORING_LOOKBACK_LABEL = (
+    f"最近{DEFAULT_MONITORING_LOOKBACK_SECONDS // 86_400}天"
+    "（Prometheus最大保留范围）"
+)
 
 
 @dataclass(frozen=True)
@@ -1445,7 +1455,9 @@ class TurnPlanningService:
         """先按发现目录确定性补全计划，再对仍越界的 Tool 输入做一次受控修正。"""
         planned = StructuredModelResult(
             output=self._bind_target_to_plan(
-                investigation=reset_model_deferred_flags(planned.output),
+                investigation=self._apply_default_monitoring_window(
+                    reset_model_deferred_flags(planned.output)
+                ),
                 target_context=context.target_context,
                 available_tools=available_tools,
             ),
@@ -1561,7 +1573,9 @@ class TurnPlanningService:
             )
             repaired = StructuredModelResult(
                 output=self._bind_target_to_plan(
-                    investigation=repaired.output,
+                    investigation=self._apply_default_monitoring_window(
+                        repaired.output
+                    ),
                     target_context=context.target_context,
                     available_tools=available_tools,
                 ),
@@ -1597,6 +1611,57 @@ class TurnPlanningService:
                     else source_queries
                 ),
             )
+
+    @staticmethod
+    def _apply_default_monitoring_window(
+        investigation: InvestigationPlanningOutput,
+    ) -> InvestigationPlanningOutput:
+        """监控趋势未指定时间时使用Prometheus可查询的最大保留窗口。"""
+        task_frame = investigation.task_frame
+        if (
+            task_frame.evidence_source_strategy
+            != EvidenceSourceStrategy.MONITORING_FIRST
+        ):
+            return investigation
+        requested_window_seconds = (
+            task_frame.requested_window_seconds
+            or DEFAULT_MONITORING_LOOKBACK_SECONDS
+        )
+        normalized_task_frame = task_frame.model_copy(
+            update={
+                "time_scope": (
+                    task_frame.time_scope
+                    or DEFAULT_MONITORING_LOOKBACK_LABEL
+                ),
+                "requested_window_seconds": requested_window_seconds,
+            }
+        )
+        effective_monitoring_window = min(
+            requested_window_seconds,
+            DEFAULT_MONITORING_LOOKBACK_SECONDS,
+        )
+        normalized_actions = tuple(
+            action.model_copy(
+                update={
+                    "input": {
+                        **dict(action.input),
+                        "window_seconds": effective_monitoring_window,
+                    }
+                }
+            )
+            if action.tool_id == "monitor.query_range"
+            else action
+            for action in investigation.plan.actions
+        )
+        normalized_plan = investigation.plan.model_copy(
+            update={"actions": normalized_actions}
+        )
+        return investigation.model_copy(
+            update={
+                "task_frame": normalized_task_frame,
+                "plan": normalized_plan,
+            }
+        )
 
     @staticmethod
     def _validate_evidence_source_strategy(
@@ -2841,7 +2906,10 @@ class TurnPlanningService:
                 raise resource_not_found("Turn Target")
             now = await uow.runs.database_now()
             monitor_window_seconds = (
-                min(int(requested_window_seconds), 2_592_000)
+                min(
+                    int(requested_window_seconds),
+                    DEFAULT_MONITORING_LOOKBACK_SECONDS,
+                )
                 if requested_window_seconds is not None
                 else None
             )

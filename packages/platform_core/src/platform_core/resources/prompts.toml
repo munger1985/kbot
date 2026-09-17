@@ -583,7 +583,10 @@ content = """
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
 
 必须把用户明确的时间范围写入 time_scope，并换算为 requested_window_seconds；例如最近7天为
-604800，最近30天为2592000。用户没有明确时间范围时 requested_window_seconds 为 null。
+604800，最近30天为2592000。指标现状、历史趋势、变化速度、持续性、容量或资源使用问题没有
+明确时间范围时，必须使用Prometheus最大保留范围：time_scope写“最近30天（Prometheus最大
+保留范围）”，requested_window_seconds写2592000；严禁自行猜测为7天、90天等其他范围。
+非指标类问题没有明确时间范围时 requested_window_seconds 才为 null。
 
 证据来源遵循“监控优先、数据库补证”：当问题询问指标现状、时间窗口、趋势、变化量、速度、
 持续性、容量或资源使用情况，且存在 monitor.query_range 时，首轮必须选择监控时序查询。
@@ -647,7 +650,10 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 available_tools 中选择；Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook
 不能阻止分析。
 用户明确给出最近N分钟、小时或天数时，task_frame.time_scope 保留原范围，并将秒数写入
-task_frame.requested_window_seconds；未明确时间范围时为 null。
+task_frame.requested_window_seconds。指标现状、历史趋势、变化速度、持续性、容量或资源使用
+问题未明确时间范围时，必须使用Prometheus最大保留范围：task_frame.time_scope写“最近30天
+（Prometheus最大保留范围）”，task_frame.requested_window_seconds写2592000；严禁自行猜测
+为7天、90天等其他范围。非指标类问题未明确时间范围时才为 null。
 指标现状、历史窗口、趋势、变化量、变化速度、持续性、容量和资源使用调查统一遵循监控优先：
 只要 available_tools 中存在 monitor.query_range，首轮先取监控时序证据，不得同时执行用于回答
 同一指标问题的数据库历史查询。监控无数据、时间覆盖不足、采样覆盖率不足、缺少必要维度或指标

@@ -247,6 +247,81 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
                 revision_no=1,
             )
 
+    def test_monitoring_first_defaults_to_prometheus_maximum_window(self) -> None:
+        investigation = self._investigation(
+            "monitor.query_range",
+            'up{instance="${external_target}"}',
+        )
+        investigation = investigation.model_copy(
+            update={
+                "task_frame": investigation.task_frame.model_copy(
+                    update={
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    }
+                )
+            }
+        )
+
+        normalized = TurnPlanningService._apply_default_monitoring_window(
+            investigation
+        )
+
+        self.assertEqual(
+            2_592_000,
+            normalized.task_frame.requested_window_seconds,
+        )
+        self.assertEqual(
+            "最近30天（Prometheus最大保留范围）",
+            normalized.task_frame.time_scope,
+        )
+        self.assertEqual(
+            2_592_000,
+            normalized.plan.actions[0].input["window_seconds"],
+        )
+
+        explicit = investigation.model_copy(
+            update={
+                "task_frame": investigation.task_frame.model_copy(
+                    update={
+                        "time_scope": "最近7天",
+                        "requested_window_seconds": 604_800,
+                    }
+                )
+            }
+        )
+        self.assertEqual(
+            604_800,
+            TurnPlanningService._apply_default_monitoring_window(
+                explicit
+            ).plan.actions[0].input["window_seconds"],
+        )
+
+        beyond_retention = investigation.model_copy(
+            update={
+                "task_frame": investigation.task_frame.model_copy(
+                    update={
+                        "time_scope": "最近90天",
+                        "requested_window_seconds": 7_776_000,
+                    }
+                )
+            }
+        )
+        normalized_beyond_retention = (
+            TurnPlanningService._apply_default_monitoring_window(
+                beyond_retention
+            )
+        )
+        self.assertEqual(
+            7_776_000,
+            normalized_beyond_retention.task_frame.requested_window_seconds,
+        )
+        self.assertEqual(
+            2_592_000,
+            normalized_beyond_retention.plan.actions[0].input[
+                "window_seconds"
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

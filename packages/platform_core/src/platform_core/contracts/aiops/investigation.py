@@ -145,7 +145,10 @@ class TaskFrame(AIOpsContract):
         default=None,
         ge=60,
         le=31_536_000,
-        description="用户要求分析的明确时间窗口；未明确时为空。",
+        description=(
+            "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
+            "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+        ),
     )
     known_facts: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
@@ -322,7 +325,13 @@ class CompactPlanningOutput(AIOpsContract):
     problem_statement: str = Field(min_length=1, max_length=2000)
     time_scope: str | None = Field(default=None, max_length=512)
     requested_window_seconds: int | None = Field(
-        default=None, ge=60, le=31_536_000
+        default=None,
+        ge=60,
+        le=31_536_000,
+        description=(
+            "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
+            "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+        ),
     )
     success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)
     selected_tool_ids: tuple[str, ...] = Field(default=(), max_length=5)
