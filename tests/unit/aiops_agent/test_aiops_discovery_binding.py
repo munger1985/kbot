@@ -490,6 +490,23 @@ class DiscoveryBindingTest(unittest.TestCase):
             ),
             dual,
         )
+        split = parse_time_windows(
+            "请生成数据库在昨天2:00-3:00的awr报告，并跟今天2:00-3:00的awr报告进行对比",
+            now=now,
+        )
+        self.assertEqual(
+            (
+                (
+                    datetime(2026, 9, 16, 2, 0, tzinfo=PRODUCT_TIMEZONE),
+                    datetime(2026, 9, 16, 3, 0, tzinfo=PRODUCT_TIMEZONE),
+                ),
+                (
+                    datetime(2026, 9, 17, 2, 0, tzinfo=PRODUCT_TIMEZONE),
+                    datetime(2026, 9, 17, 3, 0, tzinfo=PRODUCT_TIMEZONE),
+                ),
+            ),
+            split,
+        )
         self.assertEqual((), parse_time_windows("列出可用快照", now=now))
 
     def test_relative_chinese_window_binds_from_question(self) -> None:

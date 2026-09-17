@@ -305,7 +305,7 @@ def rewrite_incomplete_discovery_actions(
     investigation: InvestigationPlanningOutput,
     available_tools: tuple[dict, ...],
 ) -> InvestigationPlanningOutput | None:
-    """缺必填参数时补发现工具；只有发现工具且时间窗口能唯一确定消费工具时补延期诊断。"""
+    """缺必填参数时补发现工具；时间窗口能唯一确定的消费工具全部补齐。"""
     tool_index = {
         str(item.get("tool_id") or ""): item
         for item in available_tools
@@ -429,7 +429,7 @@ def _attach_unique_discovery_consumers(
     available_tools: tuple[dict, ...],
     next_action_id,
 ) -> tuple[list[InvestigationAction], bool]:
-    """发现工具已在计划中、消费工具缺失且时间窗口能唯一对应时，补延期诊断动作。"""
+    """发现工具已在计划中时，按窗口形态补齐所有能唯一确定的延期诊断动作。"""
     catalog = _merged_catalog_tools(available_tools)
     discovery_ids = {
         str(item.get("discovery_tool_id") or "").strip()
@@ -450,34 +450,62 @@ def _attach_unique_discovery_consumers(
     for discovery in list(updated):
         if discovery.tool_id not in discovery_ids:
             continue
-        if _plan_has_discovery_consumer(updated, discovery.tool_id, catalog):
-            continue
-        consumer = _unique_discovery_consumer(
-            discovery_tool_id=discovery.tool_id,
-            window_count=len(windows),
-            catalog=catalog,
-            selected_ids=selected_ids,
+        unused = list(
+            _unique_discovery_consumer_instantiations(
+                discovery_tool_id=discovery.tool_id,
+                windows=windows,
+                catalog=catalog,
+                selected_ids=selected_ids,
+            )
         )
-        if consumer is None:
+        if not unused:
             continue
-        filled = iso_input_from_time_windows(consumer, windows)
-        if not filled:
-            continue
-        consumer_id = next_action_id()
-        consumer_action = InvestigationAction(
-            action_id=consumer_id,
-            question=_consumer_question(investigation, discovery),
-            tool_id=str(consumer["tool_id"]),
-            input=filled,
-            expected_evidence_kind=_evidence_kind(str(consumer["tool_id"])),
-            measurement_semantics=discovery.measurement_semantics,
-            depends_on=(discovery.action_id,),
-            optional=False,
-            deferred=True,
-        )
+        for index, action in enumerate(updated):
+            claimed = _claim_consumer_instantiation(
+                action=action,
+                discovery_tool_id=discovery.tool_id,
+                catalog=catalog,
+                unused=unused,
+            )
+            if claimed is None:
+                continue
+            _consumer, filled = claimed
+            dependencies = tuple(
+                dict.fromkeys((*action.depends_on, discovery.action_id))
+            )
+            if (
+                action.input == filled
+                and action.deferred
+                and dependencies == action.depends_on
+            ):
+                continue
+            updated[index] = action.model_copy(
+                update={
+                    "input": filled,
+                    "deferred": True,
+                    "depends_on": dependencies,
+                }
+            )
+            changed = True
         insert_at = updated.index(discovery) + 1
-        updated.insert(insert_at, consumer_action)
-        changed = True
+        for consumer, filled in unused:
+            consumer_id = next_action_id()
+            updated.insert(
+                insert_at,
+                InvestigationAction(
+                    action_id=consumer_id,
+                    question=_consumer_question(investigation, discovery),
+                    tool_id=str(consumer["tool_id"]),
+                    input=filled,
+                    expected_evidence_kind=_evidence_kind(str(consumer["tool_id"])),
+                    measurement_semantics=discovery.measurement_semantics,
+                    depends_on=(discovery.action_id,),
+                    optional=False,
+                    deferred=True,
+                ),
+            )
+            insert_at += 1
+            changed = True
     return updated, changed
 
 
@@ -523,16 +551,71 @@ def _planning_time_texts(
     return tuple(texts)
 
 
-def _plan_has_discovery_consumer(
-    actions: list[InvestigationAction],
+def _unique_discovery_consumer_instantiations(
+    *,
+    discovery_tool_id: str,
+    windows: tuple[tuple[object, object], ...],
+    catalog: dict[str, dict],
+    selected_ids: set[str],
+) -> tuple[tuple[dict, dict], ...]:
+    """单窗消费工具按窗口各一份；多窗消费工具在窗口数完全匹配时一份。"""
+    instantiations: list[tuple[dict, dict]] = []
+    per_window = _unique_discovery_consumer(
+        discovery_tool_id=discovery_tool_id,
+        window_count=1,
+        catalog=catalog,
+        selected_ids=selected_ids,
+    )
+    if per_window is not None:
+        for window in windows:
+            filled = iso_input_from_time_windows(per_window, (window,))
+            if filled:
+                instantiations.append((per_window, filled))
+    if len(windows) > 1:
+        whole = _unique_discovery_consumer(
+            discovery_tool_id=discovery_tool_id,
+            window_count=len(windows),
+            catalog=catalog,
+            selected_ids=selected_ids,
+        )
+        if whole is not None:
+            filled = iso_input_from_time_windows(whole, windows)
+            if filled:
+                instantiations.append((whole, filled))
+    return tuple(instantiations)
+
+
+def _claim_consumer_instantiation(
+    *,
+    action: InvestigationAction,
     discovery_tool_id: str,
     catalog: dict[str, dict],
-) -> bool:
-    return any(
+    unused: list[tuple[dict, dict]],
+) -> tuple[dict, dict] | None:
+    if (
         str((catalog.get(action.tool_id) or {}).get("discovery_tool_id") or "").strip()
-        == discovery_tool_id
-        for action in actions
-    )
+        != discovery_tool_id
+    ):
+        return None
+    for index, (consumer, filled) in enumerate(unused):
+        if str(consumer.get("tool_id") or "") != action.tool_id:
+            continue
+        if action.input == filled or _consumer_input_unbound(action, consumer):
+            return unused.pop(index)
+    return None
+
+
+def _consumer_input_unbound(action: InvestigationAction, consumer: dict) -> bool:
+    spec = consumer.get("input") or {}
+    current = action.input or {}
+    names = [
+        name
+        for name, schema in spec.items()
+        if isinstance(schema, dict) and schema.get("required")
+    ]
+    if not names:
+        names = [name for name in spec if isinstance(name, str)]
+    return all(current.get(name) in (None, "") for name in names)
 
 
 def _unique_discovery_consumer(

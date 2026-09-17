@@ -1368,10 +1368,53 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             report.input,
         )
 
-    def test_snapshots_only_two_windows_attach_diff_report(self) -> None:
-        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+    def _two_window_report_inputs(self):
+        return (
+            {
+                "begin_snapshot_id": "2026-09-16T02:00:00+08:00",
+                "end_snapshot_id": "2026-09-16T03:00:00+08:00",
+            },
+            {
+                "begin_snapshot_id": "2026-09-17T02:00:00+08:00",
+                "end_snapshot_id": "2026-09-17T03:00:00+08:00",
+            },
+        )
+
+    def _two_window_diff_input(self):
+        return {
+            "baseline_begin_snapshot_id": "2026-09-16T02:00:00+08:00",
+            "baseline_end_snapshot_id": "2026-09-16T03:00:00+08:00",
+            "after_begin_snapshot_id": "2026-09-17T02:00:00+08:00",
+            "after_end_snapshot_id": "2026-09-17T03:00:00+08:00",
+        }
+
+    def _assert_two_window_reports_and_diff(self, rewritten) -> None:
+        self.assertIsNotNone(rewritten)
+        self.assertEqual(
+            [
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+                "db.oracle.awr.report",
+                "db.oracle.awr.diff_report",
+            ],
+            [action.tool_id for action in rewritten.plan.actions],
+        )
+        first, second, diff = rewritten.plan.actions[1:]
+        self.assertTrue(first.deferred)
+        self.assertTrue(second.deferred)
+        self.assertTrue(diff.deferred)
+        self.assertEqual(("a1",), first.depends_on)
+        self.assertEqual(("a1",), second.depends_on)
+        self.assertEqual(("a1",), diff.depends_on)
+        first_input, second_input = self._two_window_report_inputs()
+        self.assertEqual(first_input, first.input)
+        self.assertEqual(second_input, second.input)
+        self.assertEqual(self._two_window_diff_input(), diff.input)
+
+    def test_snapshots_only_two_windows_attach_reports_and_diff(self) -> None:
+        now = datetime(2026, 9, 17, 11, 40, 44, tzinfo=PRODUCT_TIMEZONE)
         investigation = self._snapshots_only_investigation(
-            question="对比昨天和今天 1 点到 2 点的 AWR",
+            question="请生成数据库在昨天2:00-3:00的awr报告，并跟今天2:00-3:00的awr报告进行对比",
         )
         with patch(
             "aiops_agent.application.investigation.discovery_binding._product_now",
@@ -1381,22 +1424,57 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 investigation=investigation,
                 available_tools=self._awr_catalog_tools(),
             )
-        self.assertIsNotNone(rewritten)
-        self.assertEqual(
-            ["db.oracle.awr.snapshots", "db.oracle.awr.diff_report"],
-            [action.tool_id for action in rewritten.plan.actions],
+        self._assert_two_window_reports_and_diff(rewritten)
+
+    def test_existing_diff_still_attaches_per_window_reports(self) -> None:
+        now = datetime(2026, 9, 17, 11, 40, 44, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告，并跟今天2:00-3:00的awr报告进行对比",
         )
-        diff = rewritten.plan.actions[1]
-        self.assertTrue(diff.deferred)
-        self.assertEqual(
-            {
-                "baseline_begin_snapshot_id": "2026-09-16T01:00:00+08:00",
-                "baseline_end_snapshot_id": "2026-09-16T02:00:00+08:00",
-                "after_begin_snapshot_id": "2026-09-17T01:00:00+08:00",
-                "after_end_snapshot_id": "2026-09-17T02:00:00+08:00",
-            },
-            diff.input,
+        diff = investigation.plan.actions[0].model_copy(
+            update={
+                "action_id": "a2",
+                "tool_id": "db.oracle.awr.diff_report",
+                "question": "对比两段时间的 AWR",
+                "expected_evidence_kind": "AWR_DIFF_REPORT",
+                "input": {},
+                "depends_on": ("a1",),
+                "deferred": True,
+            }
         )
+        investigation = investigation.model_copy(
+            update={
+                "plan": investigation.plan.model_copy(
+                    update={"actions": (*investigation.plan.actions, diff)}
+                )
+            }
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=self._awr_catalog_tools(),
+            )
+        self._assert_two_window_reports_and_diff(rewritten)
+
+    def test_snapshots_only_selected_tools_still_attach_catalog_reports_and_diff(self) -> None:
+        now = datetime(2026, 9, 17, 11, 40, 44, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告，并跟今天2:00-3:00的awr报告进行对比",
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=(
+                    {"tool_id": "db.oracle.awr.snapshots", "input": {}},
+                ),
+            )
+        self._assert_two_window_reports_and_diff(rewritten)
 
     def test_snapshots_only_selected_tools_still_attach_catalog_report(self) -> None:
         now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
@@ -1482,6 +1560,56 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 "end_snapshot_id": "2026-09-16T03:00:00+08:00",
             },
             investigation.plan.actions[2].input,
+        )
+        self.assertEqual((), frozen)
+        reasoner.repair_policy_invalid_plan.assert_not_awaited()
+
+    async def test_snapshots_only_two_windows_rewrite_without_model_repair(
+        self,
+    ) -> None:
+        now = datetime(2026, 9, 17, 11, 40, 44, tzinfo=PRODUCT_TIMEZONE)
+        rejected = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告，并跟今天2:00-3:00的awr报告进行对比",
+        )
+        service, reasoner = self._planning_service()
+        context = self._oracle_context()
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            planned, investigation, frozen, _source_queries = (
+                await service._prepare_queries_with_repair(
+                    context=context,
+                    planned=StructuredModelResult(
+                        output=rejected,
+                        receipt=SimpleNamespace(name="compact"),
+                    ),
+                    available_tools=available_tools(
+                        service._tool_snapshot_builder,
+                        context.capabilities,
+                    ),
+                    available_playbooks=(),
+                    model_snapshot={"technical_name": "test"},
+                    revision_no=1,
+                )
+            )
+        self.assertEqual("compact", planned.receipt.name)
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+                "db.oracle.awr.report",
+                "db.oracle.awr.diff_report",
+            ],
+            [action.tool_id for action in investigation.plan.actions],
+        )
+        first_input, second_input = self._two_window_report_inputs()
+        self.assertEqual(first_input, investigation.plan.actions[2].input)
+        self.assertEqual(second_input, investigation.plan.actions[3].input)
+        self.assertEqual(
+            self._two_window_diff_input(),
+            investigation.plan.actions[4].input,
         )
         self.assertEqual((), frozen)
         reasoner.repair_policy_invalid_plan.assert_not_awaited()
