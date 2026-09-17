@@ -11,57 +11,96 @@
   <header class="assistant-page-head">
     <div>
       <h1>Agents</h1>
-      <p>Agent 是知识问答的唯一入口。它必须绑定一个 ACTIVE Knowledge Core，可选绑定已发布的问数模型。</p>
+      <p>统一管理知识问答 Agent。创建后先保存草稿；如绑定问数模型，请在问数模型页为当前 Agent 版本创建 Binding，再单独启用。</p>
     </div>
-    <div class="assistant-actions"><button type="button" data-open-dialog="agent-dialog" class="primary">创建 Agent</button></div>
+    <div class="assistant-actions">
+      <button type="button" id="agent-refresh">刷新</button>
+      <button type="button" id="agent-create" class="primary">创建 Agent</button>
+    </div>
   </header>
+
   <section class="assistant-grid">
-    <article class="assistant-panel span-8">
+    <article class="assistant-panel span-9">
       <div class="assistant-panel-head">
-        <div><h2>当前 Domain 的 Agents</h2><p>只有完成所有有效 Binding 并启用的 Agent 才出现在知识问答页。</p></div>
-        <button class="small" type="button" data-open-dialog="agent-dialog">创建</button>
+        <div><h2>当前 Domain 的 Agents</h2><p><span id="agent-count">0</span> 个 Agent；删除采用归档，不清理历史版本和运行记录。</p></div>
+      </div>
+      <div class="assistant-filter-bar">
+        <div class="assistant-field"><label for="agent-filter">搜索</label><input id="agent-filter" type="search" placeholder="名称或说明"></div>
+        <div class="assistant-field compact"><label for="agent-status-filter">状态</label><select id="agent-status-filter"><option value="">全部</option><option value="DRAFT">草稿</option><option value="ACTIVE">已启用</option><option value="DISABLED">已停用</option><option value="ARCHIVED">已归档</option></select></div>
       </div>
       <div class="assistant-table-wrap">
-        <table class="assistant-table">
-          <thead><tr><th>名称</th><th>状态</th><th>Knowledge Core</th><th>问数模型</th><th>回答模型</th><th>版本</th></tr></thead>
-          <tbody>
-            <tr><td colspan="6"><div class="assistant-empty"><div><strong>尚无 Agent</strong><p>请先准备 ACTIVE Knowledge Core；如需问数，再发布语义模型并建立有效 Policy Binding。</p></div></div></td></tr>
-          </tbody>
+        <table class="assistant-table agent-table">
+          <thead><tr><th>名称</th><th>状态</th><th>能力与资源</th><th>运行模型</th><th>版本</th><th>操作</th></tr></thead>
+          <tbody id="agent-rows"><tr><td colspan="6"><div class="assistant-empty"><div><strong>正在加载</strong><p>正在读取当前 Domain 的 Agent。</p></div></div></td></tr></tbody>
         </table>
       </div>
     </article>
-    <aside class="assistant-panel span-4">
-      <div class="assistant-panel-head"><div><h2>启用规则</h2><p>由服务端验证，而不是由页面状态推断。</p></div></div>
+    <aside class="assistant-panel span-3">
+      <div class="assistant-panel-head"><div><h2>启用检查</h2><p>最终约束由服务端验证。</p></div></div>
       <div class="assistant-panel-body">
         <dl class="assistant-key-value">
-          <div><dt>Knowledge Core</dt><dd>必填，且必须为 ACTIVE</dd></div>
-          <div><dt>问数模型</dt><dd>可选；必须为 PUBLISHED 且 Policy 有效</dd></div>
-          <div><dt>模型</dt><dd>从 ACTIVE 模型目录按角色选择</dd></div>
-          <div><dt>运行版本</dt><dd>冻结绑定、指令和模型快照</dd></div>
+          <div><dt>Knowledge Core</dt><dd>必须为 ACTIVE</dd></div>
+          <div><dt>问数模型</dt><dd>必须已发布且策略有效</dd></div>
+          <div><dt>查询 Binding</dt><dd>必须匹配当前 Agent 版本</dd></div>
+          <div><dt>运行模型</dt><dd>按职责绑定已启用模型</dd></div>
         </dl>
+        <div class="assistant-notice warn">修改 Knowledge Core、问数模型、指令、配置或运行模型会生成新版本。带问数能力的新版本需重新创建查询 Binding。</div>
       </div>
     </aside>
   </section>
 </main>
-<dialog class="assistant-dialog" id="agent-dialog">
-  <form data-resource-form="Agent">
-    <div class="assistant-dialog-head"><h2>创建 Agent</h2><button class="assistant-close" type="button" data-close-dialog="agent-dialog" aria-label="关闭">×</button></div>
-    <div class="assistant-dialog-body">
-      <ol class="assistant-flow">
-        <li><strong>基本信息</strong><span>名称、说明、当前 Domain 与草稿指令。</span></li>
-        <li><strong>绑定 Knowledge Core</strong><span>必填；只能选择当前 Domain 的 ACTIVE KC。</span></li>
-        <li><strong>选择问数模型</strong><span>可选；只允许已发布且策略有效的模型。</span></li>
-        <li><strong>模型与授权</strong><span>绑定 Router/回答模型、成员与角色后才允许启用。</span></li>
-      </ol>
-      <div class="assistant-notice warn">向导控件将在资源 API 接入后逐步启用。当前不会创建无 KC Binding 的伪 Agent。</div>
+
+<dialog class="assistant-dialog wide agent-dialog" id="agent-dialog">
+  <form id="agent-form">
+    <input id="agent-id" type="hidden">
+    <input id="agent-row-version" type="hidden">
+    <div class="assistant-dialog-head">
+      <div><h2 id="agent-dialog-title">创建 Agent</h2><p class="dialog-subtitle" id="agent-dialog-subtitle">新 Agent 将以草稿状态保存。</p></div>
+      <button class="assistant-close" type="button" data-close-dialog="agent-dialog" aria-label="关闭">×</button>
     </div>
-    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="agent-dialog">取消</button><button class="primary" type="submit">保存草稿</button></div>
+    <div class="assistant-dialog-body agent-editor">
+      <section class="agent-editor-section">
+        <div class="data-section-head"><h3>基本信息</h3><span class="assistant-badge">当前 Domain</span></div>
+        <div class="assistant-form-grid">
+          <div class="assistant-field"><label for="agent-name">名称</label><input id="agent-name" required maxlength="256" placeholder="例如：客户经营助手"></div>
+          <div class="assistant-field"><label for="agent-status">保存状态</label><select id="agent-status"><option value="DRAFT">草稿</option><option value="DISABLED">停用</option><option value="ACTIVE">保持启用</option></select></div>
+          <div class="assistant-field full"><label for="agent-description">说明</label><input id="agent-description" maxlength="1000" placeholder="Agent 的业务范围和使用对象"></div>
+          <div class="assistant-field full"><label for="agent-instruction">系统指令</label><textarea id="agent-instruction" maxlength="32000" placeholder="描述回答原则、业务口径和边界。"></textarea></div>
+        </div>
+      </section>
+
+      <section class="agent-editor-section">
+        <div class="data-section-head"><h3>知识与问数资源</h3><span class="assistant-badge warn">启用前校验</span></div>
+        <div class="assistant-form-grid">
+          <div class="assistant-field full"><label for="agent-knowledge-core">Knowledge Core</label><select id="agent-knowledge-core"><option value="">加载中</option></select><p class="assistant-help">草稿可以暂不选择；启用时必须选择 ACTIVE Knowledge Core。</p></div>
+          <div class="assistant-field full"><label for="agent-data-models">问数模型（可多选）</label><select id="agent-data-models" multiple size="5"></select><p class="assistant-help">仅可新增已发布且至少有一个 ACTIVE Policy Binding 的模型。按 Ctrl/Cmd 可多选。</p></div>
+        </div>
+      </section>
+
+      <section class="agent-editor-section">
+        <div class="data-section-head"><h3>运行模型</h3><span class="assistant-badge">已启用目录</span></div>
+        <div class="assistant-form-grid">
+          <div class="assistant-field"><label for="agent-context-llm">上下文理解 LLM</label><select id="agent-context-llm"></select></div>
+          <div class="assistant-field"><label for="agent-composer-llm">回答生成 LLM</label><select id="agent-composer-llm"></select></div>
+          <div class="assistant-field"><label for="agent-memory-llm">记忆整理 LLM</label><select id="agent-memory-llm"></select></div>
+          <div class="assistant-field"><label for="agent-memory-embedding">记忆 Embedding</label><select id="agent-memory-embedding"></select></div>
+        </div>
+      </section>
+
+      <section class="agent-editor-section">
+        <div class="data-section-head"><h3>高级配置</h3><span class="assistant-badge">JSON</span></div>
+        <div class="assistant-field"><label for="agent-config">运行配置</label><textarea id="agent-config" class="agent-config" spellcheck="false">{}</textarea><p class="assistant-help">只填写 Agent 运行时明确支持的结构化配置；留空等同于 {}。</p></div>
+      </section>
+      <div id="agent-form-notice" class="assistant-notice warn">创建后如需问数，请前往“问数模型”页面为此 Agent 的当前草稿版本创建 Binding。</div>
+    </div>
+    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="agent-dialog">取消</button><button class="primary" id="agent-submit" type="submit">保存草稿</button></div>
   </form>
 </dialog>
+
 <script src="../runtime-config.js"></script>
 <script src="./js/assistant-auth.js"></script>
 <script src="./js/assistant-api.js"></script>
 <script src="./js/assistant-shell.js"></script>
-<script src="./js/assistant-resources.js"></script>
+<script src="./js/assistant-agents.js"></script>
 </body>
 </html>

@@ -25,14 +25,18 @@ DATA_SOURCE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a013")
 SNAPSHOT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a014")
 OBJECT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a015")
 POLICY_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a016")
+LLM_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a017")
 
 
 class _AccessService:
+    def __init__(self):
+        self.permissions = {"assistant:access"}
+
     async def require(self, **kwargs):
         return SimpleNamespace(permissions={kwargs["permission_code"]})
 
     async def snapshot(self, **kwargs):
-        return SimpleNamespace(app_id="assistant", domain_id=kwargs["domain_id"], user_id=kwargs["user_id"], roles=(), permissions={"assistant:access"})
+        return SimpleNamespace(app_id="assistant", domain_id=kwargs["domain_id"], user_id=kwargs["user_id"], roles=(), permissions=set(self.permissions))
 
     async def list_policy_subjects(self, **kwargs):
         return {
@@ -189,6 +193,25 @@ class _DataQueryClient:
 
     async def management_list(self, **kwargs):
         self.calls.append(("list", kwargs))
+        if kwargs["resource"] == "semantic-models":
+            return {
+                "items": [{
+                    "semantic_model_id": str(DATA_MODEL_ID),
+                    "display_name": "客户经营分析",
+                    "description": "客户、商机与沟通记录",
+                    "active_version": 3,
+                }],
+                "next_cursor": None,
+            }
+        if kwargs["resource"] == "policy-bindings":
+            return {
+                "items": [{
+                    "policy_binding_id": str(POLICY_ID),
+                    "semantic_model_ids": [str(DATA_MODEL_ID)],
+                    "status": "ACTIVE",
+                }],
+                "next_cursor": None,
+            }
         return {"items": [], "next_cursor": None}
 
     async def management_get(self, **kwargs):
@@ -352,6 +375,14 @@ class _ModelConfigClient:
                 "provider": "local",
                 "status": "ACTIVE",
             },
+            {
+                "model_id": str(LLM_ID),
+                "served_model_name": "assistant-chat",
+                "display_name": "Assistant Chat",
+                "category": 1,
+                "provider": "local",
+                "status": "ACTIVE",
+            },
         ]
 
 
@@ -376,7 +407,8 @@ class AssistantAppRouteTest(unittest.TestCase):
         )
         self.assistant = _AssistantClient()
         self.knowledge = _KnowledgeClient()
-        self.app.state.access_control_service = _AccessService()
+        self.access = _AccessService()
+        self.app.state.access_control_service = self.access
         self.app.state.assistant_app_client = self.assistant
         self.app.state.knowledge_core_client = self.knowledge
         self.data_query = _DataQueryClient()
@@ -409,6 +441,52 @@ class AssistantAppRouteTest(unittest.TestCase):
 
         self.assertEqual(422, response.status_code)
         self.assertEqual("APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", response.json()["code"])
+
+    def test_agent_management_options_only_return_safe_selectable_resources(self):
+        self.knowledge.collections = [self.knowledge.collection]
+
+        response = self.client.get(
+            "/api/v1/apps/assistant/agents/options", headers=self._headers()
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        body = response.json()
+        self.assertEqual(str(CORE_ID), body["knowledge_cores"][0]["collection_id"])
+        self.assertTrue(body["knowledge_cores"][0]["selectable"])
+        self.assertEqual(str(DATA_MODEL_ID), body["data_models"][0]["semantic_model_id"])
+        self.assertTrue(body["data_models"][0]["policy_ready"])
+        self.assertTrue(body["data_models"][0]["selectable"])
+        self.assertEqual(
+            {str(EMBEDDING_ID), str(VISUAL_ID), str(LLM_ID)},
+            {row["model_id"] for row in body["models"]},
+        )
+        self.assertNotIn("credential", response.text.lower())
+        self.assertNotIn("password", response.text.lower())
+
+    def test_archive_agent_uses_soft_delete_with_row_version(self):
+        response = self.client.delete(
+            f"/api/v1/apps/assistant/agents/{AGENT_ID}?expected_row_version=1",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(204, response.status_code, response.text)
+        self.assertEqual(41, self.assistant.payload["domain_id"])
+        self.assertEqual(1, self.assistant.payload["expected_row_version"])
+        self.assertEqual("ARCHIVED", self.assistant.payload["status"])
+
+    def test_agent_manager_can_read_list_and_detail_without_chat_permission(self):
+        self.access.permissions = {"assistant:access", "assistant:agent_manage"}
+
+        listed = self.client.get(
+            "/api/v1/apps/assistant/agents", headers=self._headers()
+        )
+        detail = self.client.get(
+            f"/api/v1/apps/assistant/agents/{AGENT_ID}", headers=self._headers()
+        )
+
+        self.assertEqual(200, listed.status_code, listed.text)
+        self.assertEqual(200, detail.status_code, detail.text)
+        self.assertEqual(str(AGENT_ID), detail.json()["agent_id"])
 
     def test_access_includes_bindings_and_capabilities(self):
         response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())

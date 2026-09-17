@@ -85,7 +85,27 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "agent-query-binding-dialog",
             "manual-ddl-dialog",
         },
-        "agents.html": {"agent-dialog"},
+        "agents.html": {
+            "agent-refresh",
+            "agent-create",
+            "agent-count",
+            "agent-filter",
+            "agent-status-filter",
+            "agent-rows",
+            "agent-dialog",
+            "agent-form",
+            "agent-name",
+            "agent-status",
+            "agent-description",
+            "agent-instruction",
+            "agent-knowledge-core",
+            "agent-data-models",
+            "agent-context-llm",
+            "agent-composer-llm",
+            "agent-memory-llm",
+            "agent-memory-embedding",
+            "agent-config",
+        },
         "model-bindings.html": {"binding-rows", "model-binding-dialog"},
         "media-assets.html": {"asset-rows", "asset-preview-dialog", "asset-preview-body"},
         "usage-runs.html": {"run-rows"},
@@ -98,7 +118,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         "domains.html": "./js/assistant-domains.js",
         "knowledge-cores.html": "./js/assistant-knowledge-cores.js",
         "data-models.html": "./js/assistant-data-models.js",
-        "agents.html": "./js/assistant-resources.js",
+        "agents.html": "./js/assistant-agents.js",
         "model-bindings.html": "./js/assistant-management.js",
         "media-assets.html": "./js/assistant-management.js",
         "usage-runs.html": "./js/assistant-management.js",
@@ -193,7 +213,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         for name in (
             "assistant-dashboard.js",
             "assistant-knowledge.js",
-            "assistant-resources.js",
+            "assistant-agents.js",
             "assistant-domains.js",
             "assistant-knowledge-cores.js",
             "assistant-data-models.js",
@@ -221,6 +241,27 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "/agent-bindings",
         ):
             self.assertIn(fragment, source)
+        self.assertNotIn("domain_id", source)
+        self.assertNotIn("/internal/v1", source)
+
+    def test_agents_page_uses_lifecycle_and_safe_option_routes(self):
+        source = (UI_ROOT / "js" / "assistant-agents.js").read_text(
+            encoding="utf-8"
+        )
+        for fragment in (
+            'json("/agents", "GET")',
+            'json("/agents/options", "GET")',
+            '"POST"',
+            '"PATCH"',
+            '"DELETE"',
+            "expected_row_version",
+            "context_llm",
+            "composer_llm",
+            "memory_llm",
+            "memory_embedding",
+        ):
+            self.assertIn(fragment, source)
+        self.assertIn("globalThis.confirm", source)
         self.assertNotIn("domain_id", source)
         self.assertNotIn("/internal/v1", source)
 

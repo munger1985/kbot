@@ -18653,7 +18653,72 @@
         ]
       }
     },
+    "/api/v1/apps/assistant/agents/options": {
+      "get": {
+        "description": "返回 Agent 编辑器所需的安全资源目录，不暴露凭据和内部连接信息。",
+        "operationId": "list_agent_management_options_api_v1_apps_assistant_agents_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agent Management Options",
+        "tags": [
+          "Assistant App"
+        ]
+      }
+    },
     "/api/v1/apps/assistant/agents/{agent_id}": {
+      "delete": {
+        "description": "归档 Agent 并保留历史版本、运行记录及审计关系。",
+        "operationId": "archive_agent_api_v1_apps_assistant_agents__agent_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_row_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Row Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Agent",
+        "tags": [
+          "Assistant App"
+        ]
+      },
       "get": {
         "operationId": "get_agent_api_v1_apps_assistant_agents__agent_id__get",
         "parameters": [

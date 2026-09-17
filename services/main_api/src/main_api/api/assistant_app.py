@@ -1515,8 +1515,74 @@ async def publish_assistant_semantic_model(
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    domain_id, _, _ = await _require_any(
+        request, "assistant:agent_manage", "assistant:knowledge_chat"
+    )
     return await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
+
+
+@router.get("/agents/options")
+async def list_agent_management_options(request: Request):
+    """返回 Agent 编辑器所需的安全资源目录，不暴露凭据和内部连接信息。"""
+    domain_id, _, _ = await _require(request, "assistant:agent_manage")
+    auth_context = request.state.auth_context
+    collections = _collection_items(
+        await _knowledge(request).list_collections(
+            domain_id=domain_id,
+            auth_context=auth_context,
+        )
+    )
+    semantic_models = _collection_items(
+        await _data_query(request).management_list(
+            resource="semantic-models",
+            cursor=None,
+            limit=200,
+            auth_context=auth_context,
+        )
+    )
+    policies = _collection_items(
+        await _data_query(request).management_list(
+            resource="policy-bindings",
+            cursor=None,
+            limit=200,
+            auth_context=auth_context,
+        )
+    )
+    policy_model_ids = {
+        str(model_id)
+        for policy in policies
+        if str(policy.get("status") or "") == "ACTIVE"
+        for model_id in policy.get("semantic_model_ids") or []
+    }
+    return {
+        "knowledge_cores": [
+            {
+                "collection_id": item.get("collection_id"),
+                "display_name": item.get("display_name"),
+                "status": item.get("status"),
+                "selectable": item.get("status") == "ACTIVE",
+            }
+            for item in collections
+        ],
+        "data_models": [
+            {
+                "semantic_model_id": item.get("semantic_model_id"),
+                "display_name": item.get("display_name"),
+                "description": item.get("description"),
+                "active_version": item.get("active_version"),
+                "policy_ready": (
+                    str(item.get("semantic_model_id")) in policy_model_ids
+                ),
+                "selectable": (
+                    item.get("active_version") is not None
+                    and str(item.get("semantic_model_id"))
+                    in policy_model_ids
+                ),
+            }
+            for item in semantic_models
+        ],
+        "models": await load_model_catalog(request),
+    }
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
@@ -1531,7 +1597,9 @@ async def create_agent(payload: AssistantAgentCreatePayload, request: Request):
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
-    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    domain_id, _, _ = await _require_any(
+        request, "assistant:agent_manage", "assistant:knowledge_chat"
+    )
     return await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
 
 
@@ -1565,3 +1633,23 @@ async def update_agent(
                 raise HTTPException(422, {"code": "APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", "message": "请先保存 Agent 草稿版本、创建该版本的查询绑定，再单独启用"})
             await _require_active_data_binding(request, agent=current)
     return await _client(request).update_agent(agent_id=agent_id, payload={"domain_id": domain_id, **values}, auth_context=request.state.auth_context)
+
+
+@router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_agent(
+    agent_id: UUID,
+    request: Request,
+    expected_row_version: int = Query(ge=1),
+):
+    """归档 Agent 并保留历史版本、运行记录及审计关系。"""
+    domain_id, _, _ = await _require(request, "assistant:agent_manage")
+    await _client(request).update_agent(
+        agent_id=agent_id,
+        payload={
+            "domain_id": domain_id,
+            "expected_row_version": expected_row_version,
+            "status": "ARCHIVED",
+        },
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
