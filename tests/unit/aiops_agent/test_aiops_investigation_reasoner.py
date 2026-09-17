@@ -480,7 +480,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             request["input_payload"]["target_context"],
         )
 
-    async def test_policy_repair_cannot_rewrite_task_frame(self) -> None:
+    async def test_policy_repair_preserves_immutable_plan_context(self) -> None:
         rejected_payload = _output(tool_id="db.oracle.readonly_query")
         rejected_payload["plan"]["actions"][0]["input"] = {
             "sql": "SELECT custom_function(sid) AS result FROM v$session",
@@ -495,23 +495,33 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             _Model(repaired_payload), _Prompts()
         )
 
-        with self.assertRaisesRegex(ValueError, "不得改变任务框架"):
-            await reasoner.repair_policy_invalid_plan(
-                content=({"content_type": "TEXT", "text": "检查数据库"},),
-                conversation_context=(),
-                target_context=TARGET_CONTEXT,
-                prompt_snapshot=PROMPT_SNAPSHOT,
-                source_run_evidence=None,
-                invalid_output=rejected,
-                validation_error="DYNAMIC_SQL_FUNCTION_FORBIDDEN",
-                available_tools=(
-                    {"tool_id": "db.instance.identity", "version": "1.0.0"},
-                ),
-                available_playbooks=(),
-                model_snapshot={},
-                deadline=None,
-                idempotency_key="turn-4-policy-repair",
-            )
+        result = await reasoner.repair_policy_invalid_plan(
+            content=({"content_type": "TEXT", "text": "检查数据库"},),
+            conversation_context=(),
+            target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
+            source_run_evidence=None,
+            invalid_output=rejected,
+            validation_error="DYNAMIC_SQL_FUNCTION_FORBIDDEN",
+            available_tools=(
+                {"tool_id": "db.instance.identity", "version": "1.0.0"},
+            ),
+            available_playbooks=(),
+            model_snapshot={},
+            deadline=None,
+            idempotency_key="turn-4-policy-repair",
+        )
+
+        self.assertEqual(rejected.input_envelope, result.output.input_envelope)
+        self.assertEqual(rejected.task_frame, result.output.task_frame)
+        self.assertEqual(
+            rejected.suggested_playbook_ids,
+            result.output.suggested_playbook_ids,
+        )
+        self.assertEqual(rejected.plan.revision_no, result.output.plan.revision_no)
+        self.assertEqual(
+            "db.instance.identity", result.output.plan.actions[0].tool_id
+        )
 
 
 if __name__ == "__main__":

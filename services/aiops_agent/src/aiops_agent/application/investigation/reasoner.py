@@ -185,27 +185,17 @@ class InvestigationReasoner:
             deadline=deadline,
             idempotency_key=idempotency_key,
         )
-        output = InvestigationPlanningOutput.model_validate(result.output)
-        if output.input_envelope != invalid_output.input_envelope:
-            raise InvestigationPlanValidationError(
-                "策略修正规划不得改变输入材料理解"
-            )
-        if output.task_frame != invalid_output.task_frame:
-            raise InvestigationPlanValidationError(
-                "策略修正规划不得改变任务框架"
-            )
-        if output.suggested_playbook_ids != invalid_output.suggested_playbook_ids:
-            raise InvestigationPlanValidationError(
-                "策略修正规划不得改变建议 Playbook"
-            )
-        output_plan_context = output.plan.model_copy(update={"actions": ()})
-        invalid_plan_context = invalid_output.plan.model_copy(
-            update={"actions": ()}
+        proposed = InvestigationPlanningOutput.model_validate(result.output)
+        # 策略修正模型只负责提出替换动作。输入理解、任务框架、Playbook 和
+        # Plan 元数据全部由服务端沿用原计划，避免模型无意改写不可变字段后
+        # 把本可恢复的参数错误升级为整轮失败。
+        output = invalid_output.model_copy(
+            update={
+                "plan": invalid_output.plan.model_copy(
+                    update={"actions": proposed.plan.actions}
+                )
+            }
         )
-        if output_plan_context != invalid_plan_context:
-            raise InvestigationPlanValidationError(
-                "策略修正规划只能修改调查动作"
-            )
         known_tools = {str(item["tool_id"]) for item in available_tools}
         unknown = tuple(
             action.tool_id

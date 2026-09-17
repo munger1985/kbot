@@ -69,6 +69,7 @@ _SAFE_FUNCTIONS = frozenset(
 # sqlglot 的 AST 使用跨方言内部函数名。策略契约和模型提示仍应使用
 # Oracle 表面函数名，否则合法的 Oracle SQL 会因解析器内部改名被误拦截。
 _SQLGLOT_ORACLE_FUNCTION_NAMES = {
+    "DECODE_CASE": "DECODE",
     "STR_TO_DATE": "TO_DATE",
     "SUBSTRING": "SUBSTR",
 }

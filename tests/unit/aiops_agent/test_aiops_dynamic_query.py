@@ -307,6 +307,17 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
         )
         self.assertIn("SUBSTR(instance_name, 1, 8)", result.normalized_sql)
 
+    def test_oracle_decode_uses_surface_function_allowlist(self) -> None:
+        result = self.policy.validate(
+            "SELECT DECODE(status, 'ONLINE', 1, 0) AS online_flag "
+            "FROM v$datafile"
+        )
+
+        self.assertIn(
+            "DECODE(status, 'ONLINE', 1, 0)",
+            result.normalized_sql,
+        )
+
     def test_unknown_function_remains_forbidden_after_name_mapping(self) -> None:
         self._assert_rejected(
             "SELECT str_to_magic(instance_name) AS value FROM v$instance",
