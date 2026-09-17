@@ -1343,6 +1343,34 @@ class DbaTurnAnswerTest(unittest.TestCase):
             47.0,
             used_row[columns["forecast_utilization_percent"]],
         )
+        self.assertEqual(
+            "LOW",
+            used_row[columns["forecast_confidence"]],
+        )
+        self.assertEqual(
+            7.0,
+            used_row[columns["history_elapsed_days"]],
+        )
+
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(artifact,),
+                    task_frame_overrides={
+                        "requested_window_seconds": 2_592_000,
+                        "temporal_analysis_mode": (
+                            "HISTORICAL_AND_FORECAST"
+                        ),
+                        "forecast_scope": "未来30天",
+                        "forecast_horizon_seconds": 2_592_000,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+        gap_codes = {gap.code for gap in assessment.gaps}
+        self.assertIn("MONITORING_FORECAST_LOW_CONFIDENCE", gap_codes)
+        self.assertNotIn("MONITORING_FORECAST_INSUFFICIENT", gap_codes)
 
     def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:
         assessment = DbaSufficiencyAssessment(

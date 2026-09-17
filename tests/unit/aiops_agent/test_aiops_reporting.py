@@ -429,6 +429,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
                 "forecast_horizon_days",
                 "forecast_utilization_percent",
                 "estimated_days_to_limit",
+                "forecast_confidence",
+                "history_elapsed_days",
             )
         )
         source = SimpleNamespace(
@@ -443,6 +445,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
                             30.0,
                             96.5,
                             24.0,
+                            "MEDIUM",
+                            30.0,
                         ),
                     ),
                 ),
@@ -457,6 +461,50 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn("表空间 USERS", recommendations[0])
         self.assertIn("未来30天使用率约为96.50%", recommendations[0])
         self.assertIn("完成扩容", recommendations[0])
+
+    def test_inspection_capacity_recommendation_keeps_low_confidence_forecast(
+        self,
+    ) -> None:
+        columns = tuple(
+            {"name": name}
+            for name in (
+                "metric_code",
+                "dimensions",
+                "forecast_horizon_days",
+                "forecast_utilization_percent",
+                "estimated_days_to_limit",
+                "forecast_confidence",
+                "history_elapsed_days",
+            )
+        )
+        source = SimpleNamespace(
+            evidence=(
+                SimpleNamespace(
+                    tool_id="metric.query_range",
+                    columns=columns,
+                    rows=(
+                        (
+                            "db.storage.used_bytes",
+                            "instance=oracle-1, tablespace=USERS",
+                            30.0,
+                            96.5,
+                            24.0,
+                            "LOW",
+                            8.17,
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        recommendations = (
+            AIOpsRuntimeService._inspection_capacity_recommendations(source)
+        )
+
+        self.assertEqual(1, len(recommendations))
+        self.assertIn("低置信度预测未来30天", recommendations[0])
+        self.assertIn("使用率约为96.50%", recommendations[0])
+        self.assertIn("约8.17天历史数据", recommendations[0])
 
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
         self,

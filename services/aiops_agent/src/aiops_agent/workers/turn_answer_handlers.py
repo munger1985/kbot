@@ -43,6 +43,12 @@ from platform_core.contracts.aiops import (
 from .handlers import TaskExecutionContext
 
 
+_MIN_FORECAST_REPRESENTATIVE_SAMPLES = 7
+_MIN_FORECAST_HISTORY_DAYS = 7.0
+_STANDARD_FORECAST_COVERAGE_RATIO = 0.8
+_STANDARD_FORECAST_HISTORY_RATIO = 0.8
+
+
 def _fact_trust_level(value: object) -> str:
     normalized = str(value or "MODEL_INFERENCE")
     return (
@@ -338,6 +344,7 @@ class DbaEvidenceAssessmentHandler:
         low_coverage = False
         observed_window_seconds = 0.0
         forecast_available = False
+        low_confidence_forecast = False
         for fact in monitoring_facts:
             column_indexes = {
                 str(column.get("name")): index
@@ -347,12 +354,20 @@ class DbaEvidenceAssessmentHandler:
             start_index = column_indexes.get("window_start")
             end_index = column_indexes.get("window_end")
             forecast_index = column_indexes.get("forecast_value")
+            forecast_confidence_index = column_indexes.get(
+                "forecast_confidence"
+            )
             for row in fact.rows:
                 if (
                     forecast_index is not None
                     and isinstance(row[forecast_index], (int, float))
                 ):
                     forecast_available = True
+                if (
+                    forecast_confidence_index is not None
+                    and row[forecast_confidence_index] == "LOW"
+                ):
+                    low_confidence_forecast = True
                 if coverage_index is not None and isinstance(
                     row[coverage_index], (int, float)
                 ):
@@ -393,6 +408,21 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
             reasons.append("历史监控证据不足以形成未来趋势预测")
+        if low_confidence_forecast:
+            monitoring_gap_found = True
+            gaps.append(
+                TurnEvidenceGap(
+                    source_id="monitoring.overview",
+                    step_id="forecast-confidence",
+                    code="MONITORING_FORECAST_LOW_CONFIDENCE",
+                    detail=(
+                        "已生成低置信度未来预测，但历史覆盖或历史长度不足，"
+                        "需要补充更完整的时序数据复核"
+                    ),
+                    retryable=True,
+                )
+            )
+            reasons.append("未来预测已形成，但因历史证据较短而置信度较低")
         if low_coverage:
             monitoring_gap_found = True
             gaps.append(
@@ -745,12 +775,27 @@ class DbaEvidenceAssessmentHandler:
                         and not isinstance(point.value, bool)
                     )
                 )
+                forecast_confidence = None
                 if (
                     trend is not None
                     and forecast_horizon_days is not None
-                    and int(trend["representative_sample_count"]) >= 7
-                    and observation.coverage_ratio >= 0.8
+                    and int(trend["representative_sample_count"])
+                    >= _MIN_FORECAST_REPRESENTATIVE_SAMPLES
+                    and float(trend["elapsed_days"])
+                    >= min(_MIN_FORECAST_HISTORY_DAYS, forecast_horizon_days)
                 ):
+                    history_ratio = (
+                        float(trend["elapsed_days"])
+                        / forecast_horizon_days
+                    )
+                    forecast_confidence = (
+                        "MEDIUM"
+                        if observation.coverage_ratio
+                        >= _STANDARD_FORECAST_COVERAGE_RATIO
+                        and history_ratio
+                        >= _STANDARD_FORECAST_HISTORY_RATIO
+                        else "LOW"
+                    )
                     trend = summarize_numeric_trend(
                         tuple(
                             (point.observed_at, float(point.value))
@@ -765,8 +810,7 @@ class DbaEvidenceAssessmentHandler:
                 if (
                     observation.metric_code == "db.storage.used_bytes"
                     and trend is not None
-                    and int(trend["representative_sample_count"]) >= 7
-                    and observation.coverage_ratio >= 0.8
+                    and forecast_confidence is not None
                     and float(trend["trend_slope_per_day"]) > 0
                     and float(trend["positive_change_ratio"]) >= 0.6
                 ):
@@ -857,6 +901,17 @@ class DbaEvidenceAssessmentHandler:
                             else len(numeric_values)
                         ),
                         (
+                            int(trend["representative_sample_count"])
+                            if trend is not None
+                            else 0
+                        ),
+                        (
+                            round(float(trend["elapsed_days"]), 4)
+                            if trend is not None
+                            else None
+                        ),
+                        forecast_confidence,
+                        (
                             round(float(trend["forecast_horizon_days"]), 2)
                             if trend is not None
                             and "forecast_horizon_days" in trend
@@ -911,6 +966,12 @@ class DbaEvidenceAssessmentHandler:
                 "logical_type": "DECIMAL",
             },
             {"name": "sample_count", "logical_type": "INTEGER"},
+            {
+                "name": "representative_sample_count",
+                "logical_type": "INTEGER",
+            },
+            {"name": "history_elapsed_days", "logical_type": "DECIMAL"},
+            {"name": "forecast_confidence", "logical_type": "STRING"},
             {
                 "name": "forecast_horizon_days",
                 "logical_type": "DECIMAL",

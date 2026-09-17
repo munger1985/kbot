@@ -3323,6 +3323,8 @@ class AIOpsRuntimeService:
             }
             if not required <= set(indexes):
                 continue
+            confidence_index = indexes.get("forecast_confidence")
+            history_days_index = indexes.get("history_elapsed_days")
             for row in evidence.rows:
                 if row[indexes["metric_code"]] != "db.storage.used_bytes":
                     continue
@@ -3347,27 +3349,64 @@ class AIOpsRuntimeService:
                     if isinstance(remaining_days, (int, float))
                     else None
                 )
+                confidence = (
+                    str(row[confidence_index])
+                    if confidence_index is not None
+                    and row[confidence_index] is not None
+                    else "MEDIUM"
+                )
+                history_days = (
+                    float(row[history_days_index])
+                    if history_days_index is not None
+                    and isinstance(row[history_days_index], (int, float))
+                    else None
+                )
+                confidence_prefix = (
+                    "低置信度预测" if confidence == "LOW" else "预测"
+                )
+                confidence_suffix = (
+                    (
+                        f"该结果仅基于约{history_days:.2f}天历史数据，"
+                        "应补齐更长时间序列后复核。"
+                    )
+                    if confidence == "LOW" and history_days is not None
+                    else (
+                        "该结果历史证据较短，应补齐更长时间序列后复核。"
+                        if confidence == "LOW"
+                        else ""
+                    )
+                )
                 if projected_percent >= 95 or (
                     remaining is not None and remaining <= horizon_days
                 ):
-                    recommendations.append(
-                        f"表空间 {tablespace} 按当前历史增速预测未来"
-                        f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
-                        "建议立即核对自动扩展上限，并在预计耗尽日前完成扩容。"
-                    )
+                    if confidence == "LOW":
+                        recommendations.append(
+                            f"表空间 {tablespace} 按当前历史增速低置信度预测未来"
+                            f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
+                            "建议立即核对当前容量和自动扩展上限，并提前准备扩容。"
+                            f"{confidence_suffix}"
+                        )
+                    else:
+                        recommendations.append(
+                            f"表空间 {tablespace} 按当前历史增速预测未来"
+                            f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
+                            "建议立即核对自动扩展上限，并在预计耗尽日前完成扩容。"
+                        )
                 elif projected_percent >= 85 or (
                     remaining is not None and remaining <= horizon_days * 2
                 ):
                     recommendations.append(
-                        f"表空间 {tablespace} 预测未来{horizon_days:g}天使用率约为"
+                        f"表空间 {tablespace} {confidence_prefix}未来{horizon_days:g}天"
+                        "使用率约为"
                         f"{projected_percent:.2f}%，建议本巡检周期内制定扩容计划并"
-                        "提高复核频率。"
+                        f"提高复核频率。{confidence_suffix}"
                     )
                 else:
                     recommendations.append(
-                        f"表空间 {tablespace} 预测未来{horizon_days:g}天使用率约为"
+                        f"表空间 {tablespace} {confidence_prefix}未来{horizon_days:g}天"
+                        "使用率约为"
                         f"{projected_percent:.2f}%，当前无需立即扩容，建议继续按历史"
-                        "增速监控并在增长模式变化时重新评估。"
+                        f"增速监控并在增长模式变化时重新评估。{confidence_suffix}"
                     )
         if not forecast_found:
             recommendations.append(

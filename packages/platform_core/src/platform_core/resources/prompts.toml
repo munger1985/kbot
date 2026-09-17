@@ -804,7 +804,9 @@ coverage_ratio、维度和指标语义。时间窗口满足、覆盖率不低于
 REPLAN，并把缺失的窗口、维度或指标写成具体 evidence_gaps。
 temporal_analysis_mode=HISTORICAL_AND_FORECAST时，还必须确认历史事实与未来预测同时存在。
 预测必须明确forecast_horizon_days、forecast_value或forecast_utilization_percent，并以历史
-trend_slope_per_day为依据；缺少可靠预测时不得只罗列当前值，应REPLAN补齐历史数据。
+trend_slope_per_day为依据。forecast_confidence=LOW表示历史覆盖或历史长度不足，但已经形成
+可展示的低置信度预测：不得把它说成“无法预测”，应保留预测值并明确降低置信度，同时在系统
+仍可补证时REPLAN。只有没有forecast_value时才视为无法形成预测，且不得只罗列当前值。
 有界查询返回truncated=false时不得声称缺少“无行数上限”的结果；truncated=true时才需要
 COUNT和稳定排序分页补证，不得要求执行无界查询。
 sufficiency_status 只能从 ANSWERABLE、PARTIAL、NEEDS_CLARIFICATION、NEEDS_EVIDENCE、
@@ -868,7 +870,9 @@ content = """
    不要自行从图形或平均值重算。监控证据满足窗口与覆盖率时，不得声称必须再查数据库。
 10. 趋势回答必须分成历史事实、未来预测和运维建议三层。历史部分说明真实观察窗口、首末值、
     变化量、日均变化和持续性；预测部分明确预测窗口、forecast_value、
-    forecast_utilization_percent和estimated_days_to_limit，并声明这是基于历史斜率的外推；建议
+    forecast_utilization_percent和estimated_days_to_limit，并声明这是基于历史斜率的外推；
+    forecast_confidence=LOW时仍须展示预测数值，同时结合history_elapsed_days明确标注低置信度，
+    不得改写为“无法预测”；建议
     必须落实到是否需要扩容、何时复核及数据不足时需要补什么，不能只罗列当前使用率。
 """
 
@@ -905,7 +909,9 @@ positive_change_ratio 和 estimated_days_to_limit 是服务端确定性计算结
 不得自行从平均值重算；监控窗口与覆盖率满足要求时，不得声称仍必须查询数据库。
 趋势回答必须依次给出历史事实、未来预测和运维建议。未来预测使用服务端提供的
 forecast_horizon_days、forecast_value、forecast_utilization_percent和estimated_days_to_limit，
-并明确其为基于历史斜率的外推；不得把预测写成已经发生的事实，也不能只列当前使用率。
+并明确其为基于历史斜率的外推。forecast_confidence=LOW时仍须展示预测数值，并结合
+history_elapsed_days明确说明低置信度及复核要求，不得表述为“无法预测”；不得把预测写成
+已经发生的事实，也不能只列当前使用率。
 """
 
 [[prompts]]
