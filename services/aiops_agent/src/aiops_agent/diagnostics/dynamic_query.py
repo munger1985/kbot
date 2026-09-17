@@ -72,6 +72,7 @@ _SQLGLOT_ORACLE_FUNCTION_NAMES = {
     "DECODE_CASE": "DECODE",
     "STR_TO_DATE": "TO_DATE",
     "SUBSTRING": "SUBSTR",
+    "TIME_TO_STR": "TO_CHAR",
 }
 _VIRTUAL_COLUMN_SOURCE_VIEWS = frozenset(
     {"ALL_TAB_COLS", "DBA_TAB_COLS", "USER_TAB_COLS", "CDB_TAB_COLS"}
@@ -246,9 +247,9 @@ class OracleDynamicQueryPolicy:
             if self._table_function_package(table) is not None
         }
         for function in expression.find_all(exp.Func):
-            # sqlglot 将 AND/OR 连接符也纳入 Func 继承体系；它们是 SQL
-            # 语法节点而非可调用函数，不能参与函数白名单判断。
-            if isinstance(function, exp.Connector):
+            # sqlglot 将 CASE/WHEN 和 AND/OR 等语法节点也纳入 Func
+            # 继承体系；它们不是可调用函数，不能参与函数白名单判断。
+            if isinstance(function, (exp.Case, exp.Connector, exp.If)):
                 continue
             if (
                 id(function) in package_functions

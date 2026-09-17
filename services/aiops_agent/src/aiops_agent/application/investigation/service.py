@@ -298,11 +298,10 @@ class TurnPlanningService:
             context.source_run_evidence
             and context.source_run_evidence.get("source_kind") == "SITUATION"
         )
-        monitoring_requested = alert_diagnosis or bool(context.inspection) or any(
-            action.tool_id.startswith("monitor.")
-            or action.tool_id.startswith("prometheus.")
-            or action.tool_id.startswith("loki.")
-            for action in investigation.plan.actions
+        monitoring_requested = self._requires_monitoring_snapshot(
+            investigation=investigation,
+            inspection=bool(context.inspection),
+            alert_diagnosis=alert_diagnosis,
         )
         monitoring_execution = (
             await self._prepare_monitoring(
@@ -1627,6 +1626,27 @@ class TurnPlanningService:
                     else source_queries
                 ),
             )
+
+    @staticmethod
+    def _requires_monitoring_snapshot(
+        *,
+        investigation: InvestigationPlanningOutput,
+        inspection: bool,
+        alert_diagnosis: bool,
+    ) -> bool:
+        """历史分析首轮始终加载监控基线，不依赖模型显式选择工具。"""
+        return (
+            alert_diagnosis
+            or inspection
+            or investigation.task_frame.temporal_analysis_mode
+            != TemporalAnalysisMode.CURRENT
+            or any(
+                action.tool_id.startswith("monitor.")
+                or action.tool_id.startswith("prometheus.")
+                or action.tool_id.startswith("loki.")
+                for action in investigation.plan.actions
+            )
+        )
 
     @staticmethod
     def _apply_default_temporal_windows(

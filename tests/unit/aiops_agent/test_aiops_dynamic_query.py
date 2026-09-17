@@ -318,6 +318,16 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             result.normalized_sql,
         )
 
+    def test_oracle_case_and_to_char_are_allowed(self) -> None:
+        result = self.policy.validate(
+            "SELECT CASE WHEN account_status = 'OPEN' THEN 1 ELSE 0 END "
+            "AS open_flag, TO_CHAR(created, 'YYYY-MM-DD') AS created_day "
+            "FROM dba_users"
+        )
+
+        self.assertIn("CASE WHEN account_status = 'OPEN'", result.normalized_sql)
+        self.assertIn("TO_CHAR(created, 'YYYY-MM-DD')", result.normalized_sql)
+
     def test_unknown_function_remains_forbidden_after_name_mapping(self) -> None:
         self._assert_rejected(
             "SELECT str_to_magic(instance_name) AS value FROM v$instance",

@@ -361,6 +361,33 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             ],
         )
 
+    def test_historical_forecast_loads_monitoring_without_explicit_action(
+        self,
+    ) -> None:
+        database_only = self._investigation(
+            "db.oracle.readonly_query",
+            "SELECT tablespace_name FROM dba_tablespaces",
+        )
+        database_only = database_only.model_copy(
+            update={
+                "task_frame": database_only.task_frame.model_copy(
+                    update={
+                        "temporal_analysis_mode": (
+                            "HISTORICAL_AND_FORECAST"
+                        )
+                    }
+                )
+            }
+        )
+
+        self.assertTrue(
+            TurnPlanningService._requires_monitoring_snapshot(
+                investigation=database_only,
+                inspection=False,
+                alert_diagnosis=False,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
