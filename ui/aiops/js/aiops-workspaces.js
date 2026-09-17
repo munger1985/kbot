@@ -510,22 +510,42 @@
     return `<div class="ops-filter-actions"><button type="button" class="primary" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
   }
 
+  function workloadReportFilename(filename, actionId) {
+    return String(filename || "oracle-workload-report.html").replace(
+      /\.html$/i,
+      `-${actionId}.html`,
+    );
+  }
+
+  function workloadReportLabel(definition, action, actions) {
+    const sameTool = actions.filter((item) => item.tool_id === action.tool_id);
+    if (sameTool.length <= 1) return definition.label;
+    const question = String(action.question || "").trim();
+    const uniqueQuestion = question && sameTool.filter(
+      (item) => String(item.question || "").trim() === question,
+    ).length === 1;
+    if (uniqueQuestion) return `${definition.label}：${question}`;
+    return `${definition.label}（${action.action_id}）`;
+  }
+
   function workloadReportActions(turn) {
-    const reports = new Map();
-    values(turn.investigation_plan?.actions).forEach((action) => {
+    const actions = values(turn.investigation_plan?.actions).filter((action) => (
+      action.status === "SUCCEEDED" && workloadReportDefinitions[action.tool_id]
+    ));
+    if (!actions.length) return "";
+    const buttons = actions.map((action) => {
       const definition = workloadReportDefinitions[action.tool_id];
-      if (action.status === "SUCCEEDED" && definition) {
-        reports.set(action.tool_id, definition);
-      }
-    });
-    if (!reports.size) return "";
-    const buttons = Array.from(reports, ([toolId, definition]) => (
-      `<button type="button" data-download-workload-report="${esc(toolId)}" `
-      + `data-conversation-id="${esc(turn.conversation_id)}" `
-      + `data-turn-id="${esc(turn.turn_id)}" `
-      + `data-workload-report-filename="${esc(definition.filename)}">`
-      + `${esc(definition.label)}</button>`
-    )).join("");
+      const filename = workloadReportFilename(definition.filename, action.action_id);
+      const label = workloadReportLabel(definition, action, actions);
+      return (
+        `<button type="button" data-download-workload-report="${esc(action.tool_id)}" `
+        + `data-workload-report-action="${esc(action.action_id)}" `
+        + `data-conversation-id="${esc(turn.conversation_id)}" `
+        + `data-turn-id="${esc(turn.turn_id)}" `
+        + `data-workload-report-filename="${esc(filename)}">`
+        + `${esc(label)}</button>`
+      );
+    }).join("");
     return `<div class="ops-workload-report-actions">${buttons}</div>`;
   }
 
@@ -539,8 +559,9 @@
           const conversationId = encodeURIComponent(button.dataset.conversationId);
           const turnId = encodeURIComponent(button.dataset.turnId);
           const toolId = encodeURIComponent(button.dataset.downloadWorkloadReport);
+          const actionId = encodeURIComponent(button.dataset.workloadReportAction);
           await KBotAIOpsAuth.download(
-            `${api}/conversations/${conversationId}/turns/${turnId}/workload-reports/${toolId}`,
+            `${api}/conversations/${conversationId}/turns/${turnId}/workload-reports/${toolId}?action_id=${actionId}`,
             button.dataset.workloadReportFilename,
             "text/html",
           );

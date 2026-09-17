@@ -777,8 +777,9 @@ class ConversationTurnService:
         turn_id: UUID,
         actor_id: str,
         tool_id: str,
+        action_id: str,
     ) -> bytes:
-        """按所属会话导出固定目录生成的原生 Oracle HTML 报告。"""
+        """按调查动作实例导出固定目录生成的原生 Oracle HTML 报告。"""
         if tool_id not in {
             "db.oracle.awr.report",
             "db.oracle.awr.diff_report",
@@ -812,7 +813,11 @@ class ConversationTurnService:
                 result = DbaToolResult.model_validate(artifact.payload_json)
                 for outcome in result.tool_outcomes:
                     observation = outcome.observation
-                    if outcome.tool_id != tool_id or observation is None:
+                    if (
+                        outcome.tool_id != tool_id
+                        or outcome.step_id != action_id
+                        or observation is None
+                    ):
                         continue
                     if (
                         observation.truncated

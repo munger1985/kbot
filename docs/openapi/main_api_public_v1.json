@@ -13819,6 +13819,16 @@
               "title": "Tool Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "pattern": "^a[0-9]+$",
+              "title": "Action Id",
+              "type": "string"
+            }
           }
         ],
         "responses": {

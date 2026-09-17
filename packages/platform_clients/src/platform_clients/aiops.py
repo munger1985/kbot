@@ -1530,15 +1530,17 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         conversation_id: UUID,
         turn_id: UUID,
         tool_id: str,
+        action_id: str,
         *,
         auth_context: AuthContext,
     ) -> AIOpsBinaryResponse:
-        """下载会话内已固化的原生 Oracle 工作负载报告。"""
+        """下载会话内指定调查动作已固化的原生 Oracle 工作负载报告。"""
         return await self._bytes(
             "GET",
             (
                 f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
                 f"/turns/{turn_id}/workload-reports/{quote(tool_id, safe='')}"
+                f"?{urlencode({'action_id': action_id})}"
             ),
             auth_context=auth_context,
             accept="text/html",

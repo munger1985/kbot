@@ -12339,7 +12339,7 @@
     },
     "/internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}": {
       "get": {
-        "description": "下载本轮生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。",
+        "description": "下载本轮指定调查动作生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。",
         "operationId": "download_workload_report_internal_v1_aiops_conversations__conversation_id__turns__turn_id__workload_reports__tool_id__get",
         "parameters": [
           {
@@ -12369,6 +12369,16 @@
             "schema": {
               "pattern": "^db\\.oracle\\.(awr\\.report|awr\\.diff_report|ash\\.report)$",
               "title": "Tool Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "pattern": "^a[0-9]+$",
+              "title": "Action Id",
               "type": "string"
             }
           }

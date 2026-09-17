@@ -778,6 +778,7 @@ async def download_workload_report(
     turn_id: UUID,
     tool_id: str,
     request: Request,
+    action_id: str = Query(pattern=r"^a[0-9]+$"),
 ):
     """代理原生 Oracle 工作负载报告，避免向浏览器暴露 Agent 内部存储。"""
     if tool_id not in {
@@ -791,6 +792,7 @@ async def download_workload_report(
         conversation_id,
         turn_id,
         tool_id,
+        action_id,
         auth_context=request.state.auth_context,
     )
     return Response(

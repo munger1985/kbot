@@ -278,9 +278,10 @@ async def download_workload_report(
     tool_id: str = Path(
         pattern=r"^db\.oracle\.(awr\.report|awr\.diff_report|ash\.report)$"
     ),
+    action_id: str = Query(pattern=r"^a[0-9]+$"),
     context: AuthContext = Depends(get_aiops_auth_context),
 ) -> Response:
-    """下载本轮生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。"""
+    """下载本轮指定调查动作生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。"""
     domain_id, actor_id = _scope(request, context)
     content = await request.app.state.conversation_turn_service.get_workload_report_content(
         domain_id=domain_id,
@@ -288,12 +289,13 @@ async def download_workload_report(
         turn_id=turn_id,
         actor_id=actor_id,
         tool_id=tool_id,
+        action_id=action_id,
     )
     filename = {
-        "db.oracle.awr.report": "oracle-awr-report.html",
-        "db.oracle.awr.diff_report": "oracle-awr-diff-report.html",
-        "db.oracle.ash.report": "oracle-ash-report.html",
-    }[tool_id]
+        "db.oracle.awr.report": "oracle-awr-report",
+        "db.oracle.awr.diff_report": "oracle-awr-diff-report",
+        "db.oracle.ash.report": "oracle-ash-report",
+    }[tool_id] + f"-{action_id}.html"
     return Response(
         content=content,
         media_type="text/html",
