@@ -131,25 +131,39 @@ class AccessControlService:
             members = [row for row in members if row.user_id in visible_user_ids]
             user_ids = tuple(row.user_id for row in members)
             users = {
-                row.user_id: row
+                row.user_id: (
+                    row.display_name,
+                    int(row.max_security_level),
+                    row.status,
+                )
                 for row in await uow.access.list_users_by_ids(user_ids)
             }
-        grouped: dict[str, list[dict[str, str]]] = {row.user_id: [] for row in members}
-        for row in rows:
-            grouped.setdefault(row.user_id, []).append({
-                "role_code": row.role_code, "status": row.status
+            member_flags = {
+                row.user_id: row.is_initial_admin == "Y"
+                for row in members
+            }
+            role_rows = tuple(
+                (row.user_id, row.role_code, row.status)
+                for row in rows
+            )
+        grouped: dict[str, list[dict[str, str]]] = {
+            user_id: [] for user_id in member_flags
+        }
+        for user_id, role_code, role_status in role_rows:
+            grouped.setdefault(user_id, []).append({
+                "role_code": role_code, "status": role_status
             })
         return [{
             "user_id": user_id,
-            "display_name": users.get(user_id).display_name
+            "display_name": users[user_id][0]
             if user_id in users else None,
-            "max_security_level": int(users[user_id].max_security_level)
+            "max_security_level": users[user_id][1]
             if user_id in users else 0,
-            "status": users.get(user_id).status
+            "status": users[user_id][2]
             if user_id in users else "ACTIVE",
             "protected": (
                 is_reserved_global_admin(user_id)
-                or any(row.user_id == user_id and row.is_initial_admin == "Y" for row in members)
+                or member_flags.get(user_id, False)
             ),
             "roles": roles,
         } for user_id, roles in grouped.items()]
@@ -160,7 +174,10 @@ class AccessControlService:
         """返回策略可选择的当前 Domain 成员及应用角色目录。"""
         members = await self.list_members(app_id=app_id, domain_id=domain_id)
         async with self._uow_factory() as uow:
-            roles = await uow.access.list_active_app_roles(app_id=app_id)
+            roles = tuple(
+                (row.role_code, row.display_name)
+                for row in await uow.access.list_active_app_roles(app_id=app_id)
+            )
         return {
             "members": [
                 {
@@ -177,10 +194,10 @@ class AccessControlService:
             ],
             "roles": [
                 {
-                    "code": row.role_code,
-                    "display_name": row.display_name,
+                    "code": role_code,
+                    "display_name": display_name,
                 }
-                for row in roles
+                for role_code, display_name in roles
             ],
         }
 

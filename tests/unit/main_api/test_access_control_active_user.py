@@ -191,6 +191,123 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             await service.user_max_security_level(user_id="TEST_USER"),
         )
 
+    async def test_policy_members_are_snapshotted_before_uow_exit(self):
+        class Entity:
+            attached = True
+
+            def __init__(self, **values):
+                self.values = values
+
+            def __getattr__(self, name):
+                if not self.attached:
+                    raise RuntimeError("实体已经脱离 Session")
+                return self.values[name]
+
+        member = Entity(user_id="user-1", is_initial_admin="N")
+        role = Entity(
+            user_id="user-1", role_code="manager", status="ACTIVE"
+        )
+        user = Entity(
+            user_id="user-1", display_name="演示用户",
+            max_security_level=2, status="ACTIVE",
+        )
+
+        class Access:
+            async def list_app_members(self, **kwargs):
+                del kwargs
+                return [member]
+
+            async def list_member_roles(self, **kwargs):
+                del kwargs
+                return [role]
+
+            async def list_users_by_ids(self, user_ids):
+                del user_ids
+                return [user]
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                member.attached = False
+                role.attached = False
+                user.attached = False
+
+        service = AccessControlService(uow_factory=Uow)
+
+        self.assertEqual(
+            [{
+                "user_id": "user-1",
+                "display_name": "演示用户",
+                "max_security_level": 2,
+                "status": "ACTIVE",
+                "protected": False,
+                "roles": [{"role_code": "manager", "status": "ACTIVE"}],
+            }],
+            await service.list_members(app_id="assistant", domain_id=41),
+        )
+
+    async def test_policy_roles_are_snapshotted_before_uow_exit(self):
+        class Role:
+            attached = True
+
+            @property
+            def role_code(self):
+                if not self.attached:
+                    raise RuntimeError("实体已经脱离 Session")
+                return "manager"
+
+            @property
+            def display_name(self):
+                if not self.attached:
+                    raise RuntimeError("实体已经脱离 Session")
+                return "管理员"
+
+        role = Role()
+
+        class Access:
+            async def list_active_app_roles(self, **kwargs):
+                del kwargs
+                return [role]
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                role.attached = False
+
+        class Service(AccessControlService):
+            async def list_members(self, **kwargs):
+                del kwargs
+                return [{
+                    "user_id": "user-1",
+                    "display_name": "演示用户",
+                    "status": "ACTIVE",
+                    "roles": [{"role_code": "manager", "status": "ACTIVE"}],
+                }]
+
+        service = Service(uow_factory=Uow)
+
+        self.assertEqual(
+            {
+                "members": [{
+                    "id": "user-1",
+                    "display_name": "演示用户",
+                    "username": "user-1",
+                }],
+                "roles": [{"code": "manager", "display_name": "管理员"}],
+            },
+            await service.list_policy_subjects(
+                app_id="assistant", domain_id=41
+            ),
+        )
+
     async def test_invalid_user_security_level_is_rejected(self):
         class Access:
             async def get_user(self, user_id):
