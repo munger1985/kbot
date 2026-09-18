@@ -75,6 +75,7 @@ class DatabaseSchemaIntrospector:
     async def capture_object(
         self, context: _ObjectContext, username: str, password: str,
     ) -> dict[str, object]:
+        mysql_check_rows: tuple = ()
         if context.source_type == "POSTGRESQL":
             connection = await asyncpg.connect(
                 host=context.endpoint.host, port=context.endpoint.port,
@@ -151,6 +152,19 @@ class DatabaseSchemaIntrospector:
                     )
                     comment_row = await cursor.fetchone()
                     object_comment = comment_row[0] if comment_row else None
+                    try:
+                        await cursor.execute(
+                            """SELECT cc.constraint_name, cc.check_clause
+                               FROM information_schema.check_constraints cc
+                               JOIN information_schema.table_constraints tc
+                                 ON tc.constraint_schema=cc.constraint_schema
+                                AND tc.constraint_name=cc.constraint_name
+                               WHERE tc.table_schema=%s AND tc.table_name=%s""",
+                            (context.schema_name, context.object_name),
+                        )
+                        mysql_check_rows = await cursor.fetchall()
+                    except Exception:
+                        mysql_check_rows = ()
             finally:
                 connection.close()
         elif context.source_type == "ORACLE":
@@ -168,11 +182,14 @@ class DatabaseSchemaIntrospector:
                     rows = await cursor.fetchall()
                     await cursor.execute(
                         """SELECT ac.constraint_name, ac.constraint_type,
-                                  LISTAGG(acc.column_name, ',') WITHIN GROUP (ORDER BY acc.position)
+                                  CASE WHEN ac.constraint_type = 'C' THEN MAX(ac.search_condition_vc)
+                                       ELSE LISTAGG(acc.column_name, ',') WITHIN GROUP (ORDER BY acc.position)
+                                  END
                            FROM all_constraints ac LEFT JOIN all_cons_columns acc
                              ON acc.owner=ac.owner AND acc.constraint_name=ac.constraint_name
                            WHERE ac.owner=:owner AND ac.table_name=:name
-                           GROUP BY ac.constraint_name, ac.constraint_type ORDER BY ac.constraint_name""",
+                           GROUP BY ac.constraint_name, ac.constraint_type
+                           ORDER BY ac.constraint_name""",
                         {"owner": context.schema_name.upper(), "name": context.object_name.upper()},
                     )
                     constraint_rows = await cursor.fetchall()
@@ -209,21 +226,128 @@ class DatabaseSchemaIntrospector:
         ]
         if not columns:
             raise ValueError("SCHEMA_OBJECT_HAS_NO_VISIBLE_COLUMNS")
+        constraints = [
+            {"name": str(row[0]), "type": str(row[1]), "definition": None if row[2] is None else str(row[2])}
+            for row in constraint_rows
+        ]
+        if mysql_check_rows:
+            check_clauses = {
+                str(row[0]): None if row[1] is None else str(row[1])
+                for row in mysql_check_rows
+            }
+            for item in constraints:
+                clause = check_clauses.get(str(item["name"]))
+                if clause:
+                    item["definition"] = clause
+        columns = await self._attach_value_samples(context, username, password, columns)
         return {
             "schema": context.schema_name, "name": context.object_name,
             "object_type": context.object_type,
             "columns": [str(column["name"]) for column in columns],
             "column_details": columns,
             "comment": None if object_comment is None else str(object_comment),
-            "constraints": [
-                {"name": str(row[0]), "type": str(row[1]), "definition": None if row[2] is None else str(row[2])}
-                for row in constraint_rows
-            ],
+            "constraints": constraints,
             "indexes": [
                 {"name": str(row[0]), "definition": None if row[1] is None else str(row[1])}
                 for row in index_rows
             ],
         }
+
+    async def _attach_value_samples(
+        self, context: _ObjectContext, username: str, password: str,
+        columns: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        """为低基数短字符串列写入 value_samples；失败不影响结构采集。"""
+        from data_query.connectors.value_members import (
+            compile_distinct_sample_query,
+            is_sampleable_string_type,
+            members_from_stored_values,
+        )
+        sampleable = [
+            column for column in columns
+            if is_sampleable_string_type(str(column.get("type") or ""))
+        ]
+        if not sampleable:
+            return columns
+        try:
+            if context.source_type == "POSTGRESQL":
+                connection = await asyncpg.connect(
+                    host=context.endpoint.host, port=context.endpoint.port,
+                    database=context.endpoint.database, user=username, password=password,
+                    ssl="require" if context.endpoint.tls_enabled else False, timeout=15,
+                )
+                try:
+                    for column in sampleable:
+                        compiled = compile_distinct_sample_query(
+                            dialect="POSTGRESQL",
+                            schema_name=context.schema_name,
+                            object_name=context.object_name,
+                            column_name=str(column["name"]),
+                        )
+                        try:
+                            rows = await connection.fetch(compiled.sql)
+                            samples = members_from_stored_values(row[0] for row in rows)
+                            if samples:
+                                column["value_samples"] = [item.value for item in samples]
+                        except Exception:
+                            continue
+                finally:
+                    await connection.close()
+                return columns
+            if context.source_type == "MYSQL":
+                connection = await aiomysql.connect(
+                    host=context.endpoint.host, port=context.endpoint.port,
+                    db=context.endpoint.database, user=username, password=password,
+                    ssl=ssl.create_default_context() if context.endpoint.tls_enabled else None,
+                    connect_timeout=15,
+                )
+                try:
+                    async with connection.cursor() as cursor:
+                        for column in sampleable:
+                            compiled = compile_distinct_sample_query(
+                                dialect="MYSQL",
+                                schema_name=context.schema_name,
+                                object_name=context.object_name,
+                                column_name=str(column["name"]),
+                            )
+                            try:
+                                await cursor.execute(compiled.sql)
+                                rows = await cursor.fetchall()
+                                samples = members_from_stored_values(row[0] for row in rows)
+                                if samples:
+                                    column["value_samples"] = [item.value for item in samples]
+                            except Exception:
+                                continue
+                finally:
+                    connection.close()
+                return columns
+            if context.source_type == "ORACLE":
+                connection = await self._oracle_connect(context, username, password)
+                try:
+                    cursor = connection.cursor()
+                    try:
+                        for column in sampleable:
+                            compiled = compile_distinct_sample_query(
+                                dialect="ORACLE",
+                                schema_name=context.schema_name.upper(),
+                                object_name=context.object_name.upper(),
+                                column_name=str(column["name"]).upper(),
+                            )
+                            try:
+                                await cursor.execute(compiled.sql)
+                                rows = await cursor.fetchall()
+                                samples = members_from_stored_values(row[0] for row in rows)
+                                if samples:
+                                    column["value_samples"] = [item.value for item in samples]
+                            except Exception:
+                                continue
+                    finally:
+                        cursor.close()
+                finally:
+                    await connection.close()
+        except Exception:
+            return columns
+        return columns
 
     @staticmethod
     async def _oracle_connect(context: _SourceContext, username: str, password: str):

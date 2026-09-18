@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from data_query.contracts import DimensionDefinition
+from data_query.contracts import DimensionDefinition, resolve_member_filter
 
 
 def normalize_filter_values(
@@ -13,6 +13,31 @@ def normalize_filter_values(
 ) -> tuple[Any, ...]:
     """在参数绑定前完成确定性的文本和日期类型规范化。"""
     return tuple(_normalize_filter_value(dimension=dimension, value=value) for value in values)
+
+
+def resolve_dimension_filter(
+    *,
+    dimension: DimensionDefinition,
+    operator: str,
+    values: tuple[Any, ...],
+) -> tuple[str, tuple[Any, ...]]:
+    """编译期非严格解析：能唯一对应库存编码则改写，否则保持原值。"""
+    if operator in {"IS_NULL", "IS_NOT_NULL"}:
+        return operator, ()
+    normalized = normalize_filter_values(dimension=dimension, values=values)
+    operator, resolved = resolve_member_filter(
+        members=dimension.value_members,
+        operator=operator,
+        values=normalized,
+        value_normalization=dimension.value_normalization,
+        allowed_filter_operators=dimension.allowed_filter_operators,
+        strict=False,
+        field_name=dimension.name,
+    )
+    return operator, tuple(
+        _normalize_filter_value(dimension=dimension, value=value)
+        for value in resolved
+    )
 
 
 def _normalize_filter_value(*, dimension: DimensionDefinition, value: Any) -> Any:

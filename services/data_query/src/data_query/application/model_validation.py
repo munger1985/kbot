@@ -23,6 +23,7 @@ from data_query.entities import (
 )
 from platform_core.identity import uuid7
 from data_query.application.notifications import publish_data_query_notification
+from data_query.application.value_domains import planning_dimension_payload
 from data_query.connectors import compile_dialect_query
 from data_query.connectors.postgresql import compile_postgresql_query
 
@@ -45,15 +46,7 @@ def planning_catalog(definition: SemanticModelDefinition) -> dict[str, object]:
             for item in definition.datasets
         ],
         "dimensions": [
-            {
-                "name": item.name,
-                "display_name": item.display_name,
-                "dataset": item.dataset,
-                "value_type": item.value_type,
-                "groupable": item.groupable,
-                "filterable": item.filterable,
-                "allowed_filter_operators": item.allowed_filter_operators,
-            }
+            planning_dimension_payload(item)
             for item in definition.dimensions
         ],
         "measures": [

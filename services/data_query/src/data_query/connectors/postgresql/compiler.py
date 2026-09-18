@@ -8,7 +8,7 @@ from typing import Any
 from data_query.contracts import DataQueryPlanV1, SemanticModelDefinition
 from data_query.domain import QueryPlanValidationError, validate_query_plan
 
-from data_query.connectors.filter_values import normalize_filter_values
+from data_query.connectors.filter_values import resolve_dimension_filter
 
 
 @dataclass(frozen=True)
@@ -74,13 +74,14 @@ def compile_postgresql_query(
     filter_predicates: list[str] = []
     for filter_ in plan.filters:
         dimension = dimensions[filter_.field]
-        values = normalize_filter_values(dimension=dimension, values=filter_.values)
+        operator, values = resolve_dimension_filter(
+            dimension=dimension, operator=filter_.operator, values=filter_.values,
+        )
         predicates: list[str] = []
         for physical_column in (dimension.physical_column, *dimension.filter_alias_columns):
             column = _quote(physical_column)
             if dimension.value_normalization == "CASE_INSENSITIVE_TRIM":
                 column = f"LOWER({column})"
-            operator = filter_.operator
             if operator == "IS_NULL":
                 predicates.append(f"{column} IS NULL")
                 continue
@@ -114,7 +115,7 @@ def compile_postgresql_query(
             else:
                 sql_operator = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}[operator]
                 predicates.append(f"{column} {sql_operator} {placeholder}")
-        conjunction = " AND " if filter_.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
+        conjunction = " AND " if operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
         filter_predicates.append(
             predicates[0]
             if len(predicates) == 1

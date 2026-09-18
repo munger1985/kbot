@@ -13,7 +13,7 @@ from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.language import language_instruction, response_language
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
 from platform_core.contracts import AuthContext
-from platform_core.contracts.data_query import DataQueryPlanV1
+from platform_core.contracts.data_query import DataQueryPlanV1, normalize_catalog_dimension_filter
 from platform_core.identity import uuid7
 
 from .contracts import QueryResult
@@ -381,16 +381,13 @@ class SemanticDataQueryExecutor:
             else:
                 values = []
             catalog = catalog_dimensions.get(field)
-            allowed = (
-                tuple(catalog.get("allowed_filter_operators") or ())
-                if isinstance(catalog, dict)
-                else ()
+            operator, values = normalize_catalog_dimension_filter(
+                field=field,
+                operator=operator,
+                values=values,
+                catalog_dimension=catalog if isinstance(catalog, dict) else None,
+                strict=True,
             )
-            if allowed and operator not in allowed:
-                if len(values) > 1 and "IN" in allowed:
-                    operator = "IN"
-                elif "EQ" in allowed:
-                    operator = "EQ"
             filters.append({
                 "field": field,
                 "operator": operator,

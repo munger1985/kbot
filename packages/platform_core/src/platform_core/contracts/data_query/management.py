@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -80,6 +80,45 @@ class DatasetDefinition(_Contract):
     scope_column: str | None = Field(default=None, pattern=_OBJECT_PATTERN)
 
 
+class DimensionValueMember(_Contract):
+    """维度闭域成员：value 是库存编码，display_name/aliases 只用于解析用户说法。"""
+
+    value: str = Field(min_length=1, max_length=256)
+    display_name: str | None = Field(default=None, min_length=1, max_length=256)
+    aliases: tuple[str, ...] = Field(default=(), max_length=32)
+
+    @field_validator("value", "display_name")
+    @classmethod
+    def strip_member_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value_members 文本不能为空")
+        return stripped
+
+    @field_validator("aliases")
+    @classmethod
+    def normalize_aliases(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = item.strip()[:128]
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            cleaned.append(text)
+        return tuple(cleaned)
+
+
+def member_lookup_key(value: str, *, normalization: str) -> str:
+    """按维度规范化规则生成成员查找键。"""
+    text = value.strip()
+    if normalization in {"LOWER_TRIM", "CASE_INSENSITIVE_TRIM"}:
+        return text.lower()
+    return text
+
+
 class DimensionDefinition(_Contract):
     name: str = Field(pattern=_KEY_PATTERN)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
@@ -90,6 +129,7 @@ class DimensionDefinition(_Contract):
     filterable: bool = True
     sensitivity: Literal["PUBLIC", "INTERNAL", "SENSITIVE"] = "INTERNAL"
     synonyms: tuple[str, ...] = Field(default=(), max_length=32)
+    value_members: tuple[DimensionValueMember, ...] = Field(default=(), max_length=64)
     value_normalization: Literal[
         "NONE", "LOWER_TRIM", "CASE_INSENSITIVE_TRIM"
     ] = "NONE"
@@ -107,7 +147,236 @@ class DimensionDefinition(_Contract):
             raise ValueError("维度筛选操作符不能重复")
         if len(self.filter_alias_columns) != len(set(self.filter_alias_columns)):
             raise ValueError("维度备用筛选列不能重复")
+        if self.value_members and self.value_type != "STRING":
+            raise ValueError("value_members 仅适用于 STRING 维度")
+        member_values = [item.value for item in self.value_members]
+        if len(member_values) != len(set(member_values)):
+            raise ValueError("value_members.value 不能重复")
+        lookup: dict[str, str] = {}
+        for member in self.value_members:
+            keys = (member.value, *(
+                (member.display_name,) if member.display_name else ()
+            ), *member.aliases)
+            for key in keys:
+                normalized = member_lookup_key(
+                    key, normalization=self.value_normalization,
+                )
+                if not normalized:
+                    raise ValueError("value_members 查找键不能为空")
+                owner = lookup.get(normalized)
+                if owner is not None and owner != member.value:
+                    raise ValueError("value_members 查找键不能映射到多个成员")
+                lookup[normalized] = member.value
         return self
+
+
+class MemberFilterResolutionError(ValueError):
+    """闭域维度筛选无法唯一解析到库存编码。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        field: str = "",
+        available_values: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.field = field
+        self.available_values = available_values
+
+
+def resolve_member_filter(
+    *,
+    members: Any,
+    operator: str,
+    values: Any,
+    value_normalization: str = "NONE",
+    allowed_filter_operators: Any = (),
+    strict: bool = False,
+    field_name: str = "",
+) -> tuple[str, tuple[Any, ...]]:
+    """把用户说法解析为库存编码；闭域 CONTAINS/STARTS_WITH 在唯一精确命中时升为 EQ/IN。"""
+    closed = _coerce_value_members(members)
+    allowed = tuple(allowed_filter_operators or ())
+    incoming = tuple(values or ())
+    if operator in {"IS_NULL", "IS_NOT_NULL"}:
+        return operator, ()
+    if not closed:
+        return operator, incoming
+    resolved: list[Any] = []
+    exact_all = True
+    for value in incoming:
+        exact = _exact_member(
+            members=closed, value=value, normalization=value_normalization,
+        )
+        if exact is not None:
+            resolved.append(exact.value)
+            continue
+        exact_all = False
+        if operator in {"CONTAINS", "STARTS_WITH"} and _stored_pattern_matches(
+            members=closed,
+            value=value,
+            operator=operator,
+            normalization=value_normalization,
+        ):
+            resolved.append(value)
+            continue
+        if strict:
+            raise _unresolved_member_error(
+                field=field_name, value=value, members=closed,
+            )
+        resolved.append(value)
+    if operator in {"CONTAINS", "STARTS_WITH"} and exact_all:
+        unique = _dedupe_preserve(resolved)
+        if len(unique) == 1 and _operator_allowed("EQ", allowed):
+            return "EQ", tuple(unique)
+        if _operator_allowed("IN", allowed):
+            return "IN", tuple(unique)
+        return operator, tuple(unique)
+    return operator, tuple(resolved)
+
+
+def normalize_catalog_dimension_filter(
+    *,
+    field: str,
+    operator: str,
+    values: Any,
+    catalog_dimension: dict[str, Any] | None,
+    strict: bool = True,
+) -> tuple[str, list[Any]]:
+    """规划目录上的操作符修复与闭域成员回写。"""
+    incoming = list(values or [])
+    allowed: tuple[str, ...] = ()
+    members: Any = ()
+    normalization = "NONE"
+    if isinstance(catalog_dimension, dict):
+        allowed = tuple(catalog_dimension.get("allowed_filter_operators") or ())
+        members = catalog_dimension.get("value_members") or ()
+        normalization = str(catalog_dimension.get("value_normalization") or "NONE")
+    if allowed and operator not in allowed:
+        if len(incoming) > 1 and "IN" in allowed:
+            operator = "IN"
+        elif "EQ" in allowed:
+            operator = "EQ"
+    if not members:
+        return operator, incoming
+    operator, resolved = resolve_member_filter(
+        members=members,
+        operator=operator,
+        values=incoming,
+        value_normalization=normalization,
+        allowed_filter_operators=allowed,
+        strict=strict,
+        field_name=field,
+    )
+    return operator, list(resolved)
+
+
+def _coerce_value_members(members: Any) -> tuple[DimensionValueMember, ...]:
+    coerced: list[DimensionValueMember] = []
+    for item in members or ():
+        if isinstance(item, DimensionValueMember):
+            coerced.append(item)
+            continue
+        if not isinstance(item, dict) or not isinstance(item.get("value"), str):
+            continue
+        aliases = item.get("aliases") or ()
+        if not isinstance(aliases, (list, tuple)):
+            aliases = ()
+        display_name = item.get("display_name")
+        coerced.append(
+            DimensionValueMember(
+                value=item["value"],
+                display_name=display_name if isinstance(display_name, str) else None,
+                aliases=tuple(aliases),
+            )
+        )
+    return tuple(coerced)
+
+
+def _exact_member(
+    *, members: tuple[DimensionValueMember, ...], value: Any, normalization: str,
+) -> DimensionValueMember | None:
+    if not isinstance(value, str):
+        return None
+    key = member_lookup_key(value, normalization=normalization)
+    if not key:
+        return None
+    matches = [
+        member for member in members
+        if key in _member_lookup_keys(member=member, normalization=normalization)
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _member_lookup_keys(
+    *, member: DimensionValueMember, normalization: str,
+) -> set[str]:
+    keys = [member.value, *member.aliases]
+    if member.display_name:
+        keys.append(member.display_name)
+    return {
+        member_lookup_key(item, normalization=normalization)
+        for item in keys
+        if item.strip()
+    }
+
+
+def _stored_pattern_matches(
+    *,
+    members: tuple[DimensionValueMember, ...],
+    value: Any,
+    operator: str,
+    normalization: str,
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    needle = member_lookup_key(value, normalization=normalization)
+    if not needle:
+        return False
+    for member in members:
+        haystack = member_lookup_key(member.value, normalization=normalization)
+        if operator == "CONTAINS" and needle in haystack:
+            return True
+        if operator == "STARTS_WITH" and haystack.startswith(needle):
+            return True
+    return False
+
+
+def _operator_allowed(operator: str, allowed: tuple[str, ...]) -> bool:
+    return not allowed or operator in allowed
+
+
+def _dedupe_preserve(values: list[Any]) -> list[Any]:
+    seen: set[Any] = set()
+    unique: list[Any] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _unresolved_member_error(
+    *, field: str, value: Any, members: tuple[DimensionValueMember, ...],
+) -> MemberFilterResolutionError:
+    shown = str(value).strip() if value is not None else ""
+    field_text = field or "该维度"
+    options = "、".join(
+        f"{item.value}（{item.display_name}）"
+        if item.display_name and item.display_name != item.value
+        else item.value
+        for item in members
+    )
+    return MemberFilterResolutionError(
+        f"维度 {field_text} 的筛选值「{shown}」不是库存编码。"
+        f"filters.values 必须使用 value_members.value，可选：{options}",
+        field=field,
+        available_values=tuple(item.value for item in members),
+    )
 
 
 class MeasureDefinition(_Contract):

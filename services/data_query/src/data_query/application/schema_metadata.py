@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from data_query.connectors.value_members import dimension_value_domain
 from data_query.contracts import (
     DatasetDefinition,
     DimensionDefinition,
@@ -329,12 +330,25 @@ async def generate_semantic_candidate(
                     aggregation="SUM", value_type=value_type, sensitivity="INTERNAL",
                 ))
             else:
+                value_members = ()
+                dimension_kwargs = {}
+                if value_type == "STRING":
+                    value_members, operators = dimension_value_domain(
+                        physical_column=physical,
+                        column_type=str(column.get("type", "STRING")),
+                        value_samples=column.get("value_samples"),
+                        constraints=metadata.get("constraints"),
+                    )
+                    if operators:
+                        dimension_kwargs["allowed_filter_operators"] = operators
                 local_dimensions.append(DimensionDefinition(
                     name=_logical_key(f"{dataset_key}_{logical}", fallback="dimension"),
                     display_name=(str(column.get("comment")) if column.get("comment") else physical),
                     dataset=dataset_key, physical_column=physical,
                     value_type=value_type, groupable=True, filterable=True,
                     sensitivity="SENSITIVE" if any(token in logical for token in ("phone", "mobile", "email", "id_card")) else "INTERNAL",
+                    value_members=value_members,
+                    **dimension_kwargs,
                 ))
                 if primary_time is None and value_type in {"DATE", "DATETIME"}:
                     primary_time = local_dimensions[-1].name
@@ -388,10 +402,12 @@ async def enrich_semantic_candidate(
                     "role": "system",
                     "content": (
                         "你是企业数据语义建模助手。只能为给定逻辑对象建议中文业务名称、维度同义词、"
-                        "敏感级别和审核警告；不得新增删除对象，不得修改 name、dataset、物理表列、类型或聚合方式。"
+                        "敏感级别、已有 value_members 的 display_name/aliases，以及审核警告；"
+                        "不得新增删除对象，不得修改 name、dataset、物理表列、类型、聚合方式或 value_members.value。"
                         "展示名必须优先依据 column_comment 或 object_comment；将英文/下划线字段翻译为简短、"
                         "明确的中文业务词语，通常 2 至 12 个汉字（可保留必要通用缩写）。注释为空、含义不明确或"
                         "可能误导时，保留 current_display_name 并在 warnings 说明，不得猜测。"
+                        "不得编造库存编码；只能为已经出现的 value_members.value 补充业务展示名和别名。"
                         "返回 JSON，包含 datasets、dimensions、measures、warnings；每项必须带原 name 和 display_name。"
                     ),
                 },
@@ -495,6 +511,40 @@ def _merge_ai_labels(*, definition: dict[str, Any], suggestions: dict[str, Any])
                         value.strip()[:128] for value in synonyms[:32]
                         if isinstance(value, str) and value.strip()
                     )
+                item["value_members"] = _merge_ai_value_members(
+                    original=item.get("value_members"),
+                    suggested=suggestion.get("value_members"),
+                )
             if section in {"dimensions", "measures"} and suggestion.get("sensitivity") in {"PUBLIC", "INTERNAL", "SENSITIVE"}:
                 item["sensitivity"] = suggestion["sensitivity"]
     return result
+
+
+def _merge_ai_value_members(*, original: object, suggested: object) -> tuple[dict[str, object], ...]:
+    """AI 只能为已有库存编码补充展示名和别名，不能增删或改 value。"""
+    if not isinstance(original, (list, tuple)):
+        return ()
+    suggested_by_value: dict[str, dict[str, object]] = {}
+    if isinstance(suggested, list):
+        for item in suggested:
+            if not isinstance(item, dict) or not isinstance(item.get("value"), str):
+                continue
+            suggested_by_value[item["value"].strip()] = item
+    merged: list[dict[str, object]] = []
+    for member in original:
+        if not isinstance(member, dict) or not isinstance(member.get("value"), str):
+            continue
+        current = dict(member)
+        extra = suggested_by_value.get(str(current["value"]).strip())
+        if extra is not None:
+            display_name = extra.get("display_name")
+            if isinstance(display_name, str) and display_name.strip():
+                current["display_name"] = display_name.strip()[:256]
+            aliases = extra.get("aliases")
+            if isinstance(aliases, list):
+                current["aliases"] = tuple(
+                    value.strip()[:128] for value in aliases[:32]
+                    if isinstance(value, str) and value.strip()
+                )
+        merged.append(current)
+    return tuple(merged)

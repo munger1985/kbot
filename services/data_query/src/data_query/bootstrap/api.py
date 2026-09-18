@@ -17,8 +17,9 @@ from data_query.application import (
     SemanticModelValidationError,
 )
 from data_query.application.managed_datasets import ManagedDatasetError, ManagedDatasetService
+from data_query.application.value_domains import ValueDomainObserver, sample_distinct_values
 from data_query.config import DataQuerySettings, get_data_query_settings
-from data_query.adapters import DatabaseCredentialService
+from data_query.adapters import DatabaseCredentialService, DataSourceExecutorResolver
 from platform_core.managed_credentials import ManagedCredentialCipher
 from data_query.connectors.connection_tester import test_data_source_connection
 from platform_core.database import create_database_runtime
@@ -75,9 +76,23 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
             llm_config=resolved.llm,
         ),
     )
+    executor_resolver = DataSourceExecutorResolver(
+        uow_factory=uow_factory,
+        credential_service=credential_service,
+    )
+
+    async def sample_dimension_values(**kwargs):
+        """通过受治理只读执行器观察低基数字符串维度的库存编码。"""
+        return await sample_distinct_values(
+            executor=executor_resolver,
+            query_guardrail=resolved.query_guardrail.model_dump(),
+            **kwargs,
+        )
+
     app.state.runtime_service = DataQueryRuntimeService(
         uow_factory=uow_factory,
         query_guardrail=resolved.query_guardrail.model_dump(),
+        value_domain_observer=ValueDomainObserver(sampler=sample_dimension_values),
     )
     app.state.managed_dataset_service = ManagedDatasetService(
         uow_factory=uow_factory,

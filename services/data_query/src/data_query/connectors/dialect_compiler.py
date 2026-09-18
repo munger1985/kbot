@@ -8,7 +8,7 @@ from typing import Any, Literal
 from data_query.contracts import DataQueryPlanV1, SemanticModelDefinition
 from data_query.domain import validate_query_plan
 
-from .filter_values import normalize_filter_values
+from .filter_values import resolve_dimension_filter
 
 
 @dataclass(frozen=True)
@@ -56,13 +56,14 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
     for item in plan.filters:
         dimension = dimensions[item.field]
         columns = (dimension.physical_column, *dimension.filter_alias_columns)
-        values = normalize_filter_values(dimension=dimension, values=item.values)
+        operator, values = resolve_dimension_filter(
+            dimension=dimension, operator=item.operator, values=item.values,
+        )
         predicates: list[str] = []
         for physical_column in columns:
             column = quote(physical_column)
             if dimension.value_normalization == "CASE_INSENSITIVE_TRIM":
                 column = f"LOWER({column})"
-            operator = item.operator
             if operator == "IS_NULL": predicates.append(f"{column} IS NULL"); continue
             if operator == "IS_NOT_NULL": predicates.append(f"{column} IS NOT NULL"); continue
             if operator in {"IN", "NOT_IN"}:
@@ -81,7 +82,7 @@ def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQuer
                 continue
             token = placeholder(start+1); mapping = {"EQ": "=", "NE": "<>", "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<="}
             predicates.append(f"{column} LIKE CONCAT({token}, '%')" if operator == "STARTS_WITH" and dialect == "MYSQL" else f"{column} LIKE ({token} || '%')" if operator == "STARTS_WITH" else f"{column} {mapping[operator]} {token}")
-        conjunction = " AND " if item.operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
+        conjunction = " AND " if operator in {"NE", "NOT_IN", "IS_NULL"} else " OR "
         filter_predicates.append(
             predicates[0]
             if len(predicates) == 1

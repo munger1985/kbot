@@ -1,12 +1,17 @@
 """Data Query 内部运行服务。"""
 
 from collections.abc import Callable
+import asyncio
 import hashlib
 import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 from data_query.application.runs import DataQueryRunError, create_data_query_run
+from data_query.application.value_domains import (
+    ValueDomainObserver,
+    planning_dimension_payload,
+)
 from data_query.contracts import (
     CreateDataQueryRun,
     DataQueryResultView,
@@ -35,9 +40,11 @@ class DataQueryRuntimeService:
     def __init__(
         self, *, uow_factory: Callable[[], DataQueryUnitOfWork],
         query_guardrail: dict[str, int],
+        value_domain_observer: ValueDomainObserver | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._query_guardrail = dict(query_guardrail)
+        self._value_domain_observer = value_domain_observer
 
     async def create_run(
         self, *, domain_id: int, actor_id: str, trace_id: str,
@@ -55,10 +62,11 @@ class DataQueryRuntimeService:
         self, *, domain_id: int, actor_id: str, actor_roles: tuple[str, ...],
         consumer_app_id: str, agent_id: UUID, agent_version_id: UUID,
     ) -> DataQueryPlanningContext:
-        """仅返回逻辑名称，绝不将物理对象、列或策略细节交给 Planner LLM。"""
+        """仅返回逻辑名称和逻辑值域，绝不将物理对象、列或策略细节交给 Planner LLM。"""
         async with self._uow_factory() as uow:
             assert uow.agent_bindings and uow.semantic_models and uow.semantic_model_versions
             assert uow.platform_access is not None
+            assert uow.data_sources is not None
             resolved_domain_id = await self._resolve_agent_domain(
                 uow.platform_access,
                 domain_id=domain_id,
@@ -70,7 +78,7 @@ class DataQueryRuntimeService:
                 domain_id=domain_id, consumer_app_id=consumer_app_id,
                 agent_id=agent_id, agent_version_id=agent_version_id,
             )
-            models: list[PlanningSemanticModel] = []
+            pending: list[tuple[object, SemanticModelDefinition, int, str, object]] = []
             for binding in bindings:
                 model = await uow.semantic_models.get_by_id(semantic_model_id=binding.semantic_model_id)
                 if model is None:
@@ -80,29 +88,64 @@ class DataQueryRuntimeService:
                 active = await uow.semantic_model_versions.get_active(semantic_model_id=model.semantic_model_id)
                 if active is None:
                     continue
+                source = await uow.data_sources.get_by_id(data_source_id=active.data_source_id)
+                if source is None:
+                    continue
                 definition = SemanticModelDefinition.model_validate(active.definition_json)
-                models.append(PlanningSemanticModel(
-                    semantic_model_id=model.semantic_model_id, semantic_model_version=active.version_no,
-                    display_name=model.display_name,
-                    datasets=tuple({"name": item.name, "display_name": item.display_name} for item in definition.datasets),
-                    dimensions=tuple({
-                        "name": item.name,
-                        "display_name": item.display_name,
-                        "dataset": item.dataset,
-                        "value_type": item.value_type,
-                        "synonyms": item.synonyms,
-                        "groupable": item.groupable,
-                        "filterable": item.filterable,
-                        "allowed_filter_operators": item.allowed_filter_operators,
-                    } for item in definition.dimensions),
-                    measures=tuple({"name": item.name, "dataset": item.dataset, "aggregation": item.aggregation, "value_type": item.value_type} for item in definition.measures),
-                    max_rows=self._query_guardrail["max_rows"],
-                ))
+                pending.append((model, definition, active.version_no, source.source_type, active.data_source_id))
             await uow.commit()
-            return DataQueryPlanningContext(
-                agent_id=agent_id, consumer_app_id=consumer_app_id,
-                agent_version_id=agent_version_id, models=tuple(models),
+        models: list[PlanningSemanticModel] = []
+        for model, definition, version_no, source_type, data_source_id in pending:
+            datasets = {item.name: item for item in definition.datasets}
+            observed = await self._planning_value_members(
+                definition=definition,
+                datasets=datasets,
+                source_type=source_type,
+                data_source_id=data_source_id,
             )
+            models.append(PlanningSemanticModel(
+                semantic_model_id=model.semantic_model_id, semantic_model_version=version_no,
+                display_name=model.display_name,
+                datasets=tuple({"name": item.name, "display_name": item.display_name} for item in definition.datasets),
+                dimensions=tuple(
+                    planning_dimension_payload(
+                        item,
+                        value_members=observed.get(item.name),
+                    )
+                    for item in definition.dimensions
+                ),
+                measures=tuple({"name": item.name, "dataset": item.dataset, "aggregation": item.aggregation, "value_type": item.value_type} for item in definition.measures),
+                max_rows=self._query_guardrail["max_rows"],
+            ))
+        return DataQueryPlanningContext(
+            agent_id=agent_id, consumer_app_id=consumer_app_id,
+            agent_version_id=agent_version_id, models=tuple(models),
+        )
+
+    async def _planning_value_members(
+        self, *, definition: SemanticModelDefinition, datasets: dict,
+        source_type: str, data_source_id,
+    ) -> dict[str, tuple]:
+        observer = self._value_domain_observer
+        if observer is None:
+            return {
+                item.name: item.value_members for item in definition.dimensions
+            }
+        async def resolve(dimension):
+            dataset = datasets.get(dimension.dataset)
+            if dataset is None:
+                return dimension.name, dimension.value_members
+            members = await observer.resolve_planning_members(
+                dimension=dimension,
+                dataset=dataset,
+                source_type=source_type,
+                data_source_id=data_source_id,
+            )
+            return dimension.name, members
+        resolved = await asyncio.gather(
+            *(resolve(item) for item in definition.dimensions)
+        )
+        return {name: members for name, members in resolved}
 
     @staticmethod
     async def _resolve_agent_domain(
