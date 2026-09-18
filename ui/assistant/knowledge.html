@@ -14,7 +14,7 @@
       <p>问文、问数与闲聊仅在当前 Agent 明确授权的 Knowledge Core 和问数模型范围内执行。</p>
     </div>
     <div class="assistant-actions">
-      <select id="knowledge-agent" aria-label="当前 Agent" disabled><option>等待 Agent 接入</option></select>
+      <select id="knowledge-agent" aria-label="当前 Agent" disabled><option value="">正在读取已启用 Agent</option></select>
       <button class="primary" id="knowledge-new-conversation" type="button">新建会话</button>
     </div>
   </header>
@@ -24,7 +24,7 @@
         <div><h2>最近会话</h2><p>当前 Agent 范围</p></div>
         <button class="small" type="button" id="knowledge-refresh">刷新</button>
       </div>
-      <div class="assistant-empty"><div><strong>尚无可用 Agent</strong><p>创建 Agent 后，必须先绑定当前 Domain 的 Knowledge Core 才能在此发起会话。</p></div></div>
+      <div class="assistant-empty" id="knowledge-agent-summary"><div><strong>正在读取 Agent</strong><p>仅显示当前 Domain 已启用的 Agent。</p></div></div>
     </aside>
     <article class="assistant-panel">
       <div class="assistant-panel-head">
@@ -57,9 +57,9 @@
       <div class="assistant-panel-head"><div><h2>运行上下文</h2><p>最终回答只显示实际使用的依据。</p></div></div>
       <div class="assistant-panel-body">
         <ul class="assistant-context-list">
-          <li><small>当前 Domain</small><strong>待接入</strong></li>
-          <li><small>Knowledge Core</small><strong>等待 Agent 绑定</strong></li>
-          <li><small>问数模型</small><strong>等待 Agent Binding</strong></li>
+          <li><small>当前 Agent</small><strong id="knowledge-context-agent">尚未选择</strong></li>
+          <li><small>Knowledge Core</small><strong id="knowledge-context-core">尚未选择</strong></li>
+          <li><small>问数模型</small><strong id="knowledge-context-models">尚未选择</strong></li>
           <li><small>引用</small><strong>[C] 文档 · [Q] 查询结果</strong></li>
         </ul>
       </div>

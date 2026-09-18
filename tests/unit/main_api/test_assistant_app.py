@@ -518,6 +518,23 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(200, detail.status_code, detail.text)
         self.assertEqual(str(AGENT_ID), detail.json()["agent_id"])
 
+    def test_knowledge_chat_user_only_lists_active_agents(self):
+        self.access.permissions = {"assistant:access", "assistant:knowledge_chat"}
+        self.assistant.agent["status"] = "DRAFT"
+
+        draft_response = self.client.get(
+            "/api/v1/apps/assistant/agents", headers=self._headers()
+        )
+        self.assistant.agent["status"] = "ACTIVE"
+        active_response = self.client.get(
+            "/api/v1/apps/assistant/agents", headers=self._headers()
+        )
+
+        self.assertEqual(200, draft_response.status_code, draft_response.text)
+        self.assertEqual([], draft_response.json())
+        self.assertEqual(200, active_response.status_code, active_response.text)
+        self.assertEqual(str(AGENT_ID), active_response.json()[0]["agent_id"])
+
     def test_access_includes_bindings_and_capabilities(self):
         response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())
 

@@ -48,7 +48,11 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
     pages = {
         "login.html": {"login-form", "password-form"},
         "dashboard.html": {"dashboard-setup", "dashboard-runs"},
-        "knowledge.html": {"knowledge-form"},
+        "knowledge.html": {
+            "knowledge-form", "knowledge-agent", "knowledge-agent-summary",
+            "knowledge-context-agent", "knowledge-context-core",
+            "knowledge-context-models",
+        },
         "x-search.html": {
             "x-search-history",
             "x-search-result",

@@ -1396,10 +1396,15 @@ async def publish_assistant_semantic_model(
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    domain_id, _, _ = await _require_any(
+    domain_id, _, snapshot = await _require_any(
         request, "assistant:agent_manage", "assistant:knowledge_chat"
     )
-    return await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
+    agents = await _client(request).list_agents(
+        domain_id=domain_id, auth_context=request.state.auth_context
+    )
+    if "assistant:agent_manage" in set(snapshot.permissions):
+        return agents
+    return [item for item in agents if item.get("status") == "ACTIVE"]
 
 
 @router.get("/agents/options")
