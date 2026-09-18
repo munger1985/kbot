@@ -79,6 +79,19 @@ class DbaAnswerDraft(BaseModel):
     evidence_refs: tuple[str, ...] = ()
 
 
+class DiagnosisAnswerDraft(BaseModel):
+    """诊断 Turn 模型只写分析和方案，不得改写 Finding 字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["DBA_DIAGNOSIS_ANSWER_DRAFT.v1"] = (
+        "DBA_DIAGNOSIS_ANSWER_DRAFT.v1"
+    )
+    analysis_markdown: str = Field(min_length=1, max_length=32000)
+    solution_markdown: str = Field(min_length=1, max_length=32000)
+    evidence_refs: tuple[str, ...] = ()
+
+
 class TurnAnswerBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

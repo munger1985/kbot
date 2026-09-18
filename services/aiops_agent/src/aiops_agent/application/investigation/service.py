@@ -10,6 +10,7 @@ from uuid import UUID
 from loguru import logger
 
 from aiops_agent.application.conversation_inputs import ConversationInputResolver
+from aiops_agent.application.diagnosis import freeze_automatic_entry_intent
 from aiops_agent.application.errors import (
     AIOpsSchemaNotReadyError,
     resource_not_found,
@@ -332,6 +333,10 @@ class TurnPlanningService:
             tuple(monitoring_execution.get("log_binding_ids", ()))
             if monitoring_requested
             else ()
+        )
+        investigation = freeze_automatic_entry_intent(
+            investigation,
+            workflow_kind=str(context.workflow_kind or ""),
         )
         compiled = self._task_compiler.compile(
             playbook_plan,
@@ -1354,6 +1359,10 @@ class TurnPlanningService:
                 "ATTACHMENT_EVIDENCE_SET.v1",
             }
         )
+        investigation = freeze_automatic_entry_intent(
+            investigation,
+            workflow_kind=str(context.workflow_kind or ""),
+        )
         compiled = self._task_compiler.compile(
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
@@ -2299,6 +2308,7 @@ class TurnPlanningService:
                 "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
+                    "workflow_kind": str(context.workflow_kind or ""),
                     "input_envelope": investigation.input_envelope.model_dump(
                         mode="json"
                     ),
@@ -3608,6 +3618,7 @@ class TurnPlanningService:
                 "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
+                    "workflow_kind": str(context.workflow_kind or ""),
                     "input_envelope": investigation.input_envelope.model_dump(
                         mode="json"
                     ),

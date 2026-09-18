@@ -1,6 +1,16 @@
 """AIOps 跨服务 Wire 契约。"""
 
 from .errors import AIOpsErrorCode, ProblemDetails
+from .findings import (
+    FindingCard,
+    FindingColumnGap,
+    FindingCompilation,
+    FindingConfirmation,
+    FindingObjectRef,
+    FindingSeverity,
+    FindingThreshold,
+    FindingType,
+)
 from .conversation import (
     AnswerBlockType,
     AnswerBlockView,
@@ -218,6 +228,14 @@ __all__ = [
     "EvidenceRole",
     "FailOpsTaskCommand",
     "FreshnessStatus",
+    "FindingCard",
+    "FindingColumnGap",
+    "FindingCompilation",
+    "FindingConfirmation",
+    "FindingObjectRef",
+    "FindingSeverity",
+    "FindingThreshold",
+    "FindingType",
     "ActionIntent",
     "CompactPlanningMode",
     "CompactPlanningOutput",

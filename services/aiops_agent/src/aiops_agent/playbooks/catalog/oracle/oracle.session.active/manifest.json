@@ -17,7 +17,7 @@
   "limits": {"max_rows": 200, "timeout_seconds": 20, "max_attempts": 2, "cost_units": 2},
   "tool_dag": [
     {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
-    {"step_id": "active_sessions", "tool_id": "db.session.active", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+    {"step_id": "active_sessions", "tool_id": "db.session.active", "tool_version": "1.1.0", "depends_on": ["identity"], "input": {}}
   ],
   "output_schema": "oracle.session.active.output.v1",
   "measurement_semantics": "CURRENT_ACTIVITY",

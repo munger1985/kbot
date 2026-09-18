@@ -21,6 +21,8 @@ PROMPT_KEYS = {
     "grounding_verify": "aiops_agent.grounding_verify",
     "answer_compose": "aiops_agent.answer_compose",
     "answer_stream": "aiops_agent.answer_stream",
+    "diagnosis_answer_compose": "aiops_agent.diagnosis_answer_compose",
+    "diagnosis_answer_stream": "aiops_agent.diagnosis_answer_stream",
     "image_evidence_extract": "aiops_agent.image_evidence_extract",
 }
 
@@ -37,6 +39,8 @@ TURN_PROMPT_IDS = (
     "investigation_assessor",
     "answer_compose",
     "answer_stream",
+    "diagnosis_answer_compose",
+    "diagnosis_answer_stream",
 )
 
 

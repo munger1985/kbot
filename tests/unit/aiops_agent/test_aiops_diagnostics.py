@@ -710,7 +710,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         with self.assertRaises(LookupError):
             registry.resolve(
                 tool_id="db.session.active",
-                tool_version="1.0.0",
+                tool_version="1.1.0",
                 db_type="ORACLE",
                 db_version="19c",
                 capabilities=set(),
@@ -718,7 +718,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
             )
         selected = registry.resolve(
             tool_id="db.session.active",
-            tool_version="1.0.0",
+            tool_version="1.1.0",
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},

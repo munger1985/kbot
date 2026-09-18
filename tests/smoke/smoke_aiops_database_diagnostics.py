@@ -105,15 +105,16 @@ async def main() -> None:
             credential_kind="target_diagnostic",
             credential_id=credential_id,
         )
-        for tool_id in (
-            "db.instance.identity",
-            "db.session.active",
-            "db.session.blocking_chain",
-            "db.storage.capacity",
-        ):
+        tool_versions = {
+            "db.instance.identity": "1.0.0",
+            "db.session.active": "1.1.0",
+            "db.session.blocking_chain": "1.1.0",
+            "db.storage.capacity": "1.0.0",
+        }
+        for tool_id, tool_version in tool_versions.items():
             tool = registry.resolve(
                 tool_id=tool_id,
-                tool_version="1.0.0",
+                tool_version=tool_version,
                 db_type="ORACLE",
                 db_version="23ai",
                 capabilities={

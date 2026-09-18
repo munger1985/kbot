@@ -136,4 +136,19 @@
 .agent-code-toolbar button { min-height: 28px; padding: 3px 8px; }
 .agent-code-block pre { margin: 0; padding: 13px; overflow: auto; }
 .agent-code-block code { font: 12px/1.6 ui-monospace, monospace; }
+
+.ops-findings, .ops-analysis, .ops-solution { margin: 0 0 14px; padding: 13px 15px; border: 1px solid var(--line); background: #f8f9fb; }
+.ops-findings header, .ops-analysis header, .ops-solution header { margin-bottom: 10px; }
+.ops-findings header strong, .ops-analysis header strong, .ops-solution header strong { color: var(--accent); font-size: 13px; }
+.ops-finding-card { margin-top: 10px; padding: 12px 13px; border: 1px solid var(--line); background: #fff; }
+.ops-finding-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 0; }
+.ops-finding-card header small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.ops-finding-card.is-critical, .ops-finding-card.is-high { border-color: #ebc7ca; }
+.ops-finding-card.is-medium { border-color: #d9c48d; }
+.ops-finding-impact { margin: 10px 0 0; }
+.ops-finding-fields { display: grid; gap: 5px; margin: 10px 0 0; padding: 0; list-style: none; }
+.ops-finding-fields li { display: flex; justify-content: space-between; gap: 18px; padding: 6px 8px; background: #f7f8fb; }
+.ops-finding-fields span { color: var(--muted); }
+.ops-finding-empty, .ops-finding-gaps { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.ops-html-report-label { color: var(--muted); font-size: 12px; }
 @media (max-width: 1000px) { .ops-workspace, .ops-master-detail { grid-template-columns: 1fr; } .ops-workspace-list { border-right: 0; border-bottom: 1px solid var(--line); } .ops-workspace-items { max-height: 240px; } }

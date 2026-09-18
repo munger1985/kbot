@@ -401,6 +401,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("data-manual-proposal", workspace)
         self.assertIn("/manual-result", workspace)
         self.assertIn("data-copy-code", workspace)
+        self.assertIn('state.permissions.has("aiops:proposal:approve")', workspace)
 
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
@@ -465,6 +466,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('block.block_type === "EVIDENCE_REFERENCES"', workspace)
         self.assertNotIn("tablespaceChartHtml", workspace)
         self.assertIn("inspectionMarkdown", workspace)
+        self.assertNotIn("markdown.render(inspectionMarkdown(result))", workspace)
+        self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
+        self.assertIn("conversationAnswerHtml(result)", workspace)
+        self.assertIn("bindWorkloadReportActions(panel)", workspace)
+        css = (AIOPS_ROOT / "css" / "workspaces.css").read_text(encoding="utf-8")
+        self.assertIn(".ops-findings", css)
+        self.assertIn(".ops-finding-card", css)
+        self.assertIn(".ops-finding-fields", css)
+        self.assertIn(".ops-analysis", css)
+        self.assertIn(".ops-solution", css)
         self.assertIn("inspectionBullets", workspace)
         self.assertIn("本期没有需要报告的记录，结果正常。", workspace)
         self.assertIn("未发现数据缺口，全部检查已形成可验证观测。", workspace)

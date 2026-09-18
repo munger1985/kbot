@@ -6,7 +6,9 @@ SELECT
     s.status AS status,
     s.event AS wait_event,
     s.seconds_in_wait AS wait_seconds,
-    s.machine AS client_host
+    s.machine AS client_host,
+    s.sql_id AS sql_id,
+    s.prev_sql_id AS prev_sql_id
 FROM gv$session s
 WHERE s.type = 'USER'
   AND s.status = 'ACTIVE'

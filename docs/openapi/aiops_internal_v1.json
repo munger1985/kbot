@@ -259,7 +259,11 @@
           "CLARIFICATION",
           "EVIDENCE_REQUEST",
           "PROPOSAL_SUMMARY",
-          "VERIFICATION_COMPARISON"
+          "VERIFICATION_COMPARISON",
+          "FINDING_CARDS",
+          "ANALYSIS_MARKDOWN",
+          "SOLUTION_MARKDOWN",
+          "HTML_REPORT_LINKS"
         ],
         "title": "AnswerBlockType",
         "type": "string"

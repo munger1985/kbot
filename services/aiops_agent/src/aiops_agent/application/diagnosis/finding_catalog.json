@@ -1,0 +1,271 @@
+{
+  "schema_version": "AIOPS_FINDING_CATALOG.v1",
+  "types": [
+    {
+      "finding_type": "LOCK_WAIT",
+      "source_tool_id": "db.session.blocking_chain",
+      "playbook_id": "oracle.session.blocking_chain",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前未观察到会话阻塞链，不等于未取证。",
+      "no_match_reason": "当前阻塞链均未达到报告条件，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "SESSION_LOCK",
+      "identity_fields": [
+        "waiting_instance_id",
+        "waiting_session_id",
+        "blocking_instance_id",
+        "blocking_session_id",
+        "lock_type"
+      ],
+      "required_columns": [
+        "waiting_instance_id",
+        "waiting_session_id",
+        "waiting_serial_number",
+        "waiting_username",
+        "waiting_sql_id",
+        "blocking_instance_id",
+        "blocking_session_id",
+        "blocking_serial_number",
+        "blocking_username",
+        "blocking_sql_id",
+        "lock_type",
+        "lock_mode",
+        "lock_ctime_seconds",
+        "wait_event",
+        "wait_seconds",
+        "chain_depth"
+      ],
+      "field_columns": [
+        "waiting_instance_id",
+        "waiting_session_id",
+        "waiting_serial_number",
+        "waiting_username",
+        "waiting_sql_id",
+        "waiting_prev_sql_id",
+        "waiting_status",
+        "blocking_instance_id",
+        "blocking_session_id",
+        "blocking_serial_number",
+        "blocking_username",
+        "blocking_sql_id",
+        "blocking_prev_sql_id",
+        "blocking_status",
+        "lock_type",
+        "lock_mode",
+        "lock_ctime_seconds",
+        "wait_event",
+        "wait_seconds",
+        "chain_depth",
+        "is_holder"
+      ],
+      "object_ref": {
+        "instance_id": "waiting_instance_id",
+        "sql_id": "waiting_sql_id",
+        "object_name": "waiting_session_id"
+      },
+      "predicates": [],
+      "impact_template": "会话 {waiting_session_id} 已等待 {wait_seconds} 秒，被会话 {blocking_session_id} 阻塞。"
+    },
+    {
+      "finding_type": "LONG_SESSION",
+      "source_tool_id": "db.session.active",
+      "playbook_id": "oracle.session.active",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有活动会话，不等于未取证。",
+      "no_match_reason": "当前活动会话均未达到长会话阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "SESSION",
+      "identity_fields": [
+        "instance_id",
+        "session_id",
+        "serial_number"
+      ],
+      "required_columns": [
+        "session_id",
+        "serial_number",
+        "username",
+        "status",
+        "wait_event",
+        "wait_seconds",
+        "sql_id"
+      ],
+      "field_columns": [
+        "instance_id",
+        "session_id",
+        "serial_number",
+        "username",
+        "status",
+        "wait_event",
+        "wait_seconds",
+        "client_host",
+        "sql_id",
+        "prev_sql_id"
+      ],
+      "object_ref": {
+        "instance_id": "instance_id",
+        "sql_id": "sql_id",
+        "object_name": "session_id"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "wait_seconds",
+          "value": 300
+        }
+      ],
+      "threshold": {
+        "metric": "wait_seconds",
+        "operator": ">=",
+        "limit": 300,
+        "current_column": "wait_seconds"
+      },
+      "impact_template": "会话 {session_id} 已持续活动 {wait_seconds} 秒。"
+    },
+    {
+      "finding_type": "DG_LAG",
+      "source_tool_id": "db.replication.lag",
+      "playbook_id": "oracle.replication.status",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 Data Guard 延迟指标，不等于未取证。",
+      "no_match_reason": "当前 apply/transport lag 未达到 30 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "DATAGUARD",
+      "identity_fields": [
+        "metric_name"
+      ],
+      "required_columns": [
+        "metric_name",
+        "metric_value",
+        "metric_unit"
+      ],
+      "field_columns": [
+        "metric_name",
+        "metric_value",
+        "metric_unit",
+        "time_computed",
+        "datum_time",
+        "lag_seconds"
+      ],
+      "object_ref": {
+        "object_name": "metric_name"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "metric_name",
+          "values": ["apply lag", "transport lag"],
+          "ignore_case": true
+        },
+        {
+          "op": "gte",
+          "column": "metric_value",
+          "value": 30,
+          "parse": "interval_seconds",
+          "parsed_field": "lag_seconds"
+        }
+      ],
+      "threshold": {
+        "metric": "lag_seconds",
+        "operator": ">=",
+        "limit": 30,
+        "current_field": "lag_seconds"
+      },
+      "impact_template": "{metric_name} 当前为 {metric_value}，已超过 30 秒阈值。"
+    },
+    {
+      "finding_type": "WAIT_CLASS",
+      "source_tool_id": "db.wait.class_summary",
+      "playbook_id": "oracle.instance.wait_summary",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有等待类统计，不等于未取证。",
+      "no_match_reason": "当前非 Idle 等待类均未达到前台等待阈值，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "WAIT_CLASS",
+      "identity_fields": [
+        "wait_class"
+      ],
+      "required_columns": [
+        "wait_class",
+        "time_waited_seconds",
+        "foreground_waited_seconds"
+      ],
+      "field_columns": [
+        "wait_class",
+        "total_waits",
+        "time_waited_seconds",
+        "total_waits_fg",
+        "foreground_waited_seconds"
+      ],
+      "object_ref": {
+        "object_name": "wait_class"
+      },
+      "predicates": [
+        {
+          "op": "neq",
+          "column": "wait_class",
+          "value": "Idle",
+          "ignore_case": true
+        },
+        {
+          "op": "gte",
+          "column": "foreground_waited_seconds",
+          "value": 3600
+        }
+      ],
+      "threshold": {
+        "metric": "foreground_waited_seconds",
+        "operator": ">=",
+        "limit": 3600,
+        "current_column": "foreground_waited_seconds"
+      },
+      "impact_template": "等待类 {wait_class} 前台已等待 {foreground_waited_seconds} 秒。"
+    },
+    {
+      "finding_type": "TABLESPACE",
+      "source_tool_id": "db.storage.capacity",
+      "playbook_id": "oracle.storage.tablespace",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有表空间容量数据，不等于未取证。",
+      "no_match_reason": "当前表空间使用率均未达到 85% 阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "TABLESPACE",
+      "identity_fields": [
+        "tablespace_name"
+      ],
+      "required_columns": [
+        "tablespace_name",
+        "used_percent",
+        "free_mb",
+        "maximum_headroom_mb",
+        "file_count"
+      ],
+      "field_columns": [
+        "tablespace_name",
+        "allocated_mb",
+        "used_mb",
+        "free_mb",
+        "used_percent",
+        "maximum_mb",
+        "maximum_headroom_mb",
+        "file_count"
+      ],
+      "object_ref": {
+        "object_name": "tablespace_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "used_percent",
+          "value": 85
+        }
+      ],
+      "threshold": {
+        "metric": "used_percent",
+        "operator": ">=",
+        "limit": 85,
+        "current_column": "used_percent"
+      },
+      "impact_template": "表空间 {tablespace_name} 使用率 {used_percent}%。"
+    }
+  ]
+}

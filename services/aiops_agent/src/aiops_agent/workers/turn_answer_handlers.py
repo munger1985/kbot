@@ -23,11 +23,17 @@ from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     is_turn_evidence_outcome,
 )
+from aiops_agent.application.diagnosis import (
+    compile_findings,
+    is_automatic_entry,
+    is_diagnosis_turn,
+)
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
     DbaAnswerProgress,
     DbaSufficiencyAssessment,
+    DiagnosisAnswerDraft,
     TurnAnswerBlock,
     TurnEvidenceFact,
     TurnEvidenceGap,
@@ -1004,6 +1010,19 @@ class DbaEvidenceAssessmentHandler:
         )
 
 
+_HTML_REPORT_TOOLS = {
+    "db.oracle.awr.report",
+    "db.oracle.awr.diff_report",
+    "db.oracle.ash.report",
+}
+_HTML_REPORT_LABELS = {
+    "db.oracle.awr.report": "下载原生 AWR 报告",
+    "db.oracle.awr.diff_report": "下载原生 AWR 对比报告",
+    "db.oracle.ash.report": "下载原生 ASH 报告",
+}
+_ACTION_ID_RE = re.compile(r"^a[0-9]+$")
+
+
 class DbaAnswerComposeHandler:
     """模型写自然语言，表格和图表由服务端从已验证证据生成。"""
 
@@ -1023,6 +1042,57 @@ class DbaAnswerComposeHandler:
             return self._waiting_result(assessment, context)
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        diagnosis = self._is_diagnosis_turn(context)
+        if diagnosis:
+            compilation = compile_findings(
+                assessment.evidence,
+                target_id=str(context.target_id or "") or None,
+            )
+            prompt = await self._prompts.resolve(
+                "diagnosis_answer_compose",
+                frozen_prompts=dict(answer_context["prompts"]),
+            )
+            result = await self._model.generate_structured(
+                purpose="aiops.dba-diagnosis-answer-compose",
+                output_model=DiagnosisAnswerDraft,
+                model_snapshot=dict(answer_context["model"]),
+                prompt_ref={**prompt.ref(), "content": prompt.content},
+                input_payload=self._diagnosis_model_input(
+                    context=context,
+                    assessment=assessment,
+                    compilation=compilation,
+                    proposal_summary=proposal_summary,
+                ),
+                deadline=self._deadline(context.deadline_at),
+                idempotency_key=(
+                    f"turn:{context.run_id}:diagnosis-answer:{context.attempt}"
+                ),
+            )
+            draft = DiagnosisAnswerDraft.model_validate(result.output)
+            self._validate_evidence_refs(draft.evidence_refs, assessment)
+            blocks = self._assemble_blocks(
+                context=context,
+                assessment=assessment,
+                compilation=compilation,
+                analysis_markdown=draft.analysis_markdown,
+                solution_markdown=draft.solution_markdown,
+                evidence_refs=draft.evidence_refs,
+            )
+            status = (
+                "COMPLETED"
+                if assessment.status == SufficiencyStatus.ANSWERABLE
+                else "PARTIAL"
+            )
+            return AIOpsTurnResult(
+                status=status,
+                sufficiency_status=assessment.status,
+                blocks=tuple(blocks),
+                evidence=assessment.evidence,
+                evidence_gaps=assessment.gaps,
+                assessment_reasons=assessment.reasons,
+                model_receipt=result.receipt.model_dump(mode="json"),
+            )
+
         prompt = await self._prompts.resolve(
             "answer_compose",
             frozen_prompts=dict(answer_context["prompts"]),
@@ -1045,27 +1115,13 @@ class DbaAnswerComposeHandler:
             idempotency_key=f"turn:{context.run_id}:answer:{context.attempt}",
         )
         draft = DbaAnswerDraft.model_validate(result.output)
-        allowed_refs = {item.evidence_ref for item in assessment.evidence}
-        if not set(draft.evidence_refs) <= allowed_refs:
-            raise ValueError("回答引用了本轮批准证据之外的内容")
-
-        blocks: list[TurnAnswerBlock] = [
-            TurnAnswerBlock(
-                block_type=AnswerBlockType.MARKDOWN,
-                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                payload={"markdown": draft.markdown},
-                evidence_refs=draft.evidence_refs,
-            )
-        ]
-        blocks.extend(self._data_blocks(assessment.evidence))
-        proposal_block = self._proposal_block(context.input_artifacts)
-        if proposal_block is not None:
-            blocks.append(proposal_block)
-        evidence_request = self._evidence_request_block(
-            assessment, context
+        self._validate_evidence_refs(draft.evidence_refs, assessment)
+        blocks = self._assemble_blocks(
+            context=context,
+            assessment=assessment,
+            markdown=draft.markdown,
+            evidence_refs=draft.evidence_refs,
         )
-        if evidence_request is not None:
-            blocks.append(evidence_request)
         status = (
             "COMPLETED"
             if assessment.status == SufficiencyStatus.ANSWERABLE
@@ -1082,7 +1138,7 @@ class DbaAnswerComposeHandler:
         )
 
     async def execute_stream(self, context: TaskExecutionContext):
-        """使用模型原生SSE生成正文，校验后逐块投递用户可见增量。"""
+        """诊断 Turn 先生成结构化草稿再切块；非诊断仍走带引用的正文流。"""
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
         if assessment.status in {
@@ -1105,6 +1161,16 @@ class DbaAnswerComposeHandler:
             return
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        if self._is_diagnosis_turn(context):
+            async for item in self._stream_diagnosis(
+                context=context,
+                assessment=assessment,
+                answer_context=answer_context,
+                proposal_summary=proposal_summary,
+            ):
+                yield item
+            return
+
         prompt = await self._prompts.resolve(
             "answer_stream",
             frozen_prompts=dict(answer_context["prompts"]),
@@ -1192,23 +1258,12 @@ class DbaAnswerComposeHandler:
                 event_key=f"answer-delta:{index}",
                 payload={"chunk_index": index, "delta": delta},
             )
-        blocks: list[TurnAnswerBlock] = [
-            TurnAnswerBlock(
-                block_type=AnswerBlockType.MARKDOWN,
-                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                payload={"markdown": markdown},
-                evidence_refs=evidence_refs,
-            )
-        ]
-        blocks.extend(self._data_blocks(assessment.evidence))
-        proposal_block = self._proposal_block(context.input_artifacts)
-        if proposal_block is not None:
-            blocks.append(proposal_block)
-        evidence_request = self._evidence_request_block(
-            assessment, context
+        blocks = self._assemble_blocks(
+            context=context,
+            assessment=assessment,
+            markdown=markdown,
+            evidence_refs=evidence_refs,
         )
-        if evidence_request is not None:
-            blocks.append(evidence_request)
         yield AIOpsTurnResult(
             status=(
                 "COMPLETED"
@@ -1233,6 +1288,251 @@ class DbaAnswerComposeHandler:
                 "duration_ms": int((time.monotonic() - started) * 1000),
             },
         )
+
+    async def _stream_diagnosis(
+        self,
+        *,
+        context: TaskExecutionContext,
+        assessment: DbaSufficiencyAssessment,
+        answer_context: dict[str, Any],
+        proposal_summary: dict[str, Any] | None,
+    ):
+        compilation = compile_findings(
+            assessment.evidence,
+            target_id=str(context.target_id or "") or None,
+        )
+        prompt = await self._prompts.resolve(
+            "diagnosis_answer_stream",
+            frozen_prompts=dict(answer_context["prompts"]),
+        )
+        yield DbaAnswerProgress(
+            event_type="thinking.delta",
+            event_key="answer-thinking:compose",
+            payload={
+                "delta": "正在基于 Finding 组织分析和方案",
+                "public_summary": "正在组织诊断分析和方案",
+            },
+        )
+        result = await self._model.generate_structured(
+            purpose="aiops.dba-diagnosis-answer-stream",
+            output_model=DiagnosisAnswerDraft,
+            model_snapshot=dict(answer_context["model"]),
+            prompt_ref={**prompt.ref(), "content": prompt.content},
+            input_payload=self._diagnosis_model_input(
+                context=context,
+                assessment=assessment,
+                compilation=compilation,
+                proposal_summary=proposal_summary,
+            ),
+            deadline=self._deadline(context.deadline_at),
+            idempotency_key=(
+                f"turn:{context.run_id}:diagnosis-answer-stream:{context.attempt}"
+            ),
+        )
+        draft = DiagnosisAnswerDraft.model_validate(result.output)
+        self._validate_evidence_refs(draft.evidence_refs, assessment)
+        markdown = "\n\n".join(
+            item
+            for item in (
+                draft.analysis_markdown.strip(),
+                draft.solution_markdown.strip(),
+            )
+            if item
+        )
+        for index, delta in enumerate(self._answer_deltas(markdown), start=1):
+            yield DbaAnswerProgress(
+                event_type="answer.delta",
+                event_key=f"answer-delta:{index}",
+                payload={"chunk_index": index, "delta": delta},
+            )
+        blocks = self._assemble_blocks(
+            context=context,
+            assessment=assessment,
+            compilation=compilation,
+            analysis_markdown=draft.analysis_markdown,
+            solution_markdown=draft.solution_markdown,
+            evidence_refs=draft.evidence_refs,
+        )
+        yield AIOpsTurnResult(
+            status=(
+                "COMPLETED"
+                if assessment.status == SufficiencyStatus.ANSWERABLE
+                else "PARTIAL"
+            ),
+            sufficiency_status=assessment.status,
+            blocks=tuple(blocks),
+            evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons,
+            answer_streamed=True,
+            model_receipt=result.receipt.model_dump(mode="json"),
+        )
+
+    def _assemble_blocks(
+        self,
+        *,
+        context: TaskExecutionContext,
+        assessment: DbaSufficiencyAssessment,
+        compilation=None,
+        analysis_markdown: str | None = None,
+        solution_markdown: str | None = None,
+        markdown: str | None = None,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> list[TurnAnswerBlock]:
+        blocks: list[TurnAnswerBlock] = []
+        diagnosis = compilation is not None
+        if diagnosis:
+            blocks.append(
+                TurnAnswerBlock(
+                    block_type=AnswerBlockType.FINDING_CARDS,
+                    schema_version="AIOPS_FINDING_CARDS_BLOCK.v1",
+                    payload=compilation.model_dump(mode="json"),
+                    evidence_refs=tuple(
+                        dict.fromkeys(
+                            ref
+                            for card in compilation.findings
+                            for ref in card.evidence_refs
+                        )
+                    ),
+                )
+            )
+            blocks.append(
+                TurnAnswerBlock(
+                    block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
+                    schema_version="AIOPS_ANALYSIS_BLOCK.v1",
+                    payload={"markdown": analysis_markdown},
+                    evidence_refs=evidence_refs,
+                )
+            )
+            blocks.append(
+                TurnAnswerBlock(
+                    block_type=AnswerBlockType.SOLUTION_MARKDOWN,
+                    schema_version="AIOPS_SOLUTION_BLOCK.v1",
+                    payload={"markdown": solution_markdown},
+                    evidence_refs=evidence_refs,
+                )
+            )
+        else:
+            blocks.append(
+                TurnAnswerBlock(
+                    block_type=AnswerBlockType.MARKDOWN,
+                    schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                    payload={"markdown": markdown},
+                    evidence_refs=evidence_refs,
+                )
+            )
+        if self._include_proposal(context):
+            proposal_block = self._proposal_block(context.input_artifacts)
+            if proposal_block is not None:
+                blocks.append(proposal_block)
+        html_block = self._html_report_links_block(assessment.evidence)
+        if html_block is not None:
+            blocks.append(html_block)
+        blocks.extend(self._data_blocks(assessment.evidence))
+        evidence_request = self._evidence_request_block(assessment, context)
+        if evidence_request is not None:
+            blocks.append(evidence_request)
+        return blocks
+
+    def _diagnosis_model_input(
+        self,
+        *,
+        context: TaskExecutionContext,
+        assessment: DbaSufficiencyAssessment,
+        compilation,
+        proposal_summary: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        sufficiency = assessment.model_dump(mode="json")
+        sufficiency["evidence"] = [
+            self._compose_evidence_payload(fact)
+            for fact in assessment.evidence
+        ]
+        return {
+            "question": str(answer_context.get("question", "")),
+            "input_envelope": dict(answer_context.get("input_envelope", {})),
+            "task_frame": dict(answer_context.get("task_frame", {})),
+            "workflow_kind": str(answer_context.get("workflow_kind") or ""),
+            "findings": compilation.model_dump(mode="json"),
+            "sufficiency": sufficiency,
+            "proposal_summary": (
+                proposal_summary if self._include_proposal(context) else None
+            ),
+        }
+
+    @staticmethod
+    def _compose_evidence_payload(fact: TurnEvidenceFact) -> dict[str, Any]:
+        payload = fact.model_dump(mode="json")
+        if fact.tool_id in _HTML_REPORT_TOOLS:
+            payload["rows"] = []
+            payload["columns"] = []
+        return payload
+
+    @staticmethod
+    def _html_report_links_block(
+        evidence: tuple[TurnEvidenceFact, ...],
+    ) -> TurnAnswerBlock | None:
+        reports = []
+        for fact in evidence:
+            if fact.tool_id not in _HTML_REPORT_TOOLS:
+                continue
+            action_id = (
+                fact.step_id if _ACTION_ID_RE.fullmatch(fact.step_id) else None
+            )
+            reports.append(
+                {
+                    "tool_id": fact.tool_id,
+                    "action_id": action_id,
+                    "label": _HTML_REPORT_LABELS[fact.tool_id],
+                    "evidence_ref": fact.evidence_ref,
+                    "captured_at": fact.captured_at,
+                }
+            )
+        if not reports:
+            return None
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.HTML_REPORT_LINKS,
+            schema_version="AIOPS_HTML_REPORT_LINKS_BLOCK.v1",
+            payload={"reports": reports},
+            evidence_refs=tuple(item["evidence_ref"] for item in reports),
+        )
+
+    @staticmethod
+    def _answer_context(context: TaskExecutionContext) -> dict[str, Any]:
+        return dict(context.plan_snapshot.get("answer_context", {}))
+
+    @staticmethod
+    def _is_diagnosis_turn(context: TaskExecutionContext) -> bool:
+        answer_context = DbaAnswerComposeHandler._answer_context(context)
+        task_frame = dict(answer_context.get("task_frame", {}))
+        return is_diagnosis_turn(
+            objectives=task_frame.get("objectives"),
+            workflow_kind=str(answer_context.get("workflow_kind") or ""),
+            trigger_type=context.trigger_type,
+        )
+
+    @staticmethod
+    def _include_proposal(context: TaskExecutionContext) -> bool:
+        answer_context = DbaAnswerComposeHandler._answer_context(context)
+        task_frame = dict(answer_context.get("task_frame", {}))
+        if is_automatic_entry(
+            workflow_kind=str(answer_context.get("workflow_kind") or ""),
+            trigger_type=context.trigger_type,
+        ):
+            return False
+        if DbaAnswerComposeHandler._is_diagnosis_turn(context):
+            intent = str(task_frame.get("action_intent") or "")
+            return intent in {"ADVISORY", "EXECUTE"}
+        return True
+
+    @staticmethod
+    def _validate_evidence_refs(
+        evidence_refs: tuple[str, ...],
+        assessment: DbaSufficiencyAssessment,
+    ) -> None:
+        allowed_refs = {item.evidence_ref for item in assessment.evidence}
+        if not set(evidence_refs) <= allowed_refs:
+            raise ValueError("回答引用了本轮批准证据之外的内容")
 
     @staticmethod
     def _assessment(
@@ -1570,6 +1870,8 @@ class DbaAnswerComposeHandler:
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
         for fact in evidence:
+            if fact.tool_id in _HTML_REPORT_TOOLS:
+                continue
             columns = list(fact.columns)
             if fact.presentation_kind in {"TABLE", "TABLE_AND_CHART"}:
                 blocks.append(

@@ -19,6 +19,7 @@ from aiops_agent.contracts.evidence import ObservationSet
 from aiops_agent.contracts.turn_answer import (
     DbaAnswerDraft,
     DbaSufficiencyAssessment,
+    DiagnosisAnswerDraft,
     TurnEvidenceGap,
 )
 from aiops_agent.ports.model import StructuredModelResult
@@ -67,14 +68,27 @@ class _AnswerModel:
     async def generate_structured(self, **kwargs) -> StructuredModelResult:
         self.calls.append(kwargs)
         digest = "a" * 64
-        return StructuredModelResult(
-            output=DbaAnswerDraft(
+        output_model = kwargs.get("output_model") or DbaAnswerDraft
+        if output_model is DiagnosisAnswerDraft:
+            output = DiagnosisAnswerDraft(
+                analysis_markdown=(
+                    "阻塞由持有会话引起，等待会话无法继续提交。"
+                ),
+                solution_markdown=(
+                    "建议先确认持有会话事务，再决定是否中断等待会话。"
+                ),
+                evidence_refs=self.evidence_refs,
+            )
+        else:
+            output = DbaAnswerDraft(
                 markdown=(
                     "当前累计耗时最高的是 SQL_ID `abc123`。"
                     "这组数据是实例启动后的累计值，不代表最近十五分钟增量。"
                 ),
                 evidence_refs=self.evidence_refs,
-            ),
+            )
+        return StructuredModelResult(
+            output=output,
             receipt=ModelInvocationReceipt(
                 purpose=kwargs["purpose"],
                 schema_id="DBA_ANSWER_DRAFT.v1",
@@ -1942,7 +1956,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
                     "schema_version": "DBA_SUFFICIENCY.v1",
                     "payload": assessment.model_dump(mode="json"),
                 },
-            )
+            ),
+            task_frame_overrides={"objectives": ["EXPLAIN"]},
         )
         handler = DbaAnswerComposeHandler(
             model_client=_AnswerModel(evidence_refs=(evidence_ref,)),
@@ -1978,7 +1993,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
                     "payload": assessment.model_dump(mode="json"),
                 },
                 _proposal_artifact(),
-            )
+            ),
+            task_frame_overrides={"action_intent": "ADVISORY"},
         )
 
         result = asyncio.run(
@@ -1991,7 +2007,12 @@ class DbaTurnAnswerTest(unittest.TestCase):
         proposal = model.calls[0]["input_payload"]["proposal_summary"]
         self.assertEqual("ADVISORY_READY", proposal["status"])
         self.assertIn("DBMS_STATS", proposal["command_preview"])
+        block_types = [item.block_type for item in result.blocks]
         self.assertEqual(
+            AnswerBlockType.PROPOSAL_SUMMARY,
+            block_types[3],
+        )
+        self.assertNotEqual(
             AnswerBlockType.PROPOSAL_SUMMARY,
             result.blocks[-1].block_type,
         )
@@ -2084,7 +2105,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
                     "schema_version": "DBA_SUFFICIENCY.v1",
                     "payload": assessment.model_dump(mode="json"),
                 },
-            )
+            ),
+            task_frame_overrides={"objectives": ["EXPLAIN"]},
         )
         model = _StreamAnswerModel(
             ("当前累计耗时最高的是 SQL_ID abc123。[E1]",)
@@ -2128,7 +2150,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
                     "schema_version": "DBA_SUFFICIENCY.v1",
                     "payload": assessment.model_dump(mode="json"),
                 },
-            )
+            ),
+            task_frame_overrides={"objectives": ["EXPLAIN"]},
         )
         model = _StreamAnswerModel(
             ("错误引用。[E9]", "已按证据修正。[E1]")

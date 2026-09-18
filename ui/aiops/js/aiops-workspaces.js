@@ -4,7 +4,10 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   const markdown = globalThis.KBotMarkdown;
-  const state = { agents: [], targets: [], conversation: null, selectedFiles: [] };
+  const state = {
+    agents: [], targets: [], conversation: null, selectedFiles: [],
+    permissions: new Set(),
+  };
   const maxDiagnosticFiles = 15;
   const typingFrameMs = 22;
   const streamRecoveryAttempts = 120;
@@ -118,13 +121,13 @@
     return answer;
   }
 
-  function conversationAnswerHtml(result) {
+  function conversationAnswerHtml(result, turn) {
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
       const narrative = values(result?.payload?.blocks).filter(
         (block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type),
       );
-      return narrative.map(answerBlockHtml).join("")
+      return narrative.map((block) => answerBlockHtml(block, turn)).join("")
         || markdown.render("Agent 已完成诊断，但本轮没有生成可展示的文字结论。");
     }
     return markdown.render(conversationAnswerMarkdown(result));
@@ -419,9 +422,157 @@
     } catch (error) { shell.toast(error.message); button.disabled = false; }
   }
 
-  function answerBlockHtml(block) {
+  const findingTypeLabels = {
+    LOCK_WAIT: "会话阻塞",
+    LONG_SESSION: "长会话",
+    DG_LAG: "Data Guard 延迟",
+    WAIT_CLASS: "等待类",
+    TABLESPACE: "表空间",
+  };
+  const findingSeverityLabels = {
+    CRITICAL: "严重",
+    HIGH: "高",
+    MEDIUM: "中",
+    LOW: "低",
+    INFO: "信息",
+  };
+  const findingConfirmationLabels = {
+    CONFIRMED: "已确认",
+    LIKELY: "很可能",
+    POSSIBLE: "可能",
+    UNKNOWN: "无法判断",
+  };
+  const findingFieldLabels = {
+    waiting_session_id: "等待 SID",
+    waiting_serial_number: "等待 Serial",
+    waiting_sql_id: "等待 SQL_ID",
+    blocking_session_id: "持有 SID",
+    blocking_serial_number: "持有 Serial",
+    blocking_sql_id: "持有 SQL_ID",
+    lock_type: "锁类型",
+    lock_mode: "锁模式",
+    lock_ctime_seconds: "持有时间（秒）",
+    waiting_instance_id: "等待实例",
+    waiting_username: "等待用户",
+    waiting_prev_sql_id: "等待上一 SQL_ID",
+    waiting_status: "等待状态",
+    blocking_instance_id: "持有实例",
+    blocking_username: "持有用户",
+    blocking_prev_sql_id: "持有上一 SQL_ID",
+    blocking_status: "持有状态",
+    wait_event: "等待事件",
+    wait_seconds: "等待时间（秒）",
+    chain_depth: "阻塞链深度",
+    is_holder: "是否持有者",
+    session_id: "SID",
+    serial_number: "Serial",
+    username: "用户",
+    status: "状态",
+    sql_id: "SQL_ID",
+    prev_sql_id: "上一 SQL_ID",
+    instance_id: "实例",
+    client_host: "客户端主机",
+    metric_name: "指标",
+    metric_value: "当前值",
+    metric_unit: "单位",
+    lag_seconds: "延迟（秒）",
+    wait_class: "等待类",
+    time_waited_seconds: "等待秒数",
+    foreground_waited_seconds: "前台等待秒数",
+    total_waits: "等待次数",
+    total_waits_fg: "前台等待次数",
+    tablespace_name: "表空间",
+    used_percent: "使用率（%）",
+    free_mb: "剩余 MB",
+    maximum_headroom_mb: "最大余量 MB",
+    file_count: "文件数",
+    allocated_mb: "已分配 MB",
+    used_mb: "已用 MB",
+    maximum_mb: "最大 MB",
+  };
+  const findingPriorityFields = {
+    LOCK_WAIT: [
+      "waiting_session_id",
+      "waiting_serial_number",
+      "waiting_sql_id",
+      "blocking_session_id",
+      "blocking_serial_number",
+      "blocking_sql_id",
+      "lock_type",
+      "lock_mode",
+      "lock_ctime_seconds",
+    ],
+  };
+
+  function findingFieldValue(value) {
+    return value == null || value === "" ? "空" : value;
+  }
+
+  function findingFieldsHtml(fields, findingType) {
+    const source = fields || {};
+    const keys = Object.keys(source);
+    if (!keys.length) return "";
+    const priority = findingPriorityFields[findingType] || [];
+    const remaining = keys.filter((key) => !priority.includes(key));
+    const ordered = [...priority.filter((key) => Object.prototype.hasOwnProperty.call(source, key)), ...remaining];
+    return `<ul class="ops-finding-fields">${ordered.map((key) => `<li><span>${esc(findingFieldLabels[key] || key)}</span><strong>${esc(findingFieldValue(source[key]))}</strong></li>`).join("")}</ul>`;
+  }
+
+  function findingCardsHtml(payload) {
+    const findings = values(payload.findings);
+    const emptyReasons = values(payload.empty_reasons);
+    const gaps = values(payload.gaps);
+    const cards = findings.map((card) => {
+      const severity = String(card.severity || "INFO");
+      const tone = ["CRITICAL", "HIGH"].includes(severity) ? "bad" : severity === "MEDIUM" ? "warn" : "good";
+      return `<article class="ops-finding-card is-${esc(severity.toLowerCase())}"><header><div><strong>${esc(findingTypeLabels[card.finding_type] || card.finding_type || "发现")}</strong><small>${esc(findingConfirmationLabels[card.confirmation] || card.confirmation || "")}</small></div><span class="ops-badge ${tone}">${esc(findingSeverityLabels[severity] || severity)}</span></header><p class="ops-finding-impact">${esc(card.impact || "")}</p>${findingFieldsHtml(card.fields, card.finding_type)}</article>`;
+    }).join("");
+    const empty = !findings.length
+      ? `<p class="ops-finding-empty">${esc(emptyReasons.join(" ") || "当前没有需要报告的发现，不等于未取证。")}</p>`
+      : emptyReasons.length
+        ? `<p class="ops-finding-empty">${esc(emptyReasons.join(" "))}</p>`
+        : "";
+    const gapRows = gaps.length
+      ? `<p class="ops-finding-gaps">${gaps.map((item) => esc(item.detail || item.column || "字段缺失")).join("；")}</p>`
+      : "";
+    return `<section class="ops-findings"><header><strong>发现</strong></header>${cards}${empty}${gapRows}</section>`;
+  }
+
+  function htmlReportLinksHtml(payload, turn) {
+    const reports = values(payload.reports);
+    if (!reports.length) return "";
+    const items = reports.map((report) => {
+      const label = report.label || report.tool_id || "原生报告";
+      if (turn && report.action_id) {
+        const definition = workloadReportDefinitions[report.tool_id] || {
+          filename: "oracle-workload-report.html",
+        };
+        const filename = workloadReportFilename(definition.filename, report.action_id);
+        return (
+          `<button type="button" data-download-workload-report="${esc(report.tool_id)}" `
+          + `data-workload-report-action="${esc(report.action_id)}" `
+          + `data-conversation-id="${esc(turn.conversation_id)}" `
+          + `data-turn-id="${esc(turn.turn_id)}" `
+          + `data-workload-report-filename="${esc(filename)}">`
+          + `${esc(label)}</button>`
+        );
+      }
+      return `<span class="ops-html-report-label">${esc(label)}</span>`;
+    }).join("");
+    return `<div class="ops-workload-report-actions">${items}</div>`;
+  }
+
+  function answerBlockHtml(block, turn) {
     const payload = block.payload || {};
     if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
+    if (block.block_type === "ANALYSIS_MARKDOWN") {
+      return `<section class="ops-analysis"><header><strong>分析</strong></header>${markdown.render(payload.markdown || payload.text || "")}</section>`;
+    }
+    if (block.block_type === "SOLUTION_MARKDOWN") {
+      return `<section class="ops-solution"><header><strong>解决方案</strong></header>${markdown.render(payload.markdown || payload.text || "")}</section>`;
+    }
+    if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload);
+    if (block.block_type === "HTML_REPORT_LINKS") return htmlReportLinksHtml(payload, turn);
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
       const cell = (row, column, index) => Array.isArray(row)
@@ -442,9 +593,10 @@
       const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(typeof value === "object" ? JSON.stringify(value) : value)}</span></li>`).join("");
       const pending = payload.status === "PENDING_APPROVAL";
       const manual = payload.execution_mode === "MANUAL_ONLY" && payload.status === "ADVISORY_READY";
-      const actions = pending
+      const canApprove = state.permissions.has("aiops:proposal:approve");
+      const actions = pending && canApprove
         ? `<div class="ops-proposal-actions"><button type="button" class="primary" data-approve-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}" data-hash="${esc(payload.proposal_hash)}">批准并执行</button><button type="button" data-reject-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">拒绝</button></div>`
-        : manual
+        : manual && canApprove
           ? `<div class="ops-manual-result"><strong>DBA 人工执行结果</strong><select data-manual-status><option value="EXECUTED">已执行</option><option value="FAILED">执行失败</option><option value="CANCELLED">已取消</option></select><textarea data-manual-note maxlength="4000" placeholder="处理说明（可选）"></textarea><textarea data-manual-output maxlength="16000" placeholder="受限输出（可选，请勿填写密码或密钥）"></textarea><button type="button" class="primary" data-manual-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">回填结果</button></div>`
           : `<p class="ops-proposal-status">当前状态：${esc(payload.status || "UNKNOWN")}</p>`;
       const command = payload.command_preview ? `<div class="agent-code-block"><div class="agent-code-toolbar"><span>仅供 DBA 人工核对${manual ? "并在 KBot 外执行" : ""}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(payload.command_preview)}</code></pre></div>` : "";
@@ -639,13 +791,14 @@
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
     const answerBlocks = values(turn.answer_blocks);
     const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type));
-    const blocks = narrativeBlocks.map(answerBlockHtml).join("");
+    const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
     const plan = investigationPlanHtml(turn.investigation_plan);
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    const workloadReports = workloadReportActions(turn);
+    const hasHtmlLinks = answerBlocks.some((block) => block.block_type === "HTML_REPORT_LINKS");
+    const workloadReports = hasHtmlLinks ? "" : workloadReportActions(turn);
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}${workloadReports}`;
   }
 
@@ -1148,9 +1301,10 @@
     const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
       ? ""
       : reportAction({ runId: run?.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${markdown.render(inspectionMarkdown(result))}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${conversationAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     if (source) await bindContinue(source);
     bindReportActions(panel);
+    bindWorkloadReportActions(panel);
   }
 
   async function initCases(page) {
@@ -1173,7 +1327,8 @@
     const manualButton = event.target.closest("[data-manual-proposal]");
     if (manualButton) submitManualResult(manualButton);
   });
-  shell.ready.then(() => {
+  shell.ready.then((access) => {
+    state.permissions = new Set(access?.permissions || []);
     const page = document.body.dataset.page;
     if (page === "chat") return initChat();
     if (["situations", "inspections"].includes(page)) return initCases(page);

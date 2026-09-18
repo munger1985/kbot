@@ -182,6 +182,28 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+_LATER_PROPOSAL_BLOCK_TYPES = frozenset(
+    {
+        "HTML_REPORT_LINKS",
+        "TABLE",
+        "CHART",
+        "EVIDENCE_REQUEST",
+    }
+)
+
+
+def proposal_insert_block_no(blocks) -> int:
+    """新 Proposal 插在方案或已有 Proposal 之后、报告和数据块之前。"""
+    later = [
+        int(item.block_no)
+        for item in blocks
+        if str(getattr(item, "block_type", "")) in _LATER_PROPOSAL_BLOCK_TYPES
+    ]
+    if later:
+        return min(later)
+    return max(int(item.block_no) for item in blocks) + 1
+
+
 def _diagnosis_answer_markdown(payload: dict[str, Any]) -> str:
     """把结构化诊断投影为适合聊天的自然 Markdown。"""
     direct = dict(payload.get("direct_answer") or {})
@@ -2797,7 +2819,12 @@ class AIOpsRuntimeService:
         markdown = "\n\n".join(
             str(block.payload.get("markdown", ""))
             for block in result.blocks
-            if str(block.block_type) == "MARKDOWN"
+            if str(block.block_type)
+            in {
+                "MARKDOWN",
+                "ANALYSIS_MARKDOWN",
+                "SOLUTION_MARKDOWN",
+            }
         ).strip()
         message_id = uuid7()
         await uow.turns.add_message(
@@ -4321,7 +4348,22 @@ class AIOpsRuntimeService:
         if turn is None or not blocks:
             raise validation_failed("后续 Proposal 缺少原诊断回答")
         message_id = blocks[0].message_id
-        block_no = max(int(item.block_no) for item in blocks) + 1
+        insert_at = proposal_insert_block_no(blocks)
+        later_blocks = [
+            item for item in blocks if int(item.block_no) >= insert_at
+        ]
+        if later_blocks:
+            offset = max(int(item.block_no) for item in blocks) + len(
+                later_blocks
+            )
+            for item in later_blocks:
+                item.block_no = int(item.block_no) + offset
+            await uow.session.flush()
+            for index, item in enumerate(
+                sorted(later_blocks, key=lambda item: int(item.block_no))
+            ):
+                item.block_no = insert_at + 1 + index
+            await uow.session.flush()
         block_payload = proposal_summary_payload(snapshot)
         answer_block_id = uuid7()
         await uow.turns.add_answer_block(
@@ -4329,7 +4371,7 @@ class AIOpsRuntimeService:
                 answer_block_id=answer_block_id,
                 turn_id=turn.turn_id,
                 message_id=message_id,
-                block_no=block_no,
+                block_no=insert_at,
                 block_type="PROPOSAL_SUMMARY",
                 schema_version="AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
                 payload_json=block_payload,
@@ -4342,7 +4384,7 @@ class AIOpsRuntimeService:
             event_type="answer.block",
             payload={
                 "answer_block_id": str(answer_block_id),
-                "block_no": block_no,
+                "block_no": insert_at,
                 "block_type": "PROPOSAL_SUMMARY",
                 "schema_version": "AIOPS_PROPOSAL_SUMMARY_BLOCK.v1",
                 "payload": block_payload,
@@ -6449,7 +6491,7 @@ class AIOpsRuntimeService:
         domain_id: int,
         actor_id: str,
     ) -> UUID:
-        """在生成前确认会话归属，并返回用于私有授权校验的 Agent。"""
+        """在生成前确认会话归属，并返回来源 Agent。"""
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_conversation(
                 conversation_id=conversation_id,
@@ -6800,7 +6842,7 @@ class AIOpsRuntimeService:
     async def get_report_source_agent_id(
         self, *, report_id: UUID, domain_id: int,
     ) -> UUID:
-        """在展示或下载前复核报告来源 Agent 的私有授权范围。"""
+        """在展示或下载前复核报告与来源 Agent 的 Domain 归属。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             report = await uow.inspections.get_report_scoped(
