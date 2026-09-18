@@ -5094,6 +5094,15 @@
             "title": "Synonyms",
             "type": "array"
           },
+          "value_members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DimensionValueMember"
+            },
+            "maxItems": 64,
+            "title": "Value Members",
+            "type": "array"
+          },
           "value_normalization": {
             "default": "NONE",
             "enum": [
@@ -5124,6 +5133,45 @@
           "value_type"
         ],
         "title": "DimensionDefinition",
+        "type": "object"
+      },
+      "DimensionValueMember": {
+        "additionalProperties": false,
+        "description": "维度闭域成员：value 是库存编码，display_name/aliases 只用于解析用户说法。",
+        "properties": {
+          "aliases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Aliases",
+            "type": "array"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "value": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "DimensionValueMember",
         "type": "object"
       },
       "DocumentReferencePreview": {

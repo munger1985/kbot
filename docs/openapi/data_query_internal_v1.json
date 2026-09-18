@@ -1228,6 +1228,15 @@
             "title": "Synonyms",
             "type": "array"
           },
+          "value_members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DimensionValueMember"
+            },
+            "maxItems": 64,
+            "title": "Value Members",
+            "type": "array"
+          },
           "value_normalization": {
             "default": "NONE",
             "enum": [
@@ -1258,6 +1267,45 @@
           "value_type"
         ],
         "title": "DimensionDefinition",
+        "type": "object"
+      },
+      "DimensionValueMember": {
+        "additionalProperties": false,
+        "description": "维度闭域成员：value 是库存编码，display_name/aliases 只用于解析用户说法。",
+        "properties": {
+          "aliases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Aliases",
+            "type": "array"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "value": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "DimensionValueMember",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2239,7 +2287,45 @@
         "title": "SemanticModelCandidateRequest",
         "type": "object"
       },
-      "SemanticModelDefinition": {
+      "SemanticModelDefinition-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetDefinition"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Datasets",
+            "type": "array"
+          },
+          "dimensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DimensionDefinition"
+            },
+            "maxItems": 512,
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/MeasureDefinition"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Measures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datasets",
+          "measures"
+        ],
+        "title": "SemanticModelDefinition",
+        "type": "object"
+      },
+      "SemanticModelDefinition-Output": {
         "additionalProperties": false,
         "properties": {
           "datasets": {
@@ -2349,7 +2435,7 @@
             "type": "string"
           },
           "definition": {
-            "$ref": "#/components/schemas/SemanticModelDefinition"
+            "$ref": "#/components/schemas/SemanticModelDefinition-Input"
           },
           "description": {
             "anyOf": [
@@ -2388,7 +2474,7 @@
         "additionalProperties": false,
         "properties": {
           "definition": {
-            "$ref": "#/components/schemas/SemanticModelDefinition"
+            "$ref": "#/components/schemas/SemanticModelDefinition-Input"
           },
           "expected_row_version": {
             "minimum": 1.0,
@@ -2772,7 +2858,7 @@
           "definition": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SemanticModelDefinition"
+                "$ref": "#/components/schemas/SemanticModelDefinition-Output"
               },
               {
                 "type": "null"

@@ -194,7 +194,7 @@
         "description": "仅在服务间传输图片字节；业务 App 必须立即转存至对象存储。",
         "properties": {
           "content": {
-            "format": "binary",
+            "format": "base64url",
             "maxLength": 33554432,
             "minLength": 1,
             "title": "Content",
