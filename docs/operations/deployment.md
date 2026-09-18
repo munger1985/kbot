@@ -259,8 +259,9 @@ Token 的签名密钥，可显式注入同名环境变量，长度不得少于 3
 创建，固定绑定 App、Domain、服务账号、Scope 和 Agent；明文只显示一次。
 
 已经使用 `001_access_control.sql` 的既有 Schema，在确认四张 `KBOT_APP_API_%` 表均不
-存在后，由 DBA 仅执行一次 `database/oracle/main_api/002_app_api_clients.sql`，再重启
-Main API。空白 Schema 由标准初始化按顺序执行 `001` 和 `002`，无需额外操作。
+存在后，由 DBA 仅执行一次 `database/oracle/main_api/002_app_api_clients.sql`，再运行
+`scripts/db/apply_oracle_schema.py --foundation-only` 同步唯一权限目录，最后重启 Main API。
+空白 Schema 由标准初始化按顺序执行 `001` 和 `002`，无需额外操作。
 
 Main API 使用离线 Swagger UI，不依赖外部 CDN。在 `kbot.toml` 设置
 `api_docs_enabled = true` 后，可访问 `http://<main-api-host>:18099/docs`，
@@ -275,6 +276,54 @@ api_allowed_origins = ["http://146.56.158.44:8080"]
 修改后重启 Main API。该值必须与浏览器地址的协议、主机和端口完全一致，不能使用
 末尾斜杠。若要临时允许任意网页来源，设置 `api_allowed_origins = ["*"]`。生产环境不要
 将 App API Key 暴露给浏览器；用户页面应使用短期用户 Token。
+
+## 统一核心权限规则切换
+
+本次权限重构必须作为一个完整 Release 部署，不能只替换 Main API 或 AIOps Agent。
+`platform_core` 的 App 注册表、Main API 授权入口、各业务服务、Oracle 权限目录和验收
+脚本必须来自同一个提交。推荐使用蓝绿方式创建空白 Schema，并通过标准初始化器加载
+当前规范；这是风险最低的生产切换方式。
+
+若必须保留既有 KBot 4.0 数据，先停掉所有会写入 KBot Schema 的 API、Worker、Scheduler
+和 Executor，完成 Schema 级备份，再由 Schema Owner 执行：
+
+```sql
+@database/oracle/operations/converge_core_authorization.sql
+```
+
+随后在安装新代码的同一 Python 环境中精确收敛并校验权限基础数据：
+
+```bash
+conda run -n kbot4 python scripts/db/apply_oracle_schema.py --foundation-only
+conda run -n kbot4 python scripts/db/apply_oracle_schema.py --check-foundation
+```
+
+该过程会删除废弃的人类 Agent Grant 表、废弃权限以及系统内置角色的多余权限映射；
+自定义角色保留，但引用废弃权限的映射会被删除。执行前必须导出权限表和旧 Grant 表，
+回退时恢复 Schema 备份，不能把旧、新权限模型混合运行。
+
+数据库校验通过后，安装同一 Release 的全部 Workspace 包，滚动重启所有加载
+`platform_core` 的 KBot Python 服务；Main API 最后重启，避免 BFF 先使用新规则调用仍在
+运行旧合同的下游服务。不得只热更新单个源码目录。
+
+切换完成至少验收以下场景：
+
+- 枚举 Main API 实际 FastAPI 路由表，确认每个 `/api/v1/apps/**` 业务路由都挂载
+  `authorize_business_app_route` 全局核心依赖；新增路由即使遗漏局部权限调用，也必须被
+  `{app_id}:use` 拒绝。
+- 只有 `{app_id}:use` 的人类用户可查看并使用当前 Domain 的全部 ACTIVE Agent；不能查看
+  其他 Domain 或 DRAFT、DISABLED、ARCHIVED Agent。
+- 只有 `aiops:use` 的普通用户查询 Target 时，Main API 必须强制下游使用 `status=ENABLED`；
+  显式请求 DISABLED Target 必须返回 403，Target 详情和管理操作继续要求
+  `aiops:target_manage`。
+- 移除 `{app_id}:use` 后，App 登录入口、Domain 列表、Agent、会话和运行接口立即拒绝。
+- App API Client 只能访问核心注册表明确登记的方法和路径，且只能使用创建时绑定的
+  ACTIVE Agent；未知子路径、跨 Domain Agent 和已撤销服务账号权限立即拒绝。
+- `platform:app_grant_manage` 不能给自己授权；没有 `platform:app_manage` 时只能授予纯
+  `{app_id}:use` 角色。
+- 平台和 App 密码管理员不能重置 Domain 范围、安全等级或有效权限高于自己的账号。
+- 执行 `python tests/acceptance/check_core_authorization_policy.py`，确认新增 App、权限、角色、
+  机器路由和 Agent 规则都已进入唯一核心注册表。
 
 通知中心由 Main API 的 Notification Worker 投影共享 Oracle Outbox。默认配置适合单机，
 需要调整批量、租约、重试或 SSE 心跳时，在 `kbot.toml` 增加 `[notifications]`，字段见

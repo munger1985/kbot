@@ -1371,36 +1371,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
         return list(payload.get("references") or [])
 
-    async def list_private_agent_grants(self, *, auth_context: AuthContext):
-        return await self._json(
-            "GET", f"{INTERNAL_API_V1}/aiops/agents/grants/list",
-            auth_context=auth_context,
-        )
-
-    async def upsert_private_agent_grant(
-        self, payload: dict[str, Any], *, auth_context: AuthContext
-    ):
-        return await self._json(
-            "PUT", f"{INTERNAL_API_V1}/aiops/agents/grants",
-            payload=payload, auth_context=auth_context,
-        )
-
-    async def update_private_agent_grant(
-        self, grant_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext
-    ):
-        return await self._json(
-            "PATCH", f"{INTERNAL_API_V1}/aiops/agents/grants/{grant_id}",
-            payload=payload, auth_context=auth_context,
-        )
-
-    async def authorize_private_agent(
-        self, payload: dict[str, Any], *, auth_context: AuthContext
-    ):
-        return await self._json(
-            "POST", f"{INTERNAL_API_V1}/aiops/agents:authorize",
-            payload=payload, auth_context=auth_context,
-        )
-
     async def start_conversation(
         self, payload: dict[str, Any], *, auth_context: AuthContext
     ) -> dict[str, Any]:

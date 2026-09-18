@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from main_api.application import UserAuthService, UserTokenClaims
+from platform_core.authorization import resolve_business_app_id
 from platform_core.contracts import PUBLIC_API_V1
 
 
@@ -13,7 +14,10 @@ router = APIRouter(prefix=f"{PUBLIC_API_V1}/auth", tags=["Authentication"])
 
 
 def _canonical_app_id(value: str) -> str:
-    return {"knowledge-retrieval": "knowledge_retrieval", "km-asset": "km_asset"}.get(value, value)
+    try:
+        return resolve_business_app_id(value)
+    except ValueError as exc:
+        raise HTTPException(404, {"code": "APP_NOT_FOUND"}) from exc
 
 
 class _Payload(BaseModel):

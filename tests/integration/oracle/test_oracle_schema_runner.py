@@ -52,7 +52,7 @@ class OracleSchemaRunnerTest(unittest.TestCase):
         sql = "\n".join(
             statement.sql for statement in load_schema_statements()
         )
-        self.assertEqual(122, sql.count(" JSON"))
+        self.assertEqual(132, sql.count(" JSON"))
         self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
         self.assertNotIn(" IS JSON", sql)
 
@@ -157,9 +157,12 @@ class _FoundationConnection:
         self.committed = False
 
     async def execute(self, statement, parameters=None):
-        del statement
-        if parameters is not None:
+        sql = str(statement)
+        self.statements.append(sql)
+        if isinstance(parameters, list):
             self.role_permission_mappings.extend(parameters)
+            return _DictionaryResult()
+        if parameters is not None:
             return _DictionaryResult()
         return next(self._results)
 
@@ -189,7 +192,7 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
             {
                 "app_id": "knowledge_retrieval",
                 "role_code": "app_admin",
-                "permission_code": "knowledge_retrieval:operations_manage",
+                "permission_code": "knowledge_retrieval:api_key_manage",
             },
             connection.role_permission_mappings,
         )
@@ -197,6 +200,11 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("MERGE INTO KBOT_PLATFORM_APP", foundation_sql)
         self.assertIn("MERGE INTO KBOT_PERMISSION", foundation_sql)
         self.assertIn("MERGE INTO KBOT_APP_ROLE", foundation_sql)
+        self.assertIn("DELETE FROM KBOT_PERMISSION", foundation_sql)
+        self.assertIn(
+            "DELETE FROM KBOT_APP_ROLE_PERMISSION",
+            foundation_sql,
+        )
         for permission_code in sorted(
             code
             for code in PLATFORM_FOUNDATION_PERMISSIONS

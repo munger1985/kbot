@@ -78,7 +78,7 @@ ui/assistant/
 
 | 导航项 | 最低权限 | 无资源时的表现 |
 | --- | --- | --- |
-| 工作台 | `assistant:access` | 展示三个入口和待配置项，不编造指标 |
+| 工作台 | `assistant:use` | 展示三个入口和待配置项，不编造指标 |
 | 知识问答 | `assistant:knowledge_chat` | 提示创建或获授可用 Agent |
 | X 实时搜索 | `assistant:x_search` | 提示管理员未绑定可用模型 |
 | 文生图 | `assistant:image_generate` | 提示管理员未绑定可用模型 |

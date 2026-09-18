@@ -12,42 +12,40 @@ from pydantic import BaseModel, Field
 from platform_clients import KnowledgeCoreClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
-from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
-    require_app_api_permission,
-)
+from main_api.application import authorize_app_request
+
+
+KNOWLEDGE_ROUTE_PERMISSIONS = {
+    "list_collections": "knowledge_retrieval:use",
+    "create_collection": "knowledge_retrieval:knowledge_manage",
+    "get_collection": "knowledge_retrieval:use",
+    "change_collection_status": "knowledge_retrieval:knowledge_manage",
+    "update_collection_models": "knowledge_retrieval:knowledge_manage",
+    "delete_collection": "knowledge_retrieval:knowledge_manage",
+    "bind_collection": "knowledge_retrieval:knowledge_manage",
+    "unbind_collection": "knowledge_retrieval:knowledge_manage",
+    "list_agent_bindings": "knowledge_retrieval:agent_manage",
+    "get_bundle_status": "knowledge_retrieval:use",
+    "get_revision_status": "knowledge_retrieval:use",
+    "get_revision_members": "knowledge_retrieval:use",
+    "reprocess_revision": "knowledge_retrieval:knowledge_manage",
+    "list_pending_approvals": "knowledge_retrieval:review",
+    "review_user_intake": "knowledge_retrieval:review",
+    "ingest_km_asset": "knowledge_retrieval:knowledge_manage",
+    "ingest_user_files": "knowledge_retrieval:upload",
+}
 
 
 async def _require_knowledge_access(request: Request) -> None:
-    context = get_auth_context(request)
-    actor_id = context.asserted_user_id or context.client_id
-    relative = request.url.path.removeprefix(
-        f"{PUBLIC_API_V1}/apps/knowledge-retrieval/knowledge"
-    )
-    permission = "knowledge_retrieval:use"
-    if "/approval" in relative:
-        permission = "knowledge_retrieval:review"
-    elif relative.startswith("/agents/"):
-        permission = "knowledge_retrieval:agent_manage"
-    elif "/ingestions/user-files" in relative:
-        permission = "knowledge_retrieval:upload"
-    elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        permission = (
-            "knowledge_retrieval:knowledge_manage"
-        )
-    require_app_api_permission(request, permission)
     try:
-        await request.app.state.access_control_service.require(
-            app_id="knowledge_retrieval",
-            domain_id=int(context.domain_id or "0"),
-            user_id=actor_id,
-            permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
-        ) from exc
+        permission = KNOWLEDGE_ROUTE_PERMISSIONS[
+            request.scope["endpoint"].__name__
+        ]
+    except (KeyError, AttributeError) as exc:
+        raise RuntimeError("Knowledge 公开端点未登记核心权限") from exc
+    await authorize_app_request(
+        request, app_id="knowledge_retrieval", permission=permission
+    )
 
 
 router = APIRouter(

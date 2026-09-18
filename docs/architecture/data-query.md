@@ -38,7 +38,7 @@ Schema Snapshot 只描述物理结构；问数 Agent 使用已发布的 Semantic
 → 在业务 Agent 中选择已发布模型 → 保存或启用 Agent
 ```
 
-智能工作台 Agent 的 `data_model_ids` 是问数能力的唯一配置事实。Main API 在 Agent 版本保存后调用内部同步契约，Data Query 自动生成 `consumer_app_id + agent_id + agent_version_id + semantic_model_id` 投影，并停用同一 Agent 的旧版本投影。用户不创建、不编辑 Agent Binding，也不需要重复配置用户或角色策略；访问权限继承 App、Domain 与 Agent 的既有授权边界。
+智能工作台 Agent 的 `data_model_ids` 是问数能力的唯一配置事实。Main API 在 Agent 版本保存后调用内部同步契约，Data Query 自动生成 `consumer_app_id + agent_id + agent_version_id + semantic_model_id` 投影，并停用同一 Agent 的旧版本投影。用户不创建、不编辑 Agent Binding，也不需要重复配置用户或角色策略；访问边界由 App 权限、Domain 隔离、Agent ACTIVE 状态和当前版本绑定共同决定。
 
 ## 查询执行安全
 

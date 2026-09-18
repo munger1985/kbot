@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
     AIOpsAgentEntity,
-    AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
     AIOpsAgentVersionTargetEntity,
@@ -133,11 +132,6 @@ class AIOpsAgentRepository:
         )
         return value is not None
 
-    async def add_grant(self, row: AIOpsAgentGrantEntity) -> None:
-        self._write_guard()
-        self._session.add(row)
-        await self._session.flush()
-
     async def get(
         self, *, domain_id: int, agent_id: UUID, lock: bool = False
     ) -> AIOpsAgentEntity | None:
@@ -217,74 +211,6 @@ class AIOpsAgentRepository:
             }
         ]
         return regular + images
-
-    async def list_grants(self, *, domain_id: int):
-        rows = await self._session.scalars(
-            select(AIOpsAgentGrantEntity)
-            .where(AIOpsAgentGrantEntity.domain_id == domain_id)
-            .order_by(
-                AIOpsAgentGrantEntity.updated_at.desc(),
-                AIOpsAgentGrantEntity.agent_grant_id,
-            )
-        )
-        return list(rows)
-
-    async def find_grant(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        subject_type: str,
-        subject_id: str,
-        lock: bool = False,
-    ):
-        statement = select(AIOpsAgentGrantEntity).where(
-            AIOpsAgentGrantEntity.domain_id == domain_id,
-            AIOpsAgentGrantEntity.agent_id == agent_id,
-            AIOpsAgentGrantEntity.subject_type == subject_type,
-            AIOpsAgentGrantEntity.subject_id == subject_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def get_grant(
-        self, *, domain_id: int, grant_id: UUID, lock: bool = False
-    ):
-        statement = select(AIOpsAgentGrantEntity).where(
-            AIOpsAgentGrantEntity.domain_id == domain_id,
-            AIOpsAgentGrantEntity.agent_grant_id == grant_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def has_active_grant(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        user_id: str,
-        role_codes: tuple[str, ...],
-    ) -> bool:
-        subjects = [
-            (AIOpsAgentGrantEntity.subject_type == "USER")
-            & (AIOpsAgentGrantEntity.subject_id == user_id)
-        ]
-        if role_codes:
-            subjects.append(
-                (AIOpsAgentGrantEntity.subject_type == "ROLE")
-                & AIOpsAgentGrantEntity.subject_id.in_(role_codes)
-            )
-        value = await self._session.scalar(
-            select(AIOpsAgentGrantEntity.agent_grant_id).where(
-                AIOpsAgentGrantEntity.domain_id == domain_id,
-                AIOpsAgentGrantEntity.agent_id == agent_id,
-                AIOpsAgentGrantEntity.status == "ACTIVE",
-                or_(*subjects),
-            )
-        )
-        return value is not None
 
     async def get_active(
         self, *, domain_id: int, agent_id: UUID,

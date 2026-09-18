@@ -15,7 +15,9 @@ KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.
 - `tools/dev_console/`：仅开发环境启用的运行日志查看页面。
 - `var/`：本地日志、上传文件和生成物；不进入 Git。
 
-知识检索与 AIOps App 分别拥有私有 Agent、不可变版本和 Grant。Agent Runtime
+知识检索与 AIOps App 分别拥有 Domain 隔离的私有 Agent 和不可变版本。人类用户按
+App、Domain 与 `{app_id}:use` 使用当前 Domain 的 ACTIVE Agent；机器客户端另受 Scope
+和 Agent 白名单约束。Agent Runtime
 执行冻结的 Execution Spec，并提供持久化 Run/Task/Artifact/Event、文档、问数、
 Hybrid、AIOps 委派、Grounded Response Composer、租约恢复和独立 Worker。
 Portal 只通过 Main API 的 `/api/v1/apps/knowledge-retrieval/*` 与

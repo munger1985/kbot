@@ -12,8 +12,8 @@ Main API 把身份和授权拆成平台层与 App 层。平台用户只拥有平
 App Member、Role Binding 和 Domain Scope 参与统一鉴权。知识检索用户拥有
 `knowledge_retrieval:use` 后，可以读取和使用当前 Domain
 内全部 ACTIVE Agent；`knowledge_retrieval:agent_manage` 仅控制 Agent 的创建、编辑
-和状态维护。AIOps 私有 Agent 仍要求额外 Agent Grant。所有授权都不能跨越 Domain
-数据隔离边界。
+和状态维护。全部业务 App 都不再使用用户或角色级 Agent Grant。所有授权都不能跨越
+Domain 数据隔离边界。
 
 平台用户还具有 `MAX_SECURITY_LEVEL` 数据可见上限，取值为 `0–3`。普通用户默认
 等级为 `1`，保留账号 `ADMIN` 为最高等级 `3`。知识检索 Run、普通会话、多模态会话
@@ -99,7 +99,8 @@ App API Key，且不得通过公网代理暴露。
 ## 权限执行边界
 
 - Main API 校验 App 成员角色和权限，不把浏览器提交的角色视为可信输入；
-- Knowledge Retrieval App 与 AIOps App 拥有私有 Agent 和 Grant；
+- 各业务 App 拥有自己的 Agent；人类按 App、Domain 和 ACTIVE 状态使用，机器按 Scope
+  与显式 Agent 白名单使用；
 - Agent Runtime 只执行调用方冻结的不可变 Execution Spec，不查询 App 权限表；
 - 内部 AuthContext 只携带本次调用所需身份和授权上下文，不替代资源服务的 Domain
   条件与对象所有权校验。

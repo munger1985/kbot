@@ -3,8 +3,8 @@
 ## Execution Spec 与 Skill
 
 Agent Runtime 不拥有可编辑 Agent Definition。Knowledge Retrieval App 与 AIOps
-App 分别拥有自己的 Agent、不可变版本和 Grant；创建会话或运行前，所属 App 将
-已授权版本编译为 `AgentExecutionSpec`。Runtime 在 Conversation 和 Run 中冻结该
+App 分别拥有自己的 Agent 与不可变版本；创建会话或运行前，所属 App 按统一核心权限
+和资源状态编译 `AgentExecutionSpec`。Runtime 在 Conversation 和 Run 中冻结该
 快照，后续 Agent 修改不会改变既有执行事实。
 
 Execution Spec 声明能力、指令、检索范围、问数绑定和功能模型。不同功能可使用

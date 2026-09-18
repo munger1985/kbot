@@ -12,7 +12,6 @@ from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.entities import (
     AIOpsAgentEntity,
-    AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     PolicyEntity,
 )
@@ -115,15 +114,6 @@ class UpdateAIOpsAgentCommand(_Model):
         ):
             raise ValueError("target_ids 不能重复")
         return self
-
-
-class UpsertAIOpsAgentGrantCommand(_Model):
-    domain_id: int = Field(ge=1)
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
-    actor_id: str = Field(min_length=1, max_length=256)
 
 
 class AIOpsAgentError(ValueError):
@@ -448,100 +438,6 @@ class AIOpsAgentService:
                 )
             ]
 
-    async def list_grants(self, *, domain_id: int):
-        async with self._uow_factory() as uow:
-            return [
-                self._grant_view(row)
-                for row in await uow.agents.list_grants(domain_id=domain_id)
-            ]
-
-    async def authorize(
-        self,
-        *,
-        domain_id: int,
-        agent_id: UUID,
-        user_id: str,
-        role_codes: tuple[str, ...],
-    ) -> dict[str, object]:
-        async with self._uow_factory() as uow:
-            agent = await uow.agents.get_active(
-                domain_id=domain_id, agent_id=agent_id
-            )
-            allowed = await uow.agents.has_active_grant(
-                domain_id=domain_id,
-                agent_id=agent_id,
-                user_id=user_id,
-                role_codes=role_codes,
-            )
-        if agent is None or not allowed:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_ACCESS_DENIED",
-                "当前用户无权使用该 AIOps Agent",
-                status_code=403,
-            )
-        return {"allowed": True, "agent_id": str(agent_id)}
-
-    async def upsert_grant(self, command: UpsertAIOpsAgentGrantCommand):
-        async with self._uow_factory() as uow:
-            if await uow.agents.get(
-                domain_id=command.domain_id, agent_id=command.agent_id
-            ) is None:
-                self._not_found()
-            row = await uow.agents.find_grant(
-                domain_id=command.domain_id,
-                agent_id=command.agent_id,
-                subject_type=command.subject_type,
-                subject_id=command.subject_id,
-                lock=True,
-            )
-            if row is None:
-                row = AIOpsAgentGrantEntity(
-                    agent_grant_id=uuid7(),
-                    domain_id=command.domain_id,
-                    agent_id=command.agent_id,
-                    subject_type=command.subject_type,
-                    subject_id=command.subject_id,
-                    status=command.status,
-                    created_by=command.actor_id,
-                    updated_by=command.actor_id,
-                )
-                await uow.agents.add_grant(row)
-            else:
-                row.status = command.status
-                row.updated_by = command.actor_id
-                row.row_version = int(row.row_version) + 1
-            await uow.commit()
-            return self._grant_view(row)
-
-    async def update_grant_status(
-        self,
-        *,
-        domain_id: int,
-        grant_id: UUID,
-        status: str,
-        expected_row_version: int,
-        actor_id: str,
-    ):
-        async with self._uow_factory() as uow:
-            row = await uow.agents.get_grant(
-                domain_id=domain_id, grant_id=grant_id, lock=True
-            )
-            if row is None:
-                raise AIOpsAgentError(
-                    "AIOPS_AGENT_GRANT_NOT_FOUND",
-                    "Agent 授权不存在",
-                    status_code=404,
-                )
-            if int(row.row_version) != expected_row_version:
-                raise AIOpsAgentError(
-                    "STATE_VERSION_CONFLICT", "Agent 授权版本已变化"
-                )
-            row.status = status
-            row.updated_by = actor_id
-            row.row_version = int(row.row_version) + 1
-            await uow.commit()
-            return self._grant_view(row)
-
     async def _validate_resources(
         self, uow, domain_id: int, status: str, values
     ) -> None:
@@ -826,18 +722,6 @@ class AIOpsAgentService:
             "image_capabilities": dict(version.image_capabilities_json or {}),
             "config": dict(version.config_json or {}),
             "row_version": int(agent.row_version),
-        }
-
-    @staticmethod
-    def _grant_view(row):
-        return {
-            "agent_grant_id": str(row.agent_grant_id),
-            "domain_id": str(row.domain_id),
-            "agent_id": str(row.agent_id),
-            "subject_type": row.subject_type,
-            "subject_id": row.subject_id,
-            "status": row.status,
-            "row_version": int(row.row_version),
         }
 
     @staticmethod

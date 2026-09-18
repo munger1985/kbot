@@ -37,12 +37,23 @@ class _Access:
             ),
             ("knowledge_retrieval", "user"): ("knowledge_retrieval:use",),
         }
+        self.permissions = (
+            SimpleNamespace(
+                permission_code="knowledge_retrieval:use"
+            ),
+            SimpleNamespace(
+                permission_code="knowledge_retrieval:knowledge_manage"
+            ),
+        )
         self.members = {}
         self.bindings = {}
         self.scopes = {}
         self.app_domains = {
             ("knowledge_retrieval", 1): SimpleNamespace(status="ACTIVE")
         }
+        self.domain_ids = {}
+        self.effective_permissions = {}
+        self.platform_permissions = {}
 
     async def get_user(self, user_id):
         return self.users.get(user_id)
@@ -52,6 +63,15 @@ class _Access:
 
     async def add_user_credential(self, row):
         self.credentials[row.user_id] = row
+
+    async def get_user_credential(self, user_id):
+        return self.credentials.get(user_id)
+
+    async def set_user_password(
+        self, *, credential, password_hash, must_change_password
+    ):
+        credential.password_hash = password_hash
+        credential.must_change_password = "Y" if must_change_password else "N"
 
     async def get_application(self, app_id):
         return self.apps.get(app_id)
@@ -71,6 +91,17 @@ class _Access:
 
     async def list_role_permission_codes(self, *, app_id, role_code):
         return self.role_permissions.get((app_id, role_code), ())
+
+    async def list_permissions(self, *, app_id):
+        return self.permissions
+
+    async def add_role(self, row):
+        self.roles[(row.app_id, row.role_code)] = row
+
+    async def replace_role_permissions(
+        self, *, app_id, role_code, permission_codes
+    ):
+        self.role_permissions[(app_id, role_code)] = permission_codes
 
     async def add_app_member(self, row):
         self.members[(row.app_id, row.user_id)] = row
@@ -98,6 +129,23 @@ class _Access:
 
     async def get_app_domain(self, *, app_id, domain_id):
         return self.app_domains.get((app_id, domain_id))
+
+    async def list_active_domain_ids(self, user_id, app_id=None):
+        return self.domain_ids.get((user_id, app_id), ())
+
+    async def permissions_for(self, *, app_id, domain_id, user_id):
+        return self.effective_permissions.get(
+            (app_id, domain_id, user_id), set()
+        )
+
+    async def platform_permissions_for(self, *, user_id):
+        return self.platform_permissions.get(user_id, set())
+
+    async def list_user_memberships(self, *, user_id):
+        return [
+            row for (_, candidate), row in self.members.items()
+            if candidate == user_id
+        ]
 
 
 class _Domains:
@@ -127,6 +175,54 @@ class _ForbiddenUowFactory:
 
 
 class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_business_role_must_include_use_permission(self):
+        uow = _Uow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.create_role(
+                app_id="knowledge_retrieval",
+                role_code="knowledge_manager",
+                display_name="知识管理员",
+                permission_codes=("knowledge_retrieval:knowledge_manage",),
+                assignable_permissions=frozenset({
+                    "knowledge_retrieval:use",
+                    "knowledge_retrieval:knowledge_manage",
+                }),
+            )
+
+        self.assertEqual(
+            "APP_USE_PERMISSION_REQUIRED", context.exception.code
+        )
+        self.assertFalse(uow.committed)
+
+    async def test_business_role_with_use_permission_is_created(self):
+        uow = _Uow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        result = await service.create_role(
+            app_id="knowledge_retrieval",
+            role_code="knowledge_manager",
+            display_name="知识管理员",
+            permission_codes=(
+                "knowledge_retrieval:use",
+                "knowledge_retrieval:knowledge_manage",
+            ),
+            assignable_permissions=frozenset({
+                "knowledge_retrieval:use",
+                "knowledge_retrieval:knowledge_manage",
+            }),
+        )
+
+        self.assertTrue(uow.committed)
+        self.assertEqual(
+            [
+                "knowledge_retrieval:use",
+                "knowledge_retrieval:knowledge_manage",
+            ],
+            result["permissions"],
+        )
+
     async def test_global_admin_can_only_be_created_by_initializer(self):
         service = AccessManagementService(uow_factory=_ForbiddenUowFactory())
         with self.assertRaises(AccessManagementError) as context:
@@ -208,6 +304,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
             await service.delete_user(
                 user_id="KR_ADMIN", expected_origin="APP",
                 expected_app_id="knowledge_retrieval",
+                actor_id="ADMIN",
             )
         self.assertEqual("PROTECTED_USER", context.exception.code)
 
@@ -215,6 +312,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
             await service.reset_app_user_password(
                 app_id="knowledge_retrieval", user_id="KR_ADMIN",
                 password="Another@Password2026!", must_change_password=False,
+                actor_id="APP_ADMIN",
             )
         self.assertEqual("INITIAL_APP_ADMIN_PROTECTED", context.exception.code)
 
@@ -249,12 +347,140 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
                 "domain_ids": (1,),
             },),
             actor_id="ADMIN",
+            actor_platform_permissions=frozenset({
+                "platform:app_grant_manage",
+                "platform:app_manage",
+            }),
         )
 
         self.assertEqual("PLATFORM_GRANT", uow.access.members[
             ("knowledge_retrieval", "PLATFORM_OP")
         ].member_source)
         self.assertEqual("ACTIVE", result["status"])
+
+    async def test_platform_app_grant_cannot_target_actor(self):
+        service = AccessManagementService(uow_factory=_ForbiddenUowFactory())
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.set_platform_app_grant(
+                user_id="GRANT_ADMIN",
+                app_id="knowledge_retrieval",
+                role_bindings=(),
+                actor_id="GRANT_ADMIN",
+                actor_platform_permissions=frozenset({
+                    "platform:app_grant_manage"
+                }),
+            )
+
+        self.assertEqual("APP_GRANT_SELF_ESCALATION", context.exception.code)
+
+    async def test_grant_admin_without_app_manage_can_only_assign_use_role(self):
+        uow = _Uow()
+        uow.access.users["PLATFORM_OP"] = SimpleNamespace(
+            user_id="PLATFORM_OP", account_origin="PLATFORM",
+            owner_app_id=None, is_protected="N",
+        )
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.set_platform_app_grant(
+                user_id="PLATFORM_OP",
+                app_id="knowledge_retrieval",
+                role_bindings=({
+                    "role_code": "app_admin",
+                    "scope_mode": "ALL_APP_DOMAINS",
+                    "domain_ids": (),
+                },),
+                actor_id="GRANT_ADMIN",
+                actor_platform_permissions=frozenset({
+                    "platform:app_grant_manage"
+                }),
+            )
+
+        self.assertEqual("ROLE_ASSIGNMENT_ESCALATION", context.exception.code)
+
+    async def test_app_manager_cannot_reset_more_privileged_user_password(self):
+        uow = _Uow()
+        uow.access.users.update({
+            "LIMITED_MANAGER": SimpleNamespace(
+                user_id="LIMITED_MANAGER", account_origin="APP",
+                owner_app_id="knowledge_retrieval", is_protected="N",
+                max_security_level=2, status="ACTIVE",
+            ),
+            "PRIVILEGED_USER": SimpleNamespace(
+                user_id="PRIVILEGED_USER", account_origin="APP",
+                owner_app_id="knowledge_retrieval", is_protected="N",
+                max_security_level=2, status="ACTIVE",
+            ),
+        })
+        uow.access.members[("knowledge_retrieval", "PRIVILEGED_USER")] = (
+            SimpleNamespace(
+                app_id="knowledge_retrieval", user_id="PRIVILEGED_USER",
+                is_initial_admin="N", status="ACTIVE",
+            )
+        )
+        for user_id in ("LIMITED_MANAGER", "PRIVILEGED_USER"):
+            uow.access.domain_ids[(user_id, "knowledge_retrieval")] = (1,)
+        uow.access.effective_permissions[
+            ("knowledge_retrieval", 1, "LIMITED_MANAGER")
+        ] = {"knowledge_retrieval:use", "knowledge_retrieval:member_manage"}
+        uow.access.effective_permissions[
+            ("knowledge_retrieval", 1, "PRIVILEGED_USER")
+        ] = {
+            "knowledge_retrieval:use",
+            "knowledge_retrieval:member_manage",
+            "knowledge_retrieval:role_manage",
+        }
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.reset_app_user_password(
+                app_id="knowledge_retrieval",
+                user_id="PRIVILEGED_USER",
+                password="Another@Password2026!",
+                must_change_password=True,
+                actor_id="LIMITED_MANAGER",
+            )
+
+        self.assertEqual(
+            "PASSWORD_RESET_PRIVILEGE_ESCALATION", context.exception.code
+        )
+        self.assertFalse(uow.committed)
+
+    async def test_platform_manager_cannot_reset_superior_platform_user(self):
+        uow = _Uow()
+        uow.access.users.update({
+            "USER_MANAGER": SimpleNamespace(
+                user_id="USER_MANAGER", account_origin="PLATFORM",
+                owner_app_id=None, is_protected="N",
+                max_security_level=2, status="ACTIVE",
+            ),
+            "PLATFORM_SUPERIOR": SimpleNamespace(
+                user_id="PLATFORM_SUPERIOR", account_origin="PLATFORM",
+                owner_app_id=None, is_protected="N",
+                max_security_level=3, status="ACTIVE",
+            ),
+        })
+        uow.access.platform_permissions["USER_MANAGER"] = {
+            "platform:user_manage"
+        }
+        uow.access.platform_permissions["PLATFORM_SUPERIOR"] = {
+            "platform:user_manage", "platform:role_manage"
+        }
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.reset_platform_user_password(
+                actor_id="USER_MANAGER",
+                user_id="PLATFORM_SUPERIOR",
+                password="Another@Password2026!",
+                must_change_password=True,
+            )
+
+        self.assertEqual(
+            "PASSWORD_RESET_PRIVILEGE_ESCALATION", context.exception.code
+        )
+        self.assertFalse(uow.committed)
 
 
 if __name__ == "__main__":

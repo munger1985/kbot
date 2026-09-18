@@ -326,11 +326,11 @@ async function ensureAccess(ctx: BusinessContext, force = false) {
 - 页面入口权限：`aiops:use`；
 - Agent 管理权限：`aiops:agent_manage`；
 - 计划管理权限：`aiops:plan_manage`；
-- `GET /api/v1/apps/aiops/agents` 会在服务端把用户 Grant 和角色 Grant 合并后过滤；
-- 拥有 `aiops:agent_manage` 时服务端直接返回全部 Agent。
+- 拥有 `aiops:use` 时服务端返回当前 Domain 的全部 ACTIVE Agent；
+- 拥有 `aiops:agent_manage` 时服务端返回全部生命周期状态的 Agent。
 
-`GET /api/v1/apps/aiops/agent-grants` 是管理员维护授权的接口，本身要求
-`aiops:agent_manage`。普通用户页面不得调用它来判断每个 Agent 是否可见。
+人类用户不再维护或读取 Agent Grant。机器 API Client 仍由 Scope 和创建时绑定的
+Agent 白名单共同限制。
 
 ### 5.3 KM Asset
 
@@ -365,7 +365,7 @@ KM `/access` 在缺少 `km_asset:use` 时直接返回 403。页面应以 App She
 禁止形成以下瀑布：
 
 ```text
-/auth/me -> /access -> /agents -> /agent-grants -> 每个 Agent 的详情/权限
+/auth/me -> /access -> 当前 Domain 的 ACTIVE Agents -> Agent 绑定的 ENABLED Targets
 ```
 
 推荐结构：
@@ -545,7 +545,9 @@ Scope 和 Agent，且只能保存在第三方服务端；浏览器仍使用用�
   `services/main_api/src/main_api/application/user_auth.py`；
 - App 权限快照：`services/main_api/src/main_api/application/access_control.py`；
 - 知识检索 App：`services/main_api/src/main_api/api/knowledge_retrieval_app.py`；
-- AIOps App 与 Agent Grant：`services/main_api/src/main_api/api/aiops_app.py`；
+- AIOps App 与统一授权入口：`services/main_api/src/main_api/api/aiops_app.py`、
+  `services/main_api/src/main_api/application/app_access.py`；
 - KM Asset App：`services/main_api/src/main_api/api/km_asset_app.py`；
 - 认证中间件与错误格式：`packages/platform_core/src/platform_core/security/middleware.py`；
-- 平台与 App 授权模型：`docs/architecture/platform-app-access-control.md`。
+- KBot 核心授权规则：`docs/architecture/core-authorization-policy.md`；
+- 平台与 App 授权数据模型：`docs/architecture/platform-app-access-control.md`。

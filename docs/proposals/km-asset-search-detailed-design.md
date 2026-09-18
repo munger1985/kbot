@@ -1282,7 +1282,7 @@ Planner 验收重点是字段、条件强度、布尔结构、日期、数量和
 - 语义主题总数请求不得产生 Data Query COUNT 或全库语义分类任务；
 - SSE 断线重放不重复执行检索；
 - Composer 两次失败后的确定性回退；
-- 多 Domain、无 Agent Grant、无 Collection 权限；
+- 多 Domain、缺少 App `use` 权限、机器 Agent 白名单为空、无 Collection 权限；
 - Oracle RAW(16) Bundle ID 的传输和反序列化。
 
 ## 21. 迁移方案

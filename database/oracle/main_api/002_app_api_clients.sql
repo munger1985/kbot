@@ -61,23 +61,3 @@ CREATE TABLE KBOT_APP_API_CLIENT_AGENT (
     CONSTRAINT FK_APP_API_AGENT_CLIENT FOREIGN KEY (CLIENT_ID)
         REFERENCES KBOT_APP_API_CLIENT (CLIENT_ID)
 );
-
-INSERT INTO KBOT_PERMISSION (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
-VALUES ('knowledge_retrieval:api_key_manage', 'knowledge_retrieval',
-        '管理知识检索 API Client');
-
-INSERT INTO KBOT_PERMISSION (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
-VALUES ('km_asset:api_key_manage', 'km_asset', '管理 KM Asset API Client');
-
-INSERT INTO KBOT_PERMISSION (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
-VALUES ('aiops:api_key_manage', 'aiops', '管理 AIOps API Client');
-
-INSERT INTO KBOT_APP_ROLE_PERMISSION (APP_ID, ROLE_CODE, PERMISSION_CODE)
-VALUES ('knowledge_retrieval', 'app_admin',
-        'knowledge_retrieval:api_key_manage');
-
-INSERT INTO KBOT_APP_ROLE_PERMISSION (APP_ID, ROLE_CODE, PERMISSION_CODE)
-VALUES ('km_asset', 'app_admin', 'km_asset:api_key_manage');
-
-INSERT INTO KBOT_APP_ROLE_PERMISSION (APP_ID, ROLE_CODE, PERMISSION_CODE)
-VALUES ('aiops', 'app_admin', 'aiops:api_key_manage');

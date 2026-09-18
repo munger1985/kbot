@@ -403,6 +403,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("data-copy-code", workspace)
         self.assertIn('state.permissions.has("aiops:proposal:approve")', workspace)
 
+    def test_shell_renders_navigation_from_access_permissions(self):
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pagePermissions", shell)
+        self.assertIn('agents: "aiops:agent_manage"', shell)
+        self.assertIn('"api-clients": "aiops:api_key_manage"', shell)
+        self.assertIn("shellMarkup(access)", shell)
+
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"

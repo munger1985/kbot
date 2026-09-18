@@ -1,4 +1,4 @@
-"""AIOps 应用拥有的 Agent、不可变版本和授权。"""
+"""AIOps 应用拥有的 Agent 与不可变版本。"""
 
 from datetime import datetime
 from typing import Any
@@ -94,38 +94,4 @@ class AIOpsAgentVersionTargetEntity(BaseEntity):
     )
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
-class AIOpsAgentGrantEntity(BaseEntity):
-    __tablename__ = "KBOT_OPS_AGENT_GRANT"
-    __table_args__ = (
-        UniqueConstraint(
-            "agent_id", "subject_type", "subject_id", name="UK_OPS_AGENT_GRANT_SUBJECT"
-        ),
-        Index(
-            "IX_OPS_AGENT_GRANT_SCOPE",
-            "domain_id",
-            "subject_type",
-            "subject_id",
-            "status",
-        ),
-    )
-
-    agent_grant_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), primary_key=True, default=uuid7
-    )
-    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    subject_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    subject_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
-    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
-    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

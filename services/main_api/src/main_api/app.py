@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -42,7 +42,11 @@ from main_api.api import (
     slack_router,
 )
 from main_api.config import get_main_api_settings
-from main_api.application import AppApiKeyError, UserAuthenticationError
+from main_api.application import (
+    AppApiKeyError,
+    UserAuthenticationError,
+    authorize_business_app_route,
+)
 from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
@@ -176,6 +180,7 @@ def create_main_api_app(
         version=config.service_version,
         docs_url="/docs" if config.docs_enabled else None,
         redoc_url="/redoc" if config.docs_enabled else None,
+        dependencies=[Depends(authorize_business_app_route)],
         **app_kwargs,
     )
     app.state.service_name = config.service_name

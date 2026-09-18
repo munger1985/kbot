@@ -94,6 +94,11 @@ class AccessControlRepository:
                 (AppRoleEntity.app_id == AppMemberRoleEntity.app_id)
                 & (AppRoleEntity.role_code == AppMemberRoleEntity.role_code),
             )
+            .join(
+                AppRolePermissionEntity,
+                (AppRolePermissionEntity.app_id == AppMemberRoleEntity.app_id)
+                & (AppRolePermissionEntity.role_code == AppMemberRoleEntity.role_code),
+            )
             .join(PlatformUserEntity, PlatformUserEntity.user_id == AppMemberEntity.user_id)
             .where(
                 AppMemberEntity.user_id == user_id,
@@ -103,6 +108,8 @@ class AccessControlRepository:
                 AppDomainEntity.status == "ACTIVE",
                 PlatformApplicationEntity.status == "ACTIVE",
                 PlatformUserEntity.status == "ACTIVE",
+                AppRolePermissionEntity.permission_code
+                == func.concat(AppDomainEntity.app_id, ":use"),
                 self._domain_scope_clause(app_id=AppDomainEntity.app_id, domain_id_column=AppDomainEntity.domain_id),
             )
         )
@@ -132,6 +139,11 @@ class AccessControlRepository:
                 & (AppRoleEntity.role_code == AppMemberRoleEntity.role_code),
             )
             .join(
+                AppRolePermissionEntity,
+                (AppRolePermissionEntity.app_id == AppMemberRoleEntity.app_id)
+                & (AppRolePermissionEntity.role_code == AppMemberRoleEntity.role_code),
+            )
+            .join(
                 PlatformApplicationEntity,
                 PlatformApplicationEntity.app_id == AppDomainEntity.app_id,
             )
@@ -147,6 +159,8 @@ class AccessControlRepository:
                 AppDomainEntity.status == "ACTIVE",
                 PlatformApplicationEntity.status == "ACTIVE",
                 PlatformUserEntity.status == "ACTIVE",
+                AppRolePermissionEntity.permission_code
+                == func.concat(AppDomainEntity.app_id, ":use"),
                 self._domain_scope_clause(
                     app_id=AppDomainEntity.app_id,
                     domain_id_column=AppDomainEntity.domain_id,

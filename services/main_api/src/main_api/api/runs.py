@@ -21,30 +21,19 @@ from platform_core.contracts import (
 )
 from main_api.application import (
     AccessConfigurationError,
-    AccessDeniedError,
+    authorize_app_request,
     require_app_api_agent,
-    require_app_api_permission,
-    require_app_api_scope,
 )
 from platform_clients import KnowledgeRetrievalAppClient
 from platform_core.security import get_auth_context
 
 
 async def _require_use(request: Request) -> None:
-    require_app_api_permission(request, "knowledge_retrieval:use")
-    context = get_auth_context(request)
-    try:
-        await request.app.state.access_control_service.require(
-            app_id="knowledge_retrieval",
-            domain_id=int(context.domain_id or "0"),
-            user_id=context.asserted_user_id or context.client_id,
-            permission_code="knowledge_retrieval:use",
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403,
-            {"code": "APP_PERMISSION_DENIED", "permission": "knowledge_retrieval:use"},
-        ) from exc
+    await authorize_app_request(
+        request,
+        app_id="knowledge_retrieval",
+        permission="knowledge_retrieval:use",
+    )
 
 
 router = APIRouter(
@@ -157,7 +146,6 @@ async def create_run(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
-    require_app_api_scope(request, "knowledge:chat:write")
     spec = await _authorized_spec(request, payload.agent_id)
     effective_level = await _effective_security_level(request)
     result = await _client(request).create_run(
@@ -176,7 +164,6 @@ async def create_run(
 async def get_run(
     run_id: UUID, request: Request
 ) -> AgentRunSummary:
-    require_app_api_scope(request, "knowledge:run:read")
     result = await _client(request).get_run(
         run_id=run_id,
         auth_context=request.state.auth_context,
@@ -190,7 +177,6 @@ async def get_run(
 async def get_run_result(
     run_id: UUID, request: Request
 ) -> AgentArtifact:
-    require_app_api_scope(request, "knowledge:run:read")
     summary = await _client(request).get_run(
         run_id=run_id, auth_context=request.state.auth_context
     )
@@ -211,7 +197,6 @@ async def get_document_reference_preview(
     citation_label: str,
     request: Request,
 ) -> DocumentReferencePreview:
-    require_app_api_scope(request, "knowledge:run:read")
     reference = await _authorized_document_reference(
         request=request,
         run_id=run_id,
@@ -264,7 +249,6 @@ async def stream_document_reference_content(
     request: Request,
     range_header: str | None = Header(default=None, alias="Range"),
 ) -> StreamingResponse:
-    require_app_api_scope(request, "knowledge:run:read")
     reference = await _authorized_document_reference(
         request=request,
         run_id=run_id,
@@ -407,7 +391,6 @@ async def cancel_run(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> AgentRunReceipt:
-    require_app_api_scope(request, "knowledge:chat:write")
     summary = await _client(request).get_run(
         run_id=run_id, auth_context=request.state.auth_context
     )
@@ -429,7 +412,6 @@ async def stream_run_events(
         default=None, alias="Last-Event-ID"
     ),
 ) -> StreamingResponse:
-    require_app_api_scope(request, "knowledge:run:read")
     cursor = _parse_cursor(last_event_id)
     summary = await _client(request).get_run(
         run_id=run_id,

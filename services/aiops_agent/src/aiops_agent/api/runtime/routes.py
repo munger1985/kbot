@@ -15,7 +15,7 @@ from aiops_agent.api.dependencies import (
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.configuration.common import ConfigurationScope
-from platform_core.contracts import AuthContext
+from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
     ClaimOpsTaskCommand,
     CompleteOpsTaskCommand,
@@ -113,7 +113,7 @@ def _ensure_agent_authorized(
     context: AuthContext, agent_id: UUID
 ) -> None:
     if (
-        context.authorized_agent_ids
+        context.principal_kind == PrincipalKind.APP_API_CLIENT
         and agent_id not in context.authorized_agent_ids
     ):
         raise HTTPException(
@@ -123,6 +123,14 @@ def _ensure_agent_authorized(
                 "message": "Ops Run 不存在",
             },
         )
+
+
+def _agent_filter(context: AuthContext) -> tuple[UUID, ...]:
+    """机器主体始终按白名单过滤，空白名单匹配不到任何资源。"""
+
+    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
+        return ()
+    return tuple(context.authorized_agent_ids) or (UUID(int=0),)
 
 
 @router.post("/runs", response_model=OpsRunReceipt, status_code=201)
@@ -237,7 +245,7 @@ async def list_runs(
     require_service_scope(request, "aiops.run")
     return await service.list_runs(
         scope=_query_scope(request, context), target_id=target_id,
-        status=status, agent_ids=tuple(context.authorized_agent_ids),
+        status=status, agent_ids=_agent_filter(context),
         cursor=cursor, limit=limit,
     )
 
@@ -570,6 +578,11 @@ async def get_pending_input(
 ) -> PendingInputView:
     require_service_scope(request, "aiops.hitl")
     domain_id = _scope(request, context)
+    summary = await service.get_run(
+        ops_run_id=run_id,
+        domain_id=domain_id,
+    )
+    _ensure_agent_authorized(context, summary.agent_id)
     return await service.get_pending_input(
         ops_run_id=run_id,
         domain_id=domain_id,

@@ -13,7 +13,6 @@ from aiops_agent.application.agents import (
     AgentModelBindings,
     CreateAIOpsAgentCommand,
     UpdateAIOpsAgentCommand,
-    UpsertAIOpsAgentGrantCommand,
 )
 from platform_core.contracts import AuthContext
 
@@ -66,24 +65,6 @@ class AgentUpdateRequest(_Request):
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
 
 
-class GrantUpsertRequest(_Request):
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
-
-
-class GrantStatusRequest(_Request):
-    status: Literal["ACTIVE", "DISABLED"]
-    expected_row_version: int = Field(ge=1)
-
-
-class AgentAuthorizeRequest(_Request):
-    agent_id: UUID
-    user_id: str = Field(min_length=1, max_length=256)
-    role_codes: tuple[str, ...] = ()
-
-
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
     require_service_scope(request, "aiops.manage")
     if context.domain_id is None:
@@ -132,76 +113,6 @@ async def action_catalog(
     try:
         return await request.app.state.agent_service.action_catalog(
             domain_id=domain_id, target_id=target_id
-        )
-    except AIOpsAgentError as exc:
-        _raise(exc)
-
-
-@router.post(":authorize")
-async def authorize_agent(
-    payload: AgentAuthorizeRequest,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    require_service_scope(request, "aiops.run")
-    if context.domain_id is None:
-        raise HTTPException(
-            403, {"code": "AIOPS_AGENT_DOMAIN_CONTEXT_REQUIRED"}
-        )
-    try:
-        return await request.app.state.agent_service.authorize(
-            domain_id=int(context.domain_id),
-            agent_id=payload.agent_id,
-            user_id=payload.user_id,
-            role_codes=payload.role_codes,
-        )
-    except AIOpsAgentError as exc:
-        _raise(exc)
-
-
-@router.get("/grants/list")
-async def list_grants(
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _scope(request, context)
-    return await request.app.state.agent_service.list_grants(domain_id=domain_id)
-
-
-@router.put("/grants")
-async def upsert_grant(
-    payload: GrantUpsertRequest,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, actor_id = _scope(request, context)
-    try:
-        return await request.app.state.agent_service.upsert_grant(
-            UpsertAIOpsAgentGrantCommand(
-                domain_id=domain_id,
-                actor_id=actor_id,
-                **payload.model_dump(),
-            )
-        )
-    except AIOpsAgentError as exc:
-        _raise(exc)
-
-
-@router.patch("/grants/{grant_id}")
-async def update_grant(
-    grant_id: UUID,
-    payload: GrantStatusRequest,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, actor_id = _scope(request, context)
-    try:
-        return await request.app.state.agent_service.update_grant_status(
-            domain_id=domain_id,
-            grant_id=grant_id,
-            status=payload.status,
-            expected_row_version=payload.expected_row_version,
-            actor_id=actor_id,
         )
     except AIOpsAgentError as exc:
         _raise(exc)

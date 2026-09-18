@@ -38,7 +38,7 @@ App 权限、所需 Scope 和允许访问的 Agent。Main API 完成 App API Key
 Execution Spec 和 Collection 边界上保持一致，仅 Conversation 因 Slack Thread 隔离
 而不同。
 
-当前公开调用至少需要 `km_asset:use` 权限、目标 Agent 授权，以及
+当前公开调用至少需要绑定服务账号的 `km_asset:use` 权限、目标 Agent 机器白名单，以及
 `km:chat:write`、`km:conversation:read`、`km:run:read`、
 `km:reference:read` Scope。缺少任一授权时应由 Main API 拒绝请求，Slack Worker
 不得绕过鉴权或改走内部接口。

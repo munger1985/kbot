@@ -8,11 +8,11 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
     AppApiKeyError,
     AppApiKeyService,
+    authorize_app_request,
 )
+from platform_core.authorization import resolve_business_app_id
 from platform_core.contracts import (
     IdentityEntryKind,
     PrincipalKind,
@@ -28,10 +28,10 @@ router = APIRouter(
 
 
 def _canonical_app_id(value: str) -> str:
-    return {
-        "knowledge-retrieval": "knowledge_retrieval",
-        "km-asset": "km_asset",
-    }.get(value, value)
+    try:
+        return resolve_business_app_id(value)
+    except ValueError as exc:
+        raise HTTPException(404, {"code": "APP_NOT_FOUND"}) from exc
 
 
 class _Payload(BaseModel):
@@ -130,35 +130,49 @@ async def _manager_context(request: Request, app_id: str) -> tuple[int, str]:
         )
     if context.app_id != app_id:
         raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
-    try:
-        domain_id = int(context.domain_id or "")
-    except ValueError as exc:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"}) from exc
-    actor_id = context.asserted_user_id or ""
-    access = cast(
-        AccessControlService, request.app.state.access_control_service
+    domain_id, actor_id, _ = await authorize_app_request(
+        request,
+        app_id=app_id,
+        permission=f"{app_id}:api_key_manage",
     )
-    try:
-        await access.require(
-            app_id=app_id,
-            domain_id=domain_id,
-            user_id=actor_id,
-            permission_code=f"{app_id}:api_key_manage",
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403,
-            {
-                "code": "APP_PERMISSION_DENIED",
-                "permission": f"{app_id}:api_key_manage",
-            },
-        ) from exc
     return domain_id, actor_id
 
 
 def _translate(exc: AppApiKeyError) -> HTTPException:
     return HTTPException(
         exc.status_code, {"code": exc.code, "message": str(exc)}
+    )
+
+
+async def _active_agent_ids(
+    request: Request, *, app_id: str, domain_id: int
+) -> frozenset[UUID]:
+    """从业务 App 实时读取当前 Domain 的 ACTIVE Agent。"""
+
+    context = request.state.auth_context
+    if app_id == "knowledge_retrieval":
+        rows = await request.app.state.knowledge_retrieval_app_client.list_agents(
+            domain_id=domain_id,
+            auth_context=context,
+        )
+    elif app_id == "km_asset":
+        rows = await request.app.state.km_asset_client.list_agents(
+            domain_id=domain_id,
+            auth_context=context,
+        )
+    elif app_id == "aiops":
+        rows = await request.app.state.aiops_client.list_private_agents(
+            auth_context=context,
+        )
+    else:
+        raise AppApiKeyError(
+            "APP_API_KEY_UNSUPPORTED_APP",
+            "该 App 尚未开放 API Client",
+        )
+    return frozenset(
+        UUID(str(item["agent_id"]))
+        for item in rows
+        if item.get("status") == "ACTIVE" and item.get("agent_id")
     )
 
 
@@ -188,6 +202,11 @@ async def create_app_api_client(
     app_id = _canonical_app_id(app_id)
     domain_id, actor_id = await _manager_context(request, app_id)
     try:
+        active_agent_ids = await _active_agent_ids(
+            request,
+            app_id=app_id,
+            domain_id=domain_id,
+        )
         return await _service(request).create_client(
             app_id=app_id,
             domain_id=domain_id,
@@ -195,6 +214,7 @@ async def create_app_api_client(
             display_name=payload.display_name.strip(),
             scopes=payload.scopes,
             agent_ids=payload.agent_ids,
+            active_agent_ids=active_agent_ids,
             expires_at=payload.expires_at,
             rate_limit_per_minute=payload.rate_limit_per_minute,
             actor_id=actor_id,

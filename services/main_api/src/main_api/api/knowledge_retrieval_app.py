@@ -7,16 +7,12 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
+    authorize_app_request,
     require_app_api_agent,
-    require_app_api_permission,
-    require_app_api_scope,
 )
-from platform_core.contracts import PrincipalKind
+from platform_core.authorization import can_read_agent, filter_readable_agents
 from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
-from platform_core.security import get_auth_context
 
 
 router = APIRouter(
@@ -54,23 +50,6 @@ class KnowledgeAgentUpdatePayload(_Payload):
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
 
 
-def _domain_actor(request: Request) -> tuple[int, str]:
-    context = get_auth_context(request)
-    if context.app_id and context.app_id != "knowledge_retrieval":
-        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
-    try:
-        domain_id = int(context.domain_id or "")
-    except ValueError as exc:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"}) from exc
-    if domain_id < 1:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"})
-    return domain_id, context.asserted_user_id or context.client_id
-
-
-def _access(request: Request) -> AccessControlService:
-    return cast(AccessControlService, request.app.state.access_control_service)
-
-
 def _client(request: Request) -> KnowledgeRetrievalAppClient:
     return cast(
         KnowledgeRetrievalAppClient,
@@ -90,25 +69,19 @@ def _uses_semantic_data_query(*, capabilities, config) -> bool:
 
 
 async def _require(request: Request, permission: str):
-    require_app_api_permission(request, permission)
-    domain_id, actor_id = _domain_actor(request)
-    try:
-        snapshot = await _access(request).require(
-            app_id="knowledge_retrieval", domain_id=domain_id,
-            user_id=actor_id, permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
-        ) from exc
-    return domain_id, actor_id, snapshot
+    return await authorize_app_request(
+        request,
+        app_id="knowledge_retrieval",
+        permission=permission,
+    )
 
 
 @router.get("/access")
 async def get_access(request: Request):
-    domain_id, actor_id = _domain_actor(request)
-    snapshot = await _access(request).snapshot(
-        app_id="knowledge_retrieval", domain_id=domain_id, user_id=actor_id
+    _, _, snapshot = await authorize_app_request(
+        request,
+        app_id="knowledge_retrieval",
+        permission="knowledge_retrieval:use",
     )
     return {
         "app_id": snapshot.app_id, "domain_id": snapshot.domain_id,
@@ -125,22 +98,14 @@ async def list_agents(request: Request):
     agents = await _client(request).list_agents(
         domain_id=domain_id, auth_context=request.state.auth_context
     )
-    require_app_api_scope(request, "knowledge:agent:read")
-    if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
-        allowed = {
-            str(value)
-            for value in request.state.auth_context.authorized_agent_ids
-        }
-        return [
-            item for item in agents
-            if item.get("status") == "ACTIVE"
-            and str(item.get("agent_id")) in allowed
-        ]
-    if "knowledge_retrieval:agent_manage" in snapshot.permissions:
-        return agents
-    return [
-        item for item in agents if item.get("status") == "ACTIVE"
-    ]
+    return filter_readable_agents(
+        app_id="knowledge_retrieval",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agents=agents,
+    )
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
@@ -169,21 +134,18 @@ async def get_agent(agent_id: UUID, request: Request):
     domain_id, _, snapshot = await _require(
         request, "knowledge_retrieval:use"
     )
-    require_app_api_scope(request, "knowledge:agent:read")
     require_app_api_agent(request, agent_id)
     agent = await _client(request).get_agent(
         agent_id=agent_id, domain_id=domain_id,
         auth_context=request.state.auth_context,
     )
-    if (
-        request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT
-        and agent.get("status") != "ACTIVE"
-    ):
-        raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
-    if (
-        request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
-        and "knowledge_retrieval:agent_manage" not in snapshot.permissions
-        and agent.get("status") != "ACTIVE"
+    if not can_read_agent(
+        app_id="knowledge_retrieval",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agent=agent,
     ):
         raise HTTPException(
             404,

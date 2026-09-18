@@ -1,10 +1,16 @@
 """数据库型 App API Key 的签发与运行时边界测试。"""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import unittest
 from uuid import UUID
 
-from main_api.application.app_api_key import AppApiKeyError, AppApiKeyService
+from main_api.application.app_api_key import (
+    AppApiKeyError,
+    AppApiKeyService,
+    require_app_api_agent,
+)
+from platform_core.contracts import PrincipalKind
 
 
 AGENT_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a001")
@@ -72,6 +78,21 @@ class _Uow:
 
 
 class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
+    def test_empty_agent_allowlist_denies_access(self):
+        request = SimpleNamespace(
+            state=SimpleNamespace(
+                auth_context=SimpleNamespace(
+                    principal_kind=PrincipalKind.APP_API_CLIENT,
+                    authorized_agent_ids=(),
+                )
+            )
+        )
+
+        with self.assertRaises(AppApiKeyError) as denied:
+            require_app_api_agent(request, AGENT_ID)
+
+        self.assertEqual("APP_API_KEY_AGENT_DENIED", denied.exception.code)
+
     async def asyncSetUp(self):
         self.repository = _Repository()
         self.service = AppApiKeyService(
@@ -85,6 +106,7 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
             display_name="第三方 KM 集成",
             scopes=("km:chat:write", "km:conversation:read"),
             agent_ids=(AGENT_ID,),
+            active_agent_ids=frozenset({AGENT_ID}),
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
             rate_limit_per_minute=60,
             actor_id="kmadmin",
@@ -118,6 +140,7 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
             display_name="长期 KM 集成",
             scopes=("km:chat:write",),
             agent_ids=(AGENT_ID,),
+            active_agent_ids=frozenset({AGENT_ID}),
             expires_at=long_term_expiry,
             rate_limit_per_minute=60,
             actor_id="kmadmin",
@@ -142,11 +165,28 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
                 display_name="无到期时间的 KM 集成",
                 scopes=("km:chat:write",),
                 agent_ids=(AGENT_ID,),
+                active_agent_ids=frozenset({AGENT_ID}),
                 expires_at=None,
                 rate_limit_per_minute=60,
                 actor_id="kmadmin",
             )
         self.assertEqual("APP_API_KEY_EXPIRY_INVALID", rejected.exception.code)
+
+    async def test_inactive_or_cross_domain_agent_is_rejected(self):
+        with self.assertRaises(AppApiKeyError) as rejected:
+            await self.service.create_client(
+                app_id="km_asset",
+                domain_id=100,
+                subject_user_id="km-service",
+                display_name="无效 Agent 集成",
+                scopes=("km:chat:write",),
+                agent_ids=(AGENT_ID,),
+                active_agent_ids=frozenset(),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                rate_limit_per_minute=60,
+                actor_id="kmadmin",
+            )
+        self.assertEqual("APP_API_KEY_AGENT_INVALID", rejected.exception.code)
 
     async def test_cross_app_and_identity_header_are_rejected(self):
         with self.assertRaises(AppApiKeyError) as cross_app:
@@ -185,6 +225,24 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual("aiops:conversation:delete", scope)
+
+    def test_aiops_pending_input_has_an_explicit_scope(self):
+        scope = AppApiKeyService._required_scope(
+            app_id="aiops",
+            method="GET",
+            path=f"/api/v1/apps/aiops/runs/{AGENT_ID}/pending-input",
+        )
+
+        self.assertEqual("aiops:run:read", scope)
+
+    def test_unregistered_run_subresource_is_not_matched_by_wildcard(self):
+        scope = AppApiKeyService._required_scope(
+            app_id="aiops",
+            method="GET",
+            path=f"/api/v1/apps/aiops/runs/{AGENT_ID}/internal-debug",
+        )
+
+        self.assertIsNone(scope)
 
 
 if __name__ == "__main__":

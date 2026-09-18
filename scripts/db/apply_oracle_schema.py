@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,15 +60,17 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "knowledge_retrieval:knowledge_manage",
     "knowledge_retrieval:data_manage",
     "knowledge_retrieval:agent_manage",
-    "knowledge_retrieval:operations_manage",
+    "knowledge_retrieval:api_key_manage",
     "km_asset:use",
     "km_asset:source_manage",
+    "km_asset:knowledge_manage",
     "km_asset:data_manage",
     "km_asset:agent_manage",
     "km_asset:operations_manage",
     "km_asset:member_manage",
     "km_asset:role_manage",
-    "assistant:access",
+    "km_asset:api_key_manage",
+    "assistant:use",
     "assistant:knowledge_chat",
     "assistant:x_search",
     "assistant:image_generate",
@@ -80,15 +82,15 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "assistant:model_binding_manage",
     "assistant:run_read",
     "aiops:use",
-    "aiops:domain_manage",
     "aiops:member_manage",
     "aiops:role_manage",
-    "aiops:operations_manage",
     "aiops:target_manage",
-    "aiops:monitor_source_manage",
+    "aiops:diagnostic_source_manage",
     "aiops:policy_manage",
     "aiops:plan_manage",
     "aiops:agent_manage",
+    "aiops:knowledge_manage",
+    "aiops:api_key_manage",
     "aiops:proposal:approve",
 }
 PLATFORM_FOUNDATION_ROLES = {
@@ -104,6 +106,7 @@ PLATFORM_FOUNDATION_ROLES = {
     ("aiops", "operator"),
     ("aiops", "approver"),
     ("aiops", "app_admin"),
+    ("aiops", "user"),
 }
 
 
@@ -134,7 +137,7 @@ def _expected_foundation_role_permissions() -> dict[tuple[str, str], set[str]]:
         ("km_asset", "user"): {"km_asset:use"},
         ("km_asset", "app_admin"): permissions_by_app["km_asset"],
         ("assistant", "user"): {
-            "assistant:access",
+            "assistant:use",
             "assistant:knowledge_chat",
             "assistant:x_search",
             "assistant:image_generate",
@@ -142,17 +145,16 @@ def _expected_foundation_role_permissions() -> dict[tuple[str, str], set[str]]:
             "assistant:run_read",
         },
         ("assistant", "app_admin"): permissions_by_app["assistant"],
+        ("aiops", "user"): {"aiops:use"},
         ("aiops", "operator"): {
             "aiops:use",
-            "aiops:operations_manage",
             "aiops:target_manage",
-            "aiops:monitor_source_manage",
+            "aiops:diagnostic_source_manage",
             "aiops:policy_manage",
             "aiops:plan_manage",
         },
         ("aiops", "approver"): {
             "aiops:use",
-            "aiops:operations_manage",
             "aiops:proposal:approve",
         },
         ("aiops", "app_admin"): permissions_by_app["aiops"],
@@ -518,12 +520,13 @@ async def _validate_platform_foundation(
             )
         ).scalars()
     )
-    missing_permissions = (
-        PLATFORM_FOUNDATION_PERMISSIONS - permission_codes
-    )
-    if missing_permissions:
+    missing_permissions = PLATFORM_FOUNDATION_PERMISSIONS - permission_codes
+    excess_permissions = permission_codes - PLATFORM_FOUNDATION_PERMISSIONS
+    if missing_permissions or excess_permissions:
         raise FoundationValidationError(
-            "平台权限目录不完整：" + ", ".join(sorted(missing_permissions))
+            "平台权限目录与核心规范不一致："
+            f"缺失={sorted(missing_permissions)}，"
+            f"多余={sorted(excess_permissions)}"
         )
 
     active_roles = {
@@ -560,16 +563,20 @@ async def _validate_platform_foundation(
         actual_role_permissions.setdefault(
             (str(app_id), str(role_code)), set()
         ).add(str(permission_code))
-    incomplete_role_mappings = sorted(
-        f"{app_id}/{role_code}"
-        for (app_id, role_code), expected in expected_role_permissions.items()
-        if not expected.issubset(
-            actual_role_permissions.get((app_id, role_code), set())
+    invalid_role_mappings = sorted(
+        (
+            f"{app_id}/{role_code}:"
+            f"缺失={sorted(expected - actual)}，"
+            f"多余={sorted(actual - expected)}"
         )
+        for (app_id, role_code), expected in expected_role_permissions.items()
+        if (actual := actual_role_permissions.get((app_id, role_code), set()))
+        != expected
     )
-    if incomplete_role_mappings:
+    if invalid_role_mappings:
         raise FoundationValidationError(
-            "角色权限映射不完整：" + ", ".join(incomplete_role_mappings)
+            "内置角色权限映射与核心规范不一致："
+            + "; ".join(invalid_role_mappings)
         )
 
     admin_platform_role_count = (
@@ -606,7 +613,38 @@ async def _validate_platform_foundation(
 async def _repair_foundation_role_permissions(
     connection: AsyncConnection,
 ) -> None:
-    """只补齐内置角色缺失的权限，不删除现有扩展映射。"""
+    """把权限目录和内置角色映射精确收敛到核心规范。"""
+    permission_codes = tuple(sorted(PLATFORM_FOUNDATION_PERMISSIONS))
+    await connection.execute(
+        text(
+            "DELETE FROM KBOT_APP_ROLE_PERMISSION "
+            "WHERE PERMISSION_CODE NOT IN :permission_codes"
+        ).bindparams(bindparam("permission_codes", expanding=True)),
+        {"permission_codes": permission_codes},
+    )
+    await connection.execute(
+        text(
+            "DELETE FROM KBOT_PERMISSION "
+            "WHERE PERMISSION_CODE NOT IN :permission_codes"
+        ).bindparams(bindparam("permission_codes", expanding=True)),
+        {"permission_codes": permission_codes},
+    )
+    for (app_id, role_code), expected in sorted(
+        _expected_foundation_role_permissions().items()
+    ):
+        statement = text(
+            "DELETE FROM KBOT_APP_ROLE_PERMISSION "
+            "WHERE APP_ID = :app_id AND ROLE_CODE = :role_code "
+            "AND PERMISSION_CODE NOT IN :permission_codes"
+        ).bindparams(bindparam("permission_codes", expanding=True))
+        await connection.execute(
+            statement,
+            {
+                "app_id": app_id,
+                "role_code": role_code,
+                "permission_codes": tuple(sorted(expected)),
+            },
+        )
     mappings = [
         {
             "app_id": app_id,

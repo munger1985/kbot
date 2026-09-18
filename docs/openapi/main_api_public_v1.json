@@ -113,70 +113,6 @@
         "title": "AIOpsAgentCreatePayload",
         "type": "object"
       },
-      "AIOpsAgentGrantPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "status": {
-            "default": "ACTIVE",
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "subject_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Subject Id",
-            "type": "string"
-          },
-          "subject_type": {
-            "enum": [
-              "USER",
-              "ROLE"
-            ],
-            "title": "Subject Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id",
-          "subject_type",
-          "subject_id"
-        ],
-        "title": "AIOpsAgentGrantPayload",
-        "type": "object"
-      },
-      "AIOpsAgentGrantStatusPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "expected_row_version"
-        ],
-        "title": "AIOpsAgentGrantStatusPayload",
-        "type": "object"
-      },
       "AIOpsAgentUpdatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -1051,7 +987,11 @@
           "CLARIFICATION",
           "EVIDENCE_REQUEST",
           "PROPOSAL_SUMMARY",
-          "VERIFICATION_COMPARISON"
+          "VERIFICATION_COMPARISON",
+          "FINDING_CARDS",
+          "ANALYSIS_MARKDOWN",
+          "SOLUTION_MARKDOWN",
+          "HTML_REPORT_LINKS"
         ],
         "title": "AnswerBlockType",
         "type": "string"
@@ -12803,113 +12743,6 @@
           }
         },
         "summary": "Action Catalog",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/agent-grants": {
-      "get": {
-        "operationId": "list_agent_grants_api_v1_apps_aiops_agent_grants_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Agent Grants",
-        "tags": [
-          "AIOps App"
-        ]
-      },
-      "put": {
-        "operationId": "upsert_agent_grant_api_v1_apps_aiops_agent_grants_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsAgentGrantPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Upsert Agent Grant",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/agent-grants/{grant_id}": {
-      "patch": {
-        "operationId": "update_agent_grant_api_v1_apps_aiops_agent_grants__grant_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "grant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Grant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsAgentGrantStatusPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Agent Grant",
         "tags": [
           "AIOps App"
         ]

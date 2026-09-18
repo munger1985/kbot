@@ -1952,8 +1952,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    23 AS SCHEMA_VERSION,
-    'aiops-oracle-v13' AS CONTRACT_VERSION
+    24 AS SCHEMA_VERSION,
+    'aiops-oracle-v14' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -1965,7 +1965,7 @@ COMMENT ON COLUMN KBOT_OPS_TASK.OUTPUT_ARTIFACT_ID IS
 
 -- ===== 开始规范 DDL：007_ops_agents.sql =====
 
--- AIOps 应用私有 Agent、不可变版本和用户/角色授权。
+-- AIOps 应用私有 Agent、不可变版本和资源绑定。
 
 CREATE TABLE KBOT_OPS_AGENT (
     AGENT_ID RAW(16) PRIMARY KEY,
@@ -2056,32 +2056,6 @@ ALTER TABLE KBOT_OPS_INSPECTION_PLAN
 ALTER TABLE KBOT_OPS_TARGET_BINDING
     ADD CONSTRAINT FK_OPS_BINDING_AGENT
     FOREIGN KEY (AGENT_ID) REFERENCES KBOT_OPS_AGENT (AGENT_ID);
-
-CREATE TABLE KBOT_OPS_AGENT_GRANT (
-    AGENT_GRANT_ID RAW(16) PRIMARY KEY,
-    DOMAIN_ID NUMBER(38) NOT NULL,
-    AGENT_ID RAW(16) NOT NULL,
-    SUBJECT_TYPE VARCHAR2(16 CHAR) NOT NULL,
-    SUBJECT_ID VARCHAR2(256 CHAR) NOT NULL,
-    STATUS VARCHAR2(16 CHAR) DEFAULT 'ACTIVE' NOT NULL,
-    ROW_VERSION NUMBER(19) DEFAULT 1 NOT NULL,
-    CREATED_BY VARCHAR2(256 CHAR) NOT NULL,
-    UPDATED_BY VARCHAR2(256 CHAR) NOT NULL,
-    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT FK_OPS_AGENT_GRANT_DOMAIN FOREIGN KEY (DOMAIN_ID)
-        REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID),
-    CONSTRAINT FK_OPS_AGENT_GRANT_AGENT FOREIGN KEY (AGENT_ID)
-        REFERENCES KBOT_OPS_AGENT (AGENT_ID) ON DELETE CASCADE,
-    CONSTRAINT UK_OPS_AGENT_GRANT_SUBJECT
-        UNIQUE (AGENT_ID, SUBJECT_TYPE, SUBJECT_ID),
-    CONSTRAINT CK_OPS_AGENT_GRANT_SUBJECT CHECK (SUBJECT_TYPE IN ('USER', 'ROLE')),
-    CONSTRAINT CK_OPS_AGENT_GRANT_STATUS CHECK (STATUS IN ('ACTIVE', 'DISABLED')),
-    CONSTRAINT CK_OPS_AGENT_GRANT_ROW_VERSION CHECK (ROW_VERSION > 0)
-);
-
-CREATE INDEX IX_OPS_AGENT_GRANT_SCOPE ON KBOT_OPS_AGENT_GRANT
-    (DOMAIN_ID, SUBJECT_TYPE, SUBJECT_ID, STATUS);
 
 -- ===== 结束规范 DDL：007_ops_agents.sql =====
 
@@ -2898,7 +2872,6 @@ BEGIN
           'KBOT_OPS_AGENT_VERSION',
           'KBOT_OPS_AGENT_VERSION_SOURCE',
           'KBOT_OPS_AGENT_VERSION_TARGET',
-          'KBOT_OPS_AGENT_GRANT',
           'KBOT_OPS_REPORT_TEMPLATE',
           'KBOT_OPS_REPORT_TEMPLATE_VER',
           'KBOT_OPS_CONVERSATION',
@@ -3040,7 +3013,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 44 OR l_view_count <> 10 THEN
+    IF l_table_count <> 43 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -3066,20 +3039,20 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 15 THEN
-        raise_application_error(-20008, 'Schema 23 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 24 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 23 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 24 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 23 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 24 合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 23
-       OR l_contract_version <> 'aiops-oracle-v13' THEN
+       OR l_schema_version <> 24
+       OR l_contract_version <> 'aiops-oracle-v14' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3088,8 +3061,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：44 张表、10 个视图，Schema Version '
-        || '23，合同 aiops-oracle-v13。'
+        '验证通过：43 张表、10 个视图，Schema Version '
+        || '24，合同 aiops-oracle-v14。'
     );
 END;
 /

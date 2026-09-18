@@ -120,7 +120,7 @@ Target不由后续Turn请求覆盖。一个Agent版本可以绑定多个逻辑Ta
 
 逻辑Target是数据库对象身份，不等同于连接配置。`display_name`、`db_type`、环境和角色描述对象；
 `readonly_connection_enabled`控制是否存在数据库只读取证能力，`controlled_change_enabled`控制
-是否允许在Agent授权和人工审批后使用独立执行凭据。两者都关闭时，Target仍可依靠Target–Source
+是否允许在Agent版本动作策略和人工审批后使用独立执行凭据。两者都关闭时，Target仍可依靠Target–Source
 映射使用Prometheus、Loki、Alertmanager和用户证据。
 
 `DBA_TASK_FRAME.v1`替代单一Intent Plan：
@@ -147,7 +147,7 @@ Playbook、输入、依赖、Evidence Need、优先级和原因。
 
 - Tool和Playbook存在且版本有效；
 - 参数符合Schema；
-- Target、Source和凭据在Agent授权范围；
+- Target、Source和凭据在当前Agent版本的显式绑定范围；
 - 依赖图无环；
 - 调用数、成本、超时和总预算；
 - 动态查询进入额外安全校验；

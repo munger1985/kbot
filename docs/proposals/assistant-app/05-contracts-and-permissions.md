@@ -57,8 +57,8 @@ ImageGenerationRequest
 
 | 权限 | 可执行动作 | 不包含的权限 |
 | --- | --- | --- |
-| `assistant:access` | 进入 App、查看本人上下文 | 任何业务能力 |
-| `assistant:knowledge_chat` | 使用获授权 Agent 聊天 | 创建 Agent、读取未授权 KC/问数结果 |
+| `assistant:use` | 进入 App、查看本人上下文 | 任何业务能力 |
+| `assistant:knowledge_chat` | 使用当前 Domain 的 ACTIVE Agent 聊天 | 创建 Agent、绕过 Agent 版本绑定读取 KC/问数结果 |
 | `assistant:x_search` | 创建/读取自己或获授项目的 X Search Run | 修改模型绑定、读取其他 Domain 来源 |
 | `assistant:image_generate` | 创建图片 Run、读取自己的资产 | 下载或管理他人私有资产 |
 | `assistant:media_read` | 查看按 Domain 授权的图片资产 | 创建生成任务 |

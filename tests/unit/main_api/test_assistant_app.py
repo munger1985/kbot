@@ -33,7 +33,19 @@ LLM_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a017")
 
 class _AccessService:
     def __init__(self):
-        self.permissions = {"assistant:access"}
+        self.permissions = {
+            "assistant:use",
+            "assistant:knowledge_chat",
+            "assistant:x_search",
+            "assistant:image_generate",
+            "assistant:media_read",
+            "assistant:domain_manage",
+            "assistant:knowledge_core_manage",
+            "assistant:data_model_manage",
+            "assistant:agent_manage",
+            "assistant:model_binding_manage",
+            "assistant:run_read",
+        }
 
     async def require(self, **kwargs):
         return SimpleNamespace(permissions={kwargs["permission_code"]})
@@ -287,6 +299,7 @@ class _AssistantClient:
         self.idempotency_key = None
         self.agent = {
             "agent_id": str(AGENT_ID), "agent_version_id": str(VERSION_ID),
+            "domain_id": 41,
             "status": "DRAFT", "knowledge_core_id": str(CORE_ID),
             "data_model_ids": [str(DATA_MODEL_ID)], "row_version": 1,
             "display_name": "客户经营助手", "enabled_capabilities": ["conversation", "document", "data_query"],
@@ -628,7 +641,7 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual("ARCHIVED", self.assistant.payload["status"])
 
     def test_agent_manager_can_read_list_and_detail_without_chat_permission(self):
-        self.access.permissions = {"assistant:access", "assistant:agent_manage"}
+        self.access.permissions = {"assistant:use", "assistant:agent_manage"}
 
         listed = self.client.get(
             "/api/v1/apps/assistant/agents", headers=self._headers()
@@ -642,7 +655,7 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(str(AGENT_ID), detail.json()["agent_id"])
 
     def test_knowledge_chat_user_only_lists_active_agents(self):
-        self.access.permissions = {"assistant:access", "assistant:knowledge_chat"}
+        self.access.permissions = {"assistant:use", "assistant:knowledge_chat"}
         self.assistant.agent["status"] = "DRAFT"
 
         draft_response = self.client.get(
@@ -659,7 +672,7 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(str(AGENT_ID), active_response.json()[0]["agent_id"])
 
     def test_knowledge_chat_creates_runtime_conversation_and_turn(self):
-        self.access.permissions = {"assistant:access", "assistant:knowledge_chat"}
+        self.access.permissions = {"assistant:use", "assistant:knowledge_chat"}
         self.assistant.agent["status"] = "ACTIVE"
 
         created = self.client.post(
@@ -717,11 +730,12 @@ class AssistantAppRouteTest(unittest.TestCase):
             )
 
         self.assistant.list_bindings = fail_bindings
+        self.access.permissions = {"assistant:use"}
         response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())
 
         self.assertEqual(200, response.status_code, response.text)
         body = response.json()
-        self.assertEqual(["assistant:access"], body["permissions"])
+        self.assertEqual(["assistant:use"], body["permissions"])
         self.assertEqual([], body["bindings"])
         self.assertEqual(
             {"bound": False, "verified": False, "ready": False},

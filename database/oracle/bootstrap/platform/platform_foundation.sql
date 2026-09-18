@@ -19,8 +19,8 @@ WHEN NOT MATCHED THEN INSERT (
 
 MERGE INTO KBOT_PERMISSION target
 USING (
-    SELECT 'assistant:access' PERMISSION_CODE, 'assistant' APP_ID,
-           '进入智能工作台' DISPLAY_NAME FROM DUAL UNION ALL
+    SELECT 'assistant:use' PERMISSION_CODE, 'assistant' APP_ID,
+           '使用智能工作台' DISPLAY_NAME FROM DUAL UNION ALL
     SELECT 'assistant:knowledge_chat', 'assistant', '使用知识问答' FROM DUAL UNION ALL
     SELECT 'assistant:x_search', 'assistant', '使用 X 实时搜索' FROM DUAL UNION ALL
     SELECT 'assistant:image_generate', 'assistant', '使用文生图' FROM DUAL UNION ALL

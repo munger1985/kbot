@@ -14,6 +14,7 @@ from pydantic import TypeAdapter
 from aiops_agent.application.investigation import (
     InvestigationPlanValidationError,
 )
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
 from aiops_agent.application.turns import ConversationTurnService
@@ -1007,21 +1008,38 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(run_id, view.ops_run_id)
 
-    async def test_start_accepts_disabled_target_for_degraded_diagnosis(
-        self,
-    ) -> None:
-        """Target 停用只降低本轮取证能力，不应阻止 Agent 接收问题。"""
+    async def test_start_rejects_disabled_target(self) -> None:
         uow = _Uow()
         uow.target.status = "DISABLED"
 
-        _, receipt = await self._start(uow)
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await self._start(uow)
 
-        self.assertEqual("QUEUED", receipt["status"])
+        self.assertEqual("AIOPS_TARGET_NOT_ENABLED", raised.exception.code)
+
+    async def test_continue_rechecks_current_agent_status(self) -> None:
+        uow = _Uow()
+        service, first = await self._start(uow)
+        uow.agent.status = "DISABLED"
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.create_turn(
+                domain_id=7,
+                conversation_id=UUID(first["conversation_id"]),
+                actor_id="dba@example.com",
+                trace_id="trace-disabled-agent",
+                command=TurnCreate(
+                    content=(
+                        {"content_type": "TEXT", "text": "继续检查"},
+                    ),
+                    idempotency_key="request-disabled-agent",
+                ),
+            )
+
         self.assertEqual(
-            uow.target.target_id,
-            uow.turns.turns[0].resolved_target_id,
+            "AIOPS_CONVERSATION_AGENT_NOT_RUNNABLE",
+            raised.exception.code,
         )
-        self.assertEqual(1, len(uow.outbox.rows))
 
     async def test_queue_accept_is_idempotent(self) -> None:
         uow = _Uow()

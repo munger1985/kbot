@@ -12,7 +12,7 @@ from aiops_agent.api.dependencies import (
     require_service_scope,
 )
 from aiops_agent.application.changes import AIOpsChangeService
-from platform_core.contracts import AuthContext
+from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
     ApprovalCommand,
     ApprovalReceipt,
@@ -38,6 +38,14 @@ Service = Annotated[AIOpsChangeService, Depends(get_service)]
 Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 
+def _agent_filter(context: AuthContext) -> tuple[UUID, ...]:
+    """机器主体始终按白名单过滤，空白名单匹配不到任何资源。"""
+
+    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
+        return ()
+    return tuple(context.authorized_agent_ids) or (UUID(int=0),)
+
+
 def _scope(request: Request, context: AuthContext) -> int:
     if context.domain_id is None:
         raise RuntimeError("AIOps 请求缺少 Domain")
@@ -56,7 +64,7 @@ async def list_proposals(
     return await service.list_proposals(
         scope=ConfigurationScope.from_auth(auth_context=context),
         target_id=target_id, status=status,
-        agent_ids=tuple(context.authorized_agent_ids), cursor=cursor, limit=limit,
+        agent_ids=_agent_filter(context), cursor=cursor, limit=limit,
     )
 
 

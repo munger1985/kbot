@@ -135,7 +135,7 @@ class ChangeRepository(AIOpsRepository):
         before_created_at: datetime | None = None,
         before_id: UUID | None = None, limit: int = 51,
     ) -> list[ChangeProposalEntity]:
-        """分页读取 Domain 内变更建议，并执行 Agent 授权过滤。"""
+        """分页读取 Domain 内变更建议，并按指定 Agent 集合过滤。"""
         self._check_active()
         statement = select(ChangeProposalEntity).join(
             TargetEntity, TargetEntity.target_id == ChangeProposalEntity.target_id

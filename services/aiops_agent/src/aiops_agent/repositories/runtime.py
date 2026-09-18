@@ -84,7 +84,7 @@ class OpsRunRepository(AIOpsRepository):
         before_created_at: datetime | None = None,
         before_id: UUID | None = None, limit: int = 51,
     ) -> list[OpsRunEntity]:
-        """按 Domain 与可授权 Agent 分页读取 Run。"""
+        """按 Domain 与指定 Agent 集合分页读取 Run。"""
         self._check_active()
         statement = select(OpsRunEntity).join(
             TargetEntity, TargetEntity.target_id == OpsRunEntity.target_id

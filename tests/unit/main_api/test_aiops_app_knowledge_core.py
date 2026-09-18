@@ -68,7 +68,7 @@ class AIOpsKnowledgeCoreBffTest(unittest.IsolatedAsyncioTestCase):
         ])
 
         domain_id, collection = await _fixed_manual_collection(
-            _request(client), require_active=True
+            _request(client), domain_id=42, require_active=True
         )
 
         self.assertEqual(42, domain_id)

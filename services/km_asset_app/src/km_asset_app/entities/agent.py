@@ -42,19 +42,3 @@ class KmAgentVersionEntity(BaseEntity):
     config_json: Mapped[dict[str, Any]] = mapped_column(OracleNativeJSON(), nullable=False)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class KmAgentGrantEntity(BaseEntity):
-    __tablename__ = "KBOT_KM_AGENT_GRANT"
-    __table_args__ = (UniqueConstraint("agent_id", "subject_type", "subject_id", name="UK_KM_AGENT_GRANT"),)
-    agent_grant_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
-    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
-    agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    subject_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    subject_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
-    row_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

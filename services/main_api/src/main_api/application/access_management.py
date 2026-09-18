@@ -14,6 +14,7 @@ from main_api.entities.access_control import (
     PlatformUserCredentialEntity,
     PlatformUserEntity,
 )
+from platform_core.authorization import get_app_authorization_policy
 
 
 INITIAL_APP_ADMIN_ROLE = "app_admin"
@@ -232,7 +233,23 @@ class AccessManagementService:
     async def set_platform_app_grant(
         self, *, user_id: str, app_id: str,
         role_bindings: tuple[dict[str, object], ...], actor_id: str,
+        actor_platform_permissions: frozenset[str],
     ) -> dict[str, object]:
+        if user_id.casefold() == actor_id.casefold():
+            raise AccessManagementError(
+                "APP_GRANT_SELF_ESCALATION",
+                "平台授权管理员不能给自己授予业务 App 权限",
+                status_code=403,
+            )
+        if "platform:app_grant_manage" not in actor_platform_permissions:
+            raise AccessManagementError(
+                "PLATFORM_PERMISSION_DENIED",
+                "缺少平台 App Grant 管理权限",
+                status_code=403,
+            )
+        assignable_permissions = None
+        if "platform:app_manage" not in actor_platform_permissions:
+            assignable_permissions = frozenset({f"{app_id}:use"})
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
             if user is None:
@@ -254,6 +271,7 @@ class AccessManagementService:
             bindings = await self._replace_role_bindings(
                 uow=uow, app_id=app_id, user_id=user_id,
                 role_bindings=role_bindings, actor_id=actor_id,
+                assignable_permissions=assignable_permissions,
             )
             await uow.commit()
             return {"user_id": user_id, "app_id": app_id, "status": "ACTIVE", "role_bindings": bindings}
@@ -360,7 +378,7 @@ class AccessManagementService:
         self, *, user_id: str, display_name: str | None, display_name_provided: bool,
         status: str | None, max_security_level: int | None = None,
         expected_origin: str = "PLATFORM", expected_app_id: str | None = None,
-        actor_security_level: int = 3,
+        actor_security_level: int = 3, actor_id: str,
     ) -> dict[str, object]:
         if is_reserved_global_admin(user_id):
             raise AccessManagementError("GLOBAL_ADMIN_PROTECTED", "ADMIN 是平台保留账号，不能修改", status_code=409)
@@ -377,6 +395,17 @@ class AccessManagementService:
             _assert_mutable_user(user)
             if user.account_origin != expected_origin or (expected_app_id and user.owner_app_id != expected_app_id):
                 raise AccessManagementError("USER_OWNERSHIP_DENIED", "用户不属于当前管理范围", status_code=403)
+            if expected_origin == "PLATFORM":
+                await self._assert_platform_target_dominated(
+                    uow=uow, actor_id=actor_id, target=user
+                )
+            elif expected_app_id:
+                await self._assert_app_target_dominated(
+                    uow=uow,
+                    app_id=expected_app_id,
+                    actor_id=actor_id,
+                    target=user,
+                )
             await uow.access.update_user(
                 user=user,
                 display_name=display_name if display_name_provided else user.display_name,
@@ -390,25 +419,29 @@ class AccessManagementService:
             await uow.commit()
             return self._user_item(user)
 
-    async def reset_password(self, *, user_id: str, password: str, must_change_password: bool) -> dict[str, object]:
-        password_hash = await self._password_hash(password)
+    async def reset_platform_user_password(
+        self, *, actor_id: str, user_id: str, password: str,
+        must_change_password: bool,
+    ) -> dict[str, object]:
         async with self._uow_factory() as uow:
-            user = await uow.access.get_user(user_id)
-            if user is None:
-                raise AccessManagementError("USER_NOT_FOUND", "用户不存在", status_code=404)
-            credential = await uow.access.get_user_credential(user_id)
-            if credential is None:
-                await uow.access.add_user_credential(PlatformUserCredentialEntity(
-                    user_id=user_id, password_hash=password_hash,
-                    must_change_password="Y" if must_change_password else "N",
-                ))
-            else:
-                await uow.access.set_user_password(
-                    credential=credential, password_hash=password_hash,
-                    must_change_password=must_change_password,
+            target = await uow.access.get_user(user_id)
+            if target is None or target.account_origin != "PLATFORM":
+                raise AccessManagementError(
+                    "PLATFORM_USER_REQUIRED", "平台用户不存在", status_code=404
                 )
+            await self._assert_platform_target_dominated(
+                uow=uow,
+                actor_id=actor_id,
+                target=target,
+            )
+            result = await self._set_password(
+                uow=uow,
+                user_id=user_id,
+                password=password,
+                must_change_password=must_change_password,
+            )
             await uow.commit()
-            return {"user_id": user_id, "must_change_password": must_change_password}
+            return result
 
     async def reset_initial_app_admin_password(
         self, *, app_id: str, password: str, must_change_password: bool
@@ -418,15 +451,18 @@ class AccessManagementService:
             initial = next((row for row in members if row.is_initial_admin == "Y"), None)
             if initial is None:
                 raise AccessManagementError("INITIAL_APP_ADMIN_NOT_FOUND", "App 初始管理员不存在", status_code=404)
-            user_id = initial.user_id
-        return await self.reset_password(
-            user_id=user_id, password=password,
-            must_change_password=must_change_password,
-        )
+            result = await self._set_password(
+                uow=uow,
+                user_id=initial.user_id,
+                password=password,
+                must_change_password=must_change_password,
+            )
+            await uow.commit()
+            return result
 
     async def reset_app_user_password(
         self, *, app_id: str, user_id: str, password: str,
-        must_change_password: bool,
+        must_change_password: bool, actor_id: str,
     ) -> dict[str, object]:
         async with self._uow_factory() as uow:
             user = await uow.access.get_user(user_id)
@@ -445,14 +481,24 @@ class AccessManagementService:
                     "初始 App 管理员密码只能由平台管理员重置",
                     status_code=409,
                 )
-        return await self.reset_password(
-            user_id=user_id, password=password,
-            must_change_password=must_change_password,
-        )
+            await self._assert_app_target_dominated(
+                uow=uow,
+                app_id=app_id,
+                actor_id=actor_id,
+                target=user,
+            )
+            result = await self._set_password(
+                uow=uow,
+                user_id=user_id,
+                password=password,
+                must_change_password=must_change_password,
+            )
+            await uow.commit()
+            return result
 
     async def delete_user(
         self, *, user_id: str, expected_origin: str = "PLATFORM",
-        expected_app_id: str | None = None,
+        expected_app_id: str | None = None, actor_id: str,
     ) -> dict[str, object]:
         if is_reserved_global_admin(user_id):
             raise AccessManagementError("GLOBAL_ADMIN_PROTECTED", "ADMIN 是平台保留账号，不能删除", status_code=409)
@@ -463,6 +509,17 @@ class AccessManagementService:
             _assert_mutable_user(user)
             if user.account_origin != expected_origin or (expected_app_id and user.owner_app_id != expected_app_id):
                 raise AccessManagementError("USER_OWNERSHIP_DENIED", "用户不属于当前管理范围", status_code=403)
+            if expected_origin == "PLATFORM":
+                await self._assert_platform_target_dominated(
+                    uow=uow, actor_id=actor_id, target=user
+                )
+            elif expected_app_id:
+                await self._assert_app_target_dominated(
+                    uow=uow,
+                    app_id=expected_app_id,
+                    actor_id=actor_id,
+                    target=user,
+                )
             await uow.access.delete_user(user=user)
             await uow.commit()
             return {"user_id": user_id, "deleted": True}
@@ -606,10 +663,148 @@ class AccessManagementService:
             result.append({"role_code": row.role_code, "scope_mode": row.scope_mode, "domain_ids": list(scopes), "status": row.status})
         return result
 
+    async def _set_password(
+        self, *, uow, user_id: str, password: str,
+        must_change_password: bool,
+    ) -> dict[str, object]:
+        """在调用方事务内写入密码，避免校验与修改分离。"""
+
+        password_hash = await self._password_hash(password)
+        credential = await uow.access.get_user_credential(user_id)
+        if credential is None:
+            await uow.access.add_user_credential(PlatformUserCredentialEntity(
+                user_id=user_id,
+                password_hash=password_hash,
+                must_change_password="Y" if must_change_password else "N",
+            ))
+        else:
+            await uow.access.set_user_password(
+                credential=credential,
+                password_hash=password_hash,
+                must_change_password=must_change_password,
+            )
+        return {
+            "user_id": user_id,
+            "must_change_password": must_change_password,
+        }
+
+    @staticmethod
+    async def _assert_app_target_dominated(
+        *, uow, app_id: str, actor_id: str, target
+    ) -> None:
+        """确保 App 管理员的有效范围和权限完整覆盖目标账号。"""
+
+        if actor_id.casefold() == target.user_id.casefold():
+            raise AccessManagementError(
+                "PASSWORD_RESET_SELF_DENIED",
+                "管理员重置接口不能用于修改自己的密码",
+                status_code=403,
+            )
+        actor = await uow.access.get_user(actor_id)
+        if actor is None or actor.status != "ACTIVE":
+            raise AccessManagementError(
+                "ACTOR_NOT_FOUND", "当前管理员账号不可用", status_code=403
+            )
+        if int(target.max_security_level) > int(actor.max_security_level):
+            raise AccessManagementError(
+                "PASSWORD_RESET_PRIVILEGE_ESCALATION",
+                "不能重置安全等级高于当前管理员的账号密码",
+                status_code=403,
+            )
+        actor_domains = set(
+            await uow.access.list_active_domain_ids(actor_id, app_id=app_id)
+        )
+        target_domains = set(
+            await uow.access.list_active_domain_ids(target.user_id, app_id=app_id)
+        )
+        if not target_domains.issubset(actor_domains):
+            raise AccessManagementError(
+                "PASSWORD_RESET_SCOPE_ESCALATION",
+                "目标账号包含当前管理员无权管理的 Domain",
+                status_code=403,
+            )
+        for domain_id in target_domains:
+            actor_permissions = await uow.access.permissions_for(
+                app_id=app_id,
+                domain_id=domain_id,
+                user_id=actor_id,
+            )
+            target_permissions = await uow.access.permissions_for(
+                app_id=app_id,
+                domain_id=domain_id,
+                user_id=target.user_id,
+            )
+            if not set(target_permissions).issubset(set(actor_permissions)):
+                raise AccessManagementError(
+                    "PASSWORD_RESET_PRIVILEGE_ESCALATION",
+                    "不能重置权限高于当前管理员的账号密码",
+                    status_code=403,
+                )
+
+    async def _assert_platform_target_dominated(
+        self, *, uow, actor_id: str, target
+    ) -> None:
+        """确保平台管理员完整覆盖目标平台账号的全部有效权限。"""
+
+        _assert_mutable_user(target)
+        if actor_id.casefold() == target.user_id.casefold():
+            raise AccessManagementError(
+                "PASSWORD_RESET_SELF_DENIED",
+                "管理员重置接口不能用于修改自己的密码",
+                status_code=403,
+            )
+        if is_reserved_global_admin(actor_id):
+            return
+        actor = await uow.access.get_user(actor_id)
+        if actor is None or actor.status != "ACTIVE":
+            raise AccessManagementError(
+                "ACTOR_NOT_FOUND", "当前管理员账号不可用", status_code=403
+            )
+        if int(target.max_security_level) > int(actor.max_security_level):
+            raise AccessManagementError(
+                "PASSWORD_RESET_PRIVILEGE_ESCALATION",
+                "不能重置安全等级高于当前管理员的账号密码",
+                status_code=403,
+            )
+        actor_platform = await uow.access.platform_permissions_for(
+            user_id=actor_id
+        )
+        target_platform = await uow.access.platform_permissions_for(
+            user_id=target.user_id
+        )
+        if not set(target_platform).issubset(set(actor_platform)):
+            raise AccessManagementError(
+                "PASSWORD_RESET_PRIVILEGE_ESCALATION",
+                "不能重置平台权限高于当前管理员的账号密码",
+                status_code=403,
+            )
+        for membership in await uow.access.list_user_memberships(
+            user_id=target.user_id
+        ):
+            await self._assert_app_target_dominated(
+                uow=uow,
+                app_id=membership.app_id,
+                actor_id=actor_id,
+                target=target,
+            )
+
     @staticmethod
     async def _validate_permissions(*, uow, app_id: str, permission_codes):
         if len(permission_codes) != len(set(permission_codes)):
             raise AccessManagementError("DUPLICATE_PERMISSION", "角色权限不能重复")
+        if app_id != "platform":
+            try:
+                policy = get_app_authorization_policy(app_id)
+            except ValueError as exc:
+                raise AccessManagementError(
+                    "APP_AUTHORIZATION_POLICY_MISSING", str(exc)
+                ) from exc
+            try:
+                policy.assert_role_permissions(permission_codes)
+            except ValueError as exc:
+                raise AccessManagementError(
+                    "APP_USE_PERMISSION_REQUIRED", str(exc)
+                ) from exc
         allowed = {row.permission_code for row in await uow.access.list_permissions(app_id=app_id)}
         unknown = sorted(set(permission_codes) - allowed)
         if unknown:

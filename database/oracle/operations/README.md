@@ -21,3 +21,13 @@ Target 页面明确选择 `CDB Root`、`PDB` 或 `Non-CDB`，重新测试连接�
 `enable_model_serving_capabilities.sql` 用于为已有模型目录新增 X Search、文生图和响应流的
 能力验收列。脚本不会把任何模型标记为可用；所有新增列默认关闭，必须由受控 Canary 写入
 验收结果后，业务入口才可使用对应能力。
+## 权限模型收敛
+
+既有 KBot 4.0 Schema 升级到统一核心权限规则时，先由 Schema Owner 执行
+`converge_core_authorization.sql` 删除废弃的人类 Agent Grant 表，再运行：
+
+```bash
+conda run -n kbot4 python scripts/db/apply_oracle_schema.py --foundation-only
+```
+
+第二步会精确收敛权限目录和系统内置角色映射；自定义角色保留，但其废弃权限映射会被清理。

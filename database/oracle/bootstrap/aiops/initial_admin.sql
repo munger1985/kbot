@@ -98,10 +98,8 @@ END;
 MERGE INTO KBOT_PERMISSION target
 USING (
     SELECT 'aiops:use' PERMISSION_CODE, 'aiops' APP_ID, '使用 AIOps' DISPLAY_NAME FROM DUAL UNION ALL
-    SELECT 'aiops:domain_manage', 'aiops', '管理 AIOps Domain 配置' FROM DUAL UNION ALL
     SELECT 'aiops:member_manage', 'aiops', '管理 AIOps 成员' FROM DUAL UNION ALL
     SELECT 'aiops:role_manage', 'aiops', '管理 AIOps 角色' FROM DUAL UNION ALL
-    SELECT 'aiops:operations_manage', 'aiops', '管理 AIOps 运行' FROM DUAL UNION ALL
     SELECT 'aiops:target_manage', 'aiops', '管理诊断目标' FROM DUAL UNION ALL
     SELECT 'aiops:diagnostic_source_manage', 'aiops', '管理诊断源' FROM DUAL UNION ALL
     SELECT 'aiops:policy_manage', 'aiops', '管理诊断策略' FROM DUAL UNION ALL
@@ -119,6 +117,7 @@ MERGE INTO KBOT_APP_ROLE target
 USING (
     SELECT 'aiops' APP_ID, 'app_admin' ROLE_CODE, 'AIOps 初始管理员' DISPLAY_NAME,
            'Y' IS_SYSTEM, 'ALL_APP_DOMAINS' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL
+    UNION ALL SELECT 'aiops', 'user', '用户', 'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
     UNION ALL SELECT 'aiops', 'operator', '运维操作员', 'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
     UNION ALL SELECT 'aiops', 'approver', '审批人', 'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
 ) source ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
@@ -135,6 +134,40 @@ WHEN NOT MATCHED THEN INSERT (
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (SELECT 'aiops' APP_ID, 'app_admin' ROLE_CODE, PERMISSION_CODE
          FROM KBOT_PERMISSION WHERE APP_ID = 'aiops') source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE
+    AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (SELECT 'aiops' APP_ID, 'user' ROLE_CODE, PERMISSION_CODE
+         FROM KBOT_PERMISSION WHERE PERMISSION_CODE = 'aiops:use') source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE
+    AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT 'aiops' APP_ID, 'operator' ROLE_CODE, PERMISSION_CODE
+      FROM KBOT_PERMISSION
+     WHERE PERMISSION_CODE IN (
+        'aiops:use', 'aiops:target_manage',
+        'aiops:diagnostic_source_manage', 'aiops:policy_manage',
+        'aiops:plan_manage'
+     )
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE
+    AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT 'aiops' APP_ID, 'approver' ROLE_CODE, PERMISSION_CODE
+      FROM KBOT_PERMISSION
+     WHERE PERMISSION_CODE IN ('aiops:use', 'aiops:proposal:approve')
+) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE
     AND target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)

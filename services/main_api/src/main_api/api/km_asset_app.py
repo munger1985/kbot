@@ -5,19 +5,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
-from loguru import logger
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
-    AppApiKeyError,
     KM_PORTAL_DOMAIN_NAME,
     UserAuthService,
+    authorize_app_request,
+    authorize_app_request_any,
     require_app_api_agent,
-    require_app_api_permission,
-    require_app_api_scope,
 )
+from platform_core.authorization import can_read_agent, filter_readable_agents
 from platform_clients import AgentRuntimeClient, KmAssetClient, KnowledgeCoreClient
 from platform_core.contracts import (
     AuthContext,
@@ -263,13 +260,11 @@ def _domain_actor(request: Request) -> tuple[int, str]:
 
 
 async def _require(request: Request, permission: str) -> int:
-    require_app_api_permission(request, permission)
-    domain_id, actor_id = _domain_actor(request)
-    service = cast(AccessControlService, request.app.state.access_control_service)
-    try:
-        await service.require(app_id="km_asset", domain_id=domain_id, user_id=actor_id, permission_code=permission)
-    except AccessDeniedError as exc:
-        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permission}) from exc
+    domain_id, _, _ = await authorize_app_request(
+        request,
+        app_id="km_asset",
+        permission=permission,
+    )
     return domain_id
 
 
@@ -497,51 +492,22 @@ async def change_password(payload: KmPasswordChangePayload, request: Request):
 
 @router.get("/access")
 async def get_access(request: Request):
-    domain_id, actor_id = _domain_actor(request)
-    snapshot = await cast(AccessControlService, request.app.state.access_control_service).snapshot(app_id="km_asset", domain_id=domain_id, user_id=actor_id)
-    if "km_asset:use" not in snapshot.permissions:
-        raise HTTPException(
-            403,
-            {
-                "code": "APP_PERMISSION_DENIED",
-                "permission": "km_asset:use",
-            },
-        )
+    _, _, snapshot = await authorize_app_request(
+        request, app_id="km_asset", permission="km_asset:use"
+    )
     return {"app_id": snapshot.app_id, "domain_id": snapshot.domain_id, "user_id": snapshot.user_id, "roles": snapshot.roles, "permissions": sorted(snapshot.permissions)}
 
 
 @router.get("/model-catalog", response_model=list[ModelCatalogItem])
 async def list_km_model_catalog(request: Request):
     """在 KM Token 的访问边界内返回管理 Agent 与 KC 所需模型。"""
-    domain_id, actor_id = _domain_actor(request)
-    service = cast(
-        AccessControlService,
-        request.app.state.access_control_service,
-    )
     permissions = (
         "km_asset:agent_manage",
         "km_asset:knowledge_manage",
     )
-    for permission in permissions:
-        try:
-            require_app_api_permission(request, permission)
-            await service.require(
-                app_id="km_asset",
-                domain_id=domain_id,
-                user_id=actor_id,
-                permission_code=permission,
-            )
-            break
-        except (AccessDeniedError, AppApiKeyError):
-            continue
-    else:
-        raise HTTPException(
-            403,
-            {
-                "code": "APP_PERMISSION_DENIED",
-                "permissions_any": list(permissions),
-            },
-        )
+    await authorize_app_request_any(
+        request, app_id="km_asset", permissions=permissions
+    )
     return await load_model_catalog(request)
 
 
@@ -783,17 +749,18 @@ async def list_processing_jobs(request: Request, source_id: UUID | None = None, 
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:agent:read")
+    domain_id, _, snapshot = await authorize_app_request(
+        request, app_id="km_asset", permission="km_asset:use"
+    )
     rows = await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
-    allowed = {str(value) for value in request.state.auth_context.authorized_agent_ids}
-    if request.state.auth_context.principal_kind.value == "APP_API_CLIENT":
-        return [
-            item for item in rows
-            if item.get("status") == "ACTIVE"
-            and str(item.get("agent_id")) in allowed
-        ]
-    return rows
+    return filter_readable_agents(
+        app_id="km_asset",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agents=rows,
+    )
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
@@ -804,13 +771,18 @@ async def create_agent(payload: KmAssetAgentCreatePayload, request: Request):
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
-    domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:agent:read")
+    domain_id, _, snapshot = await authorize_app_request(
+        request, app_id="km_asset", permission="km_asset:use"
+    )
     require_app_api_agent(request, agent_id)
     agent = await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
-    if (
-        request.state.auth_context.principal_kind.value == "APP_API_CLIENT"
-        and agent.get("status") != "ACTIVE"
+    if not can_read_agent(
+        app_id="km_asset",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agent=agent,
     ):
         raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
     return agent
@@ -841,7 +813,6 @@ async def activate_agent(agent_id: UUID, payload: AgentActivatePayload, request:
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
 async def create_conversation(payload: ConversationCreatePayload, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:chat:write")
     require_app_api_agent(request, payload.agent_id)
     runtime_context = _runtime_auth_context(request)
     spec = await _client(request).execution_spec(
@@ -859,7 +830,6 @@ async def create_conversation(payload: ConversationCreatePayload, request: Reque
 @router.get("/conversations")
 async def list_conversations(request: Request, limit: int = Query(default=50, ge=1, le=200)):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:conversation:read")
     agents = await _client(request).list_agents(domain_id=domain_id, auth_context=request.state.auth_context)
     agent_ids = {str(item["agent_id"]) for item in agents}
     if request.state.auth_context.principal_kind.value == "APP_API_CLIENT":
@@ -874,14 +844,12 @@ async def list_conversations(request: Request, limit: int = Query(default=50, ge
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:conversation:read")
     return await _km_conversation(request, conversation_id, domain_id)
 
 
 @router.patch("/conversations/{conversation_id}")
 async def update_conversation(conversation_id: UUID, payload: UpdateConversationRequest, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:conversation:update")
     await _km_conversation(request, conversation_id, domain_id)
     return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).update_conversation(conversation_id=conversation_id, payload=payload.model_dump(mode="json"), auth_context=request.state.auth_context)
 
@@ -889,7 +857,6 @@ async def update_conversation(conversation_id: UUID, payload: UpdateConversation
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(conversation_id: UUID, request: Request, expected_row_version: int = Query(ge=1)):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:conversation:delete")
     await _km_conversation(request, conversation_id, domain_id)
     await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).delete_conversation(conversation_id=conversation_id, expected_row_version=expected_row_version, auth_context=request.state.auth_context)
     return Response(status_code=204)
@@ -898,14 +865,12 @@ async def delete_conversation(conversation_id: UUID, request: Request, expected_
 @router.get("/runs/{run_id}")
 async def get_run(run_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:run:read")
     return await _km_run(request, run_id, domain_id)
 
 
 @router.get("/runs/{run_id}/result")
 async def get_run_result(run_id: UUID, request: Request):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:run:read")
     await _km_run(request, run_id, domain_id)
     return await cast(
         AgentRuntimeClient, request.app.state.agent_runtime_client
@@ -919,7 +884,6 @@ async def stream_run_events(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:run:read")
     cursor = _parse_cursor(last_event_id)
     summary = await _km_run(request, run_id, domain_id)
     if cursor > int(summary["event_cursor"]):
@@ -1003,7 +967,6 @@ def _asset_attachment(
 )
 async def get_reference_preview(run_id: UUID, citation_label: str, request: Request):
     await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:reference:read")
     reference, _payload = await _document_reference(
         request, run_id, citation_label
     )
@@ -1063,7 +1026,6 @@ async def stream_reference_attachment(
 ):
     """只允许打开当前 Asset 引用预览中列出的下级附件。"""
     await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:reference:read")
     reference, _payload = await _document_reference(
         request, run_id, citation_label
     )
@@ -1098,7 +1060,6 @@ async def stream_reference_attachment(
 @router.post("/conversations/{conversation_id}/turns", status_code=status.HTTP_202_ACCEPTED)
 async def create_conversation_turn(conversation_id: UUID, payload: ConversationTurnPayload, request: Request, idempotency_key: str = Header(alias="Idempotency-Key")):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:chat:write")
     runtime = cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
     conversation = await _km_conversation(request, conversation_id, domain_id)
     runtime_context = _runtime_auth_context(request)
@@ -1128,6 +1089,5 @@ async def create_conversation_turn(conversation_id: UUID, payload: ConversationT
 @router.get("/conversations/{conversation_id}/turns")
 async def list_conversation_turns(conversation_id: UUID, request: Request, after: int = Query(default=0, ge=0), limit: int = Query(default=200, ge=1, le=500)):
     domain_id = await _require(request, "km_asset:use")
-    require_app_api_scope(request, "km:conversation:read")
     await _km_conversation(request, conversation_id, domain_id)
     return await cast(AgentRuntimeClient, request.app.state.agent_runtime_client).list_conversation_turns(conversation_id=conversation_id, after=after, limit=limit, auth_context=request.state.auth_context)

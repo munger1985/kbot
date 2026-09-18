@@ -82,47 +82,84 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
 from platform_core.identity import uuid7
-from platform_core.security import get_auth_context
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
-    require_app_api_permission,
+    authorize_app_request,
+    require_app_api_agent,
 )
 
 
+def _route_permissions() -> dict[str, str]:
+    """显式登记本模块每个公开端点的核心权限。"""
+
+    permissions: dict[str, str] = {}
+    groups = {
+        "aiops:use": {
+            "list_notification_subscriptions", "upsert_notification_subscription",
+            "disable_notification_subscription", "get_report", "generate_report",
+            "edit_report", "get_report_presentation", "download_report_pdf",
+            "list_reports", "list_report_versions", "list_inspection_fires",
+            "get_inspection_fire", "create_ops_run", "list_ops_runs",
+            "list_situations", "get_situation", "get_ops_run",
+            "get_ops_run_result", "get_pending_input", "get_hitl_input",
+            "respond_hitl", "skip_hitl", "decide_diagnostic_query",
+            "list_proposals", "get_proposal", "cancel_ops_run",
+            "stream_ops_run_events", "list_targets",
+        },
+        "aiops:proposal:approve": {
+            "reject_proposal", "approve_proposal", "record_manual_result",
+        },
+        "aiops:target_manage": {
+            "create_target", "test_target_connection", "get_target",
+            "patch_target", "rotate_diagnostic_credential",
+            "rotate_execution_credential", "remove_execution_credential",
+            "remove_diagnostic_credential", "delete_target", "enable_target",
+            "disable_target", "request_target_connectivity_check",
+            "list_agent_bindings", "create_agent_binding",
+            "patch_agent_binding", "command_agent_binding",
+        },
+        "aiops:diagnostic_source_manage": {
+            "create_diagnostic_source", "test_diagnostic_source_connection",
+            "list_diagnostic_sources", "get_diagnostic_source",
+            "patch_diagnostic_source", "delete_diagnostic_source",
+            "check_diagnostic_source_connectivity",
+            "rotate_diagnostic_source_webhook_key", "command_diagnostic_source",
+            "list_source_bindings", "create_source_binding",
+            "patch_source_binding", "command_source_binding",
+        },
+        "aiops:policy_manage": {
+            "create_policy", "list_policies", "get_policy", "command_policy",
+        },
+        "aiops:plan_manage": {
+            "create_inspection_plan", "list_inspection_plans",
+            "get_inspection_plan", "patch_inspection_plan",
+            "activate_inspection_plan", "pause_inspection_plan",
+            "disable_inspection_plan",
+        },
+    }
+    for permission, endpoint_names in groups.items():
+        for endpoint_name in endpoint_names:
+            if endpoint_name in permissions:
+                raise RuntimeError(f"AIOps 端点重复登记权限：{endpoint_name}")
+            permissions[endpoint_name] = permission
+    return permissions
+
+
+AIOPS_ROUTE_PERMISSIONS = _route_permissions()
+
+
 async def _require_route_access(request: Request) -> None:
-    context = get_auth_context(request)
-    domain_id = int(context.domain_id or "0")
-    actor_id = context.asserted_user_id or context.client_id
-    relative = request.url.path.removeprefix(f"{PUBLIC_API_V1}/apps/aiops")
-    permission = "aiops:use"
-    if relative.startswith("/targets"):
-        permission = (
-            "aiops:use"
-            if request.method == "GET" and relative == "/targets"
-            else "aiops:target_manage"
-        )
-    elif relative.startswith("/diagnostic-sources"):
-        permission = "aiops:diagnostic_source_manage"
-    elif relative.startswith("/policies"):
-        permission = "aiops:policy_manage"
-    elif relative.startswith("/inspection-plans"):
-        permission = "aiops:plan_manage"
-    elif relative.endswith(("/approve", "/reject", "/manual-result")):
-        permission = "aiops:proposal:approve"
-    require_app_api_permission(request, permission)
-    service = cast(
-        AccessControlService, request.app.state.access_control_service
-    )
+    endpoint = request.scope.get("endpoint")
+    endpoint_name = getattr(endpoint, "__name__", "")
     try:
-        await service.require(
-            app_id="aiops", domain_id=domain_id, user_id=actor_id,
-            permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
+        permission = AIOPS_ROUTE_PERMISSIONS[endpoint_name]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"AIOps 公开端点未登记核心权限：{endpoint_name or 'unknown'}"
         ) from exc
+    _, _, snapshot = await authorize_app_request(
+        request, app_id="aiops", permission=permission
+    )
+    request.state.aiops_access_snapshot = snapshot
 
 
 router = APIRouter(
@@ -397,21 +434,8 @@ async def create_ops_run(
     idempotency_key: IdempotencyKey,
 ) -> OpsRunReceipt:
     context = request.state.auth_context
-    access = cast(
-        AccessControlService, request.app.state.access_control_service
-    )
     actor_id = context.asserted_user_id or context.client_id
-    snapshot = await access.snapshot(
-        app_id="aiops", domain_id=int(context.domain_id), user_id=actor_id
-    )
-    await _client(request).authorize_private_agent(
-        {
-            "agent_id": str(body.agent_id),
-            "user_id": actor_id,
-            "role_codes": list(snapshot.roles),
-        },
-        auth_context=context,
-    )
+    require_app_api_agent(request, body.agent_id)
     command = CreateOpsRunCommand(
         command_id=uuid7(),
         idempotency_key=idempotency_key,
@@ -813,6 +837,17 @@ async def list_targets(
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> TargetPage:
+    snapshot = request.state.aiops_access_snapshot
+    if "aiops:target_manage" not in snapshot.permissions:
+        if resource_status == "DISABLED":
+            raise HTTPException(
+                403,
+                {
+                    "code": "APP_PERMISSION_DENIED",
+                    "permission": "aiops:target_manage",
+                },
+            )
+        resource_status = "ENABLED"
     payload = await _client(request).list_targets(
         status=resource_status,
         cursor=cursor,

@@ -13,24 +13,15 @@ from platform_clients import DataQueryClient, KnowledgeRetrievalAppClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.data_query import DataQueryPlanV1
 from platform_core.security import get_auth_context
-from main_api.application import AccessDeniedError, require_app_api_permission
+from main_api.application import authorize_app_request
 
 
 async def _require_data_query_access(request: Request) -> None:
-    context = get_auth_context(request)
-    permission = "knowledge_retrieval:data_manage"
-    require_app_api_permission(request, permission)
-    try:
-        await request.app.state.access_control_service.require(
-            app_id="knowledge_retrieval",
-            domain_id=int(context.domain_id or "0"),
-            user_id=context.asserted_user_id or context.client_id,
-            permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
-        ) from exc
+    await authorize_app_request(
+        request,
+        app_id="knowledge_retrieval",
+        permission="knowledge_retrieval:data_manage",
+    )
 
 
 router = APIRouter(

@@ -19,7 +19,6 @@ from main_api.application import (
 )
 from main_api.config import get_main_api_settings
 from platform_clients import (
-    AIOpsClientError,
     KnowledgeCoreClientError,
     KnowledgeCoreResponse,
     KnowledgeCoreStreamResponse,
@@ -490,23 +489,11 @@ class _FakeAgentRuntimeClient:
 class _FakeAIOpsClient:
     def __init__(self):
         self.binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a101")
-        self.authorize_agent_calls = 0
-        self.raise_agent_access_denied = False
         self.last_start_payload = None
+        self.last_target_status = None
 
     async def is_ready(self):
         return True
-
-    async def authorize_private_agent(self, payload, *, auth_context):
-        del payload, auth_context
-        self.authorize_agent_calls += 1
-        if self.raise_agent_access_denied:
-            raise AIOpsClientError(
-                status_code=403,
-                code="AIOPS_AGENT_ACCESS_DENIED",
-                message="当前用户无权使用该 AIOps Agent",
-            )
-        return {"allowed": True}
 
     async def list_private_agents(self, *, auth_context):
         del auth_context
@@ -514,25 +501,19 @@ class _FakeAIOpsClient:
             "agent_id": str(
                 UUID("019f8eae-2c25-7d48-b044-350ec3f5a120")
             ),
+            "domain_id": 100,
             "display_name": "数据库诊断 Agent",
             "status": "ACTIVE",
-        }]
-
-    async def list_private_agent_grants(self, *, auth_context):
-        del auth_context
-        return [{
-            "agent_id": str(
-                UUID("019f8eae-2c25-7d48-b044-350ec3f5a120")
-            ),
-            "subject_type": "USER",
-            "subject_id": "portal-user-1",
-            "status": "ACTIVE",
+            "instruction": "内部诊断指令",
+            "models": {"planner_llm": "internal-model"},
+            "config": {"internal": True},
         }]
 
     async def list_targets(
         self, *, status, cursor, limit, auth_context
     ):
-        del status, cursor, limit, auth_context
+        self.last_target_status = status
+        del cursor, limit, auth_context
         return {
             "schema_version": "aiops.public.v1",
             "items": [],
@@ -608,13 +589,28 @@ class _FakeAccessControlService:
             "knowledge_retrieval:knowledge_manage",
             "knowledge_retrieval:agent_manage",
             "knowledge_retrieval:data_manage",
+            "knowledge_retrieval:member_manage",
+            "knowledge_retrieval:role_manage",
+            "knowledge_retrieval:api_key_manage",
+            "km_asset:use",
+            "km_asset:source_manage",
+            "km_asset:knowledge_manage",
+            "km_asset:data_manage",
+            "km_asset:agent_manage",
+            "km_asset:operations_manage",
+            "km_asset:member_manage",
+            "km_asset:role_manage",
+            "km_asset:api_key_manage",
             "aiops:use",
             "aiops:agent_manage",
             "aiops:target_manage",
             "aiops:diagnostic_source_manage",
             "aiops:policy_manage",
             "aiops:plan_manage",
-            "aiops:operations_manage",
+            "aiops:knowledge_manage",
+            "aiops:member_manage",
+            "aiops:role_manage",
+            "aiops:api_key_manage",
             "aiops:proposal:approve",
             "platform:user_manage",
             "platform:role_manage",
@@ -686,6 +682,20 @@ class _ScopedAccessControlService:
             app_id=app_id,
             domain_id=domain_id,
             permissions=frozenset({permission_code}),
+            roles=("manager",),
+        )
+
+    async def snapshot(self, *, app_id, domain_id, user_id):
+        del user_id
+        self.calls.append((app_id, domain_id, "snapshot"))
+        return SimpleNamespace(
+            app_id=app_id,
+            domain_id=domain_id,
+            permissions=frozenset(
+                permission
+                for candidate_app, permission in self.permissions
+                if candidate_app == app_id
+            ),
             roles=("manager",),
         )
 
@@ -1325,6 +1335,10 @@ class MainApiTest(unittest.TestCase):
         access = _ScopedAccessControlService(
             (
                 "knowledge_retrieval",
+                "knowledge_retrieval:use",
+            ),
+            (
+                "knowledge_retrieval",
                 "knowledge_retrieval:member_manage",
             )
         )
@@ -1717,6 +1731,17 @@ class MainApiTest(unittest.TestCase):
         )
 
     def test_public_revision_reprocess_schedules_selected_file(self) -> None:
+        access = _ScopedAccessControlService(
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:use",
+            ),
+            (
+                "knowledge_retrieval",
+                "knowledge_retrieval:knowledge_manage",
+            ),
+        )
+        self.app.state.access_control_service = access
         response = self.client.post(
             (
                 "/api/v1/apps/knowledge-retrieval/knowledge/bundles/"
@@ -1744,8 +1769,8 @@ class MainApiTest(unittest.TestCase):
             self.kc.last_document_version_id,
         )
         self.assertEqual(
-            "knowledge_retrieval:knowledge_manage",
-            self.app.state.access_control_service.last_permission_code,
+            [("knowledge_retrieval", 100, "snapshot")],
+            access.calls,
         )
 
     def test_validation_error_uses_problem_details(self) -> None:
@@ -1785,7 +1810,6 @@ class MainApiTest(unittest.TestCase):
         )
 
         self.assertEqual(201, response.status_code, response.text)
-        self.assertEqual(0, self.aiops.authorize_agent_calls)
         self.assertEqual("QUEUED", response.json()["status"])
         self.assertEqual(1, response.json()["turn_no"])
         self.assertEqual(
@@ -1793,7 +1817,7 @@ class MainApiTest(unittest.TestCase):
             self.aiops.last_start_payload["conversation"]["source"],
         )
 
-    def test_aiops_use_permission_reads_granted_agents_and_target_list(self) -> None:
+    def test_aiops_use_permission_reads_active_agents_and_target_list(self) -> None:
         self.app.state.access_control_service = _ScopedAccessControlService(
             ("aiops", "aiops:use")
         )
@@ -1809,12 +1833,16 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(200, agents.status_code, agents.text)
         self.assertEqual(1, len(agents.json()))
+        self.assertNotIn("instruction", agents.json()[0])
+        self.assertNotIn("models", agents.json()[0])
+        self.assertNotIn("config", agents.json()[0])
         self.assertEqual(200, targets.status_code, targets.text)
         self.assertEqual([], targets.json()["items"])
+        self.assertEqual("ENABLED", self.aiops.last_target_status)
         self.assertEqual(
             [
-                ("aiops", 100, "aiops:use"),
-                ("aiops", 100, "aiops:use"),
+                ("aiops", 100, "snapshot"),
+                ("aiops", 100, "snapshot"),
             ],
             self.app.state.access_control_service.calls,
         )
@@ -1832,9 +1860,90 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(403, response.status_code, response.text)
         self.assertEqual(
-            [("aiops", 100, "aiops:target_manage")],
+            [
+                ("aiops", 100, "snapshot"),
+            ],
             self.app.state.access_control_service.calls,
         )
+
+    def test_aiops_use_permission_cannot_list_disabled_targets(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("aiops", "aiops:use")
+        )
+
+        response = self.client.get(
+            "/api/v1/apps/aiops/targets?status=DISABLED",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("APP_PERMISSION_DENIED", response.json()["code"])
+        self.assertIsNone(self.aiops.last_target_status)
+
+    def test_aiops_management_permission_cannot_bypass_use(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("aiops", "aiops:target_manage")
+        )
+
+        response = self.client.post(
+            "/api/v1/apps/aiops/targets/test-connection",
+            headers=self._headers(),
+            json={},
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("APP_PERMISSION_DENIED", response.json()["code"])
+        self.assertIn("aiops:use", response.json()["detail"])
+        self.assertEqual(
+            [("aiops", 100, "snapshot")],
+            self.app.state.access_control_service.calls,
+        )
+
+    def test_core_guard_protects_new_business_route_without_local_check(self) -> None:
+        async def unguarded_business_route():
+            return {"ok": True}
+
+        self.app.add_api_route(
+            "/api/v1/apps/aiops/test-core-guard",
+            unguarded_business_route,
+            methods=["GET"],
+        )
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("aiops", "aiops:target_manage")
+        )
+
+        response = self.client.get(
+            "/api/v1/apps/aiops/test-core-guard",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("APP_PERMISSION_DENIED", response.json()["code"])
+        self.assertIn("aiops:use", response.json()["detail"])
+
+    def test_business_app_rejects_internal_service_principal(self) -> None:
+        async def authenticate(request):
+            return AuthContext(
+                principal_kind=PrincipalKind.SERVICE,
+                client_id="internal-service",
+                request_id="service-request",
+                trace_id="service-trace",
+                domain_id="100",
+                asserted_user_id="portal-user-1",
+            )
+
+        app = create_main_api_app(
+            domain_validator=self.domain_service.is_active,
+            enable_access_log=False,
+            test_authenticator=authenticate,
+        )
+        response = TestClient(app).get(
+            "/api/v1/apps/aiops/agents",
+            headers={"Authorization": "Bearer internal-service-token"},
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual("APP_PRINCIPAL_UNSUPPORTED", response.json()["code"])
 
     def test_aiops_starts_conversation_from_situation(self) -> None:
         target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a112")
@@ -1891,28 +2000,6 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(422, response.status_code)
         self.assertIsNone(self.aiops.last_start_payload)
-
-    def test_aiops_agent_access_denial_remains_public_403(self) -> None:
-        self.app.state.access_control_service.permissions = frozenset(
-            {"aiops:use"}
-        )
-        self.aiops.raise_agent_access_denied = True
-
-        response = self.client.post(
-            "/api/v1/apps/aiops/conversations",
-            headers={**self._headers(), "Idempotency-Key": "chat-turn-2"},
-            json={
-                "agent_id": str(self.agent_runtime.agent_id),
-                "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
-                "content": [
-                    {"content_type": "TEXT", "text": "检查数据库负载"}
-                ],
-            },
-        )
-
-        self.assertEqual(403, response.status_code)
-        self.assertEqual("AIOPS_AGENT_ACCESS_DENIED", response.json()["code"])
-        self.assertEqual(1, self.aiops.authorize_agent_calls)
 
     def test_aiops_binding_selects_agent_chat_target(self) -> None:
         target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")

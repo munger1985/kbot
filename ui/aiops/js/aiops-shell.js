@@ -1,5 +1,18 @@
 (function () {
   "use strict";
+  const pagePermissions = {
+    chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
+    reports: "aiops:use", "report-detail": "aiops:use",
+    "run-detail": "aiops:use", targets: "aiops:target_manage",
+    "target-detail": "aiops:target_manage",
+    "diagnostic-sources": "aiops:diagnostic_source_manage",
+    "diagnostic-source-detail": "aiops:diagnostic_source_manage",
+    "knowledge-core": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "inspection-plans": "aiops:plan_manage",
+    "inspection-plan-detail": "aiops:plan_manage",
+    "report-templates": "aiops:plan_manage",
+    "api-clients": "aiops:api_key_manage",
+  };
   const sections = [
     ["业务工作区", [
       ["chat", "智能诊断"], ["situations", "告警诊断"],
@@ -40,9 +53,15 @@
     document.body.append(node);
     setTimeout(() => node.remove(), 5000);
   }
-  function shellMarkup() {
+  function shellMarkup(access) {
     const current = document.body.dataset.page;
-    return `<aside class="ops-sidebar"><a class="ops-brand" href="./chat.html"><span class="ops-brand-mark">AI</span><span><strong>Operations Desk</strong><small>KBot AIOps 4.0</small></span></a>${sections.map(([name, pages]) => `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${pages.map(([id, label]) => `<a href="./${id}.html" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`).join("")}</aside><header class="ops-topbar"><div><small>当前工作域</small> <strong>KBot AIOps</strong></div><div class="ops-session"><span id="ops-domain">Domain —</span><span id="ops-user">验证用户中…</span><button id="ops-logout">退出登录</button></div></header>`;
+    const permissions = new Set(access.permissions || []);
+    const navigation = sections.map(([name, pages]) => {
+      const visible = pages.filter(([id]) => permissions.has(pagePermissions[id]));
+      if (!visible.length) return "";
+      return `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${visible.map(([id, label]) => `<a href="./${id}.html" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+    }).join("");
+    return `<aside class="ops-sidebar"><a class="ops-brand" href="./chat.html"><span class="ops-brand-mark">AI</span><span><strong>Operations Desk</strong><small>KBot AIOps 4.0</small></span></a>${navigation}</aside><header class="ops-topbar"><div><small>当前工作域</small> <strong>KBot AIOps</strong></div><div class="ops-session"><span id="ops-domain">Domain —</span><span id="ops-user">验证用户中…</span><button id="ops-logout">退出登录</button></div></header>`;
   }
   async function initialize() {
     if (document.body.classList.contains("ops-login")) return null;
@@ -50,13 +69,18 @@
       location.replace("./login.html");
       return null;
     }
-    document.body.insertAdjacentHTML("afterbegin", shellMarkup());
-    document.getElementById("ops-logout").onclick = () => {
-      KBotAIOpsAuth.clear();
-      location.replace("./login.html");
-    };
     try {
       const access = await KBotAIOpsAuth.request("/api/v1/apps/aiops/access");
+      const current = document.body.dataset.page;
+      if (!new Set(access.permissions || []).has(pagePermissions[current])) {
+        location.replace("./chat.html");
+        return null;
+      }
+      document.body.insertAdjacentHTML("afterbegin", shellMarkup(access));
+      document.getElementById("ops-logout").onclick = () => {
+        KBotAIOpsAuth.clear();
+        location.replace("./login.html");
+      };
       document.getElementById("ops-domain").textContent = `Domain ${access.domain_id}`;
       document.getElementById("ops-user").textContent = access.user_id;
       return access;

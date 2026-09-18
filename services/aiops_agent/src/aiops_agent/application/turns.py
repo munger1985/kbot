@@ -442,6 +442,11 @@ class ConversationTurnService:
                 raise resource_not_found("Conversation")
             if conversation.status == "ARCHIVED":
                 raise state_conflict("归档后的 Conversation 不能继续提问")
+            await self._require_conversation_runnable(
+                uow=uow,
+                domain_id=domain_id,
+                conversation=conversation,
+            )
             existing = await uow.turns.get_by_idempotency(
                 conversation_id=conversation_id,
                 idempotency_key=command.idempotency_key,
@@ -1150,8 +1155,43 @@ class ConversationTurnService:
             target_id=target_id,
             domain_id=domain_id,
         )
-        if target is None:
-            raise resource_not_found("Target")
+        if target is None or target.status != "ENABLED":
+            raise self._error(
+                "AIOPS_TARGET_NOT_ENABLED",
+                "Target 不存在或未启用，不能开始或继续诊断",
+            )
+
+    async def _require_conversation_runnable(
+        self,
+        *,
+        uow,
+        domain_id: int,
+        conversation: OpsConversationEntity,
+    ) -> None:
+        """继续聊天前重新校验当前 Agent、Target 与当前版本绑定。"""
+
+        agent = await uow.agents.get(
+            domain_id=domain_id,
+            agent_id=conversation.agent_id,
+        )
+        if (
+            agent is None
+            or agent.status != "ACTIVE"
+            or agent.current_version_id is None
+            or not await uow.agents.version_has_target(
+                agent_version_id=agent.current_version_id,
+                target_id=conversation.target_id,
+            )
+        ):
+            raise self._error(
+                "AIOPS_CONVERSATION_AGENT_NOT_RUNNABLE",
+                "当前 Agent 已停用或不再绑定该 Target，不能继续聊天",
+            )
+        await self._require_existing_target(
+            uow=uow,
+            domain_id=domain_id,
+            target_id=conversation.target_id,
+        )
 
     @staticmethod
     def _title(message: str) -> str:

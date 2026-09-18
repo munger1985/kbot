@@ -17,7 +17,6 @@ if __package__ in (None, ""):
 
 from aiops_agent.entities import (
     AIOpsAgentEntity,
-    AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
     OpsAnswerBlockEntity,
@@ -74,7 +73,6 @@ AIOPS_ENTITY_CLASSES = (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
-    AIOpsAgentGrantEntity,
     NotificationSubscriptionEntity,
     TargetEntity,
     PolicyEntity,

@@ -5,20 +5,26 @@ from typing import Literal, cast
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from main_api.application import AccessControlService, AccessDeniedError, AccessManagementError, AccessManagementService
+from main_api.application import (
+    AccessControlService,
+    AccessDeniedError,
+    AccessManagementError,
+    AccessManagementService,
+    authorize_app_request,
+)
+from platform_core.authorization import resolve_business_app_id
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.security import get_auth_context
 
 
 router = APIRouter(tags=["Access Management"])
-APP_SLUG_TO_ID = {
-    "knowledge-retrieval": "knowledge_retrieval",
-    "km-asset": "km_asset",
-}
 
 
 def _canonical_app_id(value: str) -> str:
-    return APP_SLUG_TO_ID.get(value, value)
+    try:
+        return resolve_business_app_id(value)
+    except ValueError as exc:
+        raise HTTPException(404, {"code": "APP_NOT_FOUND"}) from exc
 
 
 class _Payload(BaseModel):
@@ -144,20 +150,9 @@ async def _require_platform(request: Request, permission_code: str) -> str:
 
 
 async def _require_app(request: Request, *, app_id: str, permission_code: str):
-    context = get_auth_context(request)
-    actor_id = context.asserted_user_id
-    if not actor_id or not context.domain_id:
-        raise HTTPException(401, {"code": "APP_CONTEXT_REQUIRED", "message": "App 管理需要用户和 Domain 上下文"})
-    domain_id = int(context.domain_id)
-    if context.app_id and context.app_id != app_id:
-        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH", "message": "登录 Token 绑定的 App 与请求不一致"})
-    try:
-        snapshot = await _access(request).require(
-            app_id=app_id, domain_id=domain_id, user_id=actor_id,
-            permission_code=permission_code,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permission_code}) from exc
+    domain_id, actor_id, snapshot = await authorize_app_request(
+        request, app_id=app_id, permission=permission_code
+    )
     return actor_id, domain_id, snapshot
 
 
@@ -219,24 +214,25 @@ async def update_platform_user(user_id: str, payload: UserUpdatePayload, request
         status=payload.status, max_security_level=payload.max_security_level,
         expected_origin="PLATFORM",
         actor_security_level=actor_security_level,
+        actor_id=actor_id,
     ))
 
 
 @router.post(f"{PUBLIC_API_V1}/platform/users/{{user_id}}/password")
 async def reset_platform_user_password(user_id: str, payload: PasswordResetPayload, request: Request):
-    await _require_platform(request, "platform:user_manage")
-    user = await _call(lambda: _management(request).get_user(user_id=user_id))
-    if user["account_origin"] != "PLATFORM":
-        raise HTTPException(403, {"code": "PLATFORM_USER_REQUIRED"})
-    return await _call(lambda: _management(request).reset_password(
-        user_id=user_id, password=payload.password, must_change_password=payload.must_change_password
+    actor_id = await _require_platform(request, "platform:user_manage")
+    return await _call(lambda: _management(request).reset_platform_user_password(
+        actor_id=actor_id, user_id=user_id, password=payload.password,
+        must_change_password=payload.must_change_password,
     ))
 
 
 @router.delete(f"{PUBLIC_API_V1}/platform/users/{{user_id}}")
 async def delete_platform_user(user_id: str, request: Request):
-    await _require_platform(request, "platform:user_manage")
-    return await _call(lambda: _management(request).delete_user(user_id=user_id, expected_origin="PLATFORM"))
+    actor_id = await _require_platform(request, "platform:user_manage")
+    return await _call(lambda: _management(request).delete_user(
+        user_id=user_id, expected_origin="PLATFORM", actor_id=actor_id
+    ))
 
 
 @router.put(f"{PUBLIC_API_V1}/platform/users/{{user_id}}/roles")
@@ -336,8 +332,13 @@ async def reset_initial_app_admin_password(app_id: str, payload: PasswordResetPa
 async def set_platform_app_grant(user_id: str, app_id: str, payload: PlatformAppGrantPayload, request: Request):
     app_id = _canonical_app_id(app_id)
     actor_id = await _require_platform(request, "platform:app_grant_manage")
+    platform_permissions = (
+        await _access(request).platform_snapshot(user_id=actor_id)
+    ).permissions
     return await _call(lambda: _management(request).set_platform_app_grant(
-        user_id=user_id, app_id=app_id, role_bindings=_bindings(payload.role_bindings), actor_id=actor_id
+        user_id=user_id, app_id=app_id,
+        role_bindings=_bindings(payload.role_bindings), actor_id=actor_id,
+        actor_platform_permissions=platform_permissions,
     ))
 
 
@@ -381,16 +382,19 @@ async def update_app_member(app_id: str, user_id: str, payload: UserUpdatePayloa
         status=payload.status, max_security_level=payload.max_security_level,
         expected_origin="APP", expected_app_id=app_id,
         actor_security_level=actor_security_level,
+        actor_id=actor_id,
     ))
 
 
 @router.post(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}/password")
 async def reset_app_member_password(app_id: str, user_id: str, payload: PasswordResetPayload, request: Request):
     app_id = _canonical_app_id(app_id)
-    await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
+    actor_id, _, _ = await _require_app(
+        request, app_id=app_id, permission_code=f"{app_id}:member_manage"
+    )
     return await _call(lambda: _management(request).reset_app_user_password(
         app_id=app_id, user_id=user_id, password=payload.password,
-        must_change_password=payload.must_change_password,
+        must_change_password=payload.must_change_password, actor_id=actor_id,
     ))
 
 
@@ -412,9 +416,12 @@ async def set_app_member_role_bindings(
 @router.delete(f"{PUBLIC_API_V1}/apps/{{app_id}}/members/{{user_id}}")
 async def delete_app_member(app_id: str, user_id: str, request: Request):
     app_id = _canonical_app_id(app_id)
-    await _require_app(request, app_id=app_id, permission_code=f"{app_id}:member_manage")
+    actor_id, _, _ = await _require_app(
+        request, app_id=app_id, permission_code=f"{app_id}:member_manage"
+    )
     return await _call(lambda: _management(request).delete_user(
-        user_id=user_id, expected_origin="APP", expected_app_id=app_id
+        user_id=user_id, expected_origin="APP", expected_app_id=app_id,
+        actor_id=actor_id,
     ))
 
 

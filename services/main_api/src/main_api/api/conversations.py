@@ -36,7 +36,7 @@ from main_api.api.runs import (
     _effective_security_level,
     _require_use,
 )
-from main_api.application import require_app_api_agent, require_app_api_scope
+from main_api.application import require_app_api_agent
 from platform_core.contracts import PrincipalKind
 
 
@@ -82,7 +82,6 @@ async def create_conversation(
     payload: KnowledgeConversationCreateRequest,
     request: Request,
 ) -> ConversationView:
-    require_app_api_scope(request, "knowledge:chat:write")
     spec = await _authorized_spec(request, payload.agent_id)
     result = await _client(request).create_conversation(
         payload={
@@ -99,7 +98,6 @@ async def list_conversations(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ConversationView]:
-    require_app_api_scope(request, "knowledge:conversation:read")
     rows = await _client(request).list_conversations(
         limit=limit,
         auth_context=request.state.auth_context,
@@ -116,7 +114,6 @@ async def get_conversation(
     conversation_id: UUID,
     request: Request,
 ) -> ConversationView:
-    require_app_api_scope(request, "knowledge:conversation:read")
     result = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -132,7 +129,6 @@ async def update_conversation(
     payload: UpdateConversationRequest,
     request: Request,
 ) -> ConversationView:
-    require_app_api_scope(request, "knowledge:chat:write")
     current = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -152,7 +148,6 @@ async def delete_conversation(
     request: Request,
     expected_row_version: int = Query(ge=1),
 ) -> Response:
-    require_app_api_scope(request, "knowledge:chat:write")
     current = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -177,7 +172,6 @@ async def create_turn(
     request: Request,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
-    require_app_api_scope(request, "knowledge:chat:write")
     conversation = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -214,7 +208,6 @@ async def create_turn_with_images(
     images: list[UploadFile] = File(default_factory=list),
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
-    require_app_api_scope(request, "knowledge:chat:write")
     conversation = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -286,7 +279,6 @@ async def list_turns(
     after: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> ConversationTurnPage:
-    require_app_api_scope(request, "knowledge:conversation:read")
     conversation = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -312,7 +304,6 @@ async def list_turn_trace(
     after: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[PublicTraceEvent]:
-    require_app_api_scope(request, "knowledge:conversation:read")
     conversation = await _client(request).get_conversation(
         conversation_id=conversation_id,
         auth_context=request.state.auth_context,
@@ -334,7 +325,6 @@ async def list_memories(
     agent_id: UUID = Query(),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[MemoryItemView]:
-    require_app_api_scope(request, "knowledge:conversation:read")
     require_app_api_agent(request, agent_id)
     rows = await _client(request).list_memories(
         agent_id=agent_id,

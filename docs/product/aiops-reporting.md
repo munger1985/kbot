@@ -97,7 +97,7 @@ GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 `Idempotency-Key`；模板更新带并发版本校验。当前报告状态为 `READY`、`PARTIAL`
 或 `FAILED`，PDF 根据冻结内容同步渲染，导出不会修改正式报告。
 
-读取、生成、预览和下载均校验 Domain、Target 和来源 Agent 私有授权。报告
+读取、生成、预览和下载均校验 Domain、Target 与来源 Agent 的 Domain 归属。报告
 生成、读取和下载使用既有 `aiops:use`，自定义模板配置沿用 `aiops:plan_manage`。
 
 ## 持久化与审计
@@ -114,4 +114,4 @@ GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 3. 告警续聊生成的报告可追溯 Situation、自动 Run、Chat Run 和证据。
 4. 月、季、年窗口按 IANA 时区稳定计算，覆盖数、失败数和缺口可复现。
 5. 模板变更不改变历史报告；PDF 正确呈现中文、分页、证据索引和内容哈希。
-6. 跨 Domain、无来源 Agent 授权、来源未结束、模板不适用和重复请求均有确定行为。
+6. 跨 Domain、来源 Agent 不属于当前 Domain、来源未结束、模板不适用和重复请求均有确定行为。

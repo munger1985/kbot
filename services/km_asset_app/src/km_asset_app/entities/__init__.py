@@ -5,12 +5,11 @@ from .asset import (
     KmJobEntity,
     KmSourceEntity,
 )
-from .agent import KmAgentEntity, KmAgentGrantEntity, KmAgentVersionEntity
+from .agent import KmAgentEntity, KmAgentVersionEntity
 from .slack import SlackDeliveryEntity, SlackInboxEntity, SlackThreadEntity
 
 __all__ = [
     "KmAgentEntity",
-    "KmAgentGrantEntity",
     "KmAgentVersionEntity",
     "KmAssetEntity",
     "KmAssetRevisionEntity",

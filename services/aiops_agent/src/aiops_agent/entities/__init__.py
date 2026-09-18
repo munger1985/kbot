@@ -56,7 +56,6 @@ __all__ = [
     "OpsTurnInputItemEntity",
     "OpsTurnRunEntity",
     "AIOpsAgentEntity",
-    "AIOpsAgentGrantEntity",
     "AIOpsAgentVersionEntity",
     "AIOpsAgentVersionSourceEntity",
     "AIOpsAgentVersionTargetEntity",
@@ -88,7 +87,6 @@ __all__ = [
 ]
 from .agent import (
     AIOpsAgentEntity,
-    AIOpsAgentGrantEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionSourceEntity,
     AIOpsAgentVersionTargetEntity,

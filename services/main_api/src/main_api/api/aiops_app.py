@@ -12,13 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
     UserAuthService,
+    authorize_app_request,
     require_app_api_agent,
-    require_app_api_permission,
-    require_app_api_scope,
 )
+from platform_core.authorization import can_read_agent, filter_readable_agents
 from platform_clients import KnowledgeCoreClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
@@ -30,7 +28,6 @@ from platform_core.contracts.aiops import (
     TurnSummary,
     TurnView,
 )
-from platform_core.security import get_auth_context
 
 
 router = APIRouter(
@@ -122,18 +119,6 @@ class AIOpsAgentUpdatePayload(_Payload):
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
 
 
-class AIOpsAgentGrantPayload(_Payload):
-    agent_id: UUID
-    subject_type: Literal["USER", "ROLE"]
-    subject_id: str = Field(min_length=1, max_length=256)
-    status: Literal["ACTIVE", "DISABLED"] = "ACTIVE"
-
-
-class AIOpsAgentGrantStatusPayload(_Payload):
-    status: Literal["ACTIVE", "DISABLED"]
-    expected_row_version: int = Field(ge=1)
-
-
 class ConversationStartPayload(_Payload):
     agent_id: UUID
     target_id: UUID
@@ -164,23 +149,6 @@ class ReportTemplateVersionPayload(_Payload):
     definition: dict[str, Any]
 
 
-def _domain_actor(request: Request) -> tuple[int, str]:
-    context = get_auth_context(request)
-    if context.app_id and context.app_id != "aiops":
-        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
-    try:
-        domain_id = int(context.domain_id or "")
-    except ValueError as exc:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"}) from exc
-    if domain_id < 1:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"})
-    return domain_id, context.asserted_user_id or context.client_id
-
-
-def _access(request: Request) -> AccessControlService:
-    return cast(AccessControlService, request.app.state.access_control_service)
-
-
 def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
@@ -190,10 +158,9 @@ def _knowledge_client(request: Request) -> KnowledgeCoreClient:
 
 
 async def _fixed_manual_collection(
-    request: Request, *, require_active: bool = False
+    request: Request, *, domain_id: int, require_active: bool = False
 ) -> tuple[int, dict[str, Any]]:
     """取得当前 AIOps Domain 唯一的固定运维手册 Collection。"""
-    domain_id, _ = _domain_actor(request)
     catalog = await _knowledge_client(request).list_collections(
         domain_id=domain_id,
         auth_context=request.state.auth_context,
@@ -258,34 +225,35 @@ async def _validated_aiops_models(
 
 
 async def _require(request: Request, permission: str):
-    require_app_api_permission(request, permission)
-    domain_id, actor_id = _domain_actor(request)
-    try:
-        snapshot = await _access(request).require(
-            app_id="aiops",
-            domain_id=domain_id,
-            user_id=actor_id,
-            permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(
-            403, {"code": "APP_PERMISSION_DENIED", "permission": permission}
-        ) from exc
-    return domain_id, actor_id, snapshot
-
-
-async def _authorize_agent(request: Request, agent_id: UUID, snapshot, actor_id: str):
-    require_app_api_agent(request, agent_id)
-    if "aiops:agent_manage" in snapshot.permissions:
-        return
-    await _client(request).authorize_private_agent(
-        {
-            "agent_id": str(agent_id),
-            "user_id": actor_id,
-            "role_codes": list(snapshot.roles),
-        },
-        auth_context=request.state.auth_context,
+    return await authorize_app_request(
+        request,
+        app_id="aiops",
+        permission=permission,
     )
+
+
+_AIOPS_AGENT_USE_FIELDS = (
+    "agent_id",
+    "domain_id",
+    "display_name",
+    "description",
+    "status",
+    "agent_version_id",
+    "version_no",
+    "target_ids",
+    "target_candidates",
+    "image_capabilities",
+)
+
+
+def _aiops_agent_use_view(agent: dict[str, Any]) -> dict[str, Any]:
+    """仅返回聊天选择和输入能力所需的 Agent 字段。"""
+
+    return {
+        field: agent[field]
+        for field in _AIOPS_AGENT_USE_FIELDS
+        if field in agent
+    }
 
 
 @router.post("/auth/login")
@@ -317,8 +285,10 @@ async def list_aiops_model_catalog(request: Request):
 
 @router.get("/knowledge-core")
 async def get_aiops_knowledge_core(request: Request):
-    await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(request)
+    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(
+        request, domain_id=domain_id
+    )
     policy = await _knowledge_client(request).get_collection_model_policy(
         domain_id=domain_id,
         collection_id=UUID(str(collection["collection_id"])),
@@ -335,8 +305,10 @@ async def get_aiops_knowledge_core(request: Request):
 async def update_aiops_knowledge_core_models(
     payload: AIOpsCollectionModelsPayload, request: Request,
 ):
-    await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(request)
+    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(
+        request, domain_id=domain_id
+    )
     models = await _validated_aiops_models(
         request, parser_vlm=payload.parser_vlm,
         embedding=payload.embedding,
@@ -354,8 +326,10 @@ async def update_aiops_knowledge_core_models(
 async def change_aiops_knowledge_core_status(
     payload: AIOpsCollectionStatusPayload, request: Request,
 ):
-    await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(request)
+    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(
+        request, domain_id=domain_id
+    )
     return await _knowledge_client(request).change_collection_status(
         domain_id=domain_id,
         collection_id=UUID(str(collection["collection_id"])),
@@ -367,8 +341,10 @@ async def change_aiops_knowledge_core_status(
 @router.post("/knowledge-core/manuals", status_code=status.HTTP_202_ACCEPTED)
 async def upload_aiops_manual(request: Request):
     """把运维手册流式送入固定 KC，不在 Main API 落盘。"""
-    await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(request, require_active=True)
+    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(
+        request, domain_id=domain_id, require_active=True
+    )
     content_type = request.headers.get("Content-Type", "")
     idempotency_key = request.headers.get("Idempotency-Key", "").strip()
     if not content_type.lower().startswith("multipart/form-data") or not idempotency_key:
@@ -395,8 +371,10 @@ async def approve_aiops_manual(
     payload: AIOpsManualApprovalPayload,
     request: Request,
 ):
-    await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(request)
+    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
+    domain_id, collection = await _fixed_manual_collection(
+        request, domain_id=domain_id
+    )
     return await _knowledge_client(request).review_user_intake(
         domain_id=domain_id,
         collection_id=UUID(str(collection["collection_id"])),
@@ -408,9 +386,8 @@ async def approve_aiops_manual(
 
 @router.get("/access")
 async def get_access(request: Request):
-    domain_id, actor_id = _domain_actor(request)
-    snapshot = await _access(request).snapshot(
-        app_id="aiops", domain_id=domain_id, user_id=actor_id
+    _, _, snapshot = await authorize_app_request(
+        request, app_id="aiops", permission="aiops:use"
     )
     return {
         "app_id": snapshot.app_id,
@@ -423,42 +400,24 @@ async def get_access(request: Request):
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    _, actor_id, snapshot = await _require(request, "aiops:use")
+    domain_id, _, snapshot = await _require(request, "aiops:use")
     agents = await _client(request).list_private_agents(
         auth_context=request.state.auth_context
     )
-    require_app_api_scope(request, "aiops:agent:read")
-    if request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT:
-        allowed = {
-            str(value)
-            for value in request.state.auth_context.authorized_agent_ids
-        }
-        return [
-            item for item in agents
-            if item.get("status") == "ACTIVE"
-            and str(item.get("agent_id")) in allowed
-        ]
-    if "aiops:agent_manage" in snapshot.permissions:
-        return agents
-    grants = await _client(request).list_private_agent_grants(
-        auth_context=request.state.auth_context
+    visible = filter_readable_agents(
+        app_id="aiops",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agents=agents,
     )
-    allowed = {
-        str(item["agent_id"])
-        for item in grants
-        if item.get("status") == "ACTIVE"
-        and (
-            (item.get("subject_type") == "USER" and item.get("subject_id") == actor_id)
-            or (
-                item.get("subject_type") == "ROLE"
-                and item.get("subject_id") in snapshot.roles
-            )
-        )
-    }
-    return [
-        item for item in agents
-        if item.get("status") == "ACTIVE" and str(item.get("agent_id")) in allowed
-    ]
+    if (
+        request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
+        and "aiops:agent_manage" in snapshot.permissions
+    ):
+        return visible
+    return [_aiops_agent_use_view(dict(item)) for item in visible]
 
 
 @router.get("/action-catalog/{target_id}")
@@ -479,20 +438,26 @@ async def create_agent(payload: AIOpsAgentCreatePayload, request: Request):
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
-    _, actor_id, snapshot = await _require(request, "aiops:use")
-    require_app_api_scope(request, "aiops:agent:read")
+    domain_id, _, snapshot = await _require(request, "aiops:use")
     require_app_api_agent(request, agent_id)
-    if "aiops:agent_manage" not in snapshot.permissions:
-        await _authorize_agent(request, agent_id, snapshot, actor_id)
     agent = await _client(request).get_private_agent(
         agent_id, auth_context=request.state.auth_context
     )
-    if (
-        request.state.auth_context.principal_kind == PrincipalKind.APP_API_CLIENT
-        and agent.get("status") != "ACTIVE"
+    if not can_read_agent(
+        app_id="aiops",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agent=agent,
     ):
         raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
-    return agent
+    if (
+        request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
+        and "aiops:agent_manage" in snapshot.permissions
+    ):
+        return agent
+    return _aiops_agent_use_view(agent)
 
 
 @router.patch("/agents/{agent_id}")
@@ -507,33 +472,6 @@ async def update_agent(
     )
 
 
-@router.get("/agent-grants")
-async def list_agent_grants(request: Request):
-    await _require(request, "aiops:agent_manage")
-    return await _client(request).list_private_agent_grants(
-        auth_context=request.state.auth_context
-    )
-
-
-@router.put("/agent-grants")
-async def upsert_agent_grant(payload: AIOpsAgentGrantPayload, request: Request):
-    await _require(request, "aiops:agent_manage")
-    return await _client(request).upsert_private_agent_grant(
-        payload.model_dump(mode="json"), auth_context=request.state.auth_context
-    )
-
-
-@router.patch("/agent-grants/{grant_id}")
-async def update_agent_grant(
-    grant_id: UUID, payload: AIOpsAgentGrantStatusPayload, request: Request
-):
-    await _require(request, "aiops:agent_manage")
-    return await _client(request).update_private_agent_grant(
-        grant_id, payload.model_dump(mode="json"),
-        auth_context=request.state.auth_context,
-    )
-
-
 @router.post(
     "/conversation-uploads",
     status_code=status.HTTP_201_CREATED,
@@ -542,7 +480,6 @@ async def update_agent_grant(
 async def upload_conversation_input(request: Request):
     """把浏览器原始文件流转发给 AIOps，不在 Main API 落盘。"""
     await _require(request, "aiops:use")
-    require_app_api_scope(request, "aiops:chat:write")
     file_name = unquote(request.headers.get("X-File-Name", "").strip())
     media_type = request.headers.get("Content-Type", "").strip()
     if not file_name or not media_type:
@@ -571,9 +508,8 @@ async def start_conversation(
     request: Request,
     idempotency_key: IdempotencyKey,
 ):
-    _, actor_id, snapshot = await _require(request, "aiops:use")
-    require_app_api_scope(request, "aiops:chat:write")
-    await _authorize_agent(request, payload.agent_id, snapshot, actor_id)
+    await _require(request, "aiops:use")
+    require_app_api_agent(request, payload.agent_id)
     if payload.source_run_id is not None:
         source = {
             "source_type": "RUN",
@@ -617,10 +553,9 @@ async def list_conversations(
     target_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=50),
 ):
-    _, actor_id, snapshot = await _require(request, "aiops:use")
-    require_app_api_scope(request, "aiops:conversation:read")
+    await _require(request, "aiops:use")
     if agent_id is not None:
-        await _authorize_agent(request, agent_id, snapshot, actor_id)
+        require_app_api_agent(request, agent_id)
     rows = await _client(request).list_conversations(
         agent_id=agent_id,
         target_id=target_id,
@@ -643,14 +578,11 @@ async def _conversation_with_access(
     request: Request, conversation_id: UUID
 ) -> tuple[dict[str, Any], Any, str]:
     _, actor_id, snapshot = await _require(request, "aiops:use")
-    require_app_api_scope(request, "aiops:conversation:read")
     conversation = await _client(request).get_conversation(
         conversation_id,
         auth_context=request.state.auth_context,
     )
-    await _authorize_agent(
-        request, UUID(str(conversation["agent_id"])), snapshot, actor_id
-    )
+    require_app_api_agent(request, UUID(str(conversation["agent_id"])))
     return conversation, snapshot, actor_id
 
 
@@ -668,7 +600,6 @@ async def get_conversation(conversation_id: UUID, request: Request):
     response_model=ConversationSummary,
 )
 async def archive_conversation(conversation_id: UUID, request: Request):
-    require_app_api_scope(request, "aiops:conversation:delete")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).archive_conversation(
         conversation_id,
@@ -687,7 +618,6 @@ async def create_conversation_turn(
     request: Request,
     idempotency_key: IdempotencyKey,
 ):
-    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).create_conversation_turn(
         conversation_id,
@@ -818,7 +748,6 @@ async def cancel_conversation_turn(
     turn_id: UUID,
     request: Request,
 ):
-    require_app_api_scope(request, "aiops:chat:write")
     await _conversation_with_access(request, conversation_id)
     return await _client(request).cancel_conversation_turn(
         conversation_id,

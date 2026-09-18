@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 23,
-  "contract_version": "aiops-oracle-v13",
+  "schema_version": 24,
+  "contract_version": "aiops-oracle-v14",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,12 +32,12 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 35,
-      "sha256": "a064f9e656a966a84b193419c09f46dca8c5648a1680d79ddf0a41f085c33757"
+      "sha256": "844cbac76aad1e90202dde78fdee70be2c157601d3e30acbbc408bb9f48e62ae"
     },
     {
       "name": "007_ops_agents.sql",
-      "statements": 15,
-      "sha256": "a1e8c0a014663ffd4b233a02a863286da7ffc61684783c973e4416f14b41d379"
+      "statements": 13,
+      "sha256": "17bb9dafa3f32e8294b74c07fd5dc82fed5f06fe7bd5ed34b1410122bceb9b02"
     },
     {
       "name": "008_ops_conversations_reports.sql",
@@ -73,7 +73,6 @@
     "KBOT_OPS_AGENT_VERSION",
     "KBOT_OPS_AGENT_VERSION_SOURCE",
     "KBOT_OPS_AGENT_VERSION_TARGET",
-    "KBOT_OPS_AGENT_GRANT",
     "KBOT_OPS_REPORT_TEMPLATE",
     "KBOT_OPS_REPORT_TEMPLATE_VER",
     "KBOT_OPS_CONVERSATION",

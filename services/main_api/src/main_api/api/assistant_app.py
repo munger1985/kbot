@@ -12,15 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from main_api.api.models import ModelCatalogItem, load_model_catalog
 from main_api.application import (
-    AccessControlService,
-    AccessDeniedError,
-    AppApiKeyError,
     DomainConflictError,
     DomainLifecycleError,
     DomainManagementService,
     UserAuthService,
-    require_app_api_permission,
+    authorize_app_request,
+    authorize_app_request_any,
 )
+from platform_core.authorization import can_read_agent, filter_readable_agents
 from platform_clients import (
     AgentRuntimeClient,
     AssistantAppClient,
@@ -28,14 +27,13 @@ from platform_clients import (
     DataQueryClient,
     KnowledgeCoreClient,
 )
-from platform_core.contracts import PUBLIC_API_V1, PrincipalKind, UpdateConversationRequest
+from platform_core.contracts import PUBLIC_API_V1, UpdateConversationRequest
 from platform_core.contracts.data_query import SemanticModelDefinition
 from platform_core.dictionary import (
     ModelCategory,
     coerce_model_category,
     is_enabled_model_status,
 )
-from platform_core.security import get_auth_context
 
 from main_api.api.runs import (
     _DocumentReference,
@@ -269,23 +267,6 @@ class AssistantSemanticModelPublishPayload(AssistantSemanticModelReviewPayload):
     schema_snapshot_id: UUID
 
 
-def _domain_actor(request: Request) -> tuple[int, str]:
-    context = get_auth_context(request)
-    if context.app_id and context.app_id != "assistant":
-        raise HTTPException(403, {"code": "APP_CONTEXT_MISMATCH"})
-    try:
-        domain_id = int(context.domain_id or "")
-    except ValueError as exc:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"}) from exc
-    if domain_id < 1:
-        raise HTTPException(403, {"code": "DOMAIN_CONTEXT_REQUIRED"})
-    return domain_id, context.asserted_user_id or context.client_id
-
-
-def _access(request: Request) -> AccessControlService:
-    return cast(AccessControlService, request.app.state.access_control_service)
-
-
 def _client(request: Request) -> AssistantAppClient:
     return cast(AssistantAppClient, request.app.state.assistant_app_client)
 
@@ -334,41 +315,20 @@ def _run_response(view: dict[str, Any]) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=view)
 
 
-def _require_any_app_permission(request: Request, *permissions: str) -> None:
-    context = get_auth_context(request)
-    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
-        return
-    last_error: AppApiKeyError | None = None
-    for permission in permissions:
-        try:
-            require_app_api_permission(request, permission)
-            return
-        except AppApiKeyError as exc:
-            last_error = exc
-    if last_error is not None:
-        raise last_error
-
-
 async def _require(request: Request, permission: str):
-    require_app_api_permission(request, permission)
-    domain_id, actor_id = _domain_actor(request)
-    try:
-        snapshot = await _access(request).require(
-            app_id="assistant", domain_id=domain_id, user_id=actor_id,
-            permission_code=permission,
-        )
-    except AccessDeniedError as exc:
-        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permission}) from exc
-    return domain_id, actor_id, snapshot
+    return await authorize_app_request(
+        request,
+        app_id="assistant",
+        permission=permission,
+    )
 
 
 async def _require_any(request: Request, *permissions: str):
-    _require_any_app_permission(request, *permissions)
-    domain_id, actor_id, snapshot = await _snapshot(request)
-    matched = [item for item in permissions if item in set(snapshot.permissions)]
-    if not matched:
-        raise HTTPException(403, {"code": "APP_PERMISSION_DENIED", "permission": permissions[0]})
-    return domain_id, actor_id, snapshot
+    return await authorize_app_request_any(
+        request,
+        app_id="assistant",
+        permissions=tuple(permissions),
+    )
 
 
 def _auth_for_domain(request: Request, domain_id: int):
@@ -470,15 +430,12 @@ async def _domain_resource_conflicts(request: Request, *, domain_id: int) -> lis
     return conflicts
 
 
-async def _snapshot(request: Request):
-    domain_id, actor_id = _domain_actor(request)
-    snapshot = await _access(request).snapshot(app_id="assistant", domain_id=domain_id, user_id=actor_id)
-    return domain_id, actor_id, snapshot
-
-
 async def _require_media_asset(request: Request, asset_id: UUID) -> tuple[int, str, dict[str, Any]]:
-    _require_any_app_permission(request, "assistant:media_read", "assistant:image_generate")
-    domain_id, actor_id, snapshot = await _snapshot(request)
+    domain_id, actor_id, snapshot = await authorize_app_request_any(
+        request,
+        app_id="assistant",
+        permissions=("assistant:media_read", "assistant:image_generate"),
+    )
     permissions = set(snapshot.permissions)
     can_read = "assistant:media_read" in permissions
     can_own = "assistant:image_generate" in permissions
@@ -673,7 +630,9 @@ async def change_password(payload: AssistantPasswordChangePayload, request: Requ
 
 @router.get("/access")
 async def get_access(request: Request):
-    domain_id, actor_id, snapshot = await _snapshot(request)
+    domain_id, _, snapshot = await authorize_app_request(
+        request, app_id="assistant", permission="assistant:use"
+    )
     bindings: list[dict[str, Any]] = []
     try:
         listed = await _client(request).list_bindings(
@@ -1530,15 +1489,18 @@ async def publish_assistant_semantic_model(
 
 @router.get("/agents")
 async def list_agents(request: Request):
-    domain_id, _, snapshot = await _require_any(
-        request, "assistant:agent_manage", "assistant:knowledge_chat"
-    )
+    domain_id, _, snapshot = await _require(request, "assistant:use")
     agents = await _client(request).list_agents(
         domain_id=domain_id, auth_context=request.state.auth_context
     )
-    if "assistant:agent_manage" in set(snapshot.permissions):
-        return agents
-    return [item for item in agents if item.get("status") == "ACTIVE"]
+    return filter_readable_agents(
+        app_id="assistant",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agents=agents,
+    )
 
 
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
@@ -1904,10 +1866,24 @@ async def create_agent(payload: AssistantAgentCreatePayload, request: Request):
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: UUID, request: Request):
-    domain_id, _, _ = await _require_any(
-        request, "assistant:agent_manage", "assistant:knowledge_chat"
+    domain_id, _, snapshot = await _require(
+        request, "assistant:use"
     )
-    return await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
+    agent = await _client(request).get_agent(
+        agent_id=agent_id,
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    if not can_read_agent(
+        app_id="assistant",
+        domain_id=domain_id,
+        principal_kind=request.state.auth_context.principal_kind,
+        permissions=snapshot.permissions,
+        authorized_agent_ids=request.state.auth_context.authorized_agent_ids,
+        agent=agent,
+    ):
+        raise HTTPException(404, {"code": "AGENT_NOT_FOUND"})
+    return agent
 
 
 @router.patch("/agents/{agent_id}")

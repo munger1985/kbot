@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hmac
-import re
 import secrets
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from main_api.entities import AppApiClientEntity, AppApiCredentialEntity
+from platform_core.authorization import (
+    APP_AUTHORIZATION_POLICIES,
+    get_app_authorization_policy,
+)
 from platform_core.contracts import (
     AuthContext,
     IdentityEntryKind,
@@ -21,33 +24,14 @@ from platform_core.security import digest_portal_api_key, extract_bearer_token
 
 APP_API_KEY_PREFIX = "kbot_ak_"
 APP_URL_SLUGS = {
-    "knowledge_retrieval": "knowledge-retrieval",
-    "km_asset": "km-asset",
-    "aiops": "aiops",
+    app_id: policy.public_slug
+    for app_id, policy in APP_AUTHORIZATION_POLICIES.items()
+    if policy.api_scope_permissions
 }
 APP_API_SCOPE_PERMISSIONS = {
-    "knowledge_retrieval": {
-        "knowledge:agent:read": "knowledge_retrieval:use",
-        "knowledge:chat:write": "knowledge_retrieval:use",
-        "knowledge:conversation:read": "knowledge_retrieval:use",
-        "knowledge:run:read": "knowledge_retrieval:use",
-    },
-    "km_asset": {
-        "km:agent:read": "km_asset:use",
-        "km:chat:write": "km_asset:use",
-        "km:conversation:read": "km_asset:use",
-        "km:conversation:update": "km_asset:use",
-        "km:conversation:delete": "km_asset:use",
-        "km:run:read": "km_asset:use",
-        "km:reference:read": "km_asset:use",
-    },
-    "aiops": {
-        "aiops:agent:read": "aiops:use",
-        "aiops:chat:write": "aiops:use",
-        "aiops:conversation:read": "aiops:use",
-        "aiops:conversation:delete": "aiops:use",
-        "aiops:run:read": "aiops:use",
-    },
+    app_id: dict(policy.api_scope_permissions)
+    for app_id, policy in APP_AUTHORIZATION_POLICIES.items()
+    if policy.api_scope_permissions
 }
 _FORBIDDEN_IDENTITY_HEADERS = {
     "x-kbot-user-id",
@@ -96,6 +80,7 @@ class AppApiKeyService:
         display_name: str,
         scopes: tuple[str, ...],
         agent_ids: tuple[UUID, ...],
+        active_agent_ids: frozenset[UUID],
         expires_at: datetime,
         rate_limit_per_minute: int,
         actor_id: str,
@@ -109,6 +94,7 @@ class AppApiKeyService:
             subject_user_id=subject_user_id,
             scopes=normalized_scopes,
             agent_ids=normalized_agents,
+            active_agent_ids=active_agent_ids,
         )
         client = AppApiClientEntity(
             client_id=uuid7(),
@@ -368,6 +354,7 @@ class AppApiKeyService:
         subject_user_id: str,
         scopes: tuple[str, ...],
         agent_ids: tuple[UUID, ...],
+        active_agent_ids: frozenset[UUID],
     ) -> None:
         catalog = APP_API_SCOPE_PERMISSIONS.get(app_id)
         if not catalog:
@@ -381,6 +368,15 @@ class AppApiKeyService:
         if not agent_ids:
             raise AppApiKeyError(
                 "APP_API_KEY_AGENT_REQUIRED", "API Client 至少需要绑定一个 Agent"
+            )
+        invalid_agents = sorted(
+            set(agent_ids) - active_agent_ids,
+            key=str,
+        )
+        if invalid_agents:
+            raise AppApiKeyError(
+                "APP_API_KEY_AGENT_INVALID",
+                "API Client 只能绑定当前 Domain 的 ACTIVE Agent",
             )
         async with self._uow_factory() as uow:
             permissions = await uow.access.permissions_for(
@@ -471,47 +467,14 @@ class AppApiKeyService:
         *, app_id: str, method: str, path: str
     ) -> str | None:
         """以公开路径白名单确定机器请求所需 Scope，未登记路径默认拒绝。"""
-        slug = APP_URL_SLUGS.get(app_id)
-        if not slug:
+        try:
+            policy = get_app_authorization_policy(app_id)
+        except ValueError:
             return None
-        relative = path.removeprefix(f"/api/v1/apps/{slug}/").strip("/")
-        method = method.upper()
-        rules: dict[str, tuple[tuple[str, str, str], ...]] = {
-            "km_asset": (
-                ("GET", r"agents(?:/[0-9a-fA-F-]{36})?", "km:agent:read"),
-                ("POST", r"conversations", "km:chat:write"),
-                ("POST", r"conversations/[0-9a-fA-F-]{36}/turns", "km:chat:write"),
-                ("GET", r"conversations(?:/.*)?", "km:conversation:read"),
-                ("PATCH", r"conversations/[0-9a-fA-F-]{36}", "km:conversation:update"),
-                ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "km:conversation:delete"),
-                ("GET", r"runs/[0-9a-fA-F-]{36}/references/.*", "km:reference:read"),
-                ("GET", r"runs/[0-9a-fA-F-]{36}(?:/(?:result|events))?", "km:run:read"),
-            ),
-            "knowledge_retrieval": (
-                ("GET", r"agents(?:/[0-9a-fA-F-]{36})?", "knowledge:agent:read"),
-                ("POST", r"runs(?:/[0-9a-fA-F-]{36}/cancel)?", "knowledge:chat:write"),
-                ("GET", r"runs/[0-9a-fA-F-]{36}(?:/.*)?", "knowledge:run:read"),
-                ("POST", r"conversations", "knowledge:chat:write"),
-                ("POST", r"conversations/[0-9a-fA-F-]{36}/turns(?:/multipart)?", "knowledge:chat:write"),
-                ("GET", r"conversations(?:/.*)?", "knowledge:conversation:read"),
-                ("PATCH", r"conversations/[0-9a-fA-F-]{36}", "knowledge:chat:write"),
-                ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "knowledge:chat:write"),
-                ("GET", r"memories", "knowledge:conversation:read"),
-            ),
-            "aiops": (
-                ("GET", r"agents(?:/[0-9a-fA-F-]{36})?", "aiops:agent:read"),
-                ("POST", r"conversations(?:/.*)?", "aiops:chat:write"),
-                ("GET", r"conversations(?:/.*)?", "aiops:conversation:read"),
-                ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "aiops:conversation:delete"),
-                ("POST", r"runs(?:/[0-9a-fA-F-]{36}/cancel)?", "aiops:chat:write"),
-                ("GET", r"runs/[0-9a-fA-F-]{36}(?:/.*)?", "aiops:run:read"),
-                ("GET", r"reports(?:/[0-9a-fA-F-]{36})?", "aiops:run:read"),
-            ),
-        }
-        for expected_method, pattern, scope in rules.get(app_id, ()):
-            if method == expected_method and re.fullmatch(pattern, relative):
-                return scope
-        return None
+        relative = path.removeprefix(
+            f"/api/v1/apps/{policy.public_slug}/"
+        ).strip("/")
+        return policy.required_scope(method=method, relative_path=relative)
 
     @staticmethod
     def _extract_public_id(raw_key: str) -> str:
@@ -620,31 +583,6 @@ class AppApiKeyService:
         }
 
 
-def require_app_api_scope(request, scope: str) -> None:
-    """若当前主体是 App API Client，则强制检查机器 Scope。"""
-    context = request.state.auth_context
-    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
-        return
-    if scope not in context.scopes:
-        raise AppApiKeyError(
-            "APP_API_KEY_SCOPE_DENIED", f"API Client 缺少 Scope：{scope}"
-        )
-
-
-def require_app_api_permission(request, permission: str) -> None:
-    """确保 App API Client 至少拥有映射到业务权限的机器 Scope。"""
-    context = request.state.auth_context
-    if context.principal_kind != PrincipalKind.APP_API_CLIENT:
-        return
-    mapping = APP_API_SCOPE_PERMISSIONS.get(context.app_id or "", {})
-    if not any(
-        mapping.get(scope) == permission for scope in context.scopes
-    ):
-        raise AppApiKeyError(
-            "APP_API_KEY_SCOPE_DENIED", "API Client Scope 不允许执行该操作"
-        )
-
-
 def require_app_api_agent(request, agent_id: UUID) -> None:
     """限制 App API Client 只能访问创建时绑定的 Agent。"""
     context = request.state.auth_context
@@ -662,6 +600,4 @@ __all__ = [
     "AppApiKeyError",
     "AppApiKeyService",
     "require_app_api_agent",
-    "require_app_api_permission",
-    "require_app_api_scope",
 ]

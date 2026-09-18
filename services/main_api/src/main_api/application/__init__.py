@@ -37,8 +37,11 @@ from .app_api_key import (
     AppApiKeyError,
     AppApiKeyService,
     require_app_api_agent,
-    require_app_api_permission,
-    require_app_api_scope,
+)
+from .app_access import (
+    authorize_business_app_route,
+    authorize_app_request,
+    authorize_app_request_any,
 )
 
 __all__ = [
@@ -68,7 +71,8 @@ __all__ = [
     "UserTokenClaims",
     "UserTokenCodec",
     "create_user_token_codec",
+    "authorize_app_request",
+    "authorize_app_request_any",
+    "authorize_business_app_route",
     "require_app_api_agent",
-    "require_app_api_permission",
-    "require_app_api_scope",
 ]

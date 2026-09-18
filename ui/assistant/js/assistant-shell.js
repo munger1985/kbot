@@ -3,7 +3,7 @@
   "use strict";
 
   const PAGE_PERMISSIONS = {
-    dashboard: "assistant:access",
+    dashboard: "assistant:use",
     knowledge: "assistant:knowledge_chat",
     "x-search": "assistant:x_search",
     "image-generation": "assistant:image_generate",
@@ -140,7 +140,7 @@
     }
     const permissions = new Set(access.permissions || []);
     pruneNavigation(permissions);
-    if (!permissions.has("assistant:access")) {
+    if (!permissions.has("assistant:use")) {
       document.body.dataset.access = "denied";
       toast("没有智能工作台访问权限", "error");
       KBotAssistantAuth.clear();

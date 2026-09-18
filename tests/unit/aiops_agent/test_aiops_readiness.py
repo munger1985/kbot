@@ -100,7 +100,7 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_23_contract_integrity(self) -> None:
+    async def test_ready_requires_schema_24_contract_integrity(self) -> None:
         session = _SchemaSession((1, 8, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
@@ -116,11 +116,11 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 23", session.statements[0])
-        self.assertIn("aiops-oracle-v13", session.statements[0])
+        self.assertIn("schema_version = 24", session.statements[0])
+        self.assertIn("aiops-oracle-v14", session.statements[0])
         self.assertIn("USER_EVIDENCE", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_23_contract(self) -> None:
+    async def test_ready_rejects_partial_schema_24_contract(self) -> None:
         session = _SchemaSession((1, 7, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
