@@ -508,6 +508,38 @@ class _FakeAIOpsClient:
             )
         return {"allowed": True}
 
+    async def list_private_agents(self, *, auth_context):
+        del auth_context
+        return [{
+            "agent_id": str(
+                UUID("019f8eae-2c25-7d48-b044-350ec3f5a120")
+            ),
+            "display_name": "数据库诊断 Agent",
+            "status": "ACTIVE",
+        }]
+
+    async def list_private_agent_grants(self, *, auth_context):
+        del auth_context
+        return [{
+            "agent_id": str(
+                UUID("019f8eae-2c25-7d48-b044-350ec3f5a120")
+            ),
+            "subject_type": "USER",
+            "subject_id": "portal-user-1",
+            "status": "ACTIVE",
+        }]
+
+    async def list_targets(
+        self, *, status, cursor, limit, auth_context
+    ):
+        del status, cursor, limit, auth_context
+        return {
+            "schema_version": "aiops.public.v1",
+            "items": [],
+            "next_cursor": None,
+            "has_more": False,
+        }
+
     async def start_conversation(self, payload, *, auth_context):
         del auth_context
         self.last_start_payload = payload
@@ -1759,6 +1791,49 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(
             {"source_type": "CHAT"},
             self.aiops.last_start_payload["conversation"]["source"],
+        )
+
+    def test_aiops_use_permission_reads_granted_agents_and_target_list(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("aiops", "aiops:use")
+        )
+
+        agents = self.client.get(
+            "/api/v1/apps/aiops/agents",
+            headers=self._headers(),
+        )
+        targets = self.client.get(
+            "/api/v1/apps/aiops/targets",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(200, agents.status_code, agents.text)
+        self.assertEqual(1, len(agents.json()))
+        self.assertEqual(200, targets.status_code, targets.text)
+        self.assertEqual([], targets.json()["items"])
+        self.assertEqual(
+            [
+                ("aiops", 100, "aiops:use"),
+                ("aiops", 100, "aiops:use"),
+            ],
+            self.app.state.access_control_service.calls,
+        )
+
+    def test_aiops_use_permission_cannot_manage_targets(self) -> None:
+        self.app.state.access_control_service = _ScopedAccessControlService(
+            ("aiops", "aiops:use")
+        )
+
+        response = self.client.post(
+            "/api/v1/apps/aiops/targets/test-connection",
+            headers=self._headers(),
+            json={},
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            [("aiops", 100, "aiops:target_manage")],
+            self.app.state.access_control_service.calls,
         )
 
     def test_aiops_starts_conversation_from_situation(self) -> None:

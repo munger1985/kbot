@@ -97,7 +97,11 @@ async def _require_route_access(request: Request) -> None:
     relative = request.url.path.removeprefix(f"{PUBLIC_API_V1}/apps/aiops")
     permission = "aiops:use"
     if relative.startswith("/targets"):
-        permission = "aiops:target_manage"
+        permission = (
+            "aiops:use"
+            if request.method == "GET" and relative == "/targets"
+            else "aiops:target_manage"
+        )
     elif relative.startswith("/diagnostic-sources"):
         permission = "aiops:diagnostic_source_manage"
     elif relative.startswith("/policies"):
