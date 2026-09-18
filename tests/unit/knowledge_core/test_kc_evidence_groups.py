@@ -36,6 +36,20 @@ class EvidenceGroupTest(unittest.TestCase):
         citations = build_citation_pack(groups)
         self.assertEqual([citation.citation_label for citation in citations], ["C1", "C2"])
 
+    def test_nearby_context_outranks_document_start(self):
+        groups = assemble_groups(
+            [hit(5, rank=1, content="确认暂停原因及恢复条件")],
+            [
+                hit(1, rank=4, content="文档标题"),
+                hit(6, rank=1, content="暂停原因：预算审批未完成"),
+            ],
+            context_items_per_group=1,
+        )
+        self.assertEqual(
+            [item.evidence.content_text for item in groups[0].items],
+            ["确认暂停原因及恢复条件", "暂停原因：预算审批未完成"],
+        )
+
     def test_balanced_selection_reserves_one_anchor_per_bundle(self):
         anchors = [
             hit(1, rank=1, bundle=10),

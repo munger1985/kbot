@@ -762,6 +762,34 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(citations[0].evidence_ids), 2)
         self.assertIn("AI 运维实践.pdf", citations[0].excerpt)
 
+    async def test_document_skill_includes_structural_context_in_excerpt(self):
+        client = _KnowledgeCoreClient()
+        candidates = (await client.discover(query="暂停"))["candidates"]
+        raw = (await client.retrieve_evidence(query="暂停"))["citations"]
+        context_item = deepcopy(raw[0]["items"][0])
+        context_evidence_id = uuid7()
+        context_item["item_label"] = "G1-C1"
+        context_item["input_role"] = "STRUCTURAL_CONTEXT"
+        context_item["final_role"] = "STRUCTURAL_CONTEXT"
+        context_item["evidence"] = dict(context_item["evidence"])
+        context_item["evidence"].update(
+            {
+                "evidence_id": str(context_evidence_id),
+                "content_text": "暂停原因：内部预算审批和合规评估尚未完成。",
+                "heading_path": ["一、讨论内容"],
+            }
+        )
+        raw[0]["items"].append(context_item)
+        raw[0]["structural_context_ids"] = [str(context_evidence_id)]
+
+        citations = KnowledgeRetrievalSkill._map_citations(
+            raw, candidates=candidates
+        )
+
+        self.assertEqual(len(citations), 1)
+        self.assertIn("预算审批和合规评估尚未完成", citations[0].excerpt)
+        self.assertIn(context_evidence_id, citations[0].evidence_ids)
+
     async def test_document_skill_propagates_coverage_mode(self):
         client = _KnowledgeCoreClient()
         context = _context()

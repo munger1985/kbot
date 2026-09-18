@@ -806,15 +806,21 @@ class EvidenceRepository:
         ]
 
     async def expand_context(self, *, anchors: list[EvidenceHit], limit: int = 4) -> list[EvidenceHit]:
-        if not anchors:
+        if not anchors or limit <= 0:
             return []
-        conditions = [and_(
-            KcEvidenceEntity.document_version_id == anchor.document_version_id,
-            KcEvidenceEntity.parse_view_id == anchor.parse_view_id,
-            KcEvidenceEntity.section_key == anchor.section_key,
-        ) for anchor in anchors if anchor.section_key]
-        if not conditions:
-            return []
+        # 按锚点所在文档版本的序数窗口扩展，不依赖 section_key，也不做全局 LIMIT。
+        # 会议纪要里“目的”和“讨论表格”常分属不同章节，但序数相邻。
+        conditions = [
+            and_(
+                KcEvidenceEntity.document_version_id == anchor.document_version_id,
+                KcEvidenceEntity.parse_view_id == anchor.parse_view_id,
+                KcEvidenceEntity.ordinal.between(
+                    max(0, int(anchor.ordinal) - limit),
+                    int(anchor.ordinal) + limit,
+                ),
+            )
+            for anchor in anchors
+        ]
         collection_ids = {anchor.collection_id for anchor in anchors}
         statement = (
             select(
@@ -845,23 +851,36 @@ class EvidenceRepository:
             KcEvidenceEntity.collection_id.in_(collection_ids),
             or_(*conditions),
             )
-            .order_by(KcEvidenceEntity.ordinal)
-            .limit(limit)
+            .order_by(
+                KcEvidenceEntity.document_version_id,
+                KcEvidenceEntity.parse_view_id,
+                KcEvidenceEntity.ordinal,
+            )
         )
         rows = (await self.session.execute(statement)).all()
         anchor_ids = {item.evidence_id for item in anchors}
-        return [
-            self._to_hit(
-                entity, bundle_id, index, "CONTEXT", 0.0,
-                bundle_title, document_name, external_document_id,
-                document_role,
+        nearest_ordinals: dict[tuple[UUID, UUID], list[int]] = {}
+        for anchor in anchors:
+            nearest_ordinals.setdefault(
+                (anchor.document_version_id, anchor.parse_view_id),
+                [],
+            ).append(int(anchor.ordinal))
+        hits: list[EvidenceHit] = []
+        for entity, bundle_id, bundle_title, document_name, external_document_id, document_role in rows:
+            if entity.evidence_id in anchor_ids:
+                continue
+            ordinals = nearest_ordinals.get(
+                (entity.document_version_id, entity.parse_view_id),
+            ) or [int(entity.ordinal)]
+            distance = min(abs(int(entity.ordinal) - item) for item in ordinals)
+            hits.append(
+                self._to_hit(
+                    entity, bundle_id, distance, "CONTEXT", 0.0,
+                    bundle_title, document_name, external_document_id,
+                    document_role,
+                )
             )
-            for index, (
-                entity, bundle_id, bundle_title, document_name,
-                external_document_id, document_role,
-            ) in enumerate(rows, 1)
-            if entity.evidence_id not in anchor_ids
-        ]
+        return hits
 
     @staticmethod
     def _to_hit(

@@ -649,12 +649,17 @@ class KnowledgeRetrievalSkill:
             selected: list[dict[str, Any]] = []
             for group in groups:
                 items = list(group.get("items") or [])
-                primary = [
+                # 引用正文必须带上锚点邻接上下文，否则会议“目的”命中后讨论表进不了模型。
+                usable = [
                     item
                     for item in items
-                    if item.get("final_role") == "PRIMARY"
+                    if str(item.get("final_role") or "PRIMARY") in {
+                        "PRIMARY",
+                        "STRUCTURAL_CONTEXT",
+                        "NEIGHBOR",
+                    }
                 ]
-                selected.extend(primary or items)
+                selected.extend(usable or items)
             if not selected:
                 continue
             first_group = groups[0]
