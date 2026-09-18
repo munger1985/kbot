@@ -273,7 +273,7 @@ query 是后续文档检索的独立问题，必须覆盖用户仍需从文档�
 [[prompts]]
 prompt_key = "agent_runtime.data_query_plan"
 owner_service = "agent_runtime"
-version = "1.1.0"
+version = "1.0.0"
 active = true
 purpose = "从受控逻辑语义模型生成 DataQueryPlan.v1"
 input_variables = []
