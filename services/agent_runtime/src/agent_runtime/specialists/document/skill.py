@@ -275,12 +275,18 @@ class KnowledgeRetrievalSkill:
             ),
             None,
         )
-        if not isinstance(scope, dict) or "bundle_targets" not in scope:
+        if not isinstance(scope, dict):
+            return None
+        raw_targets = [
+            item
+            for item in list(scope.get("bundle_targets") or [])
+            if isinstance(item, dict)
+        ]
+        if not raw_targets:
             return None
         allowed = {str(value) for value in allowed_collection_ids}
         candidates: list[dict[str, Any]] = []
         retrieval_config = self._retrieval_config(context)
-        raw_targets = list(scope.get("bundle_targets") or [])
         scoped_targets = await self._prepare_scoped_targets(
             context=context,
             allowed_collection_ids=allowed_collection_ids,
@@ -553,6 +559,39 @@ class KnowledgeRetrievalSkill:
         )
 
     @staticmethod
+    def _scope_keywords(payload: dict[str, Any]) -> tuple[str, ...]:
+        raw = payload.get("keywords") or []
+        if isinstance(raw, str):
+            values = [raw]
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            return ()
+        keywords: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            text = str(item or "").strip()
+            key = text.casefold()
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            keywords.append(text)
+        return tuple(keywords)
+
+    @staticmethod
+    def _join_scope_query(query: str, keywords: tuple[str, ...]) -> str:
+        parts: list[str] = []
+        existing = query.casefold()
+        if query:
+            parts.append(query)
+        for word in keywords:
+            if word.casefold() in existing:
+                continue
+            parts.append(word)
+            existing = f"{existing} {word.casefold()}"
+        return " ".join(parts).strip()
+
+    @staticmethod
     def _standalone_query(context: ExecutionContext) -> str:
         document_scopes = [
             item
@@ -560,11 +599,14 @@ class KnowledgeRetrievalSkill:
             if item.artifact_type == "DOCUMENT_SCOPE"
         ]
         if document_scopes:
-            scoped_query = str(
-                (document_scopes[-1].payload or {}).get("query") or ""
-            ).strip()
-            if scoped_query:
-                return scoped_query
+            payload = document_scopes[-1].payload or {}
+            scoped_query = str(payload.get("query") or "").strip()
+            keywords = KnowledgeRetrievalSkill._scope_keywords(payload)
+            combined = KnowledgeRetrievalSkill._join_scope_query(
+                scoped_query, keywords
+            )
+            if combined:
+                return combined
         artifacts = [
             item
             for item in context.input_artifacts

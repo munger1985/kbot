@@ -91,6 +91,13 @@ class ResponseComposerSkill:
             return specialized
         query_result = self._query_result(context)
         retrieval = self._document_result(context)
+        if (
+            query_result is not None
+            and self._has_document_citations(retrieval)
+        ):
+            return await self._compose_hybrid_result(
+                context, query_result, retrieval
+            )
         if query_result is not None:
             return await self._compose_query_result(context, query_result)
         if retrieval is None or not retrieval.citation_pack.citations:
@@ -242,6 +249,15 @@ class ResponseComposerSkill:
             return
         query_result = self._query_result(context)
         retrieval = self._document_result(context)
+        if (
+            query_result is not None
+            and self._has_document_citations(retrieval)
+        ):
+            async for item in self._stream_hybrid_result(
+                context, query_result, retrieval
+            ):
+                yield item
+            return
         if query_result is not None:
             async for item in self._stream_query_result(
                 context, query_result
@@ -572,6 +588,354 @@ class ResponseComposerSkill:
                 return QueryResult.model_validate(artifact.payload)
         return None
 
+    @staticmethod
+    def _has_document_citations(
+        retrieval: DocumentRetrievalResult | None,
+    ) -> bool:
+        """只有存在可引用文档证据时才进入混合合成。"""
+        return (
+            retrieval is not None
+            and bool(retrieval.citation_pack.citations)
+        )
+
+    @staticmethod
+    def _hybrid_allowed(
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+    ) -> dict[str, Any]:
+        allowed: dict[str, Any] = {
+            item.citation_label: item
+            for item in retrieval.citation_pack.citations
+        }
+        allowed["Q1"] = query
+        return allowed
+
+    @staticmethod
+    def _require_hybrid_labels(labels: tuple[str, ...]) -> None:
+        """混合回答必须同时引用 QueryResult 和至少一条文档证据。"""
+        if "Q1" not in labels:
+            raise ValueError("同时存在 QueryResult 时必须引用 [Q1]")
+        if not any(label.startswith("C") for label in labels):
+            raise ValueError("同时存在文档证据时必须引用文档标签")
+
+    @classmethod
+    def _validate_hybrid_model_answer(
+        cls,
+        response: dict[str, Any],
+        allowed: dict[str, Any],
+    ) -> tuple[str, tuple[str, ...]]:
+        answer, labels = cls._validate_model_answer(response, allowed)
+        cls._require_hybrid_labels(labels)
+        return answer, labels
+
+    @classmethod
+    def _validate_hybrid_streamed_answer(
+        cls,
+        answer: str,
+        allowed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        labels = cls._validate_streamed_answer(answer, allowed)
+        cls._require_hybrid_labels(labels)
+        return labels
+
+    def _hybrid_prompt(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+        *,
+        prompt_definition,
+    ) -> list[dict[str, str]]:
+        messages = self._prompt(
+            context,
+            retrieval,
+            prompt_definition=prompt_definition,
+        )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        result_scope = self._query_result_scope(query)
+        messages.insert(
+            1,
+            {
+                "role": "system",
+                "content": (
+                    "当前同时存在受控 QueryResult 和已验证文档证据，"
+                    "必须同时使用两类证据回答。"
+                    "数值、排名、清单、统计和结构化字段只能来自 QueryResult，"
+                    "并使用 [Q1]；QueryResult 中不存在的正文事实只能来自"
+                    "文档证据，并使用对应的 [C*] 标签。"
+                    "不得因为 QueryResult 缺少文档字段就拒绝使用文档证据，"
+                    "也不得补造行、列、数值或文档事实。"
+                    f"{result_scope}"
+                ),
+            },
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"response_language={language}\n"
+                    f"QueryResult：[Q1] {query.model_dump_json()}"
+                ),
+            }
+        )
+        return messages
+
+    async def _compose_hybrid_result(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+    ) -> SkillResult:
+        model_name = str(
+            agent_model_name(
+                context.config_snapshot.get("agent", {}), "composer_llm"
+            )
+            or ""
+        ).strip()
+        if not model_name:
+            raise ValueError("Agent 未配置 models.composer_llm")
+        allowed = self._hybrid_allowed(query, retrieval)
+        prompt_definition = await self._prompt_resolver.resolve(
+            "agent_runtime.response_compose"
+        )
+        prompt = self._hybrid_prompt(
+            context,
+            query,
+            retrieval,
+            prompt_definition=prompt_definition,
+        )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        validated: tuple[str, tuple[str, ...]] | None = None
+        last_error: ValueError | None = None
+        previous_response: dict[str, Any] | None = None
+        for attempt in range(1, 3):
+            attempt_prompt = self._answer_attempt_prompt(
+                prompt,
+                language=language,
+                allowed_labels=tuple(allowed),
+                previous_response=previous_response,
+                validation_error=last_error,
+            )
+            response = await self._model_client.get_llm_json(
+                served_model_name=model_name,
+                prompt=attempt_prompt,
+            )
+            try:
+                validated = self._validate_hybrid_model_answer(
+                    response,
+                    allowed,
+                )
+                break
+            except ValueError as exc:
+                last_error = exc
+                previous_response = response
+                logger.warning(
+                    "混合回答未通过最终校验 "
+                    "| run_id={} | task_id={} | attempt={} | error={}",
+                    context.run_id,
+                    context.task_id,
+                    attempt,
+                    str(exc),
+                )
+        if validated is None:
+            warning = str(
+                last_error or ValueError("混合回答未通过最终校验")
+            )
+            return self._result(
+                context,
+                self._verified_source_fallback(
+                    retrieval,
+                    language=language,
+                    validation_warning=warning,
+                ),
+            )
+        answer_text, used_labels = validated
+        return self._hybrid_artifact(
+            context,
+            query,
+            retrieval,
+            allowed,
+            answer_text,
+            used_labels,
+        )
+
+    async def _stream_hybrid_result(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+    ):
+        model_name = str(
+            agent_model_name(
+                context.config_snapshot.get("agent", {}), "composer_llm"
+            )
+            or ""
+        ).strip()
+        if not model_name:
+            raise ValueError("Agent 未配置 models.composer_llm")
+        allowed = self._hybrid_allowed(query, retrieval)
+        prompt_definition = await self._prompt_resolver.resolve(
+            "agent_runtime.response_compose"
+        )
+        prompt = self._hybrid_prompt(
+            context,
+            query,
+            retrieval,
+            prompt_definition=prompt_definition,
+        )
+        prompt.append(
+            {
+                "role": "system",
+                "content": (
+                    "当前为流式回答模式。只输出最终 Markdown 回答正文，"
+                    "不要输出 JSON、字段名或隐藏思维过程；"
+                    "引用必须严格使用 ASCII 方括号格式，例如 [Q1] 或 [C1]。"
+                ),
+            }
+        )
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        yield SkillProgress(
+            event_type="thinking.delta",
+            payload={
+                "delta": (
+                    "正在基于 QueryResult 与 "
+                    f"{len(retrieval.citation_pack.citations)} "
+                    "组已验证文档证据组织回答"
+                ),
+                "public_summary": "正在组织问数与文档的综合回答",
+            },
+        )
+        validated: tuple[str, tuple[str, ...]] | None = None
+        previous_answer: str | None = None
+        last_error: ValueError | None = None
+        for attempt in range(1, 3):
+            attempt_prompt = self._answer_attempt_prompt(
+                prompt,
+                language=language,
+                allowed_labels=tuple(allowed),
+                previous_response=previous_answer,
+                validation_error=last_error,
+            )
+            answer_parts: list[str] = []
+            async for chunk in self._model_client.stream_llm_chunks(
+                served_model_name=model_name,
+                prompt=attempt_prompt,
+                temperature=0,
+            ):
+                if chunk.content:
+                    answer_parts.append(chunk.content)
+            answer_text = _normalize_citations(
+                "".join(answer_parts).strip()
+            )
+            try:
+                used_labels = self._validate_hybrid_streamed_answer(
+                    answer_text,
+                    allowed,
+                )
+            except ValueError as exc:
+                previous_answer = answer_text
+                last_error = exc
+                logger.warning(
+                    "混合回答未通过最终校验 "
+                    "| run_id={} | task_id={} | attempt={} | error={}",
+                    context.run_id,
+                    context.task_id,
+                    attempt,
+                    str(exc),
+                )
+                if attempt == 1:
+                    yield SkillProgress(
+                        event_type="thinking.delta",
+                        payload={
+                            "delta": "回答未通过引用校验，正在重新生成",
+                            "public_summary": "正在修正问数与文档引用",
+                        },
+                    )
+                continue
+            validated = (answer_text, used_labels)
+            break
+        if validated is None:
+            grounded = self._verified_source_fallback(
+                retrieval,
+                language=language,
+                validation_warning=(
+                    "回答模型连续两次未生成通过校验的混合回答"
+                ),
+            )
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": 1, "delta": grounded.answer},
+            )
+            yield self._result(context, grounded)
+            return
+        answer_text, used_labels = validated
+        result = self._hybrid_artifact(
+            context,
+            query,
+            retrieval,
+            allowed,
+            answer_text,
+            used_labels,
+        )
+        grounded_answer = str(result.artifact.payload.get("answer") or "")
+        for index, delta in enumerate(
+            _markdown_answer_deltas(grounded_answer), start=1
+        ):
+            yield SkillProgress(
+                event_type="answer.delta",
+                payload={"chunk_index": index, "delta": delta},
+            )
+        yield result
+
+    def _hybrid_artifact(
+        self,
+        context: ExecutionContext,
+        query: QueryResult,
+        retrieval: DocumentRetrievalResult,
+        allowed: dict[str, Any],
+        answer: str,
+        used_labels: tuple[str, ...],
+    ) -> SkillResult:
+        answer_text = _normalize_citations(answer).strip()
+        notice = self._truncation_notice(context, query)
+        if notice:
+            answer_text = f"{answer_text}\n\n{notice}"
+        references = []
+        for label in used_labels:
+            item = allowed[label]
+            if label == "Q1":
+                references.append(
+                    QueryResultReferenceCard(
+                        citation_label=label,
+                        query_result_id=query.query_result_id,
+                        provider=query.provider,
+                        row_count=query.row_count,
+                    )
+                )
+                continue
+            references.append(self._reference_card(item))
+        warnings = tuple(retrieval.warnings)
+        if query.truncated:
+            warnings = (*warnings, "问数结果已按服务端上限截断")
+        return self._result(
+            context,
+            GroundedAnswer(
+                answer=answer_text,
+                status="READY",
+                used_citation_labels=used_labels,
+                references=tuple(references),
+                query_results=(query.model_dump(mode="json"),),
+                visualizations=self._visualizations(context),
+                warnings=warnings,
+            ),
+        )
+
     async def _compose_query_result(
         self, context: ExecutionContext, query: QueryResult
     ) -> SkillResult:
@@ -663,17 +1027,7 @@ class ResponseComposerSkill:
         language = response_language(
             context.config_snapshot, context.original_input
         )
-        result_scope = (
-            f"结构化范围事实：当前只展示 {len(query.rows)} 行，"
-            f"已观察到至少 {query.row_count} 行且仍有其他结果；"
-            "未执行全量计数。必须明确说明结果已截断，"
-            "不得声称这是全部结果或给出精确总数。"
-            if query.truncated
-            else (
-                f"结构化范围事实：当前返回 {len(query.rows)} 行，"
-                "QueryResult 未标记截断。"
-            )
-        )
+        result_scope = self._query_result_scope(query)
         return model_name, [
             {
                 "role": "system",
@@ -706,40 +1060,9 @@ class ResponseComposerSkill:
         answer_without_labels = _strip_model_citations(answer)
         if not answer_without_labels:
             raise ValueError("问数回答移除模型引用标签后为空")
-        if query.truncated:
-            language = response_language(
-                context.config_snapshot, context.original_input
-            )
-            if language.startswith("zh"):
-                scope_notice = (
-                    f"当前显示前 {len(query.rows)} 条，仍有其他结果；"
-                    "本次未执行全量计数。"
-                )
-            elif language.startswith("ko"):
-                scope_notice = (
-                    f"현재 처음 {len(query.rows)}개 결과만 표시하며 더 많은 "
-                    "결과가 있습니다. 전체 건수는 계산하지 않았습니다."
-                )
-            elif language.startswith("ja"):
-                scope_notice = (
-                    f"現在は先頭 {len(query.rows)} 件のみを表示しており、"
-                    "ほかにも結果があります。全件数は集計していません。"
-                )
-            else:
-                scope_notice = (
-                    f"Showing the first {len(query.rows)} results; more "
-                    "results exist, and no full count was run."
-                )
-            answer_without_labels = (
-                f"{answer_without_labels}\n\n{scope_notice}"
-            )
-        charts = [
-            EChartsResult.model_validate(item.payload).model_dump(
-                mode="json"
-            )
-            for item in context.input_artifacts
-            if item.artifact_type == "ECHARTS_CONFIG"
-        ]
+        notice = self._truncation_notice(context, query)
+        if notice:
+            answer_without_labels = f"{answer_without_labels}\n\n{notice}"
         warning = (
             ("问数结果已按服务端上限截断",)
             if query.truncated
@@ -760,9 +1083,65 @@ class ResponseComposerSkill:
                     ),
                 ),
                 query_results=(query.model_dump(mode="json"),),
-                visualizations=tuple(charts),
+                visualizations=self._visualizations(context),
                 warnings=warning,
             ),
+        )
+
+    @staticmethod
+    def _query_result_scope(query: QueryResult) -> str:
+        if query.truncated:
+            return (
+                f"结构化范围事实：当前只展示 {len(query.rows)} 行，"
+                f"已观察到至少 {query.row_count} 行且仍有其他结果；"
+                "未执行全量计数。必须明确说明结果已截断，"
+                "不得声称这是全部结果或给出精确总数。"
+            )
+        return (
+            f"结构化范围事实：当前返回 {len(query.rows)} 行，"
+            "QueryResult 未标记截断。"
+        )
+
+    @staticmethod
+    def _truncation_notice(
+        context: ExecutionContext,
+        query: QueryResult,
+    ) -> str:
+        if not query.truncated:
+            return ""
+        language = response_language(
+            context.config_snapshot, context.original_input
+        )
+        if language.startswith("zh"):
+            return (
+                f"当前显示前 {len(query.rows)} 条，仍有其他结果；"
+                "本次未执行全量计数。"
+            )
+        if language.startswith("ko"):
+            return (
+                f"현재 처음 {len(query.rows)}개 결과만 표시하며 더 많은 "
+                "결과가 있습니다. 전체 건수는 계산하지 않았습니다."
+            )
+        if language.startswith("ja"):
+            return (
+                f"現在は先頭 {len(query.rows)} 件のみを表示しており、"
+                "ほかにも結果があります。全件数は集計していません。"
+            )
+        return (
+            f"Showing the first {len(query.rows)} results; more "
+            "results exist, and no full count was run."
+        )
+
+    @staticmethod
+    def _visualizations(
+        context: ExecutionContext,
+    ) -> tuple[dict[str, Any], ...]:
+        return tuple(
+            EChartsResult.model_validate(item.payload).model_dump(
+                mode="json"
+            )
+            for item in context.input_artifacts
+            if item.artifact_type == "ECHARTS_CONFIG"
         )
 
     @staticmethod

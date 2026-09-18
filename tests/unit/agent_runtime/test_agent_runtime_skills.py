@@ -237,6 +237,28 @@ class _QueryCitationModelClient(_ModelClient):
         yield LLMChunk(content="- Asset B 【C2】")
 
 
+class _HybridEvidenceModelClient(_ModelClient):
+    def __init__(self):
+        self.prompts = []
+
+    async def get_llm_json(self, **kwargs):
+        self.prompts.append(kwargs["prompt"])
+        return {
+            "answer": (
+                "金额最高的是 Asset A。[Q1] "
+                "该案例通过调整索引降低了查询延迟。[C1]"
+            ),
+            "used_citation_labels": ["Q1", "C1"],
+        }
+
+    async def stream_llm_chunks(self, **kwargs):
+        from platform_clients.model import LLMChunk
+
+        self.prompts.append(kwargs["prompt"])
+        yield LLMChunk(content="金额最高的是 Asset A。[Q1] ")
+        yield LLMChunk(content="该案例通过调整索引降低了查询延迟。[C1]")
+
+
 class _RewriteModelClient:
     def __init__(self):
         self.last_json_request = None
@@ -421,6 +443,21 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
                 "memory_refs": [],
             },
             content_hash="rewrite-hash",
+            provenance={},
+            security_level=2,
+        )
+
+    @staticmethod
+    def _document_scope_artifact(payload: dict) -> LeasedArtifact:
+        return LeasedArtifact(
+            artifact_id=uuid7(),
+            task_id=uuid7(),
+            artifact_type="DOCUMENT_SCOPE",
+            schema_version="DocumentScope.v1",
+            producer="document-scope-extract",
+            producer_version="1.0.0",
+            payload=payload,
+            content_hash="scope-hash",
             provenance={},
             security_level=2,
         )
@@ -713,6 +750,28 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(citation["title"], "数据库优化案例")
         self.assertEqual(citation["document_id"], str(client.document_id))
         self.assertEqual(citation["locator"]["pages"][0]["page_no"], 3)
+
+    async def test_document_skill_uses_scope_query_and_keywords_without_bundle_targets(self):
+        client = _KnowledgeCoreClient()
+        scope = self._document_scope_artifact({
+            "query": "对象甲 最新需求与风险",
+            "keywords": ["对象乙", "下一步行动", "对象甲"],
+            "bundle_targets": [],
+        })
+
+        result = await KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        ).execute(_context(input_artifacts=(scope,)))
+
+        self.assertEqual(
+            client.last_discovery_query,
+            "对象甲 最新需求与风险 对象乙 下一步行动",
+        )
+        self.assertEqual(
+            len(result.artifact.payload["citation_pack"]["citations"]),
+            1,
+        )
 
     async def test_document_skill_retrieves_before_asking_for_clarification(self):
         client = _KnowledgeCoreClient()
@@ -1253,6 +1312,78 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             item["role"] == "system" and "[C1]" in item["content"]
             for item in repair_prompt
         ))
+
+    async def test_composer_uses_query_and_document_evidence_together(self):
+        retrieval = await self._retrieval_artifact()
+        model = _HybridEvidenceModelClient()
+
+        result = await ResponseComposerSkill(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        ).execute(
+            _context(
+                input_artifacts=(
+                    self._query_result_artifact(),
+                    retrieval,
+                ),
+                original_input="列出金额最高的对象，并总结文档中的最新需求",
+            )
+        )
+
+        payload = result.artifact.payload
+        prompt_text = str(model.prompts)
+        self.assertEqual(payload["status"], "READY")
+        self.assertIn("[Q1]", payload["answer"])
+        self.assertIn("[C1]", payload["answer"])
+        self.assertIn("Asset A", payload["answer"])
+        self.assertIn("降低了查询延迟", payload["answer"])
+        self.assertEqual(payload["used_citation_labels"], ["Q1", "C1"])
+        self.assertEqual(
+            [item["reference_type"] for item in payload["references"]],
+            ["QUERY_RESULT", "DOCUMENT"],
+        )
+        self.assertEqual(1, len(payload["query_results"]))
+        self.assertIn("QueryResult", prompt_text)
+        self.assertIn("[Q1]", prompt_text)
+        self.assertNotIn("不是文档证据", prompt_text)
+
+    async def test_composer_streams_query_and_document_evidence_together(self):
+        retrieval = await self._retrieval_artifact()
+        model = _HybridEvidenceModelClient()
+
+        outputs = [
+            item
+            async for item in ResponseComposerSkill(
+                model_client=model,
+                prompt_resolver=_PromptResolver(),
+            ).execute_stream(
+                _context(
+                    input_artifacts=(
+                        self._query_result_artifact(),
+                        retrieval,
+                    ),
+                    original_input="列出金额最高的对象，并总结文档中的最新需求",
+                )
+            )
+        ]
+
+        deltas = [
+            item.payload["delta"]
+            for item in outputs
+            if getattr(item, "event_type", None) == "answer.delta"
+        ]
+        payload = outputs[-1].artifact.payload
+        self.assertEqual(
+            "".join(deltas),
+            "金额最高的是 Asset A。[Q1] 该案例通过调整索引降低了查询延迟。[C1]",
+        )
+        self.assertEqual(payload["used_citation_labels"], ["Q1", "C1"])
+        self.assertEqual(
+            [item["reference_type"] for item in payload["references"]],
+            ["QUERY_RESULT", "DOCUMENT"],
+        )
+        self.assertIn("QueryResult", str(model.prompts))
+        self.assertNotIn("不是文档证据", str(model.prompts))
 
     async def test_query_composer_replaces_model_citations_with_query_label(self):
         model = _QueryCitationModelClient()
