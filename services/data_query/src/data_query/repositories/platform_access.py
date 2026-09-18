@@ -21,6 +21,15 @@ class PlatformResourceAccessRepository:
                 """
                 SELECT domain_id FROM (
                     SELECT a.domain_id
+                    FROM KBOT_ASST_AGENT a
+                    JOIN KBOT_ASST_AGENT_VERSION v ON v.agent_id = a.agent_id
+                    WHERE :consumer_app_id = 'assistant'
+                      AND a.agent_id = :agent_id
+                      AND v.agent_version_id = :agent_version_id
+                      AND a.current_version_id = v.agent_version_id
+                      AND a.domain_id = :domain_id AND a.status = 'ACTIVE'
+                    UNION ALL
+                    SELECT a.domain_id
                     FROM KBOT_KR_AGENT a
                     JOIN KBOT_KR_AGENT_VERSION v ON v.agent_id = a.agent_id
                     WHERE :consumer_app_id = 'knowledge_retrieval'
@@ -46,6 +55,67 @@ class PlatformResourceAccessRepository:
                       AND v.agent_version_id = :agent_version_id
                       AND a.current_version_id = v.agent_version_id
                       AND a.domain_id = :domain_id AND a.status = 'ACTIVE'
+                )
+                """
+            ),
+            {
+                "consumer_app_id": consumer_app_id,
+                "agent_id": agent_id.bytes,
+                "agent_version_id": agent_version_id.bytes,
+                "domain_id": domain_id,
+            },
+        )
+        value = result.scalar_one_or_none()
+        return None if value is None else int(value)
+
+    async def agent_version_domain_id(
+        self, *, domain_id: int, consumer_app_id: str,
+        agent_id: UUID, agent_version_id: UUID,
+    ) -> int | None:
+        """确认业务 App 当前 Agent 版本归属，允许草稿和停用状态参与同步。"""
+        result = await self._session.execute(
+            text(
+                """
+                SELECT domain_id FROM (
+                    SELECT a.domain_id
+                    FROM KBOT_ASST_AGENT a
+                    JOIN KBOT_ASST_AGENT_VERSION v ON v.agent_id = a.agent_id
+                    WHERE :consumer_app_id = 'assistant'
+                      AND a.agent_id = :agent_id
+                      AND v.agent_version_id = :agent_version_id
+                      AND a.current_version_id = v.agent_version_id
+                      AND a.domain_id = :domain_id
+                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
+                    UNION ALL
+                    SELECT a.domain_id
+                    FROM KBOT_KR_AGENT a
+                    JOIN KBOT_KR_AGENT_VERSION v ON v.agent_id = a.agent_id
+                    WHERE :consumer_app_id = 'knowledge_retrieval'
+                      AND a.agent_id = :agent_id
+                      AND v.agent_version_id = :agent_version_id
+                      AND a.current_version_id = v.agent_version_id
+                      AND a.domain_id = :domain_id
+                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
+                    UNION ALL
+                    SELECT a.domain_id
+                    FROM KBOT_OPS_AGENT a
+                    JOIN KBOT_OPS_AGENT_VERSION v ON v.agent_id = a.agent_id
+                    WHERE :consumer_app_id = 'aiops'
+                      AND a.agent_id = :agent_id
+                      AND v.agent_version_id = :agent_version_id
+                      AND a.current_version_id = v.agent_version_id
+                      AND a.domain_id = :domain_id
+                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
+                    UNION ALL
+                    SELECT a.domain_id
+                    FROM KBOT_KM_AGENT a
+                    JOIN KBOT_KM_AGENT_VERSION v ON v.agent_id = a.agent_id
+                    WHERE :consumer_app_id = 'km_asset'
+                      AND a.agent_id = :agent_id
+                      AND v.agent_version_id = :agent_version_id
+                      AND a.current_version_id = v.agent_version_id
+                      AND a.domain_id = :domain_id
+                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
                 )
                 """
             ),

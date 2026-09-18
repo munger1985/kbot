@@ -149,14 +149,14 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
 
     def test_plan_rejects_unknown_field_and_budget_overage(self):
         with self.assertRaisesRegex(QueryPlanValidationError, "FILTER_FIELD_NOT_FOUND"):
-            validate_query_plan(plan=_plan(field="raw_sql"), model=_model(), policy_max_limit=100)
+            validate_query_plan(plan=_plan(field="raw_sql"), model=_model(), guardrail_max_limit=100)
         with self.assertRaisesRegex(QueryPlanValidationError, "POLICY_LIMIT_EXCEEDED"):
-            validate_query_plan(plan=_plan(limit=101), model=_model(), policy_max_limit=100)
+            validate_query_plan(plan=_plan(limit=101), model=_model(), guardrail_max_limit=100)
 
     def test_all_dialects_bind_untrusted_values(self):
-        postgresql = compile_postgresql_query(plan=_plan(), model=_model(), policy_max_limit=100)
-        mysql = compile_dialect_query(dialect="MYSQL", plan=_plan(), model=_model(), policy_max_limit=100)
-        oracle = compile_dialect_query(dialect="ORACLE", plan=_plan(), model=_model(), policy_max_limit=100)
+        postgresql = compile_postgresql_query(plan=_plan(), model=_model(), guardrail_max_limit=100)
+        mysql = compile_dialect_query(dialect="MYSQL", plan=_plan(), model=_model(), guardrail_max_limit=100)
+        oracle = compile_dialect_query(dialect="ORACLE", plan=_plan(), model=_model(), guardrail_max_limit=100)
         self.assertIn("$1", postgresql.sql)
         self.assertIn("%s", mysql.sql)
         self.assertIn(":p1", oracle.sql)
@@ -172,15 +172,15 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
             ),),
         })
         postgresql = compile_postgresql_query(
-            plan=plan, model=_model(), policy_max_limit=100
+            plan=plan, model=_model(), guardrail_max_limit=100
         )
         mysql = compile_dialect_query(
             dialect="MYSQL", plan=plan, model=_model(),
-            policy_max_limit=100,
+            guardrail_max_limit=100,
         )
         oracle = compile_dialect_query(
             dialect="ORACLE", plan=plan, model=_model(),
-            policy_max_limit=100,
+            guardrail_max_limit=100,
         )
 
         self.assertIn("$1", postgresql.sql)
@@ -230,14 +230,14 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
 
         oracle = compile_dialect_query(
             dialect="ORACLE", plan=plan, model=model,
-            policy_max_limit=100,
+            guardrail_max_limit=100,
         )
         mysql = compile_dialect_query(
             dialect="MYSQL", plan=plan, model=model,
-            policy_max_limit=100,
+            guardrail_max_limit=100,
         )
         postgresql = compile_postgresql_query(
-            plan=plan, model=model, policy_max_limit=100,
+            plan=plan, model=model, guardrail_max_limit=100,
         )
 
         self.assertIn('ORDER BY "ASSET_DATE_VALUE" DESC', oracle.sql)
@@ -257,7 +257,7 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
             QueryPlanValidationError, "ORDER_FIELD_NOT_SELECTED",
         ):
             validate_query_plan(
-                plan=plan, model=_model(), policy_max_limit=100,
+                plan=plan, model=_model(), guardrail_max_limit=100,
             )
 
     def test_cipher_uses_aad_and_rejects_tampering(self):

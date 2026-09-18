@@ -238,30 +238,6 @@ class AssistantSemanticModelPublishPayload(AssistantSemanticModelReviewPayload):
     schema_snapshot_id: UUID
 
 
-class AssistantQueryBudgetPayload(_Payload):
-    max_rows: int = Field(default=1000, ge=1, le=10000)
-    max_result_bytes: int = Field(
-        default=1_048_576, ge=1024, le=16_777_216
-    )
-    statement_timeout_seconds: int = Field(default=30, ge=1, le=300)
-    max_concurrent_runs: int = Field(default=4, ge=1, le=64)
-
-
-class AssistantPolicyBindingCreatePayload(_Payload):
-    actor_ids: tuple[str, ...] = Field(default=(), max_length=1000)
-    roles: tuple[str, ...] = Field(default=(), max_length=100)
-    semantic_model_ids: tuple[UUID, ...] = Field(min_length=1, max_length=64)
-    budget: AssistantQueryBudgetPayload = Field(
-        default_factory=AssistantQueryBudgetPayload
-    )
-
-
-class AssistantAgentQueryBindingCreatePayload(_Payload):
-    agent_id: UUID
-    semantic_model_id: UUID
-    policy_binding_id: UUID
-
-
 def _domain_actor(request: Request) -> tuple[int, str]:
     context = get_auth_context(request)
     if context.app_id and context.app_id != "assistant":
@@ -492,19 +468,52 @@ async def _require_active_knowledge_core(request: Request, *, domain_id: int, kn
         raise HTTPException(422, {"code": "AGENT_KNOWLEDGE_CORE_INACTIVE", "message": "绑定的 Knowledge Core 未处于 ACTIVE 状态"})
 
 
-async def _require_active_data_binding(request: Request, *, agent: dict[str, Any]) -> None:
-    raw_model_ids = agent.get("data_model_ids") or []
-    if not raw_model_ids:
-        return
-    matched = await _data_query(request).management_has_active_agent_binding(
+async def _require_published_data_models(
+    request: Request, *, data_model_ids: tuple[UUID, ...] | list[Any],
+) -> tuple[UUID, ...]:
+    """确认 Agent 选择的问数模型均属于当前 Domain 且已有发布版本。"""
+    normalized = tuple(UUID(str(value)) for value in data_model_ids)
+    if len(normalized) != len(set(normalized)):
+        raise HTTPException(
+            422,
+            {"code": "AGENT_DATA_MODEL_DUPLICATED", "message": "问数模型不能重复"},
+        )
+    if not normalized:
+        return normalized
+    response = await _data_query(request).management_list(
+        resource="semantic-models",
+        cursor=None,
+        limit=200,
+        auth_context=request.state.auth_context,
+    )
+    available = {
+        UUID(str(item["semantic_model_id"]))
+        for item in _collection_items(response)
+        if item.get("semantic_model_id") and item.get("active_version") is not None
+    }
+    missing = [str(item) for item in normalized if item not in available]
+    if missing:
+        raise HTTPException(
+            422,
+            {
+                "code": "AGENT_DATA_MODEL_NOT_PUBLISHED",
+                "message": "Agent 只能绑定当前 Domain 已发布的问数模型",
+                "semantic_model_ids": missing,
+            },
+        )
+    return normalized
+
+
+async def _sync_assistant_data_models(
+    request: Request, *, agent: dict[str, Any], data_model_ids: tuple[UUID, ...],
+) -> None:
+    await _data_query(request).management_sync_agent_bindings(
         consumer_app_id="assistant",
         agent_id=UUID(str(agent["agent_id"])),
         agent_version_id=UUID(str(agent["agent_version_id"])),
-        semantic_model_ids={UUID(str(value)) for value in raw_model_ids},
+        semantic_model_ids=set(data_model_ids),
         auth_context=request.state.auth_context,
     )
-    if not matched:
-        raise HTTPException(422, {"code": "APP_AGENT_QUERY_BINDING_REQUIRED", "message": "启用问数 Agent 前必须为当前版本配置有效查询绑定"})
 
 
 @router.post("/auth/login")
@@ -1239,134 +1248,6 @@ async def get_assistant_semantic_model_generation(
     )
 
 
-@router.get("/data-models/policy-subjects")
-async def list_assistant_policy_subjects(request: Request):
-    domain_id, _, _ = await _require(
-        request, "assistant:data_model_manage"
-    )
-    return await _access(request).list_policy_subjects(
-        app_id="assistant", domain_id=domain_id
-    )
-
-
-@router.get("/data-models/policy-bindings")
-async def list_assistant_policy_bindings(
-    request: Request,
-    cursor: UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-):
-    await _require(request, "assistant:data_model_manage")
-    return await _data_query(request).management_list(
-        resource="policy-bindings",
-        cursor=cursor,
-        limit=limit,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post(
-    "/data-models/policy-bindings", status_code=status.HTTP_201_CREATED
-)
-async def create_assistant_policy_binding(
-    payload: AssistantPolicyBindingCreatePayload,
-    request: Request,
-):
-    await _require(request, "assistant:data_model_manage")
-    if not payload.actor_ids and not payload.roles:
-        raise HTTPException(
-            422,
-            {
-                "code": "POLICY_SUBJECT_REQUIRED",
-                "message": "至少选择一个用户或角色",
-            },
-        )
-    return await _data_query(request).management_create(
-        resource="policy-bindings",
-        payload={
-            "semantic_model_ids": [
-                str(item) for item in payload.semantic_model_ids
-            ],
-            "subject_selector": {
-                "actor_ids": list(payload.actor_ids),
-                "roles": list(payload.roles),
-            },
-            "budget": payload.budget.model_dump(),
-        },
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/data-models/agent-bindings")
-async def list_assistant_agent_query_bindings(
-    request: Request,
-    cursor: UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-):
-    await _require(request, "assistant:data_model_manage")
-    return await _data_query(request).management_list(
-        resource="agent-bindings",
-        cursor=cursor,
-        limit=limit,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.get("/data-models/agents")
-async def list_assistant_agents_for_query_binding(request: Request):
-    domain_id, _, _ = await _require(
-        request, "assistant:data_model_manage"
-    )
-    return await _client(request).list_agents(
-        domain_id=domain_id,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post(
-    "/data-models/agent-bindings", status_code=status.HTTP_201_CREATED
-)
-async def create_assistant_agent_query_binding(
-    payload: AssistantAgentQueryBindingCreatePayload,
-    request: Request,
-):
-    domain_id, _, _ = await _require(
-        request, "assistant:data_model_manage"
-    )
-    agent = await _client(request).get_agent(
-        agent_id=payload.agent_id,
-        domain_id=domain_id,
-        auth_context=request.state.auth_context,
-    )
-    agent_version_id = agent.get("agent_version_id")
-    if not agent_version_id:
-        raise HTTPException(
-            409,
-            {
-                "code": "AGENT_VERSION_MISSING",
-                "message": "Assistant Agent 缺少当前版本，无法创建问数绑定",
-            },
-        )
-    if agent.get("status") != "DRAFT":
-        raise HTTPException(
-            409,
-            {
-                "code": "AGENT_DRAFT_REQUIRED",
-                "message": "请先将 Assistant Agent 保存为草稿，再创建问数绑定",
-            },
-        )
-    return await _data_query(request).management_create(
-        resource="agent-bindings",
-        payload={
-            "consumer_app_id": "assistant",
-            "agent_id": str(payload.agent_id),
-            "agent_version_id": str(agent_version_id),
-            "semantic_model_id": str(payload.semantic_model_id),
-            "policy_binding_id": str(payload.policy_binding_id),
-        },
-        auth_context=request.state.auth_context,
-    )
-
-
 @router.get("/data-models")
 async def list_assistant_semantic_models(
     request: Request,
@@ -1540,28 +1421,6 @@ async def list_agent_management_options(request: Request):
             auth_context=auth_context,
         )
     )
-    policies = _collection_items(
-        await _data_query(request).management_list(
-            resource="policy-bindings",
-            cursor=None,
-            limit=200,
-            auth_context=auth_context,
-        )
-    )
-    agent_bindings = _collection_items(
-        await _data_query(request).management_list(
-            resource="agent-bindings",
-            cursor=None,
-            limit=200,
-            auth_context=auth_context,
-        )
-    )
-    policy_model_ids = {
-        str(model_id)
-        for policy in policies
-        if str(policy.get("status") or "") == "ACTIVE"
-        for model_id in policy.get("semantic_model_ids") or []
-    }
     return {
         "knowledge_cores": [
             {
@@ -1578,26 +1437,9 @@ async def list_agent_management_options(request: Request):
                 "display_name": item.get("display_name"),
                 "description": item.get("description"),
                 "active_version": item.get("active_version"),
-                "policy_ready": (
-                    str(item.get("semantic_model_id")) in policy_model_ids
-                ),
-                "selectable": (
-                    item.get("active_version") is not None
-                    and str(item.get("semantic_model_id"))
-                    in policy_model_ids
-                ),
+                "selectable": item.get("active_version") is not None,
             }
             for item in semantic_models
-        ],
-        "agent_bindings": [
-            {
-                "agent_id": item.get("agent_id"),
-                "agent_version_id": item.get("agent_version_id"),
-                "semantic_model_id": item.get("semantic_model_id"),
-                "status": item.get("status"),
-            }
-            for item in agent_bindings
-            if item.get("consumer_app_id") == "assistant"
         ],
         "models": await load_model_catalog(request),
     }
@@ -1606,11 +1448,32 @@ async def list_agent_management_options(request: Request):
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
 async def create_agent(payload: AssistantAgentCreatePayload, request: Request):
     domain_id, _, _ = await _require(request, "assistant:agent_manage")
+    data_model_ids = await _require_published_data_models(
+        request, data_model_ids=payload.data_model_ids,
+    )
     if payload.status == "ACTIVE":
         await _require_active_knowledge_core(request, domain_id=domain_id, knowledge_core_id=payload.knowledge_core_id)
-        if payload.data_model_ids:
-            raise HTTPException(422, {"code": "APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", "message": "带问数能力的 Agent 必须先以草稿创建并配置有效查询绑定，再单独启用"})
-    return await _client(request).create_agent(payload={"domain_id": domain_id, **payload.model_dump(mode="json")}, auth_context=request.state.auth_context)
+    requested_status = payload.status
+    values = payload.model_dump(mode="json")
+    values["status"] = "DRAFT"
+    agent = await _client(request).create_agent(
+        payload={"domain_id": domain_id, **values},
+        auth_context=request.state.auth_context,
+    )
+    await _sync_assistant_data_models(
+        request, agent=agent, data_model_ids=data_model_ids,
+    )
+    if requested_status == "ACTIVE":
+        agent = await _client(request).update_agent(
+            agent_id=UUID(str(agent["agent_id"])),
+            payload={
+                "domain_id": domain_id,
+                "expected_row_version": int(agent["row_version"]),
+                "status": "ACTIVE",
+            },
+            auth_context=request.state.auth_context,
+        )
+    return agent
 
 
 @router.get("/agents/{agent_id}")
@@ -1631,7 +1494,20 @@ async def update_agent(
     current = await _client(request).get_agent(agent_id=agent_id, domain_id=domain_id, auth_context=request.state.auth_context)
     values = payload.model_dump(mode="json", exclude_unset=True)
     status_value = values.get("status", current["status"])
-    version_fields = {"knowledge_core_id", "data_model_ids", "models", "instruction", "config"}
+    version_fields = {
+        "knowledge_core_id", "data_model_ids", "models", "instruction", "config"
+    }
+    needs_sync = bool(version_fields.intersection(values)) or status_value == "ACTIVE"
+    raw_data_model_ids = values.get(
+        "data_model_ids", current.get("data_model_ids") or []
+    )
+    data_model_ids = (
+        await _require_published_data_models(
+            request, data_model_ids=raw_data_model_ids,
+        )
+        if needs_sync
+        else tuple(UUID(str(value)) for value in raw_data_model_ids)
+    )
     if status_value == "ACTIVE":
         await _require_active_knowledge_core(
             request, domain_id=domain_id,
@@ -1645,12 +1521,29 @@ async def update_agent(
                 else None
             ),
         )
-        data_model_ids = values.get("data_model_ids", current.get("data_model_ids") or [])
-        if data_model_ids:
-            if version_fields.intersection(values):
-                raise HTTPException(422, {"code": "APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", "message": "请先保存 Agent 草稿版本、创建该版本的查询绑定，再单独启用"})
-            await _require_active_data_binding(request, agent=current)
-    return await _client(request).update_agent(agent_id=agent_id, payload={"domain_id": domain_id, **values}, auth_context=request.state.auth_context)
+    requested_status = status_value
+    if requested_status == "ACTIVE":
+        values["status"] = "DRAFT"
+    agent = await _client(request).update_agent(
+        agent_id=agent_id,
+        payload={"domain_id": domain_id, **values},
+        auth_context=request.state.auth_context,
+    )
+    if needs_sync:
+        await _sync_assistant_data_models(
+            request, agent=agent, data_model_ids=data_model_ids,
+        )
+    if requested_status == "ACTIVE" and agent.get("status") != "ACTIVE":
+        agent = await _client(request).update_agent(
+            agent_id=agent_id,
+            payload={
+                "domain_id": domain_id,
+                "expected_row_version": int(agent["row_version"]),
+                "status": "ACTIVE",
+            },
+            auth_context=request.state.auth_context,
+        )
+    return agent
 
 
 @router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1661,7 +1554,7 @@ async def archive_agent(
 ):
     """归档 Agent 并保留历史版本、运行记录及审计关系。"""
     domain_id, _, _ = await _require(request, "assistant:agent_manage")
-    await _client(request).update_agent(
+    agent = await _client(request).update_agent(
         agent_id=agent_id,
         payload={
             "domain_id": domain_id,
@@ -1669,5 +1562,8 @@ async def archive_agent(
             "status": "ARCHIVED",
         },
         auth_context=request.state.auth_context,
+    )
+    await _sync_assistant_data_models(
+        request, agent=agent, data_model_ids=(),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

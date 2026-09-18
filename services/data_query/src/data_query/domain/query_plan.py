@@ -9,9 +9,9 @@ class QueryPlanValidationError(ValueError):
     """Query Plan 的稳定拒绝码。"""
 
 
-def validate_query_plan(*, plan: DataQueryPlanV1, model: SemanticModelDefinition, policy_max_limit: int) -> None:
+def validate_query_plan(*, plan: DataQueryPlanV1, model: SemanticModelDefinition, guardrail_max_limit: int) -> None:
     """验证所有名称均来自已发布 Semantic Model，绝不接触物理 SQL 名称。"""
-    if plan.limit > policy_max_limit:
+    if plan.limit > guardrail_max_limit:
         raise QueryPlanValidationError("POLICY_LIMIT_EXCEEDED")
     datasets = {item.name for item in model.datasets}
     if plan.dataset not in datasets:

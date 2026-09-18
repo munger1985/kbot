@@ -196,6 +196,21 @@ class AgentBindingCreate(_Contract):
     policy_binding_id: UUID
 
 
+class AgentBindingSync(_Contract):
+    """由业务 App 按不可变 Agent 版本同步问数模型投影。"""
+
+    consumer_app_id: str = Field(min_length=1, max_length=128)
+    agent_id: UUID
+    agent_version_id: UUID
+    semantic_model_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
+
+    @model_validator(mode="after")
+    def unique_models(self) -> "AgentBindingSync":
+        if len(self.semantic_model_ids) != len(set(self.semantic_model_ids)):
+            raise ValueError("semantic_model_ids 不能重复")
+        return self
+
+
 class AgentBindingMatch(_Contract):
     consumer_app_id: str = Field(min_length=1, max_length=128)
     agent_id: UUID
@@ -466,7 +481,6 @@ class AgentBindingView(_Contract):
     agent_id: UUID
     agent_version_id: UUID
     semantic_model_id: UUID
-    policy_binding_id: UUID
     status: str
     row_version: int = Field(ge=1)
 

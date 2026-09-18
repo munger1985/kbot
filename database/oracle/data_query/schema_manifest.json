@@ -7,9 +7,9 @@
     {"name": "001_data_sources.sql", "statements": 3, "sha256": "21f6e349663f738f955032a4acc41c0a79f47c0a4cf8cd392d758469febe1dee"},
     {"name": "002_schema_snapshots.sql", "statements": 4, "sha256": "354409951aee86413cf2683e85b49148b54d4ecf348aa4cb1c906d2552ca5706"},
     {"name": "003_semantic_models.sql", "statements": 6, "sha256": "bd48cb7a2a8873abc1fbdec7f5b3df7aa53bb4ab6870f9f7f8aadb4c79a019cb"},
-    {"name": "004_bindings_policies.sql", "statements": 4, "sha256": "b2ee8af84e6d4dc031ae8bb2f34da5017e4060a700a1ffc825b704e5ba16562d"},
-    {"name": "005_query_runtime.sql", "statements": 7, "sha256": "3e375464a7ef5aeb8feda90feb466ccd50e6cf986f74e5ffd20aeda156506083"},
-    {"name": "006_audit_views.sql", "statements": 28, "sha256": "92e357a080998738e41c622197feecb9197e3c73de60e9f776e57f14f4eb8af4"}
+    {"name": "004_bindings_policies.sql", "statements": 4, "sha256": "c8931fd9b4c0da4c7bbdd3c37fd1c6b49da3184db283f9afb0ce8a93d8a2bb28"},
+    {"name": "005_query_runtime.sql", "statements": 7, "sha256": "055e6a2900fe93858bae72025b50aefdb80b96a7727500f87c29207d5e430102"},
+    {"name": "006_audit_views.sql", "statements": 27, "sha256": "5eca07170ed70fadece24edc5433973b7b4adf486b4aa739fe3c563a8490bde2"}
   ],
   "tables": [
     "KBOT_DQ_DATA_SOURCE", "KBOT_DQ_SCHEMA_SNAPSHOT",

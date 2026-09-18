@@ -47,6 +47,7 @@ async def create_data_query_run(
     actor_roles: tuple[str, ...],
     trace_id: str,
     command: CreateDataQueryRun,
+    query_guardrail: dict[str, int],
 ) -> DataQueryRunReceipt:
     """验证所有可变管理资源后，写入可重放的 Run/Execution/Event/Audit。"""
     plan_json = command.plan.model_dump(mode="json")
@@ -59,7 +60,7 @@ async def create_data_query_run(
     })
     async with uow_factory() as uow:
         assert uow.runs and uow.semantic_models and uow.semantic_model_versions and uow.schema_snapshots
-        assert uow.data_sources and uow.agent_bindings and uow.policy_bindings and uow.executions and uow.events and uow.audits
+        assert uow.data_sources and uow.agent_bindings and uow.executions and uow.events and uow.audits
         assert uow.platform_access is not None
         agent_domain_id = await uow.platform_access.agent_domain_id(
             domain_id=domain_id, consumer_app_id=command.consumer_app_id,
@@ -100,34 +101,20 @@ async def create_data_query_run(
             raise DataQueryRunError("MODEL_NOT_BOUND")
         if len(bindings) != 1:
             raise DataQueryRunError("AMBIGUOUS_AGENT_BINDING")
-        policy = await uow.policy_bindings.get_by_id(
-            policy_binding_id=bindings[0].policy_binding_id,
-            lock=True,
-        )
-        if policy is None or policy.status != "ACTIVE":
-            raise DataQueryRunError("POLICY_DENIED")
-        subjects = policy.subject_selector_json
-        actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
-        roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
-        managed_app = policy.policy_json.get("managed_consumer_app_id") if isinstance(policy.policy_json, dict) else None
-        managed_access = managed_app == command.consumer_app_id == "km_asset"
-        if not managed_access and actor_id not in actor_ids and not set(actor_roles).intersection(roles):
-            raise DataQueryRunError("POLICY_SUBJECT_DENIED")
-        budget = policy.policy_json.get("budget") if isinstance(policy.policy_json, dict) else None
-        if not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
-            raise DataQueryRunError("POLICY_INVALID")
+        del actor_roles
+        budget = dict(query_guardrail)
         max_concurrent = budget.get("max_concurrent_runs", 4)
         if not isinstance(max_concurrent, int) or max_concurrent < 1:
-            raise DataQueryRunError("POLICY_INVALID")
+            raise DataQueryRunError("QUERY_GUARDRAIL_INVALID")
         if await uow.runs.count_inflight(
             domain_id=domain_id,
             agent_id=command.agent_id,
         ) >= max_concurrent:
-            raise DataQueryRunError("POLICY_CONCURRENCY_EXCEEDED")
+            raise DataQueryRunError("QUERY_CONCURRENCY_EXCEEDED")
         definition = SemanticModelDefinition.model_validate(version.definition_json)
         try:
             validate_query_plan(
-                plan=command.plan, model=definition, policy_max_limit=budget["max_rows"]
+                plan=command.plan, model=definition, guardrail_max_limit=budget["max_rows"]
             )
         except QueryPlanValidationError as exc:
             raise DataQueryRunError(str(exc)) from exc
@@ -135,7 +122,7 @@ async def create_data_query_run(
             compiled = compile_postgresql_query(
                 plan=command.plan,
                 model=definition,
-                policy_max_limit=budget["max_rows"],
+                guardrail_max_limit=budget["max_rows"],
                 scope_value=domain_id,
             )
         else:
@@ -143,7 +130,7 @@ async def create_data_query_run(
                 dialect=source.source_type,
                 plan=command.plan,
                 model=definition,
-                policy_max_limit=budget["max_rows"],
+                guardrail_max_limit=budget["max_rows"],
                 scope_value=domain_id,
             )
         compiled_hash = hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest()
@@ -156,7 +143,7 @@ async def create_data_query_run(
             trace_id=trace_id, idempotency_key=command.idempotency_key, request_fingerprint=fingerprint,
             original_question=command.original_question, standalone_query=command.standalone_query,
             status=DataQueryRunStatus.QUEUED.value, plan_snapshot_json=plan_json,
-            policy_snapshot_json=policy.policy_json,
+            guardrail_snapshot_json=budget,
             semantic_model_snapshot_json={"model_id": str(model.semantic_model_id), "version": version.version_no, "definition": version.definition_json, "snapshot_id": str(snapshot.schema_snapshot_id), "data_source_id": str(source.data_source_id)},
             deadline_at=command.deadline_at,
         )

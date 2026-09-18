@@ -11,7 +11,7 @@
   <header class="assistant-page-head">
     <div>
       <h1>Agents</h1>
-      <p>统一管理知识问答 Agent。创建后先保存草稿；如绑定问数模型，请在问数模型页为当前 Agent 版本创建 Binding，再单独启用。</p>
+      <p>统一管理知识问答 Agent。选择 Knowledge Core 和已发布的问数模型后，系统会自动同步当前版本的能力。</p>
     </div>
     <div class="assistant-actions">
       <button type="button" id="agent-refresh">刷新</button>
@@ -40,11 +40,10 @@
       <div class="assistant-panel-body">
         <dl class="assistant-key-value">
           <div><dt>Knowledge Core</dt><dd>必须为 ACTIVE</dd></div>
-          <div><dt>问数模型</dt><dd>必须已发布且策略有效</dd></div>
-          <div><dt>查询 Binding</dt><dd>必须匹配当前 Agent 版本</dd></div>
+          <div><dt>问数模型</dt><dd>必须已有发布版本</dd></div>
           <div><dt>运行模型</dt><dd>按职责绑定已启用模型</dd></div>
         </dl>
-        <div class="assistant-notice warn">修改 Knowledge Core、问数模型、指令、配置或运行模型会生成新版本。带问数能力的新版本需重新创建查询 Binding。</div>
+        <div class="assistant-notice warn">修改 Knowledge Core、问数模型、指令、配置或运行模型会生成新版本；问数能力由系统自动同步。</div>
       </div>
     </aside>
   </section>

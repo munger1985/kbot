@@ -17,8 +17,8 @@ class CompiledDialectQuery:
     parameters: tuple[Any, ...]
 
 
-def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQueryPlanV1, model: SemanticModelDefinition, policy_max_limit: int, scope_value: int | None = None) -> CompiledDialectQuery:
-    validate_query_plan(plan=plan, model=model, policy_max_limit=policy_max_limit)
+def compile_dialect_query(*, dialect: Literal["MYSQL", "ORACLE"], plan: DataQueryPlanV1, model: SemanticModelDefinition, guardrail_max_limit: int, scope_value: int | None = None) -> CompiledDialectQuery:
+    validate_query_plan(plan=plan, model=model, guardrail_max_limit=guardrail_max_limit)
     quote = (lambda name: f"`{name}`") if dialect == "MYSQL" else (lambda name: f'"{name}"')
     placeholder = (lambda index: "%s") if dialect == "MYSQL" else (lambda index: f":p{index}")
     dataset = next(item for item in model.datasets if item.name == plan.dataset)

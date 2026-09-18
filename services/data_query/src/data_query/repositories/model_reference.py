@@ -76,7 +76,7 @@ class DataQueryModelReferenceRepository:
                 _contains_model_id(payload, expected)
                 for payload in (
                     row.plan_snapshot_json,
-                    row.policy_snapshot_json,
+                    row.guardrail_snapshot_json,
                     row.semantic_model_snapshot_json,
                 )
             )

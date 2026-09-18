@@ -159,6 +159,10 @@ class _DataQueryClient:
     async def management_has_active_agent_binding(self, **kwargs):
         return True
 
+    async def management_sync_agent_bindings(self, **kwargs):
+        self.calls.append(("sync_agent_bindings", kwargs))
+        return {"items": [], "next_cursor": None}
+
     async def management_capabilities(self, **kwargs):
         self.calls.append(("capabilities", kwargs))
         return {"items": [{"source_type": "ORACLE", "display_name": "Oracle"}]}
@@ -276,14 +280,26 @@ class _AssistantClient:
 
     async def create_agent(self, *, payload, auth_context):
         self.payload = payload
-        return {"agent_id": str(AGENT_ID), **payload}
+        self.agent = {
+            **self.agent,
+            **payload,
+            "agent_id": str(AGENT_ID),
+            "agent_version_id": str(VERSION_ID),
+            "row_version": 1,
+        }
+        return self.agent
 
     async def get_agent(self, **kwargs):
         return self.agent
 
     async def update_agent(self, *, payload, **kwargs):
         self.payload = payload
-        return {**self.agent, **payload}
+        self.agent = {
+            **self.agent,
+            **payload,
+            "row_version": int(self.agent.get("row_version", 1)) + 1,
+        }
+        return self.agent
 
     async def list_bindings(self, **kwargs):
         return []
@@ -448,11 +464,13 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(422, response.status_code)
         self.assertEqual("AGENT_KNOWLEDGE_CORE_INACTIVE", response.json()["code"])
 
-    def test_activation_cannot_change_a_data_bound_version(self):
+    def test_activation_changes_data_models_and_syncs_current_version(self):
         response = self.client.patch(f"/api/v1/apps/assistant/agents/{AGENT_ID}", headers=self._headers(), json={"expected_row_version": 1, "data_model_ids": [str(DATA_MODEL_ID)], "status": "ACTIVE"})
 
-        self.assertEqual(422, response.status_code)
-        self.assertEqual("APP_AGENT_QUERY_BINDING_VERSION_REQUIRED", response.json()["code"])
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("ACTIVE", response.json()["status"])
+        sync = next(call for call in self.data_query.calls if call[0] == "sync_agent_bindings")
+        self.assertEqual({DATA_MODEL_ID}, sync[1]["semantic_model_ids"])
 
     def test_agent_management_options_only_return_safe_selectable_resources(self):
         self.knowledge.collections = [self.knowledge.collection]
@@ -466,17 +484,8 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(str(CORE_ID), body["knowledge_cores"][0]["collection_id"])
         self.assertTrue(body["knowledge_cores"][0]["selectable"])
         self.assertEqual(str(DATA_MODEL_ID), body["data_models"][0]["semantic_model_id"])
-        self.assertTrue(body["data_models"][0]["policy_ready"])
         self.assertTrue(body["data_models"][0]["selectable"])
-        self.assertEqual(
-            {
-                "agent_id": str(AGENT_ID),
-                "agent_version_id": str(VERSION_ID),
-                "semantic_model_id": str(DATA_MODEL_ID),
-                "status": "ACTIVE",
-            },
-            body["agent_bindings"][0],
-        )
+        self.assertNotIn("agent_bindings", body)
         self.assertEqual(
             {str(EMBEDDING_ID), str(VISUAL_ID), str(LLM_ID)},
             {row["model_id"] for row in body["models"]},
@@ -852,14 +861,7 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(422, response.status_code, response.text)
         self.assertEqual("REQUEST_VALIDATION_FAILED", response.json()["code"])
 
-    def test_model_review_publish_policy_and_agent_binding(self):
-        agents = self.client.get(
-            "/api/v1/apps/assistant/data-models/agents",
-            headers=self._headers(),
-        )
-        self.assertEqual(200, agents.status_code, agents.text)
-        self.assertEqual(str(AGENT_ID), agents.json()[0]["agent_id"])
-
+    def test_model_review_and_publish_without_policy_or_manual_binding(self):
         review = self.client.post(
             f"/api/v1/apps/assistant/data-models/{DATA_MODEL_ID}/versions/{VERSION_ID}/submit-review",
             headers=self._headers(),
@@ -879,49 +881,6 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual(204, published.status_code, published.text)
         self.assertEqual("publish", self.data_query.calls[-1][0])
 
-        policy = self.client.post(
-            "/api/v1/apps/assistant/data-models/policy-bindings",
-            headers=self._headers(),
-            json={
-                "semantic_model_ids": [str(DATA_MODEL_ID)],
-                "actor_ids": ["user-41"],
-                "roles": [],
-                "budget": {"max_rows": 500},
-            },
-        )
-        self.assertEqual(201, policy.status_code, policy.text)
-        policy_payload = self.data_query.calls[-1][1]["payload"]
-        self.assertEqual([str(DATA_MODEL_ID)], policy_payload["semantic_model_ids"])
-        self.assertEqual(["user-41"], policy_payload["subject_selector"]["actor_ids"])
-
-        binding = self.client.post(
-            "/api/v1/apps/assistant/data-models/agent-bindings",
-            headers=self._headers(),
-            json={
-                "agent_id": str(AGENT_ID),
-                "semantic_model_id": str(DATA_MODEL_ID),
-                "policy_binding_id": str(POLICY_ID),
-            },
-        )
-        self.assertEqual(201, binding.status_code, binding.text)
-        binding_payload = self.data_query.calls[-1][1]["payload"]
-        self.assertEqual("assistant", binding_payload["consumer_app_id"])
-        self.assertEqual(str(VERSION_ID), binding_payload["agent_version_id"])
-
-    def test_agent_query_binding_requires_draft_agent(self):
-        self.assistant.agent["status"] = "ACTIVE"
-        response = self.client.post(
-            "/api/v1/apps/assistant/data-models/agent-bindings",
-            headers=self._headers(),
-            json={
-                "agent_id": str(AGENT_ID),
-                "semantic_model_id": str(DATA_MODEL_ID),
-                "policy_binding_id": str(POLICY_ID),
-            },
-        )
-
-        self.assertEqual(409, response.status_code, response.text)
-        self.assertEqual("AGENT_DRAFT_REQUIRED", response.json()["code"])
 
 
 if __name__ == "__main__":

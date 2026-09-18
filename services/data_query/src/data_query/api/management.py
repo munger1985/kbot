@@ -14,6 +14,7 @@ from data_query.api.dependencies import (
 from data_query.application import DataQueryManagementService
 from data_query.contracts import (
     AgentBindingCreate,
+    AgentBindingSync,
     AgentBindingMatch,
     AgentBindingMatchResult,
     AgentBindingPage,
@@ -292,6 +293,16 @@ async def change_policy_binding_status(policy_binding_id: UUID, body: PolicyBind
 async def create_agent_binding(body: AgentBindingCreate, request: Request, service: Service, context: Auth) -> AgentBindingView:
     domain_id, actor_id = _require_management(request, context)
     return await service.create_agent_binding(domain_id=domain_id, actor_id=actor_id, command=body)
+
+
+@router.put("/agent-bindings/sync", response_model=AgentBindingPage)
+async def sync_agent_bindings(
+    body: AgentBindingSync, request: Request, service: Service, context: Auth,
+) -> AgentBindingPage:
+    domain_id, actor_id = _require_management(request, context)
+    return await service.sync_agent_bindings(
+        domain_id=domain_id, actor_id=actor_id, command=body,
+    )
 
 
 @router.get("/agent-bindings", response_model=AgentBindingPage)

@@ -35,7 +35,7 @@ class QueryExecutorResolver(Protocol):
 
     async def execute(
         self, *, connector_type: str, data_source_id: UUID,
-        policy_budget: dict[str, object], compiled: object,
+        query_guardrail: dict[str, object], compiled: object,
     ) -> NormalizedQueryResult: ...
 
 
@@ -48,7 +48,7 @@ class _ClaimedRun:
     connector_type: str
     plan_snapshot: dict[str, object]
     semantic_model_snapshot: dict[str, object]
-    policy_snapshot: dict[str, object]
+    guardrail_snapshot: dict[str, object]
     deadline_at: datetime | None
     compiled_query_hash: str
 
@@ -83,13 +83,13 @@ class DataQueryWorkerService:
                 raise TimeoutError("DATA_QUERY_TIMEOUT")
             plan = DataQueryPlanV1.model_validate(claimed.plan_snapshot)
             definition = SemanticModelDefinition.model_validate(claimed.semantic_model_snapshot["definition"])
-            budget = claimed.policy_snapshot["budget"]
-            if not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
-                raise ValueError("POLICY_INVALID")
+            budget = claimed.guardrail_snapshot
+            if not isinstance(budget.get("max_rows"), int):
+                raise ValueError("QUERY_GUARDRAIL_INVALID")
             if claimed.connector_type == "POSTGRESQL":
-                compiled = compile_postgresql_query(plan=plan, model=definition, policy_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
+                compiled = compile_postgresql_query(plan=plan, model=definition, guardrail_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
             elif claimed.connector_type in {"MYSQL", "ORACLE"}:
-                compiled = compile_dialect_query(dialect=claimed.connector_type, plan=plan, model=definition, policy_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
+                compiled = compile_dialect_query(dialect=claimed.connector_type, plan=plan, model=definition, guardrail_max_limit=budget["max_rows"], scope_value=claimed.domain_id)
             else:
                 raise ValueError("CONNECTOR_NOT_SUPPORTED")
             if hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest() != claimed.compiled_query_hash:
@@ -100,7 +100,7 @@ class DataQueryWorkerService:
                 self._executor_resolver.execute(
                     connector_type=claimed.connector_type,
                     data_source_id=source_id,
-                    policy_budget=budget,
+                    query_guardrail=budget,
                     compiled=compiled,
                 ),
             )
@@ -139,7 +139,7 @@ class DataQueryWorkerService:
                 await uow.commit()
                 return None
             run.status = "EXECUTING"
-            if not isinstance(run.plan_snapshot_json, dict) or not isinstance(run.semantic_model_snapshot_json, dict) or not isinstance(run.policy_snapshot_json, dict):
+            if not isinstance(run.plan_snapshot_json, dict) or not isinstance(run.semantic_model_snapshot_json, dict) or not isinstance(run.guardrail_snapshot_json, dict):
                 execution.status = "FAILED"
                 run.status = "FAILED"
                 await uow.commit()
@@ -153,7 +153,7 @@ class DataQueryWorkerService:
                 connector_type=execution.connector_type,
                 plan_snapshot=run.plan_snapshot_json,
                 semantic_model_snapshot=run.semantic_model_snapshot_json,
-                policy_snapshot=run.policy_snapshot_json,
+                guardrail_snapshot=run.guardrail_snapshot_json,
                 deadline_at=run.deadline_at,
                 compiled_query_hash=str(execution.compiled_query_hash or ""),
             )

@@ -140,7 +140,7 @@ async def smoke() -> None:
         dialect="ORACLE",
         plan=plan,
         model=model,
-        policy_max_limit=1,
+        guardrail_max_limit=1,
     )
     result = await DataSourceExecutorResolver._execute_oracle(
         endpoint,
@@ -176,7 +176,7 @@ async def smoke() -> None:
                 standalone_query="租约接管验证",
                 status="QUEUED",
                 plan_snapshot_json={},
-                policy_snapshot_json={},
+                guardrail_snapshot_json={},
                 semantic_model_snapshot_json={},
             ))
             await session.flush()

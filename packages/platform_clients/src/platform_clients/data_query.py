@@ -174,6 +174,27 @@ class DataQueryClient:
         )
         return result.get("matched") is True
 
+    async def management_sync_agent_bindings(
+        self, *, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_ids: set[UUID],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """按业务 Agent 当前版本同步内部问数模型投影。"""
+        return await self._json(
+            "PUT",
+            "/internal/v1/data-query/management/agent-bindings/sync",
+            payload={
+                "consumer_app_id": consumer_app_id,
+                "agent_id": str(agent_id),
+                "agent_version_id": str(agent_version_id),
+                "semantic_model_ids": [
+                    str(item) for item in sorted(semantic_model_ids, key=str)
+                ],
+            },
+            auth_context=auth_context,
+            scopes=("data_query.manage",),
+        )
+
     async def management_test_connection(
         self, *, payload: dict[str, Any], auth_context: AuthContext
     ) -> dict[str, Any]:

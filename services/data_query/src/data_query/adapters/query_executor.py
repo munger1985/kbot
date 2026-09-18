@@ -31,7 +31,7 @@ class DataSourceExecutorResolver:
 
     async def execute(
         self, *, connector_type: str, data_source_id: UUID,
-        policy_budget: dict[str, object], compiled: CompiledPostgreSQLQuery,
+        query_guardrail: dict[str, object], compiled: CompiledPostgreSQLQuery,
     ) -> NormalizedQueryResult:
         async with self._uow_factory() as uow:
             assert uow.data_sources
@@ -46,9 +46,9 @@ class DataSourceExecutorResolver:
             data_source_id=source.data_source_id,
         )
         if connector_type == "MYSQL":
-            return await self._execute_mysql(endpoint, username, password, policy_budget, compiled)
+            return await self._execute_mysql(endpoint, username, password, query_guardrail, compiled)
         if connector_type == "ORACLE":
-            return await self._execute_oracle(endpoint, username, password, policy_budget, compiled)
+            return await self._execute_oracle(endpoint, username, password, query_guardrail, compiled)
         if connector_type != "POSTGRESQL":
             raise ValueError("CONNECTOR_NOT_SUPPORTED")
 
@@ -65,7 +65,7 @@ class DataSourceExecutorResolver:
                 await connection.close()
 
         def integer(name: str, fallback: int) -> int:
-            value = policy_budget.get(name, fallback)
+            value = query_guardrail.get(name, fallback)
             return value if isinstance(value, int) else fallback
 
         return await PostgreSQLReadOnlyExecutor(

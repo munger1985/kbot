@@ -1,4 +1,4 @@
-/* 问数模型管理：数据库连接、结构发现、语义建模、验证、策略与 Agent 绑定。 */
+/* 问数模型管理：数据库连接、结构发现、语义建模、验证与发布。 */
 (function () {
   "use strict";
 
@@ -19,8 +19,6 @@
     models: [],
     modelDetails: new Map(),
     currentModel: null,
-    policies: [],
-    agents: [],
     catalog: [],
     manualObject: null,
     connectionRevision: 0,
@@ -479,18 +477,11 @@
     return state.sources.find((row) => String(row.data_source_id) === String(sourceId))?.display_name || "—";
   }
 
-  function policyCount(modelId) {
-    return state.policies.filter((row) => (
-      row.status === "ACTIVE"
-      && (row.semantic_model_ids || []).map(String).includes(String(modelId))
-    )).length;
-  }
-
   function renderModels() {
     const body = element("data-model-rows");
     element("data-model-count").textContent = `${state.models.length} 个模型`;
     if (!state.models.length) {
-      body.innerHTML = emptyRow(7, "尚无语义数据模型", "完成数据库连接、对象选择和结构采集后，点击“建立数据模型”。");
+      body.innerHTML = emptyRow(6, "尚无语义数据模型", "完成数据库连接、对象选择和结构采集后，点击“建立数据模型”。");
       return;
     }
     body.innerHTML = state.models.map((row) => {
@@ -503,7 +494,6 @@
         <td>${version ? `v${escapeHtml(version.version_no)}` : "—"}</td>
         <td>${statusBadge(version?.status || "DRAFT")}</td>
         <td>${escapeHtml(datasets)}</td>
-        <td>${escapeHtml(policyCount(row.semantic_model_id))}</td>
         <td><button type="button" class="small" data-open-model="${escapeHtml(row.semantic_model_id)}">配置</button></td>
       </tr>`;
     }).join("");
@@ -535,8 +525,6 @@
     element("semantic-model-definition").readOnly = status !== "DRAFT";
     element("submit-model-review").hidden = status !== "DRAFT";
     element("publish-model").hidden = status !== "REVIEW";
-    element("configure-model-policy").disabled = status !== "ACTIVE";
-    element("bind-model-agent").disabled = status !== "ACTIVE" || policyCount(version?.semantic_model_id) === 0;
     element("run-model-validation").disabled = !["DRAFT", "REVIEW"].includes(status) || !llmModels().length;
   }
 
@@ -653,120 +641,17 @@
         expected_row_version: version.row_version,
       },
     );
-    toast("语义数据模型已发布，可以配置策略和 Agent Binding。");
+    toast("语义数据模型已发布，可直接在 Agent 页面选择使用。" );
     await refreshCurrentModel();
   }
 
-  function renderPolicySubjects(subjects) {
-    const members = subjects.members || [];
-    const roles = subjects.roles || [];
-    element("policy-members").innerHTML = members.length
-      ? members.map((row) => `<label><input type="checkbox" name="policy-member" value="${escapeHtml(row.id)}"> <span>${escapeHtml(row.display_name || row.username || row.id)}</span></label>`).join("")
-      : "<p>当前 Domain 没有可选用户。</p>";
-    element("policy-roles").innerHTML = roles.length
-      ? roles.map((row) => `<label><input type="checkbox" name="policy-role" value="${escapeHtml(row.code)}"> <span>${escapeHtml(row.display_name || row.code)}</span></label>`).join("")
-      : "<p>当前 App 没有可选角色。</p>";
-  }
-
-  async function openPolicy() {
-    const version = state.currentModel?.version;
-    if (version?.status !== "ACTIVE") return;
-    const subjects = await KBotAssistantApi.json("/data-models/policy-subjects", "GET");
-    renderPolicySubjects(subjects);
-    openDialog("policy-dialog");
-  }
-
-  function checkedValues(name) {
-    return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((node) => node.value);
-  }
-
-  async function createPolicy(event) {
-    event.preventDefault();
-    const modelId = state.currentModel?.detail?.semantic_model_id;
-    const actorIds = checkedValues("policy-member");
-    const roles = checkedValues("policy-role");
-    if (!actorIds.length && !roles.length) {
-      toast("策略至少需要选择一个用户或角色。", "error");
-      return;
-    }
-    await KBotAssistantApi.json(
-      "/data-models/policy-bindings", "POST",
-      {
-        semantic_model_ids: [modelId],
-        actor_ids: actorIds,
-        roles,
-        budget: {
-          max_rows: Number(element("policy-max-rows").value),
-          max_result_bytes: Number(element("policy-max-bytes").value),
-          statement_timeout_seconds: Number(element("policy-timeout").value),
-          max_concurrent_runs: Number(element("policy-concurrency").value),
-        },
-      },
-    );
-    closeDialog("policy-dialog");
-    toast("问数策略已创建。");
-    await loadPolicies();
-    await loadModels();
-    updateModelActions(state.currentModel?.version);
-  }
-
-  async function loadPolicies() {
-    const payload = await KBotAssistantApi.json("/data-models/policy-bindings?limit=200", "GET");
-    state.policies = items(payload);
-  }
-
-  async function loadAgents() {
-    const payload = await KBotAssistantApi.json("/data-models/agents", "GET");
-    state.agents = Array.isArray(payload) ? payload : items(payload);
-  }
-
-  async function openAgentBinding() {
-    const modelId = state.currentModel?.detail?.semantic_model_id;
-    const draftAgents = state.agents.filter((row) => row.status === "DRAFT");
-    const policies = state.policies.filter((row) => (
-      row.status === "ACTIVE"
-      && (row.semantic_model_ids || []).map(String).includes(String(modelId))
-    ));
-    element("query-binding-agent").innerHTML = draftAgents.length
-      ? draftAgents.map((row) => `<option value="${escapeHtml(row.agent_id)}">${escapeHtml(row.display_name || row.agent_id)} · 草稿</option>`).join("")
-      : '<option value="">没有可绑定的草稿 Agent</option>';
-    element("query-binding-policy").innerHTML = policies.length
-      ? policies.map((row) => `<option value="${escapeHtml(row.policy_binding_id)}">策略 ${escapeHtml(row.policy_binding_id)} · ${escapeHtml(row.status)}</option>`).join("")
-      : '<option value="">请先创建有效策略</option>';
-    openDialog("agent-query-binding-dialog");
-  }
-
-  async function createAgentBinding(event) {
-    event.preventDefault();
-    const agentId = element("query-binding-agent").value;
-    const policyId = element("query-binding-policy").value;
-    if (!agentId || !policyId) {
-      toast("请选择 Agent 和有效策略。", "error");
-      return;
-    }
-    await KBotAssistantApi.json(
-      "/data-models/agent-bindings", "POST",
-      {
-        agent_id: agentId,
-        semantic_model_id: state.currentModel.detail.semantic_model_id,
-        policy_binding_id: policyId,
-      },
-    );
-    closeDialog("agent-query-binding-dialog");
-    toast("Agent 问数绑定已创建，请在 Agent 页面确认模型范围并启用。");
-  }
-
   async function loadReferenceData() {
-    const [connectors, catalog, policies, agents] = await Promise.all([
+    const [connectors, catalog] = await Promise.all([
       KBotAssistantApi.json("/data-models/connector-capabilities", "GET"),
       KBotAssistantApi.json("/model-catalog", "GET"),
-      KBotAssistantApi.json("/data-models/policy-bindings?limit=200", "GET"),
-      KBotAssistantApi.json("/data-models/agents", "GET"),
     ]);
     state.connectors = items(connectors);
     state.catalog = items(catalog);
-    state.policies = items(policies);
-    state.agents = Array.isArray(agents) ? agents : items(agents);
     connectorOptions();
   }
 
@@ -827,10 +712,6 @@
     element("run-model-validation").addEventListener("click", () => runValidation().catch(showError));
     element("submit-model-review").addEventListener("click", () => submitReview().catch(showError));
     element("publish-model").addEventListener("click", () => publishModel().catch(showError));
-    element("configure-model-policy").addEventListener("click", () => openPolicy().catch(showError));
-    element("policy-form").addEventListener("submit", (event) => createPolicy(event).catch(showError));
-    element("bind-model-agent").addEventListener("click", () => openAgentBinding().catch(showError));
-    element("agent-query-binding-form").addEventListener("submit", (event) => createAgentBinding(event).catch(showError));
     element("manual-ddl-form").addEventListener("submit", (event) => saveManualDdl(event).catch(showError));
     element("data-model-refresh").addEventListener("click", () => loadPage().catch(showError));
   }
@@ -843,7 +724,7 @@
     } catch (error) {
       showError(error);
       element("data-source-list").innerHTML = '<div class="assistant-empty"><div><strong>无法读取问数配置</strong><p>请确认 Data Query API 与 Worker 均已启动。</p></div></div>';
-      element("data-model-rows").innerHTML = emptyRow(7, "无法读取语义模型", "请检查 Data Query 服务状态和当前 Domain 权限。");
+      element("data-model-rows").innerHTML = emptyRow(6, "无法读取语义模型", "请检查 Data Query 服务状态和当前 Domain 权限。");
     }
   });
 })();

@@ -11,7 +11,7 @@
   });
   const state = {
     rows: [],
-    options: { knowledge_cores: [], data_models: [], agent_bindings: [], models: [] },
+    options: { knowledge_cores: [], data_models: [], models: [] },
     editing: null,
   };
 
@@ -67,25 +67,11 @@
     return labels.length ? `<div class="agent-model-list">${labels.join("")}</div>` : "—";
   }
 
-  function hasActiveQueryBinding(row) {
-    const modelIds = new Set((row.data_model_ids || []).map(String));
-    if (!modelIds.size) return true;
-    return state.options.agent_bindings.some((binding) => (
-      binding.status === "ACTIVE"
-      && String(binding.agent_id) === String(row.agent_id)
-      && String(binding.agent_version_id) === String(row.agent_version_id)
-      && modelIds.has(String(binding.semantic_model_id))
-    ));
-  }
-
   function actionButtons(row) {
     const id = escapeHtml(row.agent_id);
     if (row.status === "ARCHIVED") return '<span class="assistant-badge">只读</span>';
-    const needsQueryBinding = (row.data_model_ids || []).length && !hasActiveQueryBinding(row);
     const lifecycle = row.status === "ACTIVE"
       ? `<button class="small" type="button" data-agent-action="disable" data-agent-id="${id}">停用</button>`
-      : needsQueryBinding
-        ? `<button class="small primary" type="button" data-agent-action="configure-query" data-agent-id="${id}">配置问数 Binding</button>`
       : `<button class="small primary" type="button" data-agent-action="activate" data-agent-id="${id}">启用</button>`;
     return `<div class="assistant-row-actions">
       <button class="small" type="button" data-agent-action="edit" data-agent-id="${id}">编辑</button>
@@ -156,7 +142,7 @@
     const dataModels = state.options.data_models.map((row) => {
       const selected = selectedIds.has(String(row.semantic_model_id));
       const disabled = !row.selectable && !selected;
-      const reason = row.selectable ? "" : row.active_version == null ? " · 未发布" : " · 缺少有效策略";
+      const reason = row.selectable ? "" : " · 未发布";
       return `<option value="${escapeHtml(row.semantic_model_id)}"${selected ? " selected" : ""}${disabled ? " disabled" : ""}>${escapeHtml((row.display_name || row.semantic_model_id) + reason)}</option>`;
     });
     for (const id of selectedIds) {
@@ -275,16 +261,12 @@
         });
         closeDialog();
         await loadAll();
-        toast("Agent 草稿已创建。如需问数，请为当前版本创建查询 Binding。");
+        toast("Agent 草稿已创建，问数模型已自动同步。" );
         return;
       }
 
       const changes = versionChanges(version, state.editing);
-      let targetStatus = element("agent-status").value;
-      if (Object.keys(changes).length && version.data_model_ids.length && targetStatus === "ACTIVE") {
-        targetStatus = "DRAFT";
-        toast("运行版本已修改，Agent 已转为草稿；请重新创建查询 Binding 后再启用。");
-      }
+      const targetStatus = element("agent-status").value;
       const payload = {
         expected_row_version: Number(state.editing.row_version),
         ...changes,
@@ -317,11 +299,6 @@
       const detail = await KBotAssistantApi.json(`/agents/${encodeURIComponent(agentId)}`, "GET");
       fillForm(detail);
       openDialog();
-      return;
-    }
-    if (action === "configure-query") {
-      toast("请在问数模型详情中点击“绑定 Agent”，为当前草稿版本创建 Binding。");
-      globalThis.setTimeout(() => { location.href = "./data-models.html"; }, 500);
       return;
     }
     if (action === "activate") {
@@ -365,7 +342,6 @@
       state.options = {
         knowledge_cores: Array.isArray(options?.knowledge_cores) ? options.knowledge_cores : [],
         data_models: Array.isArray(options?.data_models) ? options.data_models : [],
-        agent_bindings: Array.isArray(options?.agent_bindings) ? options.agent_bindings : [],
         models: Array.isArray(options?.models) ? options.models : [],
       };
       renderRows();

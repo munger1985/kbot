@@ -25,7 +25,7 @@
       <li data-workflow-step="discover"><strong>2. 发现对象</strong><span>读取允许 Schema 的表和视图</span></li>
       <li data-workflow-step="capture"><strong>3. 采集结构</strong><span>选择对象并读取字段与约束</span></li>
       <li data-workflow-step="model"><strong>4. 数据建模</strong><span>生成并复核指标、维度和映射</span></li>
-      <li data-workflow-step="publish"><strong>5. 验证发布</strong><span>真实问题验证、策略和 Agent 绑定</span></li>
+      <li data-workflow-step="publish"><strong>5. 验证发布</strong><span>真实问题验证并发布供 Agent 选择</span></li>
     </ol>
   </section>
 
@@ -72,8 +72,8 @@
       </div>
       <div class="assistant-table-wrap">
         <table class="assistant-table">
-          <thead><tr><th>名称</th><th>数据源</th><th>版本</th><th>状态</th><th>数据集</th><th>策略</th><th>操作</th></tr></thead>
-          <tbody id="data-model-rows"><tr><td colspan="7"><div class="assistant-empty"><div><strong>正在读取语义模型</strong><p>请稍候。</p></div></div></td></tr></tbody>
+          <thead><tr><th>名称</th><th>数据源</th><th>版本</th><th>状态</th><th>数据集</th><th>操作</th></tr></thead>
+          <tbody id="data-model-rows"><tr><td colspan="6"><div class="assistant-empty"><div><strong>正在读取语义模型</strong><p>请稍候。</p></div></div></td></tr></tbody>
         </table>
       </div>
     </article>
@@ -141,42 +141,9 @@
     </section>
   </div>
   <div class="assistant-dialog-foot">
-    <button type="button" id="configure-model-policy">配置策略</button>
-    <button type="button" id="bind-model-agent">绑定 Agent</button>
     <button type="button" id="submit-model-review">提交审核</button>
     <button class="primary" type="button" id="publish-model">发布版本</button>
   </div>
-</dialog>
-
-<dialog class="assistant-dialog" id="policy-dialog">
-  <form id="policy-form">
-    <div class="assistant-dialog-head"><h2>配置问数策略</h2><button class="assistant-close" type="button" data-close-dialog="policy-dialog" aria-label="关闭">×</button></div>
-    <div class="assistant-dialog-body">
-      <div class="assistant-notice">策略决定哪些用户或角色可以使用当前已发布模型，以及单次查询的资源上限。</div>
-      <div class="policy-subject-grid"><section><h3>用户</h3><div id="policy-members" class="policy-check-list"></div></section><section><h3>角色</h3><div id="policy-roles" class="policy-check-list"></div></section></div>
-      <div class="assistant-form-grid policy-budget">
-        <div class="assistant-field"><label for="policy-max-rows">最大返回行数</label><input id="policy-max-rows" type="number" min="1" max="10000" value="1000"></div>
-        <div class="assistant-field"><label for="policy-timeout">超时秒数</label><input id="policy-timeout" type="number" min="1" max="300" value="30"></div>
-        <div class="assistant-field"><label for="policy-max-bytes">最大结果字节</label><input id="policy-max-bytes" type="number" min="1024" max="16777216" value="1048576"></div>
-        <div class="assistant-field"><label for="policy-concurrency">最大并发</label><input id="policy-concurrency" type="number" min="1" max="64" value="4"></div>
-      </div>
-    </div>
-    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="policy-dialog">取消</button><button class="primary" type="submit">保存策略</button></div>
-  </form>
-</dialog>
-
-<dialog class="assistant-dialog" id="agent-query-binding-dialog">
-  <form id="agent-query-binding-form">
-    <div class="assistant-dialog-head"><h2>绑定 Assistant Agent</h2><button class="assistant-close" type="button" data-close-dialog="agent-query-binding-dialog" aria-label="关闭">×</button></div>
-    <div class="assistant-dialog-body">
-      <div class="assistant-form-grid">
-        <div class="assistant-field full"><label for="query-binding-agent">Agent 草稿版本</label><select id="query-binding-agent" required></select></div>
-        <div class="assistant-field full"><label for="query-binding-policy">有效策略</label><select id="query-binding-policy" required></select></div>
-      </div>
-      <div class="assistant-notice warn">绑定后仍需在 Agent 页面保存当前问数模型范围并显式启用 Agent。</div>
-    </div>
-    <div class="assistant-dialog-foot"><button type="button" data-close-dialog="agent-query-binding-dialog">取消</button><button class="primary" type="submit">创建绑定</button></div>
-  </form>
 </dialog>
 
 <dialog class="assistant-dialog" id="manual-ddl-dialog">

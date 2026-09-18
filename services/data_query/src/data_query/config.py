@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from platform_core.config import ServiceConfig, ServiceDependencyConfig, Settings, load_settings
 
@@ -29,9 +29,19 @@ class DataQueryWorkerConfig(ServiceConfig):
     result_expiry_batch_size: int = Field(default=100, ge=1, le=1000)
 
 
+class QueryGuardrailConfig(BaseModel):
+    """平台统一维护的查询执行护栏，不作为业务用户配置项。"""
+
+    max_rows: int = Field(default=1000, ge=1, le=10000)
+    max_result_bytes: int = Field(default=1_048_576, ge=1024, le=16_777_216)
+    statement_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    max_concurrent_runs: int = Field(default=4, ge=1, le=64)
+
+
 class DataQuerySettings(Settings):
     api: DataQueryApiConfig = Field(default_factory=DataQueryApiConfig)
     worker: DataQueryWorkerConfig = Field(default_factory=DataQueryWorkerConfig)
+    query_guardrail: QueryGuardrailConfig = Field(default_factory=QueryGuardrailConfig)
     llm: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",

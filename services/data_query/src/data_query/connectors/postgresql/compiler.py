@@ -28,11 +28,11 @@ def compile_postgresql_query(
     *,
     plan: DataQueryPlanV1,
     model: SemanticModelDefinition,
-    policy_max_limit: int,
+    guardrail_max_limit: int,
     scope_value: int | None = None,
 ) -> CompiledPostgreSQLQuery:
     """编译单条参数化 SELECT；不接受 SQL、函数、Join 或标识符片段输入。"""
-    validate_query_plan(plan=plan, model=model, policy_max_limit=policy_max_limit)
+    validate_query_plan(plan=plan, model=model, guardrail_max_limit=guardrail_max_limit)
     dataset = next(item for item in model.datasets if item.name == plan.dataset)
     dimensions = {item.name: item for item in model.dimensions if item.dataset == plan.dataset}
     measures = {item.name: item for item in model.measures if item.dataset == plan.dataset}

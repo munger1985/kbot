@@ -438,6 +438,34 @@ class PolicyBindingRepository(DataQueryRepository):
 
 
 class AgentBindingRepository(DataQueryRepository):
+    async def list_for_agent(
+        self, *, domain_id: int, consumer_app_id: str, agent_id: UUID,
+        lock: bool = False,
+    ) -> list[AgentBindingEntity]:
+        statement = select(AgentBindingEntity).where(
+            AgentBindingEntity.domain_id == domain_id,
+            AgentBindingEntity.consumer_app_id == consumer_app_id,
+            AgentBindingEntity.agent_id == agent_id,
+        ).order_by(AgentBindingEntity.agent_version_id, AgentBindingEntity.semantic_model_id)
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.execute(statement)).scalars())
+
+    async def get_for_version_model(
+        self, *, domain_id: int, consumer_app_id: str, agent_id: UUID,
+        agent_version_id: UUID, semantic_model_id: UUID, lock: bool = False,
+    ) -> AgentBindingEntity | None:
+        statement = select(AgentBindingEntity).where(
+            AgentBindingEntity.domain_id == domain_id,
+            AgentBindingEntity.consumer_app_id == consumer_app_id,
+            AgentBindingEntity.agent_id == agent_id,
+            AgentBindingEntity.agent_version_id == agent_version_id,
+            AgentBindingEntity.semantic_model_id == semantic_model_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_active_for_agent(
         self, *, domain_id: int, consumer_app_id: str,
         agent_id: UUID, agent_version_id: UUID,

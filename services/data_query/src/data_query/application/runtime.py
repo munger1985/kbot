@@ -32,8 +32,12 @@ def _hash(value: object) -> str:
 
 
 class DataQueryRuntimeService:
-    def __init__(self, *, uow_factory: Callable[[], DataQueryUnitOfWork]) -> None:
+    def __init__(
+        self, *, uow_factory: Callable[[], DataQueryUnitOfWork],
+        query_guardrail: dict[str, int],
+    ) -> None:
         self._uow_factory = uow_factory
+        self._query_guardrail = dict(query_guardrail)
 
     async def create_run(
         self, *, domain_id: int, actor_id: str, trace_id: str,
@@ -44,6 +48,7 @@ class DataQueryRuntimeService:
             uow_factory=self._uow_factory,domain_id=domain_id,
             actor_id=actor_id, actor_roles=actor_roles,
             trace_id=trace_id, command=command,
+            query_guardrail=self._query_guardrail,
         )
 
     async def get_planning_context(
@@ -52,7 +57,7 @@ class DataQueryRuntimeService:
     ) -> DataQueryPlanningContext:
         """仅返回逻辑名称，绝不将物理对象、列或策略细节交给 Planner LLM。"""
         async with self._uow_factory() as uow:
-            assert uow.agent_bindings and uow.policy_bindings and uow.semantic_models and uow.semantic_model_versions
+            assert uow.agent_bindings and uow.semantic_models and uow.semantic_model_versions
             assert uow.platform_access is not None
             resolved_domain_id = await self._resolve_agent_domain(
                 uow.platform_access,
@@ -67,22 +72,13 @@ class DataQueryRuntimeService:
             )
             models: list[PlanningSemanticModel] = []
             for binding in bindings:
-                policy = await uow.policy_bindings.get_by_id(policy_binding_id=binding.policy_binding_id)
                 model = await uow.semantic_models.get_by_id(semantic_model_id=binding.semantic_model_id)
-                if policy is None or model is None or policy.status != "ACTIVE":
-                    continue
-                subjects = policy.subject_selector_json
-                actor_ids = subjects.get("actor_ids", []) if isinstance(subjects, dict) else []
-                roles = subjects.get("roles", []) if isinstance(subjects, dict) else []
-                managed_app = policy.policy_json.get("managed_consumer_app_id") if isinstance(policy.policy_json, dict) else None
-                managed_access = managed_app == consumer_app_id == "km_asset"
-                if not managed_access and actor_id not in actor_ids and not set(actor_roles).intersection(roles):
+                if model is None:
                     continue
                 if model.domain_id != resolved_domain_id:
                     continue
                 active = await uow.semantic_model_versions.get_active(semantic_model_id=model.semantic_model_id)
-                budget = policy.policy_json.get("budget") if isinstance(policy.policy_json, dict) else None
-                if active is None or not isinstance(budget, dict) or not isinstance(budget.get("max_rows"), int):
+                if active is None:
                     continue
                 definition = SemanticModelDefinition.model_validate(active.definition_json)
                 models.append(PlanningSemanticModel(
@@ -100,7 +96,7 @@ class DataQueryRuntimeService:
                         "allowed_filter_operators": item.allowed_filter_operators,
                     } for item in definition.dimensions),
                     measures=tuple({"name": item.name, "dataset": item.dataset, "aggregation": item.aggregation, "value_type": item.value_type} for item in definition.measures),
-                    max_rows=budget["max_rows"],
+                    max_rows=self._query_guardrail["max_rows"],
                 ))
             await uow.commit()
             return DataQueryPlanningContext(

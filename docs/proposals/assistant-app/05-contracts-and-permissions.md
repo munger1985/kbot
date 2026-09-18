@@ -24,8 +24,8 @@ Assistant App 是资源编排、权限投影、运行记录和媒体资产的所
 | 上下文 | `GET /access` | 当前权限、Domain、可用能力和安全显示信息 |
 | Domains | `GET/POST /domains`，`GET/PATCH /domains/{id}` | 受控委托平台 Domain 生命周期 |
 | KC | `GET/POST /knowledge-cores`，`GET/PATCH /knowledge-cores/{id}` | 代理/组合既有 KC 用例，不复制 KC 数据 |
-| 问数模型 | `GET/POST /data-models`，`GET/PATCH /data-models/{id}`，`POST /data-models/{id}:publish` | 复用 Data Query 的语义模型/策略流程 |
-| Agent | `GET/POST /agents`，`GET/PATCH /agents/{id}`，`POST /agents/{id}:enable` | 强制 KC Binding，启用前检查问数 Binding |
+| 问数模型 | `GET/POST /data-models`，`GET/PATCH /data-models/{id}`，`POST /data-models/{id}:publish` | 复用 Data Query 的语义模型生命周期 |
+| Agent | `GET/POST /agents`，`GET/PATCH /agents/{id}`，`POST /agents/{id}:enable` | 强制 KC Binding，并自动同步问数模型投影 |
 | 知识会话 | `POST /conversations`，`POST /conversations/{id}/turns`，`GET /runs/{id}`，`GET /runs/{id}/events` | 代理既有 Agent Runtime 的可恢复 Run |
 | X Search | `POST /x-search/runs`，`GET /x-search/runs/{id}`，`GET /x-search/runs/{id}/events`，`DELETE /x-search/runs/{id}` | 创建独立研究 Run，不接受原始 OCI Tool JSON；历史记录可删除 |
 | 文生图 | `POST /image-generations/runs`，`GET /image-generations/runs/{id}`，`DELETE /image-generations/runs/{id}` | 创建独立生成 Run；删除时同时清理图片对象 |
@@ -64,7 +64,7 @@ ImageGenerationRequest
 | `assistant:media_read` | 查看按 Domain 授权的图片资产 | 创建生成任务 |
 | `assistant:domain_manage` | 创建/编辑/停用本 App Domain 的受控请求 | 跨 Tenant 或修改其他 App 的 Domain |
 | `assistant:knowledge_core_manage` | 管理当前 Domain 的 KC 关联配置 | 绕过 KC 文档安全级别 |
-| `assistant:data_model_manage` | 管理数据源、语义模型和 Policy 流程 | 访问明文凭据或任意 SQL |
+| `assistant:data_model_manage` | 管理数据源和语义模型生命周期 | 访问明文凭据或任意 SQL |
 | `assistant:agent_manage` | 创建、编辑、启用 Agent 及其绑定 | 赋予自己未拥有的权限 |
 | `assistant:model_binding_manage` | 为 App 绑定已验收模型、配置额度 | 创建/读取供应商 Secret |
 | `assistant:run_read` | 读取按授权投影的运行/用量 | 读取其他 Domain 的 Prompt、来源或图片 |
@@ -74,7 +74,7 @@ ImageGenerationRequest
 ## 必须通过的验收
 
 1. 未绑定 KC 的 Agent 无法启用，且不会出现在知识问答 Agent 列表。
-2. 已绑定 KC、未绑定问数模型的 Agent 仅能走闲聊/问文；问数模型未发布或 Policy 失效时不能执行问数。
+2. 已绑定 KC、未绑定问数模型的 Agent 仅能走闲聊/问文；未发布问数模型不能被 Agent 选择。
 3. 三种引用在最终正文、`used_citation_labels` 与引用卡之间完全一致；未知 `[C]`、`[Q]`、`[X]` 标签被拒绝。
 4. X Search 只有 OCI 能力验收通过后才可创建 Run；账号白/黑名单互斥、来源 URL 和外部线索标记可验证。
 5. 文生图只在已验收模型上生成，产物存对象存储，下载和详情均再次校验 Domain/资产权限。

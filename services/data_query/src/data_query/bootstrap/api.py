@@ -76,7 +76,8 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
         ),
     )
     app.state.runtime_service = DataQueryRuntimeService(
-        uow_factory=uow_factory
+        uow_factory=uow_factory,
+        query_guardrail=resolved.query_guardrail.model_dump(),
     )
     app.state.managed_dataset_service = ManagedDatasetService(
         uow_factory=uow_factory,

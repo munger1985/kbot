@@ -7,7 +7,7 @@
 | 前缀 | 来源 | 结构化锚点 | 点击后的受控预览 |
 | --- | --- | --- | --- |
 | `[C1]` | KC Evidence | collection、bundle revision、document version、定位器 | 文档/页面/段落预览 |
-| `[Q1]` | 问数 Query Result | query result、已发布语义模型版本、策略快照 | 查询条件、列、行预览、截断信息 |
+| `[Q1]` | 问数 Query Result | query result、已发布语义模型版本、查询护栏快照 | 查询条件、列、行预览、截断信息 |
 | `[X1]` | Grok X Search citation | provider citation ID、外部 URL、作者/时间（若有）、检索时间 | 来源卡、受限摘要、打开外部 X |
 
 生成回答前，服务端从 Artifact 建立允许引用集合，并只保留正文实际使用且可解析的标签。模型自行生成的未知标签须删除或使回答进入引用校验失败，而不能呈现为事实依据。

@@ -2,9 +2,9 @@
 
 ## 目标与边界
 
-KBot4 问数将自然语言转换为受语义模型与策略约束的结构化 Query Plan，再由确定性编译器生成参数化只读查询。LLM 不生成或执行任意 SQL，浏览器不访问内部 Data Query 服务，也不持有数据库凭据。
+KBot4 问数将自然语言转换为受语义模型约束的结构化 Query Plan，再由确定性编译器生成参数化只读查询。LLM 不生成或执行任意 SQL，浏览器不访问内部 Data Query 服务，也不持有数据库凭据。
 
-问数服务支持 PostgreSQL、MySQL 和 Oracle，统一包含连接测试、Schema 自动发现、对象级结构采集、语义模型、策略、Agent Binding、查询运行、结果、审计和已验证问题。AIOps 的诊断与变更执行不通过该入口。
+问数服务支持 PostgreSQL、MySQL 和 Oracle，统一包含连接测试、Schema 自动发现、对象级结构采集、语义模型、Agent Binding 投影、查询运行、结果、审计和已验证问题。AIOps 的诊断与变更执行不通过该入口。
 
 ## 数据接入与自动发现
 
@@ -35,19 +35,17 @@ Schema Snapshot 只描述物理结构；问数 Agent 使用已发布的 Semantic
 ```text
 连接测试 → 创建数据源 → 自动发现 Schema → 选择对象 → 采集结构
 → 生成或编辑语义模型草稿 → 问题验证 → 提交审核 → 发布
-→ 创建 Policy Binding → 创建 Agent Binding → 启用 Agent
+→ 在业务 Agent 中选择已发布模型 → 保存或启用 Agent
 ```
 
-Agent Binding 精确绑定 `consumer_app_id + agent_id + agent_version_id + semantic_model_id`。带 `SEMANTIC` 问数能力的知识检索 Agent 必须先以草稿保存当前版本、创建有效 Binding，再单独启用；Main API 会在启用时向 Data Query 核验当前版本，避免出现配置显示可用但运行时没有模型的状态。
-
-策略主体从 `GET /api/v1/apps/knowledge-retrieval/data-query/policy-subjects` 读取当前 Domain 的有效成员和知识检索应用角色。创建 Policy Binding 时必须通过 `actor_ids` 或 `roles` 至少指定一类主体，Main API 会转换为内部 `subject_selector` 契约。
+智能工作台 Agent 的 `data_model_ids` 是问数能力的唯一配置事实。Main API 在 Agent 版本保存后调用内部同步契约，Data Query 自动生成 `consumer_app_id + agent_id + agent_version_id + semantic_model_id` 投影，并停用同一 Agent 的旧版本投影。用户不创建、不编辑 Agent Binding，也不需要重复配置用户或角色策略；访问权限继承 App、Domain 与 Agent 的既有授权边界。
 
 ## 查询执行安全
 
 - 所有外部数据库使用加密保存的只读凭据；响应、日志和 Prompt 不返回密码或连接引用。
 - Query Plan 只能引用已发布语义模型中的数据集、维度和指标。
 - PostgreSQL、MySQL、Oracle 均使用参数绑定和只读事务。
-- Policy 控制最大行数、结果字节数、语句超时和并发预算。
+- Data Query 内部 Query Guardrail 统一控制最大行数、结果字节数、语句超时和并发上限，并在创建 Run 时冻结快照。
 - Worker 租约、心跳和编译哈希防止重复执行或执行被冻结计划之外的查询。
 - 结果按固定期限清理；Run、Execution、Audit 和通知记录保留可追溯关系。
 

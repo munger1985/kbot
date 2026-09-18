@@ -81,8 +81,6 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "data-model-dialog",
             "semantic-model-dialog",
             "semantic-model-definition",
-            "policy-dialog",
-            "agent-query-binding-dialog",
             "manual-ddl-dialog",
         },
         "agents.html": {
@@ -237,10 +235,10 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "/validations",
             "/submit-review",
             "/publish",
-            "/policy-bindings",
-            "/agent-bindings",
         ):
             self.assertIn(fragment, source)
+        self.assertNotIn("/policy-bindings", source)
+        self.assertNotIn("/agent-bindings", source)
         self.assertNotIn("domain_id", source)
         self.assertNotIn("/internal/v1", source)
 
@@ -259,10 +257,10 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "composer_llm",
             "memory_llm",
             "memory_embedding",
-            "agent_bindings",
-            "configure-query",
         ):
             self.assertIn(fragment, source)
+        self.assertNotIn("agent_bindings", source)
+        self.assertNotIn("configure-query", source)
         self.assertIn("globalThis.confirm", source)
         self.assertNotIn("domain_id", source)
         self.assertNotIn("/internal/v1", source)

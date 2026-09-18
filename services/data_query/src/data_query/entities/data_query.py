@@ -176,7 +176,7 @@ class AgentBindingEntity(_VersionedEntity):
     __tablename__ = "KBOT_DQ_AGENT_BINDING"
     __table_args__ = (UniqueConstraint(
         "domain_id", "consumer_app_id", "agent_id", "agent_version_id",
-        "semantic_model_id", "policy_binding_id",
+        "semantic_model_id",
         name="uq_KBOT_DQ_agent_binding",
     ),)
 
@@ -186,7 +186,7 @@ class AgentBindingEntity(_VersionedEntity):
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     semantic_model_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
-    policy_binding_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    policy_binding_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", index=True)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -226,7 +226,7 @@ class DataQueryRunEntity(_VersionedEntity):
     standalone_query: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
     plan_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
-    policy_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
+    guardrail_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     semantic_model_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     deadline_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
     cancel_requested_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))

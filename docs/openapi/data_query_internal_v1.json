@@ -143,6 +143,45 @@
         "title": "AgentBindingStatusChange",
         "type": "object"
       },
+      "AgentBindingSync": {
+        "additionalProperties": false,
+        "description": "由业务 App 按不可变 Agent 版本同步问数模型投影。",
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "consumer_app_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Consumer App Id",
+            "type": "string"
+          },
+          "semantic_model_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Semantic Model Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "consumer_app_id",
+          "agent_id",
+          "agent_version_id"
+        ],
+        "title": "AgentBindingSync",
+        "type": "object"
+      },
       "AgentBindingView": {
         "additionalProperties": false,
         "properties": {
@@ -163,11 +202,6 @@
           },
           "consumer_app_id": {
             "title": "Consumer App Id",
-            "type": "string"
-          },
-          "policy_binding_id": {
-            "format": "uuid",
-            "title": "Policy Binding Id",
             "type": "string"
           },
           "row_version": {
@@ -191,7 +225,6 @@
           "agent_id",
           "agent_version_id",
           "semantic_model_id",
-          "policy_binding_id",
           "status",
           "row_version"
         ],
@@ -3174,6 +3207,47 @@
           }
         },
         "summary": "Match Active Agent Binding",
+        "tags": [
+          "Data Query Management"
+        ]
+      }
+    },
+    "/internal/v1/data-query/management/agent-bindings/sync": {
+      "put": {
+        "operationId": "sync_agent_bindings_internal_v1_data_query_management_agent_bindings_sync_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBindingSync"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBindingPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Agent Bindings",
         "tags": [
           "Data Query Management"
         ]

@@ -45,6 +45,7 @@ from data_query.contracts import (
     DataQueryAuditView,
     DataSourceView,
     AgentBindingCreate,
+    AgentBindingSync,
     AgentBindingPage,
     AgentBindingStatusChange,
     AgentBindingView,
@@ -86,7 +87,7 @@ from data_query.contracts import (
 )
 from data_query.domain import DataSourceStatus, can_transition
 from data_query.persistence import DataQueryUnitOfWork
-from data_query.entities import SemanticModelGenerationJobEntity, VerifiedQueryEntity
+from data_query.entities import AgentBindingEntity, SemanticModelGenerationJobEntity, VerifiedQueryEntity
 from data_query.adapters import DatabaseCredentialService
 
 
@@ -665,8 +666,81 @@ class DataQueryManagementService:
             consumer_app_id=entity.consumer_app_id,
             agent_id=entity.agent_id,
             agent_version_id=entity.agent_version_id,
-            semantic_model_id=entity.semantic_model_id, policy_binding_id=entity.policy_binding_id,
+            semantic_model_id=entity.semantic_model_id,
             status=entity.status, row_version=int(entity.row_version),
+        )
+
+    async def sync_agent_bindings(
+        self, *, domain_id: int, actor_id: str, command: AgentBindingSync,
+    ) -> AgentBindingPage:
+        """以业务 App 当前 Agent 版本为唯一事实同步问数模型投影。"""
+        requested = set(command.semantic_model_ids)
+        async with self._uow_factory() as uow:
+            assert uow.agent_bindings and uow.semantic_models
+            assert uow.platform_access is not None
+            owner_domain_id = await uow.platform_access.agent_version_domain_id(
+                domain_id=domain_id,
+                consumer_app_id=command.consumer_app_id,
+                agent_id=command.agent_id,
+                agent_version_id=command.agent_version_id,
+            )
+            if owner_domain_id != domain_id:
+                raise DataQueryManagementError("AGENT_VERSION_NOT_FOUND")
+            for semantic_model_id in requested:
+                model = await uow.semantic_models.get_by_id(
+                    semantic_model_id=semantic_model_id
+                )
+                if (
+                    model is None
+                    or model.domain_id != domain_id
+                    or model.active_version is None
+                ):
+                    raise DataQueryManagementError("SEMANTIC_MODEL_NOT_PUBLISHED")
+
+            rows = await uow.agent_bindings.list_for_agent(
+                domain_id=domain_id,
+                consumer_app_id=command.consumer_app_id,
+                agent_id=command.agent_id,
+                lock=True,
+            )
+            current: dict[UUID, AgentBindingEntity] = {}
+            for row in rows:
+                should_enable = (
+                    row.agent_version_id == command.agent_version_id
+                    and row.semantic_model_id in requested
+                )
+                target_status = "ACTIVE" if should_enable else "DISABLED"
+                if row.status != target_status:
+                    row.status = target_status
+                    row.updated_by = actor_id
+                if row.agent_version_id == command.agent_version_id:
+                    current[row.semantic_model_id] = row
+
+            for semantic_model_id in sorted(requested, key=str):
+                if semantic_model_id in current:
+                    continue
+                entity = AgentBindingEntity(
+                    domain_id=domain_id,
+                    consumer_app_id=command.consumer_app_id,
+                    agent_id=command.agent_id,
+                    agent_version_id=command.agent_version_id,
+                    semantic_model_id=semantic_model_id,
+                    policy_binding_id=None,
+                    status="ACTIVE",
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+                await uow.agent_bindings.add(entity)
+                current[semantic_model_id] = entity
+            await uow.commit()
+
+        active = [
+            row for model_id, row in current.items()
+            if model_id in requested and row.status == "ACTIVE"
+        ]
+        return AgentBindingPage(
+            items=tuple(self._agent_binding_view(row) for row in active),
+            next_cursor=None,
         )
 
     async def list_agent_bindings(self, *, domain_id: int, after_id: UUID | None, limit: int) -> AgentBindingPage:
@@ -740,7 +814,7 @@ class DataQueryManagementService:
             consumer_app_id=entity.consumer_app_id,
             agent_id=entity.agent_id,
             agent_version_id=entity.agent_version_id,
-            semantic_model_id=entity.semantic_model_id, policy_binding_id=entity.policy_binding_id,
+            semantic_model_id=entity.semantic_model_id,
             status=entity.status, row_version=int(entity.row_version),
         )
 

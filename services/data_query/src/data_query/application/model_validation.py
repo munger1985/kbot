@@ -149,7 +149,7 @@ async def create_model_validation_run(
             "limit": min(int(response.get("limit", 20)), 20),
             "time_zone": response.get("time_zone", "Asia/Shanghai"),
         })
-        validate_query_plan(plan=plan, model=definition, policy_max_limit=20)
+        validate_query_plan(plan=plan, model=definition, guardrail_max_limit=20)
     except Exception as exc:
         raise SemanticModelValidationError("MODEL_VALIDATION_PLAN_INVALID") from exc
 
@@ -165,7 +165,7 @@ async def create_model_validation_run(
         compiled = compile_postgresql_query(
             plan=plan,
             model=definition,
-            policy_max_limit=20,
+            guardrail_max_limit=20,
             scope_value=domain_id,
         )
     else:
@@ -173,7 +173,7 @@ async def create_model_validation_run(
             dialect=source.source_type,
             plan=plan,
             model=definition,
-            policy_max_limit=20,
+            guardrail_max_limit=20,
             scope_value=domain_id,
         )
     compiled_hash = hashlib.sha256(compiled.sql.encode("utf-8")).hexdigest()
@@ -185,7 +185,7 @@ async def create_model_validation_run(
             request_fingerprint=fingerprint,
             original_question=command.question, standalone_query=command.question,
             status="QUEUED", plan_snapshot_json=plan_json,
-            policy_snapshot_json={"budget": strict_budget, "purpose": "MODEL_VALIDATION"},
+            guardrail_snapshot_json=strict_budget,
             semantic_model_snapshot_json={
                 "model_id": str(semantic_model_id), "version": version.version_no,
                 "semantic_model_version_id": str(semantic_model_version_id),
