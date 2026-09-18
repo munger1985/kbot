@@ -622,6 +622,56 @@
         ]
       }
     },
+    "/internal/v1/assistant/agents/{agent_id}/execution-spec": {
+      "get": {
+        "operationId": "get_execution_spec_internal_v1_assistant_agents__agent_id__execution_spec_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Execution Spec",
+        "tags": [
+          "Assistant Agents"
+        ]
+      }
+    },
     "/internal/v1/assistant/bindings": {
       "get": {
         "operationId": "list_bindings_internal_v1_assistant_bindings_get",

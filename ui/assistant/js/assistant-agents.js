@@ -8,6 +8,8 @@
     composer_llm: "agent-composer-llm",
     memory_llm: "agent-memory-llm",
     memory_embedding: "agent-memory-embedding",
+    router_llm: "agent-router-llm",
+    data_planner_llm: "agent-data-planner-llm",
   });
   const state = {
     rows: [],
@@ -155,7 +157,8 @@
     const llms = state.options.models.filter((row) => KBotAssistantApi.modelCategory(row) === KBotAssistantApi.ModelCategory.LLM);
     const embeddings = state.options.models.filter((row) => KBotAssistantApi.modelCategory(row) === KBotAssistantApi.ModelCategory.TXT_EMBEDDING);
     Object.entries(MODEL_ROLES).forEach(([role, id]) => {
-      setSelectOptions(element(id), role === "memory_embedding" ? embeddings : llms, current?.models?.[role], "不绑定");
+      const placeholder = role === "data_planner_llm" ? "跟随回答生成 LLM" : "不绑定";
+      setSelectOptions(element(id), role === "memory_embedding" ? embeddings : llms, current?.models?.[role], placeholder);
     });
   }
 

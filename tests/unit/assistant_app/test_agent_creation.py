@@ -1,8 +1,10 @@
 """智能工作台 Agent 的绑定与版本测试。"""
 
 import unittest
+from uuid import UUID
 
 from assistant_app.application import AgentApplicationError, AssistantAgentService, CreateAgentCommand, UpdateAgentCommand
+from platform_core.contracts import AgentExecutionSpec
 from platform_core.identity import uuid7
 
 
@@ -92,6 +94,35 @@ class AssistantAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, repository.version.version_no)
         self.assertEqual([str(data_model_id)], updated["data_model_ids"])
         self.assertEqual(["conversation", "document", "data_query"], updated["enabled_capabilities"])
+
+    async def test_active_agent_issues_assistant_execution_spec(self) -> None:
+        repository = _Repository()
+        service = AssistantAgentService(uow_factory=lambda: _UnitOfWork(repository))
+        knowledge_core_id, data_model_id, model_id = uuid7(), uuid7(), uuid7()
+        created = await service.create(CreateAgentCommand(
+            domain_id=41,
+            display_name="客户经营助手",
+            knowledge_core_id=knowledge_core_id,
+            data_model_ids=(data_model_id,),
+            models={
+                "context_llm": model_id,
+                "composer_llm": model_id,
+                "memory_llm": model_id,
+                "memory_embedding": model_id,
+                "router_llm": model_id,
+            },
+            status="ACTIVE",
+            actor_id="user-41",
+        ))
+
+        spec = AgentExecutionSpec.model_validate(await service.execution_spec(
+            domain_id=41, agent_id=repository.agent.agent_id
+        ))
+
+        self.assertEqual("assistant", spec.owner_app_id)
+        self.assertEqual(created["agent_version_id"], str(spec.consumer_agent_version_id))
+        self.assertEqual((knowledge_core_id,), tuple(UUID(str(value)) for value in spec.resource_context["collection_ids"]))
+        self.assertEqual("SEMANTIC", spec.resource_context["data_query_mode"])
 
 
 if __name__ == "__main__":

@@ -102,6 +102,54 @@
     return response.blob();
   }
 
+  async function stream(path, handlers = {}, signal) {
+    const response = await fetch(resolveUrl(path), {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        Accept: "text/event-stream",
+        "Last-Event-ID": String(handlers.lastEventId || 0),
+        "X-Request-ID": requestId(),
+        ...authHeaders(),
+      },
+      signal,
+    });
+    if (!response.ok || !response.body) {
+      const payload = await decode(response);
+      if (response.status === 401) redirectIfUnauthorized();
+      const error = new Error(errorMessage(payload, response.status));
+      error.status = response.status;
+      error.code = payload?.code || payload?.detail?.code || "ASSISTANT_EVENT_STREAM_FAILED";
+      throw error;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const result = await reader.read();
+      buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() || "";
+      for (const block of blocks) {
+        if (!block || block.startsWith(":")) continue;
+        const event = { id: "", type: "message", data: "" };
+        block.split(/\r?\n/).forEach((line) => {
+          const separator = line.indexOf(":");
+          const field = separator < 0 ? line : line.slice(0, separator);
+          const value = separator < 0 ? "" : line.slice(separator + 1).replace(/^ /, "");
+          if (field === "id") event.id = value;
+          if (field === "event") event.type = value;
+          if (field === "data") event.data += `${event.data ? "\n" : ""}${value}`;
+        });
+        try { event.json = event.data ? JSON.parse(event.data) : null; }
+        catch (_) { event.json = event.data; }
+        handlers.onEvent?.(event);
+        if (event.type === "done") return;
+      }
+      if (result.done) return;
+    }
+  }
+
   function withQuery(path, params) {
     const search = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {
@@ -142,7 +190,7 @@
   }
 
   globalThis.KBotAssistantApi = {
-    basePath, json, request, requestBlob, requestId, withQuery,
+    basePath, json, request, requestBlob, requestId, stream, withQuery,
     ModelCategory, items, modelCategory, isActiveModel,
   };
 })();

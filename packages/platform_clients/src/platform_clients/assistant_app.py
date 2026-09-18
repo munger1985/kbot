@@ -39,6 +39,16 @@ class AssistantAppClient:
     async def get_agent(self, *, agent_id: UUID, domain_id: int, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("GET", f"{self._AGENTS}/{agent_id}?{urlencode({'domain_id': domain_id})}", auth_context=auth_context)
 
+    async def execution_spec(
+        self, *, agent_id: UUID, domain_id: int, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._AGENTS}/{agent_id}/execution-spec?"
+            f"{urlencode({'domain_id': domain_id})}",
+            auth_context=auth_context,
+        )
+
     async def update_agent(self, *, agent_id: UUID, payload: dict[str, Any], auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("PATCH", f"{self._AGENTS}/{agent_id}", payload=payload, auth_context=auth_context)
 

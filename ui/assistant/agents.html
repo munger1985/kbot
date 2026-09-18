@@ -72,7 +72,7 @@
         <div class="data-section-head"><h3>知识与问数资源</h3><span class="assistant-badge warn">启用前校验</span></div>
         <div class="assistant-form-grid">
           <div class="assistant-field full"><label for="agent-knowledge-core">Knowledge Core</label><select id="agent-knowledge-core"><option value="">加载中</option></select><p class="assistant-help">草稿可以暂不选择；启用时必须选择 ACTIVE Knowledge Core。</p></div>
-          <div class="assistant-field full"><label for="agent-data-models">问数模型（可多选）</label><select id="agent-data-models" multiple size="5"></select><p class="assistant-help">仅可新增已发布且至少有一个 ACTIVE Policy Binding 的模型。按 Ctrl/Cmd 可多选。</p></div>
+          <div class="assistant-field full"><label for="agent-data-models">问数模型（可多选）</label><select id="agent-data-models" multiple size="5"></select><p class="assistant-help">仅可选择当前 Domain 已发布的问数模型；保存 Agent 后自动同步运行绑定。按 Ctrl/Cmd 可多选。</p></div>
         </div>
       </section>
 
@@ -83,6 +83,8 @@
           <div class="assistant-field"><label for="agent-composer-llm">回答生成 LLM</label><select id="agent-composer-llm"></select></div>
           <div class="assistant-field"><label for="agent-memory-llm">记忆整理 LLM</label><select id="agent-memory-llm"></select></div>
           <div class="assistant-field"><label for="agent-memory-embedding">记忆 Embedding</label><select id="agent-memory-embedding"></select></div>
+          <div class="assistant-field"><label for="agent-router-llm">意图路由 LLM</label><select id="agent-router-llm"></select></div>
+          <div class="assistant-field"><label for="agent-data-planner-llm">问数规划 LLM</label><select id="agent-data-planner-llm"><option value="">跟随回答生成 LLM</option></select></div>
         </div>
       </section>
 
@@ -90,7 +92,7 @@
         <div class="data-section-head"><h3>高级配置</h3><span class="assistant-badge">JSON</span></div>
         <div class="assistant-field"><label for="agent-config">运行配置</label><textarea id="agent-config" class="agent-config" spellcheck="false">{}</textarea><p class="assistant-help">只填写 Agent 运行时明确支持的结构化配置；留空等同于 {}。</p></div>
       </section>
-      <div id="agent-form-notice" class="assistant-notice warn">创建后如需问数，请前往“问数模型”页面为此 Agent 的当前草稿版本创建 Binding。</div>
+      <div id="agent-form-notice" class="assistant-notice">Agent 保存后会自动同步问数模型绑定；知识问答会在 Agent 已授权能力内自动路由。</div>
     </div>
     <div class="assistant-dialog-foot"><button type="button" data-close-dialog="agent-dialog">取消</button><button class="primary" id="agent-submit" type="submit">保存草稿</button></div>
   </form>

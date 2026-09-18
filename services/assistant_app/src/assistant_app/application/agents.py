@@ -57,11 +57,20 @@ class AgentApplicationError(ValueError):
 class AssistantAgentService:
     """只管理智能工作台自己的 Agent 配置和版本，不复制 KC 或问数事实。"""
 
+    _REQUIRED_MODEL_ROLES = frozenset(
+        {"context_llm", "composer_llm", "memory_llm", "memory_embedding"}
+    )
+
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
 
     async def create(self, command: CreateAgentCommand) -> dict[str, Any]:
-        self._validate(command.status, command.knowledge_core_id, command.data_model_ids)
+        self._validate(
+            command.status,
+            command.knowledge_core_id,
+            command.data_model_ids,
+            command.models,
+        )
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
             assert uow.agents is not None
@@ -108,6 +117,49 @@ class AssistantAgentService:
                 self._not_found()
             return self._view(agent, await self._current_version(uow.agents, agent))
 
+    async def execution_spec(
+        self, *, domain_id: int, agent_id: UUID
+    ) -> dict[str, Any]:
+        """签发供 Agent Runtime 冻结保存的智能工作台执行规格。"""
+        row = await self.get(domain_id=domain_id, agent_id=agent_id)
+        if row["status"] != "ACTIVE":
+            raise AgentApplicationError(
+                "AGENT_NOT_ACTIVE", "Agent 未启用，不能创建会话", status_code=422
+            )
+        knowledge_core_id = row.get("knowledge_core_id")
+        if not knowledge_core_id:
+            raise AgentApplicationError(
+                "AGENT_KNOWLEDGE_CORE_REQUIRED",
+                "Agent 缺少可用 Knowledge Core",
+                status_code=422,
+            )
+        data_model_ids = list(row.get("data_model_ids") or [])
+        resource_context = {
+            **dict(row.get("config") or {}),
+            "resource_mode": "managed_resources",
+            "collection_ids": [knowledge_core_id],
+            "semantic_model_ids": data_model_ids,
+        }
+        if data_model_ids:
+            resource_context["data_query_mode"] = "SEMANTIC"
+        return {
+            "schema_version": "1.0",
+            "owner_app_id": "assistant",
+            "domain_id": domain_id,
+            "consumer_agent_id": row["agent_id"],
+            "consumer_agent_version_id": row["agent_version_id"],
+            "agent_kind": "KNOWLEDGE_RETRIEVAL",
+            "display_name": row["display_name"],
+            "enabled_capabilities": row["enabled_capabilities"],
+            "models": row["models"],
+            "instruction": row["instruction"],
+            "resource_context": resource_context,
+            "runtime_policy": {
+                "routing": "document_data_and_conversation",
+                "allow_general_conversation": True,
+            },
+        }
+
     async def update(self, command: UpdateAgentCommand) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             assert uow.agents is not None
@@ -134,7 +186,12 @@ class AssistantAgentService:
                 "data_model_ids", current.data_model_ids_json
             )
             target_status = changes.get("status", agent.status)
-            self._validate(target_status, knowledge_core_id, data_model_ids)
+            self._validate(
+                target_status,
+                knowledge_core_id,
+                data_model_ids,
+                changes.get("models", current.models_json),
+            )
             if version_changed:
                 version_id = uuid7()
                 await uow.agents.add_version(self._version(
@@ -161,8 +218,10 @@ class AssistantAgentService:
                 ) from exc
         return await self.get(domain_id=command.domain_id, agent_id=command.agent_id)
 
-    @staticmethod
-    def _validate(status: str, knowledge_core_id: UUID | None, data_model_ids) -> None:
+    @classmethod
+    def _validate(
+        cls, status: str, knowledge_core_id: UUID | None, data_model_ids, models
+    ) -> None:
         if len({str(value) for value in data_model_ids}) != len(data_model_ids):
             raise AgentApplicationError(
                 "AGENT_DATA_MODEL_DUPLICATED", "问数模型不能重复绑定", status_code=422
@@ -170,6 +229,21 @@ class AssistantAgentService:
         if status == "ACTIVE" and knowledge_core_id is None:
             raise AgentApplicationError(
                 "AGENT_KNOWLEDGE_CORE_REQUIRED", "启用 Agent 前必须绑定一个可用 Knowledge Core", status_code=422
+            )
+        if status != "ACTIVE":
+            return
+        missing = sorted(cls._REQUIRED_MODEL_ROLES - set(models or {}))
+        if missing:
+            raise AgentApplicationError(
+                "AGENT_MODELS_REQUIRED",
+                f"启用 Agent 前必须配置模型角色：{missing}",
+                status_code=422,
+            )
+        if "router_llm" not in set(models or {}):
+            raise AgentApplicationError(
+                "AGENT_ROUTER_MODEL_REQUIRED",
+                "启用问文、问数与对话路由前必须配置 router_llm",
+                status_code=422,
             )
 
     @staticmethod

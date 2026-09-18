@@ -186,6 +186,7 @@
             "enum": [
               "knowledge_retrieval",
               "km_asset",
+              "assistant",
               "aiops"
             ],
             "title": "Owner App Id",

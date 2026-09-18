@@ -19,6 +19,9 @@ VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a004")
 BUNDLE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a005")
 REVISION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a006")
 DOCUMENT_VERSION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a007")
+CONVERSATION_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a008")
+TURN_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a009")
+AGENT_RUN_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a00a")
 EMBEDDING_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a011")
 VISUAL_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a012")
 DATA_SOURCE_ID = UUID("019f8eae-2c25-7d48-b044-350ec3f5a013")
@@ -44,6 +47,9 @@ class _AccessService:
             "roles": [{"code": "assistant_admin", "display_name": "管理员"}],
         }
 
+    async def user_max_security_level(self, **kwargs):
+        return 2
+
 
 class _KnowledgeClient:
     def __init__(self, status="ACTIVE"):
@@ -54,6 +60,7 @@ class _KnowledgeClient:
         self.models_payload = None
         self.status_payload = None
         self.deleted = []
+        self.bound = None
         self.collections = []
         self.processing = {"items": [], "page": 1, "page_size": 100, "total": 0}
         self.approvals = {"items": []}
@@ -150,6 +157,15 @@ class _KnowledgeClient:
     async def delete_collection(self, **kwargs):
         self.deleted.append(kwargs["collection_id"])
         return {"status": "DELETING", "purge_job_id": str(CORE_ID)}
+
+    async def bind_collection(self, **kwargs):
+        self.bound = kwargs
+        return {
+            "binding_id": str(VERSION_ID),
+            "collection_id": str(kwargs["collection_id"]),
+            "agent_id": str(kwargs["agent_id"]),
+            "status": "ACTIVE",
+        }
 
 
 class _DataQueryClient:
@@ -273,6 +289,9 @@ class _AssistantClient:
             "agent_id": str(AGENT_ID), "agent_version_id": str(VERSION_ID),
             "status": "DRAFT", "knowledge_core_id": str(CORE_ID),
             "data_model_ids": [str(DATA_MODEL_ID)], "row_version": 1,
+            "display_name": "客户经营助手", "enabled_capabilities": ["conversation", "document", "data_query"],
+            "models": {"router_llm": str(LLM_ID), "composer_llm": str(LLM_ID)},
+            "instruction": "回答客户经营问题", "config": {},
         }
 
     async def list_agents(self, **kwargs):
@@ -291,6 +310,27 @@ class _AssistantClient:
 
     async def get_agent(self, **kwargs):
         return self.agent
+
+    async def execution_spec(self, **kwargs):
+        return {
+            "schema_version": "1.0",
+            "owner_app_id": "assistant",
+            "domain_id": kwargs["domain_id"],
+            "consumer_agent_id": str(AGENT_ID),
+            "consumer_agent_version_id": str(VERSION_ID),
+            "agent_kind": "KNOWLEDGE_RETRIEVAL",
+            "display_name": self.agent["display_name"],
+            "enabled_capabilities": self.agent["enabled_capabilities"],
+            "models": self.agent["models"],
+            "instruction": self.agent["instruction"],
+            "resource_context": {
+                "resource_mode": "managed_resources",
+                "data_query_mode": "SEMANTIC",
+                "collection_ids": [str(CORE_ID)],
+                "semantic_model_ids": [str(DATA_MODEL_ID)],
+            },
+            "runtime_policy": {"allow_general_conversation": True},
+        }
 
     async def update_agent(self, *, payload, **kwargs):
         self.payload = payload
@@ -325,6 +365,87 @@ class _AssistantClient:
 
     async def list_media_assets(self, **kwargs):
         return []
+
+
+class _AgentRuntimeClient:
+    def __init__(self):
+        self.conversation = {
+            "conversation_id": str(CONVERSATION_ID),
+            "agent_id": str(AGENT_ID),
+            "title": None,
+            "status": "ACTIVE",
+            "row_version": 1,
+            "last_turn_sequence": 0,
+            "last_active_at": "2026-09-18T01:00:00Z",
+            "created_at": "2026-09-18T01:00:00Z",
+            "retention_policy": "DEFAULT",
+            "purge_after": None,
+        }
+        self.create_payload = None
+        self.turn_payload = None
+        self.idempotency_key = None
+
+    async def create_conversation(self, **kwargs):
+        self.create_payload = kwargs["payload"]
+        return self.conversation
+
+    async def list_conversations(self, **kwargs):
+        return [self.conversation]
+
+    async def get_conversation(self, **kwargs):
+        return self.conversation
+
+    async def update_conversation(self, **kwargs):
+        self.conversation = {
+            **self.conversation,
+            **kwargs["payload"],
+            "row_version": self.conversation["row_version"] + 1,
+        }
+        return self.conversation
+
+    async def delete_conversation(self, **kwargs):
+        self.deleted = kwargs
+
+    async def create_conversation_turn(self, **kwargs):
+        self.turn_payload = kwargs["payload"]
+        self.idempotency_key = kwargs["idempotency_key"]
+        return {
+            "conversation_id": str(CONVERSATION_ID),
+            "turn_id": str(TURN_ID),
+            "turn_sequence": 1,
+            "turn_status": "RUNNING",
+            "run_id": str(AGENT_RUN_ID),
+            "run_status": "RUNNING",
+            "event_cursor": 1,
+            "events_url": f"/internal/v1/runs/{AGENT_RUN_ID}/events",
+        }
+
+    async def list_conversation_turns(self, **kwargs):
+        return {
+            "conversation_id": str(CONVERSATION_ID),
+            "turns": [],
+            "next_sequence": 0,
+        }
+
+    async def list_turn_trace(self, **kwargs):
+        return []
+
+    async def get_run(self, **kwargs):
+        return {
+            "run_id": str(AGENT_RUN_ID),
+            "agent_id": str(AGENT_ID),
+            "status": "COMPLETED",
+            "row_version": 2,
+            "event_cursor": 5,
+            "result": None,
+            "error_code": None,
+            "error_message": None,
+            "created_at": "2026-09-18T01:00:00Z",
+            "completed_at": "2026-09-18T01:00:01Z",
+        }
+
+    async def get_result(self, **kwargs):
+        return {"payload": {"answer": "共有 10 个客户", "references": []}}
 
 
 
@@ -441,6 +562,8 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.app.state.knowledge_core_client = self.knowledge
         self.data_query = _DataQueryClient()
         self.app.state.data_query_client = self.data_query
+        self.runtime = _AgentRuntimeClient()
+        self.app.state.agent_runtime_client = self.runtime
         self.domains = _DomainService()
         self.app.state.domain_management_service = self.domains
         self.app.state.model_config_clients = (_ModelConfigClient(),)
@@ -534,6 +657,41 @@ class AssistantAppRouteTest(unittest.TestCase):
         self.assertEqual([], draft_response.json())
         self.assertEqual(200, active_response.status_code, active_response.text)
         self.assertEqual(str(AGENT_ID), active_response.json()[0]["agent_id"])
+
+    def test_knowledge_chat_creates_runtime_conversation_and_turn(self):
+        self.access.permissions = {"assistant:access", "assistant:knowledge_chat"}
+        self.assistant.agent["status"] = "ACTIVE"
+
+        created = self.client.post(
+            "/api/v1/apps/assistant/conversations",
+            headers=self._headers(),
+            json={"agent_id": str(AGENT_ID), "retention_policy": "DEFAULT"},
+        )
+        listed = self.client.get(
+            "/api/v1/apps/assistant/conversations?limit=50",
+            headers=self._headers(),
+        )
+        turn = self.client.post(
+            f"/api/v1/apps/assistant/conversations/{CONVERSATION_ID}/turns",
+            headers={**self._headers(), "Idempotency-Key": "assistant-turn-1"},
+            json={
+                "input": "统计客户数量",
+                "expected_conversation_version": 1,
+                "client_metadata": {"source": "assistant-ui"},
+            },
+        )
+
+        self.assertEqual(201, created.status_code, created.text)
+        self.assertEqual(str(CONVERSATION_ID), created.json()["conversation_id"])
+        self.assertEqual("assistant", self.runtime.create_payload["execution_spec"]["owner_app_id"])
+        self.assertEqual(200, listed.status_code, listed.text)
+        self.assertEqual(str(CONVERSATION_ID), listed.json()[0]["conversation_id"])
+        self.assertEqual(202, turn.status_code, turn.text)
+        self.assertEqual([str(CORE_ID)], self.runtime.turn_payload["collection_ids"])
+        self.assertEqual(2, self.runtime.turn_payload["security_level"])
+        self.assertEqual("assistant-turn-1", self.runtime.idempotency_key)
+        self.assertEqual(CORE_ID, self.knowledge.bound["collection_id"])
+        self.assertEqual(AGENT_ID, self.knowledge.bound["agent_id"])
 
     def test_access_includes_bindings_and_capabilities(self):
         response = self.client.get("/api/v1/apps/assistant/access", headers=self._headers())

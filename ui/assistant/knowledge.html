@@ -11,65 +11,76 @@
   <header class="assistant-page-head">
     <div>
       <h1>知识问答</h1>
-      <p>问文、问数与闲聊仅在当前 Agent 明确授权的 Knowledge Core 和问数模型范围内执行。</p>
+      <p>由已启用 Agent 在绑定的 Knowledge Core、问数模型和普通对话能力之间自动选择执行路径。</p>
     </div>
     <div class="assistant-actions">
-      <select id="knowledge-agent" aria-label="当前 Agent" disabled><option value="">正在读取已启用 Agent</option></select>
-      <button class="primary" id="knowledge-new-conversation" type="button">新建会话</button>
+      <select id="knowledge-agent" aria-label="当前 Agent" disabled>
+        <option value="">正在读取已启用 Agent</option>
+      </select>
+      <button class="primary" id="knowledge-new-conversation" type="button" disabled>新建会话</button>
     </div>
   </header>
-  <section class="assistant-split">
-    <aside class="assistant-panel">
+
+  <section class="assistant-chat-layout">
+    <aside class="assistant-panel assistant-conversation-panel">
       <div class="assistant-panel-head">
         <div><h2>最近会话</h2><p>当前 Agent 范围</p></div>
         <button class="small" type="button" id="knowledge-refresh">刷新</button>
       </div>
-      <div class="assistant-empty" id="knowledge-agent-summary"><div><strong>正在读取 Agent</strong><p>仅显示当前 Domain 已启用的 Agent。</p></div></div>
+      <ul class="assistant-conversation-list" id="knowledge-conversation-list">
+        <li class="assistant-chat-empty">等待读取会话</li>
+      </ul>
+      <div class="assistant-agent-context" id="knowledge-agent-summary">
+        <strong>正在读取 Agent</strong>
+        <p>仅显示当前 Domain 已启用的 Agent。</p>
+      </div>
+      <dl class="assistant-chat-context">
+        <div><dt>当前 Agent</dt><dd id="knowledge-context-agent">尚未选择</dd></div>
+        <div><dt>Knowledge Core</dt><dd id="knowledge-context-core">尚未选择</dd></div>
+        <div><dt>问数模型</dt><dd id="knowledge-context-models">尚未选择</dd></div>
+      </dl>
     </aside>
-    <article class="assistant-panel">
+
+    <article class="assistant-panel assistant-chat-panel">
       <div class="assistant-panel-head">
         <div>
-          <h2 id="knowledge-title">选择或创建会话</h2>
-          <p id="knowledge-mode-help">智能选择只会在 Agent 已启用的能力内路由。</p>
-        </div>
-        <div class="assistant-mode" role="group" aria-label="问答模式">
-          <button type="button" data-mode="auto" aria-pressed="true">智能选择</button>
-          <button type="button" data-mode="document" aria-pressed="false">问文</button>
-          <button type="button" data-mode="data" aria-pressed="false">问数</button>
-          <button type="button" data-mode="conversation" aria-pressed="false">闲聊</button>
+          <h2 id="knowledge-title">请选择或创建会话</h2>
+          <p id="knowledge-conversation-meta">会话由 Agent Runtime 持久化</p>
         </div>
       </div>
-      <div class="assistant-chat">
-        <div class="assistant-chat-intro">
-          <strong id="knowledge-intro-title">等待选择 Agent</strong>
-          <p id="knowledge-intro-copy">知识问答不会隐式访问 X Search；当未创建会话或 Agent 不可用时，不发送任何模型请求。</p>
-        </div>
+      <div class="assistant-chat-stream" id="knowledge-chat-stream">
+        <div class="assistant-chat-empty">选择 Agent 后可创建会话，也可以先在输入框中准备问题。</div>
       </div>
-      <form class="assistant-composer" id="knowledge-form">
-        <textarea id="knowledge-input" maxlength="32000" placeholder="选择可用 Agent 后，询问知识、数据或发起普通对话…" disabled></textarea>
+      <div class="assistant-chat-progress" id="knowledge-progress" hidden>等待处理</div>
+      <form class="assistant-composer assistant-chat-composer" id="knowledge-form">
+        <textarea id="knowledge-input" required maxlength="32000" placeholder="询问客户沟通文档、CRM 数据，或发起普通对话…" disabled></textarea>
         <footer>
-          <span id="knowledge-input-hint">静态测试页尚未连接 Agent Runtime。</span>
+          <span id="knowledge-input-hint">请选择已启用 Agent。</span>
           <button class="primary" type="submit" disabled id="knowledge-send">发送</button>
         </footer>
       </form>
     </article>
-    <aside class="assistant-panel">
-      <div class="assistant-panel-head"><div><h2>运行上下文</h2><p>最终回答只显示实际使用的依据。</p></div></div>
-      <div class="assistant-panel-body">
-        <ul class="assistant-context-list">
-          <li><small>当前 Agent</small><strong id="knowledge-context-agent">尚未选择</strong></li>
-          <li><small>Knowledge Core</small><strong id="knowledge-context-core">尚未选择</strong></li>
-          <li><small>问数模型</small><strong id="knowledge-context-models">尚未选择</strong></li>
-          <li><small>引用</small><strong>[C] 文档 · [Q] 查询结果</strong></li>
-        </ul>
-      </div>
-    </aside>
   </section>
 </main>
+
+<dialog class="assistant-dialog assistant-reference-dialog" id="knowledge-reference-dialog">
+  <div class="assistant-dialog-head">
+    <div>
+      <h2 id="knowledge-reference-title">文档引用</h2>
+      <p class="dialog-subtitle" id="knowledge-reference-meta"></p>
+    </div>
+    <button class="assistant-close" type="button" data-close-reference aria-label="关闭">×</button>
+  </div>
+  <div class="assistant-dialog-body" id="knowledge-reference-body"></div>
+</dialog>
+
 <script src="../runtime-config.js"></script>
 <script src="./js/assistant-auth.js"></script>
 <script src="./js/assistant-api.js"></script>
 <script src="./js/assistant-shell.js"></script>
+<script src="../vendor/marked.umd.js?v=18.0.9"></script>
+<script src="../vendor/purify.min.js?v=3.4.13"></script>
+<script src="../shared/kbot-markdown.js?v=20260827_1"></script>
 <script src="./js/assistant-knowledge.js"></script>
 </body>
 </html>

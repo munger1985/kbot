@@ -6,7 +6,7 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -21,8 +21,14 @@ from main_api.application import (
     UserAuthService,
     require_app_api_permission,
 )
-from platform_clients import AssistantAppClient, AssistantAppClientError, DataQueryClient, KnowledgeCoreClient
-from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
+from platform_clients import (
+    AgentRuntimeClient,
+    AssistantAppClient,
+    AssistantAppClientError,
+    DataQueryClient,
+    KnowledgeCoreClient,
+)
+from platform_core.contracts import PUBLIC_API_V1, PrincipalKind, UpdateConversationRequest
 from platform_core.contracts.data_query import SemanticModelDefinition
 from platform_core.dictionary import (
     ModelCategory,
@@ -30,6 +36,16 @@ from platform_core.dictionary import (
     is_enabled_model_status,
 )
 from platform_core.security import get_auth_context
+
+from main_api.api.runs import (
+    _DocumentReference,
+    _document_locator,
+    _effective_security_level,
+    _event_stream,
+    _parse_cursor,
+    _preview_type,
+    _reference_not_found,
+)
 
 
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/assistant", tags=["Assistant App"])
@@ -85,6 +101,21 @@ class AssistantAgentUpdatePayload(_Payload):
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
+
+
+class AssistantConversationCreatePayload(_Payload):
+    agent_id: UUID
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    retention_policy: str = Field(
+        default="DEFAULT",
+        pattern=r"^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+    )
+
+
+class AssistantConversationTurnPayload(_Payload):
+    input: str = Field(min_length=1, max_length=32000)
+    expected_conversation_version: int = Field(ge=1)
+    client_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AssistantBindingUpsertPayload(_Payload):
@@ -265,6 +296,10 @@ def _knowledge(request: Request) -> KnowledgeCoreClient:
 
 def _data_query(request: Request) -> DataQueryClient:
     return cast(DataQueryClient, request.app.state.data_query_client)
+
+
+def _runtime(request: Request) -> AgentRuntimeClient:
+    return cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
 
 
 def _domains(request: Request) -> DomainManagementService:
@@ -514,6 +549,105 @@ async def _sync_assistant_data_models(
         semantic_model_ids=set(data_model_ids),
         auth_context=request.state.auth_context,
     )
+
+
+async def _assistant_execution_spec(
+    request: Request, *, domain_id: int, agent_id: UUID
+) -> dict[str, Any]:
+    """读取 Assistant Agent 冻结规格并修复其唯一 KC 检索授权。"""
+    spec = await _client(request).execution_spec(
+        agent_id=agent_id,
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    resource_context = spec.get("resource_context")
+    collection_ids = (
+        resource_context.get("collection_ids")
+        if isinstance(resource_context, dict)
+        else None
+    )
+    if not isinstance(collection_ids, list) or len(collection_ids) != 1:
+        raise HTTPException(
+            409,
+            {
+                "code": "ASSISTANT_AGENT_COLLECTION_INVALID",
+                "message": "Agent 执行规格必须且只能绑定一个 Knowledge Core",
+            },
+        )
+    collection_id = UUID(str(collection_ids[0]))
+    await _require_active_knowledge_core(
+        request, domain_id=domain_id, knowledge_core_id=collection_id
+    )
+    await _knowledge(request).bind_collection(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        collection_id=collection_id,
+        note="智能工作台 Agent 会话检索授权",
+        auth_context=request.state.auth_context,
+    )
+    return spec
+
+
+async def _assistant_conversation(
+    request: Request, *, domain_id: int, conversation_id: UUID
+) -> dict[str, Any]:
+    conversation = await _runtime(request).get_conversation(
+        conversation_id=conversation_id,
+        auth_context=request.state.auth_context,
+    )
+    await _client(request).get_agent(
+        agent_id=UUID(str(conversation["agent_id"])),
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    return conversation
+
+
+async def _assistant_run(
+    request: Request, *, domain_id: int, run_id: UUID
+) -> dict[str, Any]:
+    run = await _runtime(request).get_run(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+    await _client(request).get_agent(
+        agent_id=UUID(str(run["agent_id"])),
+        domain_id=domain_id,
+        auth_context=request.state.auth_context,
+    )
+    return run
+
+
+async def _assistant_document_reference(
+    request: Request, *, domain_id: int, run_id: UUID, citation_label: str
+) -> _DocumentReference:
+    await _assistant_run(request, domain_id=domain_id, run_id=run_id)
+    artifact = await _runtime(request).get_result(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+    payload = artifact.get("payload")
+    references = payload.get("references") if isinstance(payload, dict) else None
+    raw = next(
+        (
+            item
+            for item in references or []
+            if isinstance(item, dict)
+            and item.get("reference_type") == "DOCUMENT"
+            and item.get("citation_label") == citation_label
+        ),
+        None,
+    )
+    if raw is None:
+        raise _reference_not_found()
+    try:
+        return _DocumentReference.model_validate(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_REFERENCE_INVALID",
+                "message": "Run 引用缺少不可变文档定位信息",
+            },
+        ) from exc
 
 
 @router.post("/auth/login")
@@ -1405,6 +1539,293 @@ async def list_agents(request: Request):
     if "assistant:agent_manage" in set(snapshot.permissions):
         return agents
     return [item for item in agents if item.get("status") == "ACTIVE"]
+
+
+@router.post("/conversations", status_code=status.HTTP_201_CREATED)
+async def create_assistant_conversation(
+    payload: AssistantConversationCreatePayload, request: Request
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    spec = await _assistant_execution_spec(
+        request, domain_id=domain_id, agent_id=payload.agent_id
+    )
+    return await _runtime(request).create_conversation(
+        payload={**payload.model_dump(mode="json"), "execution_spec": spec},
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/conversations")
+async def list_assistant_conversations(
+    request: Request, limit: int = Query(default=50, ge=1, le=200)
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    agents = await _client(request).list_agents(
+        domain_id=domain_id, auth_context=request.state.auth_context
+    )
+    agent_ids = {str(item.get("agent_id")) for item in agents}
+    rows = await _runtime(request).list_conversations(
+        limit=200, auth_context=request.state.auth_context
+    )
+    return [
+        item for item in rows if str(item.get("agent_id")) in agent_ids
+    ][:limit]
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_assistant_conversation(conversation_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    return await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+
+
+@router.patch("/conversations/{conversation_id}")
+async def update_assistant_conversation(
+    conversation_id: UUID,
+    payload: UpdateConversationRequest,
+    request: Request,
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+    return await _runtime(request).update_conversation(
+        conversation_id=conversation_id,
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.delete(
+    "/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_assistant_conversation(
+    conversation_id: UUID,
+    request: Request,
+    expected_row_version: int = Query(ge=1),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+    await _runtime(request).delete_conversation(
+        conversation_id=conversation_id,
+        expected_row_version=expected_row_version,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/conversations/{conversation_id}/turns",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_assistant_conversation_turn(
+    conversation_id: UUID,
+    payload: AssistantConversationTurnPayload,
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    conversation = await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+    agent_id = UUID(str(conversation["agent_id"]))
+    spec = await _assistant_execution_spec(
+        request, domain_id=domain_id, agent_id=agent_id
+    )
+    resource_context = spec.get("resource_context") or {}
+    collection_ids = list(resource_context.get("collection_ids") or [])
+    security_level = await _effective_security_level(request)
+    body = payload.model_dump(mode="json")
+    body["execution_spec"] = spec
+    body["collection_ids"] = collection_ids
+    body["security_level"] = security_level
+    return await _runtime(request).create_conversation_turn(
+        conversation_id=conversation_id,
+        payload=body,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/conversations/{conversation_id}/turns")
+async def list_assistant_conversation_turns(
+    conversation_id: UUID,
+    request: Request,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+    return await _runtime(request).list_conversation_turns(
+        conversation_id=conversation_id,
+        after=after,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/conversations/{conversation_id}/turns/{turn_id}/trace")
+async def list_assistant_turn_trace(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    await _assistant_conversation(
+        request, domain_id=domain_id, conversation_id=conversation_id
+    )
+    return await _runtime(request).list_turn_trace(
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        after=after,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/runs/{run_id}")
+async def get_assistant_agent_run(run_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    return await _assistant_run(request, domain_id=domain_id, run_id=run_id)
+
+
+@router.get("/runs/{run_id}/result")
+async def get_assistant_agent_run_result(run_id: UUID, request: Request):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    await _assistant_run(request, domain_id=domain_id, run_id=run_id)
+    return await _runtime(request).get_result(
+        run_id=run_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/runs/{run_id}/events")
+async def stream_assistant_agent_run_events(
+    run_id: UUID,
+    request: Request,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    cursor = _parse_cursor(last_event_id)
+    summary = await _assistant_run(request, domain_id=domain_id, run_id=run_id)
+    if cursor > int(summary["event_cursor"]):
+        raise HTTPException(
+            400,
+            {
+                "code": "AGENT_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 超过当前 Run 事件游标",
+            },
+        )
+    return StreamingResponse(
+        _event_stream(run_id=run_id, request=request, cursor=cursor),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/runs/{run_id}/references/{citation_label}/preview")
+async def get_assistant_reference_preview(
+    run_id: UUID, citation_label: str, request: Request
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    reference = await _assistant_document_reference(
+        request,
+        domain_id=domain_id,
+        run_id=run_id,
+        citation_label=citation_label,
+    )
+    preview = await _knowledge(request).get_bundle_revision_preview(
+        domain_id=domain_id,
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        auth_context=request.state.auth_context,
+    )
+    source_file = next(
+        (
+            item
+            for item in preview.get("files", [])
+            if str(item.get("document_version_id"))
+            == str(reference.document_version_id)
+            and bool(item.get("preview_available"))
+        ),
+        None,
+    )
+    if source_file is None:
+        raise _reference_not_found()
+    mime_type = str(
+        source_file.get("detected_mime_type")
+        or source_file.get("declared_mime_type")
+        or "application/octet-stream"
+    ).split(";", 1)[0].strip().lower()
+    page_no, page_end, bbox = _document_locator(reference)
+    return {
+        "reference_type": "DOCUMENT",
+        "citation_label": reference.citation_label,
+        "title": reference.title,
+        "mime_type": mime_type,
+        "preview_type": _preview_type(mime_type),
+        "page_no": page_no,
+        "page_end": page_end,
+        "bbox": bbox,
+        "content_url": (
+            f"{PUBLIC_API_V1}/apps/assistant/runs/{run_id}/references/"
+            f"{reference.citation_label}/content"
+        ),
+        "download_available": True,
+    }
+
+
+@router.get("/runs/{run_id}/references/{citation_label}/content")
+async def stream_assistant_reference_content(
+    run_id: UUID,
+    citation_label: str,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+):
+    domain_id, _, _ = await _require(request, "assistant:knowledge_chat")
+    reference = await _assistant_document_reference(
+        request,
+        domain_id=domain_id,
+        run_id=run_id,
+        citation_label=citation_label,
+    )
+    upstream = await _knowledge(request).stream_source_file(
+        domain_id=domain_id,
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        document_version_id=reference.document_version_id,
+        range_header=range_header,
+        auth_context=request.state.auth_context,
+    )
+    forwarded_headers = {
+        name: upstream.headers[name]
+        for name in (
+            "accept-ranges",
+            "cache-control",
+            "content-disposition",
+            "content-length",
+            "content-range",
+            "content-security-policy",
+            "x-content-type-options",
+        )
+        if name in upstream.headers
+    }
+    return StreamingResponse(
+        upstream.body,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get(
+            "content-type", "application/octet-stream"
+        ),
+        headers=forwarded_headers,
+    )
 
 
 @router.get("/agents/options")

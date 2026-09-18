@@ -87,6 +87,17 @@ async def get_agent(agent_id: UUID, domain_id: int, request: Request):
         _raise(exc)
 
 
+@router.get("/{agent_id}/execution-spec")
+async def get_execution_spec(agent_id: UUID, domain_id: int, request: Request):
+    _context(request, domain_id)
+    try:
+        return await _service(request).execution_spec(
+            domain_id=domain_id, agent_id=agent_id
+        )
+    except AgentApplicationError as exc:
+        _raise(exc)
+
+
 @router.patch("/{agent_id}")
 async def update_agent(agent_id: UUID, payload: AgentUpdateRequest, request: Request):
     try:

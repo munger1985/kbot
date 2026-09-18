@@ -51,7 +51,9 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         "knowledge.html": {
             "knowledge-form", "knowledge-agent", "knowledge-agent-summary",
             "knowledge-context-agent", "knowledge-context-core",
-            "knowledge-context-models",
+            "knowledge-context-models", "knowledge-conversation-list",
+            "knowledge-chat-stream", "knowledge-progress",
+            "knowledge-reference-dialog",
         },
         "x-search.html": {
             "x-search-history",
@@ -106,6 +108,8 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
             "agent-composer-llm",
             "agent-memory-llm",
             "agent-memory-embedding",
+            "agent-router-llm",
+            "agent-data-planner-llm",
             "agent-config",
         },
         "model-bindings.html": {"binding-rows", "model-binding-dialog"},
@@ -144,7 +148,7 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
     def test_business_pages_use_auth_api_shell_script_chain(self):
         for page_name, page_script in self.page_scripts.items():
             parser = _parse(UI_ROOT / page_name)
-            extra = MARKDOWN_CHAIN if page_name == "x-search.html" else ()
+            extra = MARKDOWN_CHAIN if page_name in {"knowledge.html", "x-search.html"} else ()
             expected = [*SCRIPT_CHAIN, *extra, page_script]
             self.assertEqual(expected, parser.scripts[: len(expected)], page_name)
             self.assertNotIn("./js/assistant-resources.js", parser.scripts) if page_name == "model-bindings.html" else None
@@ -210,6 +214,13 @@ class AssistantUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("parseAnswerBlocks", x_search)
         self.assertNotIn("img.src = ", image)
         self.assertNotIn("content_path", image)
+
+        knowledge = (UI_ROOT / "js" / "assistant-knowledge.js").read_text(encoding="utf-8")
+        self.assertIn("/conversations", knowledge)
+        self.assertIn("/turns", knowledge)
+        self.assertIn("/events", knowledge)
+        self.assertIn("KBotMarkdown.render", knowledge)
+        self.assertNotIn("Runtime 未接入", knowledge)
 
     def test_pages_wait_for_shell_ready(self):
         for name in (
