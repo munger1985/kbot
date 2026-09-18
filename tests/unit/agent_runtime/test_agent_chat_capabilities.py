@@ -1121,6 +1121,44 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("DOCUMENT", request["enabled_routes"])
         self.assertIn("DATA_QUERY", request["enabled_routes"])
         self.assertEqual(decision.route_type, RouteType.HYBRID_PARALLEL)
+        self.assertFalse(decision.context_required)
+
+    async def test_router_preserves_followup_context_requirement(self):
+        model = _ModelClient(
+            response={
+                "route_type": "DOCUMENT",
+                "confidence": 0.95,
+                "reason": "当前问题通过单数指代追问上一轮对象",
+                "clarification_question": None,
+                "requires_chart": False,
+                "context_required": True,
+            }
+        )
+        planner = _root_planner(
+            model_client=model,
+            prompt_resolver=_PromptResolver(),
+        )
+
+        decision = await planner.decide_for_input(
+            agent_snapshot={
+                "enabled_capabilities": ["document", "data_query"],
+                "models": {
+                    "router_llm": {
+                        "served_model_name": "router-model"
+                    }
+                },
+            },
+            objective="根据会议纪要说明其风险原因。",
+            conversation_context={
+                "recent_items": [{
+                    "role": "ASSISTANT",
+                    "content": {"text": "北辰科技的金额最高。"},
+                }]
+            },
+        )
+
+        self.assertEqual(RouteType.DOCUMENT, decision.route_type)
+        self.assertTrue(decision.context_required)
 
     async def test_km_topic_enumeration_uses_data_first_hybrid(self):
         model = _ModelClient(

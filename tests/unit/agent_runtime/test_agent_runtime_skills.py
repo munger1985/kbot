@@ -12,6 +12,8 @@ from pydantic import ValidationError
 from agent_runtime.application import LeasedArtifact
 from agent_runtime.runtime import ExecutionContext
 from agent_runtime.specialists.conversation import ContextRewriteSkill
+from agent_runtime.specialists.conversation.contracts import ContextRewriteOutput
+from agent_runtime.specialists.conversation.skill import FOLLOWUP_FOCUS_RULE
 from agent_runtime.specialists.document import KnowledgeRetrievalSkill
 from agent_runtime.specialists.response_composer import ResponseComposerSkill
 from agent_runtime.specialists.response_composer.contracts import (
@@ -311,6 +313,23 @@ class _MalformedRewriteModelClient(_RewriteModelClient):
         return output
 
 
+class _BroadFollowupRewriteModelClient(_RewriteModelClient):
+    async def get_llm_json(self, **kwargs):
+        self.last_json_request = kwargs
+        return {
+            "raw_input": "根据会议纪要说明其风险原因。",
+            "standalone_query": "说明当前所有风险客户的风险原因。",
+            "retrieval_queries": [
+                "说明甲客户、乙客户和北辰科技的风险原因。"
+            ],
+            "resolved_references": ["其=当前风险客户"],
+            "active_topic": "当前风险客户",
+            "ambiguity": False,
+            "clarification_question": None,
+            "memory_refs": [],
+        }
+
+
 class _PromptResolver:
     async def resolve(self, prompt_key):
         variables = {
@@ -578,6 +597,103 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             "response_language=zh-CN",
             model.last_json_request["prompt"][1]["content"],
         )
+        self.assertEqual(
+            model.last_json_request["prompt"][2]["content"],
+            FOLLOWUP_FOCUS_RULE,
+        )
+
+    async def test_followup_uses_latest_unique_query_row_as_focus(self):
+        context = _context().model_copy(
+            update={
+                "original_input": "根据会议纪要说明其风险原因。",
+                "config_snapshot": {
+                    **_context().config_snapshot,
+                    "route": {
+                        "route_type": "DOCUMENT",
+                        "classifier_version": "llm-single-route-v2",
+                        "context_required": True,
+                    },
+                    "conversation": {
+                        "context": {
+                            "summary": {
+                                "active_topic": "客户开放商机"
+                            },
+                            "recent_items": [
+                                {
+                                    "role": "ASSISTANT",
+                                    "content": {
+                                        "text": (
+                                            "北辰科技，开放商机金额为 480 万元。"
+                                        ),
+                                        "query_results": [{
+                                            "columns": [
+                                                {
+                                                    "name": "customer_name",
+                                                    "label": "客户名称",
+                                                },
+                                                {
+                                                    "name": "open_amount",
+                                                    "label": "开放商机金额",
+                                                },
+                                            ],
+                                            "rows": [{
+                                                "customer_name": "北辰科技",
+                                                "open_amount": 4800000,
+                                            }],
+                                        }],
+                                    },
+                                }
+                            ],
+                            "memories": [],
+                        }
+                    },
+                },
+            }
+        )
+
+        result = await ContextRewriteSkill(
+            model_client=_BroadFollowupRewriteModelClient(),
+            prompt_resolver=_PromptResolver(),
+        ).execute(context)
+
+        payload = result.artifact.payload
+        self.assertEqual(
+            payload["standalone_query"],
+            "上一轮唯一结构化结果：客户名称=北辰科技，开放商机金额=4800000。"
+            "当前追问：根据会议纪要说明其风险原因。",
+        )
+        self.assertEqual(
+            payload["retrieval_queries"],
+            [payload["standalone_query"]],
+        )
+        self.assertNotIn("甲客户", payload["standalone_query"])
+        self.assertIn(
+            "上一轮唯一结构化结果=客户名称=北辰科技，开放商机金额=4800000",
+            payload["resolved_references"],
+        )
+
+    def test_unique_query_row_does_not_override_complete_new_question(self):
+        output = ContextRewriteOutput(
+            raw_input="说明云峰连锁零售的风险原因。",
+            standalone_query="说明云峰连锁零售的风险原因。",
+            retrieval_queries=("说明云峰连锁零售的风险原因。",),
+        )
+        result = ContextRewriteSkill._apply_unique_query_focus(
+            output,
+            original_input=output.raw_input,
+            route={"context_required": False},
+            recent_items=[{
+                "role": "ASSISTANT",
+                "content": {
+                    "query_results": [{
+                        "columns": [{"name": "customer_name"}],
+                        "rows": [{"customer_name": "北辰科技"}],
+                    }]
+                },
+            }],
+        )
+
+        self.assertEqual(output, result)
 
     async def test_km_self_contained_route_does_not_inherit_old_topic(self):
         model = _MalformedRewriteModelClient()

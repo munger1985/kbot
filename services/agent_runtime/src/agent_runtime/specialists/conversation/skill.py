@@ -14,6 +14,14 @@ from platform_core.prompts import StrictPromptRenderer
 
 from .contracts import ContextRewriteOutput
 
+FOLLOWUP_FOCUS_RULE = (
+    "消解指代时必须遵守：最近一轮助手回答若已选定唯一对象，"
+    "该对象就是当前默认焦点；当前输入的对象若仍依赖指代、指示或省略，"
+    "即使带了来源或分析角度，也必须补全为该焦点，不得改写成完整新问题，"
+    "也不得把单数指代扩成更早出现的同类对象集合；只有当前输入自己点名了"
+    "对象或范围时才不继承上一轮焦点。"
+)
+
 
 class ContextRewriteSkill:
     def __init__(self, *, model_client, prompt_resolver):
@@ -89,6 +97,10 @@ class ContextRewriteSkill:
                 "role": "system",
                 "content": language_instruction(language),
             },
+            {
+                "role": "system",
+                "content": FOLLOWUP_FOCUS_RULE,
+            },
         ]
         response = await self._model_client.get_llm_json(
             served_model_name=model_name,
@@ -146,7 +158,110 @@ class ContextRewriteSkill:
         }
         if not set(output.memory_refs).issubset(allowed_memory_ids):
             raise ValueError("上下文改写引用了未提供的 Memory")
+        output = self._apply_unique_query_focus(
+            output,
+            original_input=context.original_input,
+            route=route,
+            recent_items=memory_context.get("recent_items") or [],
+        )
         return self._result(context, output, prompt_ref=prompt.ref())
+
+    @classmethod
+    def _apply_unique_query_focus(
+        cls,
+        output: ContextRewriteOutput,
+        *,
+        original_input: str,
+        route: dict[str, Any],
+        recent_items: list[dict[str, Any]],
+    ) -> ContextRewriteOutput:
+        """用上一轮唯一问数行确定性约束需要上下文的追问。"""
+        if route.get("context_required") is not True:
+            return output
+        focus = cls._latest_unique_query_row(recent_items)
+        if focus is None:
+            return output
+        focused_query = (
+            f"上一轮唯一结构化结果：{focus}。当前追问：{original_input}"
+        )
+        if len(focused_query) > 32000:
+            return output
+        reference = f"上一轮唯一结构化结果={focus}"
+        return ContextRewriteOutput.model_validate(
+            {
+                **output.model_dump(mode="python"),
+                "standalone_query": focused_query,
+                "retrieval_queries": (focused_query,),
+                "resolved_references": tuple(dict.fromkeys((
+                    *output.resolved_references,
+                    reference,
+                ))),
+                "ambiguity": False,
+                "clarification_question": None,
+            }
+        )
+
+    @staticmethod
+    def _latest_unique_query_row(
+        recent_items: list[dict[str, Any]],
+    ) -> str | None:
+        """提取最近助手回答中唯一一行、可安全重放的结构化结果。"""
+        for item in reversed(recent_items):
+            if str(item.get("role") or "").upper() != "ASSISTANT":
+                continue
+            content = item.get("content")
+            if not isinstance(content, dict):
+                return None
+            query_results = content.get("query_results")
+            if not isinstance(query_results, list) or len(query_results) != 1:
+                return None
+            query_result = query_results[0]
+            if not isinstance(query_result, dict):
+                return None
+            rows = query_result.get("rows")
+            if not isinstance(rows, list) or len(rows) != 1:
+                return None
+            row = rows[0]
+            if not isinstance(row, dict) or not row:
+                return None
+
+            labels: dict[str, str] = {}
+            ordered_names: list[str] = []
+            columns = query_result.get("columns")
+            if isinstance(columns, list):
+                for column in columns:
+                    if not isinstance(column, dict):
+                        continue
+                    name = str(column.get("name") or "").strip()
+                    if not name or name in ordered_names:
+                        continue
+                    ordered_names.append(name)
+                    labels[name] = str(
+                        column.get("label")
+                        or column.get("display_name")
+                        or name
+                    ).strip()
+            ordered_names.extend(
+                str(name)
+                for name in row
+                if str(name) not in ordered_names
+            )
+            values: list[str] = []
+            for name in ordered_names:
+                value = row.get(name)
+                if value is None or isinstance(value, (dict, list, tuple)):
+                    continue
+                rendered = str(value).strip()
+                if not rendered:
+                    continue
+                values.append(f"{labels.get(name, name)}={rendered}")
+                if len(values) >= 8:
+                    break
+            if not values:
+                return None
+            focus = "，".join(values)
+            return focus[:2000]
+        return None
 
     @staticmethod
     def _validate_response(

@@ -285,6 +285,9 @@ class RootAgentPlanner:
                 or None
             ),
             requires_chart=requires_chart,
+            context_required=bool(
+                response.get("context_required", False)
+            ),
             classifier_version="llm-single-route-v2",
         )
 
