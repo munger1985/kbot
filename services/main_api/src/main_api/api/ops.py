@@ -35,6 +35,7 @@ from platform_core.contracts.aiops import (
     HitlSkipCommand,
     InspectionFirePage,
     InspectionFireView,
+    InspectionCheckCatalogView,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -130,10 +131,10 @@ def _route_permissions() -> dict[str, str]:
             "create_policy", "list_policies", "get_policy", "command_policy",
         },
         "aiops:plan_manage": {
-            "create_inspection_plan", "list_inspection_plans",
-            "get_inspection_plan", "patch_inspection_plan",
-            "activate_inspection_plan", "pause_inspection_plan",
-            "disable_inspection_plan",
+            "get_inspection_check_catalog", "create_inspection_plan",
+            "list_inspection_plans", "get_inspection_plan",
+            "patch_inspection_plan", "activate_inspection_plan",
+            "pause_inspection_plan", "disable_inspection_plan",
         },
     }
     for permission, endpoint_names in groups.items():
@@ -1365,6 +1366,20 @@ async def command_policy(
         auth_context=request.state.auth_context,
     )
     return _validated(PolicyDetail, payload, response)
+
+
+
+@router.get(
+    "/inspection-check-catalog",
+    response_model=InspectionCheckCatalogView,
+)
+async def get_inspection_check_catalog(
+    request: Request,
+) -> InspectionCheckCatalogView:
+    payload = await _client(request).get_inspection_check_catalog(
+        auth_context=request.state.auth_context,
+    )
+    return _validated(InspectionCheckCatalogView, payload)
 
 
 @router.post(

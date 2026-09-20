@@ -1,17 +1,27 @@
 # AIOps 诊断内核与后续能力详细设计
 
-版本：1.0
-状态：待批准，未实施
-基准日期：2026-09-18
+版本：1.1
+状态：部分落地（P0/P1 主链已实施）
+基准日期：2026-09-20
 依据：
 
-- 产品 Roadmap [`docs/product/aiops-roadmap.md`](../product/aiops-roadmap.md) v1.3
+- 产品 Roadmap [`docs/product/aiops-roadmap.md`](../product/aiops-roadmap.md) v1.4
 - 现有调查设计 [`docs/product/aiops-agent-chat-diagnosis.md`](../product/aiops-agent-chat-diagnosis.md)
 - 现有受控动作计划 [`docs/proposals/aiops-controlled-actions-implementation-plan.md`](aiops-controlled-actions-implementation-plan.md)
-- 当前代码：AIOps Agent Schema 23 / `aiops-oracle-v13`、Oracle 诊断目录 51 个 Tool、13 个 Playbook、Answer Block、逐条 Proposal 序列器
+- 当前代码：Finding Compiler、Check Catalog、SQL Monitor / SQLHC / ExaCheck 近端报告、容量约束、AWR Fact、Fleet、诊断四段与逐条审批
 
 本文把 Roadmap 落成可实施设计：先冻结共用诊断内核，再按现有实现给出改造方案。
-未批准前不改代码。EICC 与 ADG 演练不在本期设计范围。
+EICC 与 ADG 演练不在本期设计范围。
+
+实施状态：
+
+- 已落地：共用诊断内核、Finding Card 第一屏、三入口同一套 Agent 逻辑、诊断页逐条审批、
+  Check Catalog 勾选、P1 Finding 五类、SQL Monitor 官方 HTML、SQLHC Playbook、
+  ExaCheck 上传解析、AWR 对比/趋势 Fact、Fleet / leadership briefing、容量约束。
+- 本轮补齐：Cube 告警/巡检/运行详情只读渲染四段 blocks；P1 Finding
+  `INVALID_OBJECT` / `ARCHIVE_HEADROOM` / `BACKUP_FAILED` / `LONG_TRANSACTION` / `TOP_SQL`；
+  PLANNED 检查项 UI 标「规划中」且不可勾选。归档 Finding 只挂 FRA 余量，不假装有归档生成量。
+- 未做：飞书、ADG 切换演练、Host Runner、真实审批联调。
 
 ## 1. 目标
 
@@ -58,11 +68,11 @@ Finding Card → 指标/趋势/根因分析 → 解决方案 → 可选逐条动
 - 三入口已存在：`CHAT_TURN`、`ALERT_DIAGNOSIS`、`INSPECTION`；Conversation `source_type` 为 `CHAT` / `SITUATION` / `INSPECTION`。
 - 调查循环、Playbook 目录、Tool 编译执行、Evidence Artifact、Turn Answer Block、SSE 已落地。
 - Oracle 只读目录 51 个 Tool，含阻塞链、活动会话、表空间、复制延迟、等待、Top SQL、XPLAN、`db.sql.plan_monitor`、AWR/ASH HTML。
-- AWR/ASH HTML 已按动作实例下载：`GET .../workload-reports/{tool_id}`，tool_id 仅允许 `db.oracle.awr.report|awr.diff_report|ash.report`。
-- 用户上传 HTML 已有 `HTML_TEXT_EXTRACT`，可作为 SQLHC/ExaCheck 补证入口，不能当在线取证。
+- AWR/ASH/SQL Monitor HTML 已按动作实例下载：`GET .../workload-reports/{tool_id}`，tool_id 仅允许 `db.oracle.awr.report|awr.diff_report|ash.report|sql_monitor.report`。
+- 用户上传 HTML 已有 `HTML_TEXT_EXTRACT`；SQLHC 作为补证，ExaCheck/ORAchk 作为主路径导入 Finding，均不能当在线取证。
 - 受控动作 Catalog、Compiler、单条 Proposal、审批 Token、Executor、验证、`aiops.action-sequencer` 追加下一条 `PROPOSAL_SUMMARY` 已落地。
 - `ActionIntent.NONE | ADVISORY | EXECUTE` 已区分“只诊断 / 只给语句 / 申请执行”。
-- `DiagnosticProfile.SINGLE_SQL_PERFORMANCE` 已存在，可挂 SQL 诊断 Playbook，目前没有对应 DAG。
+- `DiagnosticProfile.SINGLE_SQL_PERFORMANCE` 已挂 `oracle.sql.healthcheck`；Finding 核心三件套仍走固定基线，官方 SQL Monitor 报告在 Playbook DAG 中。
 
 ### 3.2 必须改的缺口
 
@@ -75,8 +85,9 @@ Finding Card → 指标/趋势/根因分析 → 解决方案 → 可选逐条动
 | 巡检范围 | 计划只绑 `template_id=database_daily` 的固定 7 步；`optional_checks` 只是 override key，页面不能勾选 |
 | 巡检结论 | 有行也写成“结果正常”；没有越界 Finding |
 | 动手呈现 | Proposal 可出现在回答任意位置；自动入口未强制 `ActionIntent.NONE` |
-| SQL Monitor | `db.sql.plan_monitor` 读 `GV$SQL_PLAN_MONITOR` 行；无 `REPORT_SQL_MONITOR` |
-| SQLHC | 无 Playbook；现有 SQL Tool 未被组合成检查清单 |
+| SQL Monitor | `db.oracle.sql_monitor.report` 已用 `REPORT_SQL_MONITOR` 生成官方 HTML；`db.sql.plan_monitor` 仍是 `GV$SQL_PLAN_MONITOR` 行级 Fact |
+| SQLHC | 已有 `oracle.sql.healthcheck` DAG；bind/histogram 专项 Tool 仍缺，记 Gap 不中断；上传 HTML 已解析为 USER_PROVIDED 证据和可选 `SQL_STATS_STALE` Finding，不替代在线 DAG |
+| ExaCheck | 上传 HTML 已解析 FAIL/WARNING 为 USER_PROVIDED Finding；INFO 留在事实表；巡检 Check Catalog 可绑 Exadata 健康包，Fire 不执行官方脚本 |
 | 容量记忆 | Target 无 ASM/路径等运维事实表 |
 | AWR 分析 | 能出 HTML，没有 Load Profile / Top Wait / Top SQL 的结构化对比 Tool |
 
@@ -334,9 +345,16 @@ identity
   → display_cursor
   → object_statistics
   → plan_monitor
-  → sql_monitor.report   （P2 有报告 Tool 后）
+  → sql_monitor.report
   → bind/histogram 等补齐 Tool（缺则记 Gap，不中断）
 ```
+
+停止条件写在现有 Manifest 字段，不扩展 `PlaybookToolStep`：
+
+- 某步 FAILED / 空结果：记 Gap，后续步骤继续；
+- bind/histogram 等专项 Tool 尚未入目录：不写入 DAG，视为能力缺口；
+- Finding 核心三件套仍由 `_single_sql_investigation_output` 固定基线取证；
+- `db.oracle.sql_monitor.report` 只出现在 Playbook DAG，不进入固定基线。
 
 不把 MOS SQLHC 放进仓库，不在目标库执行/安装 SQLT。客户已有 SQLHC HTML 时走现有上传 + `HTML_TEXT_EXTRACT`，解析为 `USER_PROVIDED` 证据和可选 Finding，**不替代**在线 DAG。
 
@@ -348,6 +366,26 @@ identity
 这是唯一以上传为主路径的官方脚本。Host Runner 与 ADG 同类，不进 P0/P1。
 
 不能把方式 C 套到 SQL Monitor 或 SQLHC。
+
+### 6.8 本地模型绑定（P1，改绑定校验 + Provider）
+
+生产环境的规划/诊断模型必须绑定客户近端 DeepSeek；开发环境可以绑定 GPT。隔离只做在 AIOps Agent 的绑定和解析，不在 Model Serving 全局禁用 GPT。三个入口仍走同一套 Agent 诊断内核，Finding Card、指标分析、根因、方案和逐条审批执行都不改。
+
+新增 Provider `local_deepseek`：
+
+- 表示客户侧 vLLM / SGLang 等 OpenAI 兼容 HTTP 推理服务，不是进程内加载权重，也不是云端 `api_deepseek`；
+- 必填 `api_endpoint` 与 `api_key`（密钥可以是占位值）；仓库不预置模型文件或真实密钥；
+- 与其它 OpenAI 兼容 LLM（`api_deepseek` / `api_qwen` / `chatgpt`）走同一套 HTTP 适配器。
+
+校验时机与错误：
+
+- 仅 Agent 状态为 `ACTIVE` 时强制本地模型；`DRAFT` 不强制，便于先保存再补近端模型；
+- 生产环境名与 `Settings.is_production()` 一致：`prod` / `production` / `live`；
+- 生产启用时若模型目录客户端不可用 → `503 AIOPS_AGENT_MODEL_DIRECTORY_UNAVAILABLE`；
+- 生产启用时若规划或诊断模型不是 `local_deepseek` → `422 AIOPS_AGENT_PRODUCTION_LOCAL_MODEL_REQUIRED`；
+- 运行时解析规划/诊断模型再校验一次，避免目录被改成云端模型后继续跑生产诊断。
+
+UI：Agent 模型下拉展示 Provider 中文标签，`local_deepseek` 置顶；新建时预选第一个本地 DeepSeek。Ammolite Portal 的 `local_* → runtime_type=LOCAL` 对 `local_deepseek` 必须例外，其运行方式是 `API`（`PLATFORM_BOUNDARY_ADAPTATION`）：近端推理服务仍走 HTTP，不是进程内 LOCAL 权重。
 
 ## 7. 分阶段改造方案
 
@@ -442,4 +480,4 @@ P2 不强制新表：SQL Monitor 沿用 Tool Artifact；ExaCheck 沿用上传/Co
 
 ## 11. 建议实施切面
 
-批准后第一刀只做 P0-1 到 P0-8。P0 完成前不开始 SQL Monitor / SQLHC / 巡检勾选，避免内核未定就加专项包。
+P0/P1 主链与官方报告接入已经落地。后续只补飞书、ADG 演练、Host Runner 和真实审批联调，不再回头改内核。

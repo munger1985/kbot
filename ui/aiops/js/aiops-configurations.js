@@ -5,6 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   let editing = null;
   let inspectionAgents = [];
+  let inspectionCatalog = null;
 
   function showResult(id, message, tone = "bad") {
     const element = document.getElementById(id);
@@ -441,6 +442,76 @@
     return `每${days.map((day) => weekdayLabels[day]).join("、")}`;
   }
 
+  function catalogScheduleType(form) {
+    return form.elements.schedule_type.value === "WEEKLY" ? "WEEKLY" : "DAILY";
+  }
+
+  function catalogDefaultCheckIds(scheduleType) {
+    const wanted = scheduleType === "WEEKLY" ? "WEEKLY" : "DAILY";
+    if (!inspectionCatalog) return [];
+    return inspectionCatalog.groups.flatMap((group) => group.checks)
+      .filter((check) => check.availability === "READY" && (check.default_for || []).includes(wanted))
+      .map((check) => check.check_id);
+  }
+
+  function selectedCheckIds(form) {
+    return Array.from(form.querySelectorAll('input[name="selected_check_ids"]:checked'))
+      .map((input) => input.value);
+  }
+
+  function setSelectedCheckIds(form, checkIds) {
+    const selected = new Set(checkIds || []);
+    form.querySelectorAll('input[name="selected_check_ids"]').forEach((input) => {
+      input.checked = !input.disabled && selected.has(input.value);
+    });
+  }
+
+  function applyDefaultChecksIfCreating(form) {
+    if (editing) return;
+    setSelectedCheckIds(form, catalogDefaultCheckIds(catalogScheduleType(form)));
+  }
+
+  function renderCheckCatalog(form, selectedIds) {
+    const root = document.getElementById("inspection-check-catalog");
+    if (!root) return;
+    root.replaceChildren();
+    if (!inspectionCatalog) {
+      root.textContent = "检查目录读取失败，无法勾选检查项。";
+      return;
+    }
+    inspectionCatalog.groups.forEach((group) => {
+      const section = document.createElement("section");
+      section.className = "inspection-check-group";
+      const heading = document.createElement("h4");
+      heading.textContent = group.display_name;
+      const list = document.createElement("div");
+      list.className = "inspection-check-list";
+      group.checks.forEach((check) => {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = "selected_check_ids";
+        input.value = check.check_id;
+        const planned = check.availability !== "READY";
+        input.disabled = planned;
+        input.checked = !planned && (selectedIds || []).includes(check.check_id);
+        if (planned) label.dataset.planned = "true";
+        const text = document.createElement("span");
+        const title = document.createElement("strong");
+        title.textContent = check.display_name;
+        const hint = document.createElement("small");
+        hint.textContent = planned
+          ? "规划中"
+          : (check.trend_required ? "周检看趋势" : "趋势可选");
+        text.append(title, hint);
+        label.append(input, text);
+        list.append(label);
+      });
+      section.append(heading, list);
+      root.append(section);
+    });
+  }
+
   function buildSchedule(form) {
     const mode = form.querySelector('input[name="schedule_mode"]:checked')?.value;
     if (!mode) {
@@ -482,6 +553,7 @@
       form.elements.schedule_type.value = schedule.type;
       form.elements.cron_expression.value = schedule.cron;
       document.getElementById("inspection-schedule-summary").textContent = schedule.summary;
+      applyDefaultChecksIfCreating(form);
     } catch (error) {
       document.getElementById("inspection-schedule-summary").textContent = error.message;
     }
@@ -599,6 +671,10 @@
       schedule_resolver_version: form.elements.schedule_resolver_version.value.trim(),
     };
     if (create) payload.schedule_type = form.elements.schedule_type.value;
+    payload.selected_check_ids = selectedCheckIds(form);
+    if (!payload.selected_check_ids.length) {
+      throw new Error("至少勾选一个已开放的检查项。");
+    }
     return payload;
   }
 
@@ -607,6 +683,7 @@
     const form = document.getElementById("inspection-plan-form");
     form.reset();
     resetScheduleBuilder(form);
+    renderCheckCatalog(form, catalogDefaultCheckIds("DAILY"));
     form.elements.template_id.value = "database_daily";
     form.elements.template_version.value = "1.0.0";
     form.elements.schedule_resolver_version.value = "1.0.0";
@@ -625,6 +702,7 @@
       const form = document.getElementById("inspection-plan-form");
       form.reset();
       Object.entries(planPayloadValues(plan)).forEach(([key, value]) => { form.elements[key].value = value; });
+      renderCheckCatalog(form, plan.selected_check_ids || []);
       hydrateScheduleBuilder(form, plan);
       document.getElementById("inspection-plan-dialog-title").textContent = "编辑巡检计划";
       document.getElementById("save-inspection-plan").textContent = "保存修改";
@@ -734,6 +812,14 @@
         const day = index + 1;
         return new Option(`${day} 日`, String(day));
       }));
+      try {
+        inspectionCatalog = await KBotAIOpsAuth.request(`${api}/inspection-check-catalog`);
+        renderCheckCatalog(planForm, catalogDefaultCheckIds("DAILY"));
+      } catch (error) {
+        inspectionCatalog = null;
+        renderCheckCatalog(planForm, []);
+        document.getElementById("inspection-check-help").textContent = error.message;
+      }
       document.getElementById("create-inspection-plan").addEventListener("click", openPlanCreate);
       planForm.addEventListener("submit", savePlan);
       planForm.querySelectorAll('input[name="schedule_mode"], input[name="weekdays"], input[type="time"], select[name="month_day"], select[name="interval_preset"], select[name="timezone"]').forEach((control) => {

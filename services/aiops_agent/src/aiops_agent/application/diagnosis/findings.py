@@ -99,13 +99,14 @@ def _compile_fact(
         values = _row_values(columns, row)
         derived, parse_gaps = _apply_parses(spec, values, fact)
         values.update(derived)
+        gaps.extend(parse_gaps)
         if not _predicates_match(spec, values):
             continue
         matched += 1
-        confirmation = (
-            FindingConfirmation.UNKNOWN
-            if missing_required
-            else FindingConfirmation.CONFIRMED
+        confirmation = _confirmation_for(
+            spec,
+            fact,
+            missing_required=missing_required,
         )
         fields = {
             column: values.get(column.lower())
@@ -130,7 +131,6 @@ def _compile_fact(
                 playbook_id=spec.get("playbook_id"),
             )
         )
-        gaps.extend(parse_gaps)
     for column in missing_required:
         gaps.append(
             FindingColumnGap(
@@ -154,6 +154,29 @@ def _compile_fact(
     )
 
 
+def _confirmation_for(
+    spec: dict[str, Any],
+    fact: TurnEvidenceFact,
+    *,
+    missing_required: list[str],
+) -> FindingConfirmation:
+    """缺列保持 UNKNOWN；用户提供证据不得升到 CONFIRMED。"""
+    if missing_required:
+        return FindingConfirmation.UNKNOWN
+    configured = spec.get("confirmation")
+    confirmation = (
+        FindingConfirmation(str(configured))
+        if configured
+        else FindingConfirmation.CONFIRMED
+    )
+    if (
+        fact.trust_level == "USER_PROVIDED"
+        and confirmation is FindingConfirmation.CONFIRMED
+    ):
+        return FindingConfirmation.LIKELY
+    return confirmation
+
+
 def _row_values(columns: list[str], row: tuple[Any, ...]) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for name, value in zip(columns, row, strict=False):
@@ -171,25 +194,66 @@ def _apply_parses(
     gaps: list[FindingColumnGap] = []
     finding_type = FindingType(spec["finding_type"])
     for predicate in spec.get("predicates") or ():
-        if predicate.get("parse") != "interval_seconds":
-            continue
-        column = str(predicate["column"])
-        parsed_field = str(predicate.get("parsed_field") or "lag_seconds")
-        raw = values.get(column.lower())
-        parsed = _parse_interval_seconds(raw)
-        if parsed is None and raw not in {None, ""}:
-            gaps.append(
-                FindingColumnGap(
-                    finding_type=finding_type,
-                    source_tool_id=fact.tool_id,
-                    column=column,
-                    code="FINDING_VALUE_UNPARSEABLE",
-                    detail=f"{column} 无法解析为秒：{raw}",
-                    evidence_ref=fact.evidence_ref,
+        parse = predicate.get("parse")
+        if parse == "interval_seconds":
+            column = str(predicate["column"])
+            parsed_field = str(predicate.get("parsed_field") or "lag_seconds")
+            raw = values.get(column.lower())
+            parsed = _parse_interval_seconds(raw)
+            if parsed is None and raw not in {None, ""}:
+                gaps.append(
+                    FindingColumnGap(
+                        finding_type=finding_type,
+                        source_tool_id=fact.tool_id,
+                        column=column,
+                        code="FINDING_VALUE_UNPARSEABLE",
+                        detail=f"{column} 无法解析为秒：{raw}",
+                        evidence_ref=fact.evidence_ref,
+                    )
                 )
-            )
-        derived[parsed_field.lower()] = parsed
-        values[parsed_field.lower()] = parsed
+            derived[parsed_field.lower()] = parsed
+            values[parsed_field.lower()] = parsed
+            continue
+        if parse == "ratio_percent":
+            numerator = str(predicate.get("numerator") or predicate["column"])
+            denominator = str(predicate["denominator"])
+            parsed_field = str(predicate.get("parsed_field") or "used_percent")
+            num_raw = values.get(numerator.lower())
+            den_raw = values.get(denominator.lower())
+            number = _as_number(num_raw)
+            denom = _as_number(den_raw)
+            parsed = None
+            if denom is None or denom == 0:
+                if den_raw not in {None, ""}:
+                    gaps.append(
+                        FindingColumnGap(
+                            finding_type=finding_type,
+                            source_tool_id=fact.tool_id,
+                            column=denominator,
+                            code="FINDING_VALUE_UNPARSEABLE",
+                            detail=f"{denominator} 无法作为比率分母：{den_raw}",
+                            evidence_ref=fact.evidence_ref,
+                        )
+                    )
+            elif number is None:
+                if num_raw not in {None, ""}:
+                    gaps.append(
+                        FindingColumnGap(
+                            finding_type=finding_type,
+                            source_tool_id=fact.tool_id,
+                            column=numerator,
+                            code="FINDING_VALUE_UNPARSEABLE",
+                            detail=f"{numerator} 无法解析为比率分子：{num_raw}",
+                            evidence_ref=fact.evidence_ref,
+                        )
+                    )
+            else:
+                parsed = number / denom * 100
+            derived[parsed_field.lower()] = parsed
+            values[parsed_field.lower()] = parsed
+            continue
+        if parse:
+            raise ValueError(f"不支持的 Finding 解析：{parse}")
     return derived, tuple(gaps)
 
 
@@ -200,6 +264,11 @@ def _predicates_match(spec: dict[str, Any], values: dict[str, Any]) -> bool:
         parse = predicate.get("parse")
         if parse == "interval_seconds":
             parsed_field = str(predicate.get("parsed_field") or "lag_seconds")
+            raw = values.get(parsed_field.lower())
+            if raw is None:
+                return False
+        elif parse == "ratio_percent":
+            parsed_field = str(predicate.get("parsed_field") or "used_percent")
             raw = values.get(parsed_field.lower())
             if raw is None:
                 return False

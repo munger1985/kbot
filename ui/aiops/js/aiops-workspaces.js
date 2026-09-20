@@ -31,6 +31,10 @@
       label: "下载原生 ASH 报告",
       filename: "oracle-ash-report.html",
     },
+    "db.oracle.sql_monitor.report": {
+      label: "下载原生 SQL Monitor 报告",
+      filename: "oracle-sql-monitor.html",
+    },
   };
   let activeSituationId = null;
   let situationRefreshTimer = null;
@@ -379,6 +383,43 @@
         : "当前 Target 不可用";
   }
 
+  async function confirmTargetFact(form) {
+    const conversationId = form.dataset.conversationId;
+    const turnId = form.dataset.turnId;
+    const targetId = form.dataset.targetId;
+    const factType = form.dataset.factType;
+    const keyField = form.dataset.keyField;
+    const raw = String(new FormData(form).get(keyField) || "").trim();
+    const note = String(new FormData(form).get("note") || "").trim();
+    if (!conversationId || !turnId || !targetId || !factType || !keyField || !raw) {
+      shell.toast("请完整填写需要确认的运维事实");
+      return;
+    }
+    if (!confirm("确认把这条事实写入 Target 运维记忆吗？系统只会记下来，不会执行 SQL。")) return;
+    const button = form.querySelector("button[type=submit]");
+    if (button) button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(
+        `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/target-facts:confirm`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            target_id: targetId,
+            fact_type: factType,
+            fact_key: raw,
+            fact_value: { [keyField]: raw },
+            note: note || null,
+          }),
+        },
+      );
+      shell.toast("运维记忆已确认写入，不会执行 SQL");
+      if (state.conversation) await loadConversation(state.conversation.conversation_id);
+    } catch (error) {
+      shell.toast(error.message);
+      if (button) button.disabled = false;
+    }
+  }
+
   async function proposalAction(button) {
     const approving = Boolean(button.dataset.approveProposal);
     const proposalId = button.dataset.approveProposal || button.dataset.rejectProposal;
@@ -428,6 +469,14 @@
     DG_LAG: "Data Guard 延迟",
     WAIT_CLASS: "等待类",
     TABLESPACE: "表空间",
+    SQL_STATS_STALE: "统计过期",
+    EXACHECK_FAIL: "ExaCheck 失败",
+    EXACHECK_WARNING: "ExaCheck 警告",
+    INVALID_OBJECT: "无效对象",
+    ARCHIVE_HEADROOM: "FRA 余量",
+    BACKUP_FAILED: "备份失败",
+    LONG_TRANSACTION: "长事务",
+    TOP_SQL: "高耗时 SQL",
   };
   const findingSeverityLabels = {
     CRITICAL: "严重",
@@ -489,6 +538,46 @@
     allocated_mb: "已分配 MB",
     used_mb: "已用 MB",
     maximum_mb: "最大 MB",
+    owner: "所有者",
+    object_name: "对象名",
+    object_type: "对象类型",
+    last_analyzed: "上次分析",
+    stale_stats: "统计过期",
+    file_name: "文件名",
+    check_name: "检查项",
+    host: "主机",
+    message: "说明",
+    check_id: "检查 ID",
+    object_count: "对象数量",
+    database_role: "数据库角色",
+    open_mode: "打开模式",
+    log_mode: "日志模式",
+    force_logging: "强制日志",
+    flashback_on: "Flashback",
+    recovery_file_dest: "恢复区路径",
+    fra_limit_mb: "FRA 上限 MB",
+    fra_used_mb: "FRA 已用 MB",
+    fra_reclaimable_mb: "FRA 可回收 MB",
+    fra_file_count: "FRA 文件数",
+    fra_used_percent: "FRA 使用率（%）",
+    session_key: "会话键",
+    input_type: "输入类型",
+    start_time: "开始时间",
+    end_time: "结束时间",
+    elapsed_seconds: "耗时（秒）",
+    input_mb: "输入 MB",
+    output_mb: "输出 MB",
+    output_device_type: "输出设备",
+    transaction_started_at: "事务开始时间",
+    undo_blocks: "UNDO 块数",
+    undo_records: "UNDO 记录数",
+    plan_hash_value: "Plan Hash",
+    executions: "执行次数",
+    cpu_seconds: "CPU 秒",
+    buffer_gets: "逻辑读",
+    disk_reads: "物理读",
+    rows_processed: "处理行数",
+    last_active_time: "最近活动时间",
   };
   const findingPriorityFields = {
     LOCK_WAIT: [
@@ -501,6 +590,62 @@
       "lock_type",
       "lock_mode",
       "lock_ctime_seconds",
+    ],
+    SQL_STATS_STALE: [
+      "owner",
+      "object_name",
+      "object_type",
+      "stale_stats",
+      "last_analyzed",
+      "sql_id",
+    ],
+    EXACHECK_FAIL: [
+      "check_name",
+      "status",
+      "host",
+      "message",
+      "check_id",
+    ],
+    EXACHECK_WARNING: [
+      "check_name",
+      "status",
+      "host",
+      "message",
+      "check_id",
+    ],
+    INVALID_OBJECT: [
+      "owner",
+      "object_type",
+      "status",
+      "object_count",
+    ],
+    ARCHIVE_HEADROOM: [
+      "fra_used_percent",
+      "fra_used_mb",
+      "fra_limit_mb",
+      "recovery_file_dest",
+    ],
+    BACKUP_FAILED: [
+      "status",
+      "input_type",
+      "start_time",
+      "end_time",
+      "output_device_type",
+    ],
+    LONG_TRANSACTION: [
+      "session_id",
+      "username",
+      "elapsed_seconds",
+      "transaction_started_at",
+      "undo_blocks",
+    ],
+    TOP_SQL: [
+      "sql_id",
+      "elapsed_seconds",
+      "cpu_seconds",
+      "executions",
+      "buffer_gets",
+      "disk_reads",
     ],
   };
 
@@ -538,6 +683,38 @@
     return `<section class="ops-findings"><header><strong>发现</strong></header>${cards}${empty}${gapRows}</section>`;
   }
 
+  function factConfirmationHtml(payload, turn) {
+    const candidates = values(payload.candidates);
+    if (!candidates.length) return "";
+    const forms = candidates.map((candidate) => {
+      const fields = values(candidate.fields).map((field) => (
+        `<label>${esc(field.label || field.name)}`
+        + `<input name="${esc(field.name)}" maxlength="256" ${field.required ? "required" : ""}>`
+        + `</label>`
+      )).join("");
+      return (
+        `<form class="ops-fact-confirmation-form" data-confirm-target-fact`
+        + ` data-conversation-id="${esc(turn?.conversation_id || "")}"`
+        + ` data-turn-id="${esc(turn?.turn_id || "")}"`
+        + ` data-target-id="${esc(payload.target_id || "")}"`
+        + ` data-fact-type="${esc(candidate.fact_type || "")}"`
+        + ` data-key-field="${esc(candidate.key_field || "")}">`
+        + `<strong>${esc(candidate.label || candidate.fact_type || "运维事实")}</strong>`
+        + fields
+        + `<label>备注（可选）<textarea name="note" maxlength="1000" rows="2"></textarea></label>`
+        + `<button type="submit" class="primary">确认写入运维记忆</button>`
+        + `</form>`
+      );
+    }).join("");
+    return (
+      `<section class="ops-fact-confirmation">`
+      + `<header><strong>确认运维记忆</strong></header>`
+      + `<p>${esc(payload.instruction || "确认后才会写入 Target 运维记忆，不会执行 SQL。")}</p>`
+      + forms
+      + `</section>`
+    );
+  }
+
   function htmlReportLinksHtml(payload, turn) {
     const reports = values(payload.reports);
     if (!reports.length) return "";
@@ -571,6 +748,7 @@
     if (block.block_type === "SOLUTION_MARKDOWN") {
       return `<section class="ops-solution"><header><strong>解决方案</strong></header>${markdown.render(payload.markdown || payload.text || "")}</section>`;
     }
+    if (block.block_type === "FACT_CONFIRMATION") return factConfirmationHtml(payload, turn);
     if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload);
     if (block.block_type === "HTML_REPORT_LINKS") return htmlReportLinksHtml(payload, turn);
     if (block.block_type === "TABLE") {
@@ -1326,6 +1504,12 @@
     if (proposalButton) proposalAction(proposalButton);
     const manualButton = event.target.closest("[data-manual-proposal]");
     if (manualButton) submitManualResult(manualButton);
+  });
+  addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-confirm-target-fact]");
+    if (!form) return;
+    event.preventDefault();
+    confirmTargetFact(form);
   });
   shell.ready.then((access) => {
     state.permissions = new Set(access?.permissions || []);

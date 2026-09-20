@@ -1,0 +1,384 @@
+{
+  "schema_version": "AIOPS_CHECK_CATALOG.v1",
+  "groups": [
+    {
+      "group_id": "backup",
+      "display_name": "备份",
+      "checks": [
+        {
+          "check_id": "oracle.backup.rman_volume",
+          "display_name": "RMAN 备份量",
+          "availability": "READY",
+          "tool_id": "db.backup.recent_jobs",
+          "playbook_id": "oracle.maintenance.health",
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.backup.space_usage",
+          "display_name": "占用空间",
+          "availability": "READY",
+          "tool_id": "db.backup.recent_jobs",
+          "playbook_id": "oracle.maintenance.health",
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.backup.recent_jobs",
+          "display_name": "最近成功/失败",
+          "availability": "READY",
+          "tool_id": "db.backup.recent_jobs",
+          "playbook_id": "oracle.maintenance.health",
+          "finding_types": [
+            "BACKUP_FAILED"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        }
+      ]
+    },
+    {
+      "group_id": "storage",
+      "display_name": "存储",
+      "checks": [
+        {
+          "check_id": "oracle.storage.tablespace_headroom",
+          "display_name": "表空间余量",
+          "availability": "READY",
+          "tool_id": "db.storage.capacity",
+          "playbook_id": "oracle.storage.tablespace",
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.storage.datafile_count",
+          "display_name": "数据文件数",
+          "availability": "READY",
+          "tool_id": "db.storage.capacity",
+          "playbook_id": "oracle.storage.tablespace",
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.storage.growth",
+          "display_name": "增长量",
+          "availability": "READY",
+          "tool_id": "db.storage.capacity",
+          "playbook_id": "oracle.storage.tablespace",
+          "finding_types": [
+            "TABLESPACE"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.storage.undo",
+          "display_name": "UNDO",
+          "availability": "READY",
+          "tool_id": "db.storage.undo_usage",
+          "playbook_id": "oracle.storage.temp_undo",
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.storage.row_chaining",
+          "display_name": "行链接",
+          "availability": "PLANNED",
+          "tool_id": null,
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.storage.top_segment",
+          "display_name": "Top Segment",
+          "availability": "PLANNED",
+          "tool_id": null,
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        }
+      ]
+    },
+    {
+      "group_id": "session",
+      "display_name": "会话",
+      "checks": [
+        {
+          "check_id": "oracle.session.count",
+          "display_name": "会话数",
+          "availability": "READY",
+          "tool_id": "db.resource.session_utilization",
+          "playbook_id": "oracle.instance.performance",
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": false
+        },
+        {
+          "check_id": "oracle.session.long_running",
+          "display_name": "长会话",
+          "availability": "READY",
+          "tool_id": "db.session.active",
+          "playbook_id": "oracle.session.active",
+          "finding_types": [
+            "LONG_SESSION"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": false
+        },
+        {
+          "check_id": "oracle.session.long_transaction",
+          "display_name": "长事务",
+          "availability": "READY",
+          "tool_id": "db.transaction.long_running",
+          "playbook_id": "oracle.transaction.long_running",
+          "finding_types": [
+            "LONG_TRANSACTION"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": false
+        },
+        {
+          "check_id": "oracle.session.lock_wait",
+          "display_name": "锁等待",
+          "availability": "READY",
+          "tool_id": "db.session.blocking_chain",
+          "playbook_id": "oracle.session.blocking_chain",
+          "finding_types": [
+            "LOCK_WAIT"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": false
+        }
+      ]
+    },
+    {
+      "group_id": "object",
+      "display_name": "对象",
+      "checks": [
+        {
+          "check_id": "oracle.object.invalid",
+          "display_name": "无效对象",
+          "availability": "READY",
+          "tool_id": "db.objects.invalid_summary",
+          "playbook_id": "oracle.maintenance.health",
+          "finding_types": [
+            "INVALID_OBJECT"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.object.over_indexed_tables",
+          "display_name": "索引数 > 3 的表",
+          "availability": "PLANNED",
+          "tool_id": null,
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.object.sparse_index",
+          "display_name": "稀疏索引",
+          "availability": "READY",
+          "tool_id": "db.index.health",
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.object.nonsystem_in_system_tablespace",
+          "display_name": "非系统对象在系统表空间",
+          "availability": "PLANNED",
+          "tool_id": null,
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        }
+      ]
+    },
+    {
+      "group_id": "log",
+      "display_name": "日志",
+      "checks": [
+        {
+          "check_id": "oracle.log.archive_generation",
+          "display_name": "归档生成量",
+          "availability": "READY",
+          "tool_id": "db.archive.status",
+          "playbook_id": "oracle.instance.archive",
+          "finding_types": [
+            "ARCHIVE_HEADROOM"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.log.audit_volume",
+          "display_name": "审计记录/文件数",
+          "availability": "PLANNED",
+          "tool_id": null,
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        }
+      ]
+    },
+    {
+      "group_id": "performance",
+      "display_name": "性能",
+      "checks": [
+        {
+          "check_id": "oracle.performance.datafile_io",
+          "display_name": "数据文件 IO",
+          "availability": "READY",
+          "tool_id": "db.instance.performance",
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.performance.critical_waits",
+          "display_name": "关键等待",
+          "availability": "READY",
+          "tool_id": "db.wait.class_summary",
+          "playbook_id": "oracle.instance.wait_summary",
+          "finding_types": [
+            "WAIT_CLASS"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.performance.heavy_sort_sql",
+          "display_name": "严重排序 SQL",
+          "availability": "READY",
+          "tool_id": "db.sql.top_current",
+          "playbook_id": "oracle.sql.top_current",
+          "finding_types": [
+            "TOP_SQL"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        },
+        {
+          "check_id": "oracle.performance.core_parameters",
+          "display_name": "核心参数",
+          "availability": "READY",
+          "tool_id": "db.instance.parameters",
+          "playbook_id": "oracle.configuration.parameters",
+          "finding_types": [],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": true
+        }
+      ]
+    },
+    {
+      "group_id": "exadata",
+      "display_name": "Exadata 健康",
+      "checks": [
+        {
+          "check_id": "oracle.exadata.health_report",
+          "display_name": "Exadata 健康报告",
+          "availability": "READY",
+          "tool_id": "user.exacheck.report",
+          "playbook_id": null,
+          "finding_types": [
+            "EXACHECK_FAIL",
+            "EXACHECK_WARNING"
+          ],
+          "default_for": [
+            "DAILY",
+            "WEEKLY"
+          ],
+          "trend_required": false
+        }
+      ]
+    }
+  ]
+}

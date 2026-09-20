@@ -74,6 +74,9 @@ class InspectionPlanEntity(BaseEntity):
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
     template_id: Mapped[str] = mapped_column(String(128), nullable=False)
     template_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_checks_json: Mapped[list[str]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
     timeout_seconds: Mapped[int] = mapped_column(
         Numeric(10, 0), nullable=False
     )

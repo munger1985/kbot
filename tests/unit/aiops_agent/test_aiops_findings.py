@@ -17,6 +17,7 @@ from aiops_agent.application.diagnosis import (
     freeze_automatic_entry_intent,
     is_diagnosis_turn,
 )
+from aiops_agent.application.diagnosis.findings import load_finding_catalog
 from aiops_agent.application.runtime.service import proposal_insert_block_no
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.contracts.turn_answer import (
@@ -32,6 +33,7 @@ from platform_core.contracts.aiops import (
     ActionIntent,
     AnswerBlockType,
     FindingConfirmation,
+    FindingSeverity,
     FindingType,
     MeasurementSemantics,
     SufficiencyStatus,
@@ -175,6 +177,7 @@ def _fact(
     rows: tuple[tuple[object, ...], ...],
     step_id: str = "a1",
     evidence_ref: str | None = None,
+    trust_level: str = "SOURCE_VERIFIED",
 ) -> TurnEvidenceFact:
     return TurnEvidenceFact(
         evidence_ref=evidence_ref or f"artifact:{tool_id}#fact",
@@ -182,6 +185,7 @@ def _fact(
         source_id=tool_id,
         step_id=step_id,
         tool_id=tool_id,
+        trust_level=trust_level,
         measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
         presentation_kind="TABLE",
         captured_at=datetime.now(UTC).isoformat(),
@@ -209,12 +213,107 @@ def _lock_fact(**overrides) -> TurnEvidenceFact:
     return _fact(**payload)
 
 
+def _sqlhc_fact(**overrides) -> TurnEvidenceFact:
+    payload = {
+        "tool_id": "user.sqlhc.report",
+        "columns": (
+            "sql_id",
+            "owner",
+            "object_name",
+            "object_type",
+            "last_analyzed",
+            "stale_stats",
+            "file_name",
+        ),
+        "rows": (
+            (
+                "6tjx7su0q5ttj",
+                "APP",
+                "ORDERS",
+                "TABLE",
+                "2024-01-01",
+                "YES",
+                "sqlhc_6tjx7su0q5ttj.html",
+            ),
+        ),
+        "evidence_ref": "artifact:sqlhc#fact",
+        "trust_level": "USER_PROVIDED",
+    }
+    payload.update(overrides)
+    return _fact(**payload)
+
+
+def _exacheck_fact(**overrides) -> TurnEvidenceFact:
+    payload = {
+        "tool_id": "user.exacheck.report",
+        "columns": (
+            "status",
+            "check_name",
+            "message",
+            "host",
+            "check_id",
+            "file_name",
+        ),
+        "rows": (
+            (
+                "FAIL",
+                "Hardware",
+                "InfiniBand firmware is not current",
+                "cel01",
+                "IB_SWITCH_FW",
+                "exachk_db01.html",
+            ),
+            (
+                "WARNING",
+                "OS Check",
+                "Database server RAM is below recommended",
+                "db01",
+                "OS_RAM",
+                "exachk_db01.html",
+            ),
+            (
+                "INFO",
+                "Software",
+                "Clusterware version is 19.21",
+                "db01",
+                "CRS_VER",
+                "exachk_db01.html",
+            ),
+        ),
+        "evidence_ref": "artifact:exacheck#fact",
+        "trust_level": "USER_PROVIDED",
+    }
+    payload.update(overrides)
+    return _fact(**payload)
+
+
+def _tablespace_fact(**overrides) -> TurnEvidenceFact:
+    payload = {
+        "tool_id": "db.storage.capacity",
+        "columns": (
+            "tablespace_name",
+            "allocated_mb",
+            "used_mb",
+            "free_mb",
+            "used_percent",
+            "maximum_mb",
+            "maximum_headroom_mb",
+            "file_count",
+        ),
+        "rows": (("USERS", 1000.0, 900.0, 100.0, 90.0, 2000.0, 1100.0, 2),),
+        "evidence_ref": "artifact:capacity#fact",
+    }
+    payload.update(overrides)
+    return _fact(**payload)
+
+
 def _context(
     *,
     artifacts=(),
     trigger_type: str = "API",
     workflow_kind: str = "",
     task_frame_overrides: dict | None = None,
+    target_facts=(),
 ) -> TaskExecutionContext:
     task_frame = {
         "objectives": ["ASSESS"],
@@ -240,7 +339,8 @@ def _context(
                 "task_frame": task_frame,
                 "model": {"technical_name": "test-model", "revision": "1"},
                 "prompts": TEST_PROMPT_SNAPSHOT,
-            }
+            },
+            "target_facts": list(target_facts),
         },
         policy_snapshot={},
         input_artifacts=artifacts,
@@ -366,7 +466,7 @@ class FindingCompilerTest(unittest.TestCase):
         compilation = compile_findings(
             (
                 _fact(
-                    tool_id="db.sql.top_current",
+                    tool_id="db.alert.recent",
                     columns=("SQL_ID",),
                     rows=(("abc123",),),
                 ),
@@ -426,6 +526,91 @@ class FindingCompilerTest(unittest.TestCase):
         self.assertIsNone(card.fields["lock_type"])
         self.assertEqual((), compilation.gaps)
 
+    def test_sqlhc_stale_stats_compile_as_likely_user_provided(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings((_sqlhc_fact(),), target_id="tgt-1")
+        self.assertEqual((), compilation.empty_reasons)
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.SQL_STATS_STALE, card.finding_type)
+        self.assertEqual(FindingConfirmation.LIKELY, card.confirmation)
+        self.assertEqual("APP", card.fields["owner"])
+        self.assertEqual("ORDERS", card.fields["object_name"])
+        self.assertEqual("TABLE", card.fields["object_type"])
+        self.assertEqual("YES", card.fields["stale_stats"])
+        self.assertEqual("oracle.sql.healthcheck", card.playbook_id)
+
+    def test_sqlhc_fresh_stats_do_not_create_finding(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings(
+            (
+                _sqlhc_fact(
+                    rows=(
+                        (
+                            "6tjx7su0q5ttj",
+                            "APP",
+                            "ORDERS",
+                            "TABLE",
+                            "2024-01-01",
+                            "NO",
+                            "sqlhc_6tjx7su0q5ttj.html",
+                        ),
+                    ),
+                ),
+            )
+        )
+        self.assertEqual((), compilation.findings)
+        self.assertEqual(
+            ("上传的 SQLHC 报告未发现过期统计，不等于未取证。",),
+            compilation.empty_reasons,
+        )
+
+    def test_exacheck_fail_and_warning_compile_as_likely_user_provided(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings((_exacheck_fact(),), target_id="tgt-1")
+        types = tuple(card.finding_type for card in compilation.findings)
+        self.assertEqual(
+            (FindingType.EXACHECK_FAIL, FindingType.EXACHECK_WARNING),
+            types,
+        )
+        fail_card = compilation.findings[0]
+        warn_card = compilation.findings[1]
+        self.assertEqual(FindingConfirmation.LIKELY, fail_card.confirmation)
+        self.assertEqual(FindingConfirmation.LIKELY, warn_card.confirmation)
+        self.assertEqual(FindingSeverity.HIGH, fail_card.severity)
+        self.assertEqual(FindingSeverity.MEDIUM, warn_card.severity)
+        self.assertEqual("Hardware", fail_card.fields["check_name"])
+        self.assertEqual("OS Check", warn_card.fields["check_name"])
+        self.assertIsNone(fail_card.playbook_id)
+
+    def test_exacheck_info_rows_do_not_create_finding(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings(
+            (
+                _exacheck_fact(
+                    rows=(
+                        (
+                            "INFO",
+                            "Software",
+                            "Clusterware version is 19.21",
+                            "db01",
+                            "CRS_VER",
+                            "exachk_db01.html",
+                        ),
+                    ),
+                ),
+            )
+        )
+        self.assertEqual((), compilation.findings)
+        self.assertIn(
+            "上传的 ExaCheck 报告未发现 FAIL 项，不等于未取证。",
+            compilation.empty_reasons,
+        )
+        self.assertIn(
+            "上传的 ExaCheck 报告未发现 WARNING 项，不等于未取证。",
+            compilation.empty_reasons,
+        )
+
     def test_long_session_below_threshold_is_not_a_finding(self) -> None:
         compilation = compile_findings(
             (
@@ -450,6 +635,266 @@ class FindingCompilerTest(unittest.TestCase):
             ("当前活动会话均未达到长会话阈值，不等于未取证。",),
             compilation.empty_reasons,
         )
+
+    def test_mysql_replication_lag_compiles_when_threshold_reached(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.mysql.replication.lag",
+                    columns=("channel_name", "lag_seconds"),
+                    rows=(("", 45),),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.REPLICATION_LAG, card.finding_type)
+        self.assertEqual(FindingSeverity.HIGH, card.severity)
+        self.assertEqual(45, card.fields["lag_seconds"])
+        self.assertEqual("mysql.replication.lag", card.playbook_id)
+
+    def test_postgresql_dead_tuples_below_threshold_are_not_findings(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.storage.dead_tuples",
+                    columns=(
+                        "schema_name",
+                        "table_name",
+                        "live_tuples",
+                        "dead_tuples",
+                        "dead_tuple_percent",
+                        "last_autovacuum",
+                        "last_vacuum",
+                    ),
+                    rows=(("public", "orders", 10000, 1200, 10.71, None, None),),
+                ),
+            )
+        )
+        self.assertEqual((), compilation.findings)
+        self.assertEqual(
+            ("当前表死元组占比均未达到 20% 阈值，不等于未取证。",),
+            compilation.empty_reasons,
+        )
+
+    def test_idle_session_and_connection_usage_compile(self) -> None:
+        load_finding_catalog.cache_clear()
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.session.idle",
+                    columns=(
+                        "session_id",
+                        "username",
+                        "client_host",
+                        "database_name",
+                        "session_state",
+                        "idle_seconds",
+                        "query_text",
+                    ),
+                    rows=(
+                        (
+                            8841,
+                            "app",
+                            "10.0.0.8",
+                            "sales",
+                            "idle in transaction",
+                            420,
+                            "SELECT 1",
+                        ),
+                    ),
+                ),
+                _fact(
+                    tool_id="db.postgresql.connection.utilization",
+                    columns=(
+                        "resource_name",
+                        "current_utilization",
+                        "max_utilization",
+                        "limit_value",
+                        "utilization_percent",
+                    ),
+                    rows=(("connections", 180, None, "200", 90.0),),
+                ),
+                _fact(
+                    tool_id="db.maintenance.autovacuum",
+                    columns=("schema_name", "table_name", "frozen_xid_age"),
+                    rows=(("public", "history", 180000000),),
+                ),
+            )
+        )
+        types = tuple(card.finding_type for card in compilation.findings)
+        self.assertEqual(
+            (
+                FindingType.AUTOVACUUM,
+                FindingType.IDLE_SESSION,
+                FindingType.CONNECTION_USAGE,
+            ),
+            types,
+        )
+        idle = compilation.findings[1]
+        self.assertEqual(420, idle.fields["idle_seconds"])
+        self.assertEqual(FindingConfirmation.CONFIRMED, idle.confirmation)
+
+
+    def test_invalid_object_compiles_from_summary_rows(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.objects.invalid_summary",
+                    columns=("owner", "object_type", "status", "object_count"),
+                    rows=(("APP", "PACKAGE", "INVALID", 3), ("SYS", "VIEW", "VALID", 2)),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.INVALID_OBJECT, card.finding_type)
+        self.assertEqual("APP", card.fields["owner"])
+        self.assertEqual(3, card.fields["object_count"])
+        self.assertEqual("oracle.maintenance.health", card.playbook_id)
+        self.assertIn("3 个无效 PACKAGE", card.impact)
+
+    def test_archive_headroom_uses_fra_ratio_not_generation_volume(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.archive.status",
+                    columns=(
+                        "database_role",
+                        "open_mode",
+                        "log_mode",
+                        "force_logging",
+                        "flashback_on",
+                        "recovery_file_dest",
+                        "fra_limit_mb",
+                        "fra_used_mb",
+                        "fra_reclaimable_mb",
+                        "fra_file_count",
+                    ),
+                    rows=(
+                        (
+                            "PRIMARY",
+                            "READ WRITE",
+                            "ARCHIVELOG",
+                            "YES",
+                            "NO",
+                            "/u01/fast_recovery_area",
+                            1000,
+                            900,
+                            50,
+                            12,
+                        ),
+                    ),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.ARCHIVE_HEADROOM, card.finding_type)
+        self.assertEqual(90.0, card.fields["fra_used_percent"])
+        self.assertEqual(900, card.fields["fra_used_mb"])
+        self.assertEqual(1000, card.fields["fra_limit_mb"])
+        self.assertIn("FRA 使用率", card.impact)
+        self.assertNotIn("生成量", card.impact)
+
+    def test_archive_zero_limit_records_gap_without_finding(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.archive.status",
+                    columns=("fra_used_mb", "fra_limit_mb", "recovery_file_dest"),
+                    rows=((80, 0, "/u01/fra"),),
+                ),
+            )
+        )
+        self.assertEqual((), compilation.findings)
+        self.assertTrue(compilation.empty_reasons)
+        self.assertEqual({"fra_limit_mb"}, {item.column for item in compilation.gaps})
+
+    def test_backup_failed_matches_warning_and_error_status(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.backup.recent_jobs",
+                    columns=(
+                        "session_key",
+                        "input_type",
+                        "status",
+                        "start_time",
+                        "end_time",
+                        "elapsed_seconds",
+                        "input_mb",
+                        "output_mb",
+                        "output_device_type",
+                    ),
+                    rows=(
+                        (11, "DB INCR", "COMPLETED", "2026-01-01", "2026-01-01", 10, 1, 1, "DISK"),
+                        (12, "ARCHIVELOG", "COMPLETED WITH WARNINGS", "2026-01-02", "2026-01-02", 20, 2, 2, "SBT_TAPE"),
+                    ),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.BACKUP_FAILED, card.finding_type)
+        self.assertEqual(12, card.fields["session_key"])
+        self.assertEqual("COMPLETED WITH WARNINGS", card.fields["status"])
+
+    def test_long_transaction_uses_elapsed_threshold(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.transaction.long_running",
+                    columns=(
+                        "instance_id",
+                        "session_id",
+                        "username",
+                        "transaction_started_at",
+                        "elapsed_seconds",
+                        "undo_blocks",
+                        "undo_records",
+                    ),
+                    rows=((1, 44, "APP", "2026-01-01T00:00:00Z", 300, 8, 16),),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.LONG_TRANSACTION, card.finding_type)
+        self.assertEqual(44, card.fields["session_id"])
+        self.assertEqual(300, card.fields["elapsed_seconds"])
+        self.assertEqual("oracle.transaction.long_running", card.playbook_id)
+
+    def test_top_sql_compiles_above_elapsed_threshold(self) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.sql.top_current",
+                    columns=(
+                        "sql_id",
+                        "plan_hash_value",
+                        "executions",
+                        "elapsed_seconds",
+                        "cpu_seconds",
+                        "buffer_gets",
+                        "disk_reads",
+                        "rows_processed",
+                        "last_active_time",
+                    ),
+                    rows=(
+                        ("abc123", 99, 3, 9.5, 1.0, 10, 2, 1, "2026-01-01"),
+                        ("sqlhot01", 100, 8, 12.5, 4.0, 200, 20, 50, "2026-01-01"),
+                    ),
+                ),
+            )
+        )
+        self.assertEqual(1, len(compilation.findings))
+        card = compilation.findings[0]
+        self.assertEqual(FindingType.TOP_SQL, card.finding_type)
+        self.assertEqual("sqlhot01", card.fields["sql_id"])
+        self.assertEqual(12.5, card.fields["elapsed_seconds"])
 
 
 class DiagnosisPolicyTest(unittest.TestCase):
@@ -517,6 +962,82 @@ class DiagnosisComposeTest(unittest.TestCase):
             "先确认持有会话事务，再决定是否中断。",
             result.blocks[2].payload["markdown"],
         )
+
+    def test_weekly_inspection_analysis_uses_server_trend_fields(self) -> None:
+        fact = _fact(
+            tool_id="metric.query_range",
+            columns=(
+                "metric_code",
+                "dimensions",
+                "first",
+                "latest",
+                "change",
+                "change_per_day",
+            ),
+            rows=(
+                (
+                    "db.storage.used_bytes",
+                    "tablespace=USERS",
+                    100.0,
+                    140.0,
+                    40.0,
+                    5.0,
+                ),
+            ),
+            evidence_ref="artifact:metric#trend",
+        )
+        model = _AnswerModel(evidence_refs=(fact.evidence_ref,))
+        weekly = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=model,
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_sufficiency_artifact((fact,)),),
+                    workflow_kind="INSPECTION",
+                    task_frame_overrides={
+                        "objectives": ["DIAGNOSE", "ASSESS"],
+                        "subject_ref": {"schedule_type": "WEEKLY"},
+                    },
+                )
+            )
+        )
+        payload = model.calls[0]["input_payload"]
+        self.assertEqual("USE_SERVER_FIELDS", payload["trend_computation_policy"])
+        self.assertEqual(
+            [
+                {
+                    "metric_code": "db.storage.used_bytes",
+                    "dimensions": "tablespace=USERS",
+                    "first": 100.0,
+                    "latest": 140.0,
+                    "change": 40.0,
+                    "change_per_day": 5.0,
+                }
+            ],
+            payload["metric_trends"],
+        )
+        self.assertEqual(AnswerBlockType.ANALYSIS_MARKDOWN, weekly.blocks[1].block_type)
+
+        daily_model = _AnswerModel(evidence_refs=(fact.evidence_ref,))
+        asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=daily_model,
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_sufficiency_artifact((fact,)),),
+                    workflow_kind="INSPECTION",
+                    task_frame_overrides={
+                        "objectives": ["DIAGNOSE", "ASSESS"],
+                        "subject_ref": {"schedule_type": "DAILY"},
+                    },
+                )
+            )
+        )
+        daily_payload = daily_model.calls[0]["input_payload"]
+        self.assertNotIn("metric_trends", daily_payload)
+        self.assertNotIn("trend_computation_policy", daily_payload)
 
     def test_explain_question_does_not_emit_empty_finding_section(self) -> None:
         fact = _lock_fact()
@@ -666,6 +1187,92 @@ class DiagnosisComposeTest(unittest.TestCase):
         )
 
 
+    def test_tablespace_missing_facts_inserts_confirmation_after_solution(self) -> None:
+        fact = _tablespace_fact()
+        result = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=_AnswerModel(evidence_refs=(fact.evidence_ref,)),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_sufficiency_artifact((fact,)),),
+                    target_facts=(),
+                )
+            )
+        )
+        block_types = [item.block_type for item in result.blocks]
+        self.assertEqual("TABLESPACE", result.blocks[0].payload["findings"][0]["finding_type"])
+        self.assertEqual(
+            [
+                AnswerBlockType.FINDING_CARDS,
+                AnswerBlockType.ANALYSIS_MARKDOWN,
+                AnswerBlockType.SOLUTION_MARKDOWN,
+                AnswerBlockType.FACT_CONFIRMATION,
+            ],
+            block_types[:4],
+        )
+        payload = result.blocks[3].payload
+        self.assertEqual(
+            ["ASM_DISKGROUP", "DATAFILE_PATH"],
+            payload["missing_fact_types"],
+        )
+        self.assertNotIn("command_preview", payload)
+        self.assertNotIn("proposal_id", payload)
+
+    def test_tablespace_with_asm_or_path_skips_confirmation(self) -> None:
+        fact = _tablespace_fact()
+        for present in (
+            {"fact_type": "ASM_DISKGROUP", "status": "ACTIVE"},
+            {"fact_type": "DATAFILE_PATH", "status": "ACTIVE"},
+        ):
+            result = asyncio.run(
+                DbaAnswerComposeHandler(
+                    model_client=_AnswerModel(evidence_refs=(fact.evidence_ref,)),
+                    prompts=_TestPrompts(),
+                ).execute(
+                    _context(
+                        artifacts=(_sufficiency_artifact((fact,)),),
+                        target_facts=(present,),
+                    )
+                )
+            )
+            self.assertNotIn(
+                AnswerBlockType.FACT_CONFIRMATION,
+                [item.block_type for item in result.blocks],
+            )
+
+    def test_tablespace_confirmation_stays_before_proposal(self) -> None:
+        fact = _tablespace_fact()
+        result = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=_AnswerModel(evidence_refs=(fact.evidence_ref,)),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(
+                        _sufficiency_artifact((fact,)),
+                        _proposal_artifact(),
+                    ),
+                    task_frame_overrides={"action_intent": "EXECUTE"},
+                )
+            )
+        )
+        self.assertEqual(
+            [
+                AnswerBlockType.FINDING_CARDS,
+                AnswerBlockType.ANALYSIS_MARKDOWN,
+                AnswerBlockType.SOLUTION_MARKDOWN,
+                AnswerBlockType.FACT_CONFIRMATION,
+                AnswerBlockType.PROPOSAL_SUMMARY,
+            ],
+            [item.block_type for item in result.blocks[:5]],
+        )
+        self.assertNotIn(
+            "command_preview",
+            result.blocks[3].payload,
+        )
+
+
 class ProposalSequencerTest(unittest.TestCase):
     def test_proposal_inserts_after_solution_before_later_blocks(self) -> None:
         blocks = [
@@ -684,6 +1291,16 @@ class ProposalSequencerTest(unittest.TestCase):
             SimpleNamespace(block_no=3, block_type="SOLUTION_MARKDOWN"),
         ]
         self.assertEqual(4, proposal_insert_block_no(blocks))
+
+    def test_fact_confirmation_is_not_a_later_proposal_block(self) -> None:
+        blocks = [
+            SimpleNamespace(block_no=1, block_type="FINDING_CARDS"),
+            SimpleNamespace(block_no=2, block_type="ANALYSIS_MARKDOWN"),
+            SimpleNamespace(block_no=3, block_type="SOLUTION_MARKDOWN"),
+            SimpleNamespace(block_no=4, block_type="FACT_CONFIRMATION"),
+            SimpleNamespace(block_no=5, block_type="HTML_REPORT_LINKS"),
+        ]
+        self.assertEqual(5, proposal_insert_block_no(blocks))
 
 
 if __name__ == "__main__":

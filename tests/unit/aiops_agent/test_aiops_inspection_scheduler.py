@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from aiops_agent.application.inspections import (
+    compile_selected_check_steps,
+    default_selected_check_ids,
+)
 from aiops_agent.repositories.inspection import InspectionRepository
 from aiops_agent.scheduling import (
     AIOpsInspectionScheduler,
@@ -203,6 +207,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             "period_start": "2026-07-22T16:00:00+00:00",
             "period_end": "2026-07-23T16:00:00+00:00",
             "timeout_seconds": 3600,
+            "selected_check_ids": list(default_selected_check_ids("DAILY")),
             "trace_id": "trace-inspection",
         }
 
@@ -222,8 +227,130 @@ class InspectionSchedulerTest(unittest.TestCase):
             execution = call.kwargs["execution_context"]
             self.assertEqual(execution["trigger_type"], "SCHEDULE")
             self.assertEqual(execution["inspection_fire_id"], str(fire_id))
-            self.assertTrue(execution["inspection"]["evidence_steps"])
+            self.assertEqual(
+                execution["inspection"]["selected_check_ids"],
+                list(default_selected_check_ids("DAILY")),
+            )
+            self.assertEqual(
+                [item["tool_id"] for item in execution["inspection"]["evidence_steps"]],
+                [
+                    item["tool_id"]
+                    for item in compile_selected_check_steps(
+                        default_selected_check_ids("DAILY")
+                    )
+                ],
+            )
+            self.assertNotIn(
+                "db.alert.recent",
+                [item["tool_id"] for item in execution["inspection"]["evidence_steps"]],
+            )
+            self.assertTrue(
+                all(
+                    item["measurement_semantics"] == "CURRENT_ACTIVITY"
+                    for item in execution["inspection"]["evidence_steps"]
+                )
+            )
         uow.commit.assert_awaited_once()
+
+    def test_weekly_scheduled_inspection_compiles_historical_trend_steps(
+        self,
+    ) -> None:
+        fire_id = uuid7()
+        agent_id = uuid7()
+        version_id = uuid7()
+        target_ids = [uuid7()]
+        fire = SimpleNamespace(
+            plan_snapshot_json={"agent_version_id": None},
+            target_count=0,
+            updated_at=None,
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                get_fire=AsyncMock(return_value=fire),
+            ),
+            conversations=SimpleNamespace(
+                list_for_inspection_fire=AsyncMock(return_value=[]),
+                add_conversation=AsyncMock(side_effect=lambda entity: entity),
+            ),
+            agents=SimpleNamespace(
+                get=AsyncMock(
+                    return_value=SimpleNamespace(
+                        agent_id=agent_id,
+                        status="ACTIVE",
+                        current_version_id=version_id,
+                    )
+                ),
+                version=AsyncMock(
+                    return_value=SimpleNamespace(
+                        agent_version_id=version_id
+                    )
+                ),
+                active_version_target_ids=AsyncMock(
+                    return_value=target_ids
+                ),
+            ),
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = ConversationTurnService(
+            uow_factory=lambda: context,
+            inspection_template_registry=InspectionTemplateRegistry(
+                AIOpsManagementConfig().inspection_templates
+            ),
+        )
+        service._require_existing_target = AsyncMock()
+        service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
+        selected = [
+            "oracle.session.lock_wait",
+            "oracle.storage.tablespace_headroom",
+        ]
+        payload = {
+            "inspection_fire_id": str(fire_id),
+            "domain_id": 200,
+            "actor_id": "system:inspection-scheduler",
+            "agent_id": str(agent_id),
+            "plan_display_name": "数据库周报",
+            "template_id": "database_daily",
+            "template_version": "1.0.0",
+            "schedule_resolver_version": "1.0.0",
+            "schedule_type": "WEEKLY",
+            "timezone": "Asia/Shanghai",
+            "period_start": "2026-07-16T16:00:00+00:00",
+            "period_end": "2026-07-23T16:00:00+00:00",
+            "timeout_seconds": 3600,
+            "selected_check_ids": selected,
+            "trace_id": "trace-weekly-inspection",
+        }
+
+        result = asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual(result["conversation_count"], 1)
+        execution = service._create_turn.await_args.kwargs["execution_context"]
+        steps = {
+            item["tool_id"]: item
+            for item in execution["inspection"]["evidence_steps"]
+        }
+        self.assertEqual("WEEKLY", execution["inspection"]["schedule_type"])
+        self.assertEqual(
+            "HISTORICAL_SAMPLES",
+            steps["db.storage.capacity"]["measurement_semantics"],
+        )
+        self.assertTrue(steps["db.storage.capacity"]["trend_required"])
+        self.assertEqual(
+            "CURRENT_ACTIVITY",
+            steps["db.session.blocking_chain"]["measurement_semantics"],
+        )
+        self.assertEqual(
+            [item["tool_id"] for item in execution["inspection"]["evidence_steps"]],
+            [
+                item["tool_id"]
+                for item in compile_selected_check_steps(
+                    selected,
+                    schedule_type="WEEKLY",
+                )
+            ],
+        )
 
     def test_due_plan_atomically_creates_fire_and_single_agent_request(
         self,
@@ -240,6 +367,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             timezone="Asia/Shanghai",
             template_id="database_daily",
             template_version="1.0.0",
+            selected_checks_json=list(default_selected_check_ids("DAILY")),
             timeout_seconds=3600,
             overlap_policy="SKIP",
             misfire_policy="LATEST_ONLY",
@@ -300,6 +428,10 @@ class InspectionSchedulerTest(unittest.TestCase):
         )
         self.assertNotIn("agent_version_id", messages[0].payload_json)
         self.assertNotIn("target_id", messages[0].payload_json)
+        self.assertEqual(
+            messages[0].payload_json["selected_check_ids"],
+            list(default_selected_check_ids("DAILY")),
+        )
         inspections.advance_claimed_plan.assert_awaited_once()
         uow.commit.assert_awaited_once()
 

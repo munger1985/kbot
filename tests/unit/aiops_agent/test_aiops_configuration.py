@@ -32,6 +32,7 @@ from aiops_agent.application.configuration.policy_service import (
 from aiops_agent.application.configuration.inspection_service import (
     InspectionConfigurationMixin,
 )
+from aiops_agent.application.inspections import default_selected_check_ids
 from aiops_agent.application.configuration.service import (
     AIOpsConfigurationService,
 )
@@ -378,6 +379,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                 timezone="Asia/Shanghai",
                 template_id="database_daily",
                 template_version="1.0.0",
+                selected_check_ids=default_selected_check_ids("DAILY"),
                 timeout_seconds=1800,
                 schedule_resolver_version="1.0.0",
             ),
@@ -388,6 +390,14 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent_id, added[0].agent_id)
         self.assertEqual("ACTIVE", added[0].status)
         self.assertIsNotNone(added[0].next_run_at)
+        self.assertEqual(
+            list(default_selected_check_ids("DAILY")),
+            added[0].selected_checks_json,
+        )
+        self.assertEqual(
+            default_selected_check_ids("DAILY"),
+            result.selected_check_ids,
+        )
         self.assertEqual(2, result.agent_target_count)
 
 

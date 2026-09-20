@@ -27,6 +27,7 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
+    InspectionCheckCatalogView,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -728,6 +729,18 @@ async def command_policy(
     )
     _etag(response, result.row_version)
     return result
+
+
+
+@router.get(
+    "/inspection-check-catalog",
+    response_model=InspectionCheckCatalogView,
+)
+async def get_inspection_check_catalog(
+    service: Service,
+    _scope: Scope,
+) -> InspectionCheckCatalogView:
+    return service.get_inspection_check_catalog()
 
 
 @router.post(

@@ -9,6 +9,9 @@ from datetime import timedelta
 
 from loguru import logger
 
+from aiops_agent.application.inspections.check_catalog import (
+    selected_check_ids_from_json,
+)
 from aiops_agent.entities import InspectionFireEntity, OutboxEntity
 from platform_core.identity import uuid7
 
@@ -110,6 +113,9 @@ class AIOpsInspectionScheduler:
                 "timezone": plan.timezone,
                 "template_id": plan.template_id,
                 "template_version": plan.template_version,
+                "selected_check_ids": list(
+                    selected_check_ids_from_json(plan.selected_checks_json)
+                ),
                 "schedule_resolver_version": (
                     plan.schedule_resolver_version
                 ),
@@ -301,6 +307,9 @@ class AIOpsInspectionScheduler:
             "period_start": snapshot["period_start"],
             "period_end": snapshot["period_end"],
             "timeout_seconds": snapshot["timeout_seconds"],
+            "selected_check_ids": list(
+                snapshot.get("selected_check_ids") or ()
+            ),
             "trace_id": trace_id,
         }
         await uow.outbox.add(

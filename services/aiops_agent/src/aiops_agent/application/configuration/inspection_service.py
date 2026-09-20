@@ -27,6 +27,10 @@ from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
 )
+from aiops_agent.application.inspections.check_catalog import (
+    load_check_catalog,
+    normalize_selected_check_ids,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -50,6 +54,7 @@ from platform_core.contracts.aiops import (
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
+    InspectionCheckCatalogView,
     InspectionPlanCreate,
     InspectionPlanDetail,
     InspectionPlanPage,
@@ -136,6 +141,15 @@ class InspectionConfigurationMixin:
             timezone_name=timezone,
         )
 
+    def get_inspection_check_catalog(self) -> InspectionCheckCatalogView:
+        return load_check_catalog()
+
+    def _selected_check_ids(self, check_ids: Any) -> tuple[str, ...]:
+        try:
+            return normalize_selected_check_ids(check_ids)
+        except ValueError as exc:
+            raise validation_failed(str(exc)) from exc
+
     async def create_inspection_plan(
         self,
         *,
@@ -161,6 +175,9 @@ class InspectionConfigurationMixin:
                 agent_id=request.agent_id,
             )
             target_count = len(binding.target_ids)
+            selected_check_ids = self._selected_check_ids(
+                request.selected_check_ids
+            )
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
                 domain_id=scope.domain_id,
@@ -171,6 +188,7 @@ class InspectionConfigurationMixin:
                 timezone=request.timezone,
                 template_id=request.template_id,
                 template_version=request.template_version,
+                selected_checks_json=list(selected_check_ids),
                 timeout_seconds=request.timeout_seconds,
                 overlap_policy=request.overlap_policy,
                 misfire_policy=request.misfire_policy,
@@ -293,7 +311,9 @@ class InspectionConfigurationMixin:
             self._check_version(entity.row_version, expected_version)
             fields = request.model_dump(exclude_unset=True, mode="python")
             fields.pop("schema_version", None)
-            if not fields:
+            selected_provided = "selected_check_ids" in fields
+            selected_check_ids = fields.pop("selected_check_ids", None)
+            if not fields and not selected_provided:
                 raise validation_failed("PATCH 至少需要一个可修改字段")
             definitions = {
                 "cron_expression": fields.get(
@@ -310,6 +330,10 @@ class InspectionConfigurationMixin:
                 ),
             }
             next_run_at = self._validate_plan_definition(**definitions)
+            if selected_provided:
+                entity.selected_checks_json = list(
+                    self._selected_check_ids(selected_check_ids or ())
+                )
             for name, value in fields.items():
                 setattr(entity, name, value)
             entity.updated_by = scope.actor_id

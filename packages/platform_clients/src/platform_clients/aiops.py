@@ -827,6 +827,16 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+
+    async def get_inspection_check_catalog(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/inspection-check-catalog",
+            auth_context=auth_context,
+        )
+
     async def create_inspection_plan(
         self,
         payload: dict[str, Any],

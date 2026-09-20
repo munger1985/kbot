@@ -153,7 +153,10 @@
         {
           "op": "in",
           "column": "metric_name",
-          "values": ["apply lag", "transport lag"],
+          "values": [
+            "apply lag",
+            "transport lag"
+          ],
           "ignore_case": true
         },
         {
@@ -266,6 +269,755 @@
         "current_column": "used_percent"
       },
       "impact_template": "表空间 {tablespace_name} 使用率 {used_percent}%。"
+    },
+    {
+      "finding_type": "SQL_STATS_STALE",
+      "source_tool_id": "user.sqlhc.report",
+      "playbook_id": "oracle.sql.healthcheck",
+      "confirmation": "LIKELY",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "上传的 SQLHC 报告没有对象统计行，不等于未取证。",
+      "no_match_reason": "上传的 SQLHC 报告未发现过期统计，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "SQL_OBJECT",
+      "identity_fields": [
+        "owner",
+        "object_name",
+        "object_type",
+        "sql_id"
+      ],
+      "required_columns": [
+        "owner",
+        "object_name",
+        "stale_stats"
+      ],
+      "field_columns": [
+        "sql_id",
+        "owner",
+        "object_name",
+        "object_type",
+        "last_analyzed",
+        "stale_stats",
+        "file_name"
+      ],
+      "object_ref": {
+        "sql_id": "sql_id",
+        "object_name": "object_name"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "stale_stats",
+          "values": [
+            "YES"
+          ],
+          "ignore_case": true
+        }
+      ],
+      "impact_template": "对象 {owner}.{object_name} 的统计已过期（STALE_STATS={stale_stats}）。"
+    },
+    {
+      "finding_type": "EXACHECK_FAIL",
+      "source_tool_id": "user.exacheck.report",
+      "playbook_id": null,
+      "confirmation": "LIKELY",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "上传的 ExaCheck 报告没有检查行，不等于未取证。",
+      "no_match_reason": "上传的 ExaCheck 报告未发现 FAIL 项，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "EXADATA_CHECK",
+      "identity_fields": [
+        "check_id",
+        "check_name",
+        "host",
+        "message"
+      ],
+      "required_columns": [
+        "status"
+      ],
+      "field_columns": [
+        "status",
+        "check_name",
+        "message",
+        "host",
+        "check_id",
+        "file_name"
+      ],
+      "object_ref": {
+        "object_name": "check_name"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "status",
+          "values": [
+            "FAIL"
+          ],
+          "ignore_case": true
+        }
+      ],
+      "impact_template": "ExaCheck 检查 {check_name} 失败：{message}"
+    },
+    {
+      "finding_type": "EXACHECK_WARNING",
+      "source_tool_id": "user.exacheck.report",
+      "playbook_id": null,
+      "confirmation": "LIKELY",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "上传的 ExaCheck 报告没有检查行，不等于未取证。",
+      "no_match_reason": "上传的 ExaCheck 报告未发现 WARNING 项，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "EXADATA_CHECK",
+      "identity_fields": [
+        "check_id",
+        "check_name",
+        "host",
+        "message"
+      ],
+      "required_columns": [
+        "status"
+      ],
+      "field_columns": [
+        "status",
+        "check_name",
+        "message",
+        "host",
+        "check_id",
+        "file_name"
+      ],
+      "object_ref": {
+        "object_name": "check_name"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "status",
+          "values": [
+            "WARNING"
+          ],
+          "ignore_case": true
+        }
+      ],
+      "impact_template": "ExaCheck 检查 {check_name} 存在警告：{message}"
+    },
+    {
+      "finding_type": "REPLICATION_LAG",
+      "source_tool_id": "db.mysql.replication.lag",
+      "playbook_id": "mysql.replication.lag",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 MySQL 复制延迟指标，不等于未取证。",
+      "no_match_reason": "当前 MySQL 复制延迟未达到 30 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "REPLICATION",
+      "identity_fields": [
+        "channel_name"
+      ],
+      "required_columns": [
+        "channel_name",
+        "lag_seconds"
+      ],
+      "field_columns": [
+        "channel_name",
+        "lag_seconds"
+      ],
+      "object_ref": {
+        "object_name": "channel_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "lag_seconds",
+          "value": 30
+        }
+      ],
+      "threshold": {
+        "metric": "lag_seconds",
+        "operator": ">=",
+        "limit": 30,
+        "current_column": "lag_seconds"
+      },
+      "impact_template": "复制通道 {channel_name} 延迟 {lag_seconds} 秒，已超过 30 秒阈值。"
+    },
+    {
+      "finding_type": "REPLICATION_LAG",
+      "source_tool_id": "db.postgresql.replication.lag",
+      "playbook_id": "postgresql.replication.lag",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 PostgreSQL 复制延迟指标，不等于未取证。",
+      "no_match_reason": "当前 PostgreSQL 复制延迟未达到 30 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "REPLICATION",
+      "identity_fields": [
+        "channel_name"
+      ],
+      "required_columns": [
+        "channel_name",
+        "lag_seconds"
+      ],
+      "field_columns": [
+        "channel_name",
+        "service_state",
+        "lag_seconds"
+      ],
+      "object_ref": {
+        "object_name": "channel_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "lag_seconds",
+          "value": 30
+        }
+      ],
+      "threshold": {
+        "metric": "lag_seconds",
+        "operator": ">=",
+        "limit": 30,
+        "current_column": "lag_seconds"
+      },
+      "impact_template": "复制通道 {channel_name} 延迟 {lag_seconds} 秒，已超过 30 秒阈值。"
+    },
+    {
+      "finding_type": "DEAD_TUPLES",
+      "source_tool_id": "db.storage.dead_tuples",
+      "playbook_id": "postgresql.storage.dead_tuples",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有死元组统计，不等于未取证。",
+      "no_match_reason": "当前表死元组占比均未达到 20% 阈值，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "TABLE",
+      "identity_fields": [
+        "schema_name",
+        "table_name"
+      ],
+      "required_columns": [
+        "schema_name",
+        "table_name",
+        "dead_tuples",
+        "dead_tuple_percent"
+      ],
+      "field_columns": [
+        "schema_name",
+        "table_name",
+        "live_tuples",
+        "dead_tuples",
+        "dead_tuple_percent",
+        "last_autovacuum",
+        "last_vacuum"
+      ],
+      "object_ref": {
+        "object_name": "table_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "dead_tuple_percent",
+          "value": 20
+        }
+      ],
+      "threshold": {
+        "metric": "dead_tuple_percent",
+        "operator": ">=",
+        "limit": 20,
+        "current_column": "dead_tuple_percent"
+      },
+      "impact_template": "表 {schema_name}.{table_name} 死元组占比 {dead_tuple_percent}%。"
+    },
+    {
+      "finding_type": "AUTOVACUUM",
+      "source_tool_id": "db.maintenance.autovacuum",
+      "playbook_id": "postgresql.maintenance.autovacuum",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有需要关注的 Autovacuum 冻结年龄，不等于未取证。",
+      "no_match_reason": "当前表冻结 XID 年龄均未达到 1.5 亿阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "TABLE",
+      "identity_fields": [
+        "schema_name",
+        "table_name"
+      ],
+      "required_columns": [
+        "schema_name",
+        "table_name",
+        "frozen_xid_age"
+      ],
+      "field_columns": [
+        "schema_name",
+        "table_name",
+        "frozen_xid_age"
+      ],
+      "object_ref": {
+        "object_name": "table_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "frozen_xid_age",
+          "value": 150000000
+        }
+      ],
+      "threshold": {
+        "metric": "frozen_xid_age",
+        "operator": ">=",
+        "limit": 150000000,
+        "current_column": "frozen_xid_age"
+      },
+      "impact_template": "表 {schema_name}.{table_name} 冻结 XID 年龄为 {frozen_xid_age}，存在 wraparound 风险。"
+    },
+    {
+      "finding_type": "IDLE_SESSION",
+      "source_tool_id": "db.session.idle",
+      "playbook_id": null,
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有空闲事务会话，不等于未取证。",
+      "no_match_reason": "当前空闲事务均未达到 300 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "SESSION",
+      "identity_fields": [
+        "session_id",
+        "username"
+      ],
+      "required_columns": [
+        "session_id",
+        "idle_seconds",
+        "session_state"
+      ],
+      "field_columns": [
+        "session_id",
+        "username",
+        "client_host",
+        "database_name",
+        "session_state",
+        "idle_seconds",
+        "query_text"
+      ],
+      "object_ref": {
+        "object_name": "session_id"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "idle_seconds",
+          "value": 300
+        }
+      ],
+      "threshold": {
+        "metric": "idle_seconds",
+        "operator": ">=",
+        "limit": 300,
+        "current_column": "idle_seconds"
+      },
+      "impact_template": "会话 {session_id} 已空闲在事务中 {idle_seconds} 秒。"
+    },
+    {
+      "finding_type": "CONNECTION_USAGE",
+      "source_tool_id": "db.mysql.connection.utilization",
+      "playbook_id": "mysql.connection.utilization",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 MySQL 连接使用率数据，不等于未取证。",
+      "no_match_reason": "当前 MySQL 连接使用率未达到 85% 阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "RESOURCE",
+      "identity_fields": [
+        "resource_name"
+      ],
+      "required_columns": [
+        "resource_name",
+        "current_utilization",
+        "utilization_percent"
+      ],
+      "field_columns": [
+        "resource_name",
+        "current_utilization",
+        "max_utilization",
+        "limit_value",
+        "utilization_percent"
+      ],
+      "object_ref": {
+        "object_name": "resource_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "utilization_percent",
+          "value": 85
+        }
+      ],
+      "threshold": {
+        "metric": "utilization_percent",
+        "operator": ">=",
+        "limit": 85,
+        "current_column": "utilization_percent"
+      },
+      "impact_template": "连接使用率 {utilization_percent}%，当前 {current_utilization}。"
+    },
+    {
+      "finding_type": "CONNECTION_USAGE",
+      "source_tool_id": "db.postgresql.connection.utilization",
+      "playbook_id": "postgresql.connection.utilization",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 PostgreSQL 连接使用率数据，不等于未取证。",
+      "no_match_reason": "当前 PostgreSQL 连接使用率未达到 85% 阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "RESOURCE",
+      "identity_fields": [
+        "resource_name"
+      ],
+      "required_columns": [
+        "resource_name",
+        "current_utilization",
+        "utilization_percent"
+      ],
+      "field_columns": [
+        "resource_name",
+        "current_utilization",
+        "max_utilization",
+        "limit_value",
+        "utilization_percent"
+      ],
+      "object_ref": {
+        "object_name": "resource_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "utilization_percent",
+          "value": 85
+        }
+      ],
+      "threshold": {
+        "metric": "utilization_percent",
+        "operator": ">=",
+        "limit": 85,
+        "current_column": "utilization_percent"
+      },
+      "impact_template": "连接使用率 {utilization_percent}%，当前 {current_utilization}。"
+    },
+    {
+      "finding_type": "QUERY_RATE",
+      "source_tool_id": "db.mysql.instance.throughput",
+      "playbook_id": "mysql.instance.throughput",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 MySQL 吞吐指标，不等于未取证。",
+      "no_match_reason": "当前 MySQL 运行线程数未达到 32 阈值，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "INSTANCE",
+      "identity_fields": [
+        "threads_running"
+      ],
+      "required_columns": [
+        "questions_per_second",
+        "threads_running"
+      ],
+      "field_columns": [
+        "questions",
+        "uptime_seconds",
+        "questions_per_second",
+        "threads_running"
+      ],
+      "object_ref": {
+        "object_name": "threads_running"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "threads_running",
+          "value": 32
+        }
+      ],
+      "threshold": {
+        "metric": "threads_running",
+        "operator": ">=",
+        "limit": 32,
+        "current_column": "threads_running"
+      },
+      "impact_template": "当前运行线程 {threads_running}，平均 QPS {questions_per_second}。"
+    },
+    {
+      "finding_type": "QUERY_RATE",
+      "source_tool_id": "db.postgresql.instance.throughput",
+      "playbook_id": "postgresql.instance.throughput",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 PostgreSQL 吞吐指标，不等于未取证。",
+      "no_match_reason": "当前 PostgreSQL 回滚率未达到 20% 阈值，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "DATABASE",
+      "identity_fields": [
+        "database_name"
+      ],
+      "required_columns": [
+        "database_name",
+        "rollback_percent"
+      ],
+      "field_columns": [
+        "database_name",
+        "xact_commit",
+        "xact_rollback",
+        "rollback_percent",
+        "backends",
+        "sample_seconds",
+        "transactions_per_second"
+      ],
+      "object_ref": {
+        "object_name": "database_name"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "rollback_percent",
+          "value": 20
+        }
+      ],
+      "threshold": {
+        "metric": "rollback_percent",
+        "operator": ">=",
+        "limit": 20,
+        "current_column": "rollback_percent"
+      },
+      "impact_template": "数据库 {database_name} 回滚率 {rollback_percent}%。"
+    },
+    {
+      "finding_type": "INVALID_OBJECT",
+      "source_tool_id": "db.objects.invalid_summary",
+      "playbook_id": "oracle.maintenance.health",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有无效对象汇总，不等于未取证。",
+      "no_match_reason": "当前没有需要报告的无效对象，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "OBJECT",
+      "identity_fields": [
+        "owner",
+        "object_type",
+        "status"
+      ],
+      "required_columns": [
+        "owner",
+        "object_type",
+        "status",
+        "object_count"
+      ],
+      "field_columns": [
+        "owner",
+        "object_type",
+        "status",
+        "object_count"
+      ],
+      "object_ref": {
+        "object_name": "owner"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "status",
+          "values": [
+            "INVALID"
+          ],
+          "ignore_case": true
+        },
+        {
+          "op": "gte",
+          "column": "object_count",
+          "value": 1
+        }
+      ],
+      "threshold": {
+        "metric": "object_count",
+        "operator": ">=",
+        "limit": 1,
+        "current_column": "object_count"
+      },
+      "impact_template": "{owner} 下有 {object_count} 个无效 {object_type}。"
+    },
+    {
+      "finding_type": "ARCHIVE_HEADROOM",
+      "source_tool_id": "db.archive.status",
+      "playbook_id": "oracle.instance.archive",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有归档/FRA 状态，不等于未取证。",
+      "no_match_reason": "当前 FRA 使用率未达到 80% 阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "FRA",
+      "identity_fields": [
+        "recovery_file_dest"
+      ],
+      "required_columns": [
+        "fra_used_mb",
+        "fra_limit_mb"
+      ],
+      "field_columns": [
+        "database_role",
+        "open_mode",
+        "log_mode",
+        "force_logging",
+        "flashback_on",
+        "recovery_file_dest",
+        "fra_limit_mb",
+        "fra_used_mb",
+        "fra_reclaimable_mb",
+        "fra_file_count",
+        "fra_used_percent"
+      ],
+      "object_ref": {
+        "object_name": "recovery_file_dest"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "fra_used_percent",
+          "value": 80,
+          "parse": "ratio_percent",
+          "numerator": "fra_used_mb",
+          "denominator": "fra_limit_mb",
+          "parsed_field": "fra_used_percent"
+        }
+      ],
+      "threshold": {
+        "metric": "fra_used_percent",
+        "operator": ">=",
+        "limit": 80,
+        "current_field": "fra_used_percent"
+      },
+      "impact_template": "FRA 使用率 {fra_used_percent}%，已用 {fra_used_mb} MB / 上限 {fra_limit_mb} MB。"
+    },
+    {
+      "finding_type": "BACKUP_FAILED",
+      "source_tool_id": "db.backup.recent_jobs",
+      "playbook_id": "oracle.maintenance.health",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有备份任务记录，不等于未取证。",
+      "no_match_reason": "当前备份任务均未失败或带警告完成，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "BACKUP_JOB",
+      "identity_fields": [
+        "session_key",
+        "input_type",
+        "start_time"
+      ],
+      "required_columns": [
+        "session_key",
+        "status"
+      ],
+      "field_columns": [
+        "session_key",
+        "input_type",
+        "status",
+        "start_time",
+        "end_time",
+        "elapsed_seconds",
+        "input_mb",
+        "output_mb",
+        "output_device_type"
+      ],
+      "object_ref": {
+        "object_name": "session_key"
+      },
+      "predicates": [
+        {
+          "op": "in",
+          "column": "status",
+          "values": [
+            "FAILED",
+            "COMPLETED WITH ERRORS",
+            "COMPLETED WITH WARNINGS"
+          ],
+          "ignore_case": true
+        }
+      ],
+      "impact_template": "备份任务 {session_key} 状态为 {status}。"
+    },
+    {
+      "finding_type": "LONG_TRANSACTION",
+      "source_tool_id": "db.transaction.long_running",
+      "playbook_id": "oracle.transaction.long_running",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有长事务，不等于未取证。",
+      "no_match_reason": "当前事务均未达到 300 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "TRANSACTION",
+      "identity_fields": [
+        "instance_id",
+        "session_id",
+        "transaction_started_at"
+      ],
+      "required_columns": [
+        "session_id",
+        "elapsed_seconds",
+        "transaction_started_at"
+      ],
+      "field_columns": [
+        "instance_id",
+        "session_id",
+        "username",
+        "transaction_started_at",
+        "elapsed_seconds",
+        "undo_blocks",
+        "undo_records"
+      ],
+      "object_ref": {
+        "instance_id": "instance_id",
+        "object_name": "session_id"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "elapsed_seconds",
+          "value": 300
+        }
+      ],
+      "threshold": {
+        "metric": "elapsed_seconds",
+        "operator": ">=",
+        "limit": 300,
+        "current_column": "elapsed_seconds"
+      },
+      "impact_template": "会话 {session_id} 的事务已持续 {elapsed_seconds} 秒。"
+    },
+    {
+      "finding_type": "TOP_SQL",
+      "source_tool_id": "db.sql.top_current",
+      "playbook_id": "oracle.sql.top_current",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有 Top SQL 统计，不等于未取证。",
+      "no_match_reason": "当前 SQL 均未达到 10 秒耗时阈值，不等于未取证。",
+      "severity": "MEDIUM",
+      "object_kind": "SQL",
+      "identity_fields": [
+        "sql_id",
+        "plan_hash_value"
+      ],
+      "required_columns": [
+        "sql_id",
+        "elapsed_seconds"
+      ],
+      "field_columns": [
+        "sql_id",
+        "plan_hash_value",
+        "executions",
+        "elapsed_seconds",
+        "cpu_seconds",
+        "buffer_gets",
+        "disk_reads",
+        "rows_processed",
+        "last_active_time"
+      ],
+      "object_ref": {
+        "sql_id": "sql_id",
+        "object_name": "sql_id"
+      },
+      "predicates": [
+        {
+          "op": "gte",
+          "column": "elapsed_seconds",
+          "value": 10
+        }
+      ],
+      "threshold": {
+        "metric": "elapsed_seconds",
+        "operator": ">=",
+        "limit": 10,
+        "current_column": "elapsed_seconds"
+      },
+      "impact_template": "SQL {sql_id} 已累计耗时 {elapsed_seconds} 秒。"
     }
   ]
 }

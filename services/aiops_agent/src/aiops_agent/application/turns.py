@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from aiops_agent.application.inspections.check_catalog import (
+    compile_selected_check_steps,
+    normalize_selected_check_ids,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -282,13 +286,26 @@ class ConversationTurnService:
                 "AIOPS_INSPECTION_TEMPLATE_REGISTRY_MISSING",
                 "巡检固定取证模板未配置，不能以自由规划方式执行",
             )
-        evidence_steps = self._inspection_template_registry.execution_steps(
+        self._inspection_template_registry.validate(
             template_id=str(payload["template_id"]),
             template_version=str(payload["template_version"]),
             schedule_resolver_version=str(
                 payload["schedule_resolver_version"]
             ),
         )
+        try:
+            selected_check_ids = normalize_selected_check_ids(
+                payload.get("selected_check_ids")
+            )
+            evidence_steps = compile_selected_check_steps(
+                selected_check_ids,
+                schedule_type=str(payload.get("schedule_type") or "DAILY"),
+            )
+        except ValueError as exc:
+            raise self._error(
+                "AIOPS_INSPECTION_CHECK_SELECTION_INVALID",
+                str(exc),
+            ) from exc
         async with self._uow_factory() as uow:
             fire = await uow.inspections.get_fire(
                 inspection_fire_id=fire_id,
@@ -339,7 +356,7 @@ class ConversationTurnService:
                 "请对你负责的数据库执行本期健康巡检并生成巡检报告。"
                 f"观测窗口为 [{period_start.isoformat()}, {period_end.isoformat()})，"
                 f"巡检周期类型为 {schedule_type}。"
-                "本次巡检将执行模板声明的固定只读取证步骤，"
+                "本次巡检将执行已勾选检查项对应的固定只读取证步骤，"
                 "并基于实际证据评估健康风险、结论和建议。"
             )
             deadline_at = datetime.now(UTC) + timedelta(
@@ -406,6 +423,9 @@ class ConversationTurnService:
                                 "timezone": payload["timezone"],
                                 "period_start": period_start.isoformat(),
                                 "period_end": period_end.isoformat(),
+                                "selected_check_ids": list(
+                                    selected_check_ids
+                                ),
                                 "evidence_steps": evidence_steps,
                             },
                         },

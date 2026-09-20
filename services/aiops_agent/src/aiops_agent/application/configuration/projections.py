@@ -15,6 +15,9 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
+from aiops_agent.application.inspections.check_catalog import (
+    selected_check_ids_from_json,
+)
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     IdempotencyGuard,
@@ -324,6 +327,9 @@ def _inspection_detail(
         cron_expression=entity.cron_expression,
         template_id=entity.template_id,
         template_version=entity.template_version,
+        selected_check_ids=selected_check_ids_from_json(
+            entity.selected_checks_json
+        ),
         timeout_seconds=int(entity.timeout_seconds),
         overlap_policy=entity.overlap_policy,
         misfire_policy=entity.misfire_policy,

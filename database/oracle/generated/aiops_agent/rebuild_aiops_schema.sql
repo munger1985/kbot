@@ -1147,6 +1147,7 @@ CREATE TABLE KBOT_OPS_INSPECTION_PLAN (
     TIMEZONE VARCHAR2(64 CHAR) NOT NULL,
     TEMPLATE_ID VARCHAR2(128 CHAR) NOT NULL,
     TEMPLATE_VERSION VARCHAR2(64 CHAR) NOT NULL,
+    SELECTED_CHECKS_JSON JSON NOT NULL,
     TIMEOUT_SECONDS NUMBER(10) NOT NULL,
     OVERLAP_POLICY VARCHAR2(16 CHAR) NOT NULL,
     MISFIRE_POLICY VARCHAR2(16 CHAR) NOT NULL,
@@ -1686,6 +1687,7 @@ SELECT
     p.TIMEZONE,
     p.TEMPLATE_ID,
     p.TEMPLATE_VERSION,
+    p.SELECTED_CHECKS_JSON,
     p.STATUS,
     p.NEXT_RUN_AT,
     p.LAST_RUN_AT,
@@ -2971,6 +2973,8 @@ BEGIN
              AND column_name = 'EVIDENCE_ROLE')
          OR (table_name = 'KBOT_OPS_INSPECTION_PLAN'
              AND column_name = 'AGENT_ID')
+         OR (table_name = 'KBOT_OPS_INSPECTION_PLAN'
+             AND column_name = 'SELECTED_CHECKS_JSON')
        );
 
     SELECT COUNT(*)
@@ -3038,7 +3042,7 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 15 THEN
+    IF l_required_column_count <> 16 THEN
         raise_application_error(-20008, 'Schema 24 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
