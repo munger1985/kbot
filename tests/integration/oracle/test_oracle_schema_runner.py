@@ -196,10 +196,22 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
             },
             connection.role_permission_mappings,
         )
+        self.assertIn(
+            {
+                "app_id": "aiops",
+                "role_code": "user",
+                "permission_code": "aiops:use",
+            },
+            connection.role_permission_mappings,
+        )
         foundation_sql = "\n".join(connection.statements)
         self.assertIn("MERGE INTO KBOT_PLATFORM_APP", foundation_sql)
         self.assertIn("MERGE INTO KBOT_PERMISSION", foundation_sql)
         self.assertIn("MERGE INTO KBOT_APP_ROLE", foundation_sql)
+        self.assertIn(
+            "SELECT 'aiops', 'user', '用户'",
+            foundation_sql,
+        )
         self.assertIn("DELETE FROM KBOT_PERMISSION", foundation_sql)
         self.assertIn(
             "DELETE FROM KBOT_APP_ROLE_PERMISSION",

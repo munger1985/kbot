@@ -46,6 +46,9 @@ USING (
     UNION ALL
     SELECT 'assistant', 'app_admin', '智能工作台初始管理员',
            'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+    UNION ALL
+    SELECT 'aiops', 'user', '用户',
+           'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
 ) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
 WHEN MATCHED THEN UPDATE SET
