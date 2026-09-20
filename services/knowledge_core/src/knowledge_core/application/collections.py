@@ -89,6 +89,17 @@ def _collection_snapshot(entity: KcCollectionEntity) -> CollectionSnapshot:
     )
 
 
+async def _collection_snapshot_after_flush(
+    uow: KnowledgeCoreUnitOfWork,
+    entity: KcCollectionEntity,
+) -> CollectionSnapshot:
+    """刷新数据库生成字段后构造不会触发隐式 I/O 的快照。"""
+    if uow.session is None:
+        raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+    await uow.session.refresh(entity, attribute_names=["updated_at"])
+    return _collection_snapshot(entity)
+
+
 def _binding_snapshot(
     entity: KcCollectionBindingEntity,
 ) -> CollectionBindingSnapshot:
@@ -198,7 +209,7 @@ class KnowledgeCoreCollectionService:
                 updated_by=command.actor_id,
             )
             collection = await uow.collections.add(collection)
-            snapshot = _collection_snapshot(collection)
+            snapshot = await _collection_snapshot_after_flush(uow, collection)
             await uow.commit()
             return snapshot
 
@@ -282,7 +293,7 @@ class KnowledgeCoreCollectionService:
             collection.status = command.status
             collection.updated_by = command.actor_id
             await uow.session.flush()
-            snapshot = _collection_snapshot(collection)
+            snapshot = await _collection_snapshot_after_flush(uow, collection)
             await uow.commit()
             return snapshot
 
@@ -332,7 +343,9 @@ class KnowledgeCoreCollectionService:
                 collection.updated_by = command.actor_id
                 collection.row_version = int(collection.row_version) + 1
                 await uow.session.flush()
-            snapshot = _collection_snapshot(collection)
+                snapshot = await _collection_snapshot_after_flush(uow, collection)
+            else:
+                snapshot = _collection_snapshot(collection)
             await uow.commit()
             return snapshot
 
@@ -377,7 +390,7 @@ class KnowledgeCoreCollectionService:
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1
             await uow.session.flush()
-            snapshot = _collection_snapshot(collection)
+            snapshot = await _collection_snapshot_after_flush(uow, collection)
             await uow.commit()
             return snapshot
 
@@ -401,7 +414,7 @@ class KnowledgeCoreCollectionService:
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1
             await uow.flush()
-            snapshot = _collection_snapshot(collection)
+            snapshot = await _collection_snapshot_after_flush(uow, collection)
             await uow.commit()
             return snapshot
 

@@ -45,6 +45,22 @@ def collection_fixture(
     )
 
 
+class RefreshRequiredCollection:
+    """模拟 flush 后数据库生成时间戳已过期的 ORM 实体。"""
+
+    def __init__(self):
+        values = vars(collection_fixture()).copy()
+        self._updated_at = values.pop("updated_at")
+        self.__dict__.update(values)
+        self.updated_at_loaded = False
+
+    @property
+    def updated_at(self):
+        if not self.updated_at_loaded:
+            raise AssertionError("updated_at 必须先显式刷新")
+        return self._updated_at
+
+
 class FakeCollectionRepository:
     def __init__(self, existing=None):
         self._existing = existing
@@ -118,7 +134,10 @@ class FakeUnitOfWork:
         self.collections = repository
         self.bindings = binding_repository
         self.parse_views = parse_view_repository or FakeParseViewRepository()
-        self.session = SimpleNamespace(flush=AsyncMock())
+        self.session = SimpleNamespace(
+            flush=AsyncMock(),
+            refresh=AsyncMock(),
+        )
         self.commit = AsyncMock()
         self.jobs = None
         self.flush = AsyncMock()
@@ -362,9 +381,15 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         return service, uow
 
     async def test_status_change_is_explicit_and_scoped(self):
-        collection = collection_fixture()
+        collection = RefreshRequiredCollection()
         repo = FakeCollectionRepository(existing=collection)
         uow = FakeUnitOfWork(repo)
+        async def refresh_timestamp(entity, *, attribute_names):
+            self.assertIs(collection, entity)
+            self.assertEqual(["updated_at"], attribute_names)
+            entity.updated_at_loaded = True
+
+        uow.session.refresh.side_effect = refresh_timestamp
         service = KnowledgeCoreCollectionService(uow_factory=lambda: uow)
         from knowledge_core.application.collections import ChangeCollectionStatusCommand
         result = await service.change_status(ChangeCollectionStatusCommand(
@@ -375,6 +400,10 @@ class KnowledgeCoreCollectionLifecycleTest(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("tester", collection.updated_by)
+        uow.session.refresh.assert_awaited_once_with(
+            collection,
+            attribute_names=["updated_at"],
+        )
         uow.commit.assert_awaited_once()
 
     async def test_repeated_delete_returns_existing_purge_job(self):
