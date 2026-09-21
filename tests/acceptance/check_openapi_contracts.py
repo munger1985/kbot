@@ -42,7 +42,9 @@ def build_contracts() -> dict[str, dict[str, Any]]:
     from knowledge_retrieval_app.entrypoints.api import (  # noqa: PLC0415
         app as knowledge_retrieval_app,
     )
-    from assistant_app.entrypoints.api import app as assistant_app  # noqa: PLC0415
+    from media_studio_app.entrypoints.api import (  # noqa: PLC0415
+        app as media_studio_app,
+    )
     from km_asset_app.entrypoints.api import app as km_asset_app  # noqa: PLC0415
     from model_serving.entrypoints.ocr import app as ocr_app  # noqa: PLC0415
     from main_api.app import create_main_api_app  # noqa: PLC0415
@@ -58,7 +60,7 @@ def build_contracts() -> dict[str, dict[str, Any]]:
         "knowledge_retrieval_app_internal_v1.json": (
             knowledge_retrieval_app
         ),
-        "assistant_app_internal_v1.json": assistant_app,
+        "media_studio_app_internal_v1.json": media_studio_app,
         "km_asset_app_internal_v1.json": km_asset_app,
         "agent_runtime_internal_v1.json": agent_runtime_app,
         "data_query_internal_v1.json": create_data_query_contract_app(),
@@ -92,7 +94,7 @@ def _route_boundary_errors(
     elif filename in {
         "knowledge_core_internal_v1.json",
         "knowledge_retrieval_app_internal_v1.json",
-        "assistant_app_internal_v1.json",
+        "media_studio_app_internal_v1.json",
         "km_asset_app_internal_v1.json",
         "agent_runtime_internal_v1.json",
         "data_query_internal_v1.json",

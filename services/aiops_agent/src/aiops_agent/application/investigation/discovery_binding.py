@@ -604,15 +604,15 @@ def _bind_action_from_input(
     observation: dict,
     question: str | None = None,
 ) -> tuple[InvestigationAction, str]:
-    params = _bound_parameters(tool)
-    if not params:
-        return action, "UNBINDABLE"
     new_input = _normalized_integer_input(action.input, tool)
     if _all_required_integers_legal(new_input, tool):
         return (
             action.model_copy(update={"input": new_input, "deferred": False}),
             "BOUND",
         )
+    params = _bound_parameters(tool)
+    if not params:
+        return action, "UNBINDABLE"
     new_input = _fill_datetimes_from_question(
         action, params, new_input, extra_text=question
     )

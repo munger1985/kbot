@@ -93,6 +93,25 @@ class TurnPlannerService:
             trigger_type = str(
                 execution_context.get("trigger_type") or "CHAT"
             )
+            target_facts: list[dict] = []
+            if turn.resolved_target_id is not None:
+                assert uow.targets is not None
+                fact_rows = await uow.targets.list_target_facts(
+                    target_id=turn.resolved_target_id,
+                    domain_id=domain_id,
+                    active_only=True,
+                )
+                target_facts = [
+                    {
+                        "fact_id": str(row.target_fact_id),
+                        "fact_type": row.fact_type,
+                        "fact_key": row.fact_key,
+                        "fact_value": dict(row.fact_value or {}),
+                        "source": row.source,
+                        "status": row.status,
+                    }
+                    for row in fact_rows
+                ]
             run = OpsRunEntity(
                 ops_run_id=ops_run_id,
                 domain_id=domain_id,
@@ -145,6 +164,7 @@ class TurnPlannerService:
                             execution_context.get("inspection") or {}
                         )
                     },
+                    "target_facts": target_facts,
                 },
                 policy_snapshot_json={
                     "agent_version_id": str(payload["agent_version_id"]),

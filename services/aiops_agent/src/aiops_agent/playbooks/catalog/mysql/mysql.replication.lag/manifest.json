@@ -1,0 +1,69 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "mysql.replication.lag",
+  "version": "1.0.0",
+  "database_types": [
+    "MYSQL"
+  ],
+  "version_range": {
+    "minimum": "8",
+    "maximum": "10"
+  },
+  "supported_intents": [
+    "OBSERVE",
+    "INSPECT",
+    "DIAGNOSE"
+  ],
+  "domains": [
+    "REPLICATION",
+    "HIGH_AVAILABILITY"
+  ],
+  "subjects": [],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": [],
+  "required_target_capabilities": [
+    "DB_READONLY",
+    "replication_views"
+  ],
+  "required_privileges": [
+    "REPLICATION CLIENT"
+  ],
+  "required_entitlements": [],
+  "input_schema": "mysql.replication.lag.input.v1",
+  "defaults": {},
+  "limits": {
+    "max_rows": 32,
+    "timeout_seconds": 20,
+    "max_attempts": 2,
+    "cost_units": 2
+  },
+  "tool_dag": [
+    {
+      "step_id": "identity",
+      "tool_id": "db.instance.identity",
+      "tool_version": "1.0.0",
+      "depends_on": [],
+      "input": {}
+    },
+    {
+      "step_id": "collect",
+      "tool_id": "db.mysql.replication.lag",
+      "tool_version": "1.0.0",
+      "depends_on": [
+        "identity"
+      ],
+      "input": {}
+    }
+  ],
+  "output_schema": "mysql.replication.lag.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "mysql.replication.lag.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {
+    "max_age_seconds": 120,
+    "requires_observed_at": true
+  }
+}

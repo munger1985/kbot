@@ -82,3 +82,61 @@ def summarize_numeric_trend(
             }
         )
     return result
+
+_TREND_FIELDS = (
+    "metric_code",
+    "dimensions",
+    "first",
+    "latest",
+    "change",
+    "change_per_day",
+    "trend_slope_per_day",
+    "history_elapsed_days",
+)
+_REQUIRED_TREND_FIELDS = ("metric_code", "first", "latest", "change_per_day")
+
+
+def _column_name(column) -> str:
+    if isinstance(column, dict):
+        return str(column.get("name") or "")
+    return str(getattr(column, "name", "") or "")
+
+
+def extract_metric_trend_rows(evidence) -> tuple[dict[str, float | int | str], ...]:
+    """从 metric.query_range 证据抽出服务端趋势字段，不重新计算。"""
+    rows: list[dict[str, float | int | str]] = []
+    for item in evidence or ():
+        if getattr(item, "tool_id", None) != "metric.query_range":
+            continue
+        indexes = {
+            _column_name(column): index
+            for index, column in enumerate(getattr(item, "columns", ()) or ())
+            if _column_name(column)
+        }
+        if any(field not in indexes for field in _REQUIRED_TREND_FIELDS):
+            continue
+        for row in getattr(item, "rows", ()) or ():
+            first = row[indexes["first"]]
+            latest = row[indexes["latest"]]
+            change_per_day = row[indexes["change_per_day"]]
+            if first is None or latest is None or change_per_day is None:
+                continue
+            payload: dict[str, float | int | str] = {
+                "metric_code": row[indexes["metric_code"]],
+                "dimensions": (
+                    row[indexes["dimensions"]]
+                    if "dimensions" in indexes and row[indexes["dimensions"]] not in {None, ""}
+                    else "-"
+                ),
+                "first": first,
+                "latest": latest,
+                "change_per_day": change_per_day,
+            }
+            for field in _TREND_FIELDS:
+                if field in payload or field not in indexes:
+                    continue
+                value = row[indexes[field]]
+                if value is not None:
+                    payload[field] = value
+            rows.append(payload)
+    return tuple(rows)

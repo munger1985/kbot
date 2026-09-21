@@ -377,6 +377,107 @@
     }
   }
 
+  const factTypeLabels = {
+    ASM_DISKGROUP: "ASM 磁盘组",
+    DATAFILE_PATH: "数据文件目录",
+    TABLESPACE_PLACEMENT: "表空间放置",
+  };
+  const factKeyFields = {
+    ASM_DISKGROUP: "diskgroup_name",
+    DATAFILE_PATH: "directory",
+    TABLESPACE_PLACEMENT: "tablespace_name",
+  };
+
+  function factValueText(item) {
+    const keyField = factKeyFields[item.fact_type];
+    const value = item.fact_value || {};
+    return value[keyField] || item.fact_key || "—";
+  }
+
+  function renderTargetFacts(items) {
+    const list = document.getElementById("target-facts-list");
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = '<p class="ops-empty">当前没有已确认的运维记忆。</p>';
+      return;
+    }
+    list.innerHTML = `<table class="ops-table"><thead><tr><th>类型</th><th>事实值</th><th>来源</th><th>确认时间</th><th></th></tr></thead><tbody>${items.map((item) => `<tr><td>${shell.escape(factTypeLabels[item.fact_type] || item.fact_type)}</td><td>${shell.escape(factValueText(item))}</td><td>${shell.escape(item.source || "—")}</td><td>${shell.escape(shell.fmt(item.confirmed_at))}</td><td><button type="button" data-retire-target-fact="${shell.escape(item.fact_id)}" data-version="${shell.escape(item.row_version)}">撤回</button></td></tr>`).join("")}</tbody></table>`;
+  }
+
+  async function loadTargetFacts(targetId) {
+    const payload = await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/facts`);
+    renderTargetFacts(payload.items || []);
+  }
+
+  async function initializeTargetFacts(targetId) {
+    const form = document.getElementById("target-facts-form");
+    const list = document.getElementById("target-facts-list");
+    const result = document.getElementById("target-facts-result");
+    if (!form || !list) return;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const factType = form.fact_type.value;
+      const raw = String(form.fact_value.value || "").trim();
+      const keyField = factKeyFields[factType];
+      if (!raw || !keyField) {
+        result.textContent = "请填写事实值。";
+        result.dataset.tone = "bad";
+        return;
+      }
+      form.querySelector("button[type=submit]").disabled = true;
+      try {
+        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/facts`, {
+          method: "POST",
+          headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+          body: JSON.stringify({
+            fact_type: factType,
+            fact_key: raw,
+            fact_value: { [keyField]: raw },
+          }),
+        });
+        form.fact_value.value = "";
+        result.textContent = "已写入运维记忆，不会执行 SQL。";
+        result.dataset.tone = "good";
+        await loadTargetFacts(targetId);
+      } catch (error) {
+        result.textContent = error.message;
+        result.dataset.tone = "bad";
+      } finally {
+        form.querySelector("button[type=submit]").disabled = false;
+      }
+    });
+    list.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-retire-target-fact]");
+      if (!button) return;
+      if (!confirm("确认撤回这条运维记忆吗？撤回后不再参与容量判断。")) return;
+      button.disabled = true;
+      try {
+        await KBotAIOpsAuth.request(
+          `${appApi}/targets/${encodeURIComponent(targetId)}/facts/${encodeURIComponent(button.dataset.retireTargetFact)}/retire`,
+          {
+            method: "POST",
+            headers: {
+              "If-Match": `"rv-${button.dataset.version}"`,
+              "Idempotency-Key": KBotAIOpsAuth.uuid(),
+            },
+          },
+        );
+        result.textContent = "已撤回该运维记忆。";
+        result.dataset.tone = "good";
+        await loadTargetFacts(targetId);
+      } catch (error) {
+        result.textContent = error.message;
+        result.dataset.tone = "bad";
+        button.disabled = false;
+      }
+    });
+    try {
+      await loadTargetFacts(targetId);
+    } catch (error) {
+      list.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+    }
+  }
+
   async function initializeTargetSubscription(targetId, target) {
     const elements = subscriptionElements();
     if (!elements) return;
@@ -408,11 +509,19 @@
 
   const protectedReportSections = new Set(["EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"]);
 
+  function leadershipBriefingHtml(briefing) {
+    if (!briefing || typeof briefing !== "object") return "";
+    const list = (items) => `<ul>${(Array.isArray(items) ? items : []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul>`;
+    const risk = String(briefing.risk_level || "LOW");
+    const tone = { CRITICAL: "bad", HIGH: "bad", MEDIUM: "warn", LOW: "good", INFO: "good" }[risk] || "";
+    return `<section class="ops-panel ops-leadership-briefing" data-leadership-briefing><div class="ops-panel-head"><div><h3>领导简报</h3><p>只保留影响、风险和建议，不展开 SID 或 SQL。</p></div><span class="ops-badge ${tone}">${shell.escape(risk)}</span></div><div class="ops-panel-body ops-leadership-grid"><article><h4>影响</h4>${list(briefing.business_impact)}</article><article><h4>风险</h4>${list(briefing.risks)}</article><article><h4>建议</h4>${list(briefing.recommendations)}</article></div></section>`;
+  }
+
   function reportPresentationHtml(data, report, versions) {
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header><section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
   }
 
   function beginReportEdit(panel, data, report, versions) {
@@ -485,7 +594,10 @@
       }
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
       panel.innerHTML = `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
-      if (page === "target-detail") await initializeTargetSubscription(id, data);
+      if (page === "target-detail") {
+        await initializeTargetSubscription(id, data);
+        await initializeTargetFacts(id);
+      }
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
   async function renderSimple(page) {

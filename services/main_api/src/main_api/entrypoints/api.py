@@ -31,7 +31,7 @@ from platform_clients import (
     AIModelConfigClient,
     KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
-    AssistantAppClient,
+    MediaStudioClient,
     KmAssetClient,
     DataQueryClient,
 )
@@ -135,11 +135,11 @@ async def lifespan(app: FastAPI):
         timeout_seconds=settings.knowledge_retrieval_app.timeout_seconds,
         session=client_session,
     )
-    app.state.assistant_app_client = AssistantAppClient(
-        base_url=settings.assistant_app.base_url,
+    app.state.media_studio_client = MediaStudioClient(
+        base_url=settings.media_studio_app.base_url,
         caller_service=config.service_name,
-        audience=settings.assistant_app.audience,
-        timeout_seconds=settings.assistant_app.timeout_seconds,
+        audience=settings.media_studio_app.audience,
+        timeout_seconds=settings.media_studio_app.timeout_seconds,
         session=client_session,
     )
     app.state.km_asset_client = KmAssetClient(

@@ -125,9 +125,18 @@ class AIOpsAgentError(ValueError):
 
 
 class AIOpsAgentService:
-    def __init__(self, *, uow_factory, action_registry=None):
+    def __init__(
+        self,
+        *,
+        uow_factory,
+        action_registry=None,
+        environment: str = "development",
+        model_client=None,
+    ):
         self._uow_factory = uow_factory
         self._action_registry = action_registry
+        self._environment = environment
+        self._model_client = model_client
 
     async def create(self, command: CreateAIOpsAgentCommand) -> dict[str, Any]:
         agent_id, version_id = uuid7(), uuid7()
@@ -438,6 +447,49 @@ class AIOpsAgentService:
                 )
             ]
 
+    async def _validate_production_llm_providers(self, values) -> None:
+        """生产环境启用 Agent 时，规划/诊断模型必须是本地 DeepSeek。"""
+        from aiops_agent.application.diagnosis.local_models import (
+            LocalModelBindingError,
+            is_production_environment,
+            require_production_local_llm,
+        )
+
+        if not is_production_environment(self._environment):
+            return
+        models = dict(values.get("models") or {})
+        for role, role_label in (
+            ("planner_llm", "规划"),
+            ("diagnosis_llm", "诊断"),
+        ):
+            model_id = models.get(role)
+            if not model_id:
+                continue
+            if self._model_client is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_MODEL_DIRECTORY_UNAVAILABLE",
+                    "生产环境无法校验诊断模型提供方",
+                    status_code=503,
+                )
+            try:
+                definition = await self._model_client.get_model(model_id)
+            except (LookupError, RuntimeError, TypeError, ValueError) as exc:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_MODEL_DIRECTORY_UNAVAILABLE",
+                    f"{role_label}模型目录暂时不可用",
+                    status_code=503,
+                ) from exc
+            try:
+                require_production_local_llm(
+                    environment=self._environment,
+                    provider=(definition or {}).get("provider"),
+                    role_label=role_label,
+                )
+            except LocalModelBindingError as exc:
+                raise AIOpsAgentError(
+                    exc.code, exc.message, status_code=422
+                ) from exc
+
     async def _validate_resources(
         self, uow, domain_id: int, status: str, values
     ) -> None:
@@ -457,6 +509,8 @@ class AIOpsAgentService:
                 "启用 Agent 前必须选择规划模型",
                 status_code=422,
             )
+        if status == "ACTIVE":
+            await self._validate_production_llm_providers(values)
         source_ids = tuple(values.get("diagnostic_source_ids") or ())
         if not source_ids:
             raise AIOpsAgentError(

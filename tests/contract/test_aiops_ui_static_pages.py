@@ -113,9 +113,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("下载原生 AWR 报告", workspace)
         self.assertIn("下载原生 AWR 对比报告", workspace)
         self.assertIn("下载原生 ASH 报告", workspace)
+        self.assertIn("下载原生 SQL Monitor 报告", workspace)
         self.assertIn("oracle-awr-report.html", workspace)
         self.assertIn("oracle-awr-diff-report.html", workspace)
         self.assertIn("oracle-ash-report.html", workspace)
+        self.assertIn("oracle-sql-monitor.html", workspace)
         self.assertIn("data-workload-report-action", workspace)
         self.assertIn("/workload-reports/${toolId}?action_id=${actionId}", workspace)
         self.assertNotIn("reports.set(action.tool_id", workspace)
@@ -261,6 +263,31 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             (AIOPS_ROOT / "notification-subscriptions.html").exists()
         )
 
+    def test_target_detail_and_chat_own_target_fact_confirmation(self):
+        page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        workspaces_css = (AIOPS_ROOT / "css" / "workspaces.css").read_text(
+            encoding="utf-8"
+        )
+        forms_css = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="target-facts"', page)
+        self.assertIn("initializeTargetFacts", pages)
+        self.assertIn("/facts", pages)
+        self.assertIn("FACT_CONFIRMATION", workspace)
+        self.assertIn("data-confirm-target-fact", workspace)
+        self.assertIn("target-facts:confirm", workspace)
+        self.assertIn(".ops-fact-confirmation", workspaces_css)
+        self.assertIn(".target-facts-list", forms_css)
+        self.assertIn(".target-facts-form", forms_css)
+        self.assertNotIn("command_preview", workspace.split("function factConfirmationHtml")[1].split("function htmlReportLinksHtml")[0])
+
     def test_configuration_pages_open_real_create_and_edit_dialogs(self):
         pages = {
             "diagnostic-sources.html": "diagnostic-source-dialog",
@@ -346,6 +373,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="inspection-schedule-summary"', page)
         self.assertIn('name="agent_id" required', page)
         self.assertIn("创建并启用", page)
+        self.assertIn('id="inspection-check-catalog"', page)
+        self.assertIn("检查项", page)
+        self.assertIn("不能手写 SQL", page)
+        self.assertIn(">03<", page)
+        self.assertIn(">04<", page)
+        self.assertIn("运行策略", page)
+        self.assertIn('name="selected_check_ids"', script)
+        self.assertIn("function renderCheckCatalog(form, selectedIds)", script)
+        self.assertIn("/inspection-check-catalog", script)
         self.assertIn("function buildSchedule(form)", script)
         self.assertIn("function hydrateScheduleBuilder(form, plan)", script)
         self.assertIn("function renderSchedule(form)", script)

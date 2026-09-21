@@ -117,21 +117,21 @@ class _DetachingUow(_Uow):
         await super().__aexit__(exc_type, exc, traceback)
 
 
-def _app_access(*, user_id="assistantadmin", scope_mode="ALL_APP_DOMAINS", scopes=()):
+def _app_access(*, user_id="knowledgeadmin", scope_mode="ALL_APP_DOMAINS", scopes=()):
     access = _AccessRepository()
     access.users[user_id] = SimpleNamespace(
         user_id=user_id, status="ACTIVE", account_origin="APP",
     )
-    access.applications["assistant"] = SimpleNamespace(app_id="assistant", status="ACTIVE")
-    access.members[("assistant", user_id)] = SimpleNamespace(
-        app_id="assistant", user_id=user_id, status="ACTIVE",
+    access.applications["knowledge_retrieval"] = SimpleNamespace(app_id="knowledge_retrieval", status="ACTIVE")
+    access.members[("knowledge_retrieval", user_id)] = SimpleNamespace(
+        app_id="knowledge_retrieval", user_id=user_id, status="ACTIVE",
     )
     access.roles.append(SimpleNamespace(
-        app_id="assistant", user_id=user_id, role_code="ADMIN",
+        app_id="knowledge_retrieval", user_id=user_id, role_code="ADMIN",
         scope_mode=scope_mode, status="ACTIVE",
     ))
     if scopes:
-        access.scopes[("assistant", user_id, "ADMIN")] = tuple(scopes)
+        access.scopes[("knowledge_retrieval", user_id, "ADMIN")] = tuple(scopes)
     return access
 
 
@@ -210,15 +210,15 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         service = DomainManagementService(uow_factory=lambda: uow)
 
         result = await service.create_for_app(
-            app_id="assistant",
+            app_id="knowledge_retrieval",
             name="华东销售",
             description="隔离范围",
-            actor_id="assistantadmin",
+            actor_id="knowledgeadmin",
         )
 
         self.assertEqual(1, result["domain_id"])
         self.assertEqual("ACTIVE", result["status"])
-        self.assertIn(("assistant", 1), access.app_domains)
+        self.assertIn(("knowledge_retrieval", 1), access.app_domains)
         self.assertEqual({}, access.scopes)
         self.assertTrue(uow.committed)
 
@@ -226,32 +226,32 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         repository = _DomainRepository()
         _seed_domain(repository, domain_id=1, name="已有域")
         access = _app_access(scope_mode="SELECTED_DOMAINS", scopes=(1,))
-        access.app_domains[("assistant", 1)] = SimpleNamespace(
-            app_id="assistant", domain_id=1, status="ACTIVE",
+        access.app_domains[("knowledge_retrieval", 1)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=1, status="ACTIVE",
         )
         uow = _Uow(repository, access)
         service = DomainManagementService(uow_factory=lambda: uow)
 
         result = await service.create_for_app(
-            app_id="assistant",
+            app_id="knowledge_retrieval",
             name="新建销售域",
             description=None,
-            actor_id="assistantadmin",
+            actor_id="knowledgeadmin",
         )
 
         self.assertEqual(2, result["domain_id"])
-        self.assertEqual((1, 2), access.scopes[("assistant", "assistantadmin", "ADMIN")])
+        self.assertEqual((1, 2), access.scopes[("knowledge_retrieval", "knowledgeadmin", "ADMIN")])
 
     async def test_list_for_app_includes_disabled_authorized_domains(self):
         repository = _DomainRepository()
         _seed_domain(repository, domain_id=3, name="停用域", status="DISABLED")
         access = _app_access(scope_mode="ALL_APP_DOMAINS")
-        access.app_domains[("assistant", 3)] = SimpleNamespace(
-            app_id="assistant", domain_id=3, status="DISABLED",
+        access.app_domains[("knowledge_retrieval", 3)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=3, status="DISABLED",
         )
         service = DomainManagementService(uow_factory=lambda: _DetachingUow(repository, access))
 
-        result = await service.list_for_app(app_id="assistant", user_id="assistantadmin")
+        result = await service.list_for_app(app_id="knowledge_retrieval", user_id="knowledgeadmin")
 
         self.assertEqual(1, len(result["items"]))
         self.assertEqual("DISABLED", result["items"][0]["status"])
@@ -261,17 +261,17 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         repository = _DomainRepository()
         _seed_domain(repository, domain_id=8, name="旧名称")
         access = _app_access(scope_mode="ALL_APP_DOMAINS")
-        access.app_domains[("assistant", 8)] = SimpleNamespace(
-            app_id="assistant", domain_id=8, status="ACTIVE",
+        access.app_domains[("knowledge_retrieval", 8)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=8, status="ACTIVE",
         )
         uow = _Uow(repository, access)
         service = DomainManagementService(uow_factory=lambda: uow)
 
         result = await service.update_for_app(
-            app_id="assistant",
+            app_id="knowledge_retrieval",
             domain_id=8,
-            user_id="assistantadmin",
-            actor_id="assistantadmin",
+            user_id="knowledgeadmin",
+            actor_id="knowledgeadmin",
             expected_row_version=1,
             name="新名称",
             description="更新说明",
@@ -287,38 +287,38 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
         repository = _DomainRepository()
         _seed_domain(repository, domain_id=8, name="可停用域")
         access = _app_access(scope_mode="ALL_APP_DOMAINS")
-        access.app_domains[("assistant", 8)] = SimpleNamespace(
-            app_id="assistant", domain_id=8, status="ACTIVE",
+        access.app_domains[("knowledge_retrieval", 8)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=8, status="ACTIVE",
         )
         service = DomainManagementService(uow_factory=lambda: _Uow(repository, access))
 
         result = await service.disable_for_app(
-            app_id="assistant",
+            app_id="knowledge_retrieval",
             domain_id=8,
-            user_id="assistantadmin",
-            actor_id="assistantadmin",
+            user_id="knowledgeadmin",
+            actor_id="knowledgeadmin",
             expected_row_version=1,
         )
 
         self.assertEqual("DISABLED", result["status"])
-        self.assertEqual("DISABLED", access.app_domains[("assistant", 8)].status)
+        self.assertEqual("DISABLED", access.app_domains[("knowledge_retrieval", 8)].status)
         self.assertEqual(2, result["row_version"])
 
     async def test_bootstrap_portal_cannot_be_renamed_or_disabled(self):
         repository = _DomainRepository()
-        _seed_domain(repository, domain_id=41, name="assistant_portal")
+        _seed_domain(repository, domain_id=41, name="knowledge_retrieval_portal")
         access = _app_access(scope_mode="ALL_APP_DOMAINS")
-        access.app_domains[("assistant", 41)] = SimpleNamespace(
-            app_id="assistant", domain_id=41, status="ACTIVE",
+        access.app_domains[("knowledge_retrieval", 41)] = SimpleNamespace(
+            app_id="knowledge_retrieval", domain_id=41, status="ACTIVE",
         )
         service = DomainManagementService(uow_factory=lambda: _Uow(repository, access))
 
         with self.assertRaises(DomainLifecycleError) as renamed:
             await service.update_for_app(
-                app_id="assistant",
+                app_id="knowledge_retrieval",
                 domain_id=41,
-                user_id="assistantadmin",
-                actor_id="assistantadmin",
+                user_id="knowledgeadmin",
+                actor_id="knowledgeadmin",
                 expected_row_version=1,
                 name="改名引导域",
             )
@@ -326,10 +326,10 @@ class DomainManagementServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(DomainLifecycleError) as disabled:
             await service.disable_for_app(
-                app_id="assistant",
+                app_id="knowledge_retrieval",
                 domain_id=41,
-                user_id="assistantadmin",
-                actor_id="assistantadmin",
+                user_id="knowledgeadmin",
+                actor_id="knowledgeadmin",
                 expected_row_version=1,
             )
         self.assertEqual("DOMAIN_BOOTSTRAP_PROTECTED", disabled.exception.code)

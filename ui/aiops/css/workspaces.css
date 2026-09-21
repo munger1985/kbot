@@ -150,5 +150,12 @@
 .ops-finding-fields li { display: flex; justify-content: space-between; gap: 18px; padding: 6px 8px; background: #f7f8fb; }
 .ops-finding-fields span { color: var(--muted); }
 .ops-finding-empty, .ops-finding-gaps { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.ops-fact-confirmation { margin: 0 0 14px; padding: 13px 15px; border: 1px solid #d9c48d; background: #fffaf0; }
+.ops-fact-confirmation header { margin-bottom: 10px; }
+.ops-fact-confirmation header strong { color: var(--accent); font-size: 13px; }
+.ops-fact-confirmation-form { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #d9c48d; }
+.ops-fact-confirmation-form label { display: grid; gap: 4px; }
+.ops-fact-confirmation-form input, .ops-fact-confirmation-form textarea { width: 100%; }
+.ops-fact-confirmation-form button { justify-self: start; }
 .ops-html-report-label { color: var(--muted); font-size: 12px; }
 @media (max-width: 1000px) { .ops-workspace, .ops-master-detail { grid-template-columns: 1fr; } .ops-workspace-list { border-right: 0; border-bottom: 1px solid var(--line); } .ops-workspace-items { max-height: 240px; } }

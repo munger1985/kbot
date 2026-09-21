@@ -100,8 +100,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_24_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 8, 1, 1, 1, 1))
+    async def test_ready_requires_schema_26_contract_integrity(self) -> None:
+        session = _SchemaSession((1, 9, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -116,12 +116,12 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 24", session.statements[0])
-        self.assertIn("aiops-oracle-v14", session.statements[0])
+        self.assertIn("schema_version = 26", session.statements[0])
+        self.assertIn("aiops-oracle-v16", session.statements[0])
         self.assertIn("USER_EVIDENCE", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_24_contract(self) -> None:
-        session = _SchemaSession((1, 7, 1, 1, 1, 1))
+    async def test_ready_rejects_partial_schema_26_contract(self) -> None:
+        session = _SchemaSession((1, 8, 1, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -140,7 +140,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_ready_rejects_dynamic_tool_class_constraint_drift(
         self,
     ) -> None:
-        session = _SchemaSession((1, 8, 1, 1, 1, 0))
+        session = _SchemaSession((1, 9, 1, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -157,7 +157,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_ready_rejects_non_clob_report_summary(self) -> None:
-        session = _SchemaSession((1, 8, 1, 0, 1, 1))
+        session = _SchemaSession((1, 9, 1, 0, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

@@ -46,7 +46,7 @@ class ValueMemberPlanNormalizeTest(unittest.TestCase):
             response=response,
             models=models,
             question=question,
-            consumer_app_id="assistant",
+            consumer_app_id="knowledge_retrieval",
         )
 
     def test_base_and_km_reject_unresolved_closed_status(self) -> None:

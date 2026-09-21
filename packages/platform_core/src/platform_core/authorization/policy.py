@@ -175,9 +175,9 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
                 ("GET", r"runs/[0-9a-fA-F-]{36}/references/[^/]+/files/[0-9a-fA-F-]{36}/content", "km:reference:read"),
             ),
         ),
-        "assistant": _policy(
-            app_id="assistant",
-            public_slug="assistant",
+        "media_studio": _policy(
+            app_id="media_studio",
+            public_slug="media-studio",
         ),
         "aiops": _policy(
             app_id="aiops",
@@ -206,6 +206,7 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
                 ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "aiops:conversation:delete"),
                 ("POST", r"runs", "aiops:chat:write"),
                 ("POST", r"runs/[0-9a-fA-F-]{36}/cancel", "aiops:chat:write"),
+                ("GET", r"fleet", "aiops:run:read"),
                 ("GET", r"runs/[0-9a-fA-F-]{36}", "aiops:run:read"),
                 ("GET", r"runs/[0-9a-fA-F-]{36}/result", "aiops:run:read"),
                 ("GET", r"runs/[0-9a-fA-F-]{36}/events", "aiops:run:read"),

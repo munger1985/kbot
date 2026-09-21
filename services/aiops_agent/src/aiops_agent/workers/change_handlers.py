@@ -29,6 +29,11 @@ from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment
 from aiops_agent.application.changes.proposal_snapshot import (
     build_proposal_snapshot,
 )
+from aiops_agent.application.diagnosis import (
+    allows_capacity_action,
+    compile_findings,
+    decide_capacity_actions,
+)
 
 from .handlers import TaskExecutionContext
 
@@ -389,9 +394,20 @@ class ChatActionPlanHandler:
             environment=str(target.get("environment")),
             include_planned=False,
         )
+        capacity_plan = decide_capacity_actions(
+            findings=compile_findings(
+                assessment.evidence,
+                target_id=str(context.target_id or "") or None,
+            ).findings,
+            target_facts=list(context.plan_snapshot.get("target_facts") or []),
+        )
         actions = []
         for template in templates:
             definition = template.definition
+            if not allows_capacity_action(
+                capacity_plan, definition.action_template_id
+            ):
+                continue
             compiled = self._compilers.compile_turn(
                 compiler_id=definition.compiler_id,
                 assessment=assessment,

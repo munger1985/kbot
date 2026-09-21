@@ -11,6 +11,15 @@ from uuid import UUID
 
 from loguru import logger
 
+from aiops_agent.application.exacheck_report import (
+    EXACHECK_REPORT_KIND,
+    parse_exacheck_html,
+)
+from aiops_agent.application.sqlhc_report import (
+    SQLHC_REPORT_KIND,
+    parse_sqlhc_html,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedConversationUpload:
@@ -32,6 +41,8 @@ class ResolvedConversationUpload:
     model_revision: str | None = None
     prompt_ref: dict[str, str] | None = None
     extraction_error: str | None = None
+    report_kind: str | None = None
+    structured_facts: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,12 +227,22 @@ class ConversationInputResolver:
             try:
                 text = self._decode_text(raw)
                 extraction_mode = "TEXT_DECODE"
+                report_kind = None
+                structured_facts = None
                 if stored.media_type in {"text/html", "application/xhtml+xml"}:
+                    exacheck = parse_exacheck_html(text, file_name=stored.file_name)
+                    sqlhc = parse_sqlhc_html(text, file_name=stored.file_name)
                     extractor = _HtmlEvidenceExtractor()
                     extractor.feed(text)
                     extractor.close()
                     text = extractor.text()
                     extraction_mode = "HTML_TEXT_EXTRACT"
+                    if exacheck is not None:
+                        report_kind = EXACHECK_REPORT_KIND
+                        structured_facts = exacheck.as_payload()
+                    elif sqlhc is not None:
+                        report_kind = SQLHC_REPORT_KIND
+                        structured_facts = sqlhc.as_payload()
                 if not text:
                     raise ValueError("文件没有可用于诊断的正文")
                 searchable_uri, searchable_hash, searchable_size = (
@@ -239,6 +260,8 @@ class ConversationInputResolver:
                     searchable_byte_size=searchable_size,
                     extracted_char_count=len(text),
                     line_count=text.count("\n") + 1,
+                    report_kind=report_kind,
+                    structured_facts=structured_facts,
                 )
             except (UnicodeDecodeError, ValueError) as exc:
                 return ResolvedConversationUpload(

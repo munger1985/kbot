@@ -1,0 +1,152 @@
+-- 多媒体创作工作台首次使用数据资产；只写基础数据，不创建或修改 Schema。
+-- 固定资源：media_studio_portal 引导 Domain、mediaadmin 初始管理员。
+-- 不创建业务 Agent、模型绑定或模型配置；重复执行不会重置已有管理员密码。
+-- 初始密码：MediaAdmin@2026!，首次登录必须修改。
+
+SET SERVEROUTPUT ON
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
+
+DECLARE
+    l_missing VARCHAR2(4000);
+    l_conflicting_user_count PLS_INTEGER;
+    l_other_initial_admin_count PLS_INTEGER;
+BEGIN
+    SELECT LISTAGG(required.TABLE_NAME, ', ') WITHIN GROUP (ORDER BY required.TABLE_NAME)
+      INTO l_missing
+      FROM (
+        SELECT 'KBOT_PLATFORM_DOMAIN' TABLE_NAME FROM DUAL UNION ALL
+        SELECT 'KBOT_PLATFORM_APP' FROM DUAL UNION ALL
+        SELECT 'KBOT_PLATFORM_USER' FROM DUAL UNION ALL
+        SELECT 'KBOT_PLATFORM_USER_CREDENTIAL' FROM DUAL UNION ALL
+        SELECT 'KBOT_PERMISSION' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_ROLE' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_ROLE_PERMISSION' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_DOMAIN' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_MEMBER' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_MEMBER_ROLE' FROM DUAL UNION ALL
+        SELECT 'KBOT_APP_MEMBER_ROLE_SCOPE' FROM DUAL UNION ALL
+        SELECT 'KBOT_MEDIA_MODEL_BINDING' FROM DUAL UNION ALL
+        SELECT 'KBOT_MEDIA_RUN' FROM DUAL UNION ALL
+        SELECT 'KBOT_MEDIA_RUN_EVENT' FROM DUAL UNION ALL
+        SELECT 'KBOT_MEDIA_PROMPT_REVISION' FROM DUAL UNION ALL
+        SELECT 'KBOT_MEDIA_ASSET' FROM DUAL
+      ) required
+      LEFT JOIN USER_TABLES existing ON existing.TABLE_NAME = required.TABLE_NAME
+     WHERE existing.TABLE_NAME IS NULL;
+    IF l_missing IS NOT NULL THEN
+        raise_application_error(-20001, '多媒体创作工作台基础表不完整，缺表：' || l_missing);
+    END IF;
+
+    SELECT COUNT(*) INTO l_conflicting_user_count
+      FROM KBOT_PLATFORM_USER
+     WHERE USER_ID = 'mediaadmin'
+       AND (ACCOUNT_ORIGIN <> 'APP' OR OWNER_APP_ID <> 'media_studio');
+    IF l_conflicting_user_count > 0 THEN
+        raise_application_error(-20002, 'mediaadmin 已属于其他账户来源，拒绝接管。');
+    END IF;
+
+    SELECT COUNT(*) INTO l_other_initial_admin_count
+      FROM KBOT_APP_MEMBER
+     WHERE APP_ID = 'media_studio' AND IS_INITIAL_ADMIN = 'Y' AND USER_ID <> 'mediaadmin';
+    IF l_other_initial_admin_count > 0 THEN
+        raise_application_error(-20003, '多媒体创作工作台已存在其他初始管理员，拒绝覆盖。');
+    END IF;
+END;
+/
+
+MERGE INTO KBOT_PLATFORM_APP target
+USING (SELECT 'media_studio' APP_ID, '多媒体创作工作台' DISPLAY_NAME FROM DUAL) source
+ON (target.APP_ID = source.APP_ID)
+WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.STATUS = 'ACTIVE', target.MEMBER_ASSIGNABLE = 'Y', target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE, ROW_VERSION, CREATED_AT, UPDATED_AT)
+VALUES (source.APP_ID, source.DISPLAY_NAME, 'ACTIVE', 'Y', 1, SYSTIMESTAMP, SYSTIMESTAMP);
+
+MERGE INTO KBOT_PLATFORM_DOMAIN target
+USING (SELECT 'media_studio_portal' NAME, '多媒体创作工作台初始空白 Domain' DESCRIPTION FROM DUAL) source
+ON (target.NAME = source.NAME)
+WHEN MATCHED THEN UPDATE SET target.STATUS = 'ACTIVE', target.DESCRIPTION = source.DESCRIPTION, target.UPDATED_BY = 'bootstrap:media_studio_initial_admin', target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (NAME, STATUS, DESCRIPTION, ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT)
+VALUES (source.NAME, 'ACTIVE', source.DESCRIPTION, 1, 'bootstrap:media_studio_initial_admin', 'bootstrap:media_studio_initial_admin', SYSTIMESTAMP, SYSTIMESTAMP);
+
+MERGE INTO KBOT_PERMISSION target
+USING (
+    SELECT 'media_studio:use' PERMISSION_CODE, 'media_studio' APP_ID, '使用多媒体创作工作台' DISPLAY_NAME FROM DUAL UNION ALL
+    SELECT 'media_studio:image_generate', 'media_studio', '使用图片生成' FROM DUAL UNION ALL
+    SELECT 'media_studio:media_read', 'media_studio', '查看媒体资产' FROM DUAL UNION ALL
+    SELECT 'media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定' FROM DUAL UNION ALL
+    SELECT 'media_studio:run_read', 'media_studio', '查看生成运行和用量' FROM DUAL
+) source
+ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN MATCHED THEN UPDATE SET target.APP_ID = source.APP_ID, target.DISPLAY_NAME = source.DISPLAY_NAME
+WHEN NOT MATCHED THEN INSERT (PERMISSION_CODE, APP_ID, DISPLAY_NAME)
+VALUES (source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME);
+
+MERGE INTO KBOT_APP_ROLE target
+USING (
+    SELECT 'media_studio' APP_ID, 'user' ROLE_CODE, '创作用户' DISPLAY_NAME, 'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL UNION ALL
+    SELECT 'media_studio', 'app_admin', '多媒体创作工作台初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
+WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.IS_SYSTEM = source.IS_SYSTEM, target.SCOPE_POLICY = source.SCOPE_POLICY, target.STATUS = source.STATUS
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, DISPLAY_NAME, IS_SYSTEM, SCOPE_POLICY, STATUS, ROW_VERSION)
+VALUES (source.APP_ID, source.ROLE_CODE, source.DISPLAY_NAME, source.IS_SYSTEM, source.SCOPE_POLICY, source.STATUS, 1);
+
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT 'media_studio' APP_ID, 'user' ROLE_CODE, PERMISSION_CODE
+      FROM KBOT_PERMISSION
+     WHERE PERMISSION_CODE IN ('media_studio:use', 'media_studio:image_generate', 'media_studio:media_read', 'media_studio:run_read')
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT 'media_studio' APP_ID, 'app_admin' ROLE_CODE, PERMISSION_CODE
+      FROM KBOT_PERMISSION
+     WHERE APP_ID = 'media_studio'
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_PLATFORM_USER target
+USING (SELECT 'mediaadmin' USER_ID, '多媒体创作管理员' DISPLAY_NAME FROM DUAL) source
+ON (target.USER_ID = source.USER_ID)
+WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.ACCOUNT_ORIGIN = 'APP', target.OWNER_APP_ID = 'media_studio', target.IS_PROTECTED = 'Y', target.MAX_SECURITY_LEVEL = 3, target.STATUS = 'ACTIVE', target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (USER_ID, DISPLAY_NAME, ACCOUNT_ORIGIN, OWNER_APP_ID, IS_PROTECTED, MAX_SECURITY_LEVEL, STATUS, CREATED_AT, UPDATED_AT)
+VALUES (source.USER_ID, source.DISPLAY_NAME, 'APP', 'media_studio', 'Y', 3, 'ACTIVE', SYSTIMESTAMP, SYSTIMESTAMP);
+
+MERGE INTO KBOT_PLATFORM_USER_CREDENTIAL target
+USING (SELECT 'mediaadmin' USER_ID, '$2b$12$rMKBM4TGa9pMpeQKv95hZeLzxH21TrYX4u2oh2S6rRu1oyM74UUSi' PASSWORD_HASH FROM DUAL) source
+ON (target.USER_ID = source.USER_ID)
+WHEN NOT MATCHED THEN INSERT (USER_ID, PASSWORD_HASH, MUST_CHANGE_PASSWORD, PASSWORD_UPDATED_AT, CREATED_AT, UPDATED_AT)
+VALUES (source.USER_ID, source.PASSWORD_HASH, 'Y', SYSTIMESTAMP, SYSTIMESTAMP, SYSTIMESTAMP);
+
+MERGE INTO KBOT_APP_DOMAIN target
+USING (SELECT 'media_studio' APP_ID, DOMAIN_ID FROM KBOT_PLATFORM_DOMAIN WHERE NAME = 'media_studio_portal' AND STATUS = 'ACTIVE') source
+ON (target.APP_ID = source.APP_ID AND target.DOMAIN_ID = source.DOMAIN_ID)
+WHEN MATCHED THEN UPDATE SET target.STATUS = 'ACTIVE'
+WHEN NOT MATCHED THEN INSERT (APP_ID, DOMAIN_ID, STATUS, CREATED_BY, CREATED_AT)
+VALUES (source.APP_ID, source.DOMAIN_ID, 'ACTIVE', 'bootstrap:media_studio_initial_admin', SYSTIMESTAMP);
+
+MERGE INTO KBOT_APP_MEMBER target
+USING (SELECT 'media_studio' APP_ID, 'mediaadmin' USER_ID FROM DUAL) source
+ON (target.APP_ID = source.APP_ID AND target.USER_ID = source.USER_ID)
+WHEN MATCHED THEN UPDATE SET target.MEMBER_SOURCE = 'APP_INITIAL_ADMIN', target.IS_INITIAL_ADMIN = 'Y', target.STATUS = 'ACTIVE', target.UPDATED_AT = SYSTIMESTAMP
+WHEN NOT MATCHED THEN INSERT (APP_ID, USER_ID, MEMBER_SOURCE, IS_INITIAL_ADMIN, STATUS, GRANTED_BY, CREATED_AT, UPDATED_AT)
+VALUES (source.APP_ID, source.USER_ID, 'APP_INITIAL_ADMIN', 'Y', 'ACTIVE', 'bootstrap:media_studio_initial_admin', SYSTIMESTAMP, SYSTIMESTAMP);
+
+MERGE INTO KBOT_APP_MEMBER_ROLE target
+USING (SELECT 'media_studio' APP_ID, 'mediaadmin' USER_ID, 'app_admin' ROLE_CODE FROM DUAL) source
+ON (target.APP_ID = source.APP_ID AND target.USER_ID = source.USER_ID AND target.ROLE_CODE = source.ROLE_CODE)
+WHEN MATCHED THEN UPDATE SET target.SCOPE_MODE = 'ALL_APP_DOMAINS', target.STATUS = 'ACTIVE'
+WHEN NOT MATCHED THEN INSERT (APP_ID, USER_ID, ROLE_CODE, SCOPE_MODE, STATUS, CREATED_BY, CREATED_AT)
+VALUES (source.APP_ID, source.USER_ID, source.ROLE_CODE, 'ALL_APP_DOMAINS', 'ACTIVE', 'bootstrap:media_studio_initial_admin', SYSTIMESTAMP);
+
+DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE
+ WHERE APP_ID = 'media_studio' AND USER_ID = 'mediaadmin' AND ROLE_CODE = 'app_admin';
+
+COMMIT;

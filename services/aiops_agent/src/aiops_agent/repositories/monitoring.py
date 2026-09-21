@@ -328,6 +328,24 @@ class SituationRepository(AIOpsRepository):
             SituationEntity.domain_id == domain_id,
         ))).scalar_one_or_none()
 
+    async def list_open_for_domain(
+        self, *, domain_id: int
+    ) -> list[SituationEntity]:
+        """读取域内尚未关闭的故障情境，供库群总览一次投影。"""
+        self._check_active()
+        statement = (
+            select(SituationEntity)
+            .where(
+                SituationEntity.domain_id == domain_id,
+                SituationEntity.status.notin_(("RESOLVED", "CLOSED")),
+            )
+            .order_by(
+                SituationEntity.created_at.desc(),
+                SituationEntity.situation_id.desc(),
+            )
+        )
+        return list((await self._session.execute(statement)).scalars())
+
     async def page_situations(
         self, *, domain_id: int, target_id: UUID | None = None,
         status: str | None = None, severity: str | None = None,

@@ -382,7 +382,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(63, len(registry.tools))
+        self.assertEqual(78, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -413,10 +413,31 @@ class DiagnosticCatalogTest(unittest.TestCase):
             ("ORACLE", "db.resource.session_utilization"), pairs
         )
         for tool_id in (
+            "db.session.idle",
+            "db.mysql.replication.lag",
+            "db.mysql.connection.utilization",
+            "db.mysql.instance.throughput",
+        ):
+            self.assertIn(("MYSQL", tool_id), pairs)
+        for tool_id in (
+            "db.session.idle",
+            "db.postgresql.replication.lag",
+            "db.postgresql.connection.utilization",
+            "db.postgresql.instance.throughput",
+            "db.storage.dead_tuples",
+            "db.maintenance.autovacuum",
+        ):
+            self.assertIn(("POSTGRESQL", tool_id), pairs)
+        for tool_id in (
             "db.oracle.awr.snapshots",
             "db.oracle.awr.report",
             "db.oracle.awr.diff_report",
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
             "db.oracle.ash.report",
+            "db.oracle.sql_monitor.executions",
+            "db.oracle.sql_monitor.report",
         ):
             self.assertIn(("ORACLE", tool_id), pairs)
         for tool_id in (
@@ -464,6 +485,8 @@ class DiagnosticCatalogTest(unittest.TestCase):
             ("sql_id", "limit"),
             tuple(parameter.name for parameter in tool.definition.parameters),
         )
+        self.assertNotIn("report_sql_monitor", tool.sql.lower())
+        self.assertNotIn("dbms_sqltune", tool.sql.lower())
 
     def test_oracle_display_cursor_is_fixed_to_allstats_last(self) -> None:
         tool = DiagnosticRegistry.load().resolve(
@@ -568,6 +591,34 @@ class DiagnosticCatalogTest(unittest.TestCase):
         )
         self.assertNotIn(":instance_number", snapshots.sql.lower())
 
+        report = registry.resolve(
+            tool_id="db.oracle.sql_monitor.report", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c",
+            capabilities={"dynamic_performance_views"}, entitlements=set(),
+        )
+        self.assertEqual(("DBMS_SQLTUNE",), report.definition.allowed_packages)
+        self.assertEqual(
+            "db.oracle.sql_monitor.executions",
+            report.definition.discovery_tool_id,
+        )
+        self.assertIn("dbms_sqltune.report_sql_monitor", report.sql.lower())
+        self.assertIn("from dual", report.sql.lower())
+        self.assertNotIn("dbms_workload_repository", report.sql.lower())
+        self.assertEqual(
+            ("sql_id", "sql_exec_id", "sql_exec_start"),
+            tuple(item.name for item in report.definition.parameters),
+        )
+        self.assertEqual("output", report.definition.output_columns[0].name)
+        executions = registry.resolve(
+            tool_id="db.oracle.sql_monitor.executions", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c",
+            capabilities={"dynamic_performance_views"}, entitlements=set(),
+        )
+        self.assertIsNone(executions.definition.discovery_tool_id)
+        self.assertEqual((), executions.definition.allowed_packages)
+        self.assertIn("gv$sql_monitor", executions.sql.lower())
+        self.assertNotIn("report_sql_monitor", executions.sql.lower())
+
     def test_oracle_workload_report_ranges_are_validated(self) -> None:
         registry = DiagnosticRegistry.load()
         awr = registry.resolve(
@@ -579,6 +630,26 @@ class DiagnosticCatalogTest(unittest.TestCase):
             registry.validate_parameters(awr, {
                 "begin_snapshot_id": 20, "end_snapshot_id": 20,
             })
+        for tool_id in (
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
+        ):
+            fact_tool = registry.resolve(
+                tool_id=tool_id, tool_version="1.0.0",
+                db_type="ORACLE", db_version="19c", capabilities=set(),
+                entitlements=set(),
+            )
+            with self.assertRaisesRegex(ValueError, "起始快照"):
+                registry.validate_parameters(fact_tool, {
+                    "begin_snapshot_id": 20, "end_snapshot_id": 20,
+                })
+            self.assertEqual(
+                {"begin_snapshot_id": 10, "end_snapshot_id": 20},
+                registry.validate_parameters(fact_tool, {
+                    "begin_snapshot_id": 10, "end_snapshot_id": 20,
+                }),
+            )
         diff = registry.resolve(
             tool_id="db.oracle.awr.diff_report", tool_version="1.0.0",
             db_type="ORACLE", db_version="19c", capabilities=set(),
@@ -616,9 +687,56 @@ class DiagnosticCatalogTest(unittest.TestCase):
                 "end_time": "2026-09-10T10:05:00",
             })
 
+
+    def test_oracle_awr_fact_tools_read_hist_not_html(self) -> None:
+        registry = DiagnosticRegistry.load()
+        expected = {
+            "db.oracle.awr.load_profile": (
+                "dba_hist_sysstat",
+                {"snapshot_id", "metric_name", "total_value", "per_second"},
+            ),
+            "db.oracle.awr.top_wait": (
+                "dba_hist_system_event",
+                {"snapshot_id", "event_name", "time_waited_seconds"},
+            ),
+            "db.oracle.awr.top_sql": (
+                "dba_hist_sqlstat",
+                {"snapshot_id", "sql_id", "elapsed_seconds"},
+            ),
+        }
+        for tool_id, (source, columns) in expected.items():
+            with self.subTest(tool_id=tool_id):
+                tool = registry.resolve(
+                    tool_id=tool_id, tool_version="1.0.0",
+                    db_type="ORACLE", db_version="19c", capabilities=set(),
+                    entitlements=set(),
+                )
+                sql = tool.sql.lower()
+                self.assertEqual((), tool.definition.allowed_packages)
+                self.assertIn(source, sql)
+                self.assertIn("dba_hist_snapshot", sql)
+                self.assertNotIn("dbms_workload_repository", sql)
+                self.assertNotIn("<html", sql)
+                self.assertEqual(
+                    "db.oracle.awr.snapshots",
+                    tool.definition.discovery_tool_id,
+                )
+                self.assertEqual(
+                    ("begin_snapshot_id", "end_snapshot_id"),
+                    tuple(item.name for item in tool.definition.parameters),
+                )
+                names = {item.name for item in tool.definition.output_columns}
+                self.assertTrue(columns <= names)
+
     def test_oracle_awr_reports_declare_snapshot_discovery(self) -> None:
         registry = DiagnosticRegistry.load()
-        for tool_id in ("db.oracle.awr.report", "db.oracle.awr.diff_report"):
+        for tool_id in (
+            "db.oracle.awr.report",
+            "db.oracle.awr.diff_report",
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
+        ):
             tool = registry.resolve(
                 tool_id=tool_id,
                 tool_version="1.0.0",

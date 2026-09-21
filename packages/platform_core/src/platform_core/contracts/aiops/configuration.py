@@ -220,6 +220,43 @@ class TargetPage(CursorPage):
     items: tuple[TargetSummary, ...] = ()
 
 
+TargetFactType = Literal["ASM_DISKGROUP", "DATAFILE_PATH", "TABLESPACE_PLACEMENT"]
+TargetFactSource = Literal["MANUAL_CONFIRMED", "DISCOVERED"]
+TargetFactStatus = Literal["ACTIVE", "RETIRED"]
+
+
+class TargetFactCreate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    fact_type: TargetFactType
+    fact_key: str = Field(min_length=1, max_length=256)
+    fact_value: JsonObject
+
+
+class TargetFactView(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    fact_id: UUIDv7
+    target_id: UUIDv7
+    fact_type: TargetFactType
+    fact_key: str
+    fact_value: JsonObject
+    source: TargetFactSource
+    status: TargetFactStatus
+    confirmed_by: str | None = None
+    confirmed_at: UtcDatetime | None = None
+    retired_by: str | None = None
+    retired_at: UtcDatetime | None = None
+    row_version: int = Field(ge=1)
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+    created_by: str
+    updated_by: str
+
+
+class TargetFactPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[TargetFactView, ...] = ()
+
+
 def _validate_oracle_container_expectation(
     scope: OracleContainerScope | None,
     pdb_name: str | None,
@@ -487,7 +524,6 @@ class PolicyDetail(PolicySummary):
 class PolicyPage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     items: tuple[PolicySummary, ...] = ()
-
 
 
 class InspectionCheckCatalogItem(AIOpsContract):

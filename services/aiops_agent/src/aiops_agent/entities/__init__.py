@@ -29,7 +29,7 @@ from .runtime import (
     OpsRunEventEntity,
     OpsTaskEntity,
 )
-from .target import PolicyEntity, TargetBindingEntity, TargetEntity
+from .target import PolicyEntity, TargetBindingEntity, TargetEntity, TargetFactEntity
 from .conversation import (
     EvidenceRequestEntity, ImageEvidenceProcessingEntity,
     OpsAnswerBlockEntity, OpsAnswerCitationEntity,
@@ -83,6 +83,7 @@ __all__ = [
     "ReportSourceEntity",
     "TargetBindingEntity",
     "TargetEntity",
+    "TargetFactEntity",
     "TargetSourceBindingEntity",
 ]
 from .agent import (

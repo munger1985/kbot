@@ -47,7 +47,7 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
             ("api_endpoint", "api_key"), _LLM_PARAMS,
             supports_tool_calling=True, max_context_tokens=131072,
         )
-        for provider in ("api_deepseek", "api_qwen", "chatgpt")
+        for provider in ("local_deepseek", "api_deepseek", "api_qwen", "chatgpt")
     },
     (ModelCategory.LLM.value, "oci"): _ProviderSchema(
         ("api_endpoint", "model_params.compartment_id", "model_params.config_file"),

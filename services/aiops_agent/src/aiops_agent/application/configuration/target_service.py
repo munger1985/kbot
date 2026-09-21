@@ -30,6 +30,11 @@ from aiops_agent.application.configuration.schedule import (
     InspectionTemplateRegistry,
     next_cron_run,
 )
+from aiops_agent.application.targets.facts import (
+    create_confirmed_fact,
+    list_active_facts,
+    retire_fact,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -75,6 +80,9 @@ from platform_core.contracts.aiops import (
     TargetConnectionTest,
     TargetConnectionTestResult,
     TargetDetail,
+    TargetFactCreate,
+    TargetFactPage,
+    TargetFactView,
     TargetPage,
     TargetPatch,
     TargetSummary,
@@ -85,6 +93,7 @@ from platform_core.identity import uuid7
 from .projections import (
     _target_detail,
     _target_summary,
+    _target_fact_view,
     _agent_binding_view,
     _diagnostic_source_detail,
     _diagnostic_source_summary,
@@ -950,5 +959,93 @@ class TargetConfigurationMixin:
             idempotency_key=idempotency_key,
             payload={"row_version": expected_version},
             response_type=AgentBindingView,
+            handler=handler,
+        )
+
+
+    async def list_target_facts(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID,
+    ) -> TargetFactPage:
+        async with self._uow_factory() as uow:
+            assert uow.targets is not None
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=scope.domain_id,
+            )
+            if target is None:
+                raise resource_not_found("Target")
+            rows = await list_active_facts(
+                uow=uow,
+                target_id=target_id,
+                domain_id=scope.domain_id,
+            )
+            return TargetFactPage(
+                items=tuple(_target_fact_view(row) for row in rows)
+            )
+
+    async def create_target_fact(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        request: TargetFactCreate,
+        idempotency_key: str,
+    ) -> TargetFactView:
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> TargetFactView:
+            entity = await create_confirmed_fact(
+                uow=uow,
+                scope=scope,
+                target_id=target_id,
+                fact_type=request.fact_type,
+                fact_key=request.fact_key,
+                fact_value=request.fact_value,
+                now=now,
+            )
+            return _target_fact_view(entity)
+
+        return await self._idempotent(
+            scope=scope,
+            operation="TARGET_FACT_CREATE",
+            parent_resource=str(target_id),
+            idempotency_key=idempotency_key,
+            payload=request.model_dump(mode="json"),
+            response_type=TargetFactView,
+            handler=handler,
+        )
+
+    async def retire_target_fact(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        fact_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> TargetFactView:
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> TargetFactView:
+            entity = await retire_fact(
+                uow=uow,
+                scope=scope,
+                target_id=target_id,
+                fact_id=fact_id,
+                expected_version=expected_version,
+                now=now,
+            )
+            return _target_fact_view(entity)
+
+        return await self._idempotent(
+            scope=scope,
+            operation="TARGET_FACT_RETIRE",
+            parent_resource=str(fact_id),
+            idempotency_key=idempotency_key,
+            payload={"row_version": expected_version},
+            response_type=TargetFactView,
             handler=handler,
         )

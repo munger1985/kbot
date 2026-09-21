@@ -220,7 +220,7 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
         for permission_code in sorted(
             code
             for code in PLATFORM_FOUNDATION_PERMISSIONS
-            if code.startswith("assistant:")
+            if code.startswith(("knowledge_retrieval:", "media_studio:"))
         ):
             self.assertIn(permission_code, foundation_sql)
         self.assertTrue(connection.committed)

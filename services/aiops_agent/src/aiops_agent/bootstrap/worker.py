@@ -95,17 +95,21 @@ def create_aiops_worker_probe(
         app.state.runtime = runtime
         app.state.ready_check = runtime.check_aiops_schema
         action_registry = ActionRegistry.load()
+        model_client = AIModelConfigClient(
+            base_url=resolved.clients.model_serving.base_url,
+            timeout=resolved.clients.model_serving.timeout_seconds,
+            caller_service=config.service_name,
+            audience=resolved.clients.model_serving.audience,
+        )
         agent_catalog = AIOpsAgentValidator(
             AIOpsAgentService(
                 uow_factory=runtime.uow_factory,
                 action_registry=action_registry,
+                environment=resolved.environment,
+                model_client=model_client,
             ),
-            model_client=AIModelConfigClient(
-                base_url=resolved.clients.model_serving.base_url,
-                timeout=resolved.clients.model_serving.timeout_seconds,
-                caller_service=config.service_name,
-                audience=resolved.clients.model_serving.audience,
-            ),
+            model_client=model_client,
+            environment=resolved.environment,
         )
         managed_credential_service = AIOpsManagedCredentialService(
             uow_factory=runtime.uow_factory,

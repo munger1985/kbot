@@ -96,6 +96,48 @@ class TargetEntity(BaseEntity):
     __mapper_args__ = {"version_id_col": row_version}
 
 
+class TargetFactEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_TARGET_FACT"
+
+    target_fact_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    fact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    fact_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    fact_value: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="ACTIVE"
+    )
+    confirmed_by: Mapped[str | None] = mapped_column(String(256))
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    retired_by: Mapped[str | None] = mapped_column(String(256))
+    retired_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    row_version: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, default=1
+    )
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    __mapper_args__ = {"version_id_col": row_version}
+
+
 class PolicyEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_POLICY"
 

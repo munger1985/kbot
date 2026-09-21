@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .configuration import (
     AgentBindingCreate,
@@ -43,6 +43,9 @@ from .configuration import (
     TargetConnectionTestResult,
     TargetDetail,
     TargetEndpoint,
+    TargetFactCreate,
+    TargetFactPage,
+    TargetFactView,
     TargetPage,
     TargetPatch,
     TargetSummary,
@@ -408,6 +411,60 @@ class ReportEdit(AIOpsContract):
 
     title: str = Field(min_length=1, max_length=512)
     sections: tuple[ReportSectionEdit, ...] = Field(default=(), max_length=32)
+
+
+class LeadershipBriefing(AIOpsContract):
+    """正式报告的领导简报投影；不展开 SID/SQL 明细。"""
+
+    schema_version: str = "LEADERSHIP_BRIEFING.v1"
+    risk_level: str = Field(min_length=1, max_length=32)
+    business_impact: tuple[str, ...] = ()
+    risks: tuple[str, ...] = ()
+    recommendations: tuple[str, ...] = ()
+
+
+class ReportPresentation(BaseModel):
+    """报告预览投影。只约束领导简报，其余章节保持现有冻结结构。"""
+
+    model_config = ConfigDict(extra="allow")
+    leadership_briefing: LeadershipBriefing
+
+
+FleetHealth = Literal["HEALTHY", "WARNING", "CRITICAL", "UNREACHABLE", "DISABLED"]
+
+
+class FleetTargetCard(AIOpsContract):
+    """库群总览卡片；只保留健康、告警、容量和延迟，不展开 SID 明细。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    target_id: UUIDv7
+    display_name: str = Field(min_length=1, max_length=256)
+    db_type: str = Field(min_length=1, max_length=32)
+    environment: str = Field(min_length=1, max_length=16)
+    health: FleetHealth
+    open_alert_count: int = Field(ge=0)
+    max_capacity_percent: float | None = None
+    max_lag_seconds: float | None = None
+    last_diagnosed_at: UtcDatetime | None = None
+    latest_run_id: UUIDv7 | None = None
+
+
+class FleetSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    target_count: int = Field(ge=0)
+    healthy_count: int = Field(ge=0)
+    warning_count: int = Field(ge=0)
+    critical_count: int = Field(ge=0)
+    unreachable_count: int = Field(ge=0)
+    disabled_count: int = Field(ge=0)
+    open_alert_count: int = Field(ge=0)
+    last_diagnosed_at: UtcDatetime | None = None
+
+
+class FleetDashboard(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    summary: FleetSummary
+    items: tuple[FleetTargetCard, ...] = ()
 
 
 class UploadSession(AIOpsContract):

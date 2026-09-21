@@ -366,6 +366,7 @@ class _Uow:
         self.targets = SimpleNamespace(
             target_ids_shared_by_sources=self._target_candidates,
             get_scoped=self._get_target,
+            list_target_facts=self._list_target_facts,
         )
         self.runs = _RunRepository()
         self.situations = SimpleNamespace(
@@ -418,6 +419,9 @@ class _Uow:
         if domain_id == 7 and target_id == self.target.target_id:
             return self.target
         return None
+
+    async def _list_target_facts(self, *, target_id, domain_id, active_only=True):
+        return []
 
     async def _add_conversation(self, row):
         row.conversation_id = row.conversation_id or uuid7()
@@ -622,6 +626,46 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
         return service, receipt
+
+    async def test_primary_run_snapshot_includes_active_target_facts(self) -> None:
+        uow = _Uow()
+        fact = SimpleNamespace(
+            target_fact_id=uuid7(),
+            fact_type="ASM_DISKGROUP",
+            fact_key="DATA",
+            fact_value={"diskgroup_name": "DATA"},
+            source="MANUAL_CONFIRMED",
+            status="ACTIVE",
+        )
+
+        async def list_facts(*, target_id, domain_id, active_only=True):
+            self.assertEqual(uow.target.target_id, target_id)
+            self.assertEqual(7, domain_id)
+            self.assertTrue(active_only)
+            return [fact]
+
+        uow.targets.list_target_facts = list_facts
+        await self._start(uow)
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            created_payload
+        )
+        await TurnPlannerService(uow_factory=lambda: uow).begin(
+            dict(uow.outbox.rows[1].payload_json)
+        )
+        self.assertEqual(
+            [
+                {
+                    "fact_id": str(fact.target_fact_id),
+                    "fact_type": "ASM_DISKGROUP",
+                    "fact_key": "DATA",
+                    "fact_value": {"diskgroup_name": "DATA"},
+                    "source": "MANUAL_CONFIRMED",
+                    "status": "ACTIVE",
+                }
+            ],
+            uow.runs.rows[0].plan_snapshot_json["target_facts"],
+        )
 
     async def test_start_persists_one_atomic_turn_command(self) -> None:
         uow = _Uow()

@@ -16,7 +16,7 @@ from .metrics import (
 from .observations import (
     summarize_points,
 )
-from .trends import summarize_numeric_trend
+from .trends import extract_metric_trend_rows, summarize_numeric_trend
 
 __all__ = [
     "DEFAULT_BASELINE_METRICS",
@@ -25,6 +25,7 @@ __all__ = [
     "SituationCorrelationDecision",
     "correlate_signal_event",
     "summarize_points",
+    "extract_metric_trend_rows",
     "summarize_numeric_trend",
     "validate_event_class_map",
 ]

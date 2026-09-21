@@ -1,7 +1,7 @@
 # platform_clients/__init__.py — 跨服务调用客户端
 
 from .agent_runtime import AgentRuntimeClient, AgentRuntimeClientError
-from .assistant_app import AssistantAppClient, AssistantAppClientError
+from .media_studio import MediaStudioClient, MediaStudioClientError
 from .aiops import (
     AIOpsClientAuth,
     AIOpsClientError,
@@ -28,8 +28,8 @@ from .km_portal import KmPortalClient, KmPortalClientError
 __all__ = [
     "AgentRuntimeClient",
     "AgentRuntimeClientError",
-    "AssistantAppClient",
-    "AssistantAppClientError",
+    "MediaStudioClient",
+    "MediaStudioClientError",
     "AIOpsClientAuth",
     "AIOpsClientError",
     "AIOpsDelegationClient",

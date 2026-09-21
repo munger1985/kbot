@@ -1,7 +1,6 @@
 """模型目录、生命周期、引用检查与缓存失效。"""
 
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +12,11 @@ from model_serving.common.entities.ai_model import AIModelEntity
 from model_serving.common.oci_auth import public_model_params
 from model_serving.common.provider_catalog import validate_provider_config
 from model_serving.config import get_model_serving_settings
-from platform_core.contracts import AuthContext, ModelReferenceSummary
+from platform_core.contracts import (
+    AuthContext,
+    ModelReferenceSummary,
+    is_grok_provider_model_name,
+)
 from platform_core.exceptions import DataNotFoundException
 from platform_core.identity import uuid7
 
@@ -76,15 +79,8 @@ class ModelRegistryService:
             "api_endpoint": entity.api_endpoint,
             "status": _STATUS_FROM_DB[int(entity.status)],
             "model_params": public_model_params(entity.model_params),
-            "supports_x_search": bool(int(getattr(entity, "supports_x_search", 0))),
             "supports_image_generation": bool(
                 int(getattr(entity, "supports_image_generation", 0))
-            ),
-            "supports_responses_streaming": bool(
-                int(getattr(entity, "supports_responses_streaming", 0))
-            ),
-            "capability_verified_at": getattr(
-                entity, "capability_verified_at", None,
             ),
             "description": entity.descs,
             "row_version": int(entity.row_version),
@@ -176,10 +172,7 @@ class ModelRegistryService:
                     setattr(row, target, values[source])
             if {"api_endpoint", "api_key", "model_params"} & set(values):
                 # 上游连接或推理配置变化后，旧验收结论不再可信。
-                row.supports_x_search = 0
                 row.supports_image_generation = 0
-                row.supports_responses_streaming = 0
-                row.capability_verified_at = None
             row.updated_by = actor_id
             try:
                 await uow.flush()
@@ -314,10 +307,7 @@ class ModelRegistryService:
         self,
         model_id: UUID,
         *,
-        supports_x_search: bool,
         supports_image_generation: bool,
-        supports_responses_streaming: bool,
-        verified_at: datetime,
         actor_id: str,
         auth_context: AuthContext | None = None,
     ) -> dict[str, Any]:
@@ -325,10 +315,7 @@ class ModelRegistryService:
         async with self._uow_factory() as uow:
             assert uow.models
             row = await self._locked(uow.models, model_id)
-            row.supports_x_search = int(supports_x_search)
             row.supports_image_generation = int(supports_image_generation)
-            row.supports_responses_streaming = int(supports_responses_streaming)
-            row.capability_verified_at = verified_at
             row.updated_by = actor_id
             await uow.flush()
             await uow.commit()
@@ -358,9 +345,7 @@ class ModelRegistryService:
     ) -> dict[str, Any]:
         """仅向已启用且已验收能力的模型开放扩展入口。"""
         capability_fields = {
-            "x_search": "supports_x_search",
             "image_generation": "supports_image_generation",
-            "responses_streaming": "supports_responses_streaming",
         }
         field = capability_fields.get(capability)
         if field is None:
@@ -379,6 +364,24 @@ class ModelRegistryService:
                 raise ModelRegistryConflict(
                     "MODEL_CAPABILITY_UNVERIFIED",
                     f"模型尚未通过 {capability} 能力验收",
+                )
+            return self._safe(row)
+
+    async def require_grok_model(self, model_id: UUID) -> dict[str, Any]:
+        """X Search 是 Grok 原生能力，只允许已启用的 Grok 模型。"""
+        async with self._uow_factory() as uow:
+            assert uow.models
+            try:
+                row = await uow.models.get_by_id(model_id)
+            except DataNotFoundException as exc:
+                raise ModelDefinitionNotFound(model_id) from exc
+            if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
+                raise ModelRegistryConflict(
+                    "MODEL_NOT_ACTIVE", "模型未启用，不能使用 X Search",
+                )
+            if not is_grok_provider_model_name(row.provider_model_name):
+                raise ModelRegistryConflict(
+                    "X_SEARCH_GROK_REQUIRED", "X Search 只能使用 Grok 模型",
                 )
             return self._safe(row)
 

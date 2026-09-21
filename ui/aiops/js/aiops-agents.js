@@ -56,6 +56,45 @@
     });
   }
 
+
+  const LLM_PROVIDER_LABELS = {
+    local_deepseek: "本地部署 · DeepSeek",
+    api_deepseek: "API 调用 · DeepSeek",
+    api_qwen: "API 调用 · Qwen",
+    chatgpt: "API 调用 · OpenAI",
+    oci: "API 调用 · OCI",
+  };
+
+  function isLocalLlmProvider(provider) {
+    return String(provider || "").trim().toLowerCase() === "local_deepseek";
+  }
+
+  function llmProviderLabel(provider) {
+    const key = String(provider || "").trim().toLowerCase();
+    return LLM_PROVIDER_LABELS[key] || provider || "未知提供方";
+  }
+
+  function llmOptionLabel(model) {
+    return `${model.display_name} · ${model.served_model_name} · ${llmProviderLabel(model.provider)}`;
+  }
+
+  function sortedDiagnosisModels() {
+    return models
+      .filter((model) => Number(model.category) === 1)
+      .slice()
+      .sort((left, right) => {
+        const leftLocal = isLocalLlmProvider(left.provider) ? 0 : 1;
+        const rightLocal = isLocalLlmProvider(right.provider) ? 0 : 1;
+        if (leftLocal !== rightLocal) return leftLocal - rightLocal;
+        return String(left.display_name || "").localeCompare(String(right.display_name || ""), "zh");
+      });
+  }
+
+  function firstLocalDeepseekId() {
+    const local = sortedDiagnosisModels().find((model) => isLocalLlmProvider(model.provider));
+    return local ? local.model_id : "";
+  }
+
   function locatorLabel(sourceType) {
     if (sourceType === "PROMETHEUS") return "Prometheus instance 标签值";
     if (sourceType === "ALERTMANAGER") return "告警中的目标标签值";
@@ -125,12 +164,12 @@
     document.getElementById("agent-targets").innerHTML = targets.length
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
       : '<div class="ops-error">没有已启用的逻辑 Target，请先创建并启用运维目标。</div>';
-    const diagnosisModels = models.filter((model) => Number(model.category) === 1);
+    const diagnosisModels = sortedDiagnosisModels();
     document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
-      ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
+      ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
       : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
     document.getElementById("agent-model").innerHTML = diagnosisModels.length
-      ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
+      ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
       : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
     renderImageModelOptions("agent-ocr-model", 6, "不启用 OCR", "OCR");
     renderImageModelOptions("agent-vlm-model", 5, "不启用 VLM", "VLM");
@@ -325,6 +364,9 @@
     form.elements.alert_cooldown_minutes.value = 15;
     form.elements.auto_alert_enabled.checked = true;
     form.elements.status.disabled = true;
+    const localModelId = firstLocalDeepseekId();
+    form.elements.planner_model_id.value = localModelId;
+    form.elements.diagnosis_model_id.value = localModelId;
     document.getElementById("agent-status-help").textContent = "新增 Agent 固定保存为草稿；创建成功后可在编辑时启用。";
     toggleTargetFields();
     toggleAlertSettings();

@@ -68,6 +68,7 @@ from .model import (
     ModelReferenceSummary,
     ModelStatusRequest,
     ModelUpdateRequest,
+    is_grok_provider_model_name,
 )
 from . import data_query
 
@@ -111,6 +112,7 @@ __all__ = [
     "ModelReferenceSummary",
     "ModelStatusRequest",
     "ModelUpdateRequest",
+    "is_grok_provider_model_name",
     "PrincipalKind",
     "ResearchCitation",
     "ResearchRequest",

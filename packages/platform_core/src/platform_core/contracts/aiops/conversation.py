@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -74,6 +75,7 @@ class AnswerBlockType(StrEnum):
     FINDING_CARDS = "FINDING_CARDS"
     ANALYSIS_MARKDOWN = "ANALYSIS_MARKDOWN"
     SOLUTION_MARKDOWN = "SOLUTION_MARKDOWN"
+    FACT_CONFIRMATION = "FACT_CONFIRMATION"
     HTML_REPORT_LINKS = "HTML_REPORT_LINKS"
 
 
@@ -334,6 +336,16 @@ class TurnPage(CursorPage):
 class TurnCancelCommand(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     reason: str | None = Field(default=None, max_length=1000)
+
+
+
+class TargetFactConfirmCommand(AIOpsContract):
+    schema_version: str = CONVERSATION_SCHEMA_VERSION
+    target_id: UUIDv7
+    fact_type: Literal["ASM_DISKGROUP", "DATAFILE_PATH", "TABLESPACE_PLACEMENT"]
+    fact_key: str = Field(min_length=1, max_length=256)
+    fact_value: JsonObject
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class EvidenceResponseCreate(AIOpsContract):

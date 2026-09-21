@@ -28,6 +28,7 @@ def create_llm_model(config: LLMConfig) -> BaseLLM:
     # 1. OpenAI-compatible providers (DeepSeek, Qwen API, ChatGPT, etc.)
     openai_providers = [
         LLMProvider.API_DEEPSEEK.value, 
+        LLMProvider.LOCAL_DEEPSEEK.value,
         LLMProvider.API_QWEN.value, 
         LLMProvider.CHATGPT.value
     ]

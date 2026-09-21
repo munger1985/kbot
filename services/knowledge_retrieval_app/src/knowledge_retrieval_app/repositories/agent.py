@@ -1,4 +1,4 @@
-"""知识检索 Agent Repository。"""
+"""知识检索应用 Agent Repository。"""
 
 from __future__ import annotations
 
@@ -7,10 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from knowledge_retrieval_app.entities import (
-    KnowledgeRetrievalAgentEntity,
-    KnowledgeRetrievalAgentVersionEntity,
-)
+from knowledge_retrieval_app.entities import KnowledgeRetrievalAgentEntity, KnowledgeRetrievalAgentVersionEntity
 
 
 class KnowledgeRetrievalAgentRepository:
@@ -25,9 +22,7 @@ class KnowledgeRetrievalAgentRepository:
         self._session.add(row)
         await self._session.flush()
 
-    async def get(
-        self, *, domain_id: int, agent_id: UUID, lock: bool = False
-    ) -> KnowledgeRetrievalAgentEntity | None:
+    async def get(self, *, domain_id: int, agent_id: UUID, lock: bool = False) -> KnowledgeRetrievalAgentEntity | None:
         statement = select(KnowledgeRetrievalAgentEntity).where(
             KnowledgeRetrievalAgentEntity.domain_id == domain_id,
             KnowledgeRetrievalAgentEntity.agent_id == agent_id,
@@ -40,21 +35,17 @@ class KnowledgeRetrievalAgentRepository:
         rows = await self._session.scalars(
             select(KnowledgeRetrievalAgentEntity)
             .where(KnowledgeRetrievalAgentEntity.domain_id == domain_id)
-            .order_by(
-                KnowledgeRetrievalAgentEntity.updated_at.desc(),
-                KnowledgeRetrievalAgentEntity.agent_id,
-            )
+            .order_by(KnowledgeRetrievalAgentEntity.updated_at.desc(), KnowledgeRetrievalAgentEntity.agent_id)
         )
         return list(rows)
 
-    async def current_version(
-        self, *, agent_id: UUID, agent_version_id: UUID
-    ) -> KnowledgeRetrievalAgentVersionEntity | None:
-        statement = select(KnowledgeRetrievalAgentVersionEntity).where(
-            KnowledgeRetrievalAgentVersionEntity.agent_id == agent_id,
-            KnowledgeRetrievalAgentVersionEntity.agent_version_id == agent_version_id,
-        )
-        return (await self._session.execute(statement)).scalar_one_or_none()
+    async def current_version(self, *, agent_id: UUID, agent_version_id: UUID) -> KnowledgeRetrievalAgentVersionEntity | None:
+        return (await self._session.execute(
+            select(KnowledgeRetrievalAgentVersionEntity).where(
+                KnowledgeRetrievalAgentVersionEntity.agent_id == agent_id,
+                KnowledgeRetrievalAgentVersionEntity.agent_version_id == agent_version_id,
+            )
+        )).scalar_one_or_none()
 
     async def next_version_no(self, *, agent_id: UUID) -> int:
         value = await self._session.scalar(
@@ -64,7 +55,9 @@ class KnowledgeRetrievalAgentRepository:
         )
         return int(value or 0) + 1
 
-    async def model_references(self, *, model_id: UUID):
+    async def model_references(
+        self, *, model_id: UUID
+    ) -> list[tuple[KnowledgeRetrievalAgentEntity, str]]:
         rows = await self._session.execute(
             select(KnowledgeRetrievalAgentEntity, KnowledgeRetrievalAgentVersionEntity)
             .join(

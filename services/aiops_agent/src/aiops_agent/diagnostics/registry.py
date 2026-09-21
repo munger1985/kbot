@@ -198,9 +198,14 @@ class DiagnosticRegistry:
         tool_id: str, parameters: dict[str, Any]
     ) -> None:
         """校验原生工作负载报告的跨字段边界，避免包调用接收歧义范围。"""
-        if tool_id == "db.oracle.awr.report":
+        if tool_id in {
+            "db.oracle.awr.report",
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
+        }:
             if parameters["begin_snapshot_id"] >= parameters["end_snapshot_id"]:
-                raise ValueError("AWR 报告起始快照必须早于结束快照")
+                raise ValueError("AWR 起始快照必须早于结束快照")
         elif tool_id == "db.oracle.awr.diff_report":
             baseline_begin = parameters["baseline_begin_snapshot_id"]
             baseline_end = parameters["baseline_end_snapshot_id"]
@@ -228,3 +233,23 @@ class DiagnosticRegistry:
                 raise ValueError("ASH 报告起始时间必须早于结束时间")
             if (end - begin).total_seconds() > 86_400:
                 raise ValueError("ASH 报告时间范围不能超过 24 小时")
+        elif tool_id == "db.oracle.sql_monitor.report":
+            sql_id = str(parameters.get("sql_id") or "")
+            if re.fullmatch(r"[0-9A-Za-z]{13}", sql_id) is None:
+                raise ValueError(
+                    "SQL Monitor 未确认 sql_id 不调用 REPORT_SQL_MONITOR"
+                )
+            start = str(parameters.get("sql_exec_start") or "")
+            if start:
+                try:
+                    parsed = datetime.fromisoformat(
+                        start.replace("Z", "+00:00")
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        "SQL Monitor 执行开始时间必须为 ISO 8601 格式"
+                    ) from exc
+                if parsed.tzinfo is None:
+                    raise ValueError(
+                        "SQL Monitor 执行开始时间必须包含 UTC 偏移"
+                    )

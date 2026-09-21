@@ -9,6 +9,16 @@
             "title": "Config",
             "type": "object"
           },
+          "data_model_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Data Model Ids",
+            "type": "array"
+          },
           "description": {
             "anyOf": [
               {
@@ -32,20 +42,6 @@
             "title": "Domain Id",
             "type": "integer"
           },
-          "enabled_capabilities": {
-            "items": {
-              "enum": [
-                "conversation",
-                "document",
-                "data_query"
-              ],
-              "type": "string"
-            },
-            "maxItems": 3,
-            "minItems": 1,
-            "title": "Enabled Capabilities",
-            "type": "array"
-          },
           "instruction": {
             "anyOf": [
               {
@@ -57,6 +53,18 @@
               }
             ],
             "title": "Instruction"
+          },
+          "knowledge_core_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Core Id"
           },
           "models": {
             "additionalProperties": {
@@ -78,8 +86,7 @@
         },
         "required": [
           "domain_id",
-          "display_name",
-          "enabled_capabilities"
+          "display_name"
         ],
         "title": "AgentCreateRequest",
         "type": "object"
@@ -98,6 +105,22 @@
               }
             ],
             "title": "Config"
+          },
+          "data_model_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Model Ids"
           },
           "description": {
             "anyOf": [
@@ -129,27 +152,6 @@
             "title": "Domain Id",
             "type": "integer"
           },
-          "enabled_capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "enum": [
-                    "conversation",
-                    "document",
-                    "data_query"
-                  ],
-                  "type": "string"
-                },
-                "maxItems": 3,
-                "minItems": 1,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled Capabilities"
-          },
           "expected_row_version": {
             "minimum": 1.0,
             "title": "Expected Row Version",
@@ -166,6 +168,18 @@
               }
             ],
             "title": "Instruction"
+          },
+          "knowledge_core_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Core Id"
           },
           "models": {
             "anyOf": [
@@ -218,6 +232,102 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ResearchCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "allowed_x_handles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Allowed X Handles",
+            "type": "array"
+          },
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "enable_image_understanding": {
+            "default": false,
+            "title": "Enable Image Understanding",
+            "type": "boolean"
+          },
+          "enable_video_understanding": {
+            "default": false,
+            "title": "Enable Video Understanding",
+            "type": "boolean"
+          },
+          "excluded_x_handles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Excluded X Handles",
+            "type": "array"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "search_context_size": {
+            "default": "MEDIUM",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "title": "Search Context Size",
+            "type": "string"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          }
+        },
+        "required": [
+          "domain_id",
+          "model_id",
+          "agent_id",
+          "input"
+        ],
+        "title": "ResearchCreateRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -541,6 +651,322 @@
         "summary": "Get Execution Spec",
         "tags": [
           "Knowledge Retrieval Agents"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/x-search/runs": {
+      "get": {
+        "operationId": "list_research_runs_internal_v1_knowledge_retrieval_x_search_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Research Runs",
+        "tags": [
+          "KnowledgeRetrieval X Search"
+        ]
+      },
+      "post": {
+        "operationId": "create_research_run_internal_v1_knowledge_retrieval_x_search_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Research Run",
+        "tags": [
+          "KnowledgeRetrieval X Search"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/x-search/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_research_run_internal_v1_knowledge_retrieval_x_search_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Research Run",
+        "tags": [
+          "KnowledgeRetrieval X Search"
+        ]
+      },
+      "get": {
+        "operationId": "get_research_run_internal_v1_knowledge_retrieval_x_search_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Research Run",
+        "tags": [
+          "KnowledgeRetrieval X Search"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/x-search/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_research_events_internal_v1_knowledge_retrieval_x_search_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Research Events",
+        "tags": [
+          "KnowledgeRetrieval X Search"
+        ]
+      }
+    },
+    "/internal/v1/knowledge-retrieval/x-search/runs/{run_id}/sources": {
+      "get": {
+        "operationId": "list_research_sources_internal_v1_knowledge_retrieval_x_search_runs__run_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Research Sources",
+        "tags": [
+          "KnowledgeRetrieval X Search"
         ]
       }
     },

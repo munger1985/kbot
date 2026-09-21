@@ -106,6 +106,39 @@ class OpsRunRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_latest_completed_by_target(
+        self, *, domain_id: int
+    ) -> list[OpsRunEntity]:
+        """每个 Target 只取最近一次已完成诊断，避免库群总览 N+1。"""
+        self._check_active()
+        ranked = (
+            select(
+                OpsRunEntity.ops_run_id.label("ops_run_id"),
+                func.row_number()
+                .over(
+                    partition_by=OpsRunEntity.target_id,
+                    order_by=(
+                        OpsRunEntity.completed_at.desc(),
+                        OpsRunEntity.ops_run_id.desc(),
+                    ),
+                )
+                .label("rank_no"),
+            )
+            .where(
+                OpsRunEntity.domain_id == domain_id,
+                OpsRunEntity.status.in_(("COMPLETED", "PARTIAL")),
+                OpsRunEntity.completed_at.is_not(None),
+            )
+            .subquery()
+        )
+        statement = (
+            select(OpsRunEntity)
+            .join(ranked, ranked.c.ops_run_id == OpsRunEntity.ops_run_id)
+            .where(ranked.c.rank_no == 1)
+            .order_by(OpsRunEntity.target_id, OpsRunEntity.ops_run_id)
+        )
+        return list((await self._session.execute(statement)).scalars())
+
     async def list_completed_inspection_runs(
         self,
         *,

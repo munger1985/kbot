@@ -14,7 +14,7 @@ class AgentExecutionSpec(BaseModel):
 
     schema_version: str = Field(pattern=r"^1\.0$")
     owner_app_id: Literal[
-        "knowledge_retrieval", "km_asset", "assistant", "aiops"
+        "knowledge_retrieval", "km_asset", "aiops"
     ]
     domain_id: int = Field(ge=1)
     consumer_agent_id: UUID
@@ -37,7 +37,7 @@ class AgentExecutionSpec(BaseModel):
             raise ValueError("enabled_capabilities 不能包含重复能力")
         if self.agent_kind == "KNOWLEDGE_RETRIEVAL":
             if self.owner_app_id not in {
-                "knowledge_retrieval", "km_asset", "assistant"
+                "knowledge_retrieval", "km_asset"
             }:
                 raise ValueError("知识类 Agent 必须由知识应用拥有")
             if not capabilities.issubset(

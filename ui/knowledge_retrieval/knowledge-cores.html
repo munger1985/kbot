@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>知识检索 · Knowledge Cores</title>
+  <link rel="stylesheet" href="./css/knowledge.css">
+</head>
+<body data-page="knowledge-cores">
+<main class="knowledge-main">
+  <header class="knowledge-page-head">
+    <div>
+      <h1>Knowledge Cores</h1>
+      <p>复用现有 Knowledge Core 的资料接入、解析、索引、Evidence 与引用能力；不建立第二套知识库。</p>
+    </div>
+    <div class="knowledge-actions"><button type="button" data-open-dialog="kc-dialog" class="primary">创建 Knowledge Core</button></div>
+  </header>
+  <section class="knowledge-grid">
+    <article class="knowledge-panel span-8">
+      <div class="knowledge-panel-head">
+        <div><h2>当前 Domain 的 Knowledge Cores</h2><p>创建后可管理资料、解析任务、模型绑定和引用范围。</p></div>
+        <button class="small" type="button" data-open-dialog="kc-dialog">创建</button>
+      </div>
+      <div class="knowledge-table-wrap">
+        <table class="knowledge-table">
+          <thead><tr><th>名称</th><th>状态</th><th>Collection</th><th>文本 Embedding</th><th>默认安全级别</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="kc-rows">
+            <tr><td colspan="7"><div class="knowledge-empty"><div><strong>当前 Domain 尚无 Knowledge Core</strong><p>需先创建或切换到有权限的 Domain。没有 ACTIVE Knowledge Core 的 Agent 只能保存草稿，不能启用。</p></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+    <aside class="knowledge-panel span-4">
+      <div class="knowledge-panel-head"><div><h2>复用范围</h2><p>KC 事实仍由 Knowledge Core 服务所有。</p></div></div>
+      <div class="knowledge-panel-body">
+        <dl class="knowledge-key-value">
+          <div><dt>资料与版本</dt><dd>Bundle、Revision、Document Version</dd></div>
+          <div><dt>处理流水线</dt><dd>解析、索引、Discovery、Evidence</dd></div>
+          <div><dt>问文引用</dt><dd>仅使用服务端验证的 [C] 标签</dd></div>
+          <div><dt>变更约束</dt><dd>遵守既有索引与反向引用检查</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </section>
+  <section class="knowledge-panel">
+    <div class="knowledge-panel-head">
+      <div><h2>待审批资料</h2><p>用户上传的资料需批准后才会进入解析和索引流水线。</p></div>
+      <button class="small" id="kc-refresh-approvals" type="button" disabled>刷新</button>
+    </div>
+    <div class="knowledge-table-wrap">
+      <table class="knowledge-table">
+        <thead><tr><th>资料包</th><th>文件</th><th>上传时间</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="kc-approval-rows">
+          <tr><td colspan="5"><div class="knowledge-empty"><div><strong>尚未选择 Knowledge Core</strong><p>选择一个 Knowledge Core 后，可查看待审批资料。</p></div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="knowledge-panel">
+    <div class="knowledge-panel-head">
+      <div><h2>资料与解析进度</h2><p id="kc-assets-title">先在上方选择一个 Knowledge Core。</p></div>
+      <div class="knowledge-row-actions">
+        <button class="small" id="kc-refresh-processing" type="button" disabled>刷新</button>
+        <button class="small primary" id="kc-upload-open" type="button" disabled>上传文件</button>
+      </div>
+    </div>
+    <div class="knowledge-table-wrap">
+      <table class="knowledge-table">
+        <thead><tr><th>资料包</th><th>状态</th><th>阶段</th><th>进度</th><th>文件</th><th>完成时间</th><th>操作</th></tr></thead>
+        <tbody id="kc-processing-rows">
+          <tr><td colspan="7"><div class="knowledge-empty"><div><strong>尚未选择 Knowledge Core</strong><p>选择一个 Knowledge Core 后，可上传资料并查看解析、索引进度。</p></div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<dialog class="knowledge-dialog" id="kc-dialog">
+  <form id="kc-form">
+    <div class="knowledge-dialog-head"><h2 id="kc-dialog-title">创建 Knowledge Core</h2><button class="knowledge-close" type="button" data-close-dialog="kc-dialog" aria-label="关闭">×</button></div>
+    <div class="knowledge-dialog-body">
+      <input id="kc-id" type="hidden">
+      <input id="kc-row-version" type="hidden">
+      <div class="knowledge-form-grid">
+        <div class="knowledge-field"><label for="kc-domain">所属 Domain</label><input id="kc-domain" readonly></div>
+        <div class="knowledge-field"><label for="kc-name">名称</label><input id="kc-name" required maxlength="120" placeholder="例如：销售知识库"></div>
+        <div class="knowledge-field full"><label for="kc-description">说明</label><textarea id="kc-description" maxlength="1000" placeholder="说明此 Knowledge Core 覆盖的资料范围。"></textarea></div>
+        <div class="knowledge-field"><label for="kc-security">默认安全级别</label><select id="kc-security"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+        <div class="knowledge-field"><label for="kc-embedding">文本 Embedding</label><select id="kc-embedding" required><option value="">等待模型目录接入</option></select></div>
+        <div class="knowledge-field full"><label for="kc-visual-embedding">视觉 Embedding（可选）</label><select id="kc-visual-embedding"><option value="">不绑定</option></select></div>
+      </div>
+      <div class="knowledge-notice">Knowledge Core 归属当前 Token 中的 Domain，不在浏览器填写隔离标识。文本 Embedding 必须选择已启用模型。</div>
+    </div>
+    <div class="knowledge-dialog-foot"><button type="button" data-close-dialog="kc-dialog">取消</button><button class="primary" id="kc-submit" type="submit">创建</button></div>
+  </form>
+</dialog>
+<dialog class="knowledge-dialog" id="kc-upload-dialog">
+  <form id="kc-upload-form">
+    <div class="knowledge-dialog-head"><h2>上传资料</h2><button class="knowledge-close" type="button" data-close-dialog="kc-upload-dialog" aria-label="关闭">×</button></div>
+    <div class="knowledge-dialog-body">
+      <div class="knowledge-field"><label for="kc-file-input">选择文件</label><input id="kc-file-input" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,.html,application/pdf,text/plain"></div>
+      <div class="knowledge-notice">每个文件独立建立资料包。上传成功只表示 KC 已受理，解析、索引和 Discovery 建立仍需等待后台任务完成。</div>
+    </div>
+    <div class="knowledge-dialog-foot"><button type="button" data-close-dialog="kc-upload-dialog">取消</button><button class="primary" id="kc-upload-submit" type="submit">开始上传</button></div>
+  </form>
+</dialog>
+<script src="../runtime-config.js"></script>
+<script src="./js/knowledge-auth.js"></script>
+<script src="./js/knowledge-api.js"></script>
+<script src="./js/knowledge-shell.js"></script>
+<script src="./js/knowledge-knowledge-cores.js"></script>
+</body>
+</html>

@@ -492,6 +492,49 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def delete_target(self, target_id: UUID, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> None:
         await self._json("DELETE", f"{self._CONFIG}/targets/{target_id}", if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
 
+    async def list_target_facts(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}/facts",
+            auth_context=auth_context,
+        )
+
+    async def create_target_fact(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/facts",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def retire_target_fact(
+        self,
+        target_id: UUID,
+        fact_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/facts/{fact_id}/retire",
+            payload={},
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def list_agent_bindings(
         self, target_id: UUID, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:
@@ -827,7 +870,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-
     async def get_inspection_check_catalog(
         self, *, auth_context: AuthContext
     ) -> dict[str, Any]:
@@ -950,6 +992,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "GET",
             f"{INTERNAL_API_V1}/aiops/runs/{run_id}",
+            auth_context=auth_context,
+        )
+
+    async def get_fleet_dashboard(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/fleet",
             auth_context=auth_context,
         )
 
@@ -1559,6 +1610,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
                 f"/turns/{turn_id}/cancel"
             ),
             payload={},
+            auth_context=auth_context,
+        )
+
+    async def confirm_conversation_target_fact(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/target-facts:confirm"
+            ),
+            payload=payload,
             auth_context=auth_context,
         )
 

@@ -20,8 +20,8 @@ Schema 全量创建，不读取、转换、回填或保留任何 3.x KBot 表和
 2. `main_api/`：公开 API 的用户、角色和权限；
 3. `model_serving/`：模型目录；
 4. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
-5. `knowledge_retrieval_app/`：知识检索私有 Agent 和版本；
-6. `assistant_app/`：智能工作台私有 Agent、绑定和运行编排；
+5. `knowledge_retrieval_app/`：知识检索 Agent、版本和 X Search 运行；
+6. `media_studio_app/`：多媒体模型绑定、生成运行和媒体资产；
 7. `km_asset_app/`：KM 资产、Agent，以及 Slack Inbox、会话映射和 Outbox；
 8. `agent_runtime/`：Execution Spec 快照、Run、Task、Artifact、Event、会话和记忆；
 9. `data_query/`：数据源、语义模型、查询策略和查询运行；

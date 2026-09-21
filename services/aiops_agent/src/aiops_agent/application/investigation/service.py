@@ -111,6 +111,8 @@ class _ReplanInputSnapshot:
 class TurnPlanningService:
     """在外部模型调用两侧使用短事务冻结并持久化计划。"""
 
+    SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID = "oracle.sql.healthcheck"
+
     def __init__(
         self,
         *,
@@ -342,14 +344,8 @@ class TurnPlanningService:
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
             log_binding_ids=log_binding_ids,
-            user_evidence_artifact_keys=(
-                "turn-user-input:1",
-                "turn-input-analysis:1",
-                *(
-                    ("turn-source-run-evidence:1",)
-                    if context.source_run_evidence is not None
-                    else ()
-                ),
+            user_evidence_artifact_keys=self._initial_user_evidence_keys(
+                context
             ),
             include_change=(
                 investigation.task_frame.action_intent != ActionIntent.NONE
@@ -391,7 +387,13 @@ class TurnPlanningService:
         inspection = dict(context.inspection)
         template_id = str(inspection.get("template_id") or "")
         template_version = str(inspection.get("template_version") or "")
+        schedule_type = str(inspection.get("schedule_type") or "")
         configured_steps = tuple(inspection.get("evidence_steps") or ())
+        selected_check_ids = tuple(
+            item
+            for item in (inspection.get("selected_check_ids") or ())
+            if isinstance(item, str) and item
+        )
         if not template_id or not template_version or not configured_steps:
             raise InvestigationPlanValidationError(
                 "巡检执行上下文缺少已冻结的固定取证模板"
@@ -401,6 +403,8 @@ class TurnPlanningService:
         }
         actions: list[InvestigationAction] = []
         unavailable: list[str] = []
+        weekly = schedule_type == "WEEKLY"
+        weekly_trend = False
         for step in configured_steps:
             if not isinstance(step, dict):
                 raise InvestigationPlanValidationError("巡检模板步骤格式无效")
@@ -409,10 +413,21 @@ class TurnPlanningService:
             if tool_id not in tool_index:
                 unavailable.append(title)
                 continue
+            trend_required = bool(step.get("trend_required")) or (
+                str(step.get("measurement_semantics") or "")
+                == MeasurementSemantics.HISTORICAL_SAMPLES
+            )
+            if weekly and trend_required:
+                weekly_trend = True
+            question = (
+                f"巡检{title}，确认本期变化趋势和异常信号。"
+                if weekly and trend_required
+                else f"巡检{title}，确认当前状态和异常信号。"
+            )
             actions.append(
                 InvestigationAction(
                     action_id=f"a{len(actions) + 1}",
-                    question=f"巡检{title}，确认当前状态和异常信号。",
+                    question=question,
                     tool_id=tool_id,
                     input=dict(step.get("input") or {}),
                     expected_evidence_kind=str(
@@ -432,6 +447,20 @@ class TurnPlanningService:
             or context.target_context.get("target_id")
             or "当前 Target"
         )
+        known_facts = [
+            f"当前逻辑 Target 为 {display_name}",
+            "本轮只执行已勾选检查项对应的固定目录只读工具",
+        ]
+        success_criteria = [
+            "完成全部可用的勾选取证步骤",
+            "表空间先展示历史变化，再预测未来30天容量风险并给出处置建议",
+            "明确展示已验证发现、处置建议和数据缺口",
+        ]
+        if weekly_trend:
+            known_facts.append("本期为周检，已勾选需要趋势窗口的检查项")
+            success_criteria.append(
+                "周趋势必须引用监控证据中的 first、latest、change_per_day 等服务端字段，禁止自行重算"
+            )
         task_frame = TaskFrame(
             objectives=(TaskObjective.DIAGNOSE, TaskObjective.ASSESS),
             problem_statement=(
@@ -446,27 +475,22 @@ class TurnPlanningService:
             ),
             forecast_scope="未来30天",
             forecast_horizon_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
-            known_facts=(
-                f"当前逻辑 Target 为 {display_name}",
-                "本轮只执行模板声明的固定目录只读工具",
-            ),
+            known_facts=tuple(known_facts),
             unknowns=tuple(
-                ["模板声明的健康证据是否存在异常"]
+                ["勾选检查项的健康证据是否存在异常"]
                 + [f"固定工具当前不可用：{item}" for item in unavailable]
             ),
             constraints=(
                 "数据库现状仅执行当前Target的固定目录只读工具；历史趋势使用已绑定监控源的确定性指标目录，不生成动态SQL、PromQL或LogQL",
             ),
-            success_criteria=(
-                "完成全部可用的模板固定取证步骤",
-                "表空间先展示历史变化，再预测未来30天容量风险并给出处置建议",
-                "明确展示已验证发现、处置建议和数据缺口",
-            ),
+            success_criteria=tuple(success_criteria),
             action_intent=ActionIntent.NONE,
             evidence_source_strategy=EvidenceSourceStrategy.COMBINED,
             subject_ref={
                 "inspection_template_id": template_id,
                 "inspection_template_version": template_version,
+                "selected_check_ids": list(selected_check_ids),
+                "schedule_type": schedule_type,
             },
         )
         output = InvestigationPlanningOutput(
@@ -478,6 +502,7 @@ class TurnPlanningService:
                         summary=context.question[:2000],
                         key_facts=(
                             f"巡检模板：{template_id}@{template_version}",
+                            f"勾选检查项：{len(selected_check_ids) or len(configured_steps)} 项",
                             f"固定取证步骤：{len(configured_steps)} 项",
                         ),
                         confidence=1,
@@ -492,7 +517,7 @@ class TurnPlanningService:
         route = {
             "mode": "TEMPLATE_FIXED_INSPECTION",
             "public_summary": (
-                f"已按模板 {template_id}@{template_version} 建立固定只读取证计划"
+                f"已按勾选检查项建立固定只读取证计划（模板 {template_id}@{template_version}）"
             ),
         }
         await self._record_planning_route(
@@ -594,11 +619,18 @@ class TurnPlanningService:
                 )
             )
         )
+        profile_playbook_ids = self._profile_playbook_ids(
+            compact, available_playbooks
+        )
         selected_tools, selected_playbooks = select_planning_candidates(
             tools=available_tools,
             playbooks=available_playbooks,
             tool_ids=candidate_tool_ids,
-            playbook_ids=compact.selected_playbook_ids,
+            playbook_ids=tuple(
+                dict.fromkeys(
+                    (*compact.selected_playbook_ids, *profile_playbook_ids)
+                )
+            ),
         )
         compact_actions_missing = (
             compact.planning_mode
@@ -653,6 +685,7 @@ class TurnPlanningService:
         if single_sql_id is not None and not compact_route_incomplete:
             public_summary = (
                 f"已识别单 SQL 性能调查对象 {single_sql_id}，"
+                "选用 oracle.sql.healthcheck，"
                 "将执行游标、计划、对象统计、DBMS_XPLAN 和实时计划监控基线"
             )
         if compact_route_incomplete:
@@ -806,6 +839,37 @@ class TurnPlanningService:
             )
         return ()
 
+    @classmethod
+    def _profile_playbook_ids(
+        cls,
+        compact,
+        available_playbooks: tuple[dict, ...],
+    ) -> tuple[str, ...]:
+        """把单 SQL 诊断档案挂到 SQLHC 语义 Playbook；不可用时记缺口不中断。"""
+        if (
+            compact.diagnostic_profile
+            != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+        ):
+            return ()
+        available_ids = {
+            str(item["playbook_id"]) for item in available_playbooks
+        }
+        if cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID not in available_ids:
+            return ()
+        return (cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID,)
+
+    @classmethod
+    def _suggested_single_sql_playbook_ids(cls, compact) -> tuple[str, ...]:
+        """单 SQL 调查始终建议 SQLHC 语义 Playbook，不依赖模型临场选择。"""
+        return tuple(
+            dict.fromkeys(
+                (
+                    *compact.selected_playbook_ids,
+                    cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID,
+                )
+            )
+        )
+
     @staticmethod
     def _single_sql_id(compact) -> str | None:
         if (
@@ -818,8 +882,9 @@ class TurnPlanningService:
             return None
         return sql_id
 
-    @staticmethod
+    @classmethod
     def _single_sql_investigation_output(
+        cls,
         *,
         question: str,
         compact,
@@ -947,7 +1012,9 @@ class TurnPlanningService:
                 subject_ref={"sql_id": sql_id},
             ),
             plan=InvestigationPlan(revision_no=1, actions=actions),
-            suggested_playbook_ids=compact.selected_playbook_ids,
+            suggested_playbook_ids=cls._suggested_single_sql_playbook_ids(
+                compact
+            ),
         )
 
     async def _record_planning_route(
@@ -978,6 +1045,25 @@ class TurnPlanningService:
                 },
             )
             await uow.commit()
+
+    @staticmethod
+    def _initial_user_evidence_keys(
+        context: TurnPlanningContext,
+    ) -> tuple[str, ...]:
+        """首轮评估必须看到用户输入、上传抽取和继承的来源证据。"""
+        return (
+            "turn-user-input:1",
+            "turn-input-analysis:1",
+            *(
+                f"turn-upload-extract:{upload.item_no}"
+                for upload in context.resolved_uploads
+            ),
+            *(
+                ("turn-source-run-evidence:1",)
+                if context.source_run_evidence is not None
+                else ()
+            ),
+        )
 
     @staticmethod
     def _compact_question(context: TurnPlanningContext) -> str | None:
@@ -1351,6 +1437,7 @@ class TurnPlanningService:
             if schema_version
             in {
                 "USER_PROVIDED_INPUT.v1",
+                "USER_UPLOAD_EXTRACT.v1",
                 "SOURCE_RUN_EVIDENCE.v1",
                 "SITUATION_EVIDENCE.v1",
                 "DBA_TOOL_RESULT.v1",
@@ -3166,6 +3253,8 @@ class TurnPlanningService:
                             "media_type": upload.media_type,
                             "text": upload.extracted_text,
                             "extraction_mode": upload.extraction_mode,
+                            "report_kind": upload.report_kind,
+                            "structured_facts": upload.structured_facts,
                             "searchable": {
                                 "content_hash": upload.searchable_content_hash,
                                 "byte_size": upload.searchable_byte_size,

@@ -21,10 +21,10 @@ class ConfigurationContractTest(unittest.TestCase):
             {
                 "agent_runtime",
                 "aiops_agent",
-                "assistant_app",
                 "data_query",
                 "knowledge_core",
                 "knowledge_retrieval_app",
+                "media_studio_app",
                 "km_asset_app",
                 "main_api",
                 "model_serving",

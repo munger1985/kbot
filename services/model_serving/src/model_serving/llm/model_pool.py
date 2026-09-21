@@ -144,6 +144,7 @@ class LLMModelPool(BaseModelPool[BaseLLM[Any]]):
 
         # 1. OpenAI-compatible providers (DeepSeek, Qwen API, ChatGPT)
         openai_providers = [
+            LLMProvider.LOCAL_DEEPSEEK.value,
             LLMProvider.API_DEEPSEEK.value, 
             LLMProvider.API_QWEN.value, 
             LLMProvider.CHATGPT.value

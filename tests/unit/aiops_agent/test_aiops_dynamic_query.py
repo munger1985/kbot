@@ -1152,6 +1152,16 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             "db.oracle.awr.snapshots", diff["discovery_tool_id"]
         )
         self.assertNotIn("discovery_tool_id", snapshots)
+        for tool_id in (
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
+        ):
+            fact_tool = next(item for item in tools if item["tool_id"] == tool_id)
+            self.assertEqual(
+                "db.oracle.awr.snapshots",
+                fact_tool["discovery_tool_id"],
+            )
         cards = compact_tool_cards(tools)
         report_card = next(
             item for item in cards if item["tool_id"] == "db.oracle.awr.report"
@@ -1160,6 +1170,47 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             "db.oracle.awr.snapshots",
             report_card["discovery_tool_id"],
         )
+
+    def test_unconfirmed_awr_fact_tools_rewrite_to_discovery_tool(self) -> None:
+        for tool_id in (
+            "db.oracle.awr.load_profile",
+            "db.oracle.awr.top_wait",
+            "db.oracle.awr.top_sql",
+        ):
+            with self.subTest(tool_id=tool_id):
+                rejected = self._awr_investigation(
+                    tool_id=tool_id,
+                    input={},
+                    expected_evidence_kind="AWR_FACTS",
+                )
+                rewritten = rewrite_incomplete_discovery_actions(
+                    investigation=rejected,
+                    available_tools=(
+                        {
+                            "tool_id": tool_id,
+                            "discovery_tool_id": "db.oracle.awr.snapshots",
+                            "input": {
+                                "begin_snapshot_id": {
+                                    "type": "integer",
+                                    "required": True,
+                                },
+                                "end_snapshot_id": {
+                                    "type": "integer",
+                                    "required": True,
+                                },
+                            },
+                        },
+                        {"tool_id": "db.oracle.awr.snapshots", "input": {}},
+                    ),
+                )
+                self.assertIsNotNone(rewritten)
+                self.assertEqual(
+                    ["db.oracle.awr.snapshots", tool_id],
+                    [action.tool_id for action in rewritten.plan.actions],
+                )
+                self.assertEqual({}, rewritten.plan.actions[0].input)
+                self.assertFalse(rewritten.plan.actions[0].deferred)
+                self.assertTrue(rewritten.plan.actions[1].deferred)
 
     def test_missing_required_parameters_rewrite_to_discovery_tool(self) -> None:
         rejected = self._awr_investigation(
@@ -1496,6 +1547,50 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         self._assert_two_window_reports_and_diff(rewritten)
+
+    def test_snapshots_only_window_does_not_auto_attach_awr_fact_tools(self) -> None:
+        now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)
+        investigation = self._snapshots_only_investigation(
+            question="请生成数据库在昨天2:00-3:00的awr报告",
+        )
+        fact_cards = tuple(
+            {
+                "tool_id": tool_id,
+                "discovery_tool_id": "db.oracle.awr.snapshots",
+                "input": {
+                    "begin_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                    "end_snapshot_id": {
+                        "type": "integer",
+                        "required": True,
+                    },
+                },
+            }
+            for tool_id in (
+                "db.oracle.awr.load_profile",
+                "db.oracle.awr.top_wait",
+                "db.oracle.awr.top_sql",
+            )
+        )
+        with patch(
+            "aiops_agent.application.investigation.discovery_binding._product_now",
+            return_value=now,
+        ):
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=self._awr_catalog_tools() + fact_cards,
+            )
+        self.assertIsNotNone(rewritten)
+        tool_ids = [action.tool_id for action in rewritten.plan.actions]
+        self.assertEqual(
+            ["db.oracle.awr.snapshots", "db.oracle.awr.report"],
+            tool_ids,
+        )
+        self.assertNotIn("db.oracle.awr.load_profile", tool_ids)
+        self.assertNotIn("db.oracle.awr.top_wait", tool_ids)
+        self.assertNotIn("db.oracle.awr.top_sql", tool_ids)
 
     def test_snapshots_only_selected_tools_still_attach_catalog_report(self) -> None:
         now = datetime(2026, 9, 17, 9, 59, 8, tzinfo=PRODUCT_TIMEZONE)

@@ -3,6 +3,10 @@
 from uuid import UUID
 
 from aiops_agent.application.agents import AIOpsAgentError, AIOpsAgentService
+from aiops_agent.application.diagnosis.local_models import (
+    LocalModelBindingError,
+    require_production_local_llm,
+)
 from aiops_agent.application.errors import (
     dependency_unavailable,
     validation_failed,
@@ -20,9 +24,11 @@ class AIOpsAgentValidator:
         service: AIOpsAgentService,
         *,
         model_client: AIModelConfigClient | None = None,
+        environment: str = "development",
     ) -> None:
         self._service = service
         self._model_client = model_client
+        self._environment = environment
 
     async def validate_aiops_agent(
         self,
@@ -91,6 +97,14 @@ class AIOpsAgentValidator:
             raise dependency_unavailable(
                 f"{role_label}模型目录暂时不可用"
             ) from exc
+        try:
+            require_production_local_llm(
+                environment=self._environment,
+                provider=definition.get("provider"),
+                role_label=role_label,
+            )
+        except LocalModelBindingError as exc:
+            raise validation_failed(exc.message) from exc
         served_name = str(definition.get("served_model_name") or "").strip()
         if not served_name:
             raise validation_failed(f"{role_label}模型缺少 served_model_name")

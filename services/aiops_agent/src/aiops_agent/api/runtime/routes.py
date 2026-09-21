@@ -40,6 +40,7 @@ from platform_core.contracts.aiops.internal import (
     RootDelegationReceipt,
 )
 from platform_core.contracts.aiops.public import (
+    FleetDashboard,
     InspectionFirePage,
     InspectionFireView,
     OpsRunResult,
@@ -47,6 +48,7 @@ from platform_core.contracts.aiops.public import (
     OpsRunSummary,
     ReportPage,
     ReportEdit,
+    ReportPresentation,
     ReportVersionPage,
     ReportView,
     SituationPage,
@@ -235,6 +237,14 @@ async def cancel_delegation(
     )
 
 
+@router.get("/fleet", response_model=FleetDashboard)
+async def get_fleet_dashboard(
+    request: Request, service: Service, context: Auth,
+) -> FleetDashboard:
+    require_service_scope(request, "aiops.run")
+    return await service.get_fleet_dashboard(scope=_query_scope(request, context))
+
+
 @router.get("/runs", response_model=OpsRunPage)
 async def list_runs(
     request: Request, service: Service, context: Auth,
@@ -412,13 +422,13 @@ async def edit_report(
     )
 
 
-@router.get("/reports/{report_id}/presentation")
+@router.get("/reports/{report_id}/presentation", response_model=ReportPresentation)
 async def get_report_presentation(
     report_id: UUID,
     request: Request,
     service: Service,
     context: Auth,
-):
+) -> ReportPresentation:
     require_service_scope(request, "aiops.run")
     domain_id = _scope(request, context)
     _ensure_agent_authorized(

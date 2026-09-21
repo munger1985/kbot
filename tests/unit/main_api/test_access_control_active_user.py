@@ -247,7 +247,7 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
                 "protected": False,
                 "roles": [{"role_code": "manager", "status": "ACTIVE"}],
             }],
-            await service.list_members(app_id="assistant", domain_id=41),
+            await service.list_members(app_id="knowledge_retrieval", domain_id=41),
         )
 
     async def test_policy_roles_are_snapshotted_before_uow_exit(self):
@@ -304,7 +304,7 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
                 "roles": [{"code": "manager", "display_name": "管理员"}],
             },
             await service.list_policy_subjects(
-                app_id="assistant", domain_id=41
+                app_id="knowledge_retrieval", domain_id=41
             ),
         )
 

@@ -126,29 +126,29 @@ service_name = "kbot-aiops-api"
             "RUNTIME", by_name["aiops_agent"]["runtime"]["stream"]
         )
 
-    def test_assistant_app_logs_are_discoverable(self):
+    def test_knowledge_retrieval_logs_are_discoverable(self):
         self.topology_path.write_text(
             self.topology_path.read_text(encoding="utf-8")
             + """
 
 [[processes]]
-service_config = "assistant_app"
-service_name = "kbot-assistant-app"
+service_config = "knowledge_retrieval_app"
+service_name = "kbot-knowledge-retrieval-app"
 """,
             encoding="utf-8",
         )
-        service_dir = self.log_root / "assistant_app"
+        service_dir = self.log_root / "knowledge_retrieval_app"
         service_dir.mkdir()
         (service_dir / "runtime.log").write_text(
-            f"{self.stamp} | ERROR    | [worker] assistant_app.worker:run:10 - "
+            f"{self.stamp} | ERROR    | [worker] knowledge_retrieval_app.worker:run:10 - "
             "X Search 失败 run_id=run-x",
             encoding="utf-8",
         )
         service = self._service()
         names = {item["service_name"] for item in service.services()}
-        self.assertIn("assistant_app", names)
+        self.assertIn("knowledge_retrieval_app", names)
         events, _, total = service.search(
-            service_name="assistant_app", keyword="X Search",
+            service_name="knowledge_retrieval_app", keyword="X Search",
         )
         self.assertEqual(1, total)
         self.assertEqual("run-x", events[0]["run_id"])

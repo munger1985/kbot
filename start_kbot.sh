@@ -81,7 +81,7 @@ import aiops_agent
 import data_query
 import knowledge_core
 import knowledge_retrieval_app
-import assistant_app
+import media_studio_app
 import km_asset_app
 import main_api
 import model_serving
@@ -205,8 +205,9 @@ SERVICES=(
     "Knowledge Core:Index Worker:knowledge_core:knowledge_core.entrypoints.projection"
     "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
     "Knowledge Retrieval App:API:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.api"
-    "Assistant App:API:assistant_app:assistant_app.entrypoints.api"
-    "Assistant App:Worker:assistant_app:assistant_app.entrypoints.worker"
+    "Knowledge Retrieval App:X Search Worker:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.worker"
+    "Media Studio:API:media_studio_app:media_studio_app.entrypoints.api"
+    "Media Studio:Worker:media_studio_app:media_studio_app.entrypoints.worker"
     "KM Asset App:API:km_asset_app:km_asset_app.entrypoints.api"
     "KM Asset App:Worker:km_asset_app:km_asset_app.entrypoints.worker"
     "KM Asset App:Slack Worker:km_asset_app:km_asset_app.entrypoints.slack_worker"
@@ -233,7 +234,7 @@ service_port() {
         knowledge_core.entrypoints.parser) echo "18095" ;;
         knowledge_core.entrypoints.api) echo "18090" ;;
         knowledge_retrieval_app.entrypoints.api) echo "18150" ;;
-        assistant_app.entrypoints.api) echo "18170" ;;
+        media_studio_app.entrypoints.api) echo "18170" ;;
         km_asset_app.entrypoints.api) echo "18160" ;;
         agent_runtime.entrypoints.api) echo "18100" ;;
         data_query.entrypoints.api) echo "18140" ;;
@@ -252,7 +253,8 @@ is_process_only_service() {
         || [ "$1" = "km_asset_app.entrypoints.worker" ] \
         || [ "$1" = "km_asset_app.entrypoints.slack_worker" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
-        || [ "$1" = "assistant_app.entrypoints.worker" ] \
+        || [ "$1" = "knowledge_retrieval_app.entrypoints.worker" ] \
+        || [ "$1" = "media_studio_app.entrypoints.worker" ] \
         || [ "$1" = "main_api.entrypoints.notification_worker" ]
 }
 

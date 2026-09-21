@@ -25,8 +25,20 @@ from aiops_agent.contracts.tool_execution import (
 )
 from aiops_agent.application.diagnosis import (
     compile_findings,
+    decide_capacity_actions,
     is_automatic_entry,
     is_diagnosis_turn,
+    summarize_awr_facts,
+)
+from aiops_agent.application.exacheck_report import (
+    EXACHECK_FACT_COLUMNS,
+    EXACHECK_FACT_TOOL_ID,
+    EXACHECK_REPORT_KIND,
+)
+from aiops_agent.application.sqlhc_report import (
+    SQLHC_FACT_COLUMNS,
+    SQLHC_FACT_TOOL_ID,
+    SQLHC_REPORT_KIND,
 )
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -38,7 +50,7 @@ from aiops_agent.contracts.turn_answer import (
     TurnEvidenceFact,
     TurnEvidenceGap,
 )
-from aiops_agent.domain.evidence import summarize_numeric_trend
+from aiops_agent.domain.evidence import extract_metric_trend_rows, summarize_numeric_trend
 from platform_core.contracts.aiops import (
     AnswerBlockType,
     InvestigationAssessment,
@@ -182,6 +194,13 @@ class DbaEvidenceAssessmentHandler:
                             row_count=1,
                         )
                     )
+                continue
+            if schema_version == "USER_UPLOAD_EXTRACT.v1":
+                fact = self._sqlhc_upload_fact(artifact)
+                if fact is None:
+                    fact = self._exacheck_upload_fact(artifact)
+                if fact is not None:
+                    facts.append(fact)
                 continue
             if schema_version == "OBSERVATION_SET.v1":
                 result = ObservationSet.model_validate(artifact["payload"])
@@ -726,6 +745,78 @@ class DbaEvidenceAssessmentHandler:
         )
 
     @staticmethod
+    def _exacheck_upload_fact(artifact: dict) -> TurnEvidenceFact | None:
+        """把用户上传的 ExaCheck HTML 抽成检查事实，不执行官方脚本。"""
+        payload = dict(artifact.get("payload") or {})
+        if str(payload.get("report_kind") or "") != EXACHECK_REPORT_KIND:
+            return None
+        facts = dict(payload.get("structured_facts") or {})
+        columns = tuple(
+            str(name)
+            for name in (facts.get("columns") or EXACHECK_FACT_COLUMNS)
+            if str(name)
+        )
+        rows = tuple(
+            tuple(row)
+            for row in (facts.get("rows") or ())
+            if isinstance(row, (list, tuple))
+        )
+        artifact_id = str(artifact["artifact_id"])
+        return TurnEvidenceFact(
+            evidence_ref=f"artifact:{artifact_id}#exacheck-report",
+            artifact_id=artifact_id,
+            source_id="user.uploaded-exacheck-report",
+            step_id="upload",
+            tool_id=EXACHECK_FACT_TOOL_ID,
+            trust_level="USER_PROVIDED",
+            measurement_semantics=MeasurementSemantics.NOT_APPLICABLE,
+            presentation_kind="TABLE",
+            captured_at=datetime.now().isoformat(),
+            columns=tuple(
+                {"name": name, "logical_type": "STRING"}
+                for name in columns
+            ),
+            rows=rows,
+            row_count=len(rows),
+        )
+
+    @staticmethod
+    def _sqlhc_upload_fact(artifact: dict) -> TurnEvidenceFact | None:
+        """把用户上传的 SQLHC HTML 抽成补证事实，不替代在线取证。"""
+        payload = dict(artifact.get("payload") or {})
+        if str(payload.get("report_kind") or "") != SQLHC_REPORT_KIND:
+            return None
+        facts = dict(payload.get("structured_facts") or {})
+        columns = tuple(
+            str(name)
+            for name in (facts.get("columns") or SQLHC_FACT_COLUMNS)
+            if str(name)
+        )
+        rows = tuple(
+            tuple(row)
+            for row in (facts.get("rows") or ())
+            if isinstance(row, (list, tuple))
+        )
+        artifact_id = str(artifact["artifact_id"])
+        return TurnEvidenceFact(
+            evidence_ref=f"artifact:{artifact_id}#sqlhc-report",
+            artifact_id=artifact_id,
+            source_id="user.uploaded-sqlhc-report",
+            step_id="upload",
+            tool_id=SQLHC_FACT_TOOL_ID,
+            trust_level="USER_PROVIDED",
+            measurement_semantics=MeasurementSemantics.NOT_APPLICABLE,
+            presentation_kind="TABLE",
+            captured_at=datetime.now().isoformat(),
+            columns=tuple(
+                {"name": name, "logical_type": "STRING"}
+                for name in columns
+            ),
+            rows=rows,
+            row_count=len(rows),
+        )
+
+    @staticmethod
     def _monitoring_fact(
         *,
         artifact_id: str,
@@ -1014,11 +1105,13 @@ _HTML_REPORT_TOOLS = {
     "db.oracle.awr.report",
     "db.oracle.awr.diff_report",
     "db.oracle.ash.report",
+    "db.oracle.sql_monitor.report",
 }
 _HTML_REPORT_LABELS = {
     "db.oracle.awr.report": "下载原生 AWR 报告",
     "db.oracle.awr.diff_report": "下载原生 AWR 对比报告",
     "db.oracle.ash.report": "下载原生 ASH 报告",
+    "db.oracle.sql_monitor.report": "下载原生 SQL Monitor 报告",
 }
 _ACTION_ID_RE = re.compile(r"^a[0-9]+$")
 
@@ -1412,6 +1505,12 @@ class DbaAnswerComposeHandler:
                     evidence_refs=evidence_refs,
                 )
             )
+            fact_confirmation = self._fact_confirmation_block(
+                context=context,
+                compilation=compilation,
+            )
+            if fact_confirmation is not None:
+                blocks.append(fact_confirmation)
         else:
             blocks.append(
                 TurnAnswerBlock(
@@ -1448,17 +1547,32 @@ class DbaAnswerComposeHandler:
             self._compose_evidence_payload(fact)
             for fact in assessment.evidence
         ]
-        return {
+        task_frame = dict(answer_context.get("task_frame", {}))
+        payload = {
             "question": str(answer_context.get("question", "")),
             "input_envelope": dict(answer_context.get("input_envelope", {})),
-            "task_frame": dict(answer_context.get("task_frame", {})),
+            "task_frame": task_frame,
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
             "findings": compilation.model_dump(mode="json"),
             "sufficiency": sufficiency,
+            "capacity_plan": decide_capacity_actions(
+                findings=compilation.findings,
+                target_facts=list(
+                    context.plan_snapshot.get("target_facts") or []
+                ),
+            ).as_dict(),
+            "awr_facts": summarize_awr_facts(assessment.evidence).as_dict(),
             "proposal_summary": (
                 proposal_summary if self._include_proposal(context) else None
             ),
         }
+        subject_ref = dict(task_frame.get("subject_ref") or {})
+        if str(subject_ref.get("schedule_type") or "") == "WEEKLY":
+            payload["metric_trends"] = [
+                dict(item) for item in extract_metric_trend_rows(assessment.evidence)
+            ]
+            payload["trend_computation_policy"] = "USE_SERVER_FIELDS"
+        return payload
 
     @staticmethod
     def _compose_evidence_payload(fact: TurnEvidenceFact) -> dict[str, Any]:
@@ -1509,6 +1623,65 @@ class DbaAnswerComposeHandler:
             objectives=task_frame.get("objectives"),
             workflow_kind=str(answer_context.get("workflow_kind") or ""),
             trigger_type=context.trigger_type,
+        )
+
+    @staticmethod
+    def _fact_confirmation_block(
+        *,
+        context: TaskExecutionContext,
+        compilation,
+    ) -> TurnAnswerBlock | None:
+        """容量 Finding 同时缺少磁盘组和路径事实时，在方案后插入确认卡。"""
+        has_tablespace = any(
+            str(card.finding_type) == "TABLESPACE"
+            for card in compilation.findings
+        )
+        if not has_tablespace:
+            return None
+        present = {
+            str(item.get("fact_type") or "")
+            for item in list(context.plan_snapshot.get("target_facts") or [])
+            if str(item.get("status") or "ACTIVE") == "ACTIVE"
+        }
+        if "ASM_DISKGROUP" in present or "DATAFILE_PATH" in present:
+            return None
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.FACT_CONFIRMATION,
+            schema_version="AIOPS_FACT_CONFIRMATION_BLOCK.v1",
+            payload={
+                "target_id": context.target_id,
+                "missing_fact_types": ["ASM_DISKGROUP", "DATAFILE_PATH"],
+                "candidates": [
+                    {
+                        "fact_type": "ASM_DISKGROUP",
+                        "label": "ASM 磁盘组",
+                        "key_field": "diskgroup_name",
+                        "fields": [
+                            {
+                                "name": "diskgroup_name",
+                                "label": "磁盘组名称",
+                                "required": True,
+                            }
+                        ],
+                    },
+                    {
+                        "fact_type": "DATAFILE_PATH",
+                        "label": "数据文件目录",
+                        "key_field": "directory",
+                        "fields": [
+                            {
+                                "name": "directory",
+                                "label": "文件系统目录",
+                                "required": True,
+                            }
+                        ],
+                    },
+                ],
+                "instruction": (
+                    "容量方案需要磁盘组或数据文件路径事实。"
+                    "确认后才会写入 Target 运维记忆，不会执行 SQL。"
+                ),
+            },
         )
 
     @staticmethod

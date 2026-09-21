@@ -90,7 +90,6 @@
 .inspection-schedule-summary span{color:#aeb7c9;font:700 10px/1.2 ui-monospace,monospace;letter-spacing:.12em}
 .inspection-schedule-summary strong{margin-top:6px;font:650 17px/1.35 Georgia,"Songti SC",serif}
 .inspection-schedule-summary small{margin-top:3px;color:#bfc7d5;font-size:11px}
-
 .inspection-check-groups{display:grid;gap:14px}
 .inspection-check-group{padding:14px 16px;border:1px solid var(--line);background:#f8fafc}
 .inspection-check-group h4{margin:0 0 10px;font:650 14px/1.3 Georgia,"Songti SC",serif}
@@ -223,3 +222,8 @@
 .target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
 .target-subscription-actions{display:flex;justify-content:flex-end;margin-top:14px}
 @media(max-width:1000px){.target-subscription-panel{position:static}.target-detail-grid>.span-7,.target-detail-grid>.span-5{grid-column:span 12}}
+
+/* Target 详情中的运维记忆。 */
+.target-facts-list{margin-bottom:16px}
+.target-facts-form{display:grid;gap:14px;margin-top:8px}
+.target-facts-form .ops-filter-actions{justify-content:flex-start}

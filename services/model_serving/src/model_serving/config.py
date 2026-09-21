@@ -65,6 +65,12 @@ class ModelServingSettings(Settings):
             audience="kbot-knowledge-retrieval-app-api",
         )
     )
+    media_studio_app: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18170",
+            audience="kbot-media-studio-app-api",
+        )
+    )
     aiops: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18110",

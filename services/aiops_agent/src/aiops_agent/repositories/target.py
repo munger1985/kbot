@@ -12,6 +12,7 @@ from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
+    TargetFactEntity,
     TargetSourceBindingEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
@@ -42,6 +43,11 @@ class TargetRepository(AIOpsRepository):
     async def add_source_binding(
         self, entity: TargetSourceBindingEntity
     ) -> TargetSourceBindingEntity:
+        return await self._add(entity)
+
+    async def add_target_fact(
+        self, entity: TargetFactEntity
+    ) -> TargetFactEntity:
         return await self._add(entity)
 
     async def target_ids_shared_by_sources(
@@ -330,6 +336,88 @@ class TargetRepository(AIOpsRepository):
         )
         result = await self._session.execute(statement)
         return result.rowcount == 1
+
+
+    async def list_target_facts(
+        self,
+        *,
+        target_id: UUID,
+        domain_id: int,
+        active_only: bool = True,
+    ) -> list[TargetFactEntity]:
+        self._check_active()
+        statement = (
+            select(TargetFactEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetFactEntity.target_id,
+            )
+            .where(
+                TargetFactEntity.target_id == target_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        if active_only:
+            statement = statement.where(TargetFactEntity.status == "ACTIVE")
+        statement = statement.order_by(
+            TargetFactEntity.fact_type,
+            TargetFactEntity.fact_key,
+            TargetFactEntity.target_fact_id,
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def get_target_fact_scoped(
+        self,
+        *,
+        fact_id: UUID,
+        target_id: UUID,
+        domain_id: int,
+        lock: bool = False,
+    ) -> TargetFactEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(TargetFactEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetFactEntity.target_id,
+            )
+            .where(
+                TargetFactEntity.target_fact_id == fact_id,
+                TargetFactEntity.target_id == target_id,
+                TargetEntity.domain_id == domain_id,
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_active_target_fact(
+        self,
+        *,
+        target_id: UUID,
+        domain_id: int,
+        fact_type: str,
+        fact_key: str,
+        lock: bool = False,
+    ) -> TargetFactEntity | None:
+        self._check_active()
+        statement: Select = (
+            select(TargetFactEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetFactEntity.target_id,
+            )
+            .where(
+                TargetFactEntity.target_id == target_id,
+                TargetEntity.domain_id == domain_id,
+                TargetFactEntity.fact_type == fact_type,
+                TargetFactEntity.fact_key == fact_key,
+                TargetFactEntity.status == "ACTIVE",
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def list_source_bindings(
         self,

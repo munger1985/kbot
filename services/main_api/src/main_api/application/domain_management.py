@@ -10,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 
 from main_api.entities import AppDomainEntity, PlatformDomainEntity
 
-BOOTSTRAP_DOMAIN_NAMES = frozenset({"assistant_portal"})
+BOOTSTRAP_DOMAIN_NAMES = frozenset({
+    "knowledge_retrieval_portal",
+    "media_studio_portal",
+})
 
 
 class DomainConflictError(RuntimeError):

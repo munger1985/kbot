@@ -8,15 +8,21 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from aiops_agent.application.inspections.check_catalog import (
     compile_selected_check_steps,
     normalize_selected_check_ids,
 )
+from aiops_agent.application.configuration.common import ConfigurationScope
+from aiops_agent.application.configuration.projections import _target_fact_view
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
     state_conflict,
+    validation_failed,
 )
+from aiops_agent.application.targets.facts import create_confirmed_fact
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
 )
@@ -33,6 +39,8 @@ from platform_core.contracts.aiops import (
     ConversationCreate,
     ConversationSourceContext,
     ConversationSourceType,
+    TargetFactConfirmCommand,
+    TargetFactView,
     TurnCreate,
 )
 from platform_core.contracts.aiops.types import WorkflowKind
@@ -809,6 +817,7 @@ class ConversationTurnService:
             "db.oracle.awr.report",
             "db.oracle.awr.diff_report",
             "db.oracle.ash.report",
+            "db.oracle.sql_monitor.report",
         }:
             raise resource_not_found("Oracle Workload Report")
         async with self._uow_factory() as uow:
@@ -977,6 +986,64 @@ class ConversationTurnService:
             )
             await uow.commit()
             return self._turn_summary(turn)
+
+    async def confirm_target_fact(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+        trace_id: str,
+        command: TargetFactConfirmCommand,
+    ) -> TargetFactView:
+        """把聊天确认卡中的运维事实写入 Target，不生成可执行 SQL。"""
+        try:
+            async with self._uow_factory() as uow:
+                conversation = await uow.conversations.get_conversation(
+                    domain_id=domain_id,
+                    conversation_id=conversation_id,
+                )
+                turn = await uow.turns.get_turn(
+                    domain_id=domain_id,
+                    turn_id=turn_id,
+                )
+                if (
+                    conversation is None
+                    or conversation.created_by != actor_id
+                    or turn is None
+                    or turn.conversation_id != conversation_id
+                ):
+                    raise resource_not_found("Conversation Turn")
+                if command.target_id != conversation.target_id:
+                    raise validation_failed("确认的 Target 必须与当前对话一致")
+                scope = ConfigurationScope(
+                    domain_id=domain_id,
+                    principal_id=f"USER:{actor_id}",
+                    actor_id=actor_id,
+                    request_id=trace_id,
+                    trace_id=trace_id,
+                )
+                details = {
+                    "conversation_id": str(conversation_id),
+                    "turn_id": str(turn_id),
+                }
+                if command.note:
+                    details["note"] = command.note
+                entity = await create_confirmed_fact(
+                    uow=uow,
+                    scope=scope,
+                    target_id=command.target_id,
+                    fact_type=command.fact_type,
+                    fact_key=command.fact_key,
+                    fact_value=command.fact_value,
+                    now=datetime.now(UTC),
+                    details=details,
+                )
+                await uow.commit()
+                return _target_fact_view(entity)
+        except IntegrityError as exc:
+            raise state_conflict("配置自然键已存在或并发创建冲突") from exc
 
     async def _create_turn(
         self,

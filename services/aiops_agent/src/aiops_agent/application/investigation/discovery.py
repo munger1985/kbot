@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from aiops_agent.application.diagnosis.awr_facts import AWR_FACT_TOOL_IDS
 from aiops_agent.application.investigation.discovery_binding import (
     catalog_tool_cards,
     discovery_consumer_window_count,
@@ -625,11 +626,13 @@ def _unique_discovery_consumer(
     catalog: dict[str, dict],
     selected_ids: set[str],
 ) -> dict | None:
+    # AWR Fact Tool 与 HTML 报告同窗，但不能自动挂上计划，否则 1 窗报告不再唯一。
     matching = [
         item
         for item in catalog.values()
         if str(item.get("discovery_tool_id") or "").strip() == discovery_tool_id
         and discovery_consumer_window_count(item) == window_count
+        and str(item.get("tool_id") or "") not in AWR_FACT_TOOL_IDS
     ]
     preferred = [
         item

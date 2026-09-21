@@ -173,7 +173,7 @@ INSERT ALL
     INTO KBOT_PLATFORM_APP (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE) VALUES ('knowledge_retrieval', '知识检索', 'ACTIVE', 'Y')
     INTO KBOT_PLATFORM_APP (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE) VALUES ('aiops', 'AIOps', 'ACTIVE', 'Y')
     INTO KBOT_PLATFORM_APP (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE) VALUES ('km_asset', 'KM Asset', 'ACTIVE', 'Y')
-    INTO KBOT_PLATFORM_APP (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE) VALUES ('assistant', '智能工作台', 'ACTIVE', 'Y')
+    INTO KBOT_PLATFORM_APP (APP_ID, DISPLAY_NAME, STATUS, MEMBER_ASSIGNABLE) VALUES ('media_studio', '多媒体创作工作台', 'ACTIVE', 'Y')
 SELECT 1 FROM DUAL;
 
 INSERT ALL
@@ -191,6 +191,11 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:data_manage', 'knowledge_retrieval', '管理问数资源')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:agent_manage', 'knowledge_retrieval', '管理知识检索 Agent')
     INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:api_key_manage', 'knowledge_retrieval', '管理知识检索 API Client')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:knowledge_chat', 'knowledge_retrieval', '使用知识问答')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:x_search', 'knowledge_retrieval', '使用 X 实时搜索')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:domain_manage', 'knowledge_retrieval', '管理知识 Domain')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:knowledge_core_manage', 'knowledge_retrieval', '管理 Knowledge Core')
+    INTO KBOT_PERMISSION VALUES ('knowledge_retrieval:data_model_manage', 'knowledge_retrieval', '管理问数模型')
     INTO KBOT_PERMISSION VALUES ('km_asset:use', 'km_asset', '使用 KM Asset')
     INTO KBOT_PERMISSION VALUES ('km_asset:source_manage', 'km_asset', '管理 KM Asset 来源')
     INTO KBOT_PERMISSION VALUES ('km_asset:knowledge_manage', 'km_asset', '管理 KM Portal Knowledge Core')
@@ -200,17 +205,11 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('km_asset:member_manage', 'km_asset', '管理 KM Asset 成员')
     INTO KBOT_PERMISSION VALUES ('km_asset:role_manage', 'km_asset', '管理 KM Asset 角色')
     INTO KBOT_PERMISSION VALUES ('km_asset:api_key_manage', 'km_asset', '管理 KM Asset API Client')
-    INTO KBOT_PERMISSION VALUES ('assistant:use', 'assistant', '使用智能工作台')
-    INTO KBOT_PERMISSION VALUES ('assistant:knowledge_chat', 'assistant', '使用知识问答')
-    INTO KBOT_PERMISSION VALUES ('assistant:x_search', 'assistant', '使用 X 实时搜索')
-    INTO KBOT_PERMISSION VALUES ('assistant:image_generate', 'assistant', '使用文生图')
-    INTO KBOT_PERMISSION VALUES ('assistant:media_read', 'assistant', '查看图片资产')
-    INTO KBOT_PERMISSION VALUES ('assistant:domain_manage', 'assistant', '管理智能工作台 Domain')
-    INTO KBOT_PERMISSION VALUES ('assistant:knowledge_core_manage', 'assistant', '管理 Knowledge Core 关联')
-    INTO KBOT_PERMISSION VALUES ('assistant:data_model_manage', 'assistant', '管理问数模型关联')
-    INTO KBOT_PERMISSION VALUES ('assistant:agent_manage', 'assistant', '管理智能工作台 Agent')
-    INTO KBOT_PERMISSION VALUES ('assistant:model_binding_manage', 'assistant', '管理模型绑定')
-    INTO KBOT_PERMISSION VALUES ('assistant:run_read', 'assistant', '查看运行和用量')
+    INTO KBOT_PERMISSION VALUES ('media_studio:use', 'media_studio', '使用多媒体创作工作台')
+    INTO KBOT_PERMISSION VALUES ('media_studio:image_generate', 'media_studio', '使用图片生成')
+    INTO KBOT_PERMISSION VALUES ('media_studio:media_read', 'media_studio', '查看媒体资产')
+    INTO KBOT_PERMISSION VALUES ('media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定')
+    INTO KBOT_PERMISSION VALUES ('media_studio:run_read', 'media_studio', '查看生成运行和用量')
     INTO KBOT_PERMISSION VALUES ('aiops:use', 'aiops', '使用 AIOps')
     INTO KBOT_PERMISSION VALUES ('aiops:member_manage', 'aiops', '管理 AIOps 成员')
     INTO KBOT_PERMISSION VALUES ('aiops:role_manage', 'aiops', '管理 AIOps 角色')
@@ -232,8 +231,8 @@ INSERT ALL
     INTO KBOT_APP_ROLE VALUES ('knowledge_retrieval', 'reviewer', '审核人', 'Y', 'SELECTABLE', 'ACTIVE', 1)
     INTO KBOT_APP_ROLE VALUES ('km_asset', 'app_admin', 'KM Asset 初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE', 1)
     INTO KBOT_APP_ROLE VALUES ('km_asset', 'user', '用户', 'Y', 'SELECTABLE', 'ACTIVE', 1)
-    INTO KBOT_APP_ROLE VALUES ('assistant', 'app_admin', '智能工作台初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE', 1)
-    INTO KBOT_APP_ROLE VALUES ('assistant', 'user', '用户', 'Y', 'SELECTABLE', 'ACTIVE', 1)
+    INTO KBOT_APP_ROLE VALUES ('media_studio', 'app_admin', '多媒体创作工作台初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE', 1)
+    INTO KBOT_APP_ROLE VALUES ('media_studio', 'user', '创作用户', 'Y', 'SELECTABLE', 'ACTIVE', 1)
     INTO KBOT_APP_ROLE VALUES ('aiops', 'app_admin', 'AIOps 初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE', 1)
     INTO KBOT_APP_ROLE VALUES ('aiops', 'user', '用户', 'Y', 'SELECTABLE', 'ACTIVE', 1)
     INTO KBOT_APP_ROLE VALUES ('aiops', 'operator', '运维操作员', 'Y', 'SELECTABLE', 'ACTIVE', 1)
@@ -247,7 +246,12 @@ INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'knowledge_retrieval', 'app_admin', PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID = 'knowledge_retrieval';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
-SELECT 'knowledge_retrieval', 'user', PERMISSION_CODE FROM KBOT_PERMISSION WHERE PERMISSION_CODE = 'knowledge_retrieval:use';
+SELECT 'knowledge_retrieval', 'user', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN (
+    'knowledge_retrieval:use',
+    'knowledge_retrieval:knowledge_chat',
+    'knowledge_retrieval:x_search'
+);
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'knowledge_retrieval', 'contributor', PERMISSION_CODE FROM KBOT_PERMISSION
@@ -264,11 +268,11 @@ INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'km_asset', 'user', PERMISSION_CODE FROM KBOT_PERMISSION WHERE PERMISSION_CODE = 'km_asset:use';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
-SELECT 'assistant', 'app_admin', PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID = 'assistant';
+SELECT 'media_studio', 'app_admin', PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID = 'media_studio';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
-SELECT 'assistant', 'user', PERMISSION_CODE FROM KBOT_PERMISSION
-WHERE PERMISSION_CODE IN ('assistant:use', 'assistant:knowledge_chat', 'assistant:x_search', 'assistant:image_generate', 'assistant:media_read', 'assistant:run_read');
+SELECT 'media_studio', 'user', PERMISSION_CODE FROM KBOT_PERMISSION
+WHERE PERMISSION_CODE IN ('media_studio:use', 'media_studio:image_generate', 'media_studio:media_read', 'media_studio:run_read');
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'app_admin', PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID = 'aiops';

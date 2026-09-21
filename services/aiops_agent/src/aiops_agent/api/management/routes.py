@@ -51,6 +51,9 @@ from platform_core.contracts.aiops import (
     TargetConnectionTestResult,
     DatabaseCredentialInput,
     TargetDetail,
+    TargetFactCreate,
+    TargetFactPage,
+    TargetFactView,
     TargetPage,
     TargetPatch,
     WebhookKeyRotation,
@@ -309,6 +312,64 @@ async def request_target_connectivity_check(
     result = await service.request_target_connectivity_check(
         scope=scope,
         target_id=target_id,
+        expected_version=parse_etag(if_match),
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+
+@router.get(
+    "/targets/{target_id}/facts",
+    response_model=TargetFactPage,
+)
+async def list_target_facts(
+    target_id: UUID, service: Service, scope: Scope
+) -> TargetFactPage:
+    return await service.list_target_facts(scope=scope, target_id=target_id)
+
+
+@router.post(
+    "/targets/{target_id}/facts",
+    response_model=TargetFactView,
+    status_code=201,
+)
+async def create_target_fact(
+    target_id: UUID,
+    body: TargetFactCreate,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+) -> TargetFactView:
+    result = await service.create_target_fact(
+        scope=scope,
+        target_id=target_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post(
+    "/targets/{target_id}/facts/{fact_id}/retire",
+    response_model=TargetFactView,
+)
+async def retire_target_fact(
+    target_id: UUID,
+    fact_id: UUID,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> TargetFactView:
+    result = await service.retire_target_fact(
+        scope=scope,
+        target_id=target_id,
+        fact_id=fact_id,
         expected_version=parse_etag(if_match),
         idempotency_key=idempotency_key,
     )
@@ -729,7 +790,6 @@ async def command_policy(
     )
     _etag(response, result.row_version)
     return result
-
 
 
 @router.get(

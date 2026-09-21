@@ -20,9 +20,7 @@ from platform_core.security import get_actor_id
 
 class CapabilityVerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    supports_x_search: bool
     supports_image_generation: bool
-    supports_responses_streaming: bool
 
 
 def _service(request: Request) -> ResponsesService:
@@ -74,9 +72,7 @@ def create_responses_router() -> APIRouter:
         try:
             return await _service(request).verify_capabilities(
                 model_id,
-                supports_x_search=payload.supports_x_search,
                 supports_image_generation=payload.supports_image_generation,
-                supports_responses_streaming=payload.supports_responses_streaming,
                 actor_id=get_actor_id(request),
             )
         except Exception as exc:

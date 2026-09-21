@@ -178,10 +178,19 @@ class EmbeddingProvider(str, Enum):
 
 class LLMProvider(str, Enum):
     """Supported LLM provider enumeration."""
+    LOCAL_DEEPSEEK = "local_deepseek"
     API_DEEPSEEK = "api_deepseek"
     API_QWEN = "api_qwen"
     CHATGPT = "chatgpt"
     OCI = "oci"
+
+
+LOCAL_LLM_PROVIDERS = frozenset({LLMProvider.LOCAL_DEEPSEEK.value})
+
+
+def is_local_llm_provider(provider: str | None) -> bool:
+    """判断是否为客户近端部署的 LLM。走 OpenAI 兼容 HTTP，不是进程内加载。"""
+    return str(provider or "").strip().lower() in LOCAL_LLM_PROVIDERS
 
 class VisualEmbeddingProvider(str, Enum):
     """Supported visual embedding model provider enumeration."""

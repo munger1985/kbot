@@ -22,6 +22,8 @@ from platform_core.contracts.aiops import (
     ConversationUploadReceipt,
     ConversationStart,
     ConversationSummary,
+    TargetFactConfirmCommand,
+    TargetFactView,
     TurnCreate,
     TurnEventPage,
     TurnReceipt,
@@ -276,7 +278,7 @@ async def download_workload_report(
     turn_id: UUID,
     request: Request,
     tool_id: str = Path(
-        pattern=r"^db\.oracle\.(awr\.report|awr\.diff_report|ash\.report)$"
+        pattern=r"^db\.oracle\.(awr\.report|awr\.diff_report|ash\.report|sql_monitor\.report)$"
     ),
     action_id: str = Query(pattern=r"^a[0-9]+$"),
     context: AuthContext = Depends(get_aiops_auth_context),
@@ -295,6 +297,7 @@ async def download_workload_report(
         "db.oracle.awr.report": "oracle-awr-report",
         "db.oracle.awr.diff_report": "oracle-awr-diff-report",
         "db.oracle.ash.report": "oracle-ash-report",
+        "db.oracle.sql_monitor.report": "oracle-sql-monitor",
     }[tool_id] + f"-{action_id}.html"
     return Response(
         content=content,
@@ -347,4 +350,26 @@ async def cancel_turn(
         turn_id=turn_id,
         actor_id=actor_id,
         trace_id=context.trace_id,
+    )
+
+
+@router.post(
+    "/{conversation_id}/turns/{turn_id}/target-facts:confirm",
+    response_model=TargetFactView,
+)
+async def confirm_target_fact(
+    conversation_id: UUID,
+    turn_id: UUID,
+    body: TargetFactConfirmCommand,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.conversation_turn_service.confirm_target_fact(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        actor_id=actor_id,
+        trace_id=context.trace_id,
+        command=body,
     )

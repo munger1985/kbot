@@ -103,9 +103,17 @@ def create_aiops_api(
         )
         app.state.runtime = runtime
         action_registry = ActionRegistry.load()
+        model_client = AIModelConfigClient(
+            base_url=resolved.clients.model_serving.base_url,
+            timeout=resolved.clients.model_serving.timeout_seconds,
+            caller_service=config.service_name,
+            audience=resolved.clients.model_serving.audience,
+        )
         app.state.agent_service = AIOpsAgentService(
             uow_factory=runtime.uow_factory,
             action_registry=action_registry,
+            environment=resolved.environment,
+            model_client=model_client,
         )
         conversation_upload_store = LocalConversationUploadStore(
             Path(resolved.limits.conversation_upload_store_root),
@@ -131,12 +139,8 @@ def create_aiops_api(
         )
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
-            model_client=AIModelConfigClient(
-                base_url=resolved.clients.model_serving.base_url,
-                timeout=resolved.clients.model_serving.timeout_seconds,
-                caller_service=config.service_name,
-                audience=resolved.clients.model_serving.audience,
-            ),
+            model_client=model_client,
+            environment=resolved.environment,
         )
         cursor_secret = os.getenv(resolved.management.cursor_secret_env)
         if not cursor_secret:

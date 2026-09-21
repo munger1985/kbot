@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>知识检索 · Domains</title>
+  <link rel="stylesheet" href="./css/knowledge.css">
+</head>
+<body data-page="domains">
+<main class="knowledge-main">
+  <header class="knowledge-page-head">
+    <div>
+      <h1>Domains</h1>
+      <p>Domain 是知识、数据、Agent 与图片资产的强隔离边界。创建操作通过平台受控生命周期完成。</p>
+    </div>
+    <div class="knowledge-actions"><button type="button" data-open-dialog="domain-dialog" class="primary">创建 Domain</button></div>
+  </header>
+  <section class="knowledge-grid">
+    <article class="knowledge-panel span-8">
+      <div class="knowledge-panel-head">
+        <div><h2>当前 App Domains</h2><p>仅展示当前知识检索已获授权的 Domain，含已停用记录。</p></div>
+        <button class="small" type="button" data-open-dialog="domain-dialog">创建</button>
+      </div>
+      <div class="knowledge-table-wrap">
+        <table class="knowledge-table">
+          <thead><tr><th>名称</th><th>标识</th><th>状态</th><th>说明</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="domain-rows">
+            <tr><td colspan="6"><div class="knowledge-empty"><div><strong>尚无可显示的 Domain</strong><p>接入平台 Domain 生命周期后，列表将按当前 App 授权范围加载；不会使用浏览器填写的 ID 作为隔离边界。</p></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+    <aside class="knowledge-panel span-4">
+      <div class="knowledge-panel-head"><div><h2>创建后的顺序</h2><p>资源始终归属于一个 Domain。</p></div></div>
+      <div class="knowledge-panel-body">
+        <ol class="knowledge-flow">
+          <li><strong>创建并授权 Domain</strong><span>平台原子建立 Domain 与 App-Domain 关系。</span></li>
+          <li><strong>创建 Knowledge Core</strong><span>定义受控知识范围与检索模型。</span></li>
+          <li><strong>发布问数模型</strong><span>可选，建立数据源、口径、策略与版本。</span></li>
+          <li><strong>创建并启用 Agent</strong><span>必须绑定 Knowledge Core，问数模型可选。</span></li>
+        </ol>
+      </div>
+    </aside>
+  </section>
+</main>
+<dialog class="knowledge-dialog" id="domain-dialog">
+  <form id="domain-form">
+    <div class="knowledge-dialog-head"><h2 id="domain-dialog-title">创建 Domain</h2><button class="knowledge-close" type="button" data-close-dialog="domain-dialog" aria-label="关闭">×</button></div>
+    <div class="knowledge-dialog-body">
+      <input id="domain-id" type="hidden">
+      <input id="domain-row-version" type="hidden">
+      <div class="knowledge-form-grid">
+        <div class="knowledge-field full"><label for="domain-name">名称</label><input id="domain-name" required maxlength="120" placeholder="例如：华东销售"></div>
+        <div class="knowledge-field full"><label for="domain-description">说明</label><textarea id="domain-description" maxlength="1000" placeholder="说明此 Domain 的业务隔离范围与负责人。"></textarea></div>
+      </div>
+      <div class="knowledge-notice">标识由平台自动生成，不需要手工填写。创建成功后不会自动切换当前工作域。</div>
+    </div>
+    <div class="knowledge-dialog-foot"><button type="button" data-close-dialog="domain-dialog">取消</button><button class="primary" id="domain-submit" type="submit">创建</button></div>
+  </form>
+</dialog>
+<script src="../runtime-config.js"></script>
+<script src="./js/knowledge-auth.js"></script>
+<script src="./js/knowledge-api.js"></script>
+<script src="./js/knowledge-shell.js"></script>
+<script src="./js/knowledge-domains.js"></script>
+</body>
+</html>

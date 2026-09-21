@@ -1,0 +1,68 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "postgresql.replication.lag",
+  "version": "1.0.0",
+  "database_types": [
+    "POSTGRESQL"
+  ],
+  "version_range": {
+    "minimum": "12",
+    "maximum": "20"
+  },
+  "supported_intents": [
+    "OBSERVE",
+    "INSPECT",
+    "DIAGNOSE"
+  ],
+  "domains": [
+    "REPLICATION",
+    "HIGH_AVAILABILITY"
+  ],
+  "subjects": [],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": [],
+  "required_target_capabilities": [
+    "DB_READONLY"
+  ],
+  "required_privileges": [
+    "pg_read_all_stats"
+  ],
+  "required_entitlements": [],
+  "input_schema": "postgresql.replication.lag.input.v1",
+  "defaults": {},
+  "limits": {
+    "max_rows": 32,
+    "timeout_seconds": 20,
+    "max_attempts": 2,
+    "cost_units": 2
+  },
+  "tool_dag": [
+    {
+      "step_id": "identity",
+      "tool_id": "db.instance.identity",
+      "tool_version": "1.0.0",
+      "depends_on": [],
+      "input": {}
+    },
+    {
+      "step_id": "collect",
+      "tool_id": "db.postgresql.replication.lag",
+      "tool_version": "1.0.0",
+      "depends_on": [
+        "identity"
+      ],
+      "input": {}
+    }
+  ],
+  "output_schema": "postgresql.replication.lag.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "postgresql.replication.lag.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {
+    "max_age_seconds": 120,
+    "requires_observed_at": true
+  }
+}

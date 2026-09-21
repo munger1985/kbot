@@ -21,7 +21,7 @@ from sqlalchemy import text
 from main_api.api import (
     access_management_router,
     aiops_app_router,
-    assistant_app_router,
+    media_studio_app_router,
     app_api_clients_router,
     auth_router,
     conversation_router,
@@ -50,7 +50,7 @@ from main_api.application import (
 from main_api.log_reader import LocalLogSearchService
 from platform_clients import (
     AIOpsClientError,
-    AssistantAppClientError,
+    MediaStudioClientError,
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
     KnowledgeRetrievalAppClientError,
@@ -230,7 +230,8 @@ def create_main_api_app(
             "/api/v1/auth/password",
             "/api/v1/apps/km-asset/auth/password",
             "/api/v1/apps/aiops/auth/password",
-            "/api/v1/apps/assistant/auth/password",
+            "/api/v1/apps/knowledge-retrieval/auth/password",
+            "/api/v1/apps/media-studio/auth/password",
         }:
             raise PortalApiKeyError(
                 "PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码"
@@ -259,7 +260,8 @@ def create_main_api_app(
         "/api/v1/auth/apps",
         "/api/v1/apps/km-asset/auth/login",
         "/api/v1/apps/aiops/auth/login",
-        "/api/v1/apps/assistant/auth/login",
+        "/api/v1/apps/knowledge-retrieval/auth/login",
+        "/api/v1/apps/media-studio/auth/login",
     }
     public_prefixes = {
         "/api/v1/auth/apps/",
@@ -305,7 +307,7 @@ def create_main_api_app(
     app.include_router(knowledge_retrieval_app_router)
     app.include_router(km_asset_app_router)
     app.include_router(aiops_app_router)
-    app.include_router(assistant_app_router)
+    app.include_router(media_studio_app_router)
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
     app.include_router(domain_router)
@@ -416,22 +418,22 @@ def create_main_api_app(
             title="知识检索应用请求失败", detail=str(exc),
         )
 
-    @app.exception_handler(AssistantAppClientError)
-    async def assistant_app_error_handler(
-        request: Request, exc: AssistantAppClientError,
+    @app.exception_handler(MediaStudioClientError)
+    async def media_studio_error_handler(
+        request: Request, exc: MediaStudioClientError,
     ):
         _log_downstream_failure(
-            request=request, service_name="assistant-app", exc=exc
+            request=request, service_name="media-studio-app", exc=exc
         )
         if exc.status_code >= 500:
             return _problem_response(
                 request=request, status_code=503,
-                code="ASSISTANT_APP_UNAVAILABLE", title="智能工作台暂时不可用",
-                detail="智能工作台暂时无法完成请求",
+                code="MEDIA_STUDIO_UNAVAILABLE", title="多媒体创作工作台暂时不可用",
+                detail="多媒体创作工作台暂时无法完成请求",
             )
         return _problem_response(
             request=request, status_code=exc.status_code, code=exc.code,
-            title="智能工作台请求失败", detail=str(exc),
+            title="多媒体创作工作台请求失败", detail=str(exc),
         )
 
     @app.exception_handler(KmAssetClientError)

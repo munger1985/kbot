@@ -44,6 +44,7 @@ from aiops_agent.entities import (
     PolicyEntity,
     TargetBindingEntity,
     TargetEntity,
+    TargetFactEntity,
     TargetSourceBindingEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
@@ -74,6 +75,7 @@ from platform_core.contracts.aiops import (
     SecretRefStatus,
     TargetCreate,
     TargetDetail,
+    TargetFactView,
     TargetPage,
     TargetPatch,
     TargetSummary,
@@ -251,6 +253,32 @@ def _diagnostic_source_detail(entity: DiagnosticSourceEntity) -> DiagnosticSourc
         created_by=entity.created_by,
         updated_by=entity.updated_by,
     )
+
+
+def _target_fact_view(entity: TargetFactEntity) -> TargetFactView:
+    return TargetFactView(
+        fact_id=entity.target_fact_id,
+        target_id=entity.target_id,
+        fact_type=entity.fact_type,
+        fact_key=entity.fact_key,
+        fact_value=dict(entity.fact_value or {}),
+        source=entity.source,
+        status=entity.status,
+        confirmed_by=entity.confirmed_by,
+        confirmed_at=(
+            entity.confirmed_at.astimezone(UTC) if entity.confirmed_at else None
+        ),
+        retired_by=entity.retired_by,
+        retired_at=(
+            entity.retired_at.astimezone(UTC) if entity.retired_at else None
+        ),
+        row_version=int(entity.row_version),
+        created_at=entity.created_at.astimezone(UTC),
+        updated_at=entity.updated_at.astimezone(UTC),
+        created_by=entity.created_by,
+        updated_by=entity.updated_by,
+    )
+
 
 def _source_binding_view(entity: TargetSourceBindingEntity) -> SourceBindingView:
     return SourceBindingView(

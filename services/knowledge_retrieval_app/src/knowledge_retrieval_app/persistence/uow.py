@@ -2,7 +2,12 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from knowledge_retrieval_app.repositories import KnowledgeRetrievalAgentRepository
+from knowledge_retrieval_app.repositories import (
+    KnowledgeRetrievalAgentRepository,
+    KnowledgeRetrievalResearchEventRepository,
+    KnowledgeRetrievalResearchRunRepository,
+    KnowledgeRetrievalXSourceRepository,
+)
 
 
 class KnowledgeRetrievalAppUnitOfWork:
@@ -10,11 +15,17 @@ class KnowledgeRetrievalAppUnitOfWork:
         self._session_factory = session_factory
         self.session: AsyncSession | None = None
         self.agents: KnowledgeRetrievalAgentRepository | None = None
+        self.runs: KnowledgeRetrievalResearchRunRepository | None = None
+        self.run_events: KnowledgeRetrievalResearchEventRepository | None = None
+        self.x_sources: KnowledgeRetrievalXSourceRepository | None = None
         self._committed = False
 
     async def __aenter__(self):
         self.session = self._session_factory()
         self.agents = KnowledgeRetrievalAgentRepository(self.session)
+        self.runs = KnowledgeRetrievalResearchRunRepository(self.session)
+        self.run_events = KnowledgeRetrievalResearchEventRepository(self.session)
+        self.x_sources = KnowledgeRetrievalXSourceRepository(self.session)
         return self
 
     async def commit(self) -> None:
@@ -33,9 +44,10 @@ class KnowledgeRetrievalAppUnitOfWork:
             await self.session.close()
             self.session = None
             self.agents = None
+            self.runs = None
+            self.run_events = None
+            self.x_sources = None
 
 
-def create_knowledge_retrieval_app_uow(
-    session_factory: async_sessionmaker[AsyncSession],
-):
+def create_knowledge_retrieval_app_uow(session_factory: async_sessionmaker[AsyncSession]):
     return lambda: KnowledgeRetrievalAppUnitOfWork(session_factory)

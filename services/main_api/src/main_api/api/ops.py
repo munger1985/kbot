@@ -30,6 +30,7 @@ from platform_core.contracts.aiops import (
     ApprovalReceipt,
     CancelRunCommand,
     DiagnosticQueryApprovalDecision,
+    FleetDashboard,
     HitlResponse,
     HitlResult,
     HitlSkipCommand,
@@ -70,6 +71,7 @@ from platform_core.contracts.aiops import (
     RejectionCommand,
     ReportEdit,
     ReportPage,
+    ReportPresentation,
     ReportVersionPage,
     ReportView,
     TargetCreate,
@@ -77,6 +79,9 @@ from platform_core.contracts.aiops import (
     TargetConnectionTestResult,
     DatabaseCredentialInput,
     TargetDetail,
+    TargetFactCreate,
+    TargetFactPage,
+    TargetFactView,
     TargetPage,
     TargetPatch,
     WebhookKeyRotation,
@@ -100,6 +105,7 @@ def _route_permissions() -> dict[str, str]:
             "edit_report", "get_report_presentation", "download_report_pdf",
             "list_reports", "list_report_versions", "list_inspection_fires",
             "get_inspection_fire", "create_ops_run", "list_ops_runs",
+            "get_fleet_dashboard",
             "list_situations", "get_situation", "get_ops_run",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
             "respond_hitl", "skip_hitl", "decide_diagnostic_query",
@@ -115,6 +121,7 @@ def _route_permissions() -> dict[str, str]:
             "rotate_execution_credential", "remove_execution_credential",
             "remove_diagnostic_credential", "delete_target", "enable_target",
             "disable_target", "request_target_connectivity_check",
+            "list_target_facts", "create_target_fact", "retire_target_fact",
             "list_agent_bindings", "create_agent_binding",
             "patch_agent_binding", "command_agent_binding",
         },
@@ -336,11 +343,13 @@ async def edit_report(
     return ReportView.model_validate(result)
 
 
-@router.get("/reports/{report_id}/presentation")
-async def get_report_presentation(report_id: UUID, request: Request):
+@router.get("/reports/{report_id}/presentation", response_model=ReportPresentation)
+async def get_report_presentation(report_id: UUID, request: Request) -> ReportPresentation:
     """取得报告预览所需的冻结展示投影。"""
-    return await _client(request).get_report_presentation(
-        report_id, auth_context=request.state.auth_context
+    return ReportPresentation.model_validate(
+        await _client(request).get_report_presentation(
+            report_id, auth_context=request.state.auth_context
+        )
     )
 
 
@@ -467,6 +476,14 @@ async def create_ops_run(
     )
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
+
+
+@router.get("/fleet", response_model=FleetDashboard)
+async def get_fleet_dashboard(request: Request) -> FleetDashboard:
+    payload = await _client(request).get_fleet_dashboard(
+        auth_context=request.state.auth_context,
+    )
+    return FleetDashboard.model_validate(payload)
 
 
 @router.get("/runs", response_model=OpsRunPage)
@@ -989,6 +1006,63 @@ async def request_target_connectivity_check(
     return _validated(TargetDetail, payload, response)
 
 
+
+@router.get(
+    "/targets/{target_id}/facts",
+    response_model=TargetFactPage,
+)
+async def list_target_facts(
+    target_id: UUID, request: Request
+) -> TargetFactPage:
+    payload = await _client(request).list_target_facts(
+        target_id, auth_context=request.state.auth_context
+    )
+    return TargetFactPage.model_validate(payload)
+
+
+@router.post(
+    "/targets/{target_id}/facts",
+    response_model=TargetFactView,
+    status_code=201,
+)
+async def create_target_fact(
+    target_id: UUID,
+    body: TargetFactCreate,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> TargetFactView:
+    payload = await _client(request).create_target_fact(
+        target_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(TargetFactView, payload, response)
+
+
+@router.post(
+    "/targets/{target_id}/facts/{fact_id}/retire",
+    response_model=TargetFactView,
+)
+async def retire_target_fact(
+    target_id: UUID,
+    fact_id: UUID,
+    request: Request,
+    response: Response,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> TargetFactView:
+    payload = await _client(request).retire_target_fact(
+        target_id,
+        fact_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(TargetFactView, payload, response)
+
+
 @router.get(
     "/targets/{target_id}/agent-bindings",
     response_model=tuple[AgentBindingView, ...],
@@ -1366,7 +1440,6 @@ async def command_policy(
         auth_context=request.state.auth_context,
     )
     return _validated(PolicyDetail, payload, response)
-
 
 
 @router.get(

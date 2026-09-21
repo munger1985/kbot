@@ -36,6 +36,13 @@ Provider Options 由代码目录控制，按模型类别声明必要连接字段
 `model_params`。未知 Provider、未知参数、非法类别组合和不匹配的文本向量维度都会在
 写入前被拒绝。
 
+`local_deepseek` 是 LLM 的客户近端 OpenAI 兼容 Provider，必填 `api_endpoint`
+与 `api_key`，由客户侧 vLLM / SGLang 等推理服务提供，不在本进程加载权重。
+它与云端 `api_deepseek` 分开登记。AIOps 生产环境的规划/诊断绑定只允许该
+Provider；该约束属于 AIOps 绑定校验，不改变 Model Serving 对其它应用提供
+GPT 的能力。
+
+
 ## Model Pool
 
 Model Pool 按 `served_model_name` 缓存已加载实例，负责并发加载、健康检查、空闲

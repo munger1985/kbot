@@ -309,6 +309,7 @@ async def handle_chat_completions(
 
         # Normalize OpenAI family Provider judgment
         openai_family = [
+            LLMProvider.LOCAL_DEEPSEEK.value,
             LLMProvider.CHATGPT.value,
             LLMProvider.API_DEEPSEEK.value,
             LLMProvider.API_QWEN.value

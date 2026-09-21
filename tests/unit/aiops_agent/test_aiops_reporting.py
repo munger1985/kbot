@@ -325,7 +325,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             [item["title"] for item in payload["facts"][:2]],
         )
         self.assertTrue(all(
-            "检查已完成" in item["summary"] and "结果正常" in item["summary"]
+            "检查已完成" in item["summary"] and "结果正常" not in item["summary"]
             for item in payload["facts"][:2]
         ))
         self.assertIn("采集 1 条可验证观测", payload["facts"][0]["summary"])
@@ -412,12 +412,106 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual([], list(gaps))
         self.assertIn("所有计划检查均已形成可追溯观测", summary)
         self.assertEqual(
-            "近期告警日志：检查已完成，本期没有需要报告的记录，结果正常。",
+            "近期告警日志：检查已完成，本期没有需要报告的记录。",
             facts[0]["summary"],
         )
         self.assertEqual(
-            "实例性能指标：检查已完成，采集 9 条可验证观测，结果正常。",
+            "实例性能指标：检查已完成，采集 9 条可验证观测，需按 Finding 评估。",
             facts[1]["summary"],
+        )
+
+    def test_weekly_inspection_projection_uses_server_trend_fields(self) -> None:
+        source = SimpleNamespace(
+            evidence=[
+                SimpleNamespace(
+                    tool_id="db.storage.capacity",
+                    row_count=2,
+                    truncated=False,
+                    evidence_ref="artifact:test#capacity",
+                    columns=(),
+                    rows=(),
+                ),
+                SimpleNamespace(
+                    tool_id="metric.query_range",
+                    row_count=1,
+                    truncated=False,
+                    evidence_ref="artifact:test#trend",
+                    columns=tuple(
+                        {"name": name}
+                        for name in (
+                            "metric_code",
+                            "dimensions",
+                            "first",
+                            "latest",
+                            "change",
+                            "change_per_day",
+                            "trend_slope_per_day",
+                            "history_elapsed_days",
+                        )
+                    ),
+                    rows=(
+                        (
+                            "db.storage.used_bytes",
+                            "tablespace=USERS",
+                            80.0,
+                            120.0,
+                            40.0,
+                            5.7143,
+                            5.5,
+                            7.0,
+                        ),
+                    ),
+                ),
+            ],
+            evidence_gaps=(),
+        )
+        weekly_facts, weekly_gaps, weekly_summary = (
+            AIOpsRuntimeService._inspection_report_projection(
+                inspection={
+                    "schedule_type": "WEEKLY",
+                    "evidence_steps": [
+                        {
+                            "title": "表空间余量",
+                            "tool_id": "db.storage.capacity",
+                            "expected_evidence_kind": "TABLESPACE_HEADROOM",
+                            "trend_required": True,
+                            "measurement_semantics": "HISTORICAL_SAMPLES",
+                        }
+                    ],
+                },
+                source=source,
+                action_tool_ids={},
+            )
+        )
+        daily_facts, _, _ = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "schedule_type": "DAILY",
+                "evidence_steps": [
+                    {
+                        "title": "表空间余量",
+                        "tool_id": "db.storage.capacity",
+                        "expected_evidence_kind": "TABLESPACE_HEADROOM",
+                        "trend_required": True,
+                        "measurement_semantics": "CURRENT_ACTIVITY",
+                    }
+                ],
+            },
+            source=source,
+            action_tool_ids={},
+        )
+        self.assertEqual([], list(weekly_gaps))
+        self.assertIn("1/1", weekly_summary)
+        trend = next(
+            item for item in weekly_facts if item["kind"] == "inspection_trend"
+        )
+        self.assertEqual("db.storage.used_bytes", trend["metric_code"])
+        self.assertEqual(80.0, trend["first"])
+        self.assertEqual(120.0, trend["latest"])
+        self.assertEqual(5.7143, trend["change_per_day"])
+        self.assertIn("first=80.0", trend["summary"])
+        self.assertIn("change_per_day=5.7143", trend["summary"])
+        self.assertTrue(
+            all(item["kind"] != "inspection_trend" for item in daily_facts)
         )
 
     def test_inspection_capacity_recommendation_uses_forecast(self) -> None:
@@ -460,7 +554,9 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(1, len(recommendations))
         self.assertIn("表空间 USERS", recommendations[0])
         self.assertIn("未来30天使用率约为96.50%", recommendations[0])
-        self.assertIn("完成扩容", recommendations[0])
+        self.assertIn("完成 AUTOEXTEND 或 RESIZE", recommendations[0])
+        self.assertNotIn("ADD DATAFILE", recommendations[0])
+        self.assertNotIn("扩容", recommendations[0])
 
     def test_inspection_capacity_recommendation_keeps_low_confidence_forecast(
         self,

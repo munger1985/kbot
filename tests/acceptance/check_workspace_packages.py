@@ -23,7 +23,7 @@ EXPECTED = (
         "kbot-knowledge-retrieval-app",
         "knowledge_retrieval_app",
     ),
-    ("services/assistant_app", "kbot-assistant-app", "assistant_app"),
+    ("services/media_studio_app", "kbot-media-studio-app", "media_studio_app"),
     ("services/km_asset_app", "kbot-km-asset-app", "km_asset_app"),
     ("services/agent_runtime", "kbot-agent-runtime", "agent_runtime"),
     ("services/aiops_agent", "kbot-aiops-agent", "aiops_agent"),

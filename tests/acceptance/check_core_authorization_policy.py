@@ -391,7 +391,6 @@ def main() -> int:
     agent_route_files = {
         "knowledge_retrieval": main_api_api / "knowledge_retrieval_app.py",
         "km_asset": main_api_api / "km_asset_app.py",
-        "assistant": main_api_api / "assistant_app.py",
         "aiops": main_api_api / "aiops_app.py",
     }
     for app_id, path in agent_route_files.items():

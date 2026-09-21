@@ -688,6 +688,136 @@ class DbaTurnAnswerTest(unittest.TestCase):
             fact.rows[0][1]["signal_events"][0]["summary"],
         )
 
+    def test_assessment_includes_sqlhc_upload_extract(self) -> None:
+        artifact_id = str(uuid7())
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        {
+                            "artifact_id": artifact_id,
+                            "schema_version": "USER_UPLOAD_EXTRACT.v1",
+                            "payload": {
+                                "item_no": 1,
+                                "file_name": "sqlhc_6tjx7su0q5ttj.html",
+                                "media_type": "text/html",
+                                "extraction_mode": "HTML_TEXT_EXTRACT",
+                                "report_kind": "SQLHC",
+                                "structured_facts": {
+                                    "sql_id": "6tjx7su0q5ttj",
+                                    "file_name": "sqlhc_6tjx7su0q5ttj.html",
+                                    "columns": [
+                                        "sql_id",
+                                        "owner",
+                                        "object_name",
+                                        "object_type",
+                                        "last_analyzed",
+                                        "stale_stats",
+                                        "file_name",
+                                    ],
+                                    "rows": [
+                                        [
+                                            "6tjx7su0q5ttj",
+                                            "APP",
+                                            "ORDERS",
+                                            "TABLE",
+                                            "2024-01-01",
+                                            "YES",
+                                            "sqlhc_6tjx7su0q5ttj.html",
+                                        ]
+                                    ],
+                                },
+                            },
+                        },
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(1, len(result.evidence))
+        fact = result.evidence[0]
+        self.assertEqual("user.sqlhc.report", fact.tool_id)
+        self.assertEqual("user.uploaded-sqlhc-report", fact.source_id)
+        self.assertEqual("USER_PROVIDED", fact.trust_level)
+        self.assertEqual("APP", fact.rows[0][1])
+        self.assertEqual(
+            f"artifact:{artifact_id}#sqlhc-report",
+            fact.evidence_ref,
+        )
+
+    def test_assessment_includes_exacheck_upload_extract(self) -> None:
+        artifact_id = str(uuid7())
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        {
+                            "artifact_id": artifact_id,
+                            "schema_version": "USER_UPLOAD_EXTRACT.v1",
+                            "payload": {
+                                "item_no": 1,
+                                "file_name": "exachk_db01.html",
+                                "media_type": "text/html",
+                                "extraction_mode": "HTML_TEXT_EXTRACT",
+                                "report_kind": "EXACHECK",
+                                "structured_facts": {
+                                    "file_name": "exachk_db01.html",
+                                    "columns": [
+                                        "status",
+                                        "check_name",
+                                        "message",
+                                        "host",
+                                        "check_id",
+                                        "file_name",
+                                    ],
+                                    "rows": [
+                                        [
+                                            "FAIL",
+                                            "Hardware",
+                                            "InfiniBand firmware is not current",
+                                            "cel01",
+                                            "IB_SWITCH_FW",
+                                            "exachk_db01.html",
+                                        ]
+                                    ],
+                                },
+                            },
+                        },
+                    )
+                )
+            )
+        )
+
+        self.assertEqual(1, len(result.evidence))
+        fact = result.evidence[0]
+        self.assertEqual("user.exacheck.report", fact.tool_id)
+        self.assertEqual("user.uploaded-exacheck-report", fact.source_id)
+        self.assertEqual("USER_PROVIDED", fact.trust_level)
+        self.assertEqual("FAIL", fact.rows[0][0])
+        self.assertEqual(
+            f"artifact:{artifact_id}#exacheck-report",
+            fact.evidence_ref,
+        )
+
+    def test_assessment_skips_unknown_upload_extract(self) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        {
+                            "artifact_id": str(uuid7()),
+                            "schema_version": "USER_UPLOAD_EXTRACT.v1",
+                            "payload": {
+                                "report_kind": "AWR",
+                                "structured_facts": {"rows": [["db file sequential read"]]},
+                            },
+                        },
+                    )
+                )
+            )
+        )
+        self.assertEqual(0, len(result.evidence))
+
     def test_assessment_includes_direct_instance_identity_result(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(

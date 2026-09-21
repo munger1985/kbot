@@ -6,6 +6,12 @@
 Bootstrap 必须幂等，只能执行 DML 和只读校验；缺表、缺列或约束不符合规范时应立即
 终止，不得通过动态 DDL 修复现有 Schema。
 
-`assistant/initial_admin.sql` 由 `scripts/db/initialize_assistant.py` 调用，创建
-`assistant_portal` 空白引导 Domain 与 `assistantadmin` 初始管理员。它不创建 Knowledge
-Core、问数模型、Agent、模型绑定或 OCI 配置；重复执行不会覆盖已有管理员凭据。
+`knowledge_retrieval/initial_admin.sql` 和 `media_studio/initial_admin.sql` 由
+`scripts/db/initialize_product_app.py` 调用，分别创建两个 App 的空白引导
+Domain 与初始管理员。它们不创建业务 Agent、模型绑定或模型配置；
+重复执行不会覆盖已有管理员凭据。
+
+```bash
+python scripts/db/initialize_product_app.py knowledge_retrieval
+python scripts/db/initialize_product_app.py media_studio
+```

@@ -169,6 +169,7 @@ class LLMService:
             if stream:
                 # OpenAI-compatible providers (ChatGPT, Qwen, DeepSeek)
                 openai_compatible_providers = [
+                    LLMProvider.LOCAL_DEEPSEEK.value,
                     LLMProvider.CHATGPT.value,
                     LLMProvider.API_QWEN.value,
                     LLMProvider.API_DEEPSEEK.value

@@ -90,20 +90,28 @@ kind = "http"
 port = 18150
 
 [[processes]]
-process_key = "assistant_app_api"
-module = "assistant_app.entrypoints.api"
-service_config = "assistant_app"
+process_key = "knowledge_retrieval_app_worker"
+module = "knowledge_retrieval_app.entrypoints.worker"
+service_config = "knowledge_retrieval_app"
+config_section = "worker"
+service_name = "kbot-knowledge-retrieval-app-worker"
+kind = "worker"
+
+[[processes]]
+process_key = "media_studio_app_api"
+module = "media_studio_app.entrypoints.api"
+service_config = "media_studio_app"
 config_section = "api"
-service_name = "kbot-assistant-app-api"
+service_name = "kbot-media-studio-app-api"
 kind = "http"
 port = 18170
 
 [[processes]]
-process_key = "assistant_app_worker"
-module = "assistant_app.entrypoints.worker"
-service_config = "assistant_app"
+process_key = "media_studio_app_worker"
+module = "media_studio_app.entrypoints.worker"
+service_config = "media_studio_app"
 config_section = "worker"
-service_name = "kbot-assistant-app-worker"
+service_name = "kbot-media-studio-app-worker"
 kind = "worker"
 
 [[processes]]
@@ -214,7 +222,7 @@ kind = "worker"
 [endpoints]
 knowledge_core = "knowledge_core_api"
 knowledge_retrieval_app = "knowledge_retrieval_app_api"
-assistant_app = "assistant_app_api"
+media_studio_app = "media_studio_app_api"
 km_asset_app = "km_asset_app_api"
 agent_runtime = "agent_runtime_api"
 data_query = "data_query_api"
@@ -234,11 +242,16 @@ timeout_seconds = 120
 endpoint = "knowledge_retrieval_app"
 timeout_seconds = 120
 
-[dependencies.main_api.assistant_app]
-endpoint = "assistant_app"
+
+[dependencies.knowledge_retrieval_app.llm]
+endpoint = "model_llm"
+timeout_seconds = 300
+
+[dependencies.main_api.media_studio_app]
+endpoint = "media_studio_app"
 timeout_seconds = 120
 
-[dependencies.assistant_app.llm]
+[dependencies.media_studio_app.llm]
 endpoint = "model_llm"
 timeout_seconds = 300
 
@@ -341,6 +354,10 @@ timeout_seconds = 300
 
 [dependencies.model_serving.knowledge_retrieval_app]
 endpoint = "knowledge_retrieval_app"
+timeout_seconds = 120
+
+[dependencies.model_serving.media_studio_app]
+endpoint = "media_studio_app"
 timeout_seconds = 120
 
 [dependencies.model_serving.aiops]

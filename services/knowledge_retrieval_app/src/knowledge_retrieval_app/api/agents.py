@@ -29,9 +29,8 @@ class AgentCreateRequest(_Request):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[
-        Literal["conversation", "document", "data_query"], ...
-    ] = Field(min_length=1, max_length=3)
+    knowledge_core_id: UUID | None = None
+    data_model_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     models: dict[str, UUID] = Field(default_factory=dict)
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -43,9 +42,8 @@ class AgentUpdateRequest(_Request):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    enabled_capabilities: tuple[
-        Literal["conversation", "document", "data_query"], ...
-    ] | None = Field(default=None, min_length=1, max_length=3)
+    knowledge_core_id: UUID | None = None
+    data_model_ids: tuple[UUID, ...] | None = Field(default=None, max_length=100)
     models: dict[str, UUID] | None = None
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None

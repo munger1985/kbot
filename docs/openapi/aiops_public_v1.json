@@ -988,6 +988,206 @@
         "title": "DiagnosticSourceSummary",
         "type": "object"
       },
+      "FleetDashboard": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FleetTargetCard"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/FleetSummary"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "FleetDashboard",
+        "type": "object"
+      },
+      "FleetSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "critical_count": {
+            "minimum": 0.0,
+            "title": "Critical Count",
+            "type": "integer"
+          },
+          "disabled_count": {
+            "minimum": 0.0,
+            "title": "Disabled Count",
+            "type": "integer"
+          },
+          "healthy_count": {
+            "minimum": 0.0,
+            "title": "Healthy Count",
+            "type": "integer"
+          },
+          "last_diagnosed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Diagnosed At"
+          },
+          "open_alert_count": {
+            "minimum": 0.0,
+            "title": "Open Alert Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "target_count": {
+            "minimum": 0.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "unreachable_count": {
+            "minimum": 0.0,
+            "title": "Unreachable Count",
+            "type": "integer"
+          },
+          "warning_count": {
+            "minimum": 0.0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_count",
+          "healthy_count",
+          "warning_count",
+          "critical_count",
+          "unreachable_count",
+          "disabled_count",
+          "open_alert_count"
+        ],
+        "title": "FleetSummary",
+        "type": "object"
+      },
+      "FleetTargetCard": {
+        "additionalProperties": false,
+        "description": "库群总览卡片；只保留健康、告警、容量和延迟，不展开 SID 明细。",
+        "properties": {
+          "db_type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Db Type",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "health": {
+            "enum": [
+              "HEALTHY",
+              "WARNING",
+              "CRITICAL",
+              "UNREACHABLE",
+              "DISABLED"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "last_diagnosed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Diagnosed At"
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run Id"
+          },
+          "max_capacity_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Capacity Percent"
+          },
+          "max_lag_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lag Seconds"
+          },
+          "open_alert_count": {
+            "minimum": 0.0,
+            "title": "Open Alert Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "display_name",
+          "db_type",
+          "environment",
+          "health",
+          "open_alert_count"
+        ],
+        "title": "FleetTargetCard",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1148,6 +1348,149 @@
         ],
         "title": "HitlType",
         "type": "string"
+      },
+      "InspectionCheckCatalogGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/InspectionCheckCatalogItem"
+            },
+            "minItems": 1,
+            "title": "Checks",
+            "type": "array"
+          },
+          "display_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "group_id": {
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$",
+            "title": "Group Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "display_name",
+          "checks"
+        ],
+        "title": "InspectionCheckCatalogGroup",
+        "type": "object"
+      },
+      "InspectionCheckCatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": [
+              "READY",
+              "PLANNED"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "check_id": {
+            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "default_for": {
+            "items": {
+              "enum": [
+                "DAILY",
+                "WEEKLY"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Default For",
+            "type": "array"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "finding_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Finding Types",
+            "type": "array"
+          },
+          "playbook_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playbook Id"
+          },
+          "tool_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Id"
+          },
+          "trend_required": {
+            "title": "Trend Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check_id",
+          "display_name",
+          "availability",
+          "default_for",
+          "trend_required"
+        ],
+        "title": "InspectionCheckCatalogItem",
+        "type": "object"
+      },
+      "InspectionCheckCatalogView": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Catalog Hash",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/InspectionCheckCatalogGroup"
+            },
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_hash",
+          "groups"
+        ],
+        "title": "InspectionCheckCatalogView",
+        "type": "object"
       },
       "InspectionFirePage": {
         "additionalProperties": false,
@@ -1381,6 +1724,14 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "selected_check_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Selected Check Ids",
+            "type": "array"
+          },
           "template_id": {
             "maxLength": 128,
             "minLength": 1,
@@ -1414,6 +1765,7 @@
           "timezone",
           "template_id",
           "template_version",
+          "selected_check_ids",
           "timeout_seconds",
           "schedule_resolver_version"
         ],
@@ -1493,6 +1845,14 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "selected_check_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Selected Check Ids",
+            "type": "array"
+          },
           "status": {
             "enum": [
               "ACTIVE",
@@ -1540,6 +1900,7 @@
           "cron_expression",
           "template_id",
           "template_version",
+          "selected_check_ids",
           "timeout_seconds",
           "overlap_policy",
           "misfire_policy",
@@ -1678,6 +2039,20 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "selected_check_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Check Ids"
+          },
           "template_id": {
             "anyOf": [
               {
@@ -1807,6 +2182,52 @@
           "updated_at"
         ],
         "title": "InspectionPlanSummary",
+        "type": "object"
+      },
+      "LeadershipBriefing": {
+        "additionalProperties": false,
+        "description": "正式报告的领导简报投影；不展开 SID/SQL 明细。",
+        "properties": {
+          "business_impact": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Business Impact",
+            "type": "array"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "risk_level": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "risks": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Risks",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "LEADERSHIP_BRIEFING.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "risk_level"
+        ],
+        "title": "LeadershipBriefing",
         "type": "object"
       },
       "ManualResultCommand": {
@@ -3081,6 +3502,20 @@
           }
         },
         "title": "ReportPage",
+        "type": "object"
+      },
+      "ReportPresentation": {
+        "additionalProperties": true,
+        "description": "报告预览投影。只约束领导简报，其余章节保持现有冻结结构。",
+        "properties": {
+          "leadership_briefing": {
+            "$ref": "#/components/schemas/LeadershipBriefing"
+          }
+        },
+        "required": [
+          "leadership_briefing"
+        ],
+        "title": "ReportPresentation",
         "type": "object"
       },
       "ReportSectionEdit": {
@@ -4813,6 +5248,219 @@
         "title": "TargetEndpoint",
         "type": "object"
       },
+      "TargetFactCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "fact_key": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Fact Key",
+            "type": "string"
+          },
+          "fact_type": {
+            "enum": [
+              "ASM_DISKGROUP",
+              "DATAFILE_PATH",
+              "TABLESPACE_PLACEMENT"
+            ],
+            "title": "Fact Type",
+            "type": "string"
+          },
+          "fact_value": {
+            "additionalProperties": true,
+            "title": "Fact Value",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact_type",
+          "fact_key",
+          "fact_value"
+        ],
+        "title": "TargetFactCreate",
+        "type": "object"
+      },
+      "TargetFactPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TargetFactView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "TargetFactPage",
+        "type": "object"
+      },
+      "TargetFactView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "fact_id": {
+            "format": "uuid",
+            "title": "Fact Id",
+            "type": "string"
+          },
+          "fact_key": {
+            "title": "Fact Key",
+            "type": "string"
+          },
+          "fact_type": {
+            "enum": [
+              "ASM_DISKGROUP",
+              "DATAFILE_PATH",
+              "TABLESPACE_PLACEMENT"
+            ],
+            "title": "Fact Type",
+            "type": "string"
+          },
+          "fact_value": {
+            "additionalProperties": true,
+            "title": "Fact Value",
+            "type": "object"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retired_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired By"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "MANUAL_CONFIRMED",
+              "DISCOVERED"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "RETIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact_id",
+          "target_id",
+          "fact_type",
+          "fact_key",
+          "fact_value",
+          "source",
+          "status",
+          "row_version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "TargetFactView",
+        "type": "object"
+      },
       "TargetPage": {
         "additionalProperties": false,
         "properties": {
@@ -5772,6 +6420,27 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/fleet": {
+      "get": {
+        "operationId": "get_fleet_dashboard_api_v1_apps_aiops_fleet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Dashboard",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/hitl/{hitl_id}": {
       "get": {
         "operationId": "get_hitl_input_api_v1_apps_aiops_hitl__hitl_id__get",
@@ -6002,6 +6671,27 @@
           }
         },
         "summary": "Skip Hitl",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/inspection-check-catalog": {
+      "get": {
+        "operationId": "get_inspection_check_catalog_api_v1_apps_aiops_inspection_check_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InspectionCheckCatalogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Inspection Check Catalog",
         "tags": [
           "AIOps"
         ]
@@ -7571,7 +8261,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPresentation"
+                }
               }
             },
             "description": "Successful Response"
@@ -9375,6 +10067,187 @@
           }
         },
         "summary": "Rotate Execution Credential",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/targets/{target_id}/facts": {
+      "get": {
+        "operationId": "list_target_facts_api_v1_apps_aiops_targets__target_id__facts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetFactPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Target Facts",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "post": {
+        "operationId": "create_target_fact_api_v1_apps_aiops_targets__target_id__facts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetFactCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetFactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Target Fact",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/targets/{target_id}/facts/{fact_id}/retire": {
+      "post": {
+        "operationId": "retire_target_fact_api_v1_apps_aiops_targets__target_id__facts__fact_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Fact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetFactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Target Fact",
         "tags": [
           "AIOps"
         ]

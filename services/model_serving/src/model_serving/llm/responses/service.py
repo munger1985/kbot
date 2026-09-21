@@ -1,6 +1,5 @@
 """LLM 进程内的 Responses 应用服务。"""
 
-from datetime import datetime, timezone
 from uuid import UUID
 
 from model_serving.common.model_registry import ModelRegistryService
@@ -21,7 +20,7 @@ class ResponsesService:
         self._adapter = adapter
 
     async def research(self, request: ResearchRequest) -> ResearchResult:
-        await self._require(request.model_id, "x_search")
+        await self._registry.require_grok_model(request.model_id)
         material = await self._registry.get_connection_material(request.model_id)
         return await self._adapter.research(request, material)
 
@@ -34,18 +33,13 @@ class ResponsesService:
         self,
         model_id: UUID,
         *,
-        supports_x_search: bool,
         supports_image_generation: bool,
-        supports_responses_streaming: bool,
         actor_id: str,
     ) -> dict:
         """只记录验收标志，不向 OCI 发起 Canary。"""
         return await self._registry.record_capability_verification(
             model_id,
-            supports_x_search=supports_x_search,
             supports_image_generation=supports_image_generation,
-            supports_responses_streaming=supports_responses_streaming,
-            verified_at=datetime.now(timezone.utc),
             actor_id=actor_id,
         )
 

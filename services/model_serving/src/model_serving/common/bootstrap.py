@@ -9,6 +9,7 @@ from platform_clients import (
     DataQueryClient,
     KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
+    MediaStudioClient,
 )
 from platform_core.security import (
     create_auth_context_codec,
@@ -31,6 +32,18 @@ def create_model_registry(
             caller_service=service_name,
             audience=settings.knowledge_retrieval_app.audience,
             timeout_seconds=settings.knowledge_retrieval_app.timeout_seconds,
+        )
+        return await client.list_model_references(
+            model_id=model_id,
+            auth_context=auth_context,
+        )
+
+    async def media_model_references(model_id, auth_context):
+        client = MediaStudioClient(
+            base_url=settings.media_studio_app.base_url,
+            caller_service=service_name,
+            audience=settings.media_studio_app.audience,
+            timeout_seconds=settings.media_studio_app.timeout_seconds,
         )
         return await client.list_model_references(
             model_id=model_id,
@@ -93,6 +106,7 @@ def create_model_registry(
         on_model_changed=invalidate,
         reference_resolvers={
             "knowledge-retrieval-app": knowledge_agent_references,
+            "media-studio-app": media_model_references,
             "aiops-agent": aiops_agent_references,
             "knowledge-core": knowledge_references,
             "data-query": data_query_references,

@@ -167,3 +167,42 @@ class WorkloadReportDownloadTest(unittest.TestCase):
                 actor_id="user-1", tool_id="db.oracle.awr.report",
                 action_id="a4",
             ))
+
+
+    def test_download_allows_sql_monitor_report(self) -> None:
+        conversation_id, turn_id, run_id = uuid7(), uuid7(), uuid7()
+        artifacts = [
+            SimpleNamespace(
+                artifact_id=uuid7(),
+                schema_version="DBA_TOOL_RESULT.v1",
+                payload_json=_payload(
+                    "db.oracle.sql_monitor.report",
+                    "a5",
+                    "<html>sql-monitor</html>",
+                ),
+            ),
+        ]
+        uow = SimpleNamespace(
+            conversations=SimpleNamespace(get_conversation=AsyncMock(
+                return_value=SimpleNamespace(created_by="user-1")
+            )),
+            turns=SimpleNamespace(
+                get_turn=AsyncMock(return_value=SimpleNamespace(conversation_id=conversation_id)),
+                get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=run_id)),
+            ),
+            runs=SimpleNamespace(list_artifacts=AsyncMock(return_value=artifacts)),
+        )
+        service = ConversationTurnService(uow_factory=lambda: _context(uow))
+
+        content = asyncio.run(service.get_workload_report_content(
+            domain_id=1, conversation_id=conversation_id, turn_id=turn_id,
+            actor_id="user-1", tool_id="db.oracle.sql_monitor.report",
+            action_id="a5",
+        ))
+        self.assertEqual(b"<html>sql-monitor</html>", content)
+        with self.assertRaises(AIOpsApplicationError):
+            asyncio.run(service.get_workload_report_content(
+                domain_id=1, conversation_id=conversation_id, turn_id=turn_id,
+                actor_id="user-1", tool_id="db.sql.plan_monitor",
+                action_id="a5",
+            ))

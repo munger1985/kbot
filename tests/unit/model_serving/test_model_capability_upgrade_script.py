@@ -16,14 +16,12 @@ class ModelCapabilityUpgradeScriptTests(unittest.TestCase):
     def test_adds_each_capability_as_disabled_by_default(self):
         source = SCRIPT_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("SUPPORTS_X_SEARCH', 'NUMBER(1) DEFAULT 0 NOT NULL", source)
         self.assertIn(
             "SUPPORTS_IMAGE_GENERATION', 'NUMBER(1) DEFAULT 0 NOT NULL", source
         )
-        self.assertIn(
-            "SUPPORTS_RESPONSES_STREAMING', 'NUMBER(1) DEFAULT 0 NOT NULL", source
-        )
-        self.assertIn("CAPABILITY_VERIFIED_AT", source)
+        self.assertNotIn("SUPPORTS_X_SEARCH", source)
+        self.assertNotIn("SUPPORTS_RESPONSES_STREAMING", source)
+        self.assertNotIn("CAPABILITY_VERIFIED_AT", source)
 
     def test_is_idempotent_and_does_not_update_existing_models(self):
         source = SCRIPT_PATH.read_text(encoding="utf-8")

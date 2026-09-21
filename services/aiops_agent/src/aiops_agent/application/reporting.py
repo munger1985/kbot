@@ -22,6 +22,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from aiops_agent.application.errors import validation_failed
+from aiops_agent.application.leadership import project_leadership_briefing
 
 
 @dataclass(frozen=True)
@@ -422,6 +423,7 @@ def normalize_report_source(
 
 def report_presentation(
     *, payload: dict[str, Any], template: ReportTemplate,
+    findings: tuple[Any, ...] | list[Any] = (),
 ) -> dict[str, Any]:
     """把不可变报告内容投影为前端预览和文档渲染的共同输入。"""
     facts = list(payload.get("facts") or ())
@@ -485,6 +487,9 @@ def report_presentation(
         "template": {**template_summary(template), "definition": template.definition},
         "report": payload,
         "sections": section_data,
+        "leadership_briefing": project_leadership_briefing(
+            payload=payload, findings=findings,
+        ),
     }
 
 
@@ -593,6 +598,22 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     story.extend((info_table, Spacer(1, 16 * mm)))
+    briefing = dict(presentation.get("leadership_briefing") or {})
+    if briefing:
+        story.append(Paragraph("领导简报", section))
+        story.append(Paragraph(
+            _pdf_paragraph(f"风险等级：{briefing.get('risk_level') or 'LOW'}"),
+            body,
+        ))
+        for label, key in (
+            ("影响", "business_impact"),
+            ("风险", "risks"),
+            ("建议", "recommendations"),
+        ):
+            story.append(Paragraph(_pdf_paragraph(label), body))
+            for item in briefing.get(key) or ():
+                story.append(Paragraph(_pdf_paragraph(item), body, bulletText="•"))
+        story.append(Spacer(1, 8 * mm))
     summary = next((item for item in presentation.get("sections") or () if item.get("kind") == "EXECUTIVE_SUMMARY"), None)
     if summary:
         story.append(Paragraph("执行摘要", section))

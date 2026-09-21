@@ -30,7 +30,7 @@ class OpenApiContractsTest(unittest.TestCase):
                 "data_query_internal_v1.json",
                 "knowledge_core_internal_v1.json",
                 "knowledge_retrieval_app_internal_v1.json",
-                "assistant_app_internal_v1.json",
+                "media_studio_app_internal_v1.json",
                 "km_asset_app_internal_v1.json",
                 "main_api_public_v1.json",
                 "model_embedding_v1.json",
@@ -49,6 +49,22 @@ class OpenApiContractsTest(unittest.TestCase):
             for error in _route_boundary_errors(filename, schema)
         ]
         self.assertEqual([], errors)
+
+    def test_knowledge_and_media_service_boundaries_are_disjoint(self) -> None:
+        knowledge_paths = set(
+            self.contracts["knowledge_retrieval_app_internal_v1.json"]["paths"]
+        )
+        media_paths = set(
+            self.contracts["media_studio_app_internal_v1.json"]["paths"]
+        )
+        self.assertTrue(any("/x-search/" in path for path in knowledge_paths))
+        self.assertTrue(any("/agents" in path for path in knowledge_paths))
+        self.assertFalse(any("image-generations" in path for path in knowledge_paths))
+        self.assertFalse(any("media-assets" in path for path in knowledge_paths))
+        self.assertTrue(any("image-generations" in path for path in media_paths))
+        self.assertTrue(any("media-assets" in path for path in media_paths))
+        self.assertFalse(any("/x-search/" in path for path in media_paths))
+        self.assertFalse(any("/agents" in path for path in media_paths))
 
 
 if __name__ == "__main__":

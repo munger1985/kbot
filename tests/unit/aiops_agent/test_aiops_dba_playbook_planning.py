@@ -1046,6 +1046,100 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2_592_000, task_frame["forecast_horizon_seconds"])
         self.assertEqual("COMBINED", task_frame["evidence_source_strategy"])
 
+    async def test_weekly_inspection_requires_server_trend_fields(self) -> None:
+        uow = _PlanningUow()
+        question = "执行数据库周度健康巡检"
+        uow.message.payload_json = {
+            "text": question,
+            "content": [{"content_type": "TEXT", "text": question}],
+        }
+        uow.run.workflow_kind = "INSPECTION"
+        uow.run.plan_snapshot_json = {
+            "client_metadata": {
+                "inspection": {
+                    "template_id": "database_daily",
+                    "template_version": "1.0.0",
+                    "schedule_type": "WEEKLY",
+                    "selected_check_ids": [
+                        "oracle.storage.tablespace_headroom",
+                        "oracle.session.count",
+                    ],
+                    "evidence_steps": [
+                        {
+                            "title": "表空间余量",
+                            "tool_id": "db.storage.capacity",
+                            "input": {},
+                            "expected_evidence_kind": "TABLESPACE_HEADROOM",
+                            "measurement_semantics": "HISTORICAL_SAMPLES",
+                            "trend_required": True,
+                        },
+                        {
+                            "title": "会话数",
+                            "tool_id": "db.resource.session_utilization",
+                            "input": {},
+                            "expected_evidence_kind": "SESSION_UTILIZATION",
+                            "measurement_semantics": "CURRENT_ACTIVITY",
+                            "trend_required": False,
+                        },
+                    ],
+                }
+            }
+        }
+        uow.target.capabilities_json = {
+            "capabilities": [
+                "DB_READONLY",
+                "dynamic_performance_views",
+                "dba_catalog_views",
+            ],
+            "privileges": ["SELECT ANY DICTIONARY"],
+        }
+        reasoner = _CompactLookupReasoner()
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        service = TurnPlanningService(
+            uow_factory=lambda: uow,
+            investigation_reasoner=reasoner,
+            playbook_registry=registry,
+            task_compiler=InvestigationTaskCompiler(registry),
+            tool_snapshot_builder=ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=diagnostics,
+            ),
+            agent_catalog=_AgentCatalog(),
+        )
+
+        result = await service.execute(
+            {"domain_id": 7, "turn_id": str(uow.turn.turn_id)}
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual([], reasoner.compact_calls)
+        task_frame = uow.run.plan_snapshot_json["answer_context"]["task_frame"]
+        plan = uow.run.plan_snapshot_json["answer_context"]["investigation_plan"]
+        self.assertEqual("HISTORICAL_AND_FORECAST", task_frame["temporal_analysis_mode"])
+        self.assertEqual("WEEKLY", task_frame["subject_ref"]["schedule_type"])
+        self.assertIn("本期为周检，已勾选需要趋势窗口的检查项", task_frame["known_facts"])
+        self.assertIn(
+            "周趋势必须引用监控证据中的 first、latest、change_per_day 等服务端字段，禁止自行重算",
+            task_frame["success_criteria"],
+        )
+        questions = {item["tool_id"]: item["question"] for item in plan["actions"]}
+        self.assertIn("变化趋势", questions["db.storage.capacity"])
+        self.assertNotIn("变化趋势", questions["db.resource.session_utilization"])
+        self.assertEqual(
+            "HISTORICAL_SAMPLES",
+            next(
+                item["measurement_semantics"]
+                for item in plan["actions"]
+                if item["tool_id"] == "db.storage.capacity"
+            ),
+        )
+
     async def test_plain_readonly_question_uses_compact_planner_end_to_end(self):
         uow = _PlanningUow()
         question = "数据库用户 TCC 下有哪些表？"
@@ -1091,6 +1185,19 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_single_sql_profile_expands_complete_fixed_baseline(self):
         uow = _PlanningUow()
+        uow.target.capabilities_json["privileges"] = [
+            "V_$INSTANCE",
+            "V_$DATABASE",
+            "GV_$SQL",
+            "V_$SQL",
+            "V_$SQL_PLAN",
+            "V_$SQL_PLAN_STATISTICS_ALL",
+            "GV_$SQL_PLAN",
+            "DBA_TABLES",
+            "DBA_TAB_STATISTICS",
+            "GV_$SQL_PLAN_MONITOR",
+            "GV_$SQL_MONITOR",
+        ]
         question = "分析 SQL 6TJX7SU0Q5TTJ 的问题"
         uow.message.payload_json = {
             "text": question,
@@ -1146,6 +1253,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(
             "db.oracle.readonly_query",
             [item.tool_id for item in uow.tool_invocations],
+        )
+        self.assertNotIn(
+            "db.oracle.sql_monitor.report",
+            [item.tool_id for item in uow.tool_invocations],
+        )
+        self.assertEqual(
+            ["oracle.sql.healthcheck"],
+            snapshot["planning_route"]["selected_playbook_ids"],
         )
 
     async def test_controlled_action_uses_compact_precheck_and_change_chain(self):
@@ -1400,6 +1515,28 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(
             TurnPlanningService._compact_question(pasted_evidence)
+        )
+
+    def test_initial_user_evidence_keys_include_upload_extract(self):
+        empty = SimpleNamespace(
+            resolved_uploads=(),
+            source_run_evidence=None,
+        )
+        self.assertEqual(
+            ("turn-user-input:1", "turn-input-analysis:1"),
+            TurnPlanningService._initial_user_evidence_keys(empty),
+        )
+        with_upload = SimpleNamespace(
+            resolved_uploads=(SimpleNamespace(item_no=1),),
+            source_run_evidence=None,
+        )
+        self.assertEqual(
+            (
+                "turn-user-input:1",
+                "turn-input-analysis:1",
+                "turn-upload-extract:1",
+            ),
+            TurnPlanningService._initial_user_evidence_keys(with_upload),
         )
 
     def test_compact_plan_is_promoted_to_the_shared_investigation_contract(self):
@@ -2589,6 +2726,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         self.assertEqual(
             {
                 "oracle.sql.top_current",
+                "oracle.sql.healthcheck",
                 "oracle.instance.performance",
                 "oracle.instance.wait_summary",
                 "oracle.instance.archive",
@@ -2601,10 +2739,238 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "oracle.storage.temp_undo",
                 "oracle.instance.redo_alert",
                 "oracle.maintenance.health",
+                "mysql.replication.lag",
+                "mysql.session.idle",
+                "mysql.connection.utilization",
+                "mysql.instance.throughput",
+                "postgresql.replication.lag",
+                "postgresql.session.idle",
+                "postgresql.connection.utilization",
+                "postgresql.instance.throughput",
+                "postgresql.storage.dead_tuples",
+                "postgresql.maintenance.autovacuum",
             },
             {item.playbook_id for item in registry.manifests()},
         )
         self.assertEqual(64, len(registry.catalog_hash))
+
+    def test_sql_healthcheck_playbook_is_semantic_checklist_not_mos_script(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        manifest = registry.latest("oracle.sql.healthcheck")
+        ToolExecutionSnapshotBuilder(
+            playbook_registry=registry,
+            diagnostic_registry=diagnostics,
+        ).validate_catalog()
+
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.sql.cursor_details",
+                "db.sql.display_cursor",
+                "db.sql.object_statistics",
+                "db.sql.plan_monitor",
+                "db.oracle.sql_monitor.report",
+            ],
+            [step.tool_id for step in manifest.tool_dag],
+        )
+        self.assertEqual(
+            [
+                [],
+                ["identity"],
+                ["cursor_details"],
+                ["display_cursor"],
+                ["object_statistics"],
+                ["plan_monitor"],
+            ],
+            [list(step.depends_on) for step in manifest.tool_dag],
+        )
+        payload = str(manifest.model_dump(mode="json")).lower()
+        for banned in (
+            "sqlhc",
+            "sqlt",
+            "exacheck",
+            "orachk",
+            "sqltrpt",
+            "coe_xfr_sql_profile",
+        ):
+            self.assertNotIn(banned, payload)
+        self.assertNotIn(
+            "db.oracle.sql_monitor.report",
+            TurnPlanningService._profile_tool_ids(
+                CompactPlanningOutput.model_validate(
+                    {
+                        "planning_mode": "READ_ONLY_LOOKUP",
+                        "action_intent": "NONE",
+                        "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                        "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
+                        "problem_statement": "分析指定 SQL 的性能问题",
+                        "success_criteria": ["识别已验证的主要性能原因"],
+                        "public_reasoning_summary": "已识别明确 SQL_ID",
+                    }
+                )
+            ),
+        )
+
+    def test_single_sql_profile_suggests_healthcheck_without_sql_monitor_action(
+        self,
+    ) -> None:
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "READ_ONLY_LOOKUP",
+                "action_intent": "NONE",
+                "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                "subject_ref": {"sql_id": "6TJX7SU0Q5TTJ"},
+                "problem_statement": "分析指定 SQL 的性能问题",
+                "success_criteria": ["识别已验证的主要性能原因"],
+                "public_reasoning_summary": "已识别明确 SQL_ID",
+            }
+        )
+        output = TurnPlanningService._single_sql_investigation_output(
+            question="分析 SQL 6TJX7SU0Q5TTJ 的问题",
+            compact=compact,
+            target_context={"display_name": "订单生产库"},
+            sql_id="6tjx7su0q5ttj",
+        )
+
+        self.assertEqual(
+            ("oracle.sql.healthcheck",),
+            output.suggested_playbook_ids,
+        )
+        self.assertEqual(
+            [
+                "db.sql.cursor_details",
+                "db.sql.execution_plan",
+                "db.sql.object_statistics",
+                "db.sql.display_cursor",
+                "db.sql.plan_monitor",
+            ],
+            [item.tool_id for item in output.plan.actions],
+        )
+        self.assertNotIn(
+            "db.oracle.sql_monitor.report",
+            [item.tool_id for item in output.plan.actions],
+        )
+
+    def test_sql_healthcheck_playbook_freezes_confirmed_sql_id_into_dag(
+        self,
+    ) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        manifest = registry.latest("oracle.sql.healthcheck")
+        capabilities = _capabilities().model_copy(
+            update={
+                "target_capabilities": (
+                    "DB_READONLY",
+                    "dynamic_performance_views",
+                    "dba_catalog_views",
+                ),
+                "privileges": tuple(manifest.required_privileges),
+            }
+        )
+        plan = _playbook_plan(
+            registry,
+            (manifest,),
+            input_by_id={manifest.playbook_id: {"sql_id": "6tjx7su0q5ttj"}},
+        )
+        compiled = InvestigationTaskCompiler(registry).compile(plan)
+        snapshot = ToolExecutionSnapshotBuilder(
+            playbook_registry=registry,
+            diagnostic_registry=diagnostics,
+        ).build(
+            plan=plan,
+            compiled=compiled,
+            capabilities=capabilities,
+            database_execution={
+                "domain_id": 7,
+                "target_row_version": 1,
+                "db_type": "ORACLE",
+                "configured_version": "19c",
+                "connection_profile": {},
+                "diagnostic_credential_id": "credential-1",
+            },
+        )
+
+        invocation = snapshot["invocations"][
+            "playbook:1:oracle.sql.healthcheck"
+        ]
+        self.assertEqual(
+            [
+                "db.instance.identity",
+                "db.sql.cursor_details",
+                "db.sql.display_cursor",
+                "db.sql.object_statistics",
+                "db.sql.plan_monitor",
+                "db.oracle.sql_monitor.report",
+            ],
+            [item["tool_id"] for item in invocation["tools"]],
+        )
+        sql_tools = [
+            item
+            for item in invocation["tools"]
+            if item["tool_id"] != "db.instance.identity"
+        ]
+        self.assertTrue(
+            all(item["parameters"]["sql_id"] == "6tjx7su0q5ttj" for item in sql_tools)
+        )
+        self.assertNotIn("SQLHC", invocation["tools"][-1]["manual_sql"].upper())
+        self.assertIn(
+            "REPORT_SQL_MONITOR",
+            invocation["tools"][-1]["manual_sql"].upper(),
+        )
+
+    def test_sqlhc_upload_extract_does_not_replace_healthcheck_dag(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        manifest = registry.latest("oracle.sql.healthcheck")
+        plan = _playbook_plan(
+            registry,
+            (manifest,),
+            input_by_id={manifest.playbook_id: {"sql_id": "6tjx7su0q5ttj"}},
+        )
+        compiled = InvestigationTaskCompiler(registry).compile(
+            plan,
+            user_evidence_artifact_keys=(
+                "turn-user-input:1",
+                "turn-input-analysis:1",
+                "turn-upload-extract:1",
+            ),
+        )
+        assess = next(
+            task
+            for task in compiled.tasks
+            if task.task_key == "evidence:assess"
+        )
+        self.assertEqual(
+            (
+                "turn-user-input:1",
+                "turn-input-analysis:1",
+                "turn-upload-extract:1",
+                "playbook:1:oracle.sql.healthcheck",
+            ),
+            assess.input_artifact_keys,
+        )
+        self.assertTrue(
+            any(
+                task.task_key == "playbook:1:oracle.sql.healthcheck"
+                for task in compiled.tasks
+            )
+        )
 
     def test_top_sql_playbook_freezes_exact_tools_hashes_and_user_limit(self) -> None:
         diagnostics = DiagnosticRegistry.load()
@@ -3089,6 +3455,53 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             snapshot.available_source_capabilities,
         )
         self.assertFalse(snapshot.source_snapshots[0].reachable)
+
+    def test_mysql_readonly_snapshot_grants_schema_capabilities(self) -> None:
+        snapshot = build_capability_snapshot(
+            agent_id="agent-1",
+            agent_version=SimpleNamespace(agent_version_id="version-1"),
+            target=SimpleNamespace(
+                target_id="target-mysql",
+                db_type="MYSQL",
+                version_code="8.4.0",
+                status="ENABLED",
+                connectivity_status="CONNECTED",
+                readonly_connection_enabled=True,
+                controlled_change_enabled=False,
+                diagnostic_credential_id="credential-1",
+                execution_credential_id=None,
+                endpoint_json={"host": "db.internal", "port": 3306},
+                capabilities_json=None,
+            ),
+            sources=(),
+        )
+        self.assertIn("DB_READONLY", snapshot.target_capabilities)
+        self.assertIn("information_schema", snapshot.target_capabilities)
+        self.assertIn("sys_schema", snapshot.target_capabilities)
+        self.assertIn("replication_views", snapshot.target_capabilities)
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        discovered = {
+            item["tool_id"]
+            for item in ToolExecutionSnapshotBuilder(
+                playbook_registry=registry,
+                diagnostic_registry=diagnostics,
+            ).discover_tools(snapshot)
+        }
+        self.assertTrue(
+            {
+                "db.mysql.replication.lag",
+                "db.session.idle",
+                "db.mysql.connection.utilization",
+                "db.mysql.instance.throughput",
+            }
+            <= discovered
+        )
 
     def test_registry_hash_is_independent_of_registration_order(self) -> None:
         first = _manifest(

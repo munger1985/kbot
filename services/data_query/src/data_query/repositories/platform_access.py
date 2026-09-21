@@ -21,15 +21,6 @@ class PlatformResourceAccessRepository:
                 """
                 SELECT domain_id FROM (
                     SELECT a.domain_id
-                    FROM KBOT_ASST_AGENT a
-                    JOIN KBOT_ASST_AGENT_VERSION v ON v.agent_id = a.agent_id
-                    WHERE :consumer_app_id = 'assistant'
-                      AND a.agent_id = :agent_id
-                      AND v.agent_version_id = :agent_version_id
-                      AND a.current_version_id = v.agent_version_id
-                      AND a.domain_id = :domain_id AND a.status = 'ACTIVE'
-                    UNION ALL
-                    SELECT a.domain_id
                     FROM KBOT_KR_AGENT a
                     JOIN KBOT_KR_AGENT_VERSION v ON v.agent_id = a.agent_id
                     WHERE :consumer_app_id = 'knowledge_retrieval'
@@ -77,16 +68,6 @@ class PlatformResourceAccessRepository:
             text(
                 """
                 SELECT domain_id FROM (
-                    SELECT a.domain_id
-                    FROM KBOT_ASST_AGENT a
-                    JOIN KBOT_ASST_AGENT_VERSION v ON v.agent_id = a.agent_id
-                    WHERE :consumer_app_id = 'assistant'
-                      AND a.agent_id = :agent_id
-                      AND v.agent_version_id = :agent_version_id
-                      AND a.current_version_id = v.agent_version_id
-                      AND a.domain_id = :domain_id
-                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
-                    UNION ALL
                     SELECT a.domain_id
                     FROM KBOT_KR_AGENT a
                     JOIN KBOT_KR_AGENT_VERSION v ON v.agent_id = a.agent_id

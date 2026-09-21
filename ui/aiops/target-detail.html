@@ -57,6 +57,36 @@
           </form>
         </div>
       </section>
+
+      <section id="target-facts" class="ops-panel span-12" aria-labelledby="target-facts-title">
+        <div class="ops-panel-head">
+          <div>
+            <h2 id="target-facts-title">运维记忆</h2>
+            <p>确认后的 ASM 磁盘组、数据文件路径和表空间放置策略会固化到该 Target，撤回后不再参与容量判断。</p>
+          </div>
+        </div>
+        <div class="ops-panel-body">
+          <div id="target-facts-list" class="target-facts-list">正在加载…</div>
+          <form id="target-facts-form" class="ops-form target-facts-form">
+            <div class="ops-field">
+              <label for="target-fact-type">事实类型</label>
+              <select id="target-fact-type" name="fact_type" required>
+                <option value="ASM_DISKGROUP">ASM 磁盘组</option>
+                <option value="DATAFILE_PATH">数据文件目录</option>
+                <option value="TABLESPACE_PLACEMENT">表空间放置</option>
+              </select>
+            </div>
+            <div class="ops-field span-6">
+              <label for="target-fact-value">事实值</label>
+              <input id="target-fact-value" name="fact_value" maxlength="256" required placeholder="例如 DATA 或 /u01/oradata">
+            </div>
+            <div class="ops-filter-actions">
+              <button id="save-target-fact" class="primary" type="submit">确认写入</button>
+            </div>
+          </form>
+          <p id="target-facts-result" class="ops-connection-result" role="status"></p>
+        </div>
+      </section>
     </div>
   </main>
 

@@ -136,16 +136,16 @@ SERVICE_TABLES = {
     "knowledge_retrieval_app": {
         "KBOT_KR_AGENT",
         "KBOT_KR_AGENT_VERSION",
+        "KBOT_KR_RESEARCH_RUN",
+        "KBOT_KR_RESEARCH_EVENT",
+        "KBOT_KR_X_SOURCE",
     },
-    "assistant_app": {
-        "KBOT_ASST_AGENT",
-        "KBOT_ASST_AGENT_VERSION",
-        "KBOT_ASST_MODEL_BINDING",
-        "KBOT_ASST_RUN",
-        "KBOT_ASST_RUN_EVENT",
-        "KBOT_ASST_X_SOURCE",
-        "KBOT_ASST_PROMPT_REVISION",
-        "KBOT_ASST_MEDIA_ASSET",
+    "media_studio_app": {
+        "KBOT_MEDIA_MODEL_BINDING",
+        "KBOT_MEDIA_RUN",
+        "KBOT_MEDIA_RUN_EVENT",
+        "KBOT_MEDIA_PROMPT_REVISION",
+        "KBOT_MEDIA_ASSET",
     },
     "km_asset_app": {
         "KBOT_KM_SOURCE",
@@ -184,7 +184,7 @@ SERVICE_VIEWS = {
         "KBOT_V_OPS_SCHEMA_VERSION",
     },
     "knowledge_retrieval_app": set(),
-    "assistant_app": set(),
+    "media_studio_app": set(),
     "km_asset_app": {
         "KBOT_V_KM_ASSET_CURRENT",
         "KBOT_V_KM_ASSET_SEARCHABLE",
@@ -553,7 +553,8 @@ def main() -> int:
 
     for manifest_service, display_name in (
         ("platform_core", "Platform Core"),
-        ("assistant_app", "Assistant App"),
+        ("knowledge_retrieval_app", "Knowledge Retrieval App"),
+        ("media_studio_app", "Media Studio App"),
         ("data_query", "Data Query"),
         ("aiops_agent", "AIOps"),
         ("km_asset_app", "KM Asset App"),

@@ -24,6 +24,8 @@ from platform_core.contracts.aiops import (
     ConversationUploadReceipt,
     ConversationSummary,
     InputContent,
+    TargetFactConfirmCommand,
+    TargetFactView,
     TurnReceipt,
     TurnSummary,
     TurnView,
@@ -715,6 +717,7 @@ async def download_workload_report(
         "db.oracle.awr.report",
         "db.oracle.awr.diff_report",
         "db.oracle.ash.report",
+        "db.oracle.sql_monitor.report",
     }:
         raise HTTPException(404, {"code": "AIOPS_WORKLOAD_REPORT_NOT_FOUND"})
     await _conversation_with_access(request, conversation_id)
@@ -754,6 +757,26 @@ async def cancel_conversation_turn(
         turn_id,
         auth_context=request.state.auth_context,
     )
+
+
+@router.post(
+    "/conversations/{conversation_id}/turns/{turn_id}/target-facts:confirm",
+    response_model=TargetFactView,
+)
+async def confirm_conversation_target_fact(
+    conversation_id: UUID,
+    turn_id: UUID,
+    body: TargetFactConfirmCommand,
+    request: Request,
+):
+    await _conversation_with_access(request, conversation_id)
+    payload = await _client(request).confirm_conversation_target_fact(
+        conversation_id,
+        turn_id,
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return TargetFactView.model_validate(payload)
 
 
 @router.get("/conversations/{conversation_id}/turns/{turn_id}/events")

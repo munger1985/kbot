@@ -2,7 +2,6 @@
 
 from decimal import Decimal
 import unittest
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from model_serving.common.model_registry import (
@@ -101,10 +100,7 @@ def _model(*, status=1, category=1, model_params=None):
         created_by="tester",
         updated_by="tester",
         row_version=1,
-        supports_x_search=0,
         supports_image_generation=0,
-        supports_responses_streaming=0,
-        capability_verified_at=None,
     )
 
 
@@ -260,10 +256,7 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_configuration_change_revokes_capability_verification(self):
         row = _model()
-        row.supports_x_search = 1
         row.supports_image_generation = 1
-        row.supports_responses_streaming = 1
-        row.capability_verified_at = datetime.now(timezone.utc)
         repository = _Repository({row.model_id: row})
         service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
 
@@ -274,38 +267,48 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
             actor_id="operator",
         )
 
-        self.assertFalse(result["supports_x_search"])
         self.assertFalse(result["supports_image_generation"])
-        self.assertFalse(result["supports_responses_streaming"])
-        self.assertIsNone(result["capability_verified_at"])
 
-    async def test_capability_gate_requires_active_verified_model(self):
+    async def test_image_generation_gate_requires_active_verified_model(self):
         row = _model()
         repository = _Repository({row.model_id: row})
         service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
 
         with self.assertRaisesRegex(ModelRegistryConflict, "尚未通过"):
             await service.require_verified_capability(
-                row.model_id, capability="x_search",
+                row.model_id, capability="image_generation",
             )
 
         verified = await service.record_capability_verification(
             row.model_id,
-            supports_x_search=True,
-            supports_image_generation=False,
-            supports_responses_streaming=True,
-            verified_at=datetime.now(timezone.utc),
+            supports_image_generation=True,
             actor_id="canary",
         )
-        self.assertTrue(verified["supports_x_search"])
-        self.assertTrue(verified["supports_responses_streaming"])
-        self.assertIsNotNone(verified["capability_verified_at"])
+        self.assertTrue(verified["supports_image_generation"])
         self.assertEqual(
             str(row.model_id),
             (await service.require_verified_capability(
-                row.model_id, capability="x_search",
+                row.model_id, capability="image_generation",
             ))["model_id"],
         )
+
+    async def test_x_search_gate_uses_active_grok_identity(self):
+        row = _model()
+        row.provider_model_name = "xai.grok-4.6"
+        repository = _Repository({row.model_id: row})
+        service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
+
+        result = await service.require_grok_model(row.model_id)
+        self.assertEqual(str(row.model_id), result["model_id"])
+
+        row.provider_model_name = "xai.command-r-plus"
+        with self.assertRaisesRegex(ModelRegistryConflict, "Grok"):
+            await service.require_grok_model(row.model_id)
+
+        row.provider_model_name = "grok-4"
+        row.status = 0
+        with self.assertRaisesRegex(ModelRegistryConflict, "未启用"):
+            await service.require_grok_model(row.model_id)
 
 
 async def _empty():
@@ -313,6 +316,14 @@ async def _empty():
 
 
 class ProviderCatalogS4Test(unittest.TestCase):
+    def test_local_deepseek_is_openai_compatible_llm_option(self):
+        options = list_provider_options(category=1)
+        providers = {item.provider for item in options}
+        self.assertIn("local_deepseek", providers)
+        local = next(item for item in options if item.provider == "local_deepseek")
+        self.assertEqual(("api_endpoint", "api_key"), local.required_fields)
+        self.assertTrue(local.supports_tool_calling)
+
     def test_provider_options_do_not_contain_secret_values(self):
         options = list_provider_options(category=1)
         self.assertTrue(options)

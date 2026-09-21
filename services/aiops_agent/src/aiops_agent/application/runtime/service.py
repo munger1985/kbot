@@ -25,6 +25,13 @@ from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
 )
+from aiops_agent.application.runtime.fleet import (
+    FleetRunSnapshot,
+    FleetSituationSnapshot,
+    FleetTargetSnapshot,
+    parse_finding_payload,
+    project_fleet_dashboard,
+)
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
@@ -58,6 +65,7 @@ from aiops_agent.entities import (
     ReportSourceEntity,
 )
 from aiops_agent.contracts.evidence import ObservationSet
+from aiops_agent.domain.evidence import extract_metric_trend_rows
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     is_turn_evidence_outcome,
@@ -138,6 +146,7 @@ from platform_core.contracts.aiops.internal import (
 )
 from platform_core.contracts.aiops.public import (
     DiagnosticQueryApprovalDecision,
+    FleetDashboard,
     HitlResponse,
     HitlResult,
     InspectionFirePage,
@@ -3171,16 +3180,16 @@ class AIOpsRuntimeService:
         row_count: int,
         truncated: bool,
     ) -> str:
-        """把已完成检查写成明确结论，零行正常结果也不能省略。"""
+        """把已完成检查写成明确结论；有行或零行都不能直接判为正常。"""
         suffix = "（结果已截断）" if truncated else ""
         if row_count <= 0:
             return (
-                f"{title}：检查已完成，本期没有需要报告的记录，结果正常。"
+                f"{title}：检查已完成，本期没有需要报告的记录。"
                 f"{suffix}"
             )
         return (
             f"{title}：检查已完成，采集 {row_count} 条可验证观测，"
-            f"结果正常。{suffix}"
+            f"需按 Finding 评估。{suffix}"
         )
 
     @staticmethod
@@ -3300,11 +3309,28 @@ class AIOpsRuntimeService:
                 }
             )
 
+        if str(inspection.get("schedule_type") or "") == "WEEKLY":
+            for trend in extract_metric_trend_rows(source.evidence):
+                facts.append(
+                    {
+                        "kind": "inspection_trend",
+                        "title": f"指标 {trend['metric_code']} 趋势",
+                        "summary": (
+                            f"{trend['metric_code']}[{trend['dimensions']}]："
+                            f"first={trend['first']}，latest={trend['latest']}，"
+                            f"change_per_day={trend['change_per_day']}"
+                        ),
+                        "check_status": "OBSERVED",
+                        "tool_id": "metric.query_range",
+                        **trend,
+                    }
+                )
+
         if not steps:
             facts.append(
                 {
                     "kind": "inspection_coverage",
-                    "summary": "本期巡检未记录冻结的模板检查项。",
+                    "summary": "本期巡检未记录冻结的勾选检查项。",
                     "check_status": "MISSING",
                 }
             )
@@ -3313,12 +3339,12 @@ class AIOpsRuntimeService:
                     "source_id": "inspection.report",
                     "step_id": "template",
                     "code": "INSPECTION_TEMPLATE_STEPS_MISSING",
-                    "detail": "巡检 Run 未保存冻结的模板检查项",
+                    "detail": "巡检 Run 未保存冻结的勾选检查项",
                     "retryable": False,
                 }
             )
         coverage_summary = (
-            f"本期按冻结巡检模板完成 {covered_count}/{len(steps)} 项检查"
+            f"本期按勾选检查项完成 {covered_count}/{len(steps)} 项检查"
             + (
                 "，所有计划检查均已形成可追溯观测。"
                 if steps and covered_count == len(steps) and not gaps
@@ -3410,14 +3436,14 @@ class AIOpsRuntimeService:
                         recommendations.append(
                             f"表空间 {tablespace} 按当前历史增速低置信度预测未来"
                             f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
-                            "建议立即核对当前容量和自动扩展上限，并提前准备扩容。"
+                            "建议立即核对当前容量和自动扩展上限，并准备 AUTOEXTEND 或 RESIZE。"
                             f"{confidence_suffix}"
                         )
                     else:
                         recommendations.append(
                             f"表空间 {tablespace} 按当前历史增速预测未来"
                             f"{horizon_days:g}天使用率约为{projected_percent:.2f}%，"
-                            "建议立即核对自动扩展上限，并在预计耗尽日前完成扩容。"
+                            "建议立即核对自动扩展上限，并在预计耗尽日前完成 AUTOEXTEND 或 RESIZE。"
                         )
                 elif projected_percent >= 85 or (
                     remaining is not None and remaining <= horizon_days * 2
@@ -3425,20 +3451,20 @@ class AIOpsRuntimeService:
                     recommendations.append(
                         f"表空间 {tablespace} {confidence_prefix}未来{horizon_days:g}天"
                         "使用率约为"
-                        f"{projected_percent:.2f}%，建议本巡检周期内制定扩容计划并"
-                        f"提高复核频率。{confidence_suffix}"
+                        f"{projected_percent:.2f}%，建议本巡检周期内制定 AUTOEXTEND 或"
+                        f" RESIZE 计划并提高复核频率。{confidence_suffix}"
                     )
                 else:
                     recommendations.append(
                         f"表空间 {tablespace} {confidence_prefix}未来{horizon_days:g}天"
                         "使用率约为"
-                        f"{projected_percent:.2f}%，当前无需立即扩容，建议继续按历史"
+                        f"{projected_percent:.2f}%，当前只需观察，建议继续按历史"
                         f"增速监控并在增长模式变化时重新评估。{confidence_suffix}"
                     )
         if not forecast_found:
             recommendations.append(
                 "本次巡检未形成可靠的表空间未来容量预测，不能只依据当前使用率"
-                "判断是否扩容；应补齐历史监控采样后重新评估。"
+                "判断容量方案；应补齐历史监控采样后重新评估。"
             )
         return tuple(dict.fromkeys(recommendations))
 
@@ -5800,6 +5826,57 @@ class AIOpsRuntimeService:
                 return True
             return False
 
+    async def get_fleet_dashboard(
+        self, *, scope: ConfigurationScope
+    ) -> FleetDashboard:
+        """投影域内全部 Target 的健康总览，不过滤当前 Agent。"""
+        async with self._uow_factory() as uow:
+            targets = await uow.targets.list_scoped(domain_id=scope.domain_id)
+            situations = await uow.situations.list_open_for_domain(
+                domain_id=scope.domain_id
+            )
+            runs = await uow.runs.list_latest_completed_by_target(
+                domain_id=scope.domain_id
+            )
+            payloads = await uow.turns.list_finding_blocks_for_runs(
+                ops_run_ids=tuple(item.ops_run_id for item in runs)
+            )
+            return project_fleet_dashboard(
+                targets=tuple(
+                    FleetTargetSnapshot(
+                        target_id=item.target_id,
+                        display_name=item.display_name,
+                        db_type=item.db_type,
+                        environment=item.environment,
+                        status=item.status,
+                        connectivity_status=item.connectivity_status,
+                        observed_status=item.observed_status,
+                        readonly_connection_enabled=bool(
+                            item.readonly_connection_enabled
+                        ),
+                    )
+                    for item in targets
+                ),
+                situations=tuple(
+                    FleetSituationSnapshot(
+                        target_id=item.target_id,
+                        status=item.status,
+                    )
+                    for item in situations
+                ),
+                runs=tuple(
+                    FleetRunSnapshot(
+                        target_id=item.target_id,
+                        ops_run_id=item.ops_run_id,
+                        completed_at=item.completed_at,
+                        findings=parse_finding_payload(
+                            payloads.get(item.ops_run_id)
+                        ),
+                    )
+                    for item in runs
+                ),
+            )
+
     async def list_runs(
         self, *, scope: ConfigurationScope, target_id: UUID | None,
         status: str | None, agent_ids: tuple[UUID, ...],
@@ -6837,7 +6914,17 @@ class AIOpsRuntimeService:
                 )
                 if template is None:
                     raise state_conflict("历史报告缺少可重现的模板快照")
-            return report_presentation(payload=payload, template=template)
+            findings = ()
+            turns = getattr(uow, "turns", None)
+            ops_run_id = getattr(report, "ops_run_id", None)
+            if turns is not None and ops_run_id is not None:
+                payloads = await turns.list_finding_blocks_for_runs(
+                    ops_run_ids=(ops_run_id,)
+                )
+                findings = parse_finding_payload(payloads.get(ops_run_id))
+            return report_presentation(
+                payload=payload, template=template, findings=findings,
+            )
 
     async def get_report_source_agent_id(
         self, *, report_id: UUID, domain_id: int,

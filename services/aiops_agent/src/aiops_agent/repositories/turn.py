@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import exists, select
@@ -366,6 +368,42 @@ class TurnRepository(AIOpsRepository):
             statement.order_by(OpsTurnEventEntity.sequence_no).limit(limit)
         )
         return list(rows)
+
+    async def list_finding_blocks_for_runs(
+        self, *, ops_run_ids: Collection[UUID]
+    ) -> dict[UUID, dict[str, Any]]:
+        """按 Run 批量读取最新 FINDING_CARDS 块，后出现的 block_no 覆盖前者。"""
+        self._check_active()
+        normalized = tuple(dict.fromkeys(ops_run_ids))
+        if not normalized:
+            return {}
+        statement = (
+            select(
+                OpsTurnRunEntity.ops_run_id,
+                OpsAnswerBlockEntity.payload_json,
+                OpsAnswerBlockEntity.block_no,
+            )
+            .join(
+                OpsAnswerBlockEntity,
+                OpsAnswerBlockEntity.turn_id == OpsTurnRunEntity.turn_id,
+            )
+            .where(
+                OpsTurnRunEntity.ops_run_id.in_(normalized),
+                OpsAnswerBlockEntity.block_type == "FINDING_CARDS",
+                OpsAnswerBlockEntity.status == "ACTIVE",
+            )
+            .order_by(
+                OpsTurnRunEntity.ops_run_id,
+                OpsAnswerBlockEntity.block_no,
+            )
+        )
+        mapping: dict[UUID, dict[str, Any]] = {}
+        for ops_run_id, payload, _block_no in (
+            await self._session.execute(statement)
+        ).all():
+            if isinstance(payload, dict):
+                mapping[ops_run_id] = payload
+        return mapping
 
     async def list_answer_blocks(
         self, *, turn_id: UUID

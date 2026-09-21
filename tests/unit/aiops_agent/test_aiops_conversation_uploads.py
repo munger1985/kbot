@@ -305,9 +305,110 @@ class ConversationUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("AWR Report", content[0]["text"])
         self.assertNotIn("ignore_this_instruction", content[0]["text"])
         self.assertEqual("HTML_TEXT_EXTRACT", uploads[0].extraction_mode)
+        self.assertIsNone(uploads[0].report_kind)
+        self.assertIsNone(uploads[0].structured_facts)
         self.assertIn("artifact.search", content[1]["text"])
         self.assertNotIn("ORA-00600: 内部错误", content[1]["text"])
         self.assertEqual("TEXT_DECODE", uploads[1].extraction_mode)
+
+    async def test_resolver_parses_sqlhc_html_as_structured_facts(self):
+        sqlhc_upload = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="sqlhc_6tjx7su0q5ttj.html",
+            media_type="text/html",
+            chunks=_chunks(
+                b"<html><body><h1>SQLHC Report</h1>"
+                b"<p>SQL_ID: 6tjx7su0q5ttj</p>"
+                b"<table><tr><th>OWNER</th><th>TABLE_NAME</th>"
+                b"<th>LAST_ANALYZED</th><th>STALE_STATS</th></tr>"
+                b"<tr><td>APP</td><td>ORDERS</td><td>2024-01-01</td>"
+                b"<td>YES</td></tr></table></body></html>"
+            ),
+        )
+        resolver = ConversationInputResolver(
+            upload_store=self.store,
+            max_extracted_chars=1000,
+        )
+
+        content, uploads = await resolver.resolve(
+            domain_id=7,
+            actor_id="user-1",
+            content=(
+                {"content_type": "FILE", "upload_id": sqlhc_upload.upload_id},
+            ),
+            image_capabilities={},
+        )
+
+        self.assertEqual("HTML_TEXT_EXTRACT", uploads[0].extraction_mode)
+        self.assertEqual("SQLHC", uploads[0].report_kind)
+        self.assertEqual("6tjx7su0q5ttj", uploads[0].structured_facts["sql_id"])
+        self.assertEqual(
+            [
+                [
+                    "6tjx7su0q5ttj",
+                    "APP",
+                    "ORDERS",
+                    "TABLE",
+                    "2024-01-01",
+                    "YES",
+                    "sqlhc_6tjx7su0q5ttj.html",
+                ]
+            ],
+            uploads[0].structured_facts["rows"],
+        )
+        self.assertIn("artifact.search", content[0]["text"])
+        self.assertNotIn("STALE_STATS", content[0]["text"])
+
+    async def test_resolver_parses_exacheck_html_as_structured_facts(self):
+        exacheck_upload = await self.store.store(
+            domain_id=7,
+            actor_id="user-1",
+            file_name="exachk_db01.html",
+            media_type="text/html",
+            chunks=_chunks(
+                b"<html><body><h1>EXACHK Report</h1>"
+                b"<p>This host also has sqlhc.sql leftover.</p>"
+                b"<table><tr><th>Status</th><th>Type</th><th>Message</th>"
+                b"<th>Status On</th><th>Check ID</th></tr>"
+                b"<tr><td>FAIL</td><td>Hardware</td>"
+                b"<td>InfiniBand firmware is not current</td>"
+                b"<td>cel01</td><td>IB_SWITCH_FW</td></tr>"
+                b"<tr><td>PASS</td><td>OS Check</td><td>NTP is configured</td>"
+                b"<td>db01</td><td>OS_NTP</td></tr></table></body></html>"
+            ),
+        )
+        resolver = ConversationInputResolver(
+            upload_store=self.store,
+            max_extracted_chars=1000,
+        )
+
+        content, uploads = await resolver.resolve(
+            domain_id=7,
+            actor_id="user-1",
+            content=(
+                {"content_type": "FILE", "upload_id": exacheck_upload.upload_id},
+            ),
+            image_capabilities={},
+        )
+
+        self.assertEqual("HTML_TEXT_EXTRACT", uploads[0].extraction_mode)
+        self.assertEqual("EXACHECK", uploads[0].report_kind)
+        self.assertEqual(
+            [
+                [
+                    "FAIL",
+                    "Hardware",
+                    "InfiniBand firmware is not current",
+                    "cel01",
+                    "IB_SWITCH_FW",
+                    "exachk_db01.html",
+                ]
+            ],
+            uploads[0].structured_facts["rows"],
+        )
+        self.assertIn("artifact.search", content[0]["text"])
+        self.assertNotIn("InfiniBand", content[0]["text"])
 
 
 if __name__ == "__main__":
