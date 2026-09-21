@@ -373,8 +373,8 @@ class InspectionConfigurationMixin:
         idempotency_key: str,
     ) -> InspectionPlanDetail:
         transitions = {
-            "activate": ({"PAUSED"}, "ACTIVE"),
-            "pause": ({"ACTIVE", "DISABLED"}, "PAUSED"),
+            "activate": ({"PAUSED", "DISABLED"}, "ACTIVE"),
+            "pause": ({"ACTIVE"}, "PAUSED"),
             "disable": ({"ACTIVE", "PAUSED"}, "DISABLED"),
         }
         if command not in transitions:

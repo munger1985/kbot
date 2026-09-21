@@ -328,6 +328,71 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
+    def _plan(self, *, status: str) -> SimpleNamespace:
+        now = datetime.now(UTC)
+        return SimpleNamespace(
+            inspection_plan_id=uuid7(),
+            domain_id=100,
+            display_name="每日巡检",
+            agent_id=uuid7(),
+            schedule_type="DAILY",
+            cron_expression="0 13 * * *",
+            timezone="Asia/Shanghai",
+            template_id="database_daily",
+            template_version="1.0.0",
+            selected_checks_json=list(default_selected_check_ids("DAILY")),
+            timeout_seconds=1800,
+            overlap_policy="SKIP",
+            misfire_policy="SKIP",
+            schedule_resolver_version="1.0.0",
+            status=status,
+            next_run_at=None,
+            row_version=3,
+            created_at=now,
+            updated_at=now,
+            created_by="operator-1",
+            updated_by="operator-1",
+        )
+
+    def _command_service(self, entity: SimpleNamespace):
+        service = object.__new__(AIOpsConfigurationService)
+        service._template_registry = InspectionTemplateRegistry(
+            (
+                InspectionTemplateRegistration(
+                    template_id="database_daily",
+                    template_version="1.0.0",
+                    schedule_resolver_version="1.0.0",
+                ),
+            )
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                get_plan_scoped=AsyncMock(return_value=entity),
+            ),
+            agents=SimpleNamespace(
+                get_active=AsyncMock(
+                    return_value=SimpleNamespace(target_ids=(uuid7(),))
+                ),
+            ),
+            outbox=SimpleNamespace(add=AsyncMock()),
+            session=SimpleNamespace(flush=AsyncMock()),
+        )
+
+        async def execute_idempotently(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = execute_idempotently
+        return service, uow
+
+    def _scope(self) -> ConfigurationScope:
+        return ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:aiops",
+            actor_id="operator-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+
     async def test_create_plan_selects_agent_and_is_active_immediately(self) -> None:
         service = object.__new__(InspectionConfigurationMixin)
         service._template_registry = InspectionTemplateRegistry(
@@ -399,6 +464,39 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             result.selected_check_ids,
         )
         self.assertEqual(2, result.agent_target_count)
+
+    async def test_activate_restores_disabled_plan(self) -> None:
+        entity = self._plan(status="DISABLED")
+        service, uow = self._command_service(entity)
+
+        result = await service.command_inspection_plan(
+            scope=self._scope(),
+            plan_id=entity.inspection_plan_id,
+            command="activate",
+            expected_version=3,
+            idempotency_key="inspection-activate-1",
+        )
+
+        self.assertEqual("ACTIVE", result.status)
+        self.assertEqual("ACTIVE", entity.status)
+        self.assertIsNotNone(entity.next_run_at)
+        uow.agents.get_active.assert_awaited_once()
+        uow.outbox.add.assert_awaited_once()
+
+    async def test_pause_rejects_disabled_plan(self) -> None:
+        entity = self._plan(status="DISABLED")
+        service, _ = self._command_service(entity)
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.command_inspection_plan(
+                scope=self._scope(),
+                plan_id=entity.inspection_plan_id,
+                command="pause",
+                expected_version=3,
+                idempotency_key="inspection-pause-1",
+            )
+
+        self.assertEqual("OPS_STATE_CONFLICT", raised.exception.code)
 
 
 class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):

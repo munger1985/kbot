@@ -37,7 +37,9 @@
       return `<div class="ops-actions">${detailButton}${checkButton}${buttons.join("")}</div>`;
     }
     if (type === "inspection-actions") {
-      const action = item.status === "ACTIVE" ? "pause" : item.status === "PAUSED" ? "activate" : "";
+      const action = item.status === "ACTIVE"
+        ? "pause"
+        : ["PAUSED", "DISABLED"].includes(item.status) ? "activate" : "";
       if (!action) return "—";
       const label = action === "activate" ? "启用" : "暂停";
       const primary = action === "activate" ? ' class="primary"' : "";
