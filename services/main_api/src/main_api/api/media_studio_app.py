@@ -15,6 +15,7 @@ from platform_core.contracts import PUBLIC_API_V1
 
 router = APIRouter(prefix=f"{PUBLIC_API_V1}/apps/media-studio", tags=["Media Studio App"])
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "REJECTED"})
+MEDIA_STUDIO_PORTAL_DOMAIN_NAME = "media_studio_portal"
 
 
 class _Payload(BaseModel):
@@ -70,8 +71,14 @@ def _run_response(view: dict[str, Any]) -> JSONResponse:
 
 @router.post("/auth/login")
 async def login(payload: MediaStudioLoginPayload, request: Request):
+    """使用平台用户凭据进入固定的多媒体创作 Portal Domain。"""
     service = cast(UserAuthService, request.app.state.user_auth_service)
-    return await service.login(app_id="media_studio", user_id=payload.user_id, password=payload.password)
+    return await service.login_for_domain_name(
+        user_id=payload.user_id.strip(),
+        password=payload.password,
+        domain_name=MEDIA_STUDIO_PORTAL_DOMAIN_NAME,
+        app_id="media_studio",
+    )
 
 
 @router.post("/auth/password")

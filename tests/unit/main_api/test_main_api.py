@@ -1294,6 +1294,48 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("PLATFORM", response.json()["entry_kind"])
         self.assertIsNone(response.json()["domain_id"])
 
+    def test_media_studio_login_uses_fixed_portal_domain(self) -> None:
+        class _UserAuthService:
+            def __init__(self):
+                self.login_values = None
+
+            async def login_for_domain_name(self, **values):
+                self.login_values = values
+                return {
+                    "access_token": "signed-media-studio-token",
+                    "token_type": "Bearer",
+                    "user_id": values["user_id"],
+                    "app_id": values["app_id"],
+                    "domain_name": values["domain_name"],
+                    "must_change_password": True,
+                }
+
+        service = _UserAuthService()
+        self.app.state.user_auth_service = service
+
+        response = self.client.post(
+            "/api/v1/apps/media-studio/auth/login",
+            json={
+                "user_id": "  mediaadmin  ",
+                "password": "MediaAdmin@2026!",
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(
+            {
+                "user_id": "mediaadmin",
+                "password": "MediaAdmin@2026!",
+                "domain_name": "media_studio_portal",
+                "app_id": "media_studio",
+            },
+            service.login_values,
+        )
+        self.assertEqual("media_studio", response.json()["app_id"])
+        self.assertEqual(
+            "media_studio_portal", response.json()["domain_name"]
+        )
+
     def test_uninitialized_authentication_returns_service_unavailable(self) -> None:
         from main_api.application import UserAuthenticationError
 
