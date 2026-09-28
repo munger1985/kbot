@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from aiops_agent.application.implementation.artifacts import GeneratedRunbookArtifact
@@ -34,24 +35,6 @@ _SPEC = ProfileSpec(
             (
                 "configuration", "scripts", "maintenance",
                 "schedule", "monitoring", "capacity",
-            ),
-        ),
-        (
-            "ORACLE_HOME",
-            "需要由主机采集确认 Oracle Home。",
-            RunbookFactSource.HOST_COLLECTOR,
-            (
-                "configuration", "scripts", "maintenance",
-                "schedule", "monitoring", "capacity",
-            ),
-        ),
-        (
-            "BACKUP_DEST",
-            "需要确认备份目录及其容量、挂载和权限。",
-            RunbookFactSource.HOST_COLLECTOR,
-            (
-                "configuration", "capacity", "scripts",
-                "maintenance", "schedule", "monitoring",
             ),
         ),
     ),
@@ -100,6 +83,63 @@ def _artifact(
     )
 
 
+def _safe_filesystem_path(candidate: str) -> str:
+    """只接受可直接写入 Shell/RMAN 的绝对文件系统路径。"""
+    normalized = candidate.strip().rstrip("/")
+    if not normalized.startswith("/"):
+        return ""
+    if not re.fullmatch(r"/[A-Za-z0-9_+.,%/@#=()/-]+", normalized):
+        return ""
+    if ".." in normalized.split("/"):
+        return ""
+    return normalized
+
+
+def _rman_configured_backup_dest(configuration: object) -> str:
+    """从 V$RMAN_CONFIGURATION 汇总文本提取磁盘 Channel FORMAT 目录。"""
+    source = str(configuration or "")
+    patterns = (
+        r"(?:^|;\s*)CHANNEL\s*=\s*DEVICE TYPE DISK FORMAT(?:\s+TO)?\s*(['\"])(.+?)\1",
+        r"CONFIGURE CHANNEL DEVICE TYPE DISK FORMAT(?:\s+TO)?\s*(['\"])(.+?)\1",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, source, re.IGNORECASE)
+        if match is None:
+            continue
+        format_path = _safe_filesystem_path(match.group(2))
+        if not format_path:
+            continue
+        return format_path.rsplit("/", 1)[0]
+    return ""
+
+
+def _resolve_backup_dest(
+    context: dict[str, Any], facts: dict[str, Any]
+) -> tuple[str, str, bool]:
+    """按显式配置、现有 RMAN 配置、FRA、标准目录顺序解析备份路径。"""
+    explicit = _safe_filesystem_path(value(context, facts, "BACKUP_DEST"))
+    if explicit:
+        return explicit.rstrip("/"), "EXPLICIT_CONFIGURATION", False
+    configured = _rman_configured_backup_dest(facts.get("rman_configuration"))
+    if configured:
+        return configured, "RMAN_CONFIGURATION", False
+    fra = _safe_filesystem_path(str(facts.get("db_recovery_file_dest") or ""))
+    if fra:
+        return fra, "DB_RECOVERY_FILE_DEST", False
+    database_name = (
+        value(context, facts, "DB_UNIQUE_NAME")
+        or value(context, facts, "DATABASE_NAME")
+        or value(context, facts, "INSTANCE_NAME")
+        or "oracle"
+    )
+    path_name = re.sub(r"[^A-Za-z0-9_.-]", "_", database_name).lower()
+    return (
+        f"/u01/app/oracle/backup/{path_name}",
+        "STANDARD_PATH_FROM_DATABASE_NAME",
+        True,
+    )
+
+
 def compile_rman_backup(
     evidence: tuple[TurnEvidenceFact, ...], context: dict[str, Any]
 ):
@@ -107,8 +147,9 @@ def compile_rman_backup(
     facts, _ = first_row(evidence, "db.backup.rman_configuration")
     merged = {**identity, **facts}
     sid = value(context, merged, "INSTANCE_NAME") or value(context, merged, "instance_name")
-    oracle_home = value(context, merged, "ORACLE_HOME")
-    backup_dest = value(context, merged, "BACKUP_DEST")
+    backup_dest, backup_dest_source, backup_dest_review = _resolve_backup_dest(
+        context, merged
+    )
     textfile_dir = (
         value(context, merged, "PROMETHEUS_TEXTFILE_DIR")
         or "/var/lib/node_exporter/textfile_collector"
@@ -127,6 +168,15 @@ def compile_rman_backup(
         "FAR SYNC",
     }:
         database_role = "ANY"
+    if backup_dest_review:
+        backup_dest_note = (
+            "当前备份路径由数据库名称按标准目录派生；执行前可按实际独立备份挂载点调整路径，"
+            "调整后应重新生成文档，确保 RMAN 配置、脚本、调度和监控使用同一目录。"
+        )
+    else:
+        backup_dest_note = (
+            f"当前备份路径来自 {backup_dest_source}；执行前仍应核对挂载、容量和 oracle 用户写权限。"
+        )
     stage = "/var/tmp/kbot-runbooks/oracle-rman-backup"
     commands: dict[str, tuple] = {
         "assessment": (
@@ -192,6 +242,18 @@ def compile_rman_backup(
                 risk=RunbookRiskLevel.MEDIUM,
                 notes=("数据库必须已配置可用的 OMF 目标；否则本命令会停止并保留原状态。",),
             ),
+            command(
+                "rman.prerequisites.backup.destination",
+                "创建并核验备份目录",
+                f"install -d -o oracle -g oinstall -m 0750 {backup_dest}\n"
+                f"install -d -o oracle -g oinstall -m 0750 {backup_dest}/backupset {backup_dest}/level0 {backup_dest}/level1 {backup_dest}/arch {backup_dest}/autobackup {backup_dest}/log {backup_dest}/status\n"
+                f"df -P {backup_dest}\nfindmnt -T {backup_dest}\n"
+                f"test -w {backup_dest}",
+                executor=RunbookExecutor.BASH,
+                run_as="root",
+                risk=RunbookRiskLevel.MEDIUM,
+                notes=(backup_dest_note,),
+            ),
         ),
         "validation": (command(
             "rman.validation.restore",
@@ -223,22 +285,31 @@ def compile_rman_backup(
             expected=("LOG_MODE 返回 ARCHIVELOG。",),
         ),)
     artifacts: list[GeneratedRunbookArtifact] = []
-    if sid and oracle_home and backup_dest:
+    if sid and backup_dest:
         env = (
-            f"ORACLE_SID={sid}\nORACLE_HOME={oracle_home}\n"
-            f"BACKUP_DEST={backup_dest}\nLOG_DEST={backup_dest}/log\n"
+            f"ORACLE_SID={sid}\nBACKUP_DEST={backup_dest}\nLOG_DEST={backup_dest}/log\n"
             f"STATUS_DEST={backup_dest}/status\n"
             f"EXPECTED_DATABASE_ROLE='{database_role}'\n"
             + (f"PROMETHEUS_TEXTFILE_DIR={textfile_dir}\n" if textfile_dir else "")
         )
-        configure = (
-            "CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;\n"
-            "CONFIGURE CONTROLFILE AUTOBACKUP ON;\n"
-            f"CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '{backup_dest}/autobackup/%F';\n"
-            "CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO COMPRESSED BACKUPSET;\n"
-            "CONFIGURE BACKUP OPTIMIZATION ON;\n"
-            "CONFIGURE ARCHIVELOG DELETION POLICY TO BACKED UP 1 TIMES TO DISK;\n"
+        channel_configuration = (
+            ""
+            if backup_dest_source == "RMAN_CONFIGURATION"
+            else (
+                f"CONFIGURE CHANNEL DEVICE TYPE DISK FORMAT "
+                f"'{backup_dest}/backupset/%d_%T_%U.bkp';\n"
+            )
         )
+        configure = "".join((
+            "CONFIGURE DEFAULT DEVICE TYPE TO DISK;\n",
+            "CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;\n",
+            "CONFIGURE CONTROLFILE AUTOBACKUP ON;\n",
+            f"CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '{backup_dest}/autobackup/%F';\n",
+            channel_configuration,
+            "CONFIGURE DEVICE TYPE DISK PARALLELISM 2 BACKUP TYPE TO COMPRESSED BACKUPSET;\n",
+            "CONFIGURE BACKUP OPTIMIZATION ON;\n",
+            "CONFIGURE ARCHIVELOG DELETION POLICY TO BACKED UP 1 TIMES TO DISK;\n",
+        ))
         jobs = {
             "backup_level0.rman": (
                 "RUN {\n  SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';\n"
@@ -276,6 +347,30 @@ def compile_rman_backup(
             _artifact("rman.env", "env.conf", env),
             _artifact("rman.configure", "rman/configure.rman", configure, media_type="text/x-rman"),
         ))
+        oracle_env_loader = (
+            "#!/usr/bin/env bash\n"
+            "export ORAENV_ASK=NO\n"
+            "oraenv_path=$(command -v oraenv 2>/dev/null || true)\n"
+            "if [ -z \"$oraenv_path\" ] && [ -x /usr/local/bin/oraenv ]; then oraenv_path=/usr/local/bin/oraenv; fi\n"
+            "if [ -z \"$oraenv_path\" ] && [ -x /usr/bin/oraenv ]; then oraenv_path=/usr/bin/oraenv; fi\n"
+            "oracle_env_loaded=0\n"
+            "if [ -n \"$oraenv_path\" ]; then\n"
+            "  set +e\n  set +u\n  . \"$oraenv_path\" >/dev/null\n  oraenv_status=$?\n  set -u\n  set -e\n"
+            "  if [ \"$oraenv_status\" -eq 0 ] && command -v sqlplus >/dev/null && command -v rman >/dev/null; then oracle_env_loaded=1; fi\n"
+            "fi\n"
+            "if [ \"$oracle_env_loaded\" -eq 0 ]; then\n"
+            "  pmon_pid=$(pgrep -f \"ora_pmon_$ORACLE_SID\" | head -n 1 || true)\n"
+            "  if [ -z \"$pmon_pid\" ]; then echo '无法通过 oraenv 或 PMON 进程解析 Oracle 环境' >&2; return 1; fi\n"
+            "  oracle_binary=$(readlink -f \"/proc/$pmon_pid/exe\")\n"
+            "  ORACLE_HOME=$(dirname \"$(dirname \"$oracle_binary\")\")\n"
+            "  export ORACLE_HOME\n  export PATH=\"$ORACLE_HOME/bin:$PATH\"\n"
+            "fi\n"
+            "command -v sqlplus >/dev/null\ncommand -v rman >/dev/null\n"
+        )
+        artifacts.append(_artifact(
+            "rman.oracle.env", "bin/load-oracle-env.sh",
+            oracle_env_loader, mode="0750", media_type="text/x-shellscript"
+        ))
         for file_name, content in jobs.items():
             artifact_id = "rman." + file_name.removesuffix(".rman").replace("_", ".")
             artifacts.append(_artifact(
@@ -284,6 +379,7 @@ def compile_rman_backup(
         runner = (
             "#!/usr/bin/env bash\nset -euo pipefail\n"
             f"source {stage}/env.conf\n"
+            f"source {stage}/bin/load-oracle-env.sh\n"
             "job_name=$1\n"
             "case $job_name in\n"
             "  level0) script=backup_level0.rman ;;\n"
@@ -295,7 +391,7 @@ def compile_rman_backup(
             "  restore-validate) script=restore_validate.rman ;;\n"
             "  *) echo '不支持的 RMAN 任务' >&2; exit 64 ;;\n"
             "esac\n"
-            "current_role=$(\"$ORACLE_HOME/bin/sqlplus\" -s / as sysdba <<'SQL'\n"
+            "current_role=$(sqlplus -s / as sysdba <<'SQL'\n"
             "WHENEVER SQLERROR EXIT SQL.SQLCODE\nSET HEADING OFF FEEDBACK OFF PAGES 0 VERIFY OFF ECHO OFF\n"
             "SELECT database_role FROM v$database;\nEXIT\nSQL\n)\n"
             "current_role=$(printf '%s' \"$current_role\" | xargs)\n"
@@ -307,7 +403,7 @@ def compile_rman_backup(
             "started_epoch=$(date +%s)\n"
             "log_file=\"$LOG_DEST/$job_name-$(date +%Y%m%d-%H%M%S).log\"\n"
             "set +e\n"
-            f"{oracle_home}/bin/rman target / cmdfile={stage}/rman/\"$script\" log=\"$log_file\"\n"
+            f"rman target / cmdfile={stage}/rman/\"$script\" log=\"$log_file\"\n"
             "job_status=$?\nset -e\n"
             "if grep -Eq 'RMAN-[0-9]{5}|ORA-[0-9]{5}' \"$log_file\"; then job_status=1; fi\n"
             "ended_epoch=$(date +%s)\n"
@@ -348,7 +444,8 @@ def compile_rman_backup(
         check_last_backup = (
             "#!/usr/bin/env bash\nset -euo pipefail\n"
             f"source {stage}/env.conf\n"
-            "\"$ORACLE_HOME/bin/sqlplus\" -s / as sysdba <<'SQL'\n"
+            f"source {stage}/bin/load-oracle-env.sh\n"
+            "sqlplus -s / as sysdba <<'SQL'\n"
             "WHENEVER SQLERROR EXIT SQL.SQLCODE\nSET PAGES 100 LINES 240 FEEDBACK ON VERIFY OFF\n"
             "SELECT session_key, input_type, status, start_time, end_time, elapsed_seconds, output_bytes_display FROM v$rman_backup_job_details WHERE start_time >= SYSDATE - 7 ORDER BY start_time DESC FETCH FIRST 20 ROWS ONLY;\n"
             "DECLARE\n  successful_jobs PLS_INTEGER;\nBEGIN\n  SELECT COUNT(*) INTO successful_jobs FROM v$rman_backup_job_details WHERE status LIKE 'COMPLETED%' AND end_time >= SYSDATE - 26/24;\n  IF successful_jobs = 0 THEN\n    RAISE_APPLICATION_ERROR(-20001, '最近 26 小时没有成功的 RMAN 备份');\n  END IF;\nEND;\n/\nEXIT\nSQL\n"
@@ -379,6 +476,7 @@ def compile_rman_backup(
                 configure,
                 executor=RunbookExecutor.RMAN, run_as="oracle",
                 artifact_ref="rman.configure", risk=RunbookRiskLevel.MEDIUM,
+                notes=(backup_dest_note,),
             ),),
             "scripts": (
                 command(
@@ -442,10 +540,11 @@ def compile_rman_backup(
             prometheus_exporter = (
                 "#!/usr/bin/env bash\nset -euo pipefail\n"
                 f"source {stage}/env.conf\n"
+                f"source {stage}/bin/load-oracle-env.sh\n"
                 "mkdir -p \"$PROMETHEUS_TEXTFILE_DIR\"\n"
                 "metric_file=\"$PROMETHEUS_TEXTFILE_DIR/oracle_rman_$ORACLE_SID.prom\"\n"
                 "metric_tmp=\"$metric_file.tmp\"\n"
-                "\"$ORACLE_HOME/bin/sqlplus\" -s / as sysdba > \"$metric_tmp\" <<SQL\n"
+                "sqlplus -s / as sysdba > \"$metric_tmp\" <<SQL\n"
                 "WHENEVER SQLERROR EXIT SQL.SQLCODE\nSET HEADING OFF FEEDBACK OFF PAGES 0 VERIFY OFF ECHO OFF TRIMSPOOL ON\n"
                 f"SELECT 'kbot_oracle_rman_last_success_timestamp_seconds{{database=\"{sid}\"}} ' || NVL(TO_CHAR(MAX(CASE WHEN status LIKE 'COMPLETED%' THEN (end_time - DATE '1970-01-01') * 86400 END), 'FM9999999999999990'), '0') FROM v\\$rman_backup_job_details;\n"
                 f"SELECT 'kbot_oracle_rman_last_failure_timestamp_seconds{{database=\"{sid}\"}} ' || NVL(TO_CHAR(MAX(CASE WHEN status NOT LIKE 'COMPLETED%' THEN (end_time - DATE '1970-01-01') * 86400 END), 'FM9999999999999990'), '0') FROM v\\$rman_backup_job_details;\n"
@@ -536,5 +635,8 @@ def compile_rman_backup(
             "PROMETHEUS_TEXTFILE_DIR": textfile_dir,
             "PROMETHEUS_RULE_DIR": prometheus_rule_dir,
             "EXPECTED_DATABASE_ROLE": database_role,
+            "BACKUP_DEST": backup_dest,
+            "BACKUP_DEST_SOURCE": backup_dest_source,
+            "BACKUP_DEST_REVIEW_REQUIRED": "YES" if backup_dest_review else "NO",
         },
     )

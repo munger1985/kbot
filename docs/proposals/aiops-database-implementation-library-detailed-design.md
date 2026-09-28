@@ -499,8 +499,11 @@ oracle-rman-backup/
     └── alert-rules.yml
 ```
 
-`env.conf` 只保存 SID、Home、目录和日志路径，不保存 SYS 密码。默认通过本机 OS 认证执行
-`rman target /`。
+`env.conf` 只保存 SID、备份目录和日志路径，不保存 SYS 密码。默认通过本机 OS 认证执行
+`rman target /`。当前实现不要求用户提供 `ORACLE_HOME`：脚本使用 `ORACLE_SID` 调用主机
+`oraenv` 初始化 Oracle 环境，`oraenv` 不可用时从对应 PMON 进程解析 Home。备份目录按显式 Target 配置、现有 RMAN Disk Channel FORMAT、文件系统
+FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracle/backup/<db_unique_name>`，先生成
+目录创建与 `CONFIGURE CHANNEL DEVICE TYPE DISK FORMAT` 命令，并提示在实施前按真实独立挂载点调整。
 
 ### 7.6 脚本行为规范
 

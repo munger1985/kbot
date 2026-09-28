@@ -109,6 +109,11 @@ Broker 配置名、保护模式和 Redo 传输方式等可安全派生的值直�
 新增档案必须复用同一 `ImplementationRunbook` 契约、命令类型、安全边界和执行升级规则，不能
 为每类方案另建一套自由文本功能。
 
+RMAN 备份档案不要求用户补充 `ORACLE_HOME`，运行脚本通过 `ORACLE_SID + oraenv` 自动初始化环境，
+必要时从对应 PMON 进程解析 Home。
+`BACKUP_DEST` 优先读取现有 RMAN Disk Channel 或文件系统 FRA；没有现有配置时按数据库唯一名派生
+标准路径，并在正式配置前输出创建目录、容量核验和 RMAN Channel FORMAT 命令，提醒用户按实际挂载点调整。
+
 RAC、补丁、升级和迁移等档案遇到 IP、VIP、SCAN、WWID、目标环境或批准介质缺失时，状态为
 `BLOCKED_BY_REQUIRED_FACTS`：文档仍完整展示所有阶段，但相关步骤不会生成猜测值或占位符命令。
 事实必须来自 Target、部署拓扑、Host Collector、策略模板或用户明确的业务决策。
