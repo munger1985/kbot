@@ -30,12 +30,12 @@ BEGIN
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 26
-       OR l_contract_version <> 'aiops-oracle-v16' THEN
+       OR l_schema_version <> 27
+       OR l_contract_version <> 'aiops-oracle-v17' THEN
         raise_application_error(
             -20100,
-            '仅支持 AIOPS/26/'
-            || 'aiops-oracle-v16，当前为 '
+            '仅支持 AIOPS/27/'
+            || 'aiops-oracle-v17，当前为 '
             || l_component || '/' || l_schema_version || '/' || l_contract_version
         );
     END IF;
@@ -2196,8 +2196,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    26 AS SCHEMA_VERSION,
-    'aiops-oracle-v16' AS CONTRACT_VERSION
+    27 AS SCHEMA_VERSION,
+    'aiops-oracle-v17' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2891,7 +2891,8 @@ CREATE TABLE KBOT_OPS_ANSWER_BLOCK (
         'MARKDOWN', 'TABLE', 'CHART', 'EVIDENCE_REFERENCES',
         'CLARIFICATION', 'EVIDENCE_REQUEST', 'PROPOSAL_SUMMARY',
         'VERIFICATION_COMPARISON', 'FINDING_CARDS', 'ANALYSIS_MARKDOWN',
-        'SOLUTION_MARKDOWN', 'FACT_CONFIRMATION', 'HTML_REPORT_LINKS'
+        'SOLUTION_MARKDOWN', 'FACT_CONFIRMATION', 'IMPLEMENTATION_RUNBOOK',
+        'HTML_REPORT_LINKS'
     )),
     CONSTRAINT CK_OPS_ANSWER_BLOCK_STATUS
         CHECK (STATUS IN ('ACTIVE', 'SUPERSEDED')),
@@ -3584,23 +3585,23 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 16 THEN
-        raise_application_error(-20008, 'Schema 26 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 27 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
     IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 26 合同不一致。');
+        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema 27 合同不一致。');
     END IF;
     IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 26 合同不一致。');
+        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema 27 合同不一致。');
     END IF;
     IF l_answer_block_type_constraint_count <> 1 THEN
         raise_application_error(-20014, 'CK_OPS_ANSWER_BLOCK_TYPE 与应用合同不一致。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 26
-       OR l_contract_version <> 'aiops-oracle-v16' THEN
+       OR l_schema_version <> 27
+       OR l_contract_version <> 'aiops-oracle-v17' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3610,7 +3611,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：44 张表、10 个视图，Schema Version '
-        || '26，合同 aiops-oracle-v16。'
+        || '27，合同 aiops-oracle-v17。'
     );
 END;
 /

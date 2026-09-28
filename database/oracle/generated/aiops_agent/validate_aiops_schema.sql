@@ -3039,19 +3039,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 26
-           OR l_contract_version <> 'aiops-oracle-v16' THEN
+           OR l_schema_version <> 27
+           OR l_contract_version <> 'aiops-oracle-v17' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '26/aiops-oracle-v16'
+                || '27/aiops-oracle-v17'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/26/'
-                || 'aiops-oracle-v16'
+                '[通过] Schema 合同：AIOPS/27/'
+                || 'aiops-oracle-v17'
             );
         END IF;
     EXCEPTION

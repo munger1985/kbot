@@ -453,14 +453,21 @@ class CompactPlanningOutput(AIOpsContract):
             return value
         normalized = dict(value)
         mode = str(normalized.get("planning_mode") or "")
-        if mode == CompactPlanningMode.IMPLEMENTATION_RUNBOOK:
-            profile = str(normalized.get("implementation_profile") or "")
+        profile = str(normalized.get("implementation_profile") or "")
+        implementation_route = (
+            mode == CompactPlanningMode.IMPLEMENTATION_RUNBOOK
+            or profile == ImplementationProfile.ORACLE_ADG_BUILD
+        )
+        if implementation_route:
             if profile in {"", ImplementationProfile.NONE}:
                 # 当前实施方案目录只登记 ADG；模型选中实施方案模式后，
                 # 其安全语义由服务端固定，不依赖模型重复填写关联字段。
                 normalized["implementation_profile"] = (
                     ImplementationProfile.ORACLE_ADG_BUILD
                 )
+            normalized["planning_mode"] = (
+                CompactPlanningMode.IMPLEMENTATION_RUNBOOK
+            )
             normalized["objectives"] = (TaskObjective.PLAN,)
             normalized["action_intent"] = ActionIntent.NONE
             normalized["diagnostic_profile"] = DiagnosticProfile.GENERAL

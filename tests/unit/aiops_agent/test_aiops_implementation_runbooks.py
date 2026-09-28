@@ -133,6 +133,26 @@ class ImplementationRunbookPlanningTests(unittest.TestCase):
 
         self.assertIn("implementation_profile", required)
 
+    def test_adg_profile_repairs_full_investigation_mode(self) -> None:
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "FULL_INVESTIGATION",
+                "objectives": ["ASSESS"],
+                "action_intent": "NONE",
+                "diagnostic_profile": "GENERAL",
+                "implementation_profile": "ORACLE_ADG_BUILD",
+                "subject_ref": {},
+                "problem_statement": "根据当前参数生成 ADG 实施文档",
+                "success_criteria": ["生成完整实施 Runbook"],
+                "public_reasoning_summary": "需要形成完整实施方案",
+            }
+        )
+
+        self.assertEqual(
+            CompactPlanningMode.IMPLEMENTATION_RUNBOOK,
+            compact.planning_mode,
+        )
+
     def test_adg_profile_expands_to_fixed_readonly_plan(self) -> None:
         compact = _compact()
 
@@ -326,6 +346,22 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         block_types = tuple(block.block_type for block in blocks)
         self.assertIn(AnswerBlockType.IMPLEMENTATION_RUNBOOK, block_types)
         self.assertNotIn(AnswerBlockType.EVIDENCE_REQUEST, block_types)
+
+    def test_oracle_schema_accepts_implementation_runbook_block(self) -> None:
+        canonical = (
+            ROOT
+            / "database/oracle/aiops_agent/008_ops_conversations_reports.sql"
+        ).read_text(encoding="utf-8")
+        upgrade = (
+            ROOT / "database/oracle/operations/apply_aiops_schema_27.sql"
+        ).read_text(encoding="utf-8")
+        readiness = (
+            ROOT
+            / "services/aiops_agent/src/aiops_agent/bootstrap/common.py"
+        ).read_text(encoding="utf-8")
+
+        for source in (canonical, upgrade, readiness):
+            self.assertIn("IMPLEMENTATION_RUNBOOK", source)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,10 @@ Target 页面明确选择 `CDB Root`、`PDB` 或 `Non-CDB`，重新测试连接�
 `converge_core_authorization.sql` 删除废弃的 `KBOT_OPS_AGENT_GRANT`。脚本不删除业务行，
 也不改写历史运行、诊断、报告、附件或审计数据。
 
+`apply_aiops_schema_27.sql` 用于将 AIOps Schema 26 / `aiops-oracle-v16` 原地升级到
+Schema 27 / `aiops-oracle-v17`。脚本仅扩展回答块类型约束以允许
+`IMPLEMENTATION_RUNBOOK`，并更新 Schema 版本视图；不删除或改写任何业务行。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、
