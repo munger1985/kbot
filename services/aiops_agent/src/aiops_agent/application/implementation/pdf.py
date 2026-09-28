@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from html import escape
 from io import BytesIO
-import textwrap
 from typing import Any
 
 from reportlab.lib import colors
@@ -39,17 +38,8 @@ def _paragraph(value: object) -> str:
 
 
 def _wrapped_code(value: object) -> str:
-    lines: list[str] = []
-    for source_line in str(value or "").strip().splitlines():
-        wrapped = textwrap.wrap(
-            source_line,
-            width=104,
-            replace_whitespace=False,
-            drop_whitespace=False,
-            subsequent_indent="  ",
-        )
-        lines.extend(wrapped or [""])
-    return _pdf_text("\n".join(lines))
+    """保留命令原文，避免 PDF 为排版而拆断 SQL 标识符。"""
+    return _pdf_text(str(value or "").strip())
 
 
 def _page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:

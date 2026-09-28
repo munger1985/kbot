@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook
 
-版本：1.2
+版本：1.3
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -33,31 +33,40 @@ Runbook 一次性批准或批量执行。
 1. 主备拓扑、版本、网络、存储、保护模式和实施窗口确认；
 2. 主库 `ARCHIVELOG`、`FORCE LOGGING`、`REMOTE_LOGIN_PASSWORDFILE`、FRA 和本地归档目标整改；
 3. 按每线程“联机日志组数 + 1”检查并补建 Standby Redo Log；
-4. 主备 `DB_UNIQUE_NAME`、`LOG_ARCHIVE_CONFIG`、归档目标、FAL 和文件管理参数；
-5. 密码文件、静态监听和双向 TNS；
-6. RMAN Active Duplicate 或经评审后替换为备份恢复路径；
-7. 日志传输、Managed Recovery 和可选 Active Data Guard 只读；
-8. Data Guard Broker 配置和验证；
-9. 传输延迟、应用延迟、日志缺口、RFS/MRP 和 Broker 健康验收；
-10. 每个阶段的风险、验证、回退和整体停止条件；
-11. Broker、传输/应用延迟、日志缺口、MRP 和切换前只读检查等日常运维命令。
+4. 把目标环境视为全新主机，从操作系统用户、目录、Oracle 软件和 RU 开始建设；
+5. 主备 `DB_UNIQUE_NAME`、`LOG_ARCHIVE_CONFIG`、归档目标、FAL 和文件管理参数；
+6. 复制主库密码文件内容，以目标 SID 命名，并配置静态监听和双向 TNS；
+7. CDB Root/NON-CDB Target 使用 RMAN Active Duplicate 建设整库物理备库；
+8. Oracle 26ai PDB Target 使用 DGPDB：创建独立目标 CDB、Broker 配置组和 standby PDB，不执行整库 Duplicate；
+9. 日志传输、实时应用和可选 Active Data Guard 只读；
+10. Data Guard Broker、延迟、日志缺口、RFS/MRP 或 PDB 级应用健康验收；
+11. 每个阶段的风险、验证、回退、停止条件和日常运维命令。
 
 SQL、RMAN、DGMGRL、Shell、配置片段和人工确认必须按真实命令类型分开展示。系统不能把 RMAN
 或操作系统命令伪装为 SQL，也不能让模型自由生成未受版本控制的执行命令。
 
-## 3. 缺少外部输入时的行为
+## 3. 全新目标环境的自动派生规则
 
 系统先把主库证据转换成一组确定的实施参数。备库 `DB_UNIQUE_NAME`、SID、主备 TNS Alias、
 Broker 配置名、保护模式和 Redo 传输方式等可安全派生的值直接显示并代入命令。例如主库
 `DB_UNIQUE_NAME=db26ai` 时，默认生成备库名和 TNS Alias `db26ai_stby`，命令直接包含
 `DG_CONFIG=(db26ai,db26ai_stby)`，不再输出待替换模板。
 
-备库主机、Oracle Home、ASM/OMF 或文件系统路径无法从当前主库可靠获知。缺少这些事实时，系统
-仍展示完整阶段，但状态为 `BLOCKED_BY_REQUIRED_INPUTS`，相关步骤标记为 `BLOCKED`，且不生成
-带 `${...}` 或 `<...>` 的伪可执行命令。已经完成参数解析的主库 SQL 仍可直接复制。
+系统不再把备库主机、Oracle Home 和存储路径作为必须由用户补充的输入。目标环境固定按“全新环境”
+处理，并采用以下可审计默认值：
+
+- 目标主机名按 `<主库短主机名>-stby` 派生；
+- Oracle Home 优先从主库密码文件路径还原，无法还原时按数据库大版本使用标准目录；
+- 数据文件、redo、FRA、审计目录和 ASM/OMF 磁盘组沿用主库布局；
+- 整库备库名、SID、TNS Alias、Broker 配置名，以及 DGPDB 的目标 CDB/PDB 和两端配置名按固定规则派生；
+- 密码文件复制主库原文件内容，只把目标文件名替换为目标 SID；
+- 所有派生值进入“已解析参数”附录并直接代入命令，禁止输出 `${...}` 或 `<...>` 占位符。
+
+基础设施实际命名规范与派生值不一致时，应在变更评审中调整生成参数；系统不会因为尚未提供目标环境
+事实而只返回补充信息或阻断整份文档。
 
 只有数据库前置取证本身失败时，状态才是 `PARTIAL_EVIDENCE`。这表示当前状态标记可能不完整，
-不是拒绝生成方案。Runbook 不应仅返回“请先补充信息”。
+不是拒绝生成方案。取得前置证据后，整库 ADG 与 PDB DGPDB 文档均为零必填外部输入。
 
 ## 4. 展示与交互
 

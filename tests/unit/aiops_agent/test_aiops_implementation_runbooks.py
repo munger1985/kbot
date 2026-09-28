@@ -56,6 +56,8 @@ def _precheck_fact(
     remote_login_passwordfile: str = "NONE",
     shortage: int = 2,
     configured_dataguard: bool = False,
+    container_name: str = "CDB$ROOT",
+    container_id: int = 1,
 ) -> TurnEvidenceFact:
     names = (
         "database_name",
@@ -63,26 +65,58 @@ def _precheck_fact(
         "instance_name",
         "host_name",
         "service_names",
+        "db_domain",
+        "compatible",
+        "audit_file_dest",
+        "diagnostic_dest",
+        "control_files",
+        "spfile",
+        "processes",
+        "sga_target",
+        "platform_name",
+        "cdb",
         "container_name",
         "container_id",
         "database_role",
+        "open_mode",
         "log_mode",
         "force_logging",
         "flashback_on",
         "protection_mode",
+        "switchover_status",
         "remote_login_passwordfile",
         "log_archive_config",
         "log_archive_dest_1",
         "log_archive_dest_2",
         "log_archive_dest_state_2",
         "fal_server",
+        "fal_client",
+        "standby_file_management",
+        "db_file_name_convert",
+        "log_file_name_convert",
+        "db_create_file_dest",
         "db_recovery_file_dest",
         "db_recovery_file_dest_size",
-        "db_create_file_dest",
-        "standby_file_management",
         "dg_broker_start",
-        "standby_redo_shortage",
+        "character_set",
+        "national_character_set",
+        "sample_datafile_path",
+        "sample_tempfile_path",
+        "sample_redo_member_path",
+        "password_file_path",
+        "datafile_bytes",
+        "max_redo_group_number",
+        "fra_space_limit_bytes",
+        "fra_space_used_bytes",
+        "online_redo_threads",
+        "online_redo_groups",
+        "online_redo_min_size_mb",
         "online_redo_max_size_mb",
+        "standby_redo_groups",
+        "standby_redo_min_size_mb",
+        "standby_redo_max_size_mb",
+        "required_standby_redo_groups",
+        "standby_redo_shortage",
         "redo_thread_plan",
     )
     return TurnEvidenceFact(
@@ -102,13 +136,25 @@ def _precheck_fact(
                 "testdb1",
                 "db-primary.example.com",
                 "testdb.example.com",
-                "CDB$ROOT",
-                1,
+                "example.com",
+                "26.0.0",
+                "/u01/app/oracle/admin/TESTDB/adump",
+                "/u01/app/oracle",
+                "/u02/oradata/TESTDB/control01.ctl",
+                "/u01/app/oracle/product/26ai/dbhome_1/dbs/spfiletestdb1.ora",
+                1000,
+                4294967296,
+                "Linux x86 64-bit",
+                "YES",
+                container_name,
+                container_id,
                 "PRIMARY",
+                "READ WRITE",
                 log_mode,
                 force_logging,
                 "YES",
                 "MAXIMUM PERFORMANCE",
+                "TO STANDBY",
                 remote_login_passwordfile,
                 "DG_CONFIG=(testdb,testdb_stby)" if configured_dataguard else "",
                 "LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=testdb",
@@ -120,13 +166,33 @@ def _precheck_fact(
                 ),
                 "ENABLE",
                 "testdb_stby" if configured_dataguard else "",
-                "+FRA",
-                "107374182400",
-                "+DATA",
+                "",
                 "AUTO",
+                "",
+                "",
+                "/u02/oradata/TESTDB",
+                "/u03/fra",
+                "107374182400",
                 "TRUE" if configured_dataguard else "FALSE",
-                shortage,
+                "AL32UTF8",
+                "AL16UTF16",
+                "/u02/oradata/TESTDB/PDB01/system01.dbf",
+                "/u02/oradata/TESTDB/PDB01/temp01.dbf",
+                "/u02/oradata/TESTDB/redo01.log",
+                "/u01/app/oracle/product/26ai/dbhome_1/dbs/orapwtestdb1",
+                53687091200,
+                3,
+                107374182400,
+                10737418240,
+                1,
+                2,
                 200,
+                200,
+                0,
+                None,
+                None,
+                3,
+                shortage,
                 f"1:2:3:{shortage}:200",
             ),
         ),
@@ -225,10 +291,7 @@ class OracleAdgRunbookTests(unittest.TestCase):
             for step in phase.steps
         }
 
-        self.assertEqual(
-            RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS,
-            runbook.status,
-        )
+        self.assertEqual(RunbookStatus.READY, runbook.status)
         self.assertEqual("AIOPS_IMPLEMENTATION_RUNBOOK.v2", runbook.schema_version)
         self.assertEqual(
             RunbookApplicability.REQUIRED,
@@ -270,25 +333,15 @@ class OracleAdgRunbookTests(unittest.TestCase):
             {item.key for item in runbook.required_inputs},
         )
         self.assertEqual(
-            RunbookApplicability.BLOCKED,
+            RunbookApplicability.REQUIRED,
             steps["standby.duplicate"].applicability,
         )
+        self.assertFalse(runbook.required_inputs)
 
-    def test_confirmed_external_facts_render_complete_commands(self) -> None:
+    def test_target_infrastructure_defaults_render_complete_commands(self) -> None:
         runbook = compile_implementation_runbook(
             profile=ImplementationProfile.ORACLE_ADG_BUILD,
             evidence=(_precheck_fact(),),
-            context={
-                "implementation_parameters": {
-                    "STANDBY_HOST": "db-standby.example.com",
-                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
-                    "STANDBY_STORAGE": (
-                        "*.db_create_file_dest='+DATA'\n"
-                        "*.db_recovery_file_dest='+FRA'\n"
-                        "*.db_recovery_file_dest_size=107374182400"
-                    ),
-                }
-            },
         )
         command_text = "\n".join(
             command.content
@@ -300,9 +353,62 @@ class OracleAdgRunbookTests(unittest.TestCase):
         self.assertEqual(RunbookStatus.READY, runbook.status)
         self.assertFalse(runbook.required_inputs)
         self.assertIn("DUPLICATE TARGET DATABASE FOR STANDBY", command_text)
-        self.assertIn("HOST=db-standby.example.com", command_text)
+        self.assertIn("HOST=db-primary-stby.example.com", command_text)
+        self.assertIn("/u01/app/oracle/product/26ai/dbhome_1", command_text)
+        self.assertIn("/u02/oradata/TESTDB", command_text)
+        self.assertIn("oracle-database-preinstall-26ai", command_text)
+        self.assertIn(
+            "scp oracle@db-primary.example.com:"
+            "/u01/app/oracle/product/26ai/dbhome_1/dbs/orapwtestdb1 "
+            "/u01/app/oracle/product/26ai/dbhome_1/dbs/orapwTESTDBSTBY",
+            command_text,
+        )
         self.assertIn("db_unique_name='testdb_stby'", command_text)
         self.assertNotIn("${", command_text)
+        self.assertNotRegex(command_text, r"<[A-Z][A-Z0-9_]*>")
+
+    def test_pdb_target_generates_zero_input_dgpdb_runbook(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_ADG_BUILD,
+            evidence=(
+                _precheck_fact(
+                    container_name="PDB01",
+                    container_id=3,
+                ),
+            ),
+        )
+        command_text = "\n".join(
+            command.content
+            for phase in runbook.phases
+            for step in phase.steps
+            for command in step.commands
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.required_inputs)
+        self.assertIn("PDB 级 Data Guard（DGPDB）", runbook.title)
+        self.assertIn("dbca -silent -createDatabase", command_text)
+        self.assertIn("ADD PLUGGABLE DATABASE 'PDB01'", command_text)
+        self.assertIn(
+            "ADD CONFIGURATION 'testdb_dgpdb_cfg' CONNECT IDENTIFIER IS "
+            "'testdb_dgpdb';",
+            command_text,
+        )
+        self.assertNotIn("DUPLICATE TARGET DATABASE", command_text)
+        self.assertNotIn("CREATE CONFIGURATION GROUP", command_text)
+        self.assertNotIn("ENABLE PLUGGABLE DATABASE", command_text)
+        self.assertNotRegex(
+            command_text,
+            r"(?:SHOW|VALIDATE) PLUGGABLE DATABASE[^;]+VERBOSE",
+        )
+        self.assertIn("db-primary-stby.example.com", command_text)
+        self.assertIn(
+            "/u01/app/oracle/product/26ai/dbhome_1/dbs/orapwTESTDBS",
+            command_text,
+        )
+        self.assertIn("/u02/oradata/TESTDB/PDB01", command_text)
+        self.assertNotIn("${", command_text)
+        self.assertNotRegex(command_text, r"<[A-Z][A-Z0-9_]*>")
 
     def test_satisfied_prerequisites_are_marked_without_removing_steps(self) -> None:
         runbook = compile_implementation_runbook(
@@ -384,7 +490,7 @@ class OracleAdgRunbookTests(unittest.TestCase):
 
         self.assertEqual(RunbookStatus.PARTIAL_EVIDENCE, runbook.status)
         self.assertGreaterEqual(len(runbook.phases), 8)
-        self.assertTrue(runbook.required_inputs)
+        self.assertFalse(runbook.required_inputs)
 
 
 class ImplementationRunbookAnswerTests(unittest.TestCase):

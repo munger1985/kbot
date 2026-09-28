@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -127,6 +128,47 @@ def _oracle_name_with_suffix(value: str, suffix: str, limit: int) -> str:
     if not normalized[0].isalpha():
         normalized = f"D{normalized}"
     return f"{normalized[: max(1, limit - len(suffix))]}{suffix}"
+
+
+def _directory_of(path: str) -> str:
+    """从主库文件事实提取可在新主机复用的目录或 ASM 磁盘组。"""
+    value = path.strip()
+    if not value:
+        return ""
+    if value.startswith("+"):
+        return value.split("/", 1)[0]
+    return str(PurePosixPath(value).parent)
+
+
+def _oracle_release_label(version: str) -> str:
+    """把数据库版本归一为安装目录和预安装包使用的发行标签。"""
+    major_match = re.match(r"(\d+)", version.strip())
+    major = major_match.group(1) if major_match else "26"
+    return f"{major}ai" if int(major) >= 23 else f"{major}c"
+
+
+def _default_oracle_home(version: str) -> str:
+    """按数据库大版本生成全新备库的标准 Oracle Home。"""
+    release = _oracle_release_label(version)
+    return f"/u01/app/oracle/product/{release}/dbhome_1"
+
+
+def _oracle_home_from_password_file(path: str) -> str:
+    """优先从主库密码文件路径还原实际 Oracle Home。"""
+    value = path.strip()
+    if not value or value.startswith("+"):
+        return ""
+    password_directory = PurePosixPath(value).parent
+    if password_directory.name.lower() != "dbs":
+        return ""
+    return str(password_directory.parent)
+
+
+def _derived_standby_host(primary_host: str) -> str:
+    """为全新备库生成稳定且可提前纳入 DNS 的主机名。"""
+    host = primary_host.strip().split(".", 1)[0]
+    domain = primary_host.strip()[len(host):]
+    return f"{host}-stby{domain}" if host else "oracle-standby"
 
 
 def _resolve_adg_parameters(
@@ -287,6 +329,80 @@ def _resolve_adg_parameters(
         "由主库 DB_UNIQUE_NAME 派生",
     )
 
+    source_pdb_name = _text(precheck, "container_name")
+    if _integer(precheck, "container_id") > 1:
+        add(
+            "SOURCE_PDB_NAME",
+            "源 PDB",
+            source_pdb_name,
+            RunbookParameterStatus.VERIFIED,
+            "db.ha.adg_precheck:SYS_CONTEXT(USERENV, CON_NAME)",
+        )
+        add(
+            "TARGET_PDB_NAME",
+            "目标 PDB",
+            _explicit_parameter(context, "TARGET_PDB_NAME") or source_pdb_name,
+            (
+                RunbookParameterStatus.VERIFIED
+                if _explicit_parameter(context, "TARGET_PDB_NAME")
+                else RunbookParameterStatus.DERIVED
+            ),
+            (
+                "用户确认的实施参数"
+                if _explicit_parameter(context, "TARGET_PDB_NAME")
+                else "全新目标 CDB 默认沿用源 PDB 名称"
+            ),
+        )
+        target_cdb_name = _explicit_parameter(
+            context, "TARGET_CDB_DB_NAME"
+        ) or _oracle_name_with_suffix(primary_db_name, "S", 8)
+        target_cdb_unique_name = _explicit_parameter(
+            context, "TARGET_CDB_DB_UNIQUE_NAME"
+        ) or _oracle_name_with_suffix(primary_unique_name, "_dgpdb", 30)
+        add(
+            "TARGET_CDB_DB_NAME",
+            "目标 CDB DB_NAME",
+            target_cdb_name,
+            (
+                RunbookParameterStatus.VERIFIED
+                if _explicit_parameter(context, "TARGET_CDB_DB_NAME")
+                else RunbookParameterStatus.DERIVED
+            ),
+            "全新目标 CDB 名称由源 CDB 名称派生",
+        )
+        add(
+            "TARGET_CDB_DB_UNIQUE_NAME",
+            "目标 CDB DB_UNIQUE_NAME",
+            target_cdb_unique_name,
+            (
+                RunbookParameterStatus.VERIFIED
+                if _explicit_parameter(context, "TARGET_CDB_DB_UNIQUE_NAME")
+                else RunbookParameterStatus.DERIVED
+            ),
+            "全新目标 CDB 唯一名由源 CDB DB_UNIQUE_NAME 派生",
+        )
+        add(
+            "TARGET_CDB_SID",
+            "目标 CDB ORACLE_SID",
+            target_cdb_name,
+            RunbookParameterStatus.DERIVED,
+            "目标 CDB SID 与 DB_NAME 保持一致",
+        )
+        add(
+            "TARGET_CDB_TNS_ALIAS",
+            "目标 CDB TNS Alias",
+            target_cdb_unique_name,
+            RunbookParameterStatus.DERIVED,
+            "采用目标 CDB DB_UNIQUE_NAME 作为稳定别名",
+        )
+        add(
+            "TARGET_CDB_CONFIG_NAME",
+            "目标 CDB Broker 配置名",
+            _oracle_name_with_suffix(target_cdb_unique_name, "_cfg", 30),
+            RunbookParameterStatus.DERIVED,
+            "由目标 CDB DB_UNIQUE_NAME 派生",
+        )
+
     connection_profile = dict(context.get("connection_profile") or {})
     primary_host = _text(precheck, "host_name") or str(
         connection_profile.get("host") or ""
@@ -327,39 +443,239 @@ def _resolve_adg_parameters(
         "SERVICE_NAMES 参数或 Target 连接配置",
     )
 
-    for key, label, column in (
-        ("PRIMARY_FRA_DEST", "主库 FRA", "db_recovery_file_dest"),
+    version = _text(identity, "version")
+    explicit_standby_host = _explicit_parameter(context, "STANDBY_HOST")
+    derived_standby_host = explicit_standby_host or _derived_standby_host(
+        primary_host
+    )
+    add(
+        "STANDBY_HOST",
+        "备库主机",
+        derived_standby_host,
         (
-            "PRIMARY_FRA_SIZE",
-            "主库 FRA 容量（字节）",
-            "db_recovery_file_dest_size",
+            RunbookParameterStatus.VERIFIED
+            if explicit_standby_host
+            else RunbookParameterStatus.DERIVED
         ),
-        ("PRIMARY_DB_CREATE_FILE_DEST", "主库 OMF 目录", "db_create_file_dest"),
+        (
+            "用户确认的实施参数"
+            if explicit_standby_host
+            else "全新备库按 <主库主机名>-stby 规则派生；需提前配置 DNS"
+        ),
+    )
+    explicit_oracle_home = _explicit_parameter(context, "ORACLE_HOME")
+    primary_password_file = _text(precheck, "password_file_path")
+    observed_oracle_home = _oracle_home_from_password_file(primary_password_file)
+    oracle_home = (
+        explicit_oracle_home
+        or observed_oracle_home
+        or _default_oracle_home(version)
+    )
+    add(
+        "ORACLE_HOME",
+        "备库 Oracle Home",
+        oracle_home,
+        (
+            RunbookParameterStatus.VERIFIED
+            if explicit_oracle_home
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "用户确认的实施参数"
+            if explicit_oracle_home
+            else (
+                "由主库密码文件路径还原实际 Oracle Home"
+                if observed_oracle_home
+                else f"按主库版本 {version or '26ai'} 采用标准安装目录"
+            )
+        ),
+    )
+    oracle_base = oracle_home.split("/product/", 1)[0]
+    add(
+        "ORACLE_BASE",
+        "备库 Oracle Base",
+        oracle_base,
+        RunbookParameterStatus.DERIVED,
+        "由备库 Oracle Home 派生",
+    )
+
+    for key, label, column in (
+        ("PRIMARY_DATAFILE_PATH", "主库数据文件样例", "sample_datafile_path"),
+        ("PRIMARY_TEMPFILE_PATH", "主库临时文件样例", "sample_tempfile_path"),
+        ("PRIMARY_REDO_MEMBER_PATH", "主库 redo 成员样例", "sample_redo_member_path"),
+        ("PRIMARY_AUDIT_DEST", "主库审计目录", "audit_file_dest"),
+        ("PRIMARY_DIAGNOSTIC_DEST", "主库诊断目录", "diagnostic_dest"),
+        ("PRIMARY_CONTROL_FILES", "主库控制文件", "control_files"),
     ):
         add(
             key,
             label,
-            _text(precheck, column) or _explicit_parameter(context, key),
+            _text(precheck, column),
             RunbookParameterStatus.VERIFIED,
+            f"db.ha.adg_precheck:{column}",
+        )
+    observed_password_file = _text(precheck, "password_file_path")
+    derived_password_file = observed_password_file or (
+        f"{oracle_home}/dbs/orapw{_text(precheck, 'instance_name')}"
+    )
+    add(
+        "PRIMARY_PASSWORD_FILE",
+        "主库密码文件",
+        derived_password_file,
+        (
+            RunbookParameterStatus.VERIFIED
+            if observed_password_file
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "db.ha.adg_precheck:password_file_path"
+            if observed_password_file
+            else "按主库 Oracle Home 和 INSTANCE_NAME 派生"
+        ),
+    )
+
+    data_directory = _directory_of(_text(precheck, "sample_datafile_path"))
+    redo_directory = _directory_of(_text(precheck, "sample_redo_member_path"))
+    password_directory = _directory_of(_text(precheck, "password_file_path"))
+    target_path_sid = (
+        target_cdb_name
+        if _integer(precheck, "container_id") > 1
+        else standby_sid
+    )
+    audit_directory = _text(precheck, "audit_file_dest") or (
+        f"{oracle_base}/admin/{target_path_sid}/adump"
+        if target_path_sid
+        else ""
+    )
+    add(
+        "STANDBY_DATA_DEST",
+        "备库数据文件目录",
+        data_directory or _text(precheck, "db_create_file_dest"),
+        RunbookParameterStatus.DERIVED,
+        "全新备库沿用主库数据文件目录或 OMF 磁盘组",
+    )
+    add(
+        "STANDBY_REDO_DEST",
+        "备库 redo 目录",
+        redo_directory or data_directory or _text(precheck, "db_create_file_dest"),
+        RunbookParameterStatus.DERIVED,
+        "全新备库沿用主库 redo 目录",
+    )
+    add(
+        "STANDBY_AUDIT_DEST",
+        "备库审计目录",
+        audit_directory,
+        RunbookParameterStatus.DERIVED,
+        "全新备库沿用主库审计目录规则",
+    )
+    if target_path_sid:
+        add(
+            "STANDBY_PASSWORD_FILE",
+            "备库密码文件",
             (
-                f"db.ha.adg_precheck:{column}"
-                if _text(precheck, column)
-                else "用户确认的实施参数"
+                f"{password_directory}/orapw{target_path_sid}"
+                if password_directory and not password_directory.startswith("+")
+                else f"{oracle_home}/dbs/orapw{target_path_sid}"
             ),
+            RunbookParameterStatus.DERIVED,
+            "沿用主库密码文件目录并替换为备库 SID 文件名",
         )
 
-    for key, label in (
-        ("STANDBY_HOST", "备库主机"),
-        ("ORACLE_HOME", "备库 Oracle Home"),
-        ("STANDBY_STORAGE", "备库存储配置"),
-    ):
-        add(
-            key,
-            label,
-            _explicit_parameter(context, key),
-            RunbookParameterStatus.VERIFIED,
-            "用户确认的实施参数",
+    observed_fra_dest = _text(precheck, "db_recovery_file_dest")
+    explicit_fra_dest = _explicit_parameter(context, "PRIMARY_FRA_DEST")
+    derived_fra_dest = (
+        observed_fra_dest
+        or explicit_fra_dest
+        or f"{oracle_base}/fast_recovery_area"
+    )
+    add(
+        "PRIMARY_FRA_DEST",
+        "主库 FRA",
+        derived_fra_dest,
+        (
+            RunbookParameterStatus.VERIFIED
+            if observed_fra_dest or explicit_fra_dest
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "db.ha.adg_precheck:db_recovery_file_dest"
+            if observed_fra_dest
+            else (
+                "用户确认的实施参数"
+                if explicit_fra_dest
+                else "未配置 FRA 时按 Oracle Base 派生标准恢复区"
+            )
+        ),
+    )
+    observed_fra_size = _text(precheck, "db_recovery_file_dest_size")
+    explicit_fra_size = _explicit_parameter(context, "PRIMARY_FRA_SIZE")
+    derived_fra_size = observed_fra_size or explicit_fra_size or str(
+        max(20 * 1024**3, int(_integer(precheck, "datafile_bytes") * 0.35))
+    )
+    add(
+        "PRIMARY_FRA_SIZE",
+        "主库 FRA 容量（字节）",
+        derived_fra_size,
+        (
+            RunbookParameterStatus.VERIFIED
+            if observed_fra_size or explicit_fra_size
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "db.ha.adg_precheck:db_recovery_file_dest_size"
+            if observed_fra_size
+            else (
+                "用户确认的实施参数"
+                if explicit_fra_size
+                else "按数据文件容量的 35% 计算且不低于 20 GiB"
+            )
+        ),
+    )
+    add(
+        "PRIMARY_DB_CREATE_FILE_DEST",
+        "主库 OMF 目录",
+        _text(precheck, "db_create_file_dest") or data_directory,
+        (
+            RunbookParameterStatus.VERIFIED
+            if _text(precheck, "db_create_file_dest")
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "db.ha.adg_precheck:db_create_file_dest"
+            if _text(precheck, "db_create_file_dest")
+            else "由主库数据文件样例目录派生"
+        ),
+    )
+
+    storage_lines: list[str] = []
+    standby_data_dest = data_directory or _text(precheck, "db_create_file_dest")
+    if standby_data_dest:
+        storage_lines.append(
+            f"*.db_create_file_dest='{standby_data_dest}'"
         )
+    if derived_fra_dest:
+        storage_lines.extend(
+            (
+                f"*.db_recovery_file_dest='{derived_fra_dest}'",
+                f"*.db_recovery_file_dest_size={derived_fra_size}",
+            )
+        )
+    explicit_storage = _explicit_parameter(context, "STANDBY_STORAGE")
+    add(
+        "STANDBY_STORAGE",
+        "备库存储配置",
+        explicit_storage or "\n".join(storage_lines) or "SAME_PATH_AS_PRIMARY",
+        (
+            RunbookParameterStatus.VERIFIED
+            if explicit_storage
+            else RunbookParameterStatus.DERIVED
+        ),
+        (
+            "用户确认的实施参数"
+            if explicit_storage
+            else "全新备库默认使用与主库相同的目录或 ASM/OMF 磁盘组"
+        ),
+    )
 
     values = {item.key: item.value for item in parameters}
     rendered = tuple(
@@ -392,8 +708,10 @@ def _srl_commands(
     *,
     command_scope: str = "primary",
     title_scope: str = "主库",
+    redo_destination: str = "",
 ) -> tuple[RunbookCommand, ...]:
     plan = _text(row, "redo_thread_plan")
+    group_number = _integer(row, "max_redo_group_number")
     commands: list[RunbookCommand] = []
     if plan:
         for thread_spec in plan.split(","):
@@ -402,19 +720,680 @@ def _srl_commands(
                 continue
             thread_no, _online, _required, missing, size_mb = parts
             for ordinal in range(1, max(0, int(missing)) + 1):
+                group_number += 1
+                member_clause = (
+                    f" ('{redo_destination}/standby_redo_t{thread_no}_g{group_number}.log')"
+                    if redo_destination and not redo_destination.startswith("+")
+                    else ""
+                )
                 commands.append(
                     _command(
                         f"{command_scope}.srl.t{thread_no}.{ordinal}",
                         RunbookCommandType.SQLPLUS,
                         f"在{title_scope}为线程 {thread_no} 增加第 {ordinal} 个 Standby Redo Log",
                         f"""
-ALTER DATABASE ADD STANDBY LOGFILE THREAD {thread_no}
+ALTER DATABASE ADD STANDBY LOGFILE THREAD {thread_no} GROUP {group_number}{member_clause}
   SIZE {size_mb}M;
 """,
-                        "OMF/ASM 环境可直接执行；文件系统环境应按存储规范显式补充日志成员路径。",
+                        "文件系统路径沿用主库 redo 目录；ASM/OMF 环境由数据库自动创建成员。",
                     )
                 )
     return tuple(commands)
+
+
+def _compile_oracle_dgpdb_build(
+    evidence: tuple[TurnEvidenceFact, ...],
+    context: dict[str, Any],
+) -> ImplementationRunbook:
+    """为 PDB Target 生成从零建设目标 CDB 的 DGPDB 操作文档。"""
+    identity, identity_ref = _first_row(evidence, "db.instance.identity")
+    precheck, precheck_ref = _first_row(evidence, "db.ha.adg_precheck")
+    parameters, resolved_parameters = _resolve_adg_parameters(
+        identity=identity,
+        precheck=precheck,
+        context=context,
+    )
+    evidence_refs = tuple(
+        value for value in (identity_ref, precheck_ref) if value is not None
+    )
+    source_cdb = parameters.get("PRIMARY_DB_UNIQUE_NAME", "")
+    source_pdb = parameters.get("SOURCE_PDB_NAME", "")
+    target_pdb = parameters.get("TARGET_PDB_NAME", source_pdb)
+    target_cdb_name = parameters.get("TARGET_CDB_DB_NAME", "")
+    target_cdb = parameters.get("TARGET_CDB_DB_UNIQUE_NAME", "")
+    target_sid = parameters.get("TARGET_CDB_SID", target_cdb_name)
+    source_tns = parameters.get("PRIMARY_TNS_ALIAS", source_cdb)
+    target_tns = parameters.get("TARGET_CDB_TNS_ALIAS", target_cdb)
+    source_config = parameters.get("DG_CONFIG_NAME", "")
+    target_config = parameters.get("TARGET_CDB_CONFIG_NAME", "")
+    source_host = parameters.get("PRIMARY_HOST", "")
+    target_host = parameters.get("STANDBY_HOST", "")
+    port = parameters.get("PRIMARY_PORT", "1521")
+    oracle_home = parameters.get("ORACLE_HOME", "")
+    oracle_base = parameters.get("ORACLE_BASE", "")
+    data_dest = parameters.get("STANDBY_DATA_DEST", "")
+    redo_dest = parameters.get("STANDBY_REDO_DEST", data_dest)
+    audit_dest = parameters.get("STANDBY_AUDIT_DEST", "")
+    target_password_file = parameters.get("STANDBY_PASSWORD_FILE", "")
+    source_password_file = parameters.get("PRIMARY_PASSWORD_FILE", "") or (
+        f"{oracle_home}/dbs/orapw{_text(precheck, 'instance_name')}"
+    )
+    observed_source_password_file = _text(precheck, "password_file_path")
+    fra_dest = _text(precheck, "db_recovery_file_dest") or (
+        f"{oracle_base}/fast_recovery_area"
+    )
+    datafile_bytes = _integer(precheck, "datafile_bytes")
+    fra_size = _integer(precheck, "db_recovery_file_dest_size") or max(
+        20 * 1024**3,
+        int(datafile_bytes * 0.35),
+    )
+    fra_size_mb = max(20480, fra_size // 1024 // 1024)
+    character_set = _text(precheck, "character_set") or "AL32UTF8"
+    national_character_set = (
+        _text(precheck, "national_character_set") or "AL16UTF16"
+    )
+    compatible = _text(precheck, "compatible") or _text(identity, "version")
+    redo_size = max(200, _integer(precheck, "online_redo_max_size_mb"))
+    processes = max(500, _integer(precheck, "processes"))
+    sga_target = _integer(precheck, "sga_target")
+    memory_mb = max(2048, sga_target // 1024 // 1024) if sga_target else 4096
+    version = _text(identity, "version") or "26ai"
+    release_label = _oracle_release_label(version)
+    software_archive = f"/stage/oracle/LINUX.X64_{release_label}_db_home.zip"
+    filesystem_directories = tuple(
+        dict.fromkeys(
+            value
+            for value in (
+                oracle_base,
+                oracle_home,
+                data_dest,
+                redo_dest,
+                fra_dest,
+                audit_dest,
+                f"{oracle_base}/admin/{target_sid}/dpdump" if oracle_base else "",
+                f"{oracle_base}/admin/{target_sid}/pfile" if oracle_base else "",
+            )
+            if value and value.startswith("/")
+        )
+    )
+    mkdir_command = " ".join(filesystem_directories)
+    storage_type = "ASM" if data_dest.startswith("+") else "FS"
+    dbca_storage = (
+        f"-storageType ASM -diskGroupName {data_dest.lstrip('+')}"
+        if storage_type == "ASM"
+        else f"-storageType FS -datafileDestination '{data_dest}'"
+    )
+    recovery_option = (
+        f"-recoveryGroupName {fra_dest.lstrip('+')}"
+        if fra_dest.startswith("+")
+        else f"-recoveryAreaDestination '{fra_dest}'"
+    )
+    redo_member = (
+        ""
+        if redo_dest.startswith("+")
+        else f" ('{redo_dest}/standby_redo_t1_g{{group}}.log')"
+    )
+    target_srl_lines = "\n".join(
+        (
+            f"ALTER DATABASE ADD STANDBY LOGFILE THREAD 1 GROUP {group}"
+            f"{redo_member.format(group=group)} SIZE {redo_size}M;"
+        )
+        for group in range(11, 15)
+    )
+    source_archivelog_commands = (
+        "SHUTDOWN IMMEDIATE;\n"
+        "STARTUP MOUNT;\n"
+        "ALTER DATABASE ARCHIVELOG;\n"
+        "ALTER DATABASE OPEN;\n"
+        if _text(precheck, "log_mode").upper() != "ARCHIVELOG"
+        else ""
+    )
+    source_passwordfile_commands = (
+        "ALTER SYSTEM SET remote_login_passwordfile='EXCLUSIVE' "
+        "SCOPE=SPFILE SID='*';\n"
+        if _text(precheck, "remote_login_passwordfile").upper() != "EXCLUSIVE"
+        else ""
+    )
+    source_passwordfile_restart = (
+        "SHUTDOWN IMMEDIATE;\nSTARTUP;\n"
+        if source_passwordfile_commands
+        else ""
+    )
+    source_srl_commands = "\n".join(
+        command.content
+        for command in _srl_commands(
+            precheck,
+            command_scope="source_cdb",
+            title_scope="源 CDB",
+            redo_destination=redo_dest,
+        )
+    )
+    source_dgmgrl_service = f"{source_cdb}_DGMGRL"
+    target_dgmgrl_service = f"{target_cdb}_DGMGRL"
+    status = (
+        RunbookStatus.PARTIAL_EVIDENCE
+        if precheck is None
+        else RunbookStatus.READY
+    )
+    current_state = (
+        _state_item("保护范围", source_pdb, "PDB_LEVEL_DGPDB"),
+        _state_item("源 CDB", source_cdb, "VERIFIED"),
+        _state_item("目标 CDB", target_cdb, "DERIVED"),
+        _state_item("目标主机", target_host, "DERIVED"),
+        _state_item("数据库版本", version, "VERIFIED"),
+        _state_item("目录策略", "沿用主库目录结构", "DERIVED"),
+        _state_item(
+            "归档模式",
+            _text(precheck, "log_mode"),
+            "SATISFIED"
+            if _text(precheck, "log_mode").upper() == "ARCHIVELOG"
+            else "REMEDIATION_REQUIRED",
+        ),
+        _state_item(
+            "强制日志",
+            _text(precheck, "force_logging"),
+            "SATISFIED"
+            if _text(precheck, "force_logging").upper() == "YES"
+            else "REMEDIATION_REQUIRED",
+        ),
+    )
+    phases = (
+        RunbookPhase(
+            phase_id="derived_plan",
+            title="确认自动派生的目标环境",
+            objective="明确系统已采用的全新目标 CDB、主机名和目录规划，不再等待用户补充参数。",
+            steps=(
+                RunbookStep(
+                    step_id="derived_plan.defaults",
+                    title="记录目标环境默认规划",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="目标环境从零建设，所有可推导名称和路径均沿用主库规则。",
+                    commands=(
+                        _command(
+                            "derived_plan.defaults.record",
+                            RunbookCommandType.MANUAL,
+                            "实施前发布基础设施规划",
+                            (
+                                f"目标主机使用 {target_host}；目标 CDB 使用 {target_cdb_name}/"
+                                f"{target_cdb}；目标 PDB 使用 {target_pdb}；Oracle Home 使用 "
+                                f"{oracle_home}；数据文件、redo、FRA 和审计目录沿用主库目录结构。"
+                            ),
+                            "如企业实际 DNS 或存储规范不同，应在变更评审中调整派生值，但系统不再因这些事实缺失而拒绝生成文档。",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="source_cdb",
+            title="源 CDB 前置整改",
+            objective="在源 CDB Root 完成 DGPDB 所需的归档、日志和 Broker 前置条件。",
+            steps=(
+                RunbookStep(
+                    step_id="source_cdb.prerequisites",
+                    title="启用源 CDB 前置能力",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="PDB 是保护单位，但 redo、归档和 Broker 由所属 CDB 管理。",
+                    commands=(
+                        _command(
+                            "source_cdb.prerequisites.sql",
+                            RunbookCommandType.SQLPLUS,
+                            "在源 CDB Root 执行",
+                            f"""
+ALTER SESSION SET CONTAINER=CDB$ROOT;
+{source_archivelog_commands}{source_passwordfile_commands}
+ALTER DATABASE FORCE LOGGING;
+ALTER SYSTEM SET db_recovery_file_dest_size={fra_size} SCOPE=BOTH SID='*';
+ALTER SYSTEM SET db_recovery_file_dest='{fra_dest}' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';
+{source_srl_commands}
+{source_passwordfile_restart}
+""",
+                            "所有命令均在源 CDB Root 以 SYSDBA 执行；密码文件模式发生变化时步骤会显式重启 CDB。",
+                        ),
+                    ) + (
+                        (
+                            _command(
+                                "source_cdb.prerequisites.password_file",
+                                RunbookCommandType.SHELL,
+                                "在源数据库主机创建独占密码文件",
+                                f"""
+read -rsp '输入当前 SYS 密码: ' KBOT_SYS_PASSWORD; echo
+{oracle_home}/bin/orapwd file={source_password_file} password="$KBOT_SYS_PASSWORD" format=12.2 force=y
+unset KBOT_SYS_PASSWORD
+""",
+                                "仅在 V$PASSWORDFILE_INFO 未返回现有密码文件时执行。",
+                            ),
+                        )
+                        if not observed_source_password_file
+                        else ()
+                    ),
+                    verification_commands=(
+                        _command(
+                            "source_cdb.prerequisites.verify",
+                            RunbookCommandType.SQLPLUS,
+                            "核对源 CDB 和源 PDB",
+                            f"""
+SELECT name, db_unique_name, database_role, log_mode, force_logging, open_mode
+FROM v$database;
+SELECT name, open_mode, restricted FROM v$pdbs WHERE name=UPPER('{source_pdb}');
+SHOW PARAMETER dg_broker_start;
+""",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="target_os",
+            title="从零准备目标主机",
+            objective="按主库版本和目录结构安装 Oracle 软件并准备目标 CDB 文件系统。",
+            steps=(
+                RunbookStep(
+                    step_id="target_os.host",
+                    title="创建操作系统用户和目录",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="目标主机是全新环境，目录结构直接沿用主库。",
+                    commands=(
+                        _command(
+                            "target_os.host.shell",
+                            RunbookCommandType.SHELL,
+                            "在目标主机以 root 执行",
+                            f"""
+hostnamectl set-hostname {target_host.split('.', 1)[0]}
+getent group oinstall >/dev/null || groupadd -g 54321 oinstall
+getent group dba >/dev/null || groupadd -g 54322 dba
+id oracle >/dev/null 2>&1 || useradd -u 54321 -g oinstall -G dba oracle
+dnf install -y oracle-database-preinstall-{release_label} unzip
+mkdir -p {mkdir_command}
+chown -R oracle:oinstall {oracle_base} {data_dest if data_dest.startswith('/') else oracle_base} {fra_dest if fra_dest.startswith('/') else oracle_base}
+chmod -R 775 {oracle_base}
+""",
+                        ),
+                        _command(
+                            "target_os.host.network",
+                            RunbookCommandType.SHELL,
+                            "验证主备 DNS 和端口",
+                            f"""
+getent hosts {source_host}
+getent hosts {target_host}
+nc -vz {source_host} {port}
+nc -vz {target_host} {port}
+""",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="target_os.software",
+                    title="安装与主库一致的 Oracle 软件和 RU",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="DGPDB 两端必须使用兼容的数据库版本和补丁级别。",
+                    commands=(
+                        _command(
+                            "target_os.software.shell",
+                            RunbookCommandType.SHELL,
+                            "以 oracle 用户安装软件",
+                            f"""
+export ORACLE_BASE={oracle_base}
+export ORACLE_HOME={oracle_home}
+export PATH=$ORACLE_HOME/bin:$PATH
+mkdir -p "$ORACLE_HOME"
+unzip -q {software_archive} -d "$ORACLE_HOME"
+$ORACLE_HOME/runInstaller -silent -waitforcompletion \
+  oracle.install.option=INSTALL_DB_SWONLY \
+  UNIX_GROUP_NAME=oinstall \
+  INVENTORY_LOCATION={oracle_base}/oraInventory \
+  ORACLE_HOME="$ORACLE_HOME" \
+  ORACLE_BASE="$ORACLE_BASE" \
+  oracle.install.db.InstallEdition=EE \
+  oracle.install.db.OSDBA_GROUP=dba \
+  DECLINE_SECURITY_UPDATES=true
+""",
+                            "安装介质固定放置在 /stage/oracle；安装完成后由 root 执行提示的 root.sh，并应用与主库完全一致的 RU。",
+                        ),
+                    ),
+                    verification_commands=(
+                        _command(
+                            "target_os.software.verify",
+                            RunbookCommandType.SHELL,
+                            "核对软件版本",
+                            f"""
+{oracle_home}/bin/sqlplus -V
+{oracle_home}/OPatch/opatch lspatches
+""",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="target_cdb",
+            title="创建目标 CDB",
+            objective="创建独立目标 CDB，字符集、兼容参数和目录布局与源 CDB 保持一致。",
+            steps=(
+                RunbookStep(
+                    step_id="target_cdb.create",
+                    title="使用 DBCA 创建空目标 CDB",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="DGPDB 需要一个独立目标 CDB 承载 standby PDB，而不是复制整个源 CDB。",
+                    commands=(
+                        _command(
+                            "target_cdb.create.dbca",
+                            RunbookCommandType.SHELL,
+                            "在目标主机以 oracle 用户执行",
+                            f"""
+export ORACLE_BASE={oracle_base}
+export ORACLE_HOME={oracle_home}
+export ORACLE_SID={target_sid}
+export PATH=$ORACLE_HOME/bin:$PATH
+read -rsp '输入与源库一致的 SYS 密码: ' KBOT_SYS_PASSWORD; echo
+dbca -silent -createDatabase \
+  -templateName General_Purpose.dbc \
+  -gdbname {target_cdb} \
+  -sid {target_sid} \
+  -createAsContainerDatabase true \
+  -numberOfPDBs 0 \
+  -characterSet {character_set} \
+  -nationalCharacterSet {national_character_set} \
+  -databaseType MULTIPURPOSE \
+  -memoryMgmtType auto_sga \
+  -totalMemory {memory_mb} \
+  -initParams compatible={compatible},processes={processes},db_unique_name={target_cdb},remote_login_passwordfile=EXCLUSIVE \
+  {dbca_storage} \
+  {recovery_option} \
+  -recoveryAreaSize {fra_size_mb} \
+  -sysPassword "$KBOT_SYS_PASSWORD" \
+  -systemPassword "$KBOT_SYS_PASSWORD"
+unset KBOT_SYS_PASSWORD
+""",
+                        ),
+                    ),
+                    verification_commands=(
+                        _command(
+                            "target_cdb.create.verify",
+                            RunbookCommandType.SQLPLUS,
+                            "核对目标 CDB",
+                            "SELECT name, db_unique_name, cdb, open_mode, log_mode FROM v$database;",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="target_cdb.configure",
+                    title="配置目标 CDB 归档、Broker 和 SRL",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="目标 CDB 必须具备接收和应用源 PDB redo 的基础能力。",
+                    commands=(
+                        _command(
+                            "target_cdb.configure.sql",
+                            RunbookCommandType.SQLPLUS,
+                            "在目标 CDB Root 执行",
+                            f"""
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE ARCHIVELOG;
+ALTER DATABASE OPEN;
+ALTER DATABASE FORCE LOGGING;
+ALTER SYSTEM SET db_recovery_file_dest_size={fra_size} SCOPE=BOTH SID='*';
+ALTER SYSTEM SET db_recovery_file_dest='{fra_dest}' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';
+{target_srl_lines}
+""",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="connectivity",
+            title="配置密码文件、监听和双向 TNS",
+            objective="复制主库密码文件并建立 DGPDB Broker 所需的双向连接。",
+            steps=(
+                RunbookStep(
+                    step_id="connectivity.password",
+                    title="复制主库密码文件",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="目标 CDB 复用主库 SYS 密码文件内容，仅调整目标 SID 文件名。",
+                    commands=(
+                        _command(
+                            "connectivity.password.shell",
+                            RunbookCommandType.SHELL,
+                            "在目标主机以 oracle 用户执行",
+                            f"""
+scp oracle@{source_host}:{source_password_file} {target_password_file}
+chmod 600 {target_password_file}
+""",
+                            "密码文件必须通过受控 SSH 通道复制，不能在文档中记录 SYS 密码。",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="connectivity.listener_tns",
+                    title="配置监听和双向 TNS",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="两个独立 CDB 及 DGPDB Broker 必须能够使用稳定别名双向连接。",
+                    commands=(
+                        _command(
+                            "connectivity.listener.source_config",
+                            RunbookCommandType.CONFIG,
+                            "主库 listener.ora 静态注册",
+                            f"""
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (GLOBAL_DBNAME = {source_dgmgrl_service})
+      (ORACLE_HOME = {oracle_home})
+      (SID_NAME = {_text(precheck, 'instance_name')})))
+""",
+                        ),
+                        _command(
+                            "connectivity.listener.target_config",
+                            RunbookCommandType.CONFIG,
+                            "目标主机 listener.ora 静态注册",
+                            f"""
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (GLOBAL_DBNAME = {target_dgmgrl_service})
+      (ORACLE_HOME = {oracle_home})
+      (SID_NAME = {target_sid})))
+""",
+                        ),
+                        _command(
+                            "connectivity.tns.config",
+                            RunbookCommandType.CONFIG,
+                            "主备两端 tnsnames.ora",
+                            f"""
+{source_tns} =
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={source_host})(PORT={port}))
+    (CONNECT_DATA=(SERVICE_NAME={source_dgmgrl_service})))
+
+{target_tns} =
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={target_host})(PORT={port}))
+    (CONNECT_DATA=(SERVICE_NAME={target_dgmgrl_service})))
+""",
+                        ),
+                        _command(
+                            "connectivity.listener.reload",
+                            RunbookCommandType.SHELL,
+                            "分别在主库和目标主机重载监听，再测试双向别名",
+                            f"""
+{oracle_home}/bin/lsnrctl reload
+{oracle_home}/bin/tnsping {source_tns}
+{oracle_home}/bin/tnsping {target_tns}
+""",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="dgpdb",
+            title="建立 DGPDB",
+            objective="把源 PDB 加入跨 CDB Broker 配置组并在目标 CDB 创建 standby PDB。",
+            steps=(
+                RunbookStep(
+                    step_id="dgpdb.broker_configs",
+                    title="创建两个 CDB 的 Broker 配置和配置组",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="DGPDB 使用配置组协调两个独立 CDB，而不是把目标 CDB 设为整库物理备库。",
+                    commands=(
+                        _command(
+                            "dgpdb.broker_configs.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "创建并组合 Broker 配置",
+                            f"""
+CONNECT sys@{source_tns};
+CREATE CONFIGURATION '{source_config}' AS
+  PRIMARY DATABASE IS '{source_cdb}'
+  CONNECT IDENTIFIER IS '{source_tns}';
+ENABLE CONFIGURATION;
+
+CONNECT sys@{target_tns};
+CREATE CONFIGURATION '{target_config}' AS
+  PRIMARY DATABASE IS '{target_cdb}'
+  CONNECT IDENTIFIER IS '{target_tns}';
+ENABLE CONFIGURATION;
+
+CONNECT sys@{source_tns};
+ADD CONFIGURATION '{target_config}' CONNECT IDENTIFIER IS '{target_tns}';
+ENABLE CONFIGURATION ALL;
+""",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="dgpdb.add_pdb",
+                    title="创建并启用 standby PDB",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="Broker 从源 PDB 实例化目标 PDB，并持续传输和应用该 PDB 的 redo。",
+                    commands=(
+                        _command(
+                            "dgpdb.add_pdb.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "加入 PDB 级 Data Guard",
+                            f"""
+CONNECT sys@{source_tns};
+ADD PLUGGABLE DATABASE '{target_pdb}' AT '{target_cdb}'
+  SOURCE IS '{source_pdb}' AT '{source_cdb}';
+SHOW PLUGGABLE DATABASE '{target_pdb}' AT '{target_cdb}';
+""",
+                            "文件系统使用与源端相同的数据文件路径；目标主机必须已经创建对应目录。",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="dgpdb.active_data_guard",
+                    title="按许可打开目标 PDB 只读实时应用",
+                    applicability=RunbookApplicability.CONDITIONAL,
+                    rationale="仅在已购买 Active Data Guard 许可且需要查询时启用。",
+                    commands=(
+                        _command(
+                            "dgpdb.active_data_guard.sql",
+                            RunbookCommandType.SQLPLUS,
+                            "在目标 CDB 打开目标 PDB",
+                            f"ALTER PLUGGABLE DATABASE {target_pdb} OPEN READ ONLY;",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="validation",
+            title="验收与日常运维",
+            objective="验证 PDB 级传输、应用、Broker 健康和切换准备状态。",
+            steps=(
+                RunbookStep(
+                    step_id="validation.dgpdb",
+                    title="验证 DGPDB 状态",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="必须同时验证源 PDB、目标 PDB、两个 CDB 和 Broker 配置组。",
+                    commands=(
+                        _command(
+                            "validation.dgpdb.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "Broker 验收",
+                            f"""
+SHOW ALL;
+SHOW CONFIGURATION VERBOSE '{source_config}';
+SHOW CONFIGURATION VERBOSE '{target_config}';
+SHOW PLUGGABLE DATABASE '{source_pdb}' AT '{source_cdb}';
+SHOW PLUGGABLE DATABASE '{target_pdb}' AT '{target_cdb}';
+VALIDATE NETWORK CONFIGURATION FOR ALL;
+""",
+                        ),
+                        _command(
+                            "validation.dgpdb.source",
+                            RunbookCommandType.SQLPLUS,
+                            "源端验证",
+                            f"""
+ALTER SESSION SET CONTAINER={source_pdb};
+SELECT name, open_mode, restricted FROM v$pdbs WHERE name=UPPER('{source_pdb}');
+SELECT CURRENT_TIMESTAMP FROM dual;
+""",
+                        ),
+                        _command(
+                            "validation.dgpdb.target",
+                            RunbookCommandType.SQLPLUS,
+                            "目标端验证",
+                            f"""
+ALTER SESSION SET CONTAINER=CDB$ROOT;
+SELECT name, open_mode, restricted FROM v$pdbs WHERE name=UPPER('{target_pdb}');
+SELECT name, value, unit FROM v$dataguard_stats
+WHERE name IN ('transport lag','apply lag','apply finish time');
+SELECT timestamp, severity, message FROM v$dataguard_status
+WHERE timestamp > SYSDATE - 1 ORDER BY timestamp DESC FETCH FIRST 50 ROWS ONLY;
+""",
+                        ),
+                    ),
+                    risks=("Broker 存在 WARNING、目标 PDB 未追平或网络校验失败时不得进行 PDB switchover。",),
+                ),
+                RunbookStep(
+                    step_id="validation.operations",
+                    title="日常检查与切换前校验",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="交付可重复执行的 DGPDB 运维命令，但不自动切换。",
+                    commands=(
+                        _command(
+                            "validation.operations.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "日常 Broker 检查",
+                            f"""
+SHOW ALL;
+SHOW CONFIGURATION VERBOSE '{source_config}';
+SHOW CONFIGURATION VERBOSE '{target_config}';
+SHOW PLUGGABLE DATABASE '{target_pdb}' AT '{target_cdb}';
+VALIDATE PLUGGABLE DATABASE '{target_pdb}' AT '{target_cdb}';
+""",
+                        ),
+                    ),
+                    risks=("正式 switchover/failover 必须单独生成演练 Runbook 并审批。",),
+                ),
+            ),
+        ),
+    )
+    return ImplementationRunbook(
+        profile=ImplementationProfile.ORACLE_ADG_BUILD,
+        title=f"Oracle 26ai PDB 级 Data Guard（DGPDB）实施操作文档：{source_pdb}",
+        status=status,
+        execution_policy=(
+            "本产物按全新目标环境从零建设，所有名称和路径均从主库事实自动派生；"
+            "不要求用户补充备库主机、Oracle Home 或存储参数。"
+            "文档仅提供操作步骤，不自动执行命令。"
+        ),
+        current_state=current_state,
+        resolved_parameters=resolved_parameters,
+        required_inputs=(),
+        phases=phases,
+        stop_conditions=(
+            "目标主机无法解析派生主机名，或主备监听端口不通。",
+            "目标 Oracle 软件版本、RU、字符集或 COMPATIBLE 与源 CDB 不兼容。",
+            "目标目录或 ASM 磁盘组容量不足，无法容纳源 PDB 数据和 FRA。",
+            "密码文件未安全复制，或两个 CDB 的 Broker 远程认证失败。",
+            "Broker 配置组、PDB 实例化或 redo 应用出现持续错误。",
+            "源 PDB 使用 TDE 但目标 CDB 尚未安全导入所需密钥。",
+        ),
+        evidence_refs=evidence_refs,
+    )
 
 
 def _compile_oracle_adg_build(
@@ -434,12 +1413,6 @@ def _compile_oracle_adg_build(
     standby_file_management = _text(
         precheck, "standby_file_management"
     ).upper()
-    fra_dest = _text(precheck, "db_recovery_file_dest") or _explicit_parameter(
-        context, "PRIMARY_FRA_DEST"
-    )
-    fra_size = _text(
-        precheck, "db_recovery_file_dest_size"
-    ) or _explicit_parameter(context, "PRIMARY_FRA_SIZE")
     srl_shortage = _integer(precheck, "standby_redo_shortage")
     parameters, resolved_parameters = _resolve_adg_parameters(
         identity=identity,
@@ -459,25 +1432,40 @@ def _compile_oracle_adg_build(
     primary_host = parameters.get("PRIMARY_HOST", "")
     primary_port = parameters.get("PRIMARY_PORT", "1521")
     primary_service = parameters.get("PRIMARY_SERVICE_NAME", "")
-    standby_host = _explicit_parameter(context, "STANDBY_HOST")
-    oracle_home = _explicit_parameter(context, "ORACLE_HOME")
-    standby_storage = _explicit_parameter(context, "STANDBY_STORAGE")
-    unresolved_inputs = ["STANDBY_HOST", "ORACLE_HOME", "STANDBY_STORAGE"]
-    if standby_host:
-        unresolved_inputs.remove("STANDBY_HOST")
-    if oracle_home:
-        unresolved_inputs.remove("ORACLE_HOME")
-    if standby_storage:
-        unresolved_inputs.remove("STANDBY_STORAGE")
-    if not fra_dest:
-        unresolved_inputs.extend(("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE"))
-    if (
-        precheck is not None
-        and srl_shortage > 0
-        and not _text(precheck, "db_create_file_dest")
-    ):
-        unresolved_inputs.append("PRIMARY_LOG_STORAGE")
-    required_inputs = _required_inputs(*unresolved_inputs)
+    standby_host = parameters.get("STANDBY_HOST", "")
+    oracle_home = parameters.get("ORACLE_HOME", "")
+    oracle_base = parameters.get("ORACLE_BASE", "")
+    fra_dest = parameters.get("PRIMARY_FRA_DEST", "")
+    fra_size = parameters.get("PRIMARY_FRA_SIZE", "")
+    standby_storage = parameters.get("STANDBY_STORAGE", "")
+    standby_redo_dest = parameters.get("STANDBY_REDO_DEST", "")
+    standby_data_dest = parameters.get("STANDBY_DATA_DEST", "")
+    standby_audit_dest = parameters.get("STANDBY_AUDIT_DEST", "")
+    source_password_file = parameters.get("PRIMARY_PASSWORD_FILE", "")
+    standby_password_file = parameters.get("STANDBY_PASSWORD_FILE", "")
+    observed_source_password_file = _text(precheck, "password_file_path")
+    version = _text(identity, "version") or _text(precheck, "compatible") or "26ai"
+    release_label = _oracle_release_label(version)
+    software_archive = f"/stage/oracle/LINUX.X64_{release_label}_db_home.zip"
+    target_directories = tuple(
+        dict.fromkeys(
+            value
+            for value in (
+                oracle_base,
+                oracle_home,
+                standby_data_dest,
+                standby_redo_dest,
+                fra_dest,
+                standby_audit_dest,
+            )
+            if value and value.startswith("/")
+        )
+    )
+    target_directory_list = " ".join(target_directories)
+    primary_redo_dest = _directory_of(
+        _text(precheck, "sample_redo_member_path")
+    ) or _text(precheck, "db_create_file_dest")
+    required_inputs: tuple[RunbookRequiredInput, ...] = ()
     database_role = _text(precheck, "database_role") or _text(
         identity, "database_role"
     )
@@ -576,9 +1564,7 @@ def _compile_oracle_adg_build(
         RunbookStatus.PARTIAL_EVIDENCE
         if precheck is None
         else (
-            RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS
-            if required_inputs
-            else RunbookStatus.READY
+            RunbookStatus.READY
         )
     )
     baseline_backup_commands = (
@@ -748,6 +1734,23 @@ RESTORE DATABASE VALIDATE;
                     ),
                     rationale="Data Guard 远程管理和 redo 传输认证要求主备使用一致的独占密码文件。",
                     commands=() if remote_login_passwordfile == "EXCLUSIVE" else (
+                        *(
+                            (
+                                _command(
+                                    "primary.passwordfile_mode.create_file",
+                                    RunbookCommandType.SHELL,
+                                    "在主库创建独占密码文件",
+                                    f"""
+read -rsp '输入当前 SYS 密码: ' KBOT_SYS_PASSWORD; echo
+{oracle_home}/bin/orapwd file={source_password_file} password="$KBOT_SYS_PASSWORD" format=12.2 force=y
+unset KBOT_SYS_PASSWORD
+""",
+                                    "仅在 V$PASSWORDFILE_INFO 未返回现有密码文件时执行。",
+                                ),
+                            )
+                            if not observed_source_password_file
+                            else ()
+                        ),
                         _command(
                             "primary.passwordfile_mode.configure",
                             RunbookCommandType.SQLPLUS,
@@ -954,17 +1957,14 @@ SELECT dest_id, status, destination, error FROM v$archive_dest_status WHERE dest
                     applicability=(
                         RunbookApplicability.ALREADY_SATISFIED
                         if precheck is not None and srl_shortage <= 0
-                        else (
-                            RunbookApplicability.REQUIRED
-                            if _text(precheck, "db_create_file_dest")
-                            else RunbookApplicability.BLOCKED
-                        )
+                        else RunbookApplicability.REQUIRED
                     ),
                     rationale="每个 redo thread 的 SRL 数量至少应为 online redo group 数量加一，大小不小于对应联机日志。",
                     commands=() if precheck is not None and srl_shortage <= 0 else (
-                        _srl_commands(precheck)
-                        if _text(precheck, "db_create_file_dest")
-                        else ()
+                        _srl_commands(
+                            precheck,
+                            redo_destination=primary_redo_dest,
+                        )
                     ),
                     verification_commands=(
                         _command(
@@ -979,11 +1979,78 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
                     ),
                     rollback=(),
                     risks=("不能删除 ACTIVE 或正在归档的日志组；文件系统路径必须预先存在且空间充足。",),
-                    required_inputs=(
-                        ("PRIMARY_LOG_STORAGE",)
-                        if srl_shortage > 0
-                        and not _text(precheck, "db_create_file_dest")
-                        else ()
+                    required_inputs=(),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="target_environment",
+            title="从零建设备库主机与 Oracle 软件",
+            objective="按主库版本和文件布局准备全新备库，不等待用户补充主机、Oracle Home 或存储路径。",
+            steps=(
+                RunbookStep(
+                    step_id="target_environment.os",
+                    title="准备操作系统用户、内核前置和目录",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="备库按全新环境建设，主机名、用户组和文件系统目录由主库事实派生。",
+                    commands=(
+                        _command(
+                            "target_environment.os.root",
+                            RunbookCommandType.SHELL,
+                            "在备库以 root 执行",
+                            f"""
+hostnamectl set-hostname {standby_host.split('.', 1)[0]}
+dnf install -y oracle-database-preinstall-{release_label} unzip
+getent group oinstall >/dev/null || groupadd -g 54321 oinstall
+getent group dba >/dev/null || groupadd -g 54322 dba
+id oracle >/dev/null 2>&1 || useradd -u 54321 -g oinstall -G dba oracle
+mkdir -p {target_directory_list}
+chown -R oracle:oinstall {target_directory_list}
+chmod -R 775 {target_directory_list}
+""",
+                            "如果主库使用 ASM，基础设施团队应在此阶段以相同磁盘组名称完成 GI/ASM 建设；数据库 Runbook 继续使用已派生的磁盘组名。",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="target_environment.software",
+                    title="安装与主库一致的数据库软件和 RU",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="物理备库必须与主库使用兼容的 Oracle Home 版本和补丁级别。",
+                    commands=(
+                        _command(
+                            "target_environment.software.install",
+                            RunbookCommandType.SHELL,
+                            "在备库以 oracle 执行",
+                            f"""
+export ORACLE_BASE={oracle_base}
+export ORACLE_HOME={oracle_home}
+export PATH=$ORACLE_HOME/bin:$PATH
+mkdir -p "$ORACLE_HOME"
+unzip -q {software_archive} -d "$ORACLE_HOME"
+$ORACLE_HOME/runInstaller -silent -waitforcompletion \
+  oracle.install.option=INSTALL_DB_SWONLY \
+  UNIX_GROUP_NAME=oinstall \
+  INVENTORY_LOCATION={oracle_base}/oraInventory \
+  ORACLE_HOME="$ORACLE_HOME" \
+  ORACLE_BASE="$ORACLE_BASE" \
+  oracle.install.db.InstallEdition=EE \
+  oracle.install.db.OSDBA_GROUP=dba \
+  DECLINE_SECURITY_UPDATES=true
+""",
+                            "安装完成后由 root 执行安装器提示的 root.sh，并应用与主库完全一致的 RU。",
+                        ),
+                    ),
+                    verification_commands=(
+                        _command(
+                            "target_environment.software.verify",
+                            RunbookCommandType.SHELL,
+                            "核对备库软件版本和补丁",
+                            f"""
+{oracle_home}/bin/sqlplus -V
+{oracle_home}/OPatch/opatch lspatches
+""",
+                        ),
                     ),
                 ),
             ),
@@ -1100,21 +2167,22 @@ ORDER BY name;
                     title="同步密码文件",
                     applicability=(
                         RunbookApplicability.REQUIRED
-                        if oracle_home and standby_sid
+                        if source_password_file and standby_password_file
                         else RunbookApplicability.BLOCKED
                     ),
                     rationale="主备 SYS 密码文件必须一致，且 remote_login_passwordfile 应为 EXCLUSIVE。",
                     commands=(
                         _command(
-                            "connectivity.password_file.create",
+                            "connectivity.password_file.copy",
                             RunbookCommandType.SHELL,
-                            "在备库准备密码文件",
+                            "在备库复制主库密码文件并按备库 SID 命名",
                             f"""
-{oracle_home}/bin/orapwd file={oracle_home}/dbs/orapw{standby_sid} format=12.2 force=y
+scp oracle@{primary_host}:{source_password_file} {standby_password_file}
+chmod 600 {standby_password_file}
 """,
-                            "优先通过受控安全通道复制主库密码文件；不要把 SYS 密码写入脚本或 Runbook。",
+                            "通过受控 SSH 通道复制密码文件内容，不在 Runbook 中记录 SYS 密码。",
                         ),
-                    ) if oracle_home and standby_sid else (),
+                    ) if source_password_file and standby_password_file else (),
                     verification_commands=(
                         _command(
                             "connectivity.password_file.verify",
@@ -1123,8 +2191,13 @@ ORDER BY name;
                             "SHOW PARAMETER remote_login_passwordfile;",
                         ),
                     ),
-                    required_inputs=(
-                        ("ORACLE_HOME",) if not oracle_home else ()
+                    required_inputs=tuple(
+                        key
+                        for key, value in (
+                            ("PRIMARY_PASSWORD_FILE", source_password_file),
+                            ("STANDBY_PASSWORD_FILE", standby_password_file),
+                        )
+                        if not value
                     ),
                 ),
                 RunbookStep(
@@ -1606,8 +2679,9 @@ FROM v$database;
         title="Oracle Active Data Guard 建设实施 Runbook",
         status=status,
         execution_policy=(
+            "本产物按全新备库环境从零建设，主机名、Oracle Home、文件路径和密码文件目标名"
+            "均从主库事实自动派生；不要求用户先补充备库参数。"
             "本产物仅生成实施步骤，不执行任何 SQL、RMAN、DGMGRL 或系统命令。"
-            "页面中的可复制命令均已代入本轮解析参数；被外部输入阻断的步骤不生成伪可执行命令。"
             "用户后续明确选择某一步执行时，必须重新核验当时状态并进入受控 Action/审批。"
         ),
         current_state=current_state,
@@ -1618,7 +2692,7 @@ FROM v$database;
             "主备数据库版本、补丁级别或字符集不兼容。",
             "当前连接不是 CDB Root/NON-CDB，或目标数据库角色不是预期主库。",
             "主库无法形成可验证恢复点，或现有备份不可恢复。",
-            "备库容量不足，或 ASM/文件系统路径策略尚未确认。",
+            "派生的 ASM/文件系统路径尚未创建，或容量不足。",
             "主备监听/TNS/SYS 密码文件未通过双向连接验证。",
             "归档目标持续报错、日志缺口无法修复，或 MRP 无法稳定运行。",
             "任何命令的实际对象、路径或角色与 Runbook 假设不一致。",
@@ -1635,5 +2709,8 @@ def compile_implementation_runbook(
 ) -> ImplementationRunbook:
     """按结构化档案编译 Runbook，禁止模型自由拼接执行命令。"""
     if profile == ImplementationProfile.ORACLE_ADG_BUILD:
+        precheck, _ = _first_row(evidence, "db.ha.adg_precheck")
+        if _integer(precheck, "container_id") > 1:
+            return _compile_oracle_dgpdb_build(evidence, dict(context or {}))
         return _compile_oracle_adg_build(evidence, dict(context or {}))
     raise ValueError(f"不支持的实施方案档案：{profile}")

@@ -3,6 +3,13 @@ WITH parameter_values AS (
         MAX(CASE WHEN name = 'db_unique_name' THEN value END) AS db_unique_name,
         MAX(CASE WHEN name = 'service_names' THEN value END) AS service_names,
         MAX(CASE WHEN name = 'db_domain' THEN value END) AS db_domain,
+        MAX(CASE WHEN name = 'compatible' THEN value END) AS compatible,
+        MAX(CASE WHEN name = 'audit_file_dest' THEN value END) AS audit_file_dest,
+        MAX(CASE WHEN name = 'diagnostic_dest' THEN value END) AS diagnostic_dest,
+        MAX(CASE WHEN name = 'control_files' THEN value END) AS control_files,
+        MAX(CASE WHEN name = 'spfile' THEN value END) AS spfile,
+        MAX(CASE WHEN name = 'processes' THEN value END) AS processes,
+        MAX(CASE WHEN name = 'sga_target' THEN value END) AS sga_target,
         MAX(CASE WHEN name = 'remote_login_passwordfile' THEN value END) AS remote_login_passwordfile,
         MAX(CASE WHEN name = 'log_archive_config' THEN value END) AS log_archive_config,
         MAX(CASE WHEN name = 'log_archive_dest_1' THEN value END) AS log_archive_dest_1,
@@ -22,6 +29,13 @@ WITH parameter_values AS (
         'db_unique_name',
         'service_names',
         'db_domain',
+        'compatible',
+        'audit_file_dest',
+        'diagnostic_dest',
+        'control_files',
+        'spfile',
+        'processes',
+        'sga_target',
         'remote_login_passwordfile',
         'log_archive_config',
         'log_archive_dest_1',
@@ -37,6 +51,30 @@ WITH parameter_values AS (
         'db_recovery_file_dest_size',
         'dg_broker_start'
     )
+),
+database_paths AS (
+    SELECT
+        (SELECT MIN(name) FROM v$datafile) AS sample_datafile_path,
+        (SELECT MIN(name) FROM v$tempfile) AS sample_tempfile_path,
+        (SELECT MIN(member) FROM v$logfile WHERE type = 'ONLINE') AS sample_redo_member_path,
+        (SELECT MAX(file_name) FROM v$passwordfile_info) AS password_file_path,
+        (SELECT SUM(bytes) FROM v$datafile) AS datafile_bytes,
+        (
+            SELECT MAX(group_number)
+            FROM (
+                SELECT group# AS group_number FROM v$log
+                UNION ALL
+                SELECT group# AS group_number FROM v$standby_log
+            )
+        ) AS max_redo_group_number
+    FROM dual
+),
+database_character_sets AS (
+    SELECT
+        MAX(CASE WHEN parameter = 'NLS_CHARACTERSET' THEN value END) AS character_set,
+        MAX(CASE WHEN parameter = 'NLS_NCHAR_CHARACTERSET' THEN value END) AS national_character_set
+    FROM nls_database_parameters
+    WHERE parameter IN ('NLS_CHARACTERSET', 'NLS_NCHAR_CHARACTERSET')
 ),
 online_redo AS (
     SELECT
@@ -85,6 +123,13 @@ SELECT
     i.host_name,
     p.service_names,
     p.db_domain,
+    p.compatible,
+    p.audit_file_dest,
+    p.diagnostic_dest,
+    p.control_files,
+    p.spfile,
+    p.processes,
+    p.sga_target,
     d.platform_name,
     d.cdb,
     SYS_CONTEXT('USERENV', 'CON_NAME') AS container_name,
@@ -110,6 +155,14 @@ SELECT
     p.db_recovery_file_dest,
     p.db_recovery_file_dest_size,
     p.dg_broker_start,
+    cs.character_set,
+    cs.national_character_set,
+    paths.sample_datafile_path,
+    paths.sample_tempfile_path,
+    paths.sample_redo_member_path,
+    paths.password_file_path,
+    paths.datafile_bytes,
+    paths.max_redo_group_number,
     r.space_limit AS fra_space_limit_bytes,
     r.space_used AS fra_space_used_bytes,
     rs.online_redo_threads,
@@ -125,5 +178,7 @@ SELECT
 FROM v$database d
 CROSS JOIN v$instance i
 CROSS JOIN parameter_values p
+CROSS JOIN database_paths paths
+CROSS JOIN database_character_sets cs
 CROSS JOIN redo_summary rs
 LEFT JOIN v$recovery_file_dest r ON 1 = 1

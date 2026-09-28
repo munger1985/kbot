@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.implementation.pdf import (
+    _wrapped_code,
     render_implementation_runbook_pdf,
 )
 from aiops_agent.application.turns import ConversationTurnService
@@ -55,6 +56,15 @@ def _historical_payload() -> dict:
 
 
 class ImplementationRunbookPdfTest(unittest.TestCase):
+    def test_command_text_is_not_physically_wrapped(self) -> None:
+        command = (
+            "ALTER SYSTEM SET log_archive_dest_2='SERVICE=testdb_stby "
+            "ASYNC NOAFFIRM VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) "
+            "DB_UNIQUE_NAME=testdb_stby' SCOPE=BOTH SID='*';"
+        )
+
+        self.assertEqual(command, _wrapped_code(command))
+
     def test_renderer_accepts_historical_payload_without_v2_validation(self) -> None:
         content = render_implementation_runbook_pdf(_historical_payload())
 

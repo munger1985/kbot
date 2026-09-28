@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook 技术设计
 
-版本：1.2
+版本：1.3
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -60,6 +60,9 @@ ADG Runbook 路由必须满足：
 - 联机日志线程、组数、大小；
 - Standby Redo Log 线程、组数、大小；
 - 每线程 `online group + 1` 的 SRL 需求和缺口。
+- `COMPATIBLE`、字符集、进程和内存参数；
+- 数据文件、临时文件、redo、密码文件、审计、诊断和控制文件路径样例；
+- 数据文件总量和当前最大 redo group number。
 
 Playbook `oracle.ha.adg_build@1.0.0` 固定执行：
 
@@ -87,10 +90,17 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 - 备库 `DB_UNIQUE_NAME`、SID、主备 TNS Alias 和 Broker 配置名按固定命名规则派生；
 - 目标保护模式沿用当前保护模式，并确定性映射为 `ASYNC NOAFFIRM` 或 `SYNC AFFIRM`；
 - 主库查询值、Target 连接事实、用户确认值和派生值统一进入结构化参数解析表；
-- 缺少备库主机、Oracle Home 或存储事实时，相关步骤标记为 `BLOCKED` 且不生成命令；
+- 备库主机按主机名后缀、Oracle Home 按密码文件路径或版本标准目录自动派生；
+- 数据文件、redo、FRA、审计和密码文件目标路径沿用主库布局，目标环境按全新主机从零建设；
+- 主库密码文件内容复制到目标环境，并使用目标 SID 文件名；
+- `container_id > 1` 时路由到 Oracle 26ai DGPDB 编译器，创建独立目标 CDB、组合两端 Broker 配置并建立 standby PDB；
+- CDB Root/NON-CDB 才生成整库物理备库和 RMAN Duplicate；
 - 所有可复制命令必须已经代入解析值，禁止出现 `${...}` 或 `<...>` 伪可执行占位符；
 - 前置证据缺失时产物为 `PARTIAL_EVIDENCE`，但仍包含完整阶段；
 - Runbook 中不包含明文密码、密钥或自动切换/failover 命令。
+
+取得前置证据后，编译器不再为备库主机、Oracle Home、存储或密码文件目标名生成
+`required_inputs`。所有默认值在文档附录中标记为 `DERIVED`，便于变更评审追溯。
 
 ## 5. 回答和 UI
 
@@ -108,7 +118,8 @@ PDF 导出接口为：
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`。
 
 导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
-不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。接口复用会话所有者鉴权并禁止缓存。
+不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。PDF 命令块保留原始文本，不为排版物理拆分
+SQL 标识符或参数名。接口复用会话所有者鉴权并禁止缓存。
 
 ## 6. 从方案升级到执行
 
