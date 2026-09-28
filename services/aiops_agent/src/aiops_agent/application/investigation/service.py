@@ -786,48 +786,51 @@ class TurnPlanningService:
             deadline=context.deadline,
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
-        if (
-            compact.action_intent != ActionIntent.NONE
-            and planned.output.task_frame.action_intent
-            == ActionIntent.NONE
-        ):
-            planned = StructuredModelResult(
-                output=planned.output.model_copy(
-                    update={
-                        "task_frame": planned.output.task_frame.model_copy(
-                            update={
-                                "action_intent": compact.action_intent,
-                                "requires_change": (
-                                    compact.action_intent
-                                    == ActionIntent.EXECUTE
-                                ),
-                            }
-                        )
-                    }
-                ),
-                receipt=planned.receipt,
-            )
-        if (
-            compact.diagnostic_profile != DiagnosticProfile.GENERAL
-            and planned.output.task_frame.diagnostic_profile
-            == DiagnosticProfile.GENERAL
-        ):
-            planned = StructuredModelResult(
-                output=planned.output.model_copy(
-                    update={
-                        "task_frame": planned.output.task_frame.model_copy(
-                            update={
-                                "diagnostic_profile": (
-                                    compact.diagnostic_profile
-                                ),
-                                "subject_ref": dict(compact.subject_ref),
-                            }
-                        )
-                    }
-                ),
-                receipt=planned.receipt,
-            )
+        planned = StructuredModelResult(
+            output=self._align_full_plan_with_compact(
+                investigation=planned.output,
+                compact=compact,
+            ),
+            receipt=planned.receipt,
+        )
         return planned, selected_tools, selected_playbooks, route_snapshot
+
+    @staticmethod
+    def _align_full_plan_with_compact(
+        *,
+        investigation: InvestigationPlanningOutput,
+        compact,
+    ) -> InvestigationPlanningOutput:
+        """保持精简语义路由，完整 Planner 只补充假设和调查动作。"""
+        task_frame = investigation.task_frame.model_copy(
+            update={
+                "objectives": compact.objectives,
+                "problem_statement": compact.problem_statement,
+                "time_scope": compact.time_scope,
+                "requested_window_seconds": (
+                    compact.requested_window_seconds
+                ),
+                "temporal_analysis_mode": compact.temporal_analysis_mode,
+                "forecast_scope": compact.forecast_scope,
+                "forecast_horizon_seconds": (
+                    compact.forecast_horizon_seconds
+                ),
+                "success_criteria": compact.success_criteria,
+                "completion_requirements": (
+                    compact.completion_requirements
+                ),
+                "action_intent": compact.action_intent,
+                "diagnostic_profile": compact.diagnostic_profile,
+                "evidence_source_strategy": (
+                    compact.evidence_source_strategy
+                ),
+                "subject_ref": dict(compact.subject_ref),
+                "requires_change": (
+                    compact.action_intent == ActionIntent.EXECUTE
+                ),
+            }
+        )
+        return investigation.model_copy(update={"task_frame": task_frame})
 
     @staticmethod
     def _profile_tool_ids(compact) -> tuple[str, ...]:
@@ -1688,12 +1691,16 @@ class TurnPlanningService:
     ):
         """先按发现目录确定性补全计划，再对仍越界的 Tool 输入做一次受控修正。"""
         planned = StructuredModelResult(
-            output=self._bind_target_to_plan(
-                investigation=self._apply_default_temporal_windows(
-                    reset_model_deferred_flags(planned.output)
+            output=self._enforce_initial_evidence_source_strategy(
+                investigation=self._bind_target_to_plan(
+                    investigation=self._apply_default_temporal_windows(
+                        reset_model_deferred_flags(planned.output)
+                    ),
+                    target_context=context.target_context,
+                    available_tools=available_tools,
                 ),
-                target_context=context.target_context,
                 available_tools=available_tools,
+                revision_no=revision_no,
             ),
             receipt=planned.receipt,
         )
@@ -1806,12 +1813,16 @@ class TurnPlanningService:
                 )
             )
             repaired = StructuredModelResult(
-                output=self._bind_target_to_plan(
-                    investigation=self._apply_default_temporal_windows(
-                        repaired.output
+                output=self._enforce_initial_evidence_source_strategy(
+                    investigation=self._bind_target_to_plan(
+                        investigation=self._apply_default_temporal_windows(
+                            repaired.output
+                        ),
+                        target_context=context.target_context,
+                        available_tools=available_tools,
                     ),
-                    target_context=context.target_context,
                     available_tools=available_tools,
+                    revision_no=revision_no,
                 ),
                 receipt=repaired.receipt,
             )
@@ -1857,6 +1868,8 @@ class TurnPlanningService:
         return (
             alert_diagnosis
             or inspection
+            or investigation.task_frame.evidence_source_strategy
+            == EvidenceSourceStrategy.MONITORING_FIRST
             or investigation.task_frame.temporal_analysis_mode
             != TemporalAnalysisMode.CURRENT
             or any(
@@ -1932,6 +1945,53 @@ class TurnPlanningService:
         )
 
     @staticmethod
+    def _enforce_initial_evidence_source_strategy(
+        *,
+        investigation: InvestigationPlanningOutput,
+        available_tools: tuple[dict, ...],
+        revision_no: int,
+    ) -> InvestigationPlanningOutput:
+        """首轮监控优先时延后数据库动作，由服务端监控快照负责取证。"""
+        if (
+            revision_no != 1
+            or investigation.task_frame.evidence_source_strategy
+            != EvidenceSourceStrategy.MONITORING_FIRST
+            or "monitor.query_range"
+            not in {
+                str(item.get("tool_id") or "")
+                for item in available_tools
+            }
+        ):
+            return investigation
+        actions = tuple(
+            action
+            for action in investigation.plan.actions
+            if not action.tool_id.startswith("db.")
+        )
+        retained_ids = {action.action_id for action in actions}
+        normalized_actions = tuple(
+            action.model_copy(
+                update={
+                    "depends_on": tuple(
+                        dependency
+                        for dependency in action.depends_on
+                        if dependency in retained_ids
+                    )
+                }
+            )
+            for action in actions
+        )
+        if normalized_actions == investigation.plan.actions:
+            return investigation
+        return investigation.model_copy(
+            update={
+                "plan": investigation.plan.model_copy(
+                    update={"actions": normalized_actions}
+                )
+            }
+        )
+
+    @staticmethod
     def _validate_evidence_source_strategy(
         *,
         investigation: InvestigationPlanningOutput,
@@ -1955,17 +2015,6 @@ class TurnPlanningService:
             for action in investigation.plan.actions
             if not action.deferred
         )
-        monitoring_actions = tuple(
-            action
-            for action in executable
-            if action.tool_id == "monitor.query_range"
-        )
-        if not monitoring_actions:
-            raise InvestigationPlanValidationError(
-                "证据来源策略为MONITORING_FIRST，首轮必须先执行"
-                "monitor.query_range；数据库查询只能在监控证据不足后的"
-                "重规划轮执行"
-            )
         database_actions = tuple(
             action
             for action in executable
@@ -1974,7 +2023,7 @@ class TurnPlanningService:
         if database_actions:
             raise InvestigationPlanValidationError(
                 "证据来源策略为MONITORING_FIRST，首轮不能同时执行同类"
-                "数据库取证；如两类证据回答不同必要子问题，应把策略改为COMBINED"
+                "数据库取证；服务端会先加载监控快照，监控不足时再重规划补证"
             )
 
     def _prepare_valid_query_subset(
@@ -1992,15 +2041,11 @@ class TurnPlanningService:
             revision_no == 1
             and investigation.task_frame.evidence_source_strategy
             == EvidenceSourceStrategy.MONITORING_FIRST
-            and any(
-                action.tool_id == "monitor.query_range"
-                for action in source_actions
-            )
         ):
             source_actions = tuple(
                 action
                 for action in source_actions
-                if action.tool_id == "monitor.query_range"
+                if not action.tool_id.startswith("db.")
             )
 
         for action in source_actions:

@@ -65,6 +65,9 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
             provider = definition.providers.get("PROMETHEUS")
             if provider is None:
                 raise ValueError("指标不支持 Prometheus 查询覆盖")
+            override_matches_baseline = (
+                query.strip() == provider.query_template
+            )
             definition = definition.model_copy(
                 update={
                     "providers": {
@@ -78,6 +81,11 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                                     snapshot["binding_version"]
                                 ),
                                 "query_template": query.strip(),
+                                "fallback_query_templates": (
+                                    provider.fallback_query_templates
+                                    if override_matches_baseline
+                                    else ()
+                                ),
                             }
                         ),
                     }
@@ -92,13 +100,26 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                     PromQueryPolicySnapshot().max_window_seconds,
                 ),
             )
+            checked_fallbacks = tuple(
+                PromQueryPolicy(PromQueryPolicySnapshot())
+                .validate(
+                    fallback,
+                    window_seconds=min(
+                        definition.default_window_seconds,
+                        PromQueryPolicySnapshot().max_window_seconds,
+                    ),
+                )
+                .normalized_query
+                for fallback in provider.fallback_query_templates
+            )
             definition = definition.model_copy(
                 update={
                     "providers": {
                         **definition.providers,
                         "PROMETHEUS": provider.model_copy(
                             update={
-                                "query_template": checked.normalized_query
+                                "query_template": checked.normalized_query,
+                                "fallback_query_templates": checked_fallbacks,
                             }
                         ),
                     }

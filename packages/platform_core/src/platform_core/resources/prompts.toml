@@ -611,9 +611,9 @@ tool_id 或 expected_evidence_kind 及最少成功结果数；actions 必须覆�
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
 
 必须先区分历史观察与未来预测。只问当前时点状态时 temporal_analysis_mode=CURRENT，历史窗口和
-预测窗口均为空。只统计过去数据且不要求趋势外推时为HISTORICAL。凡询问趋势、增长、变化速度、
-持续性、容量耗尽或未来是否需要扩容，必须为HISTORICAL_AND_FORECAST：先分析历史真实采样，再
-基于历史趋势预测未来，不能用预测值替代历史事实。
+预测窗口均为空。询问过去的趋势、增长、变化速度或持续性，但没有要求未来外推时为HISTORICAL。
+只有明确询问容量耗尽时间、未来变化或是否需要扩容时才为HISTORICAL_AND_FORECAST：先分析历史
+真实采样，再基于历史趋势预测未来，不能用预测值替代历史事实。
 用户明确的过去范围写入time_scope并换算为requested_window_seconds；未明确时使用最近30天和
 2592000。用户明确的未来范围写入forecast_scope和forecast_horizon_seconds；未明确时使用未来
 30天和2592000。严禁把未来预测周期当成历史查询周期，也不得自行猜测90天等其他范围。
@@ -682,9 +682,9 @@ available_tools 中选择；Playbook 只是经验参考，可选，不是能力�
 用户明确要求报告、对比产物或关键证据时，必须写入 task_frame.completion_requirements，
 每项声明可接受的 tool_id 或 expected_evidence_kind 以及最少成功结果数。COMPARE 任务至少
 有一项结构化完成义务，首轮 plan 必须覆盖；相近但不同的报告或更宽时间窗口不能视为完成。
-必须先确定task_frame.temporal_analysis_mode。只问当前状态为CURRENT；只统计过去数据且不做
-外推为HISTORICAL；凡询问趋势、增长、变化速度、持续性、容量耗尽或未来是否需要扩容，必须为
-HISTORICAL_AND_FORECAST，并且先分析历史真实采样，再预测未来并给出建议。
+必须先确定task_frame.temporal_analysis_mode。只问当前状态为CURRENT；询问过去的趋势、增长、
+变化速度或持续性且不做未来外推时为HISTORICAL；只有明确询问容量耗尽时间、未来变化或是否需要
+扩容时才为HISTORICAL_AND_FORECAST，并且先分析历史真实采样，再预测未来并给出建议。
 用户明确的过去范围写入time_scope和requested_window_seconds；未明确时使用最近30天
 （Prometheus最大保留范围）和2592000。用户明确的未来范围写入forecast_scope和
 forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗口与预测窗口是两个独立
@@ -905,12 +905,11 @@ content = """
 9. 监控证据已经给出 first、latest、change、change_per_day、trend_slope_per_day、
    positive_change_ratio 或 estimated_days_to_limit 时，必须直接使用这些服务端计算结果，
    不要自行从图形或平均值重算。监控证据满足窗口与覆盖率时，不得声称必须再查数据库。
-10. 趋势回答必须分成历史事实、未来预测和运维建议三层。历史部分说明真实观察窗口、首末值、
-    变化量、日均变化和持续性；预测部分明确预测窗口、forecast_value、
-    forecast_utilization_percent和estimated_days_to_limit，并声明这是基于历史斜率的外推；
-    forecast_confidence=LOW时仍须展示预测数值，同时结合history_elapsed_days明确标注低置信度，
-    不得改写为“无法预测”；建议
-    必须落实到是否需要扩容、何时复核及数据不足时需要补什么，不能只罗列当前使用率。
+10. HISTORICAL趋势回答直接给出历史事实，说明真实观察窗口、首末值、变化量、日均变化和持续性，
+    不得因用户没有要求未来预测而拒绝回答。只有HISTORICAL_AND_FORECAST才增加未来预测和运维建议：
+    预测部分明确预测窗口、forecast_value、forecast_utilization_percent和estimated_days_to_limit，
+    并声明这是基于历史斜率的外推；forecast_confidence=LOW时仍须展示预测数值，同时结合
+    history_elapsed_days明确标注低置信度，不得改写为“无法预测”。
 """
 
 [[prompts]]
@@ -944,7 +943,8 @@ content = """
 监控证据中的 first、latest、change、change_per_day、trend_slope_per_day、
 positive_change_ratio 和 estimated_days_to_limit 是服务端确定性计算结果，应直接据此回答，
 不得自行从平均值重算；监控窗口与覆盖率满足要求时，不得声称仍必须查询数据库。
-趋势回答必须依次给出历史事实、未来预测和运维建议。未来预测使用服务端提供的
+HISTORICAL趋势回答应直接给出历史事实，不得因用户没有要求未来预测而拒绝回答。
+HISTORICAL_AND_FORECAST才依次给出历史事实、未来预测和运维建议。未来预测使用服务端提供的
 forecast_horizon_days、forecast_value、forecast_utilization_percent和estimated_days_to_limit，
 并明确其为基于历史斜率的外推。forecast_confidence=LOW时仍须展示预测数值，并结合
 history_elapsed_days明确说明低置信度及复核要求，不得表述为“无法预测”；不得把预测写成

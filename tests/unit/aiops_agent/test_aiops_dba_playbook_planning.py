@@ -1597,6 +1597,74 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             investigation.task_frame.objectives,
         )
 
+    def test_full_plan_keeps_compact_temporal_and_source_semantics(self):
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "FULL_INVESTIGATION",
+                "objectives": ["ASSESS"],
+                "action_intent": "NONE",
+                "diagnostic_profile": "GENERAL",
+                "evidence_source_strategy": "MONITORING_FIRST",
+                "subject_ref": {},
+                "problem_statement": "分析过去七天表空间变化趋势",
+                "time_scope": "过去七天",
+                "requested_window_seconds": 604800,
+                "temporal_analysis_mode": "HISTORICAL",
+                "success_criteria": ["给出各表空间七天实际变化"],
+                "selected_tool_ids": ["monitor.query_range"],
+                "public_reasoning_summary": "先读取监控历史时序",
+            }
+        )
+        full_compact = compact.model_copy(
+            update={
+                "planning_mode": "READ_ONLY_LOOKUP",
+                "objectives": (TaskObjective.ASSESS,),
+                "problem_statement": "预测未来容量并设计扩容方案",
+                "time_scope": "最近30天",
+                "requested_window_seconds": 2592000,
+                "temporal_analysis_mode": "HISTORICAL_AND_FORECAST",
+                "forecast_scope": "未来30天",
+                "forecast_horizon_seconds": 2592000,
+                "evidence_source_strategy": "DATABASE_FIRST",
+                "success_criteria": ("给出扩容方案",),
+                "actions": (
+                    InvestigationAction(
+                        action_id="a1",
+                        question="查询容量",
+                        tool_id="db.oracle.readonly_query",
+                        input={"sql": "SELECT 1 AS value FROM dual"},
+                        expected_evidence_kind="DATABASE_ROWS",
+                        measurement_semantics="CURRENT_ACTIVITY",
+                    ),
+                ),
+            }
+        )
+        full = TurnPlanningService._compact_investigation_output(
+            question="分析过去七天表空间变化趋势",
+            compact=full_compact,
+            target_context={"display_name": "Oracle Test DB"},
+        )
+
+        aligned = TurnPlanningService._align_full_plan_with_compact(
+            investigation=full,
+            compact=compact,
+        )
+
+        self.assertEqual(
+            "分析过去七天表空间变化趋势",
+            aligned.task_frame.problem_statement,
+        )
+        self.assertEqual(
+            "HISTORICAL", aligned.task_frame.temporal_analysis_mode
+        )
+        self.assertEqual(
+            "MONITORING_FIRST",
+            aligned.task_frame.evidence_source_strategy,
+        )
+        self.assertIsNone(aligned.task_frame.forecast_scope)
+        self.assertEqual(604800, aligned.task_frame.requested_window_seconds)
+        self.assertEqual("NONE", aligned.task_frame.action_intent)
+
     def test_controlled_action_is_promoted_without_complex_investigation(self):
         compact = CompactPlanningOutput.model_validate(
             {

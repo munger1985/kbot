@@ -173,7 +173,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
                 self._investigation("monitor.query_range", "up")
             )
 
-    def test_monitoring_first_strategy_rejects_database_in_initial_round(
+    def test_monitoring_first_strategy_defers_database_in_initial_round(
         self,
     ) -> None:
         database_only = self._investigation(
@@ -194,12 +194,26 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             {"tool_id": "db.oracle.readonly_query"},
         )
 
-        with self.assertRaises(InvestigationPlanValidationError):
-            TurnPlanningService._validate_evidence_source_strategy(
+        normalized = (
+            TurnPlanningService._enforce_initial_evidence_source_strategy(
                 investigation=database_only,
                 available_tools=available_tools,
                 revision_no=1,
             )
+        )
+        self.assertEqual((), normalized.plan.actions)
+        self.assertTrue(
+            TurnPlanningService._requires_monitoring_snapshot(
+                investigation=normalized,
+                inspection=False,
+                alert_diagnosis=False,
+            )
+        )
+        TurnPlanningService._validate_evidence_source_strategy(
+            investigation=normalized,
+            available_tools=available_tools,
+            revision_no=1,
+        )
 
         TurnPlanningService._validate_evidence_source_strategy(
             investigation=database_only,
@@ -246,6 +260,17 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
                 available_tools=available_tools,
                 revision_no=1,
             )
+        normalized_mixed = (
+            TurnPlanningService._enforce_initial_evidence_source_strategy(
+                investigation=mixed,
+                available_tools=available_tools,
+                revision_no=1,
+            )
+        )
+        self.assertEqual(
+            ["monitor.query_range"],
+            [action.tool_id for action in normalized_mixed.plan.actions],
+        )
 
     def test_monitoring_first_defaults_to_prometheus_maximum_window(self) -> None:
         current = self._investigation(

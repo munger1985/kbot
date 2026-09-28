@@ -1694,7 +1694,14 @@ class DbaAnswerComposeHandler:
         context: TaskExecutionContext,
         compilation,
     ) -> TurnAnswerBlock | None:
-        """容量 Finding 同时缺少磁盘组和路径事实时，在方案后插入确认卡。"""
+        """容量动作缺少磁盘组和路径事实时，在方案后插入确认卡。"""
+        task_frame = dict(
+            DbaAnswerComposeHandler._answer_context(context).get(
+                "task_frame", {}
+            )
+        )
+        if str(task_frame.get("action_intent") or "NONE") == "NONE":
+            return None
         has_tablespace = any(
             str(card.finding_type) == "TABLESPACE"
             for card in compilation.findings

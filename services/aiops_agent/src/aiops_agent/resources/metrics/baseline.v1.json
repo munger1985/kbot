@@ -224,6 +224,7 @@
           "template_id": "prom.db.storage",
           "template_version": "1",
           "query_template": "kbot_db_storage_utilization_percent{instance=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_used_percent{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -258,6 +259,7 @@
           "template_id": "prom.db.storage.used",
           "template_version": "1",
           "query_template": "kbot_db_storage_used_bytes{instance=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_bytes{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
         }
       }
@@ -281,6 +283,7 @@
           "template_id": "prom.db.storage.free",
           "template_version": "1",
           "query_template": "kbot_db_storage_free_bytes{instance=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_free{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
         }
       }
@@ -304,6 +307,7 @@
           "template_id": "prom.db.storage.max",
           "template_version": "1",
           "query_template": "kbot_db_storage_max_bytes{instance=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_max_bytes{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
         }
       }

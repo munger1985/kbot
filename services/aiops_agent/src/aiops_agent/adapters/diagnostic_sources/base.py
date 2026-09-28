@@ -190,6 +190,7 @@ class BaseDiagnosticSourceAdapter:
         effective_step: int,
         truncated: bool,
         warnings: tuple[str, ...] = (),
+        provenance: dict[str, Any] | None = None,
     ) -> MetricObservation:
         allowed_dimensions = frozenset(
             definition.expected_dimensions
@@ -255,7 +256,7 @@ class BaseDiagnosticSourceAdapter:
                 ).total_seconds()
                 // effective_step
             ),
-        )
+        ) * max(1, len(frozen))
         provider = definition.providers[self.context.source_type]
         return MetricObservation(
             metric_code=definition.metric_code,
@@ -286,6 +287,7 @@ class BaseDiagnosticSourceAdapter:
                 "template_version": provider.template_version,
                 "provider_response_hash": provider_response_hash,
                 "adapter_version": self.adapter_version,
+                **(provenance or {}),
             },
         )
 

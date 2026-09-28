@@ -185,6 +185,7 @@ def _answer_context(
     *,
     artifacts,
     target_facts=(),
+    action_intent: str = "NONE",
 ) -> TaskExecutionContext:
     return TaskExecutionContext(
         run_id=str(uuid7()),
@@ -204,7 +205,7 @@ def _answer_context(
                     "objectives": ["ASSESS"],
                     "problem_statement": "分析表空间容量",
                     "success_criteria": ["给出容量方案"],
-                    "action_intent": "NONE",
+                    "action_intent": action_intent,
                 },
                 "model": {"technical_name": "test-model", "revision": "1"},
                 "prompts": TEST_PROMPT_SNAPSHOT,
@@ -425,9 +426,12 @@ class CapacityAnswerInputTest(unittest.TestCase):
             ["db.storage.datafile.add", "db.storage.tempfile.add"],
             payload["capacity_plan"]["blocked_action_ids"],
         )
-        self.assertIn(AnswerBlockType.FACT_CONFIRMATION, [item.block_type for item in result.blocks])
+        self.assertNotIn(
+            AnswerBlockType.FACT_CONFIRMATION,
+            [item.block_type for item in result.blocks],
+        )
 
-    def test_missing_facts_keep_confirmation_and_never_add_file(self) -> None:
+    def test_advisory_missing_facts_keep_confirmation_and_never_add_file(self) -> None:
         fact = _tablespace_fact()
         result = asyncio.run(
             DbaAnswerComposeHandler(
@@ -437,6 +441,7 @@ class CapacityAnswerInputTest(unittest.TestCase):
                 _answer_context(
                     artifacts=(_sufficiency_artifact((fact,)),),
                     target_facts=(),
+                    action_intent="ADVISORY",
                 )
             )
         )

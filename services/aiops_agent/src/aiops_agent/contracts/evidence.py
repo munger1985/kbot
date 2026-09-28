@@ -42,6 +42,9 @@ class ProviderMetricDefinition(BaseModel):
     template_id: str = Field(min_length=1, max_length=128)
     template_version: str = Field(min_length=1, max_length=64)
     query_template: str | None = Field(default=None, max_length=2000)
+    fallback_query_templates: tuple[str, ...] = Field(
+        default=(), max_length=4
+    )
     exact_item_key: str | None = Field(default=None, max_length=512)
     target_type: str | None = Field(default=None, max_length=128)
     metric_name: str | None = Field(default=None, max_length=256)
@@ -49,6 +52,11 @@ class ProviderMetricDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_provider_locator(self) -> "ProviderMetricDefinition":
+        if any(
+            not query.strip() or len(query) > 2000
+            for query in self.fallback_query_templates
+        ):
+            raise ValueError("Provider 回退查询格式无效")
         if not (
             self.query_template
             or self.exact_item_key

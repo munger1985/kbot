@@ -1187,7 +1187,7 @@ class DiagnosisComposeTest(unittest.TestCase):
         )
 
 
-    def test_tablespace_missing_facts_inserts_confirmation_after_solution(self) -> None:
+    def test_readonly_tablespace_answer_skips_fact_confirmation(self) -> None:
         fact = _tablespace_fact()
         result = asyncio.run(
             DbaAnswerComposeHandler(
@@ -1202,16 +1202,27 @@ class DiagnosisComposeTest(unittest.TestCase):
         )
         block_types = [item.block_type for item in result.blocks]
         self.assertEqual("TABLESPACE", result.blocks[0].payload["findings"][0]["finding_type"])
-        self.assertEqual(
-            [
-                AnswerBlockType.FINDING_CARDS,
-                AnswerBlockType.ANALYSIS_MARKDOWN,
-                AnswerBlockType.SOLUTION_MARKDOWN,
-                AnswerBlockType.FACT_CONFIRMATION,
-            ],
-            block_types[:4],
+        self.assertNotIn(AnswerBlockType.FACT_CONFIRMATION, block_types)
+
+    def test_advisory_tablespace_answer_requests_missing_facts(self) -> None:
+        fact = _tablespace_fact()
+        result = asyncio.run(
+            DbaAnswerComposeHandler(
+                model_client=_AnswerModel(evidence_refs=(fact.evidence_ref,)),
+                prompts=_TestPrompts(),
+            ).execute(
+                _context(
+                    artifacts=(_sufficiency_artifact((fact,)),),
+                    target_facts=(),
+                    task_frame_overrides={"action_intent": "ADVISORY"},
+                )
+            )
         )
-        payload = result.blocks[3].payload
+        payload = next(
+            item.payload
+            for item in result.blocks
+            if item.block_type == AnswerBlockType.FACT_CONFIRMATION
+        )
         self.assertEqual(
             ["ASM_DISKGROUP", "DATAFILE_PATH"],
             payload["missing_fact_types"],

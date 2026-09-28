@@ -126,6 +126,57 @@ class MetricCatalogTest(unittest.TestCase):
         self.assertEqual(1, observation.summary["count"])
         self.assertEqual(1.0, observation.summary["last"])
 
+    def test_coverage_counts_expected_points_for_each_series(self) -> None:
+        now = datetime.now(UTC)
+        definition = load_metric_catalog().select(
+            ("db.storage.used_bytes",), db_type="ORACLE"
+        )[0]
+        adapter = PrometheusAdapter(
+            context=DiagnosticSourceContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="http://prometheus.example.com",
+                declared_capabilities={CAPABILITY_METRIC_QUERY_RANGE: {}},
+            ),
+            session=Mock(),
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+        request = MetricsEvidenceRequest(
+            target_id="target-1",
+            binding_id="binding-1",
+            source_locator_key="oracle-dev-01",
+            metric_definitions=(definition,),
+            window_start=now - timedelta(minutes=5),
+            window_end=now,
+            requested_step_seconds=60,
+            max_response_bytes=1024,
+            trace_id="trace-1",
+        )
+        observation = adapter._observation(
+            request=request,
+            definition=definition,
+            raw_series=[
+                (
+                    {"tablespace": "SYSTEM"},
+                    [(now - timedelta(minutes=1), "1"), (now, "2")],
+                ),
+                (
+                    {"tablespace": "SYSAUX"},
+                    [(now - timedelta(minutes=1), "3"), (now, "4")],
+                ),
+            ],
+            provider_response_hash="a" * 64,
+            effective_step=60,
+            truncated=False,
+        )
+        self.assertEqual(10, observation.expected_points)
+        self.assertEqual(4, observation.actual_points)
+        self.assertEqual(0.4, observation.coverage_ratio)
+
     def test_binding_can_override_prometheus_query_template(self) -> None:
         definition = load_metric_catalog().select(
             ("db.connection.active",), db_type="ORACLE"
@@ -149,6 +200,50 @@ class MetricCatalogTest(unittest.TestCase):
             "binding.db.connection.active", provider.template_id
         )
         self.assertIn("oracledb_sessions_value", provider.query_template)
+
+    def test_matching_binding_override_preserves_catalog_fallback(self) -> None:
+        definition = load_metric_catalog().select(
+            ("db.storage.used_bytes",), db_type="ORACLE"
+        )[0]
+        provider = definition.providers["PROMETHEUS"]
+        resolved = _metric_definitions(
+            {
+                "binding_version": 3,
+                "metrics": [definition.model_dump(mode="json")],
+                "mapping_overrides": {
+                    "prometheus_queries": {
+                        "db.storage.used_bytes": provider.query_template
+                    }
+                },
+            }
+        )
+        self.assertEqual(
+            provider.fallback_query_templates,
+            resolved[0].providers["PROMETHEUS"].fallback_query_templates,
+        )
+
+    def test_custom_binding_override_clears_catalog_fallback(self) -> None:
+        definition = load_metric_catalog().select(
+            ("db.storage.used_bytes",), db_type="ORACLE"
+        )[0]
+        resolved = _metric_definitions(
+            {
+                "binding_version": 3,
+                "metrics": [definition.model_dump(mode="json")],
+                "mapping_overrides": {
+                    "prometheus_queries": {
+                        "db.storage.used_bytes": (
+                            "custom_storage_bytes"
+                            '{instance="${external_target}"}'
+                        )
+                    }
+                },
+            }
+        )
+        self.assertEqual(
+            (),
+            resolved[0].providers["PROMETHEUS"].fallback_query_templates,
+        )
 
 
 class MonitorBlueprintTest(unittest.TestCase):
@@ -325,6 +420,9 @@ class _HealthResponse:
     async def json(self):
         return self._payload
 
+    async def read(self):
+        return json.dumps(self._payload).encode("utf-8")
+
 
 class _HealthSession:
     def __init__(self, response: _HealthResponse):
@@ -334,6 +432,141 @@ class _HealthSession:
     def get(self, url, **_):
         self.requested_url = url
         return self.response
+
+
+class _MetricQuerySession:
+    def __init__(self, responses: list[_HealthResponse]):
+        self.responses = list(responses)
+        self.queries: list[str] = []
+
+    def get(self, _url, **kwargs):
+        self.queries.append(str(kwargs["params"]["query"]))
+        return self.responses.pop(0)
+
+
+class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _payload(values: list[tuple[float, str]]) -> dict:
+        return {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {
+                            "instance": "oracle-dev-190",
+                            "tablespace": "SYSAUX",
+                        },
+                        "values": values,
+                    }
+                ]
+            },
+        }
+
+    async def test_incomplete_primary_uses_complete_raw_metric_fallback(
+        self,
+    ) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        session = _MetricQuerySession(
+            [
+                _HealthResponse(
+                    status=200,
+                    payload=self._payload([(now.timestamp(), "1")]),
+                ),
+                _HealthResponse(
+                    status=200,
+                    payload=self._payload(
+                        [
+                            ((now - timedelta(minutes=5)).timestamp(), "1"),
+                            (now.timestamp(), "2"),
+                        ]
+                    ),
+                ),
+            ]
+        )
+        definition = load_metric_catalog().select(
+            ("db.storage.used_bytes",), db_type="ORACLE"
+        )[0]
+        adapter = PrometheusAdapter(
+            context=DiagnosticSourceContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="http://prometheus.example.com",
+                declared_capabilities={CAPABILITY_METRIC_QUERY_RANGE: {}},
+            ),
+            session=session,  # type: ignore[arg-type]
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+        result = await adapter.query_metrics(
+            MetricsEvidenceRequest(
+                target_id="target-1",
+                binding_id="binding-1",
+                source_locator_key="oracle-dev-190",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(minutes=10),
+                window_end=now,
+                requested_step_seconds=300,
+                max_response_bytes=4096,
+                trace_id="trace-1",
+            )
+        )
+        self.assertEqual(2, len(session.queries))
+        self.assertIn("kbot_db_storage_used_bytes", session.queries[0])
+        self.assertIn("oracledb_tablespace_bytes", session.queries[1])
+        self.assertEqual(1.0, result.observations[0].coverage_ratio)
+        self.assertTrue(result.observations[0].provenance["fallback_used"])
+        self.assertIn("原始指标回退查询", result.observations[0].warnings[0])
+
+    async def test_complete_primary_does_not_query_fallback(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        session = _MetricQuerySession(
+            [
+                _HealthResponse(
+                    status=200,
+                    payload=self._payload(
+                        [
+                            ((now - timedelta(minutes=5)).timestamp(), "1"),
+                            (now.timestamp(), "2"),
+                        ]
+                    ),
+                )
+            ]
+        )
+        definition = load_metric_catalog().select(
+            ("db.storage.used_bytes",), db_type="ORACLE"
+        )[0]
+        adapter = PrometheusAdapter(
+            context=DiagnosticSourceContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="http://prometheus.example.com",
+                declared_capabilities={CAPABILITY_METRIC_QUERY_RANGE: {}},
+            ),
+            session=session,  # type: ignore[arg-type]
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+        result = await adapter.query_metrics(
+            MetricsEvidenceRequest(
+                target_id="target-1",
+                binding_id="binding-1",
+                source_locator_key="oracle-dev-190",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(minutes=10),
+                window_end=now,
+                requested_step_seconds=300,
+                max_response_bytes=4096,
+                trace_id="trace-1",
+            )
+        )
+        self.assertEqual(1, len(session.queries))
+        self.assertFalse(result.observations[0].provenance["fallback_used"])
 
 
 class PrometheusHealthTest(unittest.IsolatedAsyncioTestCase):

@@ -23,6 +23,8 @@ def _escape_prometheus_label(value: str) -> str:
 
 
 class PrometheusAdapter(BaseDiagnosticSourceAdapter):
+    _minimum_complete_coverage_ratio = 0.8
+
     async def health_check(
         self, request: SourceHealthRequest
     ) -> SourceHealthResult:
@@ -156,70 +158,71 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 definition.min_step_seconds,
                 max(1, duration // definition.max_points),
             )
-            query = provider.query_template.replace(
-                "${external_target}",
-                _escape_prometheus_label(source_locator_key),
-            ).replace(
-                "${host_target}",
-                _escape_prometheus_label(host_target_key),
+            query_templates = (
+                provider.query_template,
+                *provider.fallback_query_templates,
             )
-            try:
-                async with self._session.get(
-                    f"{self._endpoint().rstrip('/')}/api/v1/query_range",
-                    headers=self._headers(),
-                    params={
-                        "query": query,
-                        "start": request.window_start.timestamp(),
-                        "end": request.window_end.timestamp(),
-                        "step": step,
-                    },
-                    timeout=self._timeout,
-                ) as response:
-                    payload, response_hash = await self._response_json(
-                        response, max_bytes=request.max_response_bytes
-                    )
-                if (
-                    not isinstance(payload, dict)
-                    or payload.get("status") != "success"
-                ):
-                    raise DiagnosticSourceAdapterError(
-                        "SOURCE_RESPONSE_INVALID",
-                        "Prometheus 返回格式无效",
-                    )
-                result = payload.get("data", {}).get("result", [])
-                raw_series = []
-                for item in result:
-                    points = [
-                        (
-                            datetime.fromtimestamp(float(ts), tz=UTC),
-                            value,
-                        )
-                        for ts, value in item.get("values", [])
-                    ]
-                    raw_series.append((item.get("metric", {}), points))
-                if not raw_series:
-                    gaps.append(
-                        self._gap(
-                            request,
-                            metric_code=definition.metric_code,
-                            code="SOURCE_NO_DATA",
-                            detail="Prometheus 未返回采样",
-                        )
-                    )
-                    continue
-                observations.append(
-                    self._observation(
-                        request=request,
-                        definition=definition,
-                        raw_series=raw_series,
-                        provider_response_hash=response_hash,
-                        effective_step=step,
-                        truncated=(
-                            len(raw_series) > definition.max_series
-                        ),
-                    )
+            best_observation = None
+            query_errors: list[DiagnosticSourceAdapterError] = []
+            for query_index, query_template in enumerate(query_templates):
+                query = query_template.replace(
+                    "${external_target}",
+                    _escape_prometheus_label(source_locator_key),
+                ).replace(
+                    "${host_target}",
+                    _escape_prometheus_label(host_target_key),
                 )
-            except DiagnosticSourceAdapterError as exc:
+                try:
+                    raw_series, response_hash = await self._query_range(
+                        request=request,
+                        query=query,
+                        step=step,
+                    )
+                except DiagnosticSourceAdapterError as exc:
+                    query_errors.append(exc)
+                    continue
+                if not raw_series:
+                    continue
+                fallback_used = query_index > 0
+                observation = self._observation(
+                    request=request,
+                    definition=definition,
+                    raw_series=raw_series,
+                    provider_response_hash=response_hash,
+                    effective_step=step,
+                    truncated=len(raw_series) > definition.max_series,
+                    warnings=(
+                        (
+                            "记录指标不可用或历史覆盖不足，已采用原始指标回退查询",
+                        )
+                        if fallback_used
+                        else ()
+                    ),
+                    provenance={
+                        "query_variant": (
+                            f"fallback:{query_index}"
+                            if fallback_used
+                            else "primary"
+                        ),
+                        "fallback_used": fallback_used,
+                    },
+                )
+                if (
+                    best_observation is None
+                    or observation.coverage_ratio
+                    > best_observation.coverage_ratio
+                ):
+                    best_observation = observation
+                if (
+                    observation.coverage_ratio
+                    >= self._minimum_complete_coverage_ratio
+                ):
+                    break
+            if best_observation is not None:
+                observations.append(best_observation)
+                continue
+            if query_errors:
+                exc = query_errors[-1]
                 gaps.append(
                     self._gap(
                         request,
@@ -229,6 +232,54 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                         retryable=exc.retryable,
                     )
                 )
+                continue
+            gaps.append(
+                self._gap(
+                    request,
+                    metric_code=definition.metric_code,
+                    code="SOURCE_NO_DATA",
+                    detail="Prometheus 主查询和回退查询均未返回采样",
+                )
+            )
         return MetricsEvidenceResult(
             observations=tuple(observations), gaps=tuple(gaps)
         )
+
+    async def _query_range(
+        self,
+        *,
+        request: MetricsEvidenceRequest,
+        query: str,
+        step: int,
+    ) -> tuple[
+        list[tuple[dict[str, str], list[tuple[datetime, object]]]], str
+    ]:
+        """执行一次受控范围查询并归一 Prometheus 矩阵结果。"""
+        async with self._session.get(
+            f"{self._endpoint().rstrip('/')}/api/v1/query_range",
+            headers=self._headers(),
+            params={
+                "query": query,
+                "start": request.window_start.timestamp(),
+                "end": request.window_end.timestamp(),
+                "step": step,
+            },
+            timeout=self._timeout,
+        ) as response:
+            payload, response_hash = await self._response_json(
+                response, max_bytes=request.max_response_bytes
+            )
+        if not isinstance(payload, dict) or payload.get("status") != "success":
+            raise DiagnosticSourceAdapterError(
+                "SOURCE_RESPONSE_INVALID",
+                "Prometheus 返回格式无效",
+            )
+        result = payload.get("data", {}).get("result", [])
+        raw_series = []
+        for item in result:
+            points = [
+                (datetime.fromtimestamp(float(ts), tz=UTC), value)
+                for ts, value in item.get("values", [])
+            ]
+            raw_series.append((item.get("metric", {}), points))
+        return raw_series, response_hash
