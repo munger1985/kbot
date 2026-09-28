@@ -59,7 +59,7 @@
 .ops-progress-details strong { display: block; margin-bottom: 3px; color: #43516a; font-size: 10px; }
 .ops-progress-details ul { margin: 0; padding-left: 17px; }
 .ops-progress-details li + li { margin-top: 2px; }
-.ops-investigation-plan { max-width: 760px; margin: 0 0 18px 45px; padding: 13px 15px; border: 1px solid #cad4e6; background: #f6f8fc; }
+.ops-investigation-plan { max-width: 760px; max-height: 360px; margin: 0 0 18px 45px; padding: 13px 15px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid #cad4e6; background: #f6f8fc; }
 .ops-investigation-plan header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .ops-investigation-plan header strong { color: var(--accent); font-size: 13px; }
 .ops-investigation-plan header span { color: var(--muted); font-size: 11px; }
