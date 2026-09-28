@@ -742,6 +742,35 @@ async def download_workload_report(
     )
 
 
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf"
+)
+async def download_implementation_runbook_pdf(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+):
+    """代理数据库实施操作文档 PDF，不向浏览器暴露 Agent 内部接口。"""
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_implementation_runbook_pdf(
+        conversation_id,
+        turn_id,
+        auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": upstream.headers.get(
+                "Content-Disposition",
+                f'attachment; filename="oracle-adg-implementation-{turn_id}.pdf"',
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post(
     "/conversations/{conversation_id}/turns/{turn_id}/cancel",
     response_model=TurnSummary,

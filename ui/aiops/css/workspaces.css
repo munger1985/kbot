@@ -145,15 +145,18 @@
 .ops-runbook > header strong, .ops-runbook > header small { display: block; }
 .ops-runbook > header small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .ops-runbook-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: #dfeafb; color: #264d7d; font-size: 11px; font-weight: 700; }
+.ops-runbook-header-actions { display: flex; align-items: center; gap: 8px; }
+.ops-runbook-header-actions button { white-space: nowrap; }
 .ops-runbook-policy { margin: 0; padding: 12px 17px; border-bottom: 1px solid #d8e1ee; color: #765313; background: #fff9e9; }
 .ops-runbook h5, .ops-runbook h6 { margin: 0; }
-.ops-runbook > section, .ops-runbook-parameters, .ops-runbook-inputs, .ops-runbook-stop { margin: 14px 17px; }
+.ops-runbook > section, .ops-runbook-parameters, .ops-runbook-inputs, .ops-runbook-appendix, .ops-runbook-stop { margin: 14px 17px; }
 .ops-runbook-state { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
 .ops-runbook-state li { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); background: #fff; }
 .ops-runbook-state li span, .ops-runbook-state li small { color: var(--muted); font-size: 11px; }
 .ops-runbook-state li.is-remediation_required { border-color: #e2b5ad; background: #fff7f5; }
 .ops-runbook-state li.is-satisfied { border-color: #add5bd; background: #f5fff8; }
-.ops-runbook-parameters > summary, .ops-runbook-inputs > summary, .ops-runbook-phase > summary { cursor: pointer; font-weight: 700; }
+.ops-runbook-parameters > summary, .ops-runbook-inputs > summary, .ops-runbook-appendix > summary, .ops-runbook-phase > summary { cursor: pointer; font-weight: 700; }
+.ops-runbook-appendix > section { margin-top: 12px; }
 .ops-runbook-parameters ul, .ops-runbook-inputs ul { display: grid; gap: 7px; padding: 0; list-style: none; }
 .ops-runbook-parameters li, .ops-runbook-inputs li { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); }
 .ops-runbook-parameters li div, .ops-runbook-inputs li div { min-width: 0; }

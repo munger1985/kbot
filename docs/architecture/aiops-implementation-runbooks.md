@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook 技术设计
 
-版本：1.1
+版本：1.2
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -79,9 +79,11 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 
 - `LOG_MODE != ARCHIVELOG`：保留并标记启用归档步骤为 `REQUIRED`；
 - `FORCE_LOGGING != YES`：加入 `ALTER DATABASE FORCE LOGGING`；
+- `REMOTE_LOGIN_PASSWORDFILE != EXCLUSIVE`：加入 SPFILE 参数整改和重启提示；
 - 未配置 FRA：加入 FRA 和本地归档目标配置；
 - SRL 缺口大于零：按线程和缺口数生成补建命令；
-- 已满足的前置条件不删除步骤，标记为 `ALREADY_SATISFIED`，便于审计和复核；
+- 已满足的前置条件不删除步骤，标记为 `ALREADY_SATISFIED`，只保留验证命令；
+- 主库 Data Guard 参数逐项比较，仅为缺失或不一致项生成 `ALTER SYSTEM`；
 - 备库 `DB_UNIQUE_NAME`、SID、主备 TNS Alias 和 Broker 配置名按固定命名规则派生；
 - 目标保护模式沿用当前保护模式，并确定性映射为 `ASYNC NOAFFIRM` 或 `SYNC AFFIRM`；
 - 主库查询值、Target 连接事实、用户确认值和派生值统一进入结构化参数解析表；
@@ -93,11 +95,20 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 ## 5. 回答和 UI
 
 `DbaAnswerComposeHandler` 根据 `task_frame.implementation_profile` 编译
-`AnswerBlockType.IMPLEMENTATION_RUNBOOK`。模型 Markdown 只提供摘要，结构化 Block 是权威方案。
-Runbook 模式显式禁止 `PROPOSAL_SUMMARY`。
+`AnswerBlockType.IMPLEMENTATION_RUNBOOK`。该模式不再调用模型扩写背景说明，只输出一句执行边界，
+结构化 Block 是权威方案。Runbook 模式显式禁止 `PROPOSAL_SUMMARY`。
 
-前端按结构化字段渲染当前状态、已解析参数、外部输入、阶段、步骤和命令，并复用代码复制能力。
-阶段默认折叠，Runbook 主体设置最大高度和内部滚动；页面不把长方案当作普通 Markdown 一次性铺开。
+前端先渲染阶段、步骤和命令，当前状态、已解析参数和外部输入放到后置折叠附录，并复用代码复制
+能力。阶段默认折叠，Runbook 主体设置最大高度和内部滚动；页面不把长方案当作普通 Markdown
+一次性铺开。
+
+PDF 导出接口为：
+
+- 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`。
+
+导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
+不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。接口复用会话所有者鉴权并禁止缓存。
 
 ## 6. 从方案升级到执行
 

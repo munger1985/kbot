@@ -767,7 +767,13 @@
       const requiredInputs = values(payload.required_inputs).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.placeholder || "")}</code></li>`).join("");
       const phases = values(payload.phases).map((phase, phaseIndex) => `<details class="ops-runbook-phase"${phaseIndex === 0 ? " open" : ""}><summary><span>${esc(phase.title || phase.phase_id)}</span><small>${esc(phase.objective || "")}</small></summary><div class="ops-runbook-steps">${values(phase.steps).map((step) => `<article class="ops-runbook-step"><header><div><strong>${esc(step.title || step.step_id)}</strong><small>${esc(step.rationale || "")}</small></div><span class="ops-runbook-applicability is-${esc(String(step.applicability || "required").toLowerCase())}">${esc(applicabilityLabel[step.applicability] || step.applicability || "")}</span></header>${values(step.required_inputs).length ? `<p class="ops-runbook-needs"><strong>所需输入：</strong>${values(step.required_inputs).map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${commandGroup("实施命令", step.commands)}${commandGroup("验证命令", step.verification_commands)}${commandGroup("回退命令", step.rollback)}${values(step.risks).length ? `<div class="ops-runbook-risks"><strong>风险与注意事项</strong><ul>${values(step.risks).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : ""}</article>`).join("")}</div></details>`).join("");
       const stopConditions = values(payload.stop_conditions).length ? `<section class="ops-runbook-stop"><h5>停止条件</h5><ul>${values(payload.stop_conditions).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : "";
-      return `<section class="ops-runbook"><header><div><strong>${esc(payload.title || "数据库实施 Runbook")}</strong><small>${esc(payload.profile || "")}</small></div><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span></header><p class="ops-runbook-policy">${esc(payload.execution_policy || "")}</p>${stateItems ? `<section><h5>当前环境摘要</h5><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<details class="ops-runbook-parameters" open><summary>已解析实施参数</summary><ul>${resolvedParameters}</ul></details>` : ""}${requiredInputs ? `<details class="ops-runbook-inputs" open><summary>实施前必须确认的外部输入</summary><ul>${requiredInputs}</ul></details>` : ""}<div class="ops-runbook-body">${phases}</div>${stopConditions}</section>`;
+      const download = turn?.conversation_id && turn?.turn_id
+        ? `<button type="button" data-download-implementation-runbook data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button>`
+        : "";
+      const appendix = stateItems || resolvedParameters || requiredInputs
+        ? `<details class="ops-runbook-appendix"><summary>当前参数与待补齐基础设施信息</summary>${stateItems ? `<section><h5>当前环境摘要</h5><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<details class="ops-runbook-parameters"><summary>已解析实施参数</summary><ul>${resolvedParameters}</ul></details>` : ""}${requiredInputs ? `<details class="ops-runbook-inputs" open><summary>实施前必须确认的外部输入</summary><ul>${requiredInputs}</ul></details>` : ""}</details>`
+        : "";
+      return `<section class="ops-runbook"><header><div><strong>${esc(payload.title || "数据库实施 Runbook")}</strong><small>${esc(payload.profile || "")}</small></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span>${download}</div></header><p class="ops-runbook-policy">${esc(payload.execution_policy || "")}</p><div class="ops-runbook-body">${phases}</div>${appendix}${stopConditions}</section>`;
     }
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
@@ -924,6 +930,31 @@
     });
   }
 
+  function bindImplementationRunbookActions(root = document) {
+    root.querySelectorAll("[data-download-implementation-runbook]").forEach((button) => {
+      button.onclick = async () => {
+        button.disabled = true;
+        const label = button.textContent;
+        button.textContent = "正在下载…";
+        try {
+          const conversationId = encodeURIComponent(button.dataset.conversationId);
+          const turnId = encodeURIComponent(button.dataset.turnId);
+          await KBotAIOpsAuth.download(
+            `${api}/conversations/${conversationId}/turns/${turnId}/implementation-runbook.pdf`,
+            `oracle-adg-implementation-${button.dataset.turnId}.pdf`,
+            "application/pdf",
+          );
+          shell.toast("ADG 实施文档已开始下载");
+        } catch (error) {
+          shell.toast(error.message || "无法下载 ADG 实施文档");
+        } finally {
+          button.disabled = false;
+          button.textContent = label;
+        }
+      };
+    });
+  }
+
   async function openReportGenerator(button) {
     button.disabled = true;
     try {
@@ -1040,6 +1071,7 @@
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
     bindWorkloadReportActions(panel);
+    bindImplementationRunbookActions(panel);
     bindReportActions(panel);
     resumeActiveTurns(conversation.conversation_id, turns);
   }
@@ -1501,6 +1533,7 @@
     if (source) await bindContinue(source);
     bindReportActions(panel);
     bindWorkloadReportActions(panel);
+    bindImplementationRunbookActions(panel);
   }
 
   async function initCases(page) {

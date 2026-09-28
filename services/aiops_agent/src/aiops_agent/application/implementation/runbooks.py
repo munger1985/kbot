@@ -63,6 +63,16 @@ def _integer(row: dict[str, Any] | None, key: str) -> int:
         return 0
 
 
+def _setting_contains(value: str, *parts: str) -> bool:
+    """忽略空白和大小写判断 Oracle 参数是否已包含目标语义。"""
+    normalized = re.sub(r"\s+", "", value).upper()
+    return all(
+        re.sub(r"\s+", "", part).upper() in normalized
+        for part in parts
+        if part
+    )
+
+
 def _state_item(label: str, value: str, status: str) -> dict[str, Any]:
     return {"label": label, "value": value or "未取得", "status": status}
 
@@ -377,7 +387,12 @@ def _required_inputs(*keys: str) -> tuple[RunbookRequiredInput, ...]:
     )
 
 
-def _srl_commands(row: dict[str, Any] | None) -> tuple[RunbookCommand, ...]:
+def _srl_commands(
+    row: dict[str, Any] | None,
+    *,
+    command_scope: str = "primary",
+    title_scope: str = "主库",
+) -> tuple[RunbookCommand, ...]:
     plan = _text(row, "redo_thread_plan")
     commands: list[RunbookCommand] = []
     if plan:
@@ -389,9 +404,9 @@ def _srl_commands(row: dict[str, Any] | None) -> tuple[RunbookCommand, ...]:
             for ordinal in range(1, max(0, int(missing)) + 1):
                 commands.append(
                     _command(
-                        f"primary.srl.t{thread_no}.{ordinal}",
+                        f"{command_scope}.srl.t{thread_no}.{ordinal}",
                         RunbookCommandType.SQLPLUS,
-                        f"为线程 {thread_no} 增加第 {ordinal} 个 Standby Redo Log",
+                        f"在{title_scope}为线程 {thread_no} 增加第 {ordinal} 个 Standby Redo Log",
                         f"""
 ALTER DATABASE ADD STANDBY LOGFILE THREAD {thread_no}
   SIZE {size_mb}M;
@@ -413,6 +428,9 @@ def _compile_oracle_adg_build(
     )
     log_mode = _text(precheck, "log_mode").upper()
     force_logging = _text(precheck, "force_logging").upper()
+    remote_login_passwordfile = _text(
+        precheck, "remote_login_passwordfile"
+    ).upper()
     standby_file_management = _text(
         precheck, "standby_file_management"
     ).upper()
@@ -466,6 +484,94 @@ def _compile_oracle_adg_build(
     container_name = _text(precheck, "container_name")
     container_id = _integer(precheck, "container_id")
     redo_size = _integer(precheck, "online_redo_max_size_mb")
+    log_archive_dest_1 = _text(precheck, "log_archive_dest_1")
+    log_archive_config = _text(precheck, "log_archive_config")
+    log_archive_dest_2 = _text(precheck, "log_archive_dest_2")
+    log_archive_dest_state_2 = _text(
+        precheck, "log_archive_dest_state_2"
+    ).upper()
+    fal_server = _text(precheck, "fal_server")
+    dg_broker_start = _text(precheck, "dg_broker_start").upper()
+    fra_ready = bool(
+        fra_dest
+        and fra_size
+        and _setting_contains(
+            log_archive_dest_1,
+            "LOCATION=USE_DB_RECOVERY_FILE_DEST",
+            f"DB_UNIQUE_NAME={db_unique_name}",
+        )
+    )
+    desired_dg_config = f"DG_CONFIG=({db_unique_name},{standby_unique_name})"
+    desired_dest_2_parts = (
+        f"SERVICE={standby_tns_alias}",
+        transport_mode,
+        transport_ack,
+        "VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE)",
+        f"DB_UNIQUE_NAME={standby_unique_name}",
+    )
+    dest_2_ready = _setting_contains(
+        log_archive_dest_2, *desired_dest_2_parts
+    )
+    primary_parameter_commands: list[RunbookCommand] = []
+    if not _setting_contains(log_archive_config, desired_dg_config):
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.log_archive_config",
+                RunbookCommandType.SQLPLUS,
+                "设置 Data Guard 成员列表",
+                f"ALTER SYSTEM SET log_archive_config='{desired_dg_config}' SCOPE=BOTH SID='*';",
+            )
+        )
+    if not dest_2_ready:
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.log_archive_dest_2",
+                RunbookCommandType.SQLPLUS,
+                "设置备库 redo 传输目标",
+                (
+                    "ALTER SYSTEM SET log_archive_dest_2='"
+                    f"SERVICE={standby_tns_alias} {transport_mode} {transport_ack} "
+                    "VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) "
+                    f"DB_UNIQUE_NAME={standby_unique_name}' SCOPE=BOTH SID='*';"
+                ),
+            )
+        )
+    if not dest_2_ready and log_archive_dest_state_2 != "DEFER":
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.defer_transport",
+                RunbookCommandType.SQLPLUS,
+                "建设期间暂缓远端传输",
+                "ALTER SYSTEM SET log_archive_dest_state_2=DEFER SCOPE=BOTH SID='*';",
+            )
+        )
+    if fal_server.upper() != standby_tns_alias.upper():
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.fal_server",
+                RunbookCommandType.SQLPLUS,
+                "设置主库角色切换后的 FAL 服务",
+                f"ALTER SYSTEM SET fal_server='{standby_tns_alias}' SCOPE=BOTH SID='*';",
+            )
+        )
+    if standby_file_management != "AUTO":
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.standby_file_management",
+                RunbookCommandType.SQLPLUS,
+                "启用自动备库文件管理",
+                "ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH SID='*';",
+            )
+        )
+    if dg_broker_start != "TRUE":
+        primary_parameter_commands.append(
+            _command(
+                "parameters.primary.dg_broker_start",
+                RunbookCommandType.SQLPLUS,
+                "启动 Data Guard Broker",
+                "ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';",
+            )
+        )
     status = (
         RunbookStatus.PARTIAL_EVIDENCE
         if precheck is None
@@ -542,11 +648,24 @@ BACKUP SPFILE TAG 'PRE_ADG_BUILD_SPFILE';
         _state_item("归档模式", log_mode, "SATISFIED" if log_mode == "ARCHIVELOG" else "REMEDIATION_REQUIRED"),
         _state_item("强制日志", force_logging, "SATISFIED" if force_logging == "YES" else "REMEDIATION_REQUIRED"),
         _state_item(
+            "远程密码文件",
+            remote_login_passwordfile,
+            "SATISFIED"
+            if remote_login_passwordfile == "EXCLUSIVE"
+            else "REMEDIATION_REQUIRED",
+        ),
+        _state_item(
             "Flashback",
             _text(precheck, "flashback_on"),
             "SATISFIED" if _text(precheck, "flashback_on").upper() == "YES" else "OPTIONAL_REMEDIATION",
         ),
-        _state_item("FRA", fra_dest, "SATISFIED" if fra_dest else "INPUT_REQUIRED"),
+        _state_item(
+            "FRA 与本地归档目标",
+            fra_dest,
+            "SATISFIED" if fra_ready else (
+                "REMEDIATION_REQUIRED" if fra_dest and fra_size else "INPUT_REQUIRED"
+            ),
+        ),
         _state_item(
             "Standby Redo Log",
             f"缺少 {srl_shortage} 组" if precheck else "未取得",
@@ -584,7 +703,7 @@ BACKUP SPFILE TAG 'PRE_ADG_BUILD_SPFILE';
                             "完成实施确认单",
                             "确认页面列出的外部输入，记录主库停机窗口、备份保留点、DNS/SCAN/监听变更人和回退负责人。",
                         ),
-                    ),
+                    ) if required_inputs else (),
                     risks=("主备版本或补丁不一致会导致 Duplicate、日志应用或切换失败。",),
                     required_inputs=tuple(item.key for item in required_inputs),
                 ),
@@ -620,6 +739,46 @@ RESTORE DATABASE VALIDATE;
             objective="把主库改造成可持续传输并可恢复的 Data Guard 主库。",
             steps=(
                 RunbookStep(
+                    step_id="primary.passwordfile_mode",
+                    title="设置远程密码文件模式",
+                    applicability=(
+                        RunbookApplicability.ALREADY_SATISFIED
+                        if remote_login_passwordfile == "EXCLUSIVE"
+                        else RunbookApplicability.REQUIRED
+                    ),
+                    rationale="Data Guard 远程管理和 redo 传输认证要求主备使用一致的独占密码文件。",
+                    commands=() if remote_login_passwordfile == "EXCLUSIVE" else (
+                        _command(
+                            "primary.passwordfile_mode.configure",
+                            RunbookCommandType.SQLPLUS,
+                            "设置 REMOTE_LOGIN_PASSWORDFILE",
+                            (
+                                "ALTER SYSTEM SET remote_login_passwordfile='EXCLUSIVE' SCOPE=SPFILE SID='*';"
+                                if log_mode != "ARCHIVELOG"
+                                else """
+ALTER SYSTEM SET remote_login_passwordfile='EXCLUSIVE' SCOPE=SPFILE SID='*';
+SHUTDOWN IMMEDIATE;
+STARTUP;
+"""
+                            ),
+                            (
+                                "后续启用 ARCHIVELOG 的重启会使本参数生效；重启后再复制密码文件到备库。"
+                                if log_mode != "ARCHIVELOG"
+                                else "重启后再复制密码文件到备库。"
+                            ),
+                        ),
+                    ),
+                    verification_commands=() if log_mode != "ARCHIVELOG" else (
+                        _command(
+                            "primary.passwordfile_mode.verify",
+                            RunbookCommandType.SQLPLUS,
+                            "验证远程密码文件模式",
+                            "SHOW PARAMETER remote_login_passwordfile;",
+                        ),
+                    ),
+                    risks=("如本步骤发生变更，必须把主库重启纳入同一受控窗口。",),
+                ),
+                RunbookStep(
                     step_id="primary.archivelog",
                     title="启用 ARCHIVELOG",
                     applicability=(
@@ -628,7 +787,7 @@ RESTORE DATABASE VALIDATE;
                         else RunbookApplicability.REQUIRED
                     ),
                     rationale="物理备库依赖连续归档日志；NOARCHIVELOG 必须在建设前整改。",
-                    commands=(
+                    commands=() if log_mode == "ARCHIVELOG" else (
                         _command(
                             "primary.archivelog.enable",
                             RunbookCommandType.SQLPLUS,
@@ -646,10 +805,17 @@ ALTER DATABASE OPEN;
                             "primary.archivelog.verify",
                             RunbookCommandType.SQLPLUS,
                             "验证归档模式",
-                            "SELECT log_mode FROM v$database;",
+                            (
+                                "SELECT log_mode FROM v$database;"
+                                if remote_login_passwordfile == "EXCLUSIVE"
+                                else """
+SELECT log_mode FROM v$database;
+SHOW PARAMETER remote_login_passwordfile;
+"""
+                            ),
                         ),
                     ),
-                    rollback=(
+                    rollback=() if log_mode == "ARCHIVELOG" else (
                         _command(
                             "primary.archivelog.rollback",
                             RunbookCommandType.SQLPLUS,
@@ -673,7 +839,7 @@ ALTER DATABASE OPEN;
                         else RunbookApplicability.REQUIRED
                     ),
                     rationale="阻止 NOLOGGING 操作造成备库不可恢复的数据块缺口。",
-                    commands=(
+                    commands=() if force_logging == "YES" else (
                         _command(
                             "primary.force_logging.enable",
                             RunbookCommandType.SQLPLUS,
@@ -689,7 +855,7 @@ ALTER DATABASE OPEN;
                             "SELECT force_logging FROM v$database;",
                         ),
                     ),
-                    rollback=(
+                    rollback=() if force_logging == "YES" else (
                         _command(
                             "primary.force_logging.rollback",
                             RunbookCommandType.SQLPLUS,
@@ -700,51 +866,11 @@ ALTER DATABASE OPEN;
                     risks=("启用后 NOLOGGING 路径会产生额外 redo。",),
                 ),
                 RunbookStep(
-                    step_id="primary.flashback",
-                    title="启用 Flashback Database",
-                    applicability=(
-                        RunbookApplicability.ALREADY_SATISFIED
-                        if _text(precheck, "flashback_on").upper() == "YES"
-                        else RunbookApplicability.CONDITIONAL
-                    ),
-                    rationale="Flashback 不是物理备库的硬前置，但可显著降低故障切换后 reinstate 原主库的成本。",
-                    commands=(
-                        _command(
-                            "primary.flashback.enable",
-                            RunbookCommandType.SQLPLUS,
-                            "在已配置 FRA 的主库启用 Flashback",
-                            "ALTER DATABASE FLASHBACK ON;",
-                        ),
-                    ),
-                    verification_commands=(
-                        _command(
-                            "primary.flashback.verify",
-                            RunbookCommandType.SQLPLUS,
-                            "验证 Flashback",
-                            "SELECT flashback_on FROM v$database;",
-                        ),
-                    ),
-                    rollback=(
-                        _command(
-                            "primary.flashback.rollback",
-                            RunbookCommandType.SQLPLUS,
-                            "关闭 Flashback",
-                            "ALTER DATABASE FLASHBACK OFF;",
-                        ),
-                    ),
-                    risks=("Flashback 会持续占用 FRA，必须同步调整容量和保留窗口。",),
-                    required_inputs=(
-                        ("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE")
-                        if not fra_dest
-                        else ()
-                    ),
-                ),
-                RunbookStep(
                     step_id="primary.fra",
                     title="配置 FRA 与本地归档目标",
                     applicability=(
                         RunbookApplicability.ALREADY_SATISFIED
-                        if _text(precheck, "db_recovery_file_dest")
+                        if fra_ready
                         else (
                             RunbookApplicability.REQUIRED
                             if fra_dest and fra_size
@@ -752,11 +878,11 @@ ALTER DATABASE OPEN;
                         )
                     ),
                     rationale="归档和恢复文件必须有明确容量、告警和清理策略。",
-                    commands=(
+                    commands=() if fra_ready else (
                         _command(
                             "primary.fra.configure",
                             RunbookCommandType.SQLPLUS,
-                            "配置 FRA",
+                            "配置 FRA 与本地归档目标",
                             f"""
 ALTER SYSTEM SET db_recovery_file_dest_size={fra_size} SCOPE=BOTH SID='*';
 ALTER SYSTEM SET db_recovery_file_dest='{fra_dest}' SCOPE=BOTH SID='*';
@@ -783,6 +909,46 @@ SELECT dest_id, status, destination, error FROM v$archive_dest_status WHERE dest
                     ),
                 ),
                 RunbookStep(
+                    step_id="primary.flashback",
+                    title="启用 Flashback Database",
+                    applicability=(
+                        RunbookApplicability.ALREADY_SATISFIED
+                        if _text(precheck, "flashback_on").upper() == "YES"
+                        else RunbookApplicability.CONDITIONAL
+                    ),
+                    rationale="Flashback 不是物理备库的硬前置，但可显著降低故障切换后 reinstate 原主库的成本。",
+                    commands=() if _text(precheck, "flashback_on").upper() == "YES" else (
+                        _command(
+                            "primary.flashback.enable",
+                            RunbookCommandType.SQLPLUS,
+                            "在已配置 FRA 的主库启用 Flashback",
+                            "ALTER DATABASE FLASHBACK ON;",
+                        ),
+                    ),
+                    verification_commands=(
+                        _command(
+                            "primary.flashback.verify",
+                            RunbookCommandType.SQLPLUS,
+                            "验证 Flashback",
+                            "SELECT flashback_on FROM v$database;",
+                        ),
+                    ),
+                    rollback=() if _text(precheck, "flashback_on").upper() == "YES" else (
+                        _command(
+                            "primary.flashback.rollback",
+                            RunbookCommandType.SQLPLUS,
+                            "关闭 Flashback",
+                            "ALTER DATABASE FLASHBACK OFF;",
+                        ),
+                    ),
+                    risks=("Flashback 会持续占用 FRA，必须同步调整容量和保留窗口。",),
+                    required_inputs=(
+                        ("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE")
+                        if not fra_dest
+                        else ()
+                    ),
+                ),
+                RunbookStep(
                     step_id="primary.srl",
                     title="补齐 Standby Redo Log",
                     applicability=(
@@ -795,7 +961,7 @@ SELECT dest_id, status, destination, error FROM v$archive_dest_status WHERE dest
                         )
                     ),
                     rationale="每个 redo thread 的 SRL 数量至少应为 online redo group 数量加一，大小不小于对应联机日志。",
-                    commands=(
+                    commands=() if precheck is not None and srl_shortage <= 0 else (
                         _srl_commands(precheck)
                         if _text(precheck, "db_create_file_dest")
                         else ()
@@ -831,7 +997,11 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
                     step_id="parameters.primary",
                     title="配置主库参数",
                     applicability=(
-                        RunbookApplicability.REQUIRED
+                        (
+                            RunbookApplicability.REQUIRED
+                            if primary_parameter_commands
+                            else RunbookApplicability.ALREADY_SATISFIED
+                        )
                         if all(
                             (
                                 db_unique_name,
@@ -845,28 +1015,7 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
                         else RunbookApplicability.BLOCKED
                     ),
                     rationale="显式声明 DG_CONFIG、远端归档目标和角色相关参数。",
-                    commands=(
-                        _command(
-                            "parameters.primary.sql",
-                            RunbookCommandType.SQLPLUS,
-                            "设置主库 Data Guard 参数",
-                            f"""
-ALTER SYSTEM SET log_archive_config='DG_CONFIG=({db_unique_name},{standby_unique_name})' SCOPE=BOTH SID='*';
-ALTER SYSTEM SET log_archive_dest_2='SERVICE={standby_tns_alias} {transport_mode} {transport_ack} VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME={standby_unique_name}' SCOPE=BOTH SID='*';
-ALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH SID='*';
-ALTER SYSTEM SET fal_server='{standby_tns_alias}' SCOPE=BOTH SID='*';
-ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH SID='*';
-ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';
-""",
-                        ),
-                        _command(
-                            "parameters.primary.protection_mode",
-                            RunbookCommandType.SQLPLUS,
-                            "在备库稳定同步后设置目标保护模式",
-                            f"ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE {protection_mode};",
-                            "先用 PERFORMANCE 完成建设和追平；切换到 AVAILABILITY 或 PROTECTION 前必须确认 SYNC 目标健康。",
-                        ),
-                    ) if all(
+                    commands=tuple(primary_parameter_commands) if all(
                         (
                             db_unique_name,
                             standby_unique_name,
@@ -1330,6 +1479,124 @@ VALIDATE NETWORK CONFIGURATION FOR ALL;
                         ),
                     ),
                     risks=("存在未解决 gap、持续 apply lag 或 Broker WARNING 时不得进入切换演练。",),
+                ),
+            ),
+        ),
+        RunbookPhase(
+            phase_id="operations",
+            title="日常验证与运维命令",
+            objective="交付建设后的固定巡检、受控启停和切换前检查命令。",
+            steps=(
+                RunbookStep(
+                    step_id="operations.health",
+                    title="日常健康检查",
+                    applicability=RunbookApplicability.REQUIRED,
+                    rationale="同时核对 Broker、传输、应用延迟、日志缺口和最近 Data Guard 事件。",
+                    commands=(
+                        _command(
+                            "operations.health.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "Broker 日常检查",
+                            f"""
+SHOW CONFIGURATION VERBOSE;
+SHOW DATABASE VERBOSE '{db_unique_name}';
+SHOW DATABASE VERBOSE '{standby_unique_name}';
+VALIDATE DATABASE VERBOSE '{db_unique_name}';
+VALIDATE DATABASE VERBOSE '{standby_unique_name}';
+VALIDATE NETWORK CONFIGURATION FOR ALL;
+""",
+                        ),
+                        _command(
+                            "operations.health.primary",
+                            RunbookCommandType.SQLPLUS,
+                            "主库传输状态",
+                            """
+SELECT dest_id, status, target, destination, error, recovery_mode,
+       archived_thread#, archived_seq#
+FROM v$archive_dest_status
+WHERE status <> 'INACTIVE'
+ORDER BY dest_id;
+SELECT timestamp, severity, message
+FROM v$dataguard_status
+WHERE timestamp > SYSDATE - 1
+ORDER BY timestamp DESC FETCH FIRST 50 ROWS ONLY;
+""",
+                        ),
+                        _command(
+                            "operations.health.standby",
+                            RunbookCommandType.SQLPLUS,
+                            "备库应用状态",
+                            """
+SELECT name, value, unit, time_computed
+FROM v$dataguard_stats
+WHERE name IN ('transport lag','apply lag','apply finish time');
+SELECT process, status, thread#, sequence#
+FROM v$managed_standby ORDER BY process;
+SELECT thread#, low_sequence#, high_sequence# FROM v$archive_gap;
+SELECT timestamp, severity, message
+FROM v$dataguard_status
+WHERE timestamp > SYSDATE - 1
+ORDER BY timestamp DESC FETCH FIRST 50 ROWS ONLY;
+""",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="operations.control",
+                    title="受控暂停与恢复",
+                    applicability=RunbookApplicability.CONDITIONAL,
+                    rationale="仅在维护窗口或故障隔离时使用，操作后必须重新执行健康检查。",
+                    commands=(
+                        _command(
+                            "operations.control.apply",
+                            RunbookCommandType.SQLPLUS,
+                            "备库暂停和恢复日志应用",
+                            """
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT FROM SESSION;
+""",
+                            "两条语句分别用于暂停和恢复，不要作为一个无条件连续脚本执行。",
+                        ),
+                        _command(
+                            "operations.control.transport",
+                            RunbookCommandType.SQLPLUS,
+                            "主库暂停和恢复远端传输",
+                            """
+ALTER SYSTEM SET log_archive_dest_state_2=DEFER SCOPE=BOTH SID='*';
+ALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH SID='*';
+""",
+                            "两条语句分别用于暂停和恢复，不要作为一个无条件连续脚本执行。",
+                        ),
+                    ),
+                ),
+                RunbookStep(
+                    step_id="operations.switchover_readiness",
+                    title="切换前只读检查",
+                    applicability=RunbookApplicability.CONDITIONAL,
+                    rationale="本步骤只验证切换条件，不执行 switchover 或 failover。",
+                    commands=(
+                        _command(
+                            "operations.switchover_readiness.dgmgrl",
+                            RunbookCommandType.DGMGRL,
+                            "Broker 切换前校验",
+                            f"""
+SHOW CONFIGURATION VERBOSE;
+VALIDATE DATABASE VERBOSE '{db_unique_name}';
+VALIDATE DATABASE VERBOSE '{standby_unique_name}';
+""",
+                        ),
+                        _command(
+                            "operations.switchover_readiness.sql",
+                            RunbookCommandType.SQLPLUS,
+                            "数据库角色与切换状态",
+                            """
+SELECT db_unique_name, database_role, open_mode, protection_mode,
+       switchover_status
+FROM v$database;
+""",
+                        ),
+                    ),
+                    risks=("本 Runbook 不自动执行角色切换；正式切换必须另行审批并生成演练方案。",),
                 ),
             ),
         ),

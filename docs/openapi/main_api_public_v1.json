@@ -14160,6 +14160,58 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf": {
+      "get": {
+        "description": "代理数据库实施操作文档 PDF，不向浏览器暴露 Agent 内部接口。",
+        "operationId": "download_implementation_runbook_pdf_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__implementation_runbook_pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Implementation Runbook Pdf",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content": {
       "get": {
         "description": "代理已固化的会话图片，不向浏览器公开 AIOps 本地存储地址。",

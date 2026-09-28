@@ -124,6 +124,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('"text/html"', workspace)
         self.assertIn('accept = "application/pdf"', auth)
         self.assertIn("Accept: accept", auth)
+        self.assertIn("data-download-implementation-runbook", workspace)
+        self.assertIn("/implementation-runbook.pdf", workspace)
+        self.assertIn('"application/pdf"', workspace)
+        self.assertIn("bindImplementationRunbookActions(panel)", workspace)
 
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(

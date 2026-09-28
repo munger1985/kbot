@@ -1204,6 +1204,25 @@ class DbaAnswerComposeHandler:
             return self._waiting_result(assessment, context)
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        if self._is_implementation_runbook(context):
+            markdown = self._implementation_runbook_summary(assessment)
+            blocks = self._assemble_blocks(
+                context=context,
+                assessment=assessment,
+                markdown=markdown,
+            )
+            return AIOpsTurnResult(
+                status=(
+                    "COMPLETED"
+                    if assessment.status == SufficiencyStatus.ANSWERABLE
+                    else "PARTIAL"
+                ),
+                sufficiency_status=assessment.status,
+                blocks=tuple(blocks),
+                evidence=assessment.evidence,
+                evidence_gaps=assessment.gaps,
+                assessment_reasons=assessment.reasons,
+            )
         diagnosis = self._is_diagnosis_turn(context)
         if diagnosis:
             compilation = compile_findings(
@@ -1325,6 +1344,32 @@ class DbaAnswerComposeHandler:
             return
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
+        if self._is_implementation_runbook(context):
+            markdown = self._implementation_runbook_summary(assessment)
+            yield DbaAnswerProgress(
+                event_type="answer.delta",
+                event_key="answer-delta:1",
+                payload={"chunk_index": 1, "delta": markdown},
+            )
+            blocks = self._assemble_blocks(
+                context=context,
+                assessment=assessment,
+                markdown=markdown,
+            )
+            yield AIOpsTurnResult(
+                status=(
+                    "COMPLETED"
+                    if assessment.status == SufficiencyStatus.ANSWERABLE
+                    else "PARTIAL"
+                ),
+                sufficiency_status=assessment.status,
+                blocks=tuple(blocks),
+                evidence=assessment.evidence,
+                evidence_gaps=assessment.gaps,
+                assessment_reasons=assessment.reasons,
+                answer_streamed=True,
+            )
+            return
         if self._is_diagnosis_turn(context):
             async for item in self._stream_diagnosis(
                 context=context,
@@ -1695,6 +1740,15 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _answer_context(context: TaskExecutionContext) -> dict[str, Any]:
         return dict(context.plan_snapshot.get("answer_context", {}))
+
+    @staticmethod
+    def _implementation_runbook_summary(
+        assessment: DbaSufficiencyAssessment,
+    ) -> str:
+        """实施文档直接进入操作步骤，不再让模型扩写背景说明。"""
+        if assessment.evidence:
+            return "已按当前主库参数生成 ADG 实施操作文档；本轮仅生成文档，不执行命令。"
+        return "当前主库参数证据不完整；已生成可确认的操作框架，缺失事实对应步骤已标记为阻断。"
 
     @staticmethod
     def _is_diagnosis_turn(context: TaskExecutionContext) -> bool:

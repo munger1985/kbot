@@ -310,6 +310,36 @@ async def download_workload_report(
     )
 
 
+@router.get("/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf")
+async def download_implementation_runbook_pdf(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    """下载本轮已固化的数据库实施操作文档 PDF。"""
+    domain_id, actor_id = _scope(request, context)
+    content = (
+        await request.app.state.conversation_turn_service.get_implementation_runbook_pdf(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="oracle-adg-implementation-{turn_id}.pdf"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get(
     "/{conversation_id}/turns/{turn_id}/events",
     response_model=TurnEventPage,

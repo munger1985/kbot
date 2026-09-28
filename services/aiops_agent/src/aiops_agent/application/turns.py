@@ -26,6 +26,9 @@ from aiops_agent.application.targets.facts import create_confirmed_fact
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
 )
+from aiops_agent.application.implementation.pdf import (
+    render_implementation_runbook_pdf,
+)
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.entities import (
     OpsConversationEntity,
@@ -867,6 +870,40 @@ class ConversationTurnService:
                         return content
                     raise state_conflict("原生工作负载报告正文为空")
         raise resource_not_found("Oracle Workload Report")
+
+    async def get_implementation_runbook_pdf(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> bytes:
+        """导出会话中已固化的数据库实施 Runbook，兼容历史 Block。"""
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                domain_id=domain_id,
+                conversation_id=conversation_id,
+            )
+            turn = await uow.turns.get_turn(
+                domain_id=domain_id,
+                turn_id=turn_id,
+            )
+            if (
+                conversation is None
+                or conversation.created_by != actor_id
+                or turn is None
+                or turn.conversation_id != conversation_id
+            ):
+                raise resource_not_found("Conversation Turn")
+            for block in await uow.turns.list_answer_blocks(turn_id=turn_id):
+                if block.block_type != "IMPLEMENTATION_RUNBOOK":
+                    continue
+                payload = block.payload_json
+                if isinstance(payload, dict):
+                    return render_implementation_runbook_pdf(dict(payload))
+                raise state_conflict("数据库实施文档内容无效")
+        raise resource_not_found("Implementation Runbook")
 
     async def list_events(
         self,

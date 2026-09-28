@@ -1577,6 +1577,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="text/html",
         )
 
+    async def download_implementation_runbook_pdf(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        """下载会话内已固化的数据库实施操作文档 PDF。"""
+        return await self._bytes(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/implementation-runbook.pdf"
+            ),
+            auth_context=auth_context,
+            accept="application/pdf",
+        )
+
     async def list_conversation_turn_events(
         self,
         conversation_id: UUID,

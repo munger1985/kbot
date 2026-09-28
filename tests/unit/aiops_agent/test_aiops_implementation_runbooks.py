@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import unittest
 
@@ -52,7 +53,9 @@ def _precheck_fact(
     *,
     log_mode: str = "NOARCHIVELOG",
     force_logging: str = "NO",
+    remote_login_passwordfile: str = "NONE",
     shortage: int = 2,
+    configured_dataguard: bool = False,
 ) -> TurnEvidenceFact:
     names = (
         "database_name",
@@ -67,10 +70,17 @@ def _precheck_fact(
         "force_logging",
         "flashback_on",
         "protection_mode",
+        "remote_login_passwordfile",
+        "log_archive_config",
+        "log_archive_dest_1",
+        "log_archive_dest_2",
+        "log_archive_dest_state_2",
+        "fal_server",
         "db_recovery_file_dest",
         "db_recovery_file_dest_size",
         "db_create_file_dest",
         "standby_file_management",
+        "dg_broker_start",
         "standby_redo_shortage",
         "online_redo_max_size_mb",
         "redo_thread_plan",
@@ -99,10 +109,22 @@ def _precheck_fact(
                 force_logging,
                 "YES",
                 "MAXIMUM PERFORMANCE",
+                remote_login_passwordfile,
+                "DG_CONFIG=(testdb,testdb_stby)" if configured_dataguard else "",
+                "LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=testdb",
+                (
+                    "SERVICE=testdb_stby ASYNC NOAFFIRM "
+                    "VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) "
+                    "DB_UNIQUE_NAME=testdb_stby"
+                    if configured_dataguard else ""
+                ),
+                "ENABLE",
+                "testdb_stby" if configured_dataguard else "",
                 "+FRA",
                 "107374182400",
                 "+DATA",
                 "AUTO",
+                "TRUE" if configured_dataguard else "FALSE",
                 shortage,
                 200,
                 f"1:2:3:{shortage}:200",
@@ -218,6 +240,10 @@ class OracleAdgRunbookTests(unittest.TestCase):
         )
         self.assertEqual(
             RunbookApplicability.REQUIRED,
+            steps["primary.passwordfile_mode"].applicability,
+        )
+        self.assertEqual(
+            RunbookApplicability.REQUIRED,
             steps["primary.srl"].applicability,
         )
         command_text = "\n".join(
@@ -228,6 +254,7 @@ class OracleAdgRunbookTests(unittest.TestCase):
         )
         self.assertIn("ALTER DATABASE ARCHIVELOG", command_text)
         self.assertIn("ALTER DATABASE FORCE LOGGING", command_text)
+        self.assertIn("remote_login_passwordfile='EXCLUSIVE'", command_text)
         self.assertIn(
             "DG_CONFIG=(testdb,testdb_stby)",
             command_text,
@@ -284,6 +311,7 @@ class OracleAdgRunbookTests(unittest.TestCase):
                 _precheck_fact(
                     log_mode="ARCHIVELOG",
                     force_logging="YES",
+                    remote_login_passwordfile="EXCLUSIVE",
                     shortage=0,
                 ),
             ),
@@ -297,12 +325,56 @@ class OracleAdgRunbookTests(unittest.TestCase):
         for step_id in (
             "primary.archivelog",
             "primary.force_logging",
+            "primary.passwordfile_mode",
             "primary.srl",
         ):
             self.assertEqual(
                 RunbookApplicability.ALREADY_SATISFIED,
                 steps[step_id].applicability,
             )
+            self.assertFalse(steps[step_id].commands)
+
+    def test_existing_dataguard_parameters_only_emit_verification(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_ADG_BUILD,
+            evidence=(
+                _precheck_fact(
+                    log_mode="ARCHIVELOG",
+                    force_logging="YES",
+                    remote_login_passwordfile="EXCLUSIVE",
+                    shortage=0,
+                    configured_dataguard=True,
+                ),
+            ),
+        )
+        steps = {
+            step.step_id: step
+            for phase in runbook.phases
+            for step in phase.steps
+        }
+
+        self.assertEqual(
+            RunbookApplicability.ALREADY_SATISFIED,
+            steps["parameters.primary"].applicability,
+        )
+        self.assertFalse(steps["parameters.primary"].commands)
+        self.assertTrue(steps["parameters.primary"].verification_commands)
+
+    def test_runbook_ends_with_validation_and_daily_operations(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_ADG_BUILD,
+            evidence=(_precheck_fact(),),
+        )
+
+        self.assertEqual("operations", runbook.phases[-1].phase_id)
+        command_text = "\n".join(
+            command.content
+            for step in runbook.phases[-1].steps
+            for command in step.commands
+        )
+        self.assertIn("SHOW CONFIGURATION VERBOSE", command_text)
+        self.assertIn("v$dataguard_stats", command_text)
+        self.assertIn("log_archive_dest_state_2=DEFER", command_text)
 
     def test_missing_precheck_still_returns_complete_partial_runbook(self) -> None:
         runbook = compile_implementation_runbook(
@@ -316,6 +388,84 @@ class OracleAdgRunbookTests(unittest.TestCase):
 
 
 class ImplementationRunbookAnswerTests(unittest.TestCase):
+    @staticmethod
+    def _execution_context(
+        assessment: DbaSufficiencyAssessment,
+    ) -> TaskExecutionContext:
+        return TaskExecutionContext(
+            run_id="run",
+            task_id="task",
+            task_key="answer",
+            target_id="target",
+            agent_id="agent",
+            trigger_type="API",
+            trace_id="trace",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "answer_context": {
+                    "task_frame": {
+                        "objectives": ["PLAN"],
+                        "action_intent": "NONE",
+                        "implementation_profile": "ORACLE_ADG_BUILD",
+                    },
+                    "workflow_kind": "",
+                }
+            },
+            policy_snapshot={},
+            input_artifacts=(
+                {
+                    "artifact_id": "assessment",
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            ),
+        )
+
+    def test_execute_bypasses_model_and_returns_runbook_directly(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=(_precheck_fact(),),
+        )
+        handler = DbaAnswerComposeHandler(model_client=None, prompts=None)
+
+        result = asyncio.run(handler.execute(self._execution_context(assessment)))
+
+        self.assertEqual("COMPLETED", result.status)
+        self.assertIsNone(result.model_receipt)
+        self.assertIn(
+            AnswerBlockType.IMPLEMENTATION_RUNBOOK,
+            tuple(block.block_type for block in result.blocks),
+        )
+        self.assertEqual(
+            "已按当前主库参数生成 ADG 实施操作文档；本轮仅生成文档，不执行命令。",
+            result.blocks[0].payload["markdown"],
+        )
+
+    def test_stream_execute_emits_single_summary_then_runbook(self) -> None:
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=(_precheck_fact(),),
+        )
+        handler = DbaAnswerComposeHandler(model_client=None, prompts=None)
+
+        async def collect():
+            return [
+                item
+                async for item in handler.execute_stream(
+                    self._execution_context(assessment)
+                )
+            ]
+
+        items = asyncio.run(collect())
+
+        self.assertEqual("answer.delta", items[0].event_type)
+        self.assertTrue(items[-1].answer_streamed)
+        self.assertIn(
+            AnswerBlockType.IMPLEMENTATION_RUNBOOK,
+            tuple(block.block_type for block in items[-1].blocks),
+        )
+
     def test_answer_contains_runbook_and_never_proposal(self) -> None:
         handler = DbaAnswerComposeHandler(model_client=None, prompts=None)
         context = TaskExecutionContext(
