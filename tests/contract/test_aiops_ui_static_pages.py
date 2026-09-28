@@ -540,6 +540,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("investigationPlanHtml", workspace)
         self.assertIn("showInvestigationPlan", workspace)
         self.assertIn("调查计划与判断依据", workspace)
+        progress_rule = css.split(".ops-progress {", 1)[1].split("}", 1)[0]
+        self.assertIn("max-height: 320px", progress_rule)
+        self.assertIn("overflow-y: auto", progress_rule)
+        self.assertIn("scrollbar-gutter: stable", progress_rule)
         self.assertIn(".ops-investigation-plan", css)
         self.assertIn("max-height: 360px", css)
         self.assertIn("overflow-y: auto", css)

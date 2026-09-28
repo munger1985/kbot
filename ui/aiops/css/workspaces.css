@@ -43,8 +43,8 @@
 .ops-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
 .ops-composer-hint { color: var(--muted); font-size: 11px; }
 .ops-context-banner { padding: 11px 14px; border-left: 3px solid var(--accent); background: #eef2fa; color: #47536a; }
-.ops-progress { max-width: 760px; margin: 0 0 18px 45px; color: #47536a; }
-.ops-progress header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ops-progress { max-width: 760px; max-height: 320px; margin: 0 0 18px 45px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; color: #47536a; }
+.ops-progress header { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #dce3ef; background: #eef2fa; }
 .ops-progress header strong { color: var(--accent); font-size: 13px; }
 .ops-progress header span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .ops-progress-timeline { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
