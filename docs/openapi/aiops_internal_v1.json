@@ -639,8 +639,13 @@
           },
           "trust_level": {
             "default": "SOURCE_VERIFIED",
-            "maxLength": 24,
-            "minLength": 1,
+            "enum": [
+              "SOURCE_VERIFIED",
+              "USER_PROVIDED",
+              "KNOWLEDGE_CITATION",
+              "MODEL_INFERENCE",
+              "SYSTEM"
+            ],
             "title": "Trust Level",
             "type": "string"
           }

@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 27
-                              AND contract_version = 'aiops-oracle-v17'
+                              AND schema_version = 28
+                              AND contract_version = 'aiops-oracle-v18'
                             """
                         )
                     )
@@ -95,27 +95,6 @@ class AIOpsProcessRuntime:
                         )
                     )
                 ).scalar_one_or_none()
-                task_type_constraint = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_CONSTRAINTS
-                            WHERE TABLE_NAME = 'KBOT_OPS_TASK'
-                              AND CONSTRAINT_NAME = 'CK_OPS_TASK_TYPE'
-                              AND CONSTRAINT_TYPE = 'C'
-                              AND STATUS = 'ENABLED'
-                              AND VALIDATED = 'VALIDATED'
-                              AND SEARCH_CONDITION_VC LIKE '%CONTEXT_BUILD%'
-                              AND SEARCH_CONDITION_VC LIKE '%PLAYBOOK_INVOKE%'
-                              AND SEARCH_CONDITION_VC LIKE '%PROPOSAL%'
-                              AND SEARCH_CONDITION_VC NOT LIKE '%INTENT_ROUTE%'
-                              AND SEARCH_CONDITION_VC NOT LIKE '%SKILL_PLAN%'
-                              AND SEARCH_CONDITION_VC NOT LIKE '%SKILL_INVOKE%'
-                            """
-                        )
-                    )
-                ).scalar_one_or_none()
                 report_summary_column = (
                     await session.execute(
                         text(
@@ -140,43 +119,15 @@ class AIOpsProcessRuntime:
                         )
                     )
                 ).scalar_one_or_none()
-                tool_class_constraint = (
+                business_check_constraints = (
                     await session.execute(
                         text(
                             """
                             SELECT COUNT(*)
                             FROM USER_CONSTRAINTS
-                            WHERE TABLE_NAME = 'KBOT_OPS_TOOL_INVOCATION'
-                              AND CONSTRAINT_NAME = 'CK_OPS_TOOL_INV_CLASS'
+                            WHERE TABLE_NAME LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
                               AND CONSTRAINT_TYPE = 'C'
-                              AND STATUS = 'ENABLED'
-                              AND VALIDATED = 'VALIDATED'
-                              AND SEARCH_CONDITION_VC LIKE '%''PROMETHEUS''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''LOKI''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''ORACLE_SQL_DYNAMIC''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''USER_EVIDENCE''%'
-                            """
-                        )
-                    )
-                ).scalar_one_or_none()
-                answer_block_type_constraint = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_CONSTRAINTS
-                            WHERE TABLE_NAME = 'KBOT_OPS_ANSWER_BLOCK'
-                              AND CONSTRAINT_NAME = 'CK_OPS_ANSWER_BLOCK_TYPE'
-                              AND CONSTRAINT_TYPE = 'C'
-                              AND STATUS = 'ENABLED'
-                              AND VALIDATED = 'VALIDATED'
-                              AND SEARCH_CONDITION_VC LIKE '%''FINDING_CARDS''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''ANALYSIS_MARKDOWN''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''SOLUTION_MARKDOWN''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''FACT_CONFIRMATION''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''IMPLEMENTATION_RUNBOOK''%'
-                              AND SEARCH_CONDITION_VC LIKE '%''HTML_REPORT_LINKS''%'
+                              AND GENERATED = 'USER NAME'
                             """
                         )
                     )
@@ -185,9 +136,7 @@ class AIOpsProcessRuntime:
                     required_columns == 9
                     and report_summary_column == 1
                     and report_source_table == 1
-                    and task_type_constraint == 1
-                    and tool_class_constraint == 1
-                    and answer_block_type_constraint == 1
+                    and business_check_constraints == 0
                 )
             return {
                 "aiops_schema": "ok",

@@ -170,9 +170,7 @@ DECLARE
     l_workflow_kind_count PLS_INTEGER;
     l_required_column_count PLS_INTEGER;
     l_report_summary_count PLS_INTEGER;
-    l_task_type_constraint_count PLS_INTEGER;
-    l_tool_class_constraint_count PLS_INTEGER;
-    l_answer_block_type_constraint_count PLS_INTEGER;
+    l_business_check_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -270,21 +268,6 @@ BEGIN
        );
 
     SELECT COUNT(*)
-      INTO l_task_type_constraint_count
-      FROM user_constraints
-     WHERE table_name = 'KBOT_OPS_TASK'
-       AND constraint_name = 'CK_OPS_TASK_TYPE'
-       AND constraint_type = 'C'
-       AND status = 'ENABLED'
-       AND validated = 'VALIDATED'
-       AND search_condition_vc LIKE '%CONTEXT_BUILD%'
-       AND search_condition_vc LIKE '%PLAYBOOK_INVOKE%'
-       AND search_condition_vc LIKE '%PROPOSAL%'
-       AND search_condition_vc NOT LIKE '%INTENT_ROUTE%'
-       AND search_condition_vc NOT LIKE '%SKILL_PLAN%'
-       AND search_condition_vc NOT LIKE '%SKILL_INVOKE%';
-
-    SELECT COUNT(*)
       INTO l_report_summary_count
       FROM user_tab_columns
      WHERE table_name = 'KBOT_OPS_REPORT'
@@ -292,32 +275,11 @@ BEGIN
        AND data_type = 'CLOB';
 
     SELECT COUNT(*)
-      INTO l_tool_class_constraint_count
+      INTO l_business_check_constraint_count
       FROM user_constraints
-     WHERE table_name = 'KBOT_OPS_TOOL_INVOCATION'
-       AND constraint_name = 'CK_OPS_TOOL_INV_CLASS'
+     WHERE table_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
        AND constraint_type = 'C'
-       AND status = 'ENABLED'
-       AND validated = 'VALIDATED'
-       AND search_condition_vc LIKE '%''PROMETHEUS''%'
-       AND search_condition_vc LIKE '%''LOKI''%'
-       AND search_condition_vc LIKE '%''ORACLE_SQL''%'
-       AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%'
-       AND search_condition_vc LIKE '%''USER_EVIDENCE''%';
-
-    SELECT COUNT(*)
-      INTO l_answer_block_type_constraint_count
-      FROM user_constraints
-     WHERE table_name = 'KBOT_OPS_ANSWER_BLOCK'
-       AND constraint_name = 'CK_OPS_ANSWER_BLOCK_TYPE'
-       AND constraint_type = 'C'
-       AND status = 'ENABLED'
-       AND validated = 'VALIDATED'
-       AND search_condition_vc LIKE '%''FINDING_CARDS''%'
-       AND search_condition_vc LIKE '%''ANALYSIS_MARKDOWN''%'
-       AND search_condition_vc LIKE '%''SOLUTION_MARKDOWN''%'
-       AND search_condition_vc LIKE '%''FACT_CONFIRMATION''%'
-       AND search_condition_vc LIKE '%''HTML_REPORT_LINKS''%';
+       AND generated = 'USER NAME';
 
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
@@ -354,14 +316,8 @@ BEGIN
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
     END IF;
-    IF l_task_type_constraint_count <> 1 THEN
-        raise_application_error(-20009, 'CK_OPS_TASK_TYPE 与 Schema {schema_version} 合同不一致。');
-    END IF;
-    IF l_tool_class_constraint_count <> 1 THEN
-        raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema {schema_version} 合同不一致。');
-    END IF;
-    IF l_answer_block_type_constraint_count <> 1 THEN
-        raise_application_error(-20014, 'CK_OPS_ANSWER_BLOCK_TYPE 与应用合同不一致。');
+    IF l_business_check_constraint_count <> 0 THEN
+        raise_application_error(-20009, 'AIOps 业务表不得包含命名 CHECK 约束。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}

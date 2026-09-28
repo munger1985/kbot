@@ -1,48 +1,48 @@
 {
   "component": "aiops_agent",
-  "schema_version": 27,
-  "contract_version": "aiops-oracle-v17",
+  "schema_version": 28,
+  "contract_version": "aiops-oracle-v18",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 29,
-      "sha256": "ebfbe4a373a1a495d89118d843c6311fde7135b603b3d3e788b28d2cc99d000e"
+      "sha256": "b03eb9fb4a88d623388cdabf1348b729d612fcb74eac624300b98d8733e6e938"
     },
     {
       "name": "002_ops_runtime.sql",
       "statements": 35,
-      "sha256": "66eed35dd7f89910c45398a9313e9bbf77c5c32ea08bc9b5b1e6e3c81a04a2cc"
+      "sha256": "8fb4113eceb9a8b554e1520195f285e4a0669cdb5ef7d8556b75990258228655"
     },
     {
       "name": "003_ops_change.sql",
       "statements": 28,
-      "sha256": "23ea481535e1aaf974b005917dfdf5c851a18e38a7330dafa857714a0c569e5c"
+      "sha256": "a8f0857828a6fee01e570bf6d2ff401aef3a99bfdd6a35c1003c6ce5d8166c33"
     },
     {
       "name": "004_ops_inspection.sql",
       "statements": 23,
-      "sha256": "d9674e1a91a71226bc1852c763dbc9a7eb31f733900ba9ba2abc971b8d9cba92"
+      "sha256": "a31db85587cde815d15e9e6d804bb1dc391cddc2d3e5d77e64a4f25b4e79666f"
     },
     {
       "name": "005_ops_messaging.sql",
       "statements": 8,
-      "sha256": "569aab11f6aaa0727327e0bb2e809587e9a5f72f12934d773ce86d31e8ba590d"
+      "sha256": "40cf37ea41079d64d1a2edf07405d2aa3759af20eef1f96f2a5a3ad9eb7867a6"
     },
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "d96aa42ede6ca4f273911a6ef893adfa3f084bc992acf05fe4a4f56bd922d7f7"
+      "sha256": "9ea25612ed5a10804e8354b7f648a0e0cf2fece7dc8140f14dc3091ba5aa9a34"
     },
     {
       "name": "007_ops_agents.sql",
       "statements": 13,
-      "sha256": "17bb9dafa3f32e8294b74c07fd5dc82fed5f06fe7bd5ed34b1410122bceb9b02"
+      "sha256": "caebafc26264e1a7516b27c9262a096185958d5b35a4a814fd2cccd3cbc470f7"
     },
     {
       "name": "008_ops_conversations_reports.sql",
       "statements": 83,
-      "sha256": "7e9989a497c0095b8b045ea9509975dc04561dc0e2e9056bdc8bde5b640aa73c"
+      "sha256": "bb02b2ef2efa91691783c803747f709e79acdc9d781f26f9415a15f31089f784"
     }
   ],
   "tables": [

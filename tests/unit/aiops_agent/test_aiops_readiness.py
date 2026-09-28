@@ -100,8 +100,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_27_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 9, 1, 1, 1, 1, 1))
+    async def test_ready_requires_schema_28_contract_integrity(self) -> None:
+        session = _SchemaSession((1, 9, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -116,14 +116,12 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 27", session.statements[0])
-        self.assertIn("aiops-oracle-v17", session.statements[0])
-        self.assertIn("USER_EVIDENCE", session.statements[-2])
-        self.assertIn("FINDING_CARDS", session.statements[-1])
-        self.assertIn("IMPLEMENTATION_RUNBOOK", session.statements[-1])
+        self.assertIn("schema_version = 28", session.statements[0])
+        self.assertIn("aiops-oracle-v18", session.statements[0])
+        self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_27_contract(self) -> None:
-        session = _SchemaSession((1, 8, 1, 1, 1, 1, 1))
+    async def test_ready_rejects_partial_schema_28_contract(self) -> None:
+        session = _SchemaSession((1, 8, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -139,10 +137,10 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             "contract_mismatch", checks["aiops_schema_integrity"]
         )
 
-    async def test_ready_rejects_dynamic_tool_class_constraint_drift(
+    async def test_ready_rejects_business_check_constraint(
         self,
     ) -> None:
-        session = _SchemaSession((1, 9, 1, 1, 1, 0, 1))
+        session = _SchemaSession((1, 9, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -159,26 +157,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_ready_rejects_non_clob_report_summary(self) -> None:
-        session = _SchemaSession((1, 9, 1, 0, 1, 1, 1))
-        runtime = AIOpsProcessRuntime(
-            settings=object(),
-            service_name="test-aiops",
-            database_runtime=SimpleNamespace(
-                session_factory=lambda: session
-            ),
-        )
-
-        checks = await runtime.check_aiops_schema()
-
-        self.assertEqual("ok", checks["aiops_schema"])
-        self.assertEqual(
-            "contract_mismatch", checks["aiops_schema_integrity"]
-        )
-
-    async def test_ready_rejects_answer_block_type_constraint_drift(
-        self,
-    ) -> None:
-        session = _SchemaSession((1, 9, 1, 1, 1, 1, 0))
+        session = _SchemaSession((1, 9, 0, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

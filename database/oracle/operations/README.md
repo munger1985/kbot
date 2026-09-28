@@ -30,6 +30,11 @@ Target 页面明确选择 `CDB Root`、`PDB` 或 `Non-CDB`，重新测试连接�
 Schema 27 / `aiops-oracle-v17`。脚本仅扩展回答块类型约束以允许
 `IMPLEMENTATION_RUNBOOK`，并更新 Schema 版本视图；不删除或改写任何业务行。
 
+`apply_aiops_schema_28.sql` 用于将 AIOps Schema 27 / `aiops-oracle-v17` 原地升级到
+Schema 28 / `aiops-oracle-v18`。脚本移除全部 `KBOT_OPS_%` 表上的用户命名 `CHECK`
+约束，把枚举、状态和范围规则收回应用层合同；不删除表，也不删除或改写业务行。执行前
+必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

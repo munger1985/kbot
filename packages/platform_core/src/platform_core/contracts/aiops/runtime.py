@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -25,9 +25,13 @@ class ArtifactInput(AIOpsContract):
     payload: Any | None = None
     payload_uri: str | None = Field(default=None, max_length=2048)
     provenance: JsonObject = Field(default_factory=dict)
-    trust_level: str = Field(
-        default="SOURCE_VERIFIED", min_length=1, max_length=24
-    )
+    trust_level: Literal[
+        "SOURCE_VERIFIED",
+        "USER_PROVIDED",
+        "KNOWLEDGE_CITATION",
+        "MODEL_INFERENCE",
+        "SYSTEM",
+    ] = "SOURCE_VERIFIED"
     security_level: int = Field(default=1, ge=0, le=999)
 
     @model_validator(mode="after")

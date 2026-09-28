@@ -75,6 +75,13 @@ APPLY_SCHEMA_26 = (
     / "operations"
     / "apply_aiops_schema_26.sql"
 )
+APPLY_SCHEMA_28 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_28.sql"
+)
 CHECK_CATALOG = (
     ROOT
     / "services"
@@ -158,22 +165,15 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             self.preserving_sql.index("正在删除临时备份表"),
         )
 
-    def test_answer_block_constraint_supports_current_application_types(
+    def test_canonical_schema_does_not_enumerate_business_values(
         self,
     ) -> None:
         canonical = (SCHEMA_DIR / "008_ops_conversations_reports.sql").read_text(
             encoding="utf-8"
         )
-        for block_type in (
-            "FINDING_CARDS",
-            "ANALYSIS_MARKDOWN",
-            "SOLUTION_MARKDOWN",
-            "FACT_CONFIRMATION",
-            "HTML_REPORT_LINKS",
-        ):
-            self.assertIn(f"'{block_type}'", canonical)
-            self.assertIn(f"''{block_type}''", self.sql)
-            self.assertIn(f"''{block_type}''", self.preserving_sql)
+        self.assertNotRegex(canonical, r"\bCHECK\s*\(")
+        self.assertNotRegex(self.sql, r"\bCONSTRAINT\s+CK_OPS_")
+        self.assertNotRegex(self.preserving_sql, r"\bCONSTRAINT\s+CK_OPS_")
 
     def test_rebuild_validation_matches_manifest_contract(self) -> None:
         self.assertIn(f"l_table_count <> {len(self.manifest['tables'])}", self.sql)
@@ -194,8 +194,8 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("l_missing_view_count <> 0", self.sql)
         self.assertIn("l_required_column_count <> 16", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
-        self.assertIn("l_task_type_constraint_count <> 1", self.sql)
-        self.assertIn("''USER_EVIDENCE''", self.sql)
+        self.assertIn("l_business_check_constraint_count <> 0", self.sql)
+        self.assertNotIn("CK_OPS_TASK_TYPE", self.sql)
         for table_name in self.manifest["tables"]:
             self.assertIn(f"'{table_name}'", self.sql)
         for view_name in self.manifest["views"]:
@@ -401,6 +401,21 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
                 _analyze_canonical_sql(definition["name"], content),
             )
 
+    def test_schema_28_apply_removes_business_checks_without_data_changes(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_28.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("CONSTRAINT_TYPE = 'C'", normalized)
+        self.assertIn("GENERATED = 'USER NAME'", normalized)
+        self.assertIn("DROP CONSTRAINT", normalized)
+        self.assertIn("28 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V18' AS CONTRACT_VERSION", normalized)
+
     def test_canonical_analyzer_rejects_unclosed_check_constraint(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "括号未闭合"):
             _analyze_canonical_sql(
@@ -428,15 +443,6 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("Worker、Scheduler 和 DB Executor", self.sql)
         self.assertIn("SET SQLBLANKLINES ON", self.sql)
         self.assertNotIn("DROP USER", self.sql.upper())
-
-    def test_turn_status_check_is_closed_before_next_constraint(self) -> None:
-        self.assertIn(
-            "'PROPOSAL_PENDING', 'COMPLETED', 'PARTIAL', 'FAILED', "
-            "'CANCELLED'\n    )),\n"
-            "    CONSTRAINT CK_OPS_TURN_SUFFICIENCY CHECK (",
-            self.sql,
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

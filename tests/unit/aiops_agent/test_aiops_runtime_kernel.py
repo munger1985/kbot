@@ -538,6 +538,29 @@ class KernelHandlerTest(unittest.IsolatedAsyncioTestCase):
                 producer_version="1",
             )
 
+    def test_artifact_trust_level_is_validated_by_application_contract(
+        self,
+    ) -> None:
+        artifact = ArtifactInput(
+            artifact_type="IMPLEMENTATION_SCRIPT",
+            schema_version="AIOPS_RUNBOOK_ARTIFACT.v1",
+            producer="aiops.implementation-compiler",
+            producer_version="1",
+            payload={"content": "RUN { BACKUP DATABASE; }"},
+            trust_level="SYSTEM",
+        )
+        self.assertEqual("SYSTEM", artifact.trust_level)
+
+        with self.assertRaises(ValidationError):
+            ArtifactInput(
+                artifact_type="REPORT",
+                schema_version="REPORT.v1",
+                producer="handler",
+                producer_version="1",
+                payload={"status": "ready"},
+                trust_level="UNRECOGNIZED",
+            )
+
 
 class OracleTimeContractTest(unittest.TestCase):
     def test_oracle_timestamp_normalizes_to_utc(self) -> None:

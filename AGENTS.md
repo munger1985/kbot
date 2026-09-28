@@ -35,6 +35,10 @@ Public routes authenticate the Portal backend API Key and derive Domain/user con
 
 Add or update focused tests under `tests/unit/<service>/`, `tests/integration/`, or `tests/contract/`. Explicit environment checks belong in `tests/acceptance/`, real dependency flows in `tests/smoke/`, and quality datasets or runners in `tests/evaluation/`. Include a runnable `__main__` entry point when a tool is intended for direct execution, and keep environment assumptions explicit. Do not commit real OCI keys, database passwords, tokens, or `.env`/secret configuration.
 
+## Database Constraint Policy
+
+KBot 业务表只使用主键、外键和列级 `NOT NULL` 保障结构完整性。业务枚举、状态迁移、数值范围、字段组合关系和业务唯一性必须由应用层合同、领域服务及事务处理负责；规范 DDL 不得新增 `CHECK` 或 `UNIQUE` 表约束，也不得用唯一索引绕过这项原则。修改已有表时，不要扩展旧业务约束；应通过无损升级脚本逐步移除，并同步应用校验、测试和数据库文档。
+
 ## Commit & Pull Request Guidelines
 
 Recent history uses Conventional Commit-style prefixes, commonly `feat(scope):`, `fix(scope):`, and `fix:`; write concise imperative summaries, for example `feat(search): add graph reranking`. Keep commits scoped. Pull requests should explain the behavior change, identify configuration or schema impacts, list tests run, link related issues, and include request/response examples or screenshots for API/UI-visible changes.

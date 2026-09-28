@@ -687,21 +687,18 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         self.assertIn(AnswerBlockType.IMPLEMENTATION_RUNBOOK, block_types)
         self.assertNotIn(AnswerBlockType.EVIDENCE_REQUEST, block_types)
 
-    def test_oracle_schema_accepts_implementation_runbook_block(self) -> None:
+    def test_oracle_schema_does_not_enumerate_answer_block_types(self) -> None:
         canonical = (
             ROOT
             / "database/oracle/aiops_agent/008_ops_conversations_reports.sql"
         ).read_text(encoding="utf-8")
         upgrade = (
-            ROOT / "database/oracle/operations/apply_aiops_schema_27.sql"
-        ).read_text(encoding="utf-8")
-        readiness = (
-            ROOT
-            / "services/aiops_agent/src/aiops_agent/bootstrap/common.py"
+            ROOT / "database/oracle/operations/apply_aiops_schema_28.sql"
         ).read_text(encoding="utf-8")
 
-        for source in (canonical, upgrade, readiness):
-            self.assertIn("IMPLEMENTATION_RUNBOOK", source)
+        self.assertNotIn("CK_OPS_ANSWER_BLOCK_TYPE", canonical)
+        self.assertIn("CONSTRAINT_TYPE = 'C'", upgrade)
+        self.assertIn(AnswerBlockType.IMPLEMENTATION_RUNBOOK, AnswerBlockType)
 
 
 if __name__ == "__main__":
