@@ -114,6 +114,24 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
 
         self.assertIn("````sql\necho '```'\n````", content)
 
+    def test_manual_item_is_not_rendered_as_an_implementation_command(self) -> None:
+        payload = _historical_payload()
+        payload["phases"][0]["steps"][0]["commands"] = [{
+            "command_type": "MANUAL",
+            "executor": "MANUAL",
+            "title": "确认维护窗口",
+            "content": "由业务负责人确认停机窗口。",
+        }]
+
+        content = render_implementation_runbook_markdown(payload)
+
+        self.assertIn("### 人工确认项", content)
+        self.assertNotIn("### 实施命令", content)
+        self.assertNotIn("MANUAL ·", content)
+        self.assertNotIn("```text", content)
+        self.assertIn("由业务负责人确认停机窗口。", content)
+        self.assertTrue(render_implementation_runbook_pdf(payload).startswith(b"%PDF-"))
+
     def test_command_text_is_not_physically_wrapped(self) -> None:
         command = (
             "ALTER SYSTEM SET log_archive_dest_2='SERVICE=testdb_stby "

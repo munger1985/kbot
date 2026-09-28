@@ -765,7 +765,7 @@ async def download_implementation_runbook_pdf(
         headers={
             "Content-Disposition": upstream.headers.get(
                 "Content-Disposition",
-                f'attachment; filename="oracle-adg-implementation-{turn_id}.pdf"',
+                f'attachment; filename="database-implementation-{turn_id}.pdf"',
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
@@ -796,7 +796,7 @@ async def download_implementation_runbook_markdown(
         headers={
             "Content-Disposition": upstream.headers.get(
                 "Content-Disposition",
-                f'attachment; filename="oracle-adg-implementation-{turn_id}.md"',
+                f'attachment; filename="database-implementation-{turn_id}.md"',
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

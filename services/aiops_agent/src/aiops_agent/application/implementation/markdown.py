@@ -48,6 +48,7 @@ def _append_commands(
     commands: object,
     *,
     heading: str,
+    manual: bool = False,
 ) -> None:
     values = _items(commands)
     if not values:
@@ -57,11 +58,11 @@ def _append_commands(
         command = _mapping(command_value)
         command_type = _text(command.get("command_type"), "COMMAND")
         title = _text(command.get("title"), "命令")
-        lines.extend((f"#### {command_type} · {title}", ""))
-        metadata = [
+        lines.extend((f"#### {title}" if manual else f"#### {command_type} · {title}", ""))
+        metadata = [] if manual else [
             f"执行器 `{_text(command.get('executor'), command_type)}`",
-            f"身份 `{_text(command.get('run_as'))}`",
         ]
+        metadata.append(f"身份 `{_text(command.get('run_as'))}`")
         if _items(command.get("node_scope")):
             metadata.append(
                 "节点 " + "、".join(
@@ -72,11 +73,14 @@ def _append_commands(
         if command.get("risk_level"):
             metadata.append(f"风险 `{_text(command.get('risk_level'))}`")
         lines.extend(("；".join(metadata), ""))
-        lines.extend(_fenced_code(
-            command.get("content"),
-            _command_language(command.get("command_type")),
-        ))
-        lines.append("")
+        if manual:
+            lines.extend((_text(command.get("content")), ""))
+        else:
+            lines.extend(_fenced_code(
+                command.get("content"),
+                _command_language(command.get("command_type")),
+            ))
+            lines.append("")
         notes = _items(command.get("notes"))
         expected = _items(command.get("expected_result"))
         if expected:
@@ -179,7 +183,31 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
                     "",
                 ))
             for key, label in group_labels:
-                _append_commands(lines, step.get(key), heading=label)
+                values = _items(step.get(key))
+                if key == "commands":
+                    executable = [
+                        item for item in values
+                        if "MANUAL" not in {
+                            str(_mapping(item).get("command_type") or "").upper(),
+                            str(_mapping(item).get("executor") or "").upper(),
+                        }
+                    ]
+                    manual = [
+                        item for item in values
+                        if "MANUAL" in {
+                            str(_mapping(item).get("command_type") or "").upper(),
+                            str(_mapping(item).get("executor") or "").upper(),
+                        }
+                    ]
+                    _append_commands(lines, executable, heading=label)
+                    _append_commands(
+                        lines,
+                        manual,
+                        heading="人工确认项",
+                        manual=True,
+                    )
+                    continue
+                _append_commands(lines, values, heading=label)
             risks = _items(step.get("risks"))
             if risks:
                 lines.extend(("### 风险与注意事项", ""))

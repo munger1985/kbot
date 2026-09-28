@@ -111,6 +111,8 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 前端按正式 Markdown 文档视觉连续渲染封面信息、执行边界、目录、阶段、步骤、命令、停止条件和附录，
 不再使用 `details` 折叠容器、固定最大高度或区块内滚动。目录链接定位到阶段和步骤，命令块在页面
 宽度内自动换行，但复制按钮始终复制结构化 Block 中保存的原始命令文本。
+只有 SQL、RMAN、DGMGRL、Shell 等真实可执行内容进入“实施命令”；`MANUAL` 内容单独显示为
+“人工确认项”，缺失事实导致的阻断步骤只显示阻断原因和所需事实，不生成中文说明伪命令。
 
 结构化 Runbook JSON 是唯一真相。`application/implementation/markdown.py` 负责无状态、确定性的
 Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命令类型元数据，PDF 与 Markdown 下载

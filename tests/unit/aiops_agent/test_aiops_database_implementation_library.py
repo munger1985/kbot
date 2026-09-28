@@ -18,7 +18,12 @@ from aiops_agent.application.implementation.registry import (
 )
 from aiops_agent.application.investigation.service import TurnPlanningService
 from aiops_agent.contracts.implementation import RunbookStatus
-from platform_core.contracts.aiops import ImplementationProfile
+from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from platform_core.contracts.aiops import (
+    ImplementationProfile,
+    MeasurementSemantics,
+)
+from platform_core.contracts.aiops.playbooks import PresentationPreference
 
 
 class DatabaseImplementationLibraryTest(unittest.TestCase):
@@ -112,6 +117,90 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
                 "oracle-rman-backup/bin/run-rman-job.sh",
                 names,
             )
+
+    def test_rman_backup_uses_real_commands_for_every_ready_phase(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RMAN_BACKUP_BUILD,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "INSTANCE_NAME": "TESTDB",
+                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
+                    "BACKUP_DEST": "/backup/testdb",
+                }
+            },
+        )
+
+        commands = [
+            command
+            for phase in runbook.phases
+            for step in phase.steps
+            for command in step.commands
+        ]
+        self.assertTrue(commands)
+        self.assertTrue(all(step.commands for phase in runbook.phases for step in phase.steps))
+        self.assertNotIn("MANUAL", {item.command_type.value for item in commands})
+        serialized = runbook.model_dump_json()
+        self.assertNotIn("按本阶段检查表实施并留存证据", serialized)
+        self.assertIn("REPORT NEED BACKUP RECOVERY WINDOW OF 7 DAYS", serialized)
+        self.assertIn("RESTORE DATABASE VALIDATE CHECK LOGICAL", serialized)
+        self.assertIn("promtool check rules", serialized)
+        self.assertIn("df -P /backup/testdb", serialized)
+
+    def test_blocked_steps_do_not_publish_manual_pseudo_commands(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RMAN_BACKUP_BUILD,
+            evidence=(),
+            context={},
+        )
+
+        blocked_steps = [
+            step
+            for phase in runbook.phases
+            for step in phase.steps
+            if step.applicability.value == "BLOCKED"
+        ]
+        self.assertTrue(blocked_steps)
+        self.assertTrue(all(not step.commands for step in blocked_steps))
+        self.assertTrue(
+            all(
+                step.applicability.value == "BLOCKED" or step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+        self.assertNotIn(
+            "登记并重新核验实施事实",
+            runbook.model_dump_json(),
+        )
+
+    def test_rman_backup_adds_archivelog_conversion_for_noarchivelog(self) -> None:
+        evidence = (TurnEvidenceFact(
+            evidence_ref="evidence:rman-precheck",
+            artifact_id="artifact-rman-precheck",
+            source_id="oracle-source",
+            step_id="precheck",
+            tool_id="db.backup.rman_configuration",
+            measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+            presentation_kind=PresentationPreference.TABLE,
+            captured_at="2026-09-28T08:00:00Z",
+            columns=({"name": "log_mode"},),
+            rows=(("NOARCHIVELOG",),),
+            row_count=1,
+        ),)
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RMAN_BACKUP_BUILD,
+            evidence=evidence,
+            context={
+                "implementation_parameters": {
+                    "INSTANCE_NAME": "TESTDB",
+                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
+                    "BACKUP_DEST": "/backup/testdb",
+                }
+            },
+        )
+
+        self.assertIn("ALTER DATABASE ARCHIVELOG", runbook.model_dump_json())
 
     def test_pitr_without_target_is_blocked_and_has_no_set_until(self) -> None:
         runbook = compile_implementation_runbook(

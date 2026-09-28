@@ -386,41 +386,74 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                 commands = _items(step.get(key))
                 if not commands:
                     continue
-                story.append(Paragraph(_paragraph(label), body))
-                for command_value in commands:
-                    command = _mapping(command_value)
-                    heading = " · ".join(
-                        item
-                        for item in (
-                            str(command.get("executor") or command.get("command_type") or ""),
-                            str(command.get("title") or ""),
+                groups = ((label, commands, False),)
+                if key == "commands":
+                    executable = [
+                        item for item in commands
+                        if "MANUAL" not in {
+                            str(_mapping(item).get("command_type") or "").upper(),
+                            str(_mapping(item).get("executor") or "").upper(),
+                        }
+                    ]
+                    manual = [
+                        item for item in commands
+                        if "MANUAL" in {
+                            str(_mapping(item).get("command_type") or "").upper(),
+                            str(_mapping(item).get("executor") or "").upper(),
+                        }
+                    ]
+                    groups = (
+                        (label, executable, False),
+                        ("人工确认项", manual, True),
+                    )
+                for group_label, group_commands, manual_group in groups:
+                    if not group_commands:
+                        continue
+                    story.append(Paragraph(_paragraph(group_label), body))
+                    for command_value in group_commands:
+                        command = _mapping(command_value)
+                        heading = " · ".join(
+                            item
+                            for item in (
+                                str(command.get("executor") or command.get("command_type") or ""),
+                                str(command.get("title") or ""),
+                            )
+                            if item
                         )
-                        if item
-                    )
-                    formatted_code = _formatted_code(
-                        command.get("content"),
-                        command.get("command_type"),
-                    )
-                    story.append(_RunbookCodeBlock(
-                        title=heading or "COMMAND",
-                        code=formatted_code,
-                        text_font_name=font_name,
-                    ))
-                    execution_metadata = " · ".join(
-                        item for item in (
-                            f"身份 {command.get('run_as')}" if command.get("run_as") else "",
-                            f"节点 {'、'.join(map(str, _items(command.get('node_scope'))))}" if _items(command.get("node_scope")) else "",
-                            f"风险 {command.get('risk_level')}" if command.get("risk_level") else "",
-                        ) if item
-                    )
-                    if execution_metadata:
-                        story.append(Paragraph(_paragraph(execution_metadata), body))
-                    for expected in _items(command.get("expected_result")):
-                        story.append(Paragraph(
-                            _paragraph(f"预期：{expected}"), body, bulletText="•"
-                        ))
-                    for note in _items(command.get("notes")):
-                        story.append(Paragraph(_paragraph(note), body, bulletText="•"))
+                        if manual_group:
+                            story.append(Paragraph(
+                                _paragraph(command.get("title") or "人工确认"),
+                                step_style,
+                            ))
+                            story.append(Paragraph(
+                                _paragraph(command.get("content")),
+                                body,
+                            ))
+                        else:
+                            formatted_code = _formatted_code(
+                                command.get("content"),
+                                command.get("command_type"),
+                            )
+                            story.append(_RunbookCodeBlock(
+                                title=heading or "COMMAND",
+                                code=formatted_code,
+                                text_font_name=font_name,
+                            ))
+                        execution_metadata = " · ".join(
+                            item for item in (
+                                f"身份 {command.get('run_as')}" if command.get("run_as") else "",
+                                f"节点 {'、'.join(map(str, _items(command.get('node_scope'))))}" if _items(command.get("node_scope")) else "",
+                                f"风险 {command.get('risk_level')}" if command.get("risk_level") else "",
+                            ) if item
+                        )
+                        if execution_metadata:
+                            story.append(Paragraph(_paragraph(execution_metadata), body))
+                        for expected in _items(command.get("expected_result")):
+                            story.append(Paragraph(
+                                _paragraph(f"预期：{expected}"), body, bulletText="•"
+                            ))
+                        for note in _items(command.get("notes")):
+                            story.append(Paragraph(_paragraph(note), body, bulletText="•"))
             for risk in _items(step.get("risks")):
                 story.append(Paragraph(_paragraph(f"注意：{risk}"), body))
 

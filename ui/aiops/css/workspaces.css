@@ -204,6 +204,11 @@
 .ops-runbook-command .agent-code-toolbar { background: #2b3549; color: #fff; }
 .ops-runbook-command pre { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .ops-runbook-command ul, .ops-runbook-risks ul, .ops-runbook-stop ul { margin: 8px 0; }
+.ops-runbook-command-group.is-manual h5 { color: #76571d; }
+.ops-runbook-manual { margin-top: 8px; padding: 12px 14px; border-left: 3px solid #d3a64f; background: #fff9ec; color: #5f4a21; }
+.ops-runbook-manual h6 { margin: 0 0 6px; font-size: 13px; }
+.ops-runbook-manual p { margin: 0; line-height: 1.7; white-space: pre-wrap; }
+.ops-runbook-manual .ops-runbook-command-meta { margin: 8px -2px 0; padding: 0; background: transparent; }
 .ops-runbook-risks { margin-top: 14px; padding: 12px 14px; border-left: 3px solid #cf895c; background: #fff7f2; color: #714326; }
 .ops-runbook-missing-facts ul, .ops-runbook-artifacts ul { display: grid; gap: 8px; padding: 0; list-style: none; }
 .ops-runbook-missing-facts li, .ops-runbook-artifacts li { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr); gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--line); background: #fff; }

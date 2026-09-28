@@ -126,6 +126,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("Accept: accept", auth)
         self.assertIn("data-download-implementation-runbook", workspace)
         self.assertIn("implementation-runbook.${format.extension}", workspace)
+        self.assertIn('commandGroup("人工确认项", manualItems, true)', workspace)
         self.assertIn('"application/pdf"', workspace)
         self.assertIn('"text/markdown"', workspace)
         self.assertIn('"application/json"', workspace)

@@ -137,14 +137,7 @@ def blocked_step(
         title=title,
         applicability=RunbookApplicability.BLOCKED,
         rationale=objective,
-        commands=(command(
-            f"{step_id}.facts",
-            "登记并重新核验实施事实",
-            "在当前 Target 的部署拓扑、主机采集或策略配置中补齐本步骤列出的事实，然后重新生成实施文档。",
-            executor=RunbookExecutor.MANUAL,
-            run_as="DBA",
-            risk=RunbookRiskLevel.LOW,
-        ),),
+        commands=(),
         required_inputs=missing_keys,
         risks=("事实未核验前不得把示例值代入生产命令。",),
     )
@@ -237,15 +230,6 @@ def compile_profile(
                 ))
                 continue
             phase_commands = commands_by_phase.get(step_id, ())
-            if not phase_commands:
-                phase_commands = (command(
-                    f"{step_id}.checklist",
-                    "按本阶段检查表实施并留存证据",
-                    "逐项执行文档列出的检查、变更、验证和回退准备；所有实际值以参数附录固化事实为准。",
-                    executor=RunbookExecutor.MANUAL,
-                    run_as="DBA",
-                    risk=RunbookRiskLevel.MEDIUM,
-                ),)
             steps.append(normal_step(
                 step_id,
                 title,

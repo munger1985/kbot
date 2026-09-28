@@ -758,18 +758,23 @@
         CONDITIONAL: "按条件实施",
         BLOCKED: "等待必要事实",
       };
-      const commandHtml = (command) => {
+      const isManualCommand = (command) => [command.command_type, command.executor]
+        .some((value) => String(value || "").toUpperCase() === "MANUAL");
+      const commandHtml = (command, manual = false) => {
         const metadata = [
-          command.executor || command.command_type,
+          manual ? "" : command.executor || command.command_type,
           command.run_as ? `身份 ${command.run_as}` : "",
           values(command.node_scope).length ? `节点 ${values(command.node_scope).join("、")}` : "",
           command.container_name ? `容器 ${command.container_name}` : "",
           command.risk_level ? `风险 ${command.risk_level}` : "",
         ].filter(Boolean).map((item) => `<span>${esc(item)}</span>`).join("");
+        if (manual) {
+          return `<div class="ops-runbook-manual"><h6>${esc(command.title || "人工确认")}</h6><p>${esc(command.content || "")}</p>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
+        }
         return `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(command.executor || command.command_type || "COMMAND")}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}<pre><code>${esc(command.content || "")}</code></pre>${values(command.expected_result).length ? `<div class="ops-runbook-expected"><strong>预期结果</strong><ul>${values(command.expected_result).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
       };
-      const commandGroup = (title, commands) => values(commands).length
-        ? `<section class="ops-runbook-command-group"><h5>${esc(title)}</h5>${values(commands).map(commandHtml).join("")}</section>`
+      const commandGroup = (title, commands, manual = false) => values(commands).length
+        ? `<section class="ops-runbook-command-group${manual ? " is-manual" : ""}"><h5>${esc(title)}</h5>${values(commands).map((command) => commandHtml(command, manual)).join("")}</section>`
         : "";
       const stateItems = values(payload.current_state).map((item) => `<li class="is-${esc(String(item.status || "unknown").toLowerCase())}"><span>${esc(item.label || "-")}</span><strong>${esc(item.value || "-")}</strong><small>${esc(item.status || "UNKNOWN")}</small></li>`).join("");
       const resolvedParameters = values(payload.resolved_parameters).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.source || "")}</small></div><code>${esc(item.value || "")}</code><span>${esc(item.status || "")}</span></li>`).join("");
@@ -784,7 +789,9 @@
         const steps = values(phase.steps).map((step, stepIndex) => {
           const stepNumber = `${phaseNumber}.${stepIndex + 1}`;
           const stepId = `${phaseId}-step-${stepIndex + 1}`;
-          return `<article class="ops-runbook-step" id="${stepId}"><header><div><span class="ops-runbook-step-number">${stepNumber}</span><h4>${esc(step.title || step.step_id)}</h4><p>${esc(step.rationale || "")}</p></div><span class="ops-runbook-applicability is-${esc(String(step.applicability || "required").toLowerCase())}">${esc(applicabilityLabel[step.applicability] || step.applicability || "")}</span></header>${values(step.required_inputs).length ? `<p class="ops-runbook-needs"><strong>所需输入：</strong>${values(step.required_inputs).map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${commandGroup("实施命令", step.commands)}${commandGroup("验证命令", step.verification_commands)}${commandGroup("回退命令", step.rollback)}${values(step.risks).length ? `<aside class="ops-runbook-risks"><strong>风险与注意事项</strong><ul>${values(step.risks).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></aside>` : ""}</article>`;
+          const implementationCommands = values(step.commands).filter((command) => !isManualCommand(command));
+          const manualItems = values(step.commands).filter(isManualCommand);
+          return `<article class="ops-runbook-step" id="${stepId}"><header><div><span class="ops-runbook-step-number">${stepNumber}</span><h4>${esc(step.title || step.step_id)}</h4><p>${esc(step.rationale || "")}</p></div><span class="ops-runbook-applicability is-${esc(String(step.applicability || "required").toLowerCase())}">${esc(applicabilityLabel[step.applicability] || step.applicability || "")}</span></header>${values(step.required_inputs).length ? `<p class="ops-runbook-needs"><strong>所需输入：</strong>${values(step.required_inputs).map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${commandGroup("实施命令", implementationCommands)}${commandGroup("人工确认项", manualItems, true)}${commandGroup("验证命令", step.verification_commands)}${commandGroup("回退命令", step.rollback)}${values(step.risks).length ? `<aside class="ops-runbook-risks"><strong>风险与注意事项</strong><ul>${values(step.risks).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></aside>` : ""}</article>`;
         }).join("");
         return `<section class="ops-runbook-phase" id="${phaseId}"><header><span class="ops-runbook-phase-number">${phaseNumber}</span><div><h3>${esc(phase.title || phase.phase_id)}</h3><p>${esc(phase.objective || "")}</p></div></header><div class="ops-runbook-steps">${steps}</div></section>`;
       }).join("");
